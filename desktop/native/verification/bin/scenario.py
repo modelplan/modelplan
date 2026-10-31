@@ -2,6 +2,9 @@
 """Launch-mode scenario registry (scenarios.json), used by SKILL.md's launch branch.
   name --config C           print the run config's registered scenario, or nothing for an unregistered launch
   prepare|drive --config C  run that scenario's step with `--config C` and exit with its status
+  booking-unit|booking-scenario --scenario S
+                            the unit / booking scenario `book.py request` must use for S (registry `unit`,
+                            `bookingScenario`); the builder must write the same values (macrev-332-27)
   build --scenario S --config C [-- ARGS]
                             before `book.py start`: run S's `config` builder, which creates C (it must not exist)
   has-actions --config C    print `actions` when the scenario registers an action runner, else nothing
@@ -13,7 +16,7 @@ scenario's preparation receipt; any ambiguity refuses."""
 import argparse,json,shlex,signal,subprocess,sys,time
 from pathlib import Path
 REGISTRY=Path(__file__).resolve().with_name('scenarios.json')
-OPTIONAL=('config','actions','observations')
+OPTIONAL=('config','actions','observations','unit','bookingScenario')
 STARTED_SECONDS=15 # C2.4 section 7: the bounded wait for the native `started` row
 def load(path=None):
     reg=json.loads(Path(path or REGISTRY).read_text())
@@ -85,15 +88,26 @@ def build(name,config,extra,path=None):
     try:ok=isinstance(built,dict) and (resolve(built,path) or (None,))[0]==name
     except ValueError:ok=False
     if not ok:raise ValueError('builder did not create this scenario\'s run config')
+    booking=built.get('booking') if isinstance(built.get('booking'),dict) else {}
+    if any(key in reg[name] and booking.get(field)!=reg[name][key] for key,field in (('unit','unit'),('bookingScenario','scenario'))):
+        raise ValueError('built run config books another unit/scenario than the registry entry')
     return 0
+def booking_field(name,key,path=None):
+    reg=load(path)
+    if name not in reg:raise ValueError('unknown scenario')
+    if key not in reg[name]:raise ValueError(f'scenario declares no {key}')
+    return reg[name][key]
 def main(argv=None,path=None):
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('step',choices=('name','prepare','drive','build','has-actions','started','actions'))
-    p.add_argument('--config',type=Path,required=True);p.add_argument('--scenario')
+    p.add_argument('step',choices=('name','prepare','drive','build','has-actions','started','actions','booking-unit','booking-scenario'))
+    p.add_argument('--config',type=Path);p.add_argument('--scenario')
     argv=list(sys.argv[1:] if argv is None else argv);cut=argv.index('--') if '--' in argv else len(argv)
     a=p.parse_args(argv[:cut]);a.extra=argv[cut+1:] # everything after -- goes to the step unchanged
     if a.extra and a.step not in ('build','actions'):p.error('extra arguments are only for build and actions')
-    if (a.scenario is not None)!=(a.step=='build'):p.error('--scenario is required for build and only for build')
+    named=a.step in ('build','booking-unit','booking-scenario')
+    if (a.scenario is not None)!=named:p.error('--scenario is required for build and booking-* and only for them')
+    if a.step.startswith('booking-'):print(booking_field(a.scenario,'unit' if a.step=='booking-unit' else 'bookingScenario',path));return 0
+    if a.config is None:p.error('--config is required')
     if a.step=='build':return build(a.scenario,a.config,a.extra,path)
     c=json.loads(a.config.read_text())
     if a.step=='name':found=resolve(c,path);print(found[0] if found else '');return 0

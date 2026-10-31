@@ -51,6 +51,8 @@ class U6PrepareConfigTests(unittest.TestCase):
             prepare.prepare(args,make_home=FakeHome,probe=probe)
             config=json.loads((batch/'run.json').read_text());seed=json.loads((batch/'synthetic-seed.json').read_text())
             self.assertEqual(config['booking']['unit'],'U6')
+            entry=json.loads((Path(__file__).parent/'bin/scenarios.json').read_text())['u6'] # macrev-332-27: book.py request uses these
+            self.assertEqual((config['booking']['unit'],config['booking']['scenario']),(entry['unit'],entry['bookingScenario']))
             self.assertEqual(config['packageSHA256'],hashlib.sha256(package.read_bytes()).hexdigest())
             self.assertEqual(seed['titleSHA256'],hashlib.sha256(b'GitHub Copilot').hexdigest())
             self.assertEqual(seed['homeSeedSHA256'],config['syntheticHomeSeedSHA256'])
