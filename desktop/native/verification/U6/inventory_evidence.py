@@ -4,6 +4,7 @@ import argparse, hashlib, json, sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from artifact_paths import is_appledouble
+from capture_artifacts import approved_images,exportable
 
 def inventory(config):
     batch = Path(config['batch'])
@@ -16,8 +17,9 @@ def inventory(config):
             ('head','binarySHA256','packageSHA256','helperSHA256','syntheticHomeSeedSHA256'))):
         raise ValueError('evidence-pins-mismatch')
     entries = []
+    images,capture_problems=approved_images(config,batch)
     for path in sorted(batch.rglob('*')):
-        if is_appledouble(path): continue
+        if not exportable(path,batch,images): continue
         if path.is_symlink(): raise ValueError('symlink-in-evidence')
         if not path.is_file() or path.name in ('README.md','filelist.txt'): continue
         rel = path.relative_to(batch).as_posix()
@@ -28,6 +30,7 @@ def inventory(config):
         'binarySHA256':config['binarySHA256'],'packageSHA256':config['packageSHA256'],
         'profileSHA256':config['syntheticHomeSeedSHA256'],'durationSeconds':manifest.get('timing',{}).get('durationSeconds'),
         'outcome':manifest.get('scenarios',[{}])[0].get('outcome'),'fileCount':len(entries)}
+    if capture_problems:summary.update(outcome='fail',captureContradiction=True,excludedImages=len(capture_problems))
     if not summary['runID'] or not summary['epoch'] or not summary['packageSHA256']:
         raise ValueError('evidence-pin-missing')
     with (batch/'filelist.txt').open('x') as stream:stream.writelines(lines)
@@ -37,7 +40,9 @@ def inventory(config):
         stream.write('The listed files are this one run’s bounded synthetic evidence. '
                      'An outcome is supplied by evidence-u6.py; file hashes do not upgrade missing GUI or cleanup proof.\n')
     print(json.dumps(summary))
+    return summary
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True)
-    a=p.parse_args();inventory(json.loads(a.config.read_text()))
+    a=p.parse_args();result=inventory(json.loads(a.config.read_text()))
+    raise SystemExit(1 if result.get('captureContradiction') else 0)

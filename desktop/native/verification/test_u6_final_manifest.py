@@ -33,6 +33,20 @@ class U6FinalManifestTests(unittest.TestCase):
         path=Path(self.args[7]);manifest=json.loads(path.read_text())
         manifest['bundleMembers']['engine']['sha256']='0'*64;path.write_text(json.dumps(manifest))
         outcome,_=self.final();self.assertEqual(outcome['outcome'],'not-run')
+    def test_orphan_image_is_fail_and_never_exported_by_evidence_or_inventory(self):
+        image=self.batch/'status-preclick.png';image.write_bytes(b'not-owned-pixels')
+        outcome,manifest=self.final();self.assertEqual((outcome['outcome'],outcome['step']),('fail','capture-privacy'))
+        self.assertNotIn('status-preclick.png',json.dumps(manifest))
+        result=subprocess.run([sys.executable,'-B',str(Path(__file__).parent/'U6/inventory_evidence.py'),'--config',self.args[1]],capture_output=True,text=True)
+        self.assertEqual(result.returncode,1,result.stderr)
+        self.assertNotIn('status-preclick.png',(self.batch/'filelist.txt').read_text())
+        self.assertEqual(json.loads(result.stdout)['outcome'],'fail')
+    def test_missing_capture_proof_stays_not_run_but_pixels_are_excluded(self):
+        (self.batch/'dock-capture.json').unlink()
+        outcome,manifest=self.final();self.assertEqual(outcome['outcome'],'not-run')
+        self.assertTrue(outcome['captureContradiction'])
+        self.assertTrue(manifest['capturePrivacy']['contradiction'])
+        self.assertNotIn('dock-owned.png',json.dumps(manifest))
     def unavailable_receipts(self):
         native_path=self.batch/'native-observations.jsonl'
         native=[json.loads(line) for line in native_path.read_text().splitlines()]

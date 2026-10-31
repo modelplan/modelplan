@@ -20,9 +20,14 @@ During the lease the operator must not activate another application: no `open`, 
 Codex or another app. Activation intentionally triggers the existing owner-preempted stop. Prepare
 commands before start and let the one attached script run; do not disable or special-case that stop.
 Before the first status click, `U6/capture_status.py` captures only the admitted native status-button
-rectangle (`status-preclick.png`), with run/PID, frame sequence/generation, exact crop and SHA-256 in
-`status-preclick-capture.json`. It checks current settled geometry before and after capture and fails
-closed if it changes; no full-screen/status-popup capture is authorized. This is visibility evidence,
+rectangle in a private temporary directory inside the run's local scratch. Only after successful capture
+and post-capture geometry/identity checks does it publish `status-preclick/status-preclick.png` and
+`status-preclick/status-preclick-capture.json` as one atomically renamed directory, binding run/PID,
+frame sequence/generation, crop and SHA-256. Exceptions/timeouts delete owned private/staging files
+in finally and write a bounded refusal. Final evidence/inventory exclude unreceipted or unusable images;
+an orphan image is explicitly flagged and prevents PASS (otherwise FAIL; pre-existing missing mandatory
+proof remains NOT-RUN under C2.7), never an exported file. No full-screen/status-popup capture
+is authorized. This is visibility evidence,
 not a substitute for native menu arrival or final qualification.
 
 ### Status-frame readiness repair

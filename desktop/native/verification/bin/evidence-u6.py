@@ -13,15 +13,24 @@ def main(argv=None):
     chain_spec=importlib.util.spec_from_file_location('u6_chain',Path(__file__).parent.parent/'U6/evidence_chain.py')
     chain=importlib.util.module_from_spec(chain_spec);chain_spec.loader.exec_module(chain)
     verdict=chain.evaluate(config,args.batch,args.package,kit_manifest)
+    sys.path.insert(0,str(Path(__file__).parent.parent/'U6'))
+    from capture_artifacts import approved_images,exportable
+    images,capture_problems=approved_images(config,args.batch)
+    if capture_problems:
+        # Missing mandatory receipts remain NOT-RUN under C2.7. Orphan pixels
+        # are excluded either way and can never accompany an otherwise PASS.
+        if verdict['outcome']=='pass':verdict.update(outcome='fail',step='capture-privacy',reason='unknown')
+        verdict['captureContradiction']=True
     spec = importlib.util.spec_from_file_location('shared_evidence',Path(__file__).with_name('evidence.py'))
     shared = importlib.util.module_from_spec(spec); spec.loader.exec_module(shared)
-    files=sorted(p.relative_to(args.batch).as_posix() for p in args.batch.rglob('*') if not is_appledouble(p) and p.is_file()
+    files=sorted(p.relative_to(args.batch).as_posix() for p in args.batch.rglob('*') if exportable(p,args.batch,images) and p.is_file()
                  and p.name not in ('manifest.json','filelist.txt','README.md'))
     report=dict(headSHA=config['head'],profile='synthetic',attributionMethod='c2.3-raw-run-bound-receipts',
         scenarios=[dict(id='U6-DockMenu-synthetic',outcome=verdict['outcome'],step=verdict['step'],reason=verdict['reason'])],files=files)
     result = shared.manifest(report,args.batch)
     result['subject'] = {key:config.get(key) for key in ('head','binarySHA256','packageSHA256','helperSHA256','syntheticHomeSeedSHA256')}
     result['timing'] = {'durationSeconds':verdict.get('durationSeconds')}
+    if capture_problems:result['capturePrivacy']={'contradiction':True,'excludedImages':len(capture_problems)}
     with (args.batch/'manifest.json').open('x') as stream: json.dump(result,stream,indent=2)
     print(json.dumps(dict(scenario='U6-DockMenu-synthetic',**verdict)))
 if __name__ == '__main__': main()

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Owned status-rectangle capture; all screen/process operations are fakes."""
-import hashlib,importlib.util,json,tempfile,types,unittest
+import hashlib,importlib.util,json,tempfile,types,unittest,subprocess
 from pathlib import Path
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('u6_status_capture',Path(__file__).parent/'U6/capture_status.py')
@@ -8,8 +8,9 @@ capture=importlib.util.module_from_spec(spec);spec.loader.exec_module(capture)
 
 class StatusCaptureTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
-        self.config=dict(batch=str(self.root),subjectPidPath=str(self.root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)/'batch';self.root.mkdir()
+        self.scratch=Path(self.temp.name)/'scratch';self.scratch.mkdir()
+        self.config=dict(batch=str(self.root),scratch=str(self.scratch),subjectPidPath=str(self.root/'subject.json'),expectedLease=dict(runID='run',epoch='epoch'))
         (self.root/'subject.json').write_text(json.dumps(dict(pid=42,state='running',runID='run',epoch='epoch')))
         self.frame=dict(event='status-item-frame',runID='run',epoch='epoch',pid=42,seq=7,mono=100,
             checks=dict(x=1800,y=1418,cgX=1800,cgY=0,width=44,height=22,coordinateSpace='appkit-screen',
@@ -26,12 +27,19 @@ class StatusCaptureTests(unittest.TestCase):
             capture.capture(self.config,run_capture=fake,now=lambda:100.5)
     def test_exact_owned_rectangle_and_receipt_before_input(self):
         def fake(command,**_):
-            self.assertEqual(command,['screencapture','-x','-R','1800,0,44,22',str(self.root/'status-preclick.png')])
+            self.assertEqual(command[:4],['screencapture','-x','-R','1800,0,44,22'])
+            self.assertTrue(Path(command[-1]).is_relative_to(self.scratch))
             Path(command[-1]).write_bytes(b'synthetic-owned-rectangle');return types.SimpleNamespace(returncode=0)
-        self.run_capture(fake);r=json.loads((self.root/'status-preclick-capture.json').read_text())
+        self.run_capture(fake);r=json.loads((self.root/'status-preclick/status-preclick-capture.json').read_text())
         self.assertEqual((r['pid'],r['frameSeq'],r['frameGeneration']),(42,7,2))
         self.assertEqual(r['sha256'],hashlib.sha256(b'synthetic-owned-rectangle').hexdigest())
         self.assertEqual(r['statusWindowCheck'],'unavailable')
+        self.assertEqual(list(self.scratch.iterdir()),[])
+        self.assertFalse((self.root/'status-preclick.png').exists())
+        self.assertTrue((self.root/'status-preclick/status-preclick.png').is_file())
+        from capture_artifacts import approved_images
+        allowed,problems=approved_images(self.config,self.root)
+        self.assertEqual(allowed,{'status-preclick/status-preclick.png'});self.assertEqual(problems,[])
     def test_unsettled_or_oversized_never_invokes_capture(self):
         for changes in [dict(settled=False),dict(height=44),dict(frameGeneration=3)]:
             with self.subTest(changes=changes):
@@ -43,6 +51,26 @@ class StatusCaptureTests(unittest.TestCase):
             Path(command[-1]).write_bytes(b'synthetic');self.frame['checks']['frameGeneration']=3;self.write()
             return types.SimpleNamespace(returncode=0)
         with self.assertRaisesRegex(ValueError,'owned-frame-changed'):self.run_capture(fake)
-        self.assertFalse((self.root/'status-preclick-capture.json').exists())
+        self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
+        self.assertEqual(json.loads((self.root/'status-capture-refusal.json').read_text())['reason'],'owned-frame-changed')
+    def test_partial_error_timeout_and_exception_delete_private_pixels(self):
+        for failure in ('error','timeout','exception'):
+            with self.subTest(failure=failure):
+                self.setUp()
+                def fake(command,**_):
+                    Path(command[-1]).write_bytes(b'partial-unverified-pixels')
+                    if failure=='timeout':raise subprocess.TimeoutExpired('unused',5)
+                    if failure=='exception':raise RuntimeError('private-text-must-not-be-exported')
+                    return types.SimpleNamespace(returncode=1)
+                with self.assertRaises((ValueError,subprocess.TimeoutExpired,RuntimeError)):self.run_capture(fake)
+                self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
+                data=(self.root/'status-capture-refusal.json').read_text();self.assertNotIn('private-text',data)
+    def test_publish_error_cleans_staging_and_private_files(self):
+        def fake(command,**_):
+            Path(command[-1]).write_bytes(b'validated');return types.SimpleNamespace(returncode=0)
+        with patch.object(capture.os,'rename',side_effect=OSError('private-path')):
+            with self.assertRaises(OSError):self.run_capture(fake)
+        self.assertEqual(list(self.root.rglob('*.png')),[]);self.assertEqual(list(self.scratch.iterdir()),[])
+        self.assertFalse(any(p.name.startswith('.u6-status-publish-') for p in self.root.iterdir()))
 
 if __name__=='__main__':unittest.main()
