@@ -3,8 +3,6 @@
 import argparse,hashlib,importlib.util,json,os,signal,subprocess,sys,time,shutil
 from pathlib import Path
 from admission import load_and_admit
-import book
-from release import IDENTITY_FIELDS, validate_release
 BASE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('shared_cleanup',BASE/'cleanup-run.py');cleanup=importlib.util.module_from_spec(spec);spec.loader.exec_module(cleanup)
 def write(path,data):
@@ -22,20 +20,15 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',type=Path,required=True);a=parser.parse_args();c=json.loads(a.config.read_text());admit(c,time.time())
     out=Path(c['batch']);scratch=Path(c['scratch']);assert out.is_dir() and scratch.is_dir()
     binary=Path(c['binary']);assert hashlib.sha256(binary.read_bytes()).hexdigest()==c['binarySHA256']
-    locks=Path(c['locks']);owned=[];app=None;guardian=None;identity=None
+    locks=Path(c['locks']);owned=[];app=None;identity=None
     stop=Path(c['stopPath']);lease=Path(c['leasePath']);finish=out/'operator-finish.json'
     if stop.resolve()!=(out/'stop.json').resolve():raise ValueError('stop-path-mismatch')
     contract=dict(profile='synthetic',binarySHA256=c['binarySHA256'],argv=[str(binary)],
                   leasePath=str(lease),releasePath=c['releasePath'],stopPath=str(stop),
                   expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
                   requiredSeconds=30,booking=c.get('booking'))
-    # Check booking and file-backed release before starting our heartbeat guardian.
-    # The shared admission loader then checks live heartbeat immediately before launch.
-    initial_lease=json.loads(lease.read_text())
-    if any(initial_lease.get(k)!=contract['expectedLease'].get(k) for k in IDENTITY_FIELDS):raise ValueError('run/lease identity mismatch')
-    if stop.exists():raise ValueError('stopped')
-    validate_release(initial_lease,json.loads(Path(c['releasePath']).read_text()))
-    book.admit(dict(booking=c.get('booking'),lease=initial_lease,requiredSeconds=30))
+    # M1 runs the independent guardian; admission checks its live lease before setup.
+    load_and_admit(contract)
     result=dict(runID=c['runID'],epoch=c['epoch'],headSHA=c['head'],profile='synthetic',outcome='not-run',appStarted=False)
     try:
         if any((locks/f'slot{i}').exists() for i in (1,2)):raise RuntimeError('resource-busy-before-launch')
@@ -43,15 +36,6 @@ def main():
             lock=locks/name;lock.mkdir();write(lock/'owner.json',dict(runID=c['runID'],epoch=c['epoch'],pid=os.getpid()));owned.append(lock)
         if sum((locks/f'slot{i}').exists() for i in (1,2))!=1:raise RuntimeError('resource-contention')
         if shutil.disk_usage(c['resourceRoot']).free-2*3430940672<8589934592:raise RuntimeError('resource-disk-floor')
-        gc=scratch/'guardian.json';write(gc,c|dict(controllerPID=os.getpid(),lease=str(lease),stop=str(stop)))
-        guardian=subprocess.Popen([sys.executable,str(BASE/'drive-scenario.py'),'--guardian',str(gc)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        deadline=time.monotonic()+3
-        while time.monotonic()<deadline:
-            if guardian.poll() is not None:raise RuntimeError('guardian-exited-before-launch')
-            live=json.loads(lease.read_text())
-            if live.get('guardianHeartbeatAt',0)>initial_lease.get('guardianHeartbeatAt',0):break
-            time.sleep(.1)
-        else:raise RuntimeError('guardian-heartbeat-timeout')
         load_and_admit(contract)
         native_contract=scratch/'native-guard.json';write(native_contract,dict(runID=c['runID'],epoch=c['epoch'],start=c['start'],expiresAt=c['expiresAt'],lease=str(lease),stop=str(stop),observations=str(out/'native-observations.jsonl'),menuRequest=str(out/'menu-request.json')))
         with (scratch/'app-stdout.log').open('w') as stdout,(scratch/'app-stderr.log').open('w') as stderr:
@@ -76,12 +60,9 @@ def main():
                 except subprocess.TimeoutExpired:
                     if cleanup.matches(cleanup.identity(app.pid),identity):os.killpg(app.pid,signal.SIGKILL)
                     app.wait(timeout=5)
-        if guardian is not None:
-            try:guardian.wait(timeout=3)
-            except subprocess.TimeoutExpired:guardian.terminate();guardian.wait(timeout=3)
         for lock in owned:
             if lock.exists() and json.loads((lock/'owner.json').read_text()).get('runID')==c['runID']:(lock/'owner.json').unlink();lock.rmdir()
-        result['cleanup']=dict(ownedAppExited=app is None or app.poll() is not None,guardianExited=guardian is None or guardian.poll() is not None,leaseReleased=True,scratchRemoved=cleanup.remove_scratch(scratch,['home','tmp']))
+        result['cleanup']=dict(ownedAppExited=app is None or app.poll() is not None,guardian='external-M1',leaseReleased=False,scratchRemoved=cleanup.remove_scratch(scratch,['home','tmp']))
         result['ownedExitCode']=None if app is None else app.returncode
         write(out/'result.json',result);print(json.dumps({'runID':c['runID'],'outcome':result['outcome'],'appStarted':result['appStarted'],'cleanup':result['cleanup']}),flush=True)
 if __name__=='__main__':main()
