@@ -45,5 +45,17 @@
       "pace": ""
     }
   ],
-  "sessionKey": "81f50290a3af0a79"
+  "sessionKey": "81f50290a3af0a79",
+  "sessions": [
+    {
+      "sessionKey": "81f50290a3af0a79",
+      "observedAt": "2026-10-14T09:58:00Z",
+      "harness": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "fastMode": false,
+        "version": "2.1.300"
+      }
+    }
+  ]
 }

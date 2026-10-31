@@ -105,7 +105,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
                                        machine only from log timestamps and token counts
                                        (MODELPLAN_HISTORY=off stops both, and the tokens per day)
   modelplan history --effort-suggestion dismiss|off|on
-                                       control local weekly effort suggestions (never changes settings)
+                                       control local weekly effort suggestions (default off; never changes settings)
   modelplan declare <planId> [generation] [--region ID]
                                        record which plan pays for another vendor's model (GLM through
                                        Z.ai in Claude Code) in ~/.config/modelplan/local.json, so
@@ -125,7 +125,7 @@ const usage = `modelplan — ModelPlan thin client (read-only, anonymous)
 Common flags: --json  --lang zh|en  --offline  --no-color  --base URL
 Env: MODELPLAN_BASE, MODELPLAN_CACHE, MODELPLAN_LANG, NO_COLOR,
      MODELPLAN_READERS=passive|off (restrict shared reader permissions),
-     MODELPLAN_EFFORT_SUGGESTION=off (no local weekly effort suggestions),
+     MODELPLAN_EFFORT_SUGGESTION=on (opt in to local weekly effort suggestions; default off),
      MODELPLAN_TASK_BRIEF=off (no task-start brief), MODELPLAN_HISTORY=off (no quota history, speed measurement or tokens per day), MODELPLAN_CODEX_ACCOUNT=off (no Codex account reading),
      MODELPLAN_CODEXBAR=off or a path (no CodexBar, or the CodexBar CLI to run)
 `
@@ -426,14 +426,21 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		observeCodexSpeed(st, now)
 		observeAgents(st, now)
 		es := filterSource(advise.Derive(advise.Input{Report: report, Digest: d, State: state, Now: now}), *source)
-		_ = state.Save(st.Dir, now)
 		if c.json {
+			_ = state.Save(st.Dir, now)
 			for i := range es {
 				es[i].Text = map[string]string{"zh": render.Style{T: render.ZH}.AdviceLine(es[i]), "en": render.Style{T: render.EN}.AdviceLine(es[i])}
 			}
 			return printJSON(stdout, map[string]any{"schemaVersion": 1, "evaluatedAt": now.UTC(), "events": nonNil(es)})
 		}
+		es = claimPaceWarnings(st.Dir, es, now)
 		style.Advice(stdout, es)
+		for _, e := range es {
+			if e.Type == advise.WindowPace {
+				state.MarkSeen([]advise.Event{e}, now)
+			}
+		}
+		_ = state.Save(st.Dir, now)
 		return 0
 
 	case "qwen-usage":
@@ -527,6 +534,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "publication":
 		return printJSON(stdout, d.Publication())
 	case "windows":
+		if calendar, _, err := publication.LoadWindows(st); err == nil {
+			d = calendar
+		}
 		now := time.Now()
 		groups := advise.Windows(d, advise.WindowFilter{Provider: *provider, Plan: *planFlag, Model: *modelFlag, Region: *region}, now)
 		if c.json {
@@ -657,6 +667,9 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 	return d, s, 0
 }
 
+// statuslineLockWait bounds how long a status line waits for the reader lock.
+var statuslineLockWait = 400 * time.Millisecond
+
 // statusline is cache-only: it may start a detached sync but never waits on the network.
 // For Claude Code it also records the usage windows the harness passes on stdin, so the
 // Skill and `modelplan quota` can read them later.
@@ -679,7 +692,11 @@ func statusline(stdin io.Reader, stdout io.Writer, style render.Style, st *store
 	if preview {
 		return statuslineInput(in, stdout, style, st, c, harness, modelID, effort, true)
 	}
-	unlock, err := consent.ReaderLock()
+	// Another session's status line or a hook may hold the lock for a moment; wait briefly
+	// rather than drop this session's reading (each session keeps its own in the snapshot).
+	ctx, cancel := context.WithTimeout(context.Background(), statuslineLockWait)
+	unlock, err := consent.ReaderLockContext(ctx)
+	cancel()
 	if err != nil {
 		return 0
 	}
@@ -794,6 +811,9 @@ func statuslineHint(style render.Style, st *store.Store, d *digest.Digest, repor
 			personalAllowed = false
 		}
 		if e.Source == "claude-code" && e.InStatusLine(now) {
+			if e.Type == advise.WindowPace && save && (e.At == nil || !history.ClaimPaceWarning(st.Dir, e.Key, *e.At, now)) {
+				continue
+			}
 			if hint = style.AdviceShort(e); hint != "" {
 				if save {
 					state.NoteShown(e, now)
@@ -865,8 +885,13 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		SessionID      string `json:"session_id"`
 		Model          string `json:"model"`
 		TranscriptPath string `json:"transcript_path"` // Claude Code: read for local speed measurement
+		Event          string `json:"hook_event_name"`
+		Source         string `json:"source"` // SessionStart: startup | resume | clear | compact
 	}
 	_ = json.Unmarshal(b, &in)
+	if in.Event == "SessionStart" {
+		return sessionStartHook(stdout, style, st, harness, in.SessionID, in.Model, in.Source, now)
+	}
 	// Without the status line nothing else keeps the publication fresh for Claude Code. With no
 	// publication at all (just installed) the first prompt waits briefly for one, so it gets the
 	// brief, and a sync that does not finish in time goes on in the background for the next
@@ -929,6 +954,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		es[i].Key = advise.ConfigKey(es[i])
 	}
 	es = state.Unseen(es)
+	es = claimPaceWarnings(st.Dir, es, now)
 	var parts, shown []string
 	if system != "" {
 		shown = append(shown, system)
@@ -956,26 +982,7 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 	// The first prompt of a thread gets the task-start brief: the model judges the task, the
 	// publication supplies the options.
 	if in.SessionID != "" && os.Getenv("MODELPLAN_TASK_BRIEF") != "off" {
-		// Without a reading yet (a first thread, an API-key login, no status line) the brief
-		// still lists the options and the default; the quota and current model are then unknown.
-		acct := &quota.Account{Source: harness, Headroom: "unknown"}
-		for i := range report.Accounts {
-			if report.Accounts[i].Source == harness {
-				acct = &report.Accounts[i]
-			}
-		}
-		switch {
-		case in.Model != "" && (acct.Harness == nil || acct.Harness.Model != in.Model):
-			// The hook names the thread's model (Codex); its effort is known only from that thread's log.
-			x := *acct
-			x.Harness = &quota.Harness{Model: in.Model}
-			acct = &x
-		case harness == "claude-code" && acct.Harness != nil && acct.Harness.Attribution != "current-thread":
-			// The status line's model and effort are another session's (or of unknown session).
-			x := *acct
-			x.Harness = nil
-			acct = &x
-		}
+		acct := threadAccount(report, harness, in.Model)
 		model := ""
 		if acct.Harness != nil {
 			model = acct.Harness.Model
@@ -991,13 +998,14 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 			}
 		}
 		for _, fact := range state.QuotaNotices(in.SessionID, acct, now) {
+			if fact.Kind == "low" {
+				fact.Down, fact.Cheaper = advise.NoticeSteps(acct, report, d, now)
+			}
 			parts = append(parts, style.QuotaNotice(fact))
 		}
 	}
-	// Personal history advice belongs only in the user message, never in parts.
-	if v := history.NotifyEffortSuggestion(st.Dir, d, now); v != nil {
-		shown = append(shown, style.EffortSuggestionLine(v))
-	}
+	// Personal default-effort suggestions stay in text history and the status
+	// line. Hooks must neither expose them to plugins nor consume their notice.
 	if len(parts) > 0 || len(shown) > 0 {
 		out := map[string]any{}
 		if len(shown) > 0 {
@@ -1010,6 +1018,60 @@ func adviseHookAt(stdin io.Reader, stdout io.Writer, style render.Style, st *sto
 		fmt.Fprintln(stdout, string(b))
 	}
 	_ = state.Save(st.Dir, now)
+	return 0
+}
+
+// threadAccount is the prompting thread's account with only that thread's model and effort.
+// Without a reading yet (a first thread, an API-key login, no status line) the quota and the
+// current model are unknown.
+func threadAccount(report quota.Report, harness, model string) *quota.Account {
+	acct := &quota.Account{Source: harness, Headroom: "unknown"}
+	for i := range report.Accounts {
+		if report.Accounts[i].Source == harness {
+			acct = &report.Accounts[i]
+		}
+	}
+	switch {
+	case model != "" && (acct.Harness == nil || acct.Harness.Model != model):
+		// The hook names the thread's model (Codex); its effort is known only from that thread's log.
+		x := *acct
+		x.Harness = &quota.Harness{Model: model}
+		acct = &x
+	case harness == "claude-code" && acct.Harness != nil && acct.Harness.Attribution != "current-thread":
+		// The status line's model and effort are another session's (or of unknown session).
+		x := *acct
+		x.Harness = nil
+		acct = &x
+	}
+	return acct
+}
+
+// sessionStartHook: after Claude Code or Codex compacted or resumed a thread, the model gets
+// back the low or run-out quota notice that thread was sent, when it still holds. Nothing else
+// is sent, refreshed or marked; the next prompt carries on as usual.
+func sessionStartHook(stdout io.Writer, style render.Style, st *store.Store, harness, session, model, source string, now time.Time) int {
+	if session == "" || (source != "compact" && source != "resume") || os.Getenv("MODELPLAN_TASK_BRIEF") == "off" {
+		return 0
+	}
+	paths := quotaPaths(st)
+	if harness == "claude-code" {
+		paths.CodexHome, paths.ClaudeSession = "", session
+	} else {
+		paths.CodexThread = session
+	}
+	report := quota.ReadPermitted(paths, now)
+	if harness == "claude-code" {
+		model = "" // as on a prompt: the status line's reading for this session, not the start's default
+	}
+	acct := threadAccount(report, harness, model)
+	n := advise.Load(st.Dir).QuotaResend(session, acct, now)
+	if n == nil {
+		return 0
+	}
+	d, _, _ := publication.Load(st)
+	n.Down, n.Cheaper = advise.NoticeSteps(acct, report, d, now)
+	b, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": "SessionStart", "additionalContext": style.QuotaNotice(*n)}})
+	fmt.Fprintln(stdout, string(b))
 	return 0
 }
 
@@ -1036,6 +1098,17 @@ func refreshCodexBarLater(st *store.Store, now time.Time) {
 	case quota.CodexBarDue(p, now):
 		_ = startDetached("codexbar", "refresh", "--quiet")
 	}
+}
+
+func claimPaceWarnings(cache string, events []advise.Event, now time.Time) []advise.Event {
+	out := make([]advise.Event, 0, len(events))
+	for _, event := range events {
+		if event.Type == advise.WindowPace && (event.At == nil || !history.ClaimPaceWarning(cache, event.Key, *event.At, now)) {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out
 }
 
 func filterSource(es []advise.Event, source string) []advise.Event {
@@ -1107,21 +1180,14 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		connectionEnv := connections.Local(paths)
 		connectionEnv.Gemini = &localUsage
 		connectionEnv.Qwen = &qwenLocal
-		fv := history.ReadEffortSuggestion(st.Dir, d, now)
-		if fv.Suggestion != nil {
-			style := render.Style{T: render.ZH}
-			if c.lang == "en" {
-				style.T = render.EN
-			}
-			fv.Suggestion.Message = style.EffortSuggestionLine(fv.Suggestion)
-		}
-		boundaries := append(advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now}), fv.Boundaries...)
+		// This machine-readable feed is also consumed by plugins. Keep personal
+		// default-effort suggestions out, even when explicitly enabled locally.
+		boundaries := advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now})
 		return snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistoriesWithAdmission(home, st.Dir, true, now, admission), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
 			Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
 			QwenUsage:   qwenExport,
 			Connections: connections.DiagnoseWithAdmission(connectionEnv, report, admission),
 			Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
-			EffortSuggestion: fv.Suggestion, EffortSuggestionRevision: fv.Revision,
 			Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now})
 	}, func(admission consent.Admission) snapshot.Snapshot {
 		// A second change publishes only the user's own declarations. No tool

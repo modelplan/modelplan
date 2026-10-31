@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: MIT
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ALLOWED_ROUTES, isWorkflowFile, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, isWorkflowFile, workflowProblems } from "../workflow-policy.mjs";
+
+test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
+  const text = `jobs:\n  check:\n    ${TRUSTED_MAC_ROUTE}\n`;
+  assert.deepEqual(workflowProblems(text, ".github/workflows/trusted-mac.yml"), []);
+  assert.ok(workflowProblems(text, ".github/workflows/attacker.yml").length > 0);
+  assert.ok(workflowProblems(text.replace("github.actor_id == '11829005'", "true"), ".github/workflows/trusted-mac.yml").length > 0);
+  assert.ok(workflowProblems(text.replace("github.event.pull_request.head.repo.full_name == github.repository", "true"), ".github/workflows/trusted-mac.yml").length > 0);
+  assert.ok(workflowProblems(text.replace("inputs.os == 'macos-latest'", "true"), ".github/workflows/trusted-mac.yml").length > 0);
+});
 
 const GUARD = "vars.MAC_CI_RUNNER == 'self-hosted' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
 const ROUTED = "jobs:\n" + [...ALLOWED_ROUTES].map((r, i) => `  j${i}:\n    ${r}\n`).join("");
 
-test("accepts hosted runners, pull_request, and the guarded Mac route", () => {
+test("accepts hosted runners and ordinary pull_request triggers", () => {
   assert.deepEqual(workflowProblems("on: pull_request\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
-  assert.deepEqual(workflowProblems("on:\n  push:\n  pull_request:\n" + ROUTED), []);
+  assert.deepEqual(workflowProblems("on:\n  push:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n"), []);
+  assert.ok(workflowProblems(`runs-on: \${{ (${GUARD}) && fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]') || 'macos-latest' }}`).length > 0);
 });
 
 test("rejects pull_request_target in every YAML form", () => {

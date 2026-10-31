@@ -1,16 +1,12 @@
+export const TRUSTED_MAC_ROUTE = "runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-latest' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
-// are the dedicated Mac's owner-only pre-job gate and the private runners' private-repo registration.
+// are the immutable reusable workflow selected by the runner group and the owner-only pre-job gate.
 //
-// Design: an allow-list, not a pattern search. Any line mentioning `self-hosted` or
-// `pull_request_target` must be exactly one of the two canonical routing lines below; anything
-// else (other triggers, branch filters, `|| true`, comments, composed selectors) fails.
-const GUARD = "vars.MAC_CI_RUNNER == 'self-hosted' && github.event_name != 'pull_request_target' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)";
-const LABELS = `fromJSON('["self-hosted","macOS","ARM64","modelplan-mac"]')`;
-export const ALLOWED_ROUTES = new Set([
-  `runs-on: \${{ (${GUARD}) && ${LABELS} || 'macos-latest' }}`,
-  `runs-on: \${{ (matrix.os == 'macos-latest' && ${GUARD}) && ${LABELS} || matrix.os }}`,
-]);
+// Exact routing allow-list, scoped to the trusted reusable workflow. Callers cannot
+// select these runners directly. Other triggers, OR bypasses and constructed
+// selectors fail; escaped YAML spellings are checked too.
+export const ALLOWED_ROUTES = new Set();
 
 // GitHub runs top-level .yml and .yaml files under .github/workflows/.
 export function isWorkflowFile(path) {
@@ -35,9 +31,13 @@ function lineProblems(raw, problems) {
     problems.add("non-canonical self-hosted route or pull_request_target");
 }
 
-export function workflowProblems(text) {
+export function workflowProblems(text, path = "") {
   const problems = new Set();
-  for (const raw of text.split("\n")) lineProblems(raw, problems);
-  if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) lineProblems(raw, problems);
+  const check = (raw) => {
+    if (path === ".github/workflows/trusted-mac.yml" && raw.trim() === TRUSTED_MAC_ROUTE) return;
+    lineProblems(raw, problems);
+  };
+  for (const raw of text.split("\n")) check(raw);
+  if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];
 }

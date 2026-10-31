@@ -221,7 +221,7 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 | | Directory | What it is |
 | --- | --- | --- |
 | **ModelPlan Skill** | [`skills/model-plan/`](skills/model-plan/) | The main client, for any agent with Skills: model and effort choice, the multiplier for each step up, planning around your remaining quota and reset times |
-| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session |
+| Claude Code plugin | [`claude-code/`](claude-code/) | The Skill, `/modelplan:*` commands, status line and a prompt hook that shows you new hints and gives Claude a short task-start brief once per session and a factual line when quota runs low (re-sent after compaction) |
 | Codex plugin | [`codex/`](codex/) | The Skill and a GPT effort dashboard with a ⚡ Fast / Ultrafast switch, your Codex quota and public reset notices |
 | Desktop app (preview) | [`desktop/`](desktop/) | A macOS menu bar app: the quota left and the current hint in the menu bar, a popover with your sessions, quota and effort curves, and a notification once per piece of advice. Ad-hoc signed, not notarized |
 | `modelplan` CLI | [`cli/`](cli/) | Single static binary: `lineup`, `effort`, `models`, `quota`, `advise`, `statusline`, `sync`, `doctor` |
