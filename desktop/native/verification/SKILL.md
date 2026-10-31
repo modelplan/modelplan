@@ -9,7 +9,7 @@ Run from the checkout root. This skill is draft until a verification run at its 
 
 ## 1. Launch
 
-Use `bin/check_inputs.py <root> <entry>` to catch missing relative modules before an attempt; this is a local link check, not a release-asset manifest gate. Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. The coordinator grants the epoch and GO; M2 posts window start/end and runs the independent watchdog. Owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
+Use `bin/check_inputs.py <root> <entry>` to catch missing relative modules before an attempt; this is a local link check, not a release-asset manifest gate. Use `bin/launch.py --config <run.json>` to validate an existing run contract. `--execute` starts only the explicit test executable with a fresh synthetic HOME/TMPDIR after a matching release and fresh lease. The script creates no scheduling authority. The coordinator grants the epoch and GO; M1 posts window start/end and runs `bin/guardian.py` as the independent watchdog. Owner takeover stops it. The absolute run deadline includes waiting, launch, preflight and cleanup, at most 1200 seconds. Remaining time must cover declared phases plus cleanup, with no arbitrary start cutoff. Non-GUI build/tests need no GUI lease; avoid heavy jobs during announced measurement windows.
 
 M1 uses this exact sequence (details and coordinator withdrawal are in
 [`bin/BOOKINGS.md`](bin/BOOKINGS.md)). Configure `MODELPLAN_BOOKING_LEDGER` with
@@ -23,12 +23,16 @@ python3 desktop/native/verification/bin/book.py request \
   --lane M1 --unit U11a --scenario cold --minutes 20
 python3 desktop/native/verification/bin/book.py start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
-# M2 maintains the issued lease's heartbeat and independent stop/deadline watchdog.
+# Keep the lease heartbeat fresh and enforce stop/deadline for the whole run (background):
+python3 desktop/native/verification/bin/guardian.py \
+  --lease "$LEASE_PATH" --stop "$STOP_PATH" &
+GUARDIAN_PID=$!
 python3 desktop/native/verification/bin/release.py \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
   --approval "$APPROVAL_URL" --output "$RELEASE_PATH"
 python3 desktop/native/verification/bin/launch.py --config "$RUN_CONFIG" --execute
 # After exit, Cleanup and independent closure verification:
+kill "$GUARDIAN_PID"  # writes the stop file and ends the heartbeat
 python3 desktop/native/verification/bin/book.py finish \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 ```
@@ -41,7 +45,7 @@ python3 desktop/native/verification/bin/book.py withdraw \
 ```
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
-it does not replace M2's watchdog. The release writer refuses a lease that differs
+`bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 15-second cleanup reserve, and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs
 from the started head or has expired. Only M1 writes a release, and an existing
 receipt is never overwritten. Run configs supply `leasePath`, `releasePath` and
 `stopPath`, plus the matching booking. Both Launch and Drive use `admission.py` to
