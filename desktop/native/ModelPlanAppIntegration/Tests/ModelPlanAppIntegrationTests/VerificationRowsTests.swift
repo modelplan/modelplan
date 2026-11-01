@@ -6,13 +6,14 @@ import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
+@_spi(DockResourceChecks) import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 @MainActor final class VerificationRowsTests: XCTestCase {
     func testEverySnapshotReachesTheNormalDockEntry() async throws {
         _ = NSApplication.shared
         let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../verification/fixtures/dock-scenarios").standardizedFileURL
-        let cases = [("mixed-overflow.json", 8), ("single-window.json", 3), ("reset-announced.json", 1), ("reset-confirmed.json", 1), ("stale.json", 3)]
+        let cases = [("mixed-overflow.json", 64), ("single-window.json", 3), ("reset-announced.json", 1), ("reset-confirmed.json", 1), ("stale.json", 3)]
         for (name, count) in cases {
             let home = FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-verification-test-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -27,7 +28,19 @@ import ModelPlanWire
             let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "verification", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, makeClient: { _, store in VerificationRowsClient(store: store, home: home) })
             await app.prepare(); app.allowDockPresentation(); await app.composition.start()
             XCTAssertEqual(app.composition.provider.dockContent.dockRows.count, count, name)
-            XCTAssertEqual(app.composition.presentedContent.snapshot.inputs.count, count, name)
+            let content = app.composition.presentedContent
+            XCTAssertEqual(content.snapshot.inputs.count, count, name)
+            XCTAssertNil(app.composition.dock.lastAppearanceError, name)
+            let skin = try XCTUnwrap(app.composition.dock.dockView.presentedSkinForChecks, name)
+            XCTAssertNotNil(app.composition.dock.dockView.presentedImageForChecks, name)
+            if name == "mixed-overflow.json" {
+                XCTAssertTrue(skin.stations.contains { ($0.overflowCount ?? 0) > 0 }, "overflow must be rendered")
+            }
+            if name == "single-window.json" {
+                XCTAssertTrue(content.snapshot.inputs.allSatisfy { $0.windows.count == 1 && $0.windows[0].period == .week && $0.windows[0].isGeneral }, "single weekly window must be the general outer-ring input")
+            }
+            if name == "reset-announced.json" { XCTAssertEqual(content.signals.first?.reset?.id, "reset-announced") }
+            if name == "reset-confirmed.json" { XCTAssertEqual(content.signals.first?.reset?.id, "reset-confirmed") }
             XCTAssertNil(app.composition.dock.nativePanel)
             await app.composition.stop()
         }

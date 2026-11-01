@@ -779,6 +779,5438 @@
             "disabledReason": "cooldown"
           }
         }
+      },
+      {
+        "id": "overflow-08",
+        "kind": "tool",
+        "order": 8,
+        "name": {
+          "en": "Synthetic 08",
+          "zh": "合成 08"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000009",
+            "accountLocator": "0000000000000009",
+            "plan": {
+              "id": "overflow-08",
+              "name": {
+                "en": "Synthetic 08",
+                "zh": "合成 08"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-09",
+        "kind": "tool",
+        "order": 9,
+        "name": {
+          "en": "Synthetic 09",
+          "zh": "合成 09"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000a",
+            "accountLocator": "000000000000000a",
+            "plan": {
+              "id": "overflow-09",
+              "name": {
+                "en": "Synthetic 09",
+                "zh": "合成 09"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-10",
+        "kind": "tool",
+        "order": 10,
+        "name": {
+          "en": "Synthetic 10",
+          "zh": "合成 10"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000b",
+            "accountLocator": "000000000000000b",
+            "plan": {
+              "id": "overflow-10",
+              "name": {
+                "en": "Synthetic 10",
+                "zh": "合成 10"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-11",
+        "kind": "tool",
+        "order": 11,
+        "name": {
+          "en": "Synthetic 11",
+          "zh": "合成 11"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000c",
+            "accountLocator": "000000000000000c",
+            "plan": {
+              "id": "overflow-11",
+              "name": {
+                "en": "Synthetic 11",
+                "zh": "合成 11"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-12",
+        "kind": "tool",
+        "order": 12,
+        "name": {
+          "en": "Synthetic 12",
+          "zh": "合成 12"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000d",
+            "accountLocator": "000000000000000d",
+            "plan": {
+              "id": "overflow-12",
+              "name": {
+                "en": "Synthetic 12",
+                "zh": "合成 12"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-13",
+        "kind": "tool",
+        "order": 13,
+        "name": {
+          "en": "Synthetic 13",
+          "zh": "合成 13"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000e",
+            "accountLocator": "000000000000000e",
+            "plan": {
+              "id": "overflow-13",
+              "name": {
+                "en": "Synthetic 13",
+                "zh": "合成 13"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-14",
+        "kind": "tool",
+        "order": 14,
+        "name": {
+          "en": "Synthetic 14",
+          "zh": "合成 14"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000000f",
+            "accountLocator": "000000000000000f",
+            "plan": {
+              "id": "overflow-14",
+              "name": {
+                "en": "Synthetic 14",
+                "zh": "合成 14"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-15",
+        "kind": "tool",
+        "order": 15,
+        "name": {
+          "en": "Synthetic 15",
+          "zh": "合成 15"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000010",
+            "accountLocator": "0000000000000010",
+            "plan": {
+              "id": "overflow-15",
+              "name": {
+                "en": "Synthetic 15",
+                "zh": "合成 15"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-16",
+        "kind": "tool",
+        "order": 16,
+        "name": {
+          "en": "Synthetic 16",
+          "zh": "合成 16"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000011",
+            "accountLocator": "0000000000000011",
+            "plan": {
+              "id": "overflow-16",
+              "name": {
+                "en": "Synthetic 16",
+                "zh": "合成 16"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-17",
+        "kind": "tool",
+        "order": 17,
+        "name": {
+          "en": "Synthetic 17",
+          "zh": "合成 17"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000012",
+            "accountLocator": "0000000000000012",
+            "plan": {
+              "id": "overflow-17",
+              "name": {
+                "en": "Synthetic 17",
+                "zh": "合成 17"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-18",
+        "kind": "tool",
+        "order": 18,
+        "name": {
+          "en": "Synthetic 18",
+          "zh": "合成 18"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000013",
+            "accountLocator": "0000000000000013",
+            "plan": {
+              "id": "overflow-18",
+              "name": {
+                "en": "Synthetic 18",
+                "zh": "合成 18"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-19",
+        "kind": "tool",
+        "order": 19,
+        "name": {
+          "en": "Synthetic 19",
+          "zh": "合成 19"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000014",
+            "accountLocator": "0000000000000014",
+            "plan": {
+              "id": "overflow-19",
+              "name": {
+                "en": "Synthetic 19",
+                "zh": "合成 19"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-20",
+        "kind": "tool",
+        "order": 20,
+        "name": {
+          "en": "Synthetic 20",
+          "zh": "合成 20"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000015",
+            "accountLocator": "0000000000000015",
+            "plan": {
+              "id": "overflow-20",
+              "name": {
+                "en": "Synthetic 20",
+                "zh": "合成 20"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-21",
+        "kind": "tool",
+        "order": 21,
+        "name": {
+          "en": "Synthetic 21",
+          "zh": "合成 21"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000016",
+            "accountLocator": "0000000000000016",
+            "plan": {
+              "id": "overflow-21",
+              "name": {
+                "en": "Synthetic 21",
+                "zh": "合成 21"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-22",
+        "kind": "tool",
+        "order": 22,
+        "name": {
+          "en": "Synthetic 22",
+          "zh": "合成 22"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000017",
+            "accountLocator": "0000000000000017",
+            "plan": {
+              "id": "overflow-22",
+              "name": {
+                "en": "Synthetic 22",
+                "zh": "合成 22"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-23",
+        "kind": "tool",
+        "order": 23,
+        "name": {
+          "en": "Synthetic 23",
+          "zh": "合成 23"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000018",
+            "accountLocator": "0000000000000018",
+            "plan": {
+              "id": "overflow-23",
+              "name": {
+                "en": "Synthetic 23",
+                "zh": "合成 23"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-24",
+        "kind": "tool",
+        "order": 24,
+        "name": {
+          "en": "Synthetic 24",
+          "zh": "合成 24"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000019",
+            "accountLocator": "0000000000000019",
+            "plan": {
+              "id": "overflow-24",
+              "name": {
+                "en": "Synthetic 24",
+                "zh": "合成 24"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-25",
+        "kind": "tool",
+        "order": 25,
+        "name": {
+          "en": "Synthetic 25",
+          "zh": "合成 25"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001a",
+            "accountLocator": "000000000000001a",
+            "plan": {
+              "id": "overflow-25",
+              "name": {
+                "en": "Synthetic 25",
+                "zh": "合成 25"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-26",
+        "kind": "tool",
+        "order": 26,
+        "name": {
+          "en": "Synthetic 26",
+          "zh": "合成 26"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001b",
+            "accountLocator": "000000000000001b",
+            "plan": {
+              "id": "overflow-26",
+              "name": {
+                "en": "Synthetic 26",
+                "zh": "合成 26"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-27",
+        "kind": "tool",
+        "order": 27,
+        "name": {
+          "en": "Synthetic 27",
+          "zh": "合成 27"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001c",
+            "accountLocator": "000000000000001c",
+            "plan": {
+              "id": "overflow-27",
+              "name": {
+                "en": "Synthetic 27",
+                "zh": "合成 27"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-28",
+        "kind": "tool",
+        "order": 28,
+        "name": {
+          "en": "Synthetic 28",
+          "zh": "合成 28"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001d",
+            "accountLocator": "000000000000001d",
+            "plan": {
+              "id": "overflow-28",
+              "name": {
+                "en": "Synthetic 28",
+                "zh": "合成 28"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-29",
+        "kind": "tool",
+        "order": 29,
+        "name": {
+          "en": "Synthetic 29",
+          "zh": "合成 29"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001e",
+            "accountLocator": "000000000000001e",
+            "plan": {
+              "id": "overflow-29",
+              "name": {
+                "en": "Synthetic 29",
+                "zh": "合成 29"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-30",
+        "kind": "tool",
+        "order": 30,
+        "name": {
+          "en": "Synthetic 30",
+          "zh": "合成 30"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000001f",
+            "accountLocator": "000000000000001f",
+            "plan": {
+              "id": "overflow-30",
+              "name": {
+                "en": "Synthetic 30",
+                "zh": "合成 30"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-31",
+        "kind": "tool",
+        "order": 31,
+        "name": {
+          "en": "Synthetic 31",
+          "zh": "合成 31"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000020",
+            "accountLocator": "0000000000000020",
+            "plan": {
+              "id": "overflow-31",
+              "name": {
+                "en": "Synthetic 31",
+                "zh": "合成 31"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-32",
+        "kind": "tool",
+        "order": 32,
+        "name": {
+          "en": "Synthetic 32",
+          "zh": "合成 32"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000021",
+            "accountLocator": "0000000000000021",
+            "plan": {
+              "id": "overflow-32",
+              "name": {
+                "en": "Synthetic 32",
+                "zh": "合成 32"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-33",
+        "kind": "tool",
+        "order": 33,
+        "name": {
+          "en": "Synthetic 33",
+          "zh": "合成 33"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000022",
+            "accountLocator": "0000000000000022",
+            "plan": {
+              "id": "overflow-33",
+              "name": {
+                "en": "Synthetic 33",
+                "zh": "合成 33"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-34",
+        "kind": "tool",
+        "order": 34,
+        "name": {
+          "en": "Synthetic 34",
+          "zh": "合成 34"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000023",
+            "accountLocator": "0000000000000023",
+            "plan": {
+              "id": "overflow-34",
+              "name": {
+                "en": "Synthetic 34",
+                "zh": "合成 34"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-35",
+        "kind": "tool",
+        "order": 35,
+        "name": {
+          "en": "Synthetic 35",
+          "zh": "合成 35"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000024",
+            "accountLocator": "0000000000000024",
+            "plan": {
+              "id": "overflow-35",
+              "name": {
+                "en": "Synthetic 35",
+                "zh": "合成 35"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-36",
+        "kind": "tool",
+        "order": 36,
+        "name": {
+          "en": "Synthetic 36",
+          "zh": "合成 36"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000025",
+            "accountLocator": "0000000000000025",
+            "plan": {
+              "id": "overflow-36",
+              "name": {
+                "en": "Synthetic 36",
+                "zh": "合成 36"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-37",
+        "kind": "tool",
+        "order": 37,
+        "name": {
+          "en": "Synthetic 37",
+          "zh": "合成 37"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000026",
+            "accountLocator": "0000000000000026",
+            "plan": {
+              "id": "overflow-37",
+              "name": {
+                "en": "Synthetic 37",
+                "zh": "合成 37"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-38",
+        "kind": "tool",
+        "order": 38,
+        "name": {
+          "en": "Synthetic 38",
+          "zh": "合成 38"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000027",
+            "accountLocator": "0000000000000027",
+            "plan": {
+              "id": "overflow-38",
+              "name": {
+                "en": "Synthetic 38",
+                "zh": "合成 38"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-39",
+        "kind": "tool",
+        "order": 39,
+        "name": {
+          "en": "Synthetic 39",
+          "zh": "合成 39"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000028",
+            "accountLocator": "0000000000000028",
+            "plan": {
+              "id": "overflow-39",
+              "name": {
+                "en": "Synthetic 39",
+                "zh": "合成 39"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-40",
+        "kind": "tool",
+        "order": 40,
+        "name": {
+          "en": "Synthetic 40",
+          "zh": "合成 40"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000029",
+            "accountLocator": "0000000000000029",
+            "plan": {
+              "id": "overflow-40",
+              "name": {
+                "en": "Synthetic 40",
+                "zh": "合成 40"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-41",
+        "kind": "tool",
+        "order": 41,
+        "name": {
+          "en": "Synthetic 41",
+          "zh": "合成 41"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002a",
+            "accountLocator": "000000000000002a",
+            "plan": {
+              "id": "overflow-41",
+              "name": {
+                "en": "Synthetic 41",
+                "zh": "合成 41"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-42",
+        "kind": "tool",
+        "order": 42,
+        "name": {
+          "en": "Synthetic 42",
+          "zh": "合成 42"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002b",
+            "accountLocator": "000000000000002b",
+            "plan": {
+              "id": "overflow-42",
+              "name": {
+                "en": "Synthetic 42",
+                "zh": "合成 42"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-43",
+        "kind": "tool",
+        "order": 43,
+        "name": {
+          "en": "Synthetic 43",
+          "zh": "合成 43"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002c",
+            "accountLocator": "000000000000002c",
+            "plan": {
+              "id": "overflow-43",
+              "name": {
+                "en": "Synthetic 43",
+                "zh": "合成 43"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-44",
+        "kind": "tool",
+        "order": 44,
+        "name": {
+          "en": "Synthetic 44",
+          "zh": "合成 44"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002d",
+            "accountLocator": "000000000000002d",
+            "plan": {
+              "id": "overflow-44",
+              "name": {
+                "en": "Synthetic 44",
+                "zh": "合成 44"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-45",
+        "kind": "tool",
+        "order": 45,
+        "name": {
+          "en": "Synthetic 45",
+          "zh": "合成 45"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002e",
+            "accountLocator": "000000000000002e",
+            "plan": {
+              "id": "overflow-45",
+              "name": {
+                "en": "Synthetic 45",
+                "zh": "合成 45"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-46",
+        "kind": "tool",
+        "order": 46,
+        "name": {
+          "en": "Synthetic 46",
+          "zh": "合成 46"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000002f",
+            "accountLocator": "000000000000002f",
+            "plan": {
+              "id": "overflow-46",
+              "name": {
+                "en": "Synthetic 46",
+                "zh": "合成 46"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-47",
+        "kind": "tool",
+        "order": 47,
+        "name": {
+          "en": "Synthetic 47",
+          "zh": "合成 47"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000030",
+            "accountLocator": "0000000000000030",
+            "plan": {
+              "id": "overflow-47",
+              "name": {
+                "en": "Synthetic 47",
+                "zh": "合成 47"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-48",
+        "kind": "tool",
+        "order": 48,
+        "name": {
+          "en": "Synthetic 48",
+          "zh": "合成 48"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000031",
+            "accountLocator": "0000000000000031",
+            "plan": {
+              "id": "overflow-48",
+              "name": {
+                "en": "Synthetic 48",
+                "zh": "合成 48"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-49",
+        "kind": "tool",
+        "order": 49,
+        "name": {
+          "en": "Synthetic 49",
+          "zh": "合成 49"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000032",
+            "accountLocator": "0000000000000032",
+            "plan": {
+              "id": "overflow-49",
+              "name": {
+                "en": "Synthetic 49",
+                "zh": "合成 49"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-50",
+        "kind": "tool",
+        "order": 50,
+        "name": {
+          "en": "Synthetic 50",
+          "zh": "合成 50"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000033",
+            "accountLocator": "0000000000000033",
+            "plan": {
+              "id": "overflow-50",
+              "name": {
+                "en": "Synthetic 50",
+                "zh": "合成 50"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-51",
+        "kind": "tool",
+        "order": 51,
+        "name": {
+          "en": "Synthetic 51",
+          "zh": "合成 51"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000034",
+            "accountLocator": "0000000000000034",
+            "plan": {
+              "id": "overflow-51",
+              "name": {
+                "en": "Synthetic 51",
+                "zh": "合成 51"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-52",
+        "kind": "tool",
+        "order": 52,
+        "name": {
+          "en": "Synthetic 52",
+          "zh": "合成 52"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000035",
+            "accountLocator": "0000000000000035",
+            "plan": {
+              "id": "overflow-52",
+              "name": {
+                "en": "Synthetic 52",
+                "zh": "合成 52"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-53",
+        "kind": "tool",
+        "order": 53,
+        "name": {
+          "en": "Synthetic 53",
+          "zh": "合成 53"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000036",
+            "accountLocator": "0000000000000036",
+            "plan": {
+              "id": "overflow-53",
+              "name": {
+                "en": "Synthetic 53",
+                "zh": "合成 53"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-54",
+        "kind": "tool",
+        "order": 54,
+        "name": {
+          "en": "Synthetic 54",
+          "zh": "合成 54"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000037",
+            "accountLocator": "0000000000000037",
+            "plan": {
+              "id": "overflow-54",
+              "name": {
+                "en": "Synthetic 54",
+                "zh": "合成 54"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-55",
+        "kind": "tool",
+        "order": 55,
+        "name": {
+          "en": "Synthetic 55",
+          "zh": "合成 55"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000038",
+            "accountLocator": "0000000000000038",
+            "plan": {
+              "id": "overflow-55",
+              "name": {
+                "en": "Synthetic 55",
+                "zh": "合成 55"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-56",
+        "kind": "tool",
+        "order": 56,
+        "name": {
+          "en": "Synthetic 56",
+          "zh": "合成 56"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000039",
+            "accountLocator": "0000000000000039",
+            "plan": {
+              "id": "overflow-56",
+              "name": {
+                "en": "Synthetic 56",
+                "zh": "合成 56"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-57",
+        "kind": "tool",
+        "order": 57,
+        "name": {
+          "en": "Synthetic 57",
+          "zh": "合成 57"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003a",
+            "accountLocator": "000000000000003a",
+            "plan": {
+              "id": "overflow-57",
+              "name": {
+                "en": "Synthetic 57",
+                "zh": "合成 57"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-58",
+        "kind": "tool",
+        "order": 58,
+        "name": {
+          "en": "Synthetic 58",
+          "zh": "合成 58"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003b",
+            "accountLocator": "000000000000003b",
+            "plan": {
+              "id": "overflow-58",
+              "name": {
+                "en": "Synthetic 58",
+                "zh": "合成 58"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-59",
+        "kind": "tool",
+        "order": 59,
+        "name": {
+          "en": "Synthetic 59",
+          "zh": "合成 59"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003c",
+            "accountLocator": "000000000000003c",
+            "plan": {
+              "id": "overflow-59",
+              "name": {
+                "en": "Synthetic 59",
+                "zh": "合成 59"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-60",
+        "kind": "tool",
+        "order": 60,
+        "name": {
+          "en": "Synthetic 60",
+          "zh": "合成 60"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003d",
+            "accountLocator": "000000000000003d",
+            "plan": {
+              "id": "overflow-60",
+              "name": {
+                "en": "Synthetic 60",
+                "zh": "合成 60"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-61",
+        "kind": "tool",
+        "order": 61,
+        "name": {
+          "en": "Synthetic 61",
+          "zh": "合成 61"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003e",
+            "accountLocator": "000000000000003e",
+            "plan": {
+              "id": "overflow-61",
+              "name": {
+                "en": "Synthetic 61",
+                "zh": "合成 61"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-62",
+        "kind": "tool",
+        "order": 62,
+        "name": {
+          "en": "Synthetic 62",
+          "zh": "合成 62"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "000000000000003f",
+            "accountLocator": "000000000000003f",
+            "plan": {
+              "id": "overflow-62",
+              "name": {
+                "en": "Synthetic 62",
+                "zh": "合成 62"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow-63",
+        "kind": "tool",
+        "order": 63,
+        "name": {
+          "en": "Synthetic 63",
+          "zh": "合成 63"
+        },
+        "vendorKey": "synthetic",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000040",
+            "accountLocator": "0000000000000040",
+            "plan": {
+              "id": "overflow-63",
+              "name": {
+                "en": "Synthetic 63",
+                "zh": "合成 63"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
       }
     ],
     "rowsSummary": {

@@ -23,7 +23,7 @@ import ModelPlanSettings
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
         "community":"750509c8df47319fef826dfc5bcc4046c8991ad3b623f37d3a334e69deb23a11",
-        "official":"a8abde4881032dc2f4d05adf946fe5c2570b01bd7f7d642cc57e32482d798c22",
+        "official":"894b899b9777264dfb14ac97335447508dc451b26fe743aac0729aaf44482c77",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -150,15 +150,16 @@ struct CockpitUnavailableNotice {
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
             if let requestNotice { requestNotice(notice); return }
-            let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
+            let english=await owner.settingsStore.snapshot().preferences.language == .english
+            let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
-                ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
-                : "Check tool access in Settings, or reinstall this candidate if bundled content is missing. / 请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。"
+                ? (english ? "History is unavailable in this candidate. Open Settings to check connected tools." : "当前候选版尚无历史窗口，请打开设置查看已连接工具。")
+                : (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
             for action in notice.actions {
                 switch action {
-                case .settings:alert.addButton(withTitle:"Open Settings / 打开设置")
-                case .dockReadings:alert.addButton(withTitle:"Dock readings / Dock 读数")
-                case .cancel:alert.addButton(withTitle:"Cancel / 取消")
+                case .settings:alert.addButton(withTitle:english ? "Open Settings" : "打开设置")
+                case .dockReadings:alert.addButton(withTitle:english ? "Cockpit" : "驾驶舱")
+                case .cancel:alert.addButton(withTitle:english ? "Cancel" : "取消")
                 }
             }
             switch alert.runModal() {

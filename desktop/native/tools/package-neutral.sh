@@ -68,6 +68,15 @@ if [ "$verification_rows" = 1 ]; then app="$output_dir/ModelPlan-verification.ap
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 # The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
+# The Z.ai mark is authorized for beta use only; neutral distribution excludes it.
+mark_bundle="$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle"
+mark_path=$(find "$mark_bundle" -type f -name zai-white.svg -print)
+if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" != 1 ]; then
+    echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
+fi
+rm -- "$mark_path"
 xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
     "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
 xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"
@@ -94,6 +103,8 @@ if [ "$verification_rows" = 1 ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier org.modelplan.verification.rows" "$app/Contents/Info.plist"
 fi
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
+cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
+cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
     --expected-sha256 "$credential_sha" --universal "$app"

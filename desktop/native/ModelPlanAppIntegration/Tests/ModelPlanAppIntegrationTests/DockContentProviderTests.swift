@@ -2,7 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -27,6 +27,36 @@ import ModelPlanSettings
         let personal = try FeedDecoder.personal(JSONSerialization.data(withJSONObject: value))
         var ledger = ExpiryLedger()
         return .make(personal: personal, presentation: PersonalProjection.evaluate(personal, now: now, ledger: &ledger), publication: nil)
+    }
+    func testCockpitOpeningAcknowledgesMenuButNotFaceNotice() async throws {
+        _ = NSApplication.shared
+        var input = DockInstrumentInput(id: "synthetic", name: "Synthetic", windows: [])
+        input.dataState = .fresh
+        var signal = DockSubscriptionSignal(id: input.id); signal.dataState = .fresh
+        signal.reset = .init(id: "synthetic-reset", status: .announced, announcedAt: now.addingTimeInterval(-60))
+        let provider = Provider(.init(snapshot: .init(inputs: [input]), signals: [signal]))
+        let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false, contentProvider: provider)
+        defer { host.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("notice-host-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await coordinator.reload(); host.setPresentationAllowed(true)
+        XCTAssertEqual(host.menuNotice?.shape, .hollow)
+        var opened = false; host.showConsole = { opened = true }
+        host.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(opened); XCTAssertNil(host.menuNotice)
+        XCTAssertEqual(DockNoticeProjection.selected(for: signal, at: now)?.shape, .hollow)
+    }
+    func testSliverPulseRetiresWhenNoticeIsRemoved() throws {
+        var signal = DockSubscriptionSignal(id: "synthetic"); signal.dataState = .fresh
+        signal.reset = .init(id: "event", status: .announced, announcedAt: now.addingTimeInterval(-60))
+        let notice = try XCTUnwrap(DockNoticeProjection.selected(for: signal, at: now))
+        let sliver = DockSliverView(frame: .zero)
+        try sliver.apply(image: nil, logicalSize: .init(width: 4, height: 100), scale: 1, accessibilityLabel: "Synthetic")
+        sliver.noticeMarks = [.init(position: 0.5, notice: notice, unit: 1)]
+        XCTAssertTrue(sliver.pulseNotice(notice.key)); XCTAssertEqual(sliver.noticePulseCountForChecks, 1)
+        sliver.noticeMarks = []; XCTAssertEqual(sliver.noticePulseCountForChecks, 0)
+        sliver.dispose()
     }
     func testDefaultProviderKeepsExistingProjectionAndLegacyFormatting() throws {
         let joined = try legacy(); var diagnostics = StoreDiagnostics(); diagnostics.personal = nil

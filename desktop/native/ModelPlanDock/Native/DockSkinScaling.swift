@@ -31,11 +31,14 @@ public extension DockInstrumentSkin {
             v.outer = ring(v.outer); v.inner = ring(v.inner)
             v.clock.radius *= factor; v.clock.dotRadius *= factor; v.clock.backWidth *= factor
             v.notchWidth *= factor; v.caseInnerRadius *= factor
+            v.singleWindowCaseInnerRadius = v.singleWindowCaseInnerRadius.map { $0 * factor }
+            if var overlay = v.radialOverlay { overlay.radius *= factor; v.radialOverlay = overlay }
             v.eventSolidDiameter = v.eventSolidDiameter.map { $0 * factor }
             v.eventHollowDiameter = v.eventHollowDiameter.map { $0 * factor }
             v.eventStrokeWidth = v.eventStrokeWidth.map { $0 * factor }
             v.eventSolidOutlineWidth = v.eventSolidOutlineWidth.map { $0 * factor }
             if var placeholder = v.placeholderText { placeholder.size *= factor; v.placeholderText = placeholder }
+            if var style = v.placeholderStyle { style.strokeWidth *= factor; style.dash = style.dash.map { $0 * factor }; v.placeholderStyle = style }
             return v
         }
         return result

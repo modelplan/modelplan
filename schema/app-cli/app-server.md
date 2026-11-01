@@ -359,8 +359,9 @@ refresh; no additional fetch is started.
 
 The current public reset record does not provide reviewed structured plan links,
 confirmation references, or an official vendor-host-list interface. Accordingly
-v1 treats unmapped free-form scope as row-wide, drops and counts unlinked
-confirmations, and omits source links while retaining eligible events. The
+v1 treats unmapped free-form scope as row-wide, drops unlinked confirmations,
+and omits source links while retaining eligible events. The backend computes a
+drop count internally, but does not expose it in responses or diagnostics. The
 publication-side structured links and host interface are separate follow-ups.
 
 A published schedule with `precision: "deadline"` may have identical `from`
