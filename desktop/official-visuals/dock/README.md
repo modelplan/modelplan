@@ -21,7 +21,7 @@ three sizes, three edges and 0/1/4/7/30 subscriptions, including alias and overf
 cases. Tests compare every outline sample, station, readout anchor and button
 position against those outputs, independently of the Swift implementation.
 
-`T2FaceMaterial` draws only the clipped face material. It does not claim the
+`T2FaceMaterial` draws the clipped face material, quadratic soot fans and ignition well. It does not claim the
 complete layer stack, a product entry, interactions or visual acceptance.
 It uses Core Graphics and Core Image, without a web view. The static noise follows
 the non-stitched SVG fractal-noise algorithm with seed 23 and three octaves.

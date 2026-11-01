@@ -66,6 +66,14 @@ public struct T2Geometry: Sendable {
     public let clockRadius: CGFloat
     public let sliverCentre: CGPoint
 
+    public func point(arc: CGFloat, depth: CGFloat, onFace: Bool = false) -> CGPoint {
+        let first = stations[0].arcPosition
+        let depthCentre = stationDepth - radius * cos(first / radius)
+        let inward = depth + (onFace ? depth / freeDepth : 1) *
+            (depthCentre + radius * cos(arc / radius) - stationDepth)
+        return input.coordinates.point(along: radius * sin(arc / radius), inward: inward, midpoint: midpoint)
+    }
+
     public enum InputError: Error { case invalidGeometry }
     private struct Slot {
         let subscription: T2Subscription?
