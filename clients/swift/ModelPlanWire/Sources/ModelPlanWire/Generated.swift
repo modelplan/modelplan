@@ -1664,7 +1664,7 @@ public struct WireCockpitQueryParams: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         if c.contains(.`redBelow`), try c.decodeNil(forKey: .`redBelow`) { throw WireDecodeError.invalidIdentity }
-        self.`redBelow` = try? c.decodeIfPresent(Int.self, forKey: .`redBelow`)
+        self.`redBelow` = try c.decodeIfPresent(Int.self, forKey: .`redBelow`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -1673,6 +1673,7 @@ public struct WireCockpitQueryParams: Codable, Sendable {
         try c.encodeIfPresent(`redBelow`, forKey: .`redBelow`)
     }
     private func validate() throws {
+        if let value = `redBelow`, ![10, 16, 20, 25].contains(value) { throw WireDecodeError.invalidBound }
     }
 }
 

@@ -478,8 +478,8 @@
           "field": "redBelow",
           "omission": true,
           "null": false,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "forbidden"
         }
       ],

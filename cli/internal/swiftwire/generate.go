@@ -504,7 +504,9 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			var values []string
 			for _, item := range choices {
 				n, ok := item.(float64)
-				if !ok { panic("non-numeric integer enum") }
+				if !ok {
+					panic("non-numeric integer enum")
+				}
 				values = append(values, strconv.FormatFloat(n, 'f', -1, 64))
 			}
 			fmt.Fprintf(b, "        if let value = %s, ![%s].contains(value) { throw WireDecodeError.invalidBound }\n", value, strings.Join(values, ", "))
