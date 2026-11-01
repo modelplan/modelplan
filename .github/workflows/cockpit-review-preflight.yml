@@ -1,0 +1,43 @@
+name: Cockpit Windows lock preflight
+on:
+  push:
+    branches: [ci/414-windows-lock-preflight]
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Format affected Go sources
+        run: gofmt -w cli/internal/consent/lock_windows.go cli/internal/consent/consent_test.go cli/internal/speed/lock_windows.go cli/internal/speed/lock_windows_test.go cli/internal/speed/speed.go cli/cmd/modelplan/project_lock_windows_test.go
+      - name: Save formatting patch
+        if: always()
+        run: git diff --binary > "$RUNNER_TEMP/windows-lock-format.patch"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-lock-format-${{ matrix.os }}
+          path: ${{ runner.temp }}/windows-lock-format.patch
+      - name: Vet affected packages
+        working-directory: cli
+        run: go vet ./internal/speed ./internal/consent ./internal/quota ./cmd/modelplan
+      - name: Cross-platform lock regressions
+        working-directory: cli
+        run: go test -count=1 -v ./internal/speed ./internal/consent ./internal/quota ./cmd/modelplan -run 'Test(WindowsLockExcludesLiveAndReleasesKilledWriter|WindowsObservationWritesLedger|WindowsProjectLabelsOffAndHistoryErasure|ConsentMalformedAndLockFailClosed|KilledReaderReleasesKernelAdmission|LedgerWriterLockNeverStealsAgedLiveHolder|HistoryCleanupNeverStealsSlowWriterLocks|KilledWriterReleasesLedgerLockForCleanup|HistoryLedgerRewriteFailureLeavesOriginal)$'
+      - name: Full Go tests and vet
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: cli
+        run: go vet ./... && go test ./...
+      - name: Source policy
+        run: node scripts/check-source-policy.mjs

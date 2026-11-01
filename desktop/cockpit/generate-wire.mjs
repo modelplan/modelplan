@@ -17,6 +17,7 @@ function visit(node) {
   for (const value of node.anyOf ?? []) visit(value);
 }
 visit({$ref:'#/$defs/CockpitData'});
+visit({$ref:'#/$defs/CockpitQueryParams'});
 function type(node) {
   if (node.$ref) return 'Wire'+node.$ref.replace('#/$defs/','');
   if (node.anyOf) return node.anyOf.map(type).join(' | ');

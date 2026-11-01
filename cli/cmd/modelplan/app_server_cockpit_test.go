@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
@@ -32,6 +33,9 @@ func TestSharedCockpitGroupsVerifiedBindingsWithoutChangingRows(t *testing.T) {
 	display, err := source.ReadCockpit(context.Background(), admission)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(display); strings.Contains(string(b), `"details"`) {
+		t.Fatal("old client received details")
 	}
 	if len(display.Subscriptions) != 1 || display.Subscriptions[0].SubscriptionRef != ref || len(display.Subscriptions[0].Accounts) != 2 {
 		t.Fatal("Go subscription grouping missing or unverified plan inferred")
