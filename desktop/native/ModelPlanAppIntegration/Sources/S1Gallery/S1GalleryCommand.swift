@@ -7,6 +7,10 @@ import S1GalleryCore
     @MainActor static func main() async {
         do {
             let env = ProcessInfo.processInfo.environment
+            if let output = env["MODELPLAN_S1_CAPTURE_EMPTY_DIR"], !output.isEmpty {
+                try await S1NativeRegression.captureEmpty(outputPath: output)
+                return
+            }
             if let baseline = env["MODELPLAN_S1_REGRESSION_BASELINES"], !baseline.isEmpty {
                 try await S1NativeRegression.run(baselinePath: baseline)
                 return

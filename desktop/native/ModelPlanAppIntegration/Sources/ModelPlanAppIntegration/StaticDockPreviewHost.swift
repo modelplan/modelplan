@@ -445,6 +445,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         container.addSubview(dockView); container.addSubview(consoleButton)
+        bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
@@ -467,6 +468,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         sliver.onNeedsFreshPresentation = refresh
         card.isHidden = true
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+    private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onEmptyAction = { [weak self, weak view] in
+            guard let self, let view, self.permitted, !self.retired, !self.rendering,
+                  view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
+            showSettings(); return true
+        }
+        view.permitsEmptyAction = { [weak self, weak view] source in
+            guard let self, let view else { return false }
+            return self.acceptsInstrumentAction(from: view, source: source)
+        }
     }
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
@@ -697,7 +709,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable (fallback)" : "停靠栏外观不可用（回退）") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
+            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable" : "挂件外观暂不可用") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
@@ -737,6 +749,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                     var candidate = try appearance(view, rows, oriented)
                     candidate.scaleRegistration(by: view.appliedGeometryScale)
                     guard passIsCurrent(generation) else { return }
+                    bindEmptyStation(to: view)
                     view.onAction = dockView.onAction
                     view.permitsAction = { [weak self, weak view] _, source in
                         guard let self, let view else { return false }

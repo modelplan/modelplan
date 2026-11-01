@@ -38,6 +38,7 @@ public extension DockInstrumentSkin {
             v.eventStrokeWidth = v.eventStrokeWidth.map { $0 * factor }
             v.eventSolidOutlineWidth = v.eventSolidOutlineWidth.map { $0 * factor }
             if var placeholder = v.placeholderText { placeholder.size *= factor; v.placeholderText = placeholder }
+            if var style = v.placeholderStyle { style.strokeWidth *= factor; style.dash = style.dash.map { $0 * factor }; v.placeholderStyle = style }
             return v
         }
         return result

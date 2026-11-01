@@ -62,7 +62,12 @@ public enum T2DockSkin {
                 recipe["subscriptionID"] = id
                 if let alias=reading.alias, !alias.isEmpty { recipe["aliasRect"] = rect(box(CGPoint(x:station.readoutCentre.x,y:station.readoutCentre.y-12*unit),56*unit,12*unit)) }
             } else if station.isOverflow { recipe["overflowCount"] = g.overflow.count; recipe["overflowNoticeKey"] = "__t2_overflow_notice__" }
-            else if station.isEmpty { recipe["placeholderLabel"] = "+" }
+            else if station.isEmpty {
+                // rocket-r1/rocket.css .dk-empty: a dark dashed status station.
+                recipe["placeholderLabel"] = "?"
+                recipe["placeholderText"] = ["fontResource":"font-jetbrains-mono", "size":16, "weight":400]
+                recipe["placeholderStyle"] = ["fillKey":"emptyFill", "strokeKey":"emptyStroke", "textKey":"emptyText", "strokeWidth":1, "dash":[3,3]]
+            }
             stations.append(recipe)
         }
         let button = g.button, guardSize=34*unit
@@ -73,7 +78,7 @@ public enum T2DockSkin {
             ["resource":"a5-recessed-guard-52x52@3x.png", "rect":rect(box(button,guardSize,guardSize))]
         ]
         func ink(_ r: Double,_ g: Double,_ b: Double,_ a: Double=1) -> [String:Double] { ["r":r/255,"g":g/255,"b":b/255,"a":a] }
-        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255),"eventBackdrop":ink(16,21,28),"eventOutline":ink(16,21,28,0.6)]
+        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255),"eventBackdrop":ink(16,21,28),"eventOutline":ink(16,21,28,0.6),"emptyFill":ink(20,22,26,221/255),"emptyStroke":ink(255,255,255,0.2),"emptyText":ink(154,160,166)]
         let text: [String: Any] = ["fontResource":"font-jetbrains-mono","size":11*unit,"weight":400]
         let alias: [String: Any] = ["useSystemUIFont":true,"size":10*unit,"weight":400]
         let object: [String: Any] = ["schemaVersion":1,"bounds":rect(bounds),"bodyPolygon":g.outline.map{[$0.x,$0.y]},"fixedLayers":fixed,"stations":stations,"palette":palette,"text":text,"aliasText":alias,"readoutPalette":["normal":"lcdWhite"]]
