@@ -2,7 +2,7 @@
 # U11 native cockpit bridge
 
 The local WKWebView consumer of the web contract in public #355, pinned here to
-`61aeba51d9183466edae7000147acf6dce80cca1`. The web source stays in
+`533ce0852b91eb44c6d5b49e14667a2ae4666907`. The web source stays in
 `desktop/cockpit/`; this package has no renderer, copied DTO or private art.
 
 Production borrows its one existing `ProcessEngineClient` through
@@ -151,7 +151,7 @@ are separate gates.
 
 ## Current v1 bundle pin
 
-Production now pins #355 `61aeba51d9183466edae7000147acf6dce80cca1`.
+Production now pins #355 `533ce0852b91eb44c6d5b49e14667a2ae4666907`.
 Official manifest: `b0acd07ad0e4f6e5c2fef1e5e70f1413d96c1b81bf6f689ef4b911b448fd9360`
 (1069 files); community: `a06423b7730a3b158ff61e1d20d85a649301ae58717877eba48b0c2a0dc5aafe`
 (28 files). Session metadata remains plain tool/project/title/time text.
@@ -205,16 +205,18 @@ three-string capability array, with duplicate keys/nesting still rejected.
 
 Every bridge envelope uses `version: 2`. Load-time appearance contains only
 `theme`, `locale`, `reduceMotion` and `reduceTransparency`. Its initial `shell`
-contains `profile`, `attached`, `forcedClosed` and `tier`, before first paint.
+contains `profile`, `attached`, `forcedClosed`, `tier` and `scope`, before first paint.
 The WK view stays hidden until this load receives an authenticated v2 ready.
 Native `appearance` updates use flat `theme`, `locale`, `reduceMotion` and
 `reduceTransparency` fields on the context/sequence envelope. Separate `shell`
 updates carry `profile: open|closed`, `attached`, `forcedClosed` and
-`tier: tall|compact`, selected solely by the native geometry resolver. Shell actions
+`tier: tall|compact`, selected solely by the native geometry resolver, plus
+`scope` from the cockpit session receiver. Shell actions
 are exactly `close`, `detach`, `putBack`, `shutterToggle`, plus the existing
 setup/settings/history actions. Forced closure below 706 points does not mutate
 saved shutter intent. Actual visibility remains separate from shell closure so
-put-back/open/close controls retain their authority. Appearance/shell updates
+attachment/close controls retain their authority. The v1 view exposes no user
+shutter/open control; forced-closed cap and its localized reason remain. Appearance/shell updates
 preserve query identity and replay after the privacy barrier.
 
 Settings commits and accessibility notifications update the native appearance
@@ -223,9 +225,33 @@ Day preference changes. The READERS-owned #399 Web counterpart and its reviewed 
 pin must be adopted before the real-page normal-entry journey can qualify.
 The coordinator has frozen load/height-tier alignment and authorized announced
 synthetic WK windows of at most 20 minutes once the matching bundle is published.
-The matching #399 source61aeba51 manifests were independently rebuilt and
-verified before adoption. Real-page acceptance is recorded separately from
-this source contract; it requires the announced synthetic WK journey. This native change
-does not update Web sources or asset pins, approve a rendered baseline, or claim
-latency/resource/device acceptance. DESIGN review and coordinator-scheduled
+The combined #403 tree includes #399 (owner preview OK, batch-012). READERS
+keeps its Web fixes on its own branch; the native integrator merges reviewed
+heads and rebuilds/verifies both manifest pins before acceptance. Later visual
+fixes still require the normal design gate; no baseline is refreshed here. The
+combined tree pins the independently rebuilt Web output without approving a
+new baseline or claiming latency/resource/device acceptance. DESIGN review and coordinator-scheduled
 M1/MacCI device checks remain separate gates.
+
+The `scopeSelect` action carries exactly one `key`. The bridge admits only keys
+from its current acknowledged display. Independently, `EngineCockpitCoordinator`
+checks the latest authoritative response/context, retains the selection for the
+cockpit session and sends it through `shell.scope`, including the next load.
+All uses `all`; a member uses a verified subscriptionRef or the exact rowId#route
+fallback. The key is only compared/echoed, never interpreted as a command/path.
+Membership retires at clear/unload; privacy invalidation resets selection to All.
+The Dock does not follow cockpit scope in v1.
+
+Normal user close requests the page's120ms transition (instant under Reduce
+Motion); shutdown/privacy disposal is still immediate. Owned tray mouse-down is
+excluded from outside dismissal so its mouse-up performs exactly one toggle.
+The real owned-status regression covers Reduce Motion, a hold beyond120ms and
+the actual fade interval. A5 target registration remains Partial — completed by
+#408/#397, and Theme-row policy by #402; their regression exceptions are strict,
+so unexpected success requires removing the explicit dependency marker.
+
+The real normal-entry test runs its scope/reload/appearance and owned-status
+scenarios inside one Cocoa application lifetime, not repeated starts of
+NSApplication in a single XCTest process. The operator opts in only inside an
+announced synthetic GUI window or the coordinator-routed self-hosted test slot;
+ordinary unit invocations skip this case before creating windows.

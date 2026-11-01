@@ -64,6 +64,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private let shellSession: CockpitShellSession
   private let anchor: () -> CGRect?
   private var layout: CockpitShellLayout?
+  private var scope = "all"
   private var outsideMonitor: Any?, localMonitor: Any?
   private var closeTask: Task<Void, Never>?
   private var dragStart: (point: CGPoint, frame: CGRect, detached: Bool)?
@@ -84,6 +85,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onFailure: ((CockpitWindowFailure) -> Void)?
   #if MODELPLAN_TEST_ONLY_SPI
     public var verificationWebView: WKWebView? { web }
+    public var verificationCloseStarted: ((TimeInterval) -> Void)?
+    public var verificationDidDiscard: (() -> Void)?
+    public var verificationOutsidePress: ((NSEvent.EventType,Bool)->Void)?
+    public var verificationCloseOrigin: ((String)->Void)?
     public var verificationPlacement: (usable: CGRect, anchor: CGRect)? {
       didSet { applyLayout() }
     }
@@ -192,6 +197,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// or complete view disposal. An unknown floor remains blocked after receipt.
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
     web?.isHidden = true
+    scope = "all"
     guard web != nil, bridge.ready, clearWaiter == nil else {
       discard()
       return
@@ -315,6 +321,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  public func updateScope(_ key:String) {
+    guard key != scope, CockpitMemberScopes.isValidKey(key) else { return }
+    scope=key; publishAppearance()
+  }
   public func updateAppearance(_ value: CockpitAppearance) {
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
       reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached)
@@ -324,7 +334,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     publishAppearance()
   }
-  private var currentShell: CockpitShellState? { layout?.shellState(attached: !shellSession.detached) }
+  private var currentShell: CockpitShellState? { layout?.shellState(attached: !shellSession.detached, scope: scope) }
   private func publishAppearance() {
     guard bridge.ready, !bridge.blocked, !ending else { return }
     do {
@@ -430,23 +440,43 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   private func installOutsideMonitors() {
     let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-    outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
-      Task { @MainActor in self?.outsidePress(NSEvent.mouseLocation) }
+    outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
+      let type=event.type
+      Task { @MainActor in self?.outsidePress(NSEvent.mouseLocation,eventType:type) }
     }
     localMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
       MainActor.assumeIsolated {
         let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
-        self?.outsidePress(point)
+        self?.outsidePress(point,eventType:event.type)
       }
       return event
     }
   }
-  private func outsidePress(_ point: CGPoint) {
+  private func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
+    // The owned tray completes one toggle on mouse-up. Its mouse-down is not
+    // a competing outside dismissal, including with Reduce Motion/long holds.
+    let isTray=anchor()?.contains(point) == true
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationOutsidePress?(eventType,isTray)
+    #endif
+    if eventType == .leftMouseDown, isTray { return }
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationCloseOrigin?("outside")
+    #endif
+    closeAnimated()
+  }
+  public func requestClose() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationCloseOrigin?("requested")
+    #endif
     closeAnimated()
   }
   public func closeAnimated() {
     guard !ending, closeTask == nil else { return }
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationCloseStarted?(appearance.reduceMotion ? 0 : 0.12)
+    #endif
     guard !appearance.reduceMotion, let window else { discard(); return }
     NSAnimationContext.runAnimationGroup { context in context.duration = 0.12; window.animator().alphaValue = 0 }
     closeTask = Task { @MainActor [weak self] in
@@ -462,6 +492,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func discard() {
     guard !ending else { return }
     ending = true
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationDidDiscard?()
+    #endif
     closeTask?.cancel(); closeTask = nil; cancelDrag()
     if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil

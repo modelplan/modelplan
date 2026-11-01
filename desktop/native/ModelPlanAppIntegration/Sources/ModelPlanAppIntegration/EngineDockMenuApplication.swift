@@ -16,6 +16,13 @@ import ModelPlanSettings
     private var terminating = false
     private var cockpitOpen = false
     private var accessibilityObserver: NSObjectProtocol?
+    #if MODELPLAN_TEST_ONLY_SPI
+    public var verificationStatusButton: NSStatusBarButton? { status?.button }
+    public var verificationStatusAction: ((NSEvent.EventType,Bool)->Void)?
+    public func verificationRemoveStatusItem() {
+        if let status { NSStatusBar.system.removeStatusItem(status) }; status = nil
+    }
+    #endif
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
     #endif
@@ -73,7 +80,7 @@ import ModelPlanSettings
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
     func toggleCockpit() {
-        if cockpitOpen { console?.hide() } else { showConsole() }
+        if cockpitOpen { console?.close() } else { showConsole() }
     }
     func cockpitVisibilityChanged(_ open: Bool) {
         cockpitOpen = open
@@ -129,6 +136,9 @@ import ModelPlanSettings
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func statusPressed() {
         guard let event = NSApp.currentEvent, let button = status?.button else { return }
+        #if MODELPLAN_TEST_ONLY_SPI
+        verificationStatusAction?(event.type,cockpitOpen)
+        #endif
         if event.type == .rightMouseUp {
             if let menu = liveStatusMenu { NSMenu.popUpContextMenu(menu, with: event, for: button) }
         } else { toggleCockpit() }

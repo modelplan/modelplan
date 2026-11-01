@@ -10,7 +10,7 @@ public struct CockpitShellLayout: Equatable, Sendable {
     public let rootHeight: CGFloat
     public let frame: CGRect
     public static func fit(usable: CGRect, anchor: CGRect, shutterClosed: Bool) -> Self? {
-        guard usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
+        guard !usable.isNull, !usable.isInfinite, usable.width.isFinite, usable.height.isFinite, usable.width > 0, usable.height > 40,
               usable.origin.x.isFinite, usable.origin.y.isFinite,
               anchor.origin.x.isFinite, anchor.origin.y.isFinite else { return nil }
         let profile: CockpitAppearance.Profile = usable.height - 66 >= 890 ? .full : .compact
@@ -25,9 +25,9 @@ public struct CockpitShellLayout: Equatable, Sendable {
         return Self(profile: profile, shutterClosed: closed, forcedClosed: usable.height - 66 < 640, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - size.height, width: size.width, height: size.height))
     }
-    public func shellState(attached: Bool) -> CockpitShellState {
+    public func shellState(attached: Bool, scope: String = "all") -> CockpitShellState {
         .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
-              tier: profile == .full ? .tall : .compact)
+              tier: profile == .full ? .tall : .compact, scope: scope)
     }
     public func clamping(origin: CGPoint, usable: CGRect) -> CGRect {
         CGRect(x: max(usable.minX, min(origin.x, usable.maxX - frame.width)),

@@ -43,14 +43,15 @@ public struct CockpitShellState: Equatable, Sendable {
   public enum Tier: String, Sendable { case tall, compact }
   public let profile: Profile
   public let tier: Tier
+  public let scope: String
   public let attached: Bool, forcedClosed: Bool
-  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier) {
-    self.tier = tier
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier, scope: String = "all") {
+    self.tier = tier; self.scope = scope
     self.profile = closed || forcedClosed ? .closed : .open
     self.attached = attached; self.forcedClosed = forcedClosed
   }
   var fields: [String: Any] {
-    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue]
+    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue, "scope": scope]
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {
@@ -65,6 +66,7 @@ public struct CockpitVisibility: Equatable, Sendable {
 public enum CockpitIntent: Equatable, Sendable {
   case chooseSetup, openSettings, close, detach, putBack, shutterToggle
   case openHistory(String)
+  case scopeSelect(String)
 }
 public enum CockpitReceipt: Equatable {
   case ready, rendered, cleared
@@ -175,8 +177,10 @@ public final class CockpitBridgeState {
   private struct Pending {
     let kind: String
     let tools: Set<String>
+    let members: Set<String>
   }
   private var pending: [UUID: Pending] = [:]
+  private var scopeMembers = Set<String>()
   public init(context: CockpitEngineContext, pageID: UUID = UUID()) {
     self.context = context
     self.pageID = pageID
@@ -186,7 +190,7 @@ public final class CockpitBridgeState {
       ? CockpitQueryTicket(pageID: pageID, context: context, viewRevision: viewRevision) : nil
   }
   private func envelope(
-    _ type: String, extra: [String: Any] = [:], receipt: String? = nil, tools: Set<String> = []
+    _ type: String, extra: [String: Any] = [:], receipt: String? = nil, tools: Set<String> = [], members: Set<String> = []
   ) throws -> String {
     guard !disposed, hostSequence < UInt64.max, pending.count < 32 else {
       throw CockpitBridgeError.unavailable
@@ -202,11 +206,12 @@ public final class CockpitBridgeState {
     for (k, v) in extra { body[k] = v }
     let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
     guard data.count <= 1_048_576 else { throw CockpitBridgeError.limit }
-    if let receipt { pending[id] = Pending(kind: receipt, tools: tools) }
+    if let receipt { pending[id] = Pending(kind: receipt, tools: tools, members: members) }
     return String(decoding: data, as: UTF8.self)
   }
   public func load(_ appearance: CockpitAppearance, shell: CockpitShellState) throws -> String {
     guard !loaded else { throw CockpitBridgeError.unavailable }
+    guard CockpitMemberScopes.isValidKey(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     loaded = true
     return try envelope(
       "load",
@@ -227,13 +232,14 @@ public final class CockpitBridgeState {
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    guard CockpitMemberScopes.isValidKey(shell.scope), scopeMembers.isEmpty || scopeMembers.contains(shell.scope) else { throw CockpitBridgeError.invalidMessage }
     return try envelope("shell", extra: shell.fields)
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
     let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))
     let tools = Set(data.projection.rows.filter { $0.kind == .tool && !$0.invalid }.map { $0.id })
-    return try envelope("display", extra: ["data": object], receipt: "rendered", tools: tools)
+    return try envelope("display", extra: ["data": object], receipt: "rendered", tools: tools, members: CockpitMemberScopes.keys(data))
   }
   public func setVisibility(_ value: CockpitVisibility) throws -> String {
     guard ready, !blocked else { throw CockpitBridgeError.unavailable }
@@ -258,6 +264,7 @@ public final class CockpitBridgeState {
     viewRevision += 1
     blocked = true
     historyTools.removeAll()
+    scopeMembers.removeAll()
     pending.removeAll()
     return try envelope("clear", receipt: "cleared")
   }
@@ -272,6 +279,7 @@ public final class CockpitBridgeState {
     ready = false
     readyCapabilities.removeAll(); appearanceVersion = nil
     historyTools.removeAll()
+    scopeMembers.removeAll()
     pending.removeAll()
     actionRequests.removeAll()
     retiredEpochs.removeAll()
@@ -302,14 +310,18 @@ public final class CockpitBridgeState {
     else { throw CockpitBridgeError.invalidMessage }
     if type == "action" {
       let action = m["action"] as? String
-      let history = action == "openHistory"
-      guard Set(m.keys) == base.union(history ? ["action", "tool"] : ["action"]), ready, !blocked,
+      let history = action == "openHistory", scope = action == "scopeSelect"
+      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : ["action"]
+      guard Set(m.keys) == base.union(extra), ready, !blocked,
         visibility.active, actionRequests.count < 1024, !actionRequests.contains(id)
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      case "scopeSelect":
+        guard let key=m["key"] as? String,scopeMembers.contains(key) else { throw CockpitBridgeError.invalidMessage }
+        intent = .scopeSelect(key)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack
@@ -350,6 +362,7 @@ public final class CockpitBridgeState {
       return .cleared
     case "rendered":
       historyTools = expected.tools
+      scopeMembers = expected.members
       return .rendered
     default: throw CockpitBridgeError.invalidMessage
     }

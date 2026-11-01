@@ -9,12 +9,18 @@ import ModelPlanWire
   var onIntent: ((CockpitIntent) -> Void)? { get set }
   var onClosed: (() -> Void)? { get set }
   func open()
+  func requestClose()
   func updateAppearance(_ appearance: CockpitAppearance)
+  func updateScope(_ key:String)
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
 }
-public extension CockpitPageSurface { func updateAppearance(_ appearance: CockpitAppearance) {} }
+public extension CockpitPageSurface {
+  func requestClose() { discard() }
+  func updateAppearance(_ appearance: CockpitAppearance) {}
+  func updateScope(_ key:String) {}
+}
 extension CockpitWindowController: CockpitPageSurface {}
 
 private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked Sendable {
@@ -36,6 +42,8 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var delivery: EngineDeliveryContext?
   private var page: (any CockpitPageSurface)?
   private var pageGeneration: UUID?
+  public private(set) var selectedScope = "all"
+  private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
   private var requestTicket: CockpitQueryTicket?
@@ -108,24 +116,36 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       guard self?.pageGeneration == generation else { return }; self?.refresh()
     }
     newPage.onIntent = { [weak self] intent in
-      guard self?.pageGeneration == generation else { return }; self?.onIntent?(intent)
+      guard self?.pageGeneration == generation else { return }; self?.receiveIntent(intent)
     }
     newPage.onClosed = { [weak self] in
       guard self?.pageGeneration == generation else { return }
       self?.pageGeneration = nil
+      self?.scopeMembers.removeAll()
       self?.cancelQuery()
       self?.page = nil
       self?.onClosed?()
     }
     page = newPage
+    newPage.updateScope(selectedScope)
     newPage.open()
     if page === newPage { onOpened?() }
   }
+  private func receiveIntent(_ intent:CockpitIntent) {
+    if case .scopeSelect(let key)=intent {
+      guard delivery != nil,scopeMembers.contains(key) else { return }
+      selectedScope=key; page?.updateScope(key); return
+    }
+    onIntent?(intent)
+  }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
+  /// User close retains the page until its normal transition completes.
+  /// Privacy/shutdown continue to use close() for immediate disposal.
+  public func requestClose() { cancelQuery(); page?.requestClose() }
   public func close() {
     cancelQuery()
     let previous = page
-    page = nil; pageGeneration = nil
+    page = nil; pageGeneration = nil; scopeMembers.removeAll()
     previous?.discard()
     if previous != nil { onClosed?() }
   }
@@ -171,10 +191,12 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func adopt(_ next: EngineDeliveryContext) async {
     guard delivery != next else { return }
     cancelQuery()
+    if delivery?.sessionID != next.sessionID || delivery?.floor != next.floor { selectedScope="all" }
+    scopeMembers.removeAll()
     delivery = next
     do {
       let context = try Self.bridgeContext(next)
-      if let page { await page.clearPrivateViews(adopting: context) }
+      if let page { await page.clearPrivateViews(adopting: context); page.updateScope(selectedScope) }
       refresh()
     } catch {
       delivery = nil
@@ -186,10 +208,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     switch event {
     case .clearPrivateViews:
       cancelQuery()
-      delivery = nil
+      delivery = nil; selectedScope="all"; scopeMembers.removeAll()
       // Do not adopt a guessed session from nextFloor. The subsequent
       // admitted context event supplies the complete authoritative identity.
-      if let page { await page.clearPrivateViews(adopting: nil) }
+      if let page { await page.clearPrivateViews(adopting: nil); page.updateScope("all") }
     case .context(let context), .connection(.ready(let context)):
       await adopt(context)
     case .response(_, .cockpit(let reply)):
@@ -199,7 +221,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.storeEpoch == delivery.floor.storeEpoch,
         reply.envelope.consentGeneration == delivery.floor.generation
       {
+        scopeMembers=CockpitMemberScopes.keys(reply.envelope.data)
+        if !scopeMembers.contains(selectedScope) { selectedScope="all" }
         page?.display(reply.envelope.data, ticket: ticket)
+        page?.updateScope(selectedScope)
       }
     case .rowsChanged: refresh()
     case .featureFailure(.cockpit, _):
@@ -214,7 +239,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   /// Owner calls outside the delivery turn; stop itself emits a clear event.
   public func shutdown() async {
     close()
-    delivery = nil
+    delivery = nil; selectedScope="all"; scopeMembers.removeAll()
     let current = ownedClient
     ownedClient = nil; borrowedClient = nil
     await current?.stop()

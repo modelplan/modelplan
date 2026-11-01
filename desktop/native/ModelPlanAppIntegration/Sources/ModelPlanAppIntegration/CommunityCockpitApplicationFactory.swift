@@ -31,10 +31,10 @@ import ModelPlanSettings
 }
 
 @MainActor public enum CommunityCockpitApplicationFactory {
-    public static let webSource = "61aeba51d9183466edae7000147acf6dce80cca1"
+    public static let webSource = "533ce0852b91eb44c6d5b49e14667a2ae4666907"
     public static let manifestPins = [
-        "community":"03a56f5cf2593ce05db2a1902a2180465e56596c35a5b58e117be6166b7adc88",
-        "official":"615789ae4b9ae3851553a28bef50fb7f39c4139d2a51e130ae30c653687639c9",
+        "community":"65205d11b602e8d02dce3bc8973f1bfba16a36d03d613fb37b47f181d984b76e",
+        "official":"2c24e1ded7457e109a642136564e43f14ee98e51da5393a103d51594346953d1",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -158,7 +158,7 @@ struct CockpitUnavailableNotice {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
                 case .close:self.hide()
-                case .detach,.putBack,.shutterToggle:break // handled by the native page
+                case .detach,.putBack,.shutterToggle,.scopeSelect:break // handled by the native page
                 }
             }
             activate()
@@ -172,6 +172,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.updateAppearance(owner.appearance)
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
+    func close() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.requestClose();fallback?.hide() }
     func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();owner.visibility?(false);fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }

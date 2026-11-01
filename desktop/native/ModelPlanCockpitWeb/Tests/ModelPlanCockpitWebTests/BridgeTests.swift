@@ -129,4 +129,49 @@ final class BridgeTests: XCTestCase {
       try EngineCockpitCoordinator.bridgeContext(
         .init(sessionID: "not-a-session", floor: delivery.floor, revision: 2)))
   }
+  func testMemberScopeSelectRequiresCurrentRenderedMembership() throws {
+    let state = CockpitBridgeState(context:try context())
+    let load = try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let action = try reply(load,"action",3,extra:["action":"scopeSelect","key":"0123456789abcdef"])
+    XCTAssertThrowsError(try state.accept(action,source:source))
+    let display = try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    XCTAssertNoThrow(try state.accept(action,source:source),"Frozen scopeSelect key must reach native only after its current display is acknowledged")
+  }
+
+  func testScopeKeysUseVerifiedReferenceOrExactRowRouteFallback() throws {
+    let data=try fixture()
+    XCTAssertEqual(CockpitMemberScopes.keys(data),["all","0123456789abcdef"])
+    let fallback=try WireCockpitData(projection:data.projection,subscriptions:[])
+    XCTAssertEqual(CockpitMemberScopes.keys(fallback),["all","codex#saved_login_api"])
+    XCTAssertFalse(CockpitMemberScopes.isValidKey("../unlisted"))
+    XCTAssertFalse(CockpitMemberScopes.isValidKey("tool#not_a_route"))
+  }
+  func testScopeRejectsUnknownKeysWrongFieldAndClearedMembership() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    func action(_ key:String,_ sequence:Int=3) throws -> String {
+      var body=try object(reply(load,"action",sequence,extra:["action":"scopeSelect","key":key]))
+      body["requestId"]=UUID().uuidString; return try encode(body)
+    }
+    for key in ["unknown","https://example.test/command","codex#manual",""] {
+      XCTAssertThrowsError(try state.accept(action(key),source:source))
+    }
+    var wrong=try object(action("all"));wrong["scope"]=wrong.removeValue(forKey:"key")
+    XCTAssertThrowsError(try state.accept(encode(wrong),source:source))
+    _ = try state.setVisibility(.init(visible:true,occluded:true,key:true))
+    XCTAssertThrowsError(try state.accept(action("all"),source:source))
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    XCTAssertEqual(try state.accept(action("all"),source:source),.action(.scopeSelect("all")))
+    let clear=try state.clear(adopting:state.context)
+    _ = try state.accept(reply(clear,"cleared",4),source:source)
+    let freshAction=try reply(clear,"action",5,extra:["action":"scopeSelect","key":"0123456789abcdef"])
+    XCTAssertThrowsError(try state.accept(freshAction,source:source),"A valid new revision cannot revive retired display membership")
+    state.dispose()
+    XCTAssertThrowsError(try state.accept(action("all",6),source:source))
+  }
+
 }
