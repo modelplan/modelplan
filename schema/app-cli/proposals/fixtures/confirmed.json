@@ -1,0 +1,131 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "result": {
+    "sessionId": "s-synthetic",
+    "storeEpoch": "e-synthetic",
+    "consentGeneration": 7,
+    "data": {
+      "sequence": 1,
+      "projection": {
+        "rowsVersion": 1,
+        "rows": [
+          {
+            "id": "codex",
+            "kind": "tool",
+            "order": 1,
+            "name": {
+              "en": "Codex",
+              "zh": "Codex"
+            },
+            "vendorKey": "openai",
+            "surfaces": [
+              "dock",
+              "menu",
+              "settings"
+            ],
+            "consent": "allowed",
+            "state": "empty",
+            "reason": {
+              "code": "no_usage_windows",
+              "text": {
+                "en": "No usage windows were reported",
+                "zh": "未报告用量窗口"
+              }
+            },
+            "nextStep": {
+              "action": "none",
+              "text": {
+                "en": "Wait for the next available reading",
+                "zh": "等待下一次可用读数"
+              }
+            },
+            "accounts": [
+              {
+                "route": "runtime_rpc",
+                "subscriptionRef": "0123456789abcdef",
+                "accountLocator": null,
+                "plan": {
+                  "id": "pro",
+                  "name": {
+                    "en": "Pro",
+                    "zh": "Pro"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "none",
+                "observedAt": "2026-11-01T11:59:00Z",
+                "freshUntil": null,
+                "lastFailure": null,
+                "windows": []
+              },
+              {
+                "route": "runtime_rpc",
+                "subscriptionRef": "fedcba9876543210",
+                "accountLocator": null,
+                "plan": {
+                  "id": "plus",
+                  "name": {
+                    "en": "Plus",
+                    "zh": "Plus"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "none",
+                "observedAt": "2026-11-01T11:59:00Z",
+                "freshUntil": null,
+                "lastFailure": null,
+                "windows": []
+              }
+            ],
+            "expiresAt": null,
+            "stateAfterExpiry": null
+          }
+        ],
+        "rowsSummary": {
+          "state": "empty",
+          "reason": {
+            "code": "no_dock_rows",
+            "text": {
+              "en": "No Dock reading or available action yet",
+              "zh": "尚无 Dock 读数或可用操作"
+            }
+          },
+          "text": {
+            "en": "No Dock reading or available action yet",
+            "zh": "尚无 Dock 读数或可用操作"
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "Review reader consent in Settings",
+              "zh": "在设置中检查读取授权"
+            }
+          }
+        },
+        "resetEvents": [
+          {
+            "version": 1,
+            "id": "3dff9ab9b227f04ccc830141faefbcbe1552681a0a58dbd65fe4a81b9e19d922",
+            "provider": "openai",
+            "confirms": "3dff9ab9b227f04ccc830141faefbcbe1552681a0a58dbd65fe4a81b9e19d922",
+            "planIds": [
+              "pro"
+            ],
+            "rowId": "codex",
+            "status": "confirmed",
+            "publishedAt": "2026-11-01T12:00:00Z",
+            "expiresAt": "2026-11-02T12:00:00Z",
+            "source": {
+              "kind": "publication",
+              "publicationId": "0123456789abcdef01234567",
+              "url": "https://example.test/reset"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
