@@ -1,0 +1,43 @@
+name: Cockpit details work
+on:
+  pull_request:
+    paths:
+      - 'cli/**'
+      - 'schema/app-cli/**'
+      - '.github/workflows/cockpit-details-work.yml'
+permissions:
+  contents: read
+jobs:
+  generate-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Regenerate contracts and format Go
+        run: |
+          git diff --name-only origin/main -- '*.go' | xargs -r gofmt -w
+          cd cli
+          go run ./internal/appserver/wire/cmd/schema
+          go run ./internal/swiftwire/cmd --write
+          cd ..
+          node desktop/cockpit/generate-wire.mjs
+      - name: Preserve generated changes
+        if: always()
+        run: |
+          git add -N schema/app-cli/captures
+          git diff --binary > "$RUNNER_TEMP/cockpit-generated.patch"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cockpit-generated
+          path: ${{ runner.temp }}/cockpit-generated.patch
+      - name: Consent and producer tests
+        working-directory: cli
+        run: go test -count=1 ./internal/speed ./internal/quota ./cmd/modelplan
