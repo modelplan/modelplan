@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
+:root[data-theme] #cockpit .ck-head .wordmark{background:none;font:600 14px/20px 'DM Sans',sans-serif;letter-spacing:-.025em;color:var(--silk-hi);width:112px;height:20px}
+:root[data-theme] #cockpit .ck-head .wordmark b{font:inherit;color:#df604c}
+/* The strip's historical raster is painted by both pseudo-elements. */
+:root[data-theme] #cockpit .ck-head .wordmark::before,:root[data-theme] #cockpit .ck-head .wordmark::after{content:none;background:none;transform:none}

@@ -6,7 +6,7 @@ import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
-import {engineView} from '../study/rocket-r1/engine-view.js';
+import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
 const esc=(value:unknown)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colour:'#6aa8ff',logo:'openai'},claude:{colour:'#ff9a6a',logo:'claude'},cursor:{colour:'#eef2f6',logo:'cursor'},copilot:{colour:'#c08cff',logo:'copilot'},kimi:{colour:'#ff8fcf',logo:'kimi'},glm:{colour:'#8f7dff',logo:'zai-white'},opencode:{colour:'#b5d65a',logo:'opencode'}};
@@ -27,10 +27,27 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.png':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:'quota-only',todayAverageGenerationTps:null,todayTokens:null,usage7:null,windows,extras,forecast:null,event:null,cards:[],credits:account.credits&&['credits','points'].includes(account.credits.unit)&&finite(account.credits.balance)!==null?{balance:account.credits.balance,drawing:false}:null};
  });
  const alerts=members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=25?'red':'amber',sub:esc(key)})));
- const source={now,accounts,alerts,caution:{level:null,key:''}};
+ const level=alerts.some(a=>a.level==='red')?'red':alerts.some(a=>a.level==='amber')?'amber':null;
+ const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
+ const source={now,accounts,alerts,caution:{level,key:''}};
  const paint=()=>{
   setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:25,ack:null,lang:locale,now};
   const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
+  // Inline style attributes from the study HTML are blocked by the host CSP.
+  // Apply only validated model-derived layout and fixed palette values through
+  // CSSOM; wire text is never interpreted as CSS.
+  for(const el of host.querySelectorAll<HTMLElement>('.eng-keys,.eng-lcd'))el.style.setProperty('--n',String(model.slots));
+  host.querySelector<HTMLElement>('.eng-lcd')?.style.setProperty('--rows',rowsTemplate(model));
+  const keys=host.querySelector<HTMLElement>('.eng-keys');if(keys)keys.dataset.slots=String(model.slots);
+  for(const [index,el] of [...host.querySelectorAll<HTMLElement>('.eng-keys .ek[data-sub] .bl')].entries()){
+   const colour=model.cols[index]?.colour;if(typeof colour==='string'&&/^#[0-9a-f]{6}$/i.test(colour))el.style.setProperty('--v',colour);
+  }
+  for(const cell of host.querySelectorAll<HTMLElement>('.qcell')){
+   const state=['ok','mid','low'].find(x=>cell.classList.contains('lv-'+x));
+   if(state){cell.style.setProperty('--qf',`var(--st-${state})`);if(state!=='ok')cell.style.setProperty('--qn',`var(--st-${state})`);}
+  }
+  // These bridge rows have no today metrics until the details capability supplies them.
+  for(const row of host.querySelectorAll<HTMLElement>('.qrow-t'))row.dataset.available='false';
   // Native supplies only allowlisted marks; retain the established accessibility hook.
   for(const image of host.querySelectorAll<HTMLImageElement>('.ek img.lamp'))image.classList.add('vendor-mark');
   for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',locale==='en'?`Page ${n+1}`:`第 ${n+1} 页`);led.setAttribute('aria-current',String(n===page));}

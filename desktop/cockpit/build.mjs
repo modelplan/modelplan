@@ -54,7 +54,11 @@ const notices=['MIT: cockpit bridge, schema adapter and community layout.','Vend
   await cp(resolve(assets,'cockpit/study-strip'),resolve(stripPath,'study-strip'),{recursive:true});
   css="@import url('./study/rocket-r1/shell6.css');\n"+css;
   css+='\n'+await readFile(resolve(assets,'cockpit/study-strip.css'),'utf8');
-  css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
+  // Retain the canopy adapter; the strip itself uses the original study rules.
+  const cockpitCss=await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
+  css+='\n'+cockpitCss.slice(0,cockpitCss.indexOf('#cockpit .ck-head'))+cockpitCss.slice(cockpitCss.indexOf('/* Study c01 closed cap'));
+  css+='\n'+await readFile(resolve(assets,'cockpit/wordmark.css'),'utf8');
+  css+='\n'+await readFile(resolve(assets,'cockpit/engine-few-paging.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

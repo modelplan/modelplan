@@ -9,11 +9,15 @@
     },
     {
       "file": "cockpit/SOURCES.md",
-      "sha256": "ccd1069dddab596a80917672183deb47f9566f88ed19e4b9ce96f4504ed1020f"
+      "sha256": "49d5e1d41419251896f36c3564d27d8344eccff0759aef53710de79717ffb277"
     },
     {
       "file": "cockpit/cockpit.css",
       "sha256": "a030534691091b9664fdc6a28cc825bce46fb52d2f6837476767d4aec40672ed"
+    },
+    {
+      "file": "cockpit/engine-few-paging.css",
+      "sha256": "07f6db9e4bf786369005db43bf0e9dc7df5d32b3a021b5e4f5796a37a26f4824"
     },
     {
       "file": "cockpit/shell6.css",
@@ -170,6 +174,10 @@
     {
       "file": "cockpit/study-strip/wordmark@3x.png",
       "sha256": "d8271e66f5c80cb2e857fa4941175f1164b584f6cde09a04093618b90d319cd6"
+    },
+    {
+      "file": "cockpit/wordmark.css",
+      "sha256": "9f2d6e9e10d82b7d8b3d6f780b757bc5e8150215c0fd18761d4cc5589263a9b5"
     },
     {
       "file": "logo.svg",

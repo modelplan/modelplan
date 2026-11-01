@@ -3,56 +3,34 @@
 *{box-sizing:border-box}body.r1{margin:0;background:transparent;height:100vh;overflow:hidden;font-family:'DM Sans',system-ui,sans-serif}button{font:inherit;cursor:pointer}button:disabled{cursor:default;opacity:.5}button:focus-visible{outline:2px solid var(--gold-lcd);outline-offset:2px}
 /* The prototype's timer/canvas/transition animation stack is not loaded. */
 *,*::before,*::after{animation:none!important;transition:none!important}
-#cockpit.ck{display:grid!important;position:relative!important;inset:auto!important;transform:none!important;opacity:1!important;width:620px;height:var(--body-h,890px);margin:0 auto;max-height:100vh;grid-template-rows:minmax(24px,1fr) 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px);gap:9px;padding:12px 22px 22px;isolation:isolate;overflow:visible}
+#cockpit.ck{display:grid!important;position:relative!important;inset:auto!important;transform:none!important;opacity:1!important;width:620px;height:var(--body-h,890px);margin:0 auto;max-height:100vh;grid-template-rows:minmax(24px,1fr) 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px);gap:9px;padding:12px 16px 22px;--pad-x:16px;isolation:isolate;overflow:visible}
 .ck-head{grid-row:2;grid-column:1;z-index:3}.ck-portrow{grid-row:1;grid-column:1;min-height:0}.ck-eng{grid-row:3;grid-column:1;overflow:auto;min-width:0;min-height:0}.ck-deck{grid-row:4;grid-column:1;min-height:0}.ck-tape{grid-row:5;grid-column:1;min-height:0;overflow:auto}.ck-brand{margin-right:auto}.ck-head .key{min-width:54px}.wordmark{white-space:nowrap}
 .ck-portrow::after{display:none}.ck-port{height:100%;background:var(--port-bg);min-height:0}.ck-field{display:none!important}.hud:not(.wide){position:absolute;left:28px;right:28px;top:auto;bottom:18px;max-width:none;width:auto;min-height:0;display:block;padding:8px 12px;background:var(--lcd-glass);box-shadow:var(--well);border-radius:5px}.u11-summary{font:11px var(--f-silk);color:var(--lcd-ink)}
 [data-profile=compact] .hud{display:none!important}.activity{display:block;width:6px;height:6px;border-radius:50%;background:var(--gold-lcd);opacity:.35}
-.u11-engine-table{min-width:100%;width:max-content;--n:1}.eng-krow{display:grid;grid-template-columns:44px minmax(0,1fr);gap:2px}.ek-all{min-width:44px;font-size:8px;padding:4px}.eng-keys{display:grid;grid-template-columns:repeat(var(--n),minmax(92px,1fr));gap:2px}.eng-keys .ek{min-height:28px;padding:5px 6px;max-width:none;min-width:92px}.ek-name{font:500 11px var(--f-silk);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.eng-lcd{display:block;min-height:165px;padding:8px 8px 8px 44px}.eng-cols{display:grid;grid-template-columns:repeat(var(--n),minmax(92px,1fr));height:auto;gap:0}.ec{min-width:92px;padding:4px 6px;display:block;border-right:1px solid var(--slot-line)}.ec:last-child{border-right:0}.u11-reason,.u11-plan,.u11-source{display:block;overflow-wrap:anywhere}.u11-reason,.u11-source{font:9px var(--f-silk);color:var(--lcd-muted);margin:3px 0}.u11-plan{font:500 10px var(--f-silk);color:var(--lcd-ink)}.u11-account{margin:8px 0}.qcell{min-height:44px;padding:6px 0}.qline{display:flex;justify-content:space-between;gap:5px;align-items:baseline}.qtxt{font-size:9px;max-width:none}.qnum{font:20px 'JetBrains Mono',monospace;color:var(--lcd-ink)}.qnum small{font-size:9px}.qmeter{display:block}.qbar{display:flex;gap:2px;margin-top:4px}.qbar i{display:block;height:3px;min-width:4px;flex:1;background:var(--slot-2)}.qbar i.on{background:var(--lcd-ink)}
 .ck-deck{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:10px}.dk-fad{display:flex;flex-direction:column;min-width:0;min-height:0}.fd-chs{flex:1;display:flex;gap:20px;justify-content:center;align-items:stretch;padding:18px 12px}.u11-fader{position:relative;width:10px;border-radius:5px;background:linear-gradient(90deg,var(--slot-1),var(--slot-2));box-shadow:var(--well);opacity:.5}.u11-fader i{position:absolute;left:-10px;right:-10px;bottom:25%;height:18px;border-radius:3px;background:linear-gradient(var(--key-1),var(--key-2));box-shadow:var(--raised)}.fd-bank{padding:8px;text-align:center}.dk-mfd{overflow:auto;padding:14px;background:var(--lcd-bg);box-shadow:var(--well);border-radius:5px;min-height:0}.dk-mfd h2{font-size:10px;color:var(--lcd-muted);margin:0 0 10px}.u11-subscription{display:grid;gap:6px;border-top:1px solid var(--slot-line);padding:9px 0;color:var(--lcd-ink);font:10px var(--f-silk)}.u11-empty,.ec-empty{font:11px var(--f-silk);color:var(--lcd-muted);padding:10px}.ck-tape{display:flex;flex-direction:column;gap:5px;padding:10px 12px;background:var(--lcd-bg);box-shadow:var(--well)}.u11-observed{font:10px 'Share Tech Mono',monospace;color:var(--lcd-ink)}
 
-/* The static table replaces the prototype's two direct grid children. */
-#cockpit .ck-eng{display:block}.ck-eng .eng-keys{position:static;inset:auto}.ck-eng .ek-all{position:static;inset:auto;width:auto}.ck-eng .ec{display:block}.eng-krow{min-height:30px}
 
 /* Two 240ms opacity pulses, six steps per iteration (25 updates/s), then idle. */
 @keyframes cockpit-state-pulse{from{opacity:.8}to{opacity:.35}}
 #cockpit .activity.state-pulse{animation:cockpit-state-pulse 240ms steps(6,end) 2!important}
 @media(prefers-reduced-motion:reduce){#cockpit .activity.state-pulse{animation:none!important}}
-/* S6: six subscription bays, with a three-bay minimum for one or two. */
-.ck-deck{grid-template-columns:1fr}.dk-fad{display:none!important}.u11-engine-table{width:100%;min-width:0}.s6-page[hidden]{display:none!important}.s6-page .eng-keys,.s6-page .eng-cols{grid-template-columns:repeat(var(--n),minmax(0,1fr))}.s6-page .eng-keys .ek,.s6-page .ec{min-width:0}.s6-page .eng-lcd{display:grid;grid-template-columns:44px 1fr;padding:5px 0;min-height:152px}.s6-page .eng-labels,.s6-page .ec{display:grid;grid-template-rows:repeat(3,1fr)}.s6-page .lb{padding-left:3px}.s6-page .ec{padding:0 3px}.s6-page .qcell{padding:2px;min-height:0}.s6-page .qnum{font-size:14px;line-height:16px}.s6-page .qreset{font:9px var(--f-lcd);color:var(--lcd-muted)}.s6-page .qbar i.on{background:var(--st-ok)}.s6-page [data-status=amber] .qnum{color:var(--st-mid)}.s6-page [data-status=amber] .qbar i.on{background:var(--st-mid)}.s6-page [data-status=red] .qnum{color:var(--st-low)}.s6-page [data-status=red] .qbar i.on{background:var(--st-low)}.eng-pg{justify-content:flex-end;padding:3px}.ck-eng .eng-led{padding:0;border:0;color:transparent;overflow:hidden;cursor:pointer}.ck-eng .eng-led[aria-current=true]{width:12px;background:var(--lcd-ink)}
 
-#cockpit .ck-eng{overflow:hidden}.s6-page .eng-lcd{height:150px;min-height:0}
 
-.eng-pg{padding-right:40px}
 
 #cockpit .ck-eng{pointer-events:auto}
 
 /* Approved night wordmark and All key indicator. */
 #cockpit .wordmark b{color:#df604c}
-.ck-eng .ek-all::after{content:"";position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--lcd-ink);opacity:.22;pointer-events:none}
-.ck-eng .ek-all.on::after{opacity:1;box-shadow:0 0 6px var(--lcd-ink)}
-.ck-eng .eng-led.lv-amber[aria-current=false]{background:var(--st-mid)}
-.ck-eng .eng-led.lv-red[aria-current=false]{background:var(--st-low)}
 .ck-eng .ek .vendor-mark{width:16px;height:16px;object-fit:contain;flex:none}
 
 /* V1 control strip: the host supplies attachment and close behavior. */
-#cockpit .ck-head{padding:0 6px;gap:6px;border-radius:6px;background:linear-gradient(180deg,var(--metal-1),var(--metal-2) 48%,var(--metal-3));box-shadow:var(--raised)}
-#cockpit .ck-brand{display:flex;align-items:center;gap:5px;min-width:0}
 #cockpit .s6-brand-mark{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
 #cockpit .s6-brand-mark::before{content:"M";font:600 12px var(--f-silk);color:var(--silk)}
-#cockpit .ck-head .s6-strip-key{width:26px;min-width:26px;height:22px;padding:0;font-size:13px}
 
 /* Owner-directed study strip: neutral community glyph; official vector added by build. */
-#cockpit .ck-head{position:relative;display:flex;align-items:center;gap:6px}
-#cockpit .ck-brand{gap:8px}#cockpit .s6-brand-mark{width:28px;height:28px}
-#cockpit .wordmark{font-family:var(--f-silk);font-size:10px;font-weight:600;letter-spacing:.15em}#cockpit .wordmark b{font-weight:600;color:#df604c}
-#cockpit .shutter-slider{--shutter-travel:0px;position:absolute;left:50%;top:-3px;transform:translateX(-50%);width:152px;height:32px;padding:0;border:0;border-radius:5px;background:linear-gradient(#11151a,#353b42 45%,#11151a);box-shadow:inset 0 1px 4px #000;touch-action:none;cursor:ew-resize}
-#cockpit .shutter-slider[aria-pressed=true]{--shutter-travel:100px}#cockpit .shutter-blind{position:absolute;left:6px;top:5px;height:22px;width:var(--shutter-travel);background:repeating-linear-gradient(#3d444b 0 3px,#20252b 3px 6px)}
-#cockpit .shutter-thumb{position:absolute;left:2px;top:-2px;width:48px;height:36px;transform:translateX(var(--shutter-travel));border-radius:5px;background:linear-gradient(#717982,#252c33 46%,#4d555d);box-shadow:0 2px 5px #000,inset 0 1px #aeb6bd}
-#cockpit .s6-alert{position:relative;display:grid;place-items:center;width:44px;height:22px;border-radius:4px;background:linear-gradient(var(--caution-1),var(--caution-2));box-shadow:var(--raised);font:600 10px var(--f-silk);letter-spacing:.04em;color:var(--ink)}#cockpit .s6-alert .activity{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 #cockpit[data-shell=closed]{grid-template-rows:16px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}
 #cockpit .s6-closed-cap{height:16px;padding:0!important;align-self:stretch!important;border-radius:3px;background:linear-gradient(#646b72,#282d32 55%,#41474e)!important;box-shadow:inset 0 1px #8c959e}
 #cockpit .s6-closed-cap span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-#cockpit .ck-eng .ek-name{font-weight:400}
 #cockpit .ck-eng .eng-keys .ek::after{content:"";position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--vendor-color);opacity:.5;box-shadow:0 0 4px var(--vendor-color);pointer-events:none}
 #cockpit .ck-eng .eng-keys .ek.on::after{opacity:1;box-shadow:0 0 6px var(--vendor-color)}
 
@@ -62,17 +40,13 @@
 #cockpit .ck-eng .vendor-glyph img[src$="/openai.png"]{width:32px;height:32px;max-width:none}
 
 /* Study engine reserves Today and Reserve tracks; absent wire values stay blank. */
-.s6-page .eng-labels,.s6-page .ec{grid-template-rows:repeat(3,minmax(0,1fr)) 23px 32px}
 
 /* Prototype key hierarchy; the 16px glyph box is normalized to visible bounds. */
-.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px);height:16px;white-space:nowrap}
-.ck-eng .ek .bl{position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--v);opacity:.5;box-shadow:0 0 4px var(--v)}
 #cockpit .ck-eng .eng-keys .ek::after{content:none}
 
 /* Live canopy HUD and scene are post-v1; retain the empty study shell only. */
 #cockpit .hud{display:none!important}
 /* Keep long, localized study cell annotations inside their own column. */
-.s6-page .qline{min-width:0;overflow:hidden}.s6-page .qtxt{display:flex;gap:3px;min-width:0;overflow:hidden;white-space:nowrap}.s6-page .qtxt>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* Study fader/MFD lanes; data unavailable until cockpitDetailsV1/publication. */
 #cockpit .ck-deck{padding-left:var(--bz);display:grid;grid-template-columns:var(--fad-w) minmax(0,1fr);column-gap:var(--gutter);align-items:stretch}
@@ -81,8 +55,71 @@
 #cockpit .mfd-empty{color:var(--lcd-muted)}
 #cockpit .ck-deck{pointer-events:auto}
 /* Preserve the full number line when Today and Reserve share the fixed engine height. */
-.s6-page .qcell{display:flex;flex-direction:column;justify-content:center;gap:2px}.s6-page .qline{height:16px;min-height:16px;flex:none;overflow:visible}.s6-page .qmeter{flex:none}
 
 /* Study record strip: blank coverage slots until the live-session contract arrives. */
 #cockpit .ck-tape{display:block;padding:3px 62px 3px 7px;container-type:inline-size}
 #cockpit .t-lines{display:grid;grid-template-rows:repeat(var(--tape-lines,3),16px)}
+#cockpit .s6-brand-mark{display:block;width:28px;height:28px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
+.ck-lamp .activity{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+
+/* The OpenAI raster has a half-size painted glyph inside its canvas. */
+#cockpit .ck-eng .ek .vendor-mark[src$='/openai.png']{width:32px;height:32px;margin:-8px}
+/* Keep the native wrapper while preserving the prototype engine grid. */
+#cockpit .ck-eng{display:block;overflow:hidden}.u11-engine-table{display:grid;grid-template-rows:26px minmax(0,1fr);grid-auto-rows:var(--row-h,18px);row-gap:var(--key-gap,4px);height:100%;width:100%;min-width:0}.s6-page[hidden]{display:none!important}.ck-eng .eng-led{cursor:pointer}
+
+/* Prefer the pinned static OFL faces over legacy study variable-font aliases. */
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/dm-sans/dm-sans-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/dm-sans/dm-sans-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/dm-sans/dm-sans-latin-600-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./fonts/dm-sans/dm-sans-latin-700-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-600-normal.woff2') format('woff2');
+}
+
+/* Owner-approved tab weight. */
+#cockpit .ck-eng .ek-name{font-weight:400}
+
+/* The CSP-safe CSSOM serialization changes the study's literal style selector. */
+.ck-eng .eng-keys:is([data-slots='5'],[data-slots='6']) .ek-name{display:none}

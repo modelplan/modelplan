@@ -25,8 +25,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  shutter.onpointerup=e=>{if(!drag||drag.id!==e.pointerId)return;const d=drag;drag=null;shutter.style.removeProperty('--shutter-travel');if(d.moved){suppressClick=true;requestShutter(d.start+(e.clientX-d.x)/d.scale>=50);}};
  const cancelDrag=()=>{drag=null;shutter.style.removeProperty('--shutter-travel');};shutter.onpointercancel=cancelDrag;shutter.onlostpointercapture=cancelDrag;
  shutter.onkeydown=e=>{const target=e.key==='ArrowRight'||e.key==='End'?true:e.key==='ArrowLeft'||e.key==='Home'?false:null;if(target!==null&&e.isTrusted){e.preventDefault();requestShutter(target);}};
- const attach=element('button',undefined,'key'),close=element('button',undefined,'key');
- attach.dataset.detach='';close.dataset.close='';for(const b of [attach,close]){b.type='button';head.append(b);}
+ const attach=root.querySelector<HTMLButtonElement>('[data-detach]')!,close=root.querySelector<HTMLButtonElement>('[data-close]')!;
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
  const cap=element('section',undefined,'s6-closed-cap');cap.hidden=true;
  cap.style.pointerEvents='auto';cap.style.gridRow='1';cap.style.gridColumn='1';cap.style.alignSelf='end';cap.style.padding='12px';cap.style.background='var(--port-bg)';cap.style.borderRadius='8px';
@@ -35,9 +34,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  close.onclick=e=>{if(e.isTrusted)action('close');};
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
-  root.querySelector<HTMLElement>('.s6-alert')!.setAttribute('aria-label',zh?'告警未激活':'Alert inactive');
-  attach.textContent=nativeShell?.attached?'⇱':'⇲';
-  attach.setAttribute('aria-pressed',String(!nativeShell?.attached));attach.setAttribute('aria-label',nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back'));close.textContent='✕';close.setAttribute('aria-label',zh?'关闭':'Close');
+  const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.setAttribute('aria-label',alert.classList.contains('lit')?(zh?'告警激活':'Alert active'):(zh?'告警未激活':'Alert inactive'));
+  attach.setAttribute('aria-pressed',String(!nativeShell?.attached));attach.setAttribute('aria-label',nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back'));close.setAttribute('aria-label',zh?'关闭':'Close');
   reason.textContent=forced?(zh?'窗口高度不足，无法打开':'Not enough window height to open'):'';
   shutter.setAttribute('aria-label',zh?'舷窗快门':'Porthole shutter');shutter.setAttribute('aria-pressed',String(closed));shutter.setAttribute('aria-describedby',reason.id);shutter.title=reason.textContent;shutter.disabled=!active||!nativeShell||forced;
   attach.hidden=!nativeShell;close.hidden=!nativeShell;
@@ -48,7 +46,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(closed)stop();
  }
  function localise(){
-  document.documentElement.lang=locale;deck.locale(locale);tape.locale(locale);frame.settings.textContent='⚙';frame.settings.setAttribute('aria-label',words[locale].settings);
+  document.documentElement.lang=locale;deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
   for(const e of root.querySelectorAll<HTMLElement>('[data-en][data-zh]')){e.textContent=locale==='en'?e.dataset.en!:e.dataset.zh!;if(e.tagName==='BUTTON')e.setAttribute('aria-label',e.textContent);else if(e.classList.contains('ek-name'))e.parentElement?.setAttribute('aria-label',e.textContent);}
   for(const e of root.querySelectorAll<HTMLElement>('[data-reset]'))e.textContent=relative(e.dataset.reset??null);
   for(const e of root.querySelectorAll<HTMLButtonElement>('.eng-led[data-page]')){const n=Number(e.dataset.page)+1;e.setAttribute('aria-label',locale==='en'?`Page ${n}`:`第 ${n} 页`);}
@@ -61,7 +59,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
  function relative(raw:string|null):string {
   if(!raw)return '';const delta=Date.parse(raw)-Date.now();if(!Number.isFinite(delta))return '';
   const mins=Math.max(0,Math.ceil(delta/60000)),d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;
@@ -92,7 +90,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   }
  setEmpty('waiting');
  return {
-  configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.textContent='⚙';frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty('waiting');},
+  configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty('waiting');},
   updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();if(lastData)renderData(lastData);},
   shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();applyScope?.(value.scope);deck.scope(value.scope);},
   render:renderData,

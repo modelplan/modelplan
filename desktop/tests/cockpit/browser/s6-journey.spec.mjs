@@ -19,12 +19,12 @@ test('built cockpit entry displays subscription columns and pages from wire data
   });
   data.subscriptions=[];
   expect(await receive(send('display',{data}))).toBe(true);
-  await expect(page.locator('.eng-cols .ec:visible')).toHaveCount(6);
+  await expect(page.locator('.eng-cols .ec[data-col]:visible')).toHaveCount(6);
   await expect(page.locator('.eng-lcd:visible')).toContainText('5h');
   await expect(page.locator('.eng-lcd:visible')).toContainText('Weekly');
   await expect(page.locator('.eng-lcd:visible')).toContainText('Other');
   await page.getByRole('button',{name:'Page 2'}).click();
-  await expect(page.locator('.eng-cols .ec:visible')).toHaveCount(1);
+  await expect(page.locator('.eng-cols .ec[data-col]:visible')).toHaveCount(1);
   await expect(page.locator('.eng-krow:visible')).toContainText('Tool 6');
   await page.getByRole('button',{name:'Tool 6'}).click();
   await expect(page.getByRole('button',{name:'Tool 6'})).toHaveAttribute('aria-pressed','true');
@@ -41,13 +41,13 @@ test('account members get separate c3 columns and monthly-only readings stay in 
   const monthly=row.accounts[0];monthly.subscriptionRef=null;monthly.route='saved_login_api';monthly.windows[0].role='monthly';monthly.windows[0].durationSeconds=2592000;monthly.windows[0].remainingPercent=18;monthly.windows[0].resetsAt='2026-11-01T05:00:00Z';
   const weekly=structuredClone(monthly);weekly.route='runtime_rpc';weekly.windows[0].role='weekly';weekly.windows[0].durationSeconds=604800;weekly.windows[0].remainingPercent=75;row.accounts.push(weekly);
   expect(await receive(send('display',{data}))).toBe(true);
-  const cols=page.locator('.eng-cols .ec:visible');await expect(cols).toHaveCount(2);
+  const cols=page.locator('.eng-cols .ec[data-col]:visible');await expect(cols).toHaveCount(2);
   expect(await page.locator('.s6-page:visible').evaluate(e=>e.style.getPropertyValue('--n'))).toBe('3');
   await expect(cols.nth(0).locator('.qcell').nth(0)).toBeEmpty();
   await expect(cols.nth(0).locator('.qcell').nth(1)).toBeEmpty();
   await expect(cols.nth(0).locator('.qcell').nth(2)).toContainText('18%');
   await expect(cols.nth(0).locator('.qcell').nth(2)).toContainText('mo');
-  await expect(cols.nth(0).locator('.qcell').nth(2)).toContainText('resets in 3h');
+  await expect(cols.nth(0).locator('.qcell').nth(2)).toContainText('3h00');
   await expect(cols.nth(1).locator('.qcell').nth(1)).toContainText('75%');
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
   await expect(page.locator('.eng-cols .ec')).toHaveCount(0);
@@ -126,13 +126,13 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   expect(await page.locator('.s6-page:visible img.vendor-mark').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
   await expect(page.getByRole('button',{name:'Page 2'})).toHaveClass(/lv-red/);
   const all=page.getByRole('button',{name:'All',exact:true}).first();await expect(all).toHaveAttribute('aria-pressed','true');
-  expect(await all.evaluate(e=>getComputedStyle(e,'::after').opacity)).toBe('1');
+  expect(await all.locator('.bl').evaluate(e=>getComputedStyle(e).opacity)).toBe('1');
   await page.getByRole('button',{name:'Tool 0',exact:true}).click();
-  await expect(all).toHaveAttribute('aria-pressed','false');expect(await all.evaluate(e=>getComputedStyle(e,'::after').opacity)).toBe('0.22');
+  await expect(all).toHaveAttribute('aria-pressed','false');expect(await all.locator('.bl').evaluate(e=>getComputedStyle(e).opacity)).toBe('0.22');
   let selected=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));expect(selected.action).toBe('scopeSelect');expect(selected.key).toBe('tool0#saved_login_api');
   expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:'Tool 0',exact:true})).toHaveAttribute('aria-pressed','true');
   await page.getByRole('button',{name:'All',exact:true}).first().click();selected=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));expect(selected.key).toBe('all');
-  await page.getByRole('button',{name:'Page 2'}).click();await expect(page.getByRole('button',{name:'Page 2'})).not.toHaveClass(/lv-red/);await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(1);
+  await page.getByRole('button',{name:'Page 2'}).click();await expect(page.getByRole('button',{name:'Page 2'})).toHaveClass(/lv-red/);await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(1);
 });
 
 test('native session scope is restored on load and shell updates without emitting an action',async({page})=>{
@@ -176,10 +176,10 @@ test('v1 strip uses a brand mark and equal icon keys with localized accessible n
   await expect(page.locator('.ck-brand .s6-brand-mark')).toBeVisible();
   expect(await page.locator('.s6-brand-mark').evaluate(e=>getComputedStyle(e).backgroundImage)).toContain('brand-mark.svg');
   const settings=page.getByRole('button',{name:'Settings',exact:true}),detach=page.getByRole('button',{name:'Detach',exact:true}),close=page.getByRole('button',{name:'Close',exact:true});
-  await expect(close).toHaveText('✕');await expect(settings).not.toHaveText('Settings');await expect(detach).not.toHaveText('Detach');
+  await expect(close).toHaveText('');expect(await close.evaluate(e=>getComputedStyle(e,'::before').backgroundImage)).toContain('close-normal');await expect(settings).not.toHaveText('Settings');await expect(detach).not.toHaveText('Detach');
   const sizes=await Promise.all([settings,detach,close].map(b=>b.boundingBox()));expect(sizes.every(r=>r.width===sizes[0].width&&r.height===sizes[0].height)).toBe(true);
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
-  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分离',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'关闭',exact:true})).toHaveText('✕');
+  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分离',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'关闭',exact:true})).toHaveText('');
   await expect(page.getByText('ALERT',{exact:true})).toBeVisible();
   await expect(page.locator('.s6-alert')).toHaveAttribute('aria-label','告警未激活');
 });
@@ -290,4 +290,17 @@ test('verified scope remains selected across a display refresh',async({page})=>{
   const data=sample();expect(await receive(send('display',{data}))).toBe(true);
   await page.getByRole('button',{name:'Codex',exact:true}).click();expect(await receive(send('display',{data}))).toBe(true);
   await expect(page.getByRole('button',{name:'Codex',exact:true})).toHaveAttribute('aria-pressed','true');
+});
+
+test('clearing the display also clears its derived threshold alert',async({page})=>{
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample();data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
+  expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.locator('.s6-alert')).toHaveClass(/lit/);
+  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
+  await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|red|amber/);
+  await expect(page.locator('.s6-alert')).toHaveAttribute('aria-label','Alert inactive');
 });
