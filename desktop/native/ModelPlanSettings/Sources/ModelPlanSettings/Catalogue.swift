@@ -93,6 +93,8 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
 public struct SettingsPageContext: Sendable {
+    /// True only for the shipping normal-entry v1 surface.
+    public var v1NormalEntry = false
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []

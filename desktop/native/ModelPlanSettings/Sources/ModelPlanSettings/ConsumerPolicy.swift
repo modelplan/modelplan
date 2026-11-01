@@ -3,6 +3,7 @@ import Foundation
 import ModelPlanDock
 
 public struct SettingsEnvironment: Sendable {
+    public var v1NormalEntry = false
     public var darkAppearance = false
     public var reduceMotion = false
     public var reduceTransparency = false
