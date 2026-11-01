@@ -148,6 +148,21 @@ final class BridgeTests: XCTestCase {
     XCTAssertFalse(CockpitMemberScopes.isValidKey("../unlisted"))
     XCTAssertFalse(CockpitMemberScopes.isValidKey("tool#not_a_route"))
   }
+  func testUnverifiedCollisionsReceiveDistinctSessionScopeKeys() throws {
+    let url = try XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))
+    var root = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:url)) as? [String:Any])
+    var projection = try XCTUnwrap(root["projection"] as? [String:Any])
+    var rows = try XCTUnwrap(projection["rows"] as? [[String:Any]])
+    var account = try XCTUnwrap((rows[0]["accounts"] as? [[String:Any]])?.first)
+    account.removeValue(forKey:"subscriptionRef")
+    rows[0]["accounts"] = [account,account]; projection["rows"] = rows
+    root["projection"] = projection; root["subscriptions"] = []
+    let data = try JSONDecoder().decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:root))
+    XCTAssertEqual(CockpitMemberScopes.keys(data),["all","codex#saved_login_api#1","codex#saved_login_api#2"])
+    for key in ["codex#saved_login_api#0","codex#saved_login_api#01","codex#saved_login_api#-1"] {
+      XCTAssertFalse(CockpitMemberScopes.isValidKey(key))
+    }
+  }
   func testScopeRejectsUnknownKeysWrongFieldAndClearedMembership() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))

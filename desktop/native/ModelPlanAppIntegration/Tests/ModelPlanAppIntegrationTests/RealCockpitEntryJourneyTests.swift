@@ -57,7 +57,7 @@ import ModelPlanWire
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("s6-real-page-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let bundle = try makeSyntheticApp(at: directory, cockpit: input, edition:edition)
-        let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: nativeRoot.appendingPathComponent("ModelPlanCockpitWeb/Tests/ModelPlanCockpitWebTests/Fixtures/cockpit.json")))
+        let data = try collisionFixture()
         let physical = try XCTUnwrap(NSScreen.main).visibleFrame
         func placement(_ height:CGFloat) -> (CGRect,CGRect) {
             (CGRect(x:physical.minX,y:physical.maxY-height,width:physical.width,height:height),
@@ -128,7 +128,29 @@ import ModelPlanWire
             let restored=try await waitForDOM(page,label:"session scope restored by the next actual load") { $0["scopeKey"] as? String == retainedScope }
             XCTAssertEqual(try XCTUnwrap(page.verificationShellState).scope,retainedScope)
             XCTAssertEqual(restored["scopeKey"] as? String,retainedScope)
-            let client=try XCTUnwrap(engine),queries=await client.cockpitQueries
+            let client=try XCTUnwrap(engine)
+            if entry == "menu" {
+                let web=try XCTUnwrap(page.verificationWebView)
+                func visibleValues() async throws -> [String] {
+                    let result=try await evaluate(web:web,code:"return [...document.querySelectorAll('.s6-page:not([hidden]) .qnum')].map(x=>x.textContent);",arguments:[:])
+                    return try XCTUnwrap(result as? [String])
+                }
+                var values=try await visibleValues();XCTAssertTrue(values.contains("18%"))
+                try await click(".eng-led[data-page='1']",page:page)
+                values=try await visibleValues();XCTAssertTrue(values.contains("75%"))
+                try await click(".eng-keys .ek[data-scope='codex#saved_login_api#2']",page:page)
+                try await waitForCondition("second unverified member is selected") { page.verificationShellState?.scope == "codex#saved_login_api#2" }
+                let refreshed=expectation(description:"fresh synthetic response renders both collision members");nextRendered=refreshed
+                try await client.notifyRowsChanged()
+                await fulfillment(of:[refreshed],timeout:10)
+                _ = try await waitForDOM(page,label:"collision scope survives refresh") { $0["scopeKey"] as? String == "codex#saved_login_api#2" }
+                values=try await visibleValues();XCTAssertTrue(values.contains("75%"))
+                try await click(".eng-led[data-page='0']",page:page)
+                values=try await visibleValues();XCTAssertTrue(values.contains("18%"))
+                try await click(".eng-keys .ek[data-scope='codex#saved_login_api#1']",page:page)
+                try await waitForCondition("first unverified member is selected") { page.verificationShellState?.scope == "codex#saved_login_api#1" }
+            }
+            let queries=await client.cockpitQueries
             for key in ["all","0123456789abcdef","all","0123456789abcdef"] {
                 let selector=key == "all" ? ".ek-all" : ".eng-keys .ek[data-scope='0123456789abcdef']"
                 try await click(selector,page:page)
@@ -279,6 +301,30 @@ import ModelPlanWire
         init(_ event:NSEvent) { self.event=event }
         func post() { NSApp.postEvent(event,atStart:false); posted=true }
     }
+    private func collisionFixture() throws -> WireCockpitData {
+        let bytes=try Data(contentsOf:nativeRoot.appendingPathComponent("ModelPlanCockpitWeb/Tests/ModelPlanCockpitWebTests/Fixtures/cockpit.json"))
+        var root=try XCTUnwrap(JSONSerialization.jsonObject(with:bytes) as? [String:Any])
+        var projection=try XCTUnwrap(root["projection"] as? [String:Any])
+        var rows=try XCTUnwrap(projection["rows"] as? [[String:Any]])
+        let original=try XCTUnwrap((rows[0]["accounts"] as? [[String:Any]])?.first)
+        let template=try XCTUnwrap((root["subscriptions"] as? [[String:Any]])?.first)
+        var first=original,last=original
+        first.removeValue(forKey:"subscriptionRef");last.removeValue(forKey:"subscriptionRef")
+        var firstWindows=try XCTUnwrap(first["windows"] as? [[String:Any]]),lastWindows=firstWindows
+        firstWindows[0]["remainingPercent"]=18;lastWindows[0]["remainingPercent"]=75
+        first["windows"]=firstWindows;last["windows"]=lastWindows
+        var accounts=[first],subscriptions=[[String:Any]]()
+        for i in 0..<5 {
+            let ref=String(format:"%016llx",i == 0 ? UInt64(0x0123456789abcdef) : UInt64(i))
+            var account=original,subscription=template
+            account["subscriptionRef"]=ref;subscription["subscriptionRef"]=ref
+            subscription["accounts"]=[["tool":"codex","account":account]]
+            accounts.append(account);subscriptions.append(subscription)
+        }
+        accounts.append(last);rows[0]["accounts"]=accounts;projection["rows"]=rows
+        root["projection"]=projection;root["subscriptions"]=subscriptions
+        return try JSONDecoder().decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:root))
+    }
     private var nativeRoot: URL {
         var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<3 { root.deleteLastPathComponent() }
@@ -378,6 +424,11 @@ private actor PinnedPageJourneyEngine: EngineClient {
         let envelope = try WireEnvelope(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: context.floor.generation, data: data)
         await consumer.consume(.response(requestID: id, .cockpit(.init(envelope: envelope, delivery: context))))
         return .init(requestID: id)
+    }
+    func notifyRowsChanged() async throws {
+        let rows=try WireRowsSnapshot(sequence:1,projection:data.projection)
+        let envelope=try WireEnvelope(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:context.floor.generation,data:rows)
+        await consumer.consume(.rowsChanged(.init(envelope:envelope,delivery:context),invalidRowCount:0))
     }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
