@@ -135,18 +135,26 @@ import ModelPlanWire
                     let result=try await evaluate(web:web,code:"return [...document.querySelectorAll('.s6-page:not([hidden]) .qnum')].map(x=>x.textContent);",arguments:[:])
                     return try XCTUnwrap(result as? [String])
                 }
-                var values=try await visibleValues();XCTAssertTrue(values.contains("18%"))
+                func waitForValue(_ expected:String) async throws {
+                    let deadline=ContinuousClock.now.advanced(by:.seconds(3))
+                    repeat {
+                        if try await visibleValues().contains(expected) { return }
+                        try await Task.sleep(for:.milliseconds(20))
+                    } while ContinuousClock.now < deadline
+                    XCTFail("Visible page did not show \(expected)");throw ScriptFailure.deadline
+                }
+                try await waitForValue("18%")
                 try await click(".eng-led[data-page='1']",page:page)
-                values=try await visibleValues();XCTAssertTrue(values.contains("75%"))
+                try await waitForValue("75%")
                 try await click(".eng-keys .ek[data-scope='codex#saved_login_api#2']",page:page)
                 try await waitForCondition("second unverified member is selected") { page.verificationShellState?.scope == "codex#saved_login_api#2" }
                 let refreshed=expectation(description:"fresh synthetic response renders both collision members");nextRendered=refreshed
                 try await client.notifyRowsChanged()
                 await fulfillment(of:[refreshed],timeout:10)
                 _ = try await waitForDOM(page,label:"collision scope survives refresh") { $0["scopeKey"] as? String == "codex#saved_login_api#2" }
-                values=try await visibleValues();XCTAssertTrue(values.contains("75%"))
+                try await waitForValue("75%")
                 try await click(".eng-led[data-page='0']",page:page)
-                values=try await visibleValues();XCTAssertTrue(values.contains("18%"))
+                try await waitForValue("18%")
                 try await click(".eng-keys .ek[data-scope='codex#saved_login_api#1']",page:page)
                 try await waitForCondition("first unverified member is selected") { page.verificationShellState?.scope == "codex#saved_login_api#1" }
             }
