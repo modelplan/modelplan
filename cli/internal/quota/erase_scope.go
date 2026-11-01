@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // EraseScope is the engine's cleanup hook. It never reads tool credentials,
@@ -24,6 +25,9 @@ func EraseScope(p Paths, scope string, forget bool) error {
 			return err
 		}
 		defer unlock()
+		if err := speed.ForgetSource(p.Cache, tool); err != nil {
+			return err
+		}
 		if err := localusage.ForgetProductionHistoryLocked(p.Cache, tool); err != nil {
 			return err
 		}

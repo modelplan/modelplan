@@ -36,6 +36,7 @@ type liveSample struct {
 
 // LiveRecord is bounded local observation state, not a public session identifier.
 type LiveRecord struct {
+	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
 	Key             string       `json:"key"`
 	Ref             string       `json:"ref"`
 	Source          string       `json:"source"`
@@ -205,12 +206,12 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 	})
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
-	if x.cfg.model == "" || x.last.IsZero() || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
+	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(grantStart(l.admission, source)) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
-	r := LiveRecord{Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
+	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
 	for _, s := range l.Sessions {
-		if s.Key == key && s.Source == source {
+		if s.Key == key && s.Source == source && sameEpoch(s.GrantEpoch, r.GrantEpoch) {
 			r.Ref = s.Ref
 			r.ProjectRef = s.ProjectRef
 			r.SubscriptionRef = s.SubscriptionRef
@@ -222,7 +223,7 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 	}
 	at := -1
 	for i, old := range l.Live {
-		if old.Key == key && old.Source == source {
+		if old.Key == key && old.Source == source && sameEpoch(old.GrantEpoch, r.GrantEpoch) {
 			at = i
 			r.Ref = old.Ref
 			if old.StartedAt.Before(r.StartedAt) {
@@ -241,7 +242,7 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 		r.ProjectRef, _ = l.project(x.cwd)
 	}
 	for _, q := range x.requests {
-		if q.cfg != x.cfg || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
+		if q.cfg != x.cfg || q.end.Before(grantStart(l.admission, source)) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
 			continue
 		}
 		r.Samples = append(r.Samples, liveSample{At: q.end.UTC(), Out: q.out, GenMs: q.gen.Milliseconds(), Eligible: q.eligible()})
