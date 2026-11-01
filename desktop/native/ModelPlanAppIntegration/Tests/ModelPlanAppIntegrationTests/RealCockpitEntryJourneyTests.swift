@@ -14,8 +14,31 @@ import ModelPlanWire
 /// announce a start/end window of at most20 minutes on #570, and first adopt
 /// the matching #399 production bundle. No real account/Keychain scope exists.
 @MainActor final class RealCockpitEntryJourneyTests: XCTestCase {
-    func testNormalEntryUsesTheActualPinnedPageAndV2ShellProtocol() async throws {
+    func testNormalEntryUsesTheActualPinnedPageAndV2ShellProtocol() throws {
         #if MODELPLAN_TEST_ONLY_SPI
+        guard ProcessInfo.processInfo.environment["MODELPLAN_S6_REAL_PAGE"] == "1" else {
+            throw XCTSkip("Requires the announced synthetic WK journey window")
+        }
+        let application = NSApplication.shared
+        application.setActivationPolicy(.accessory)
+        var completion: Result<Void, Error>?
+        // An async XCTest loop is not NSApplication.run(): without the real
+        // Cocoa host loop the loaded panel cannot become key/active. Keep the
+        // production visibility gate and run the actual application event loop.
+        Task { @MainActor in
+            do { try await exerciseActualPage(); completion = .success(()) }
+            catch { completion = .failure(error) }
+            application.stop(nil)
+            if let wake = NSEvent.otherEvent(with:.applicationDefined,location:.zero,modifierFlags:[],timestamp:0,windowNumber:0,context:nil,subtype:0,data1:0,data2:0) { application.postEvent(wake,atStart:false) }
+        }
+        application.run()
+        try XCTUnwrap(completion,"The owned Cocoa loop stopped before the journey completed").get()
+        #else
+        throw XCTSkip("Compile only the announced WK journey with MODELPLAN_TEST_ONLY_SPI")
+        #endif
+    }
+    #if MODELPLAN_TEST_ONLY_SPI
+    private func exerciseActualPage() async throws {
         guard ProcessInfo.processInfo.environment["MODELPLAN_S6_REAL_PAGE"] == "1",
               let bundlePath = ProcessInfo.processInfo.environment["MODELPLAN_S6_PINNED_BUNDLE"] else {
             throw XCTSkip("Requires an announced synthetic WK window and the matching #399 bundle")
@@ -31,12 +54,17 @@ import ModelPlanWire
         defer { try? FileManager.default.removeItem(at: directory) }
         let bundle = try makeSyntheticApp(at: directory, cockpit: input, edition:edition)
         let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: nativeRoot.appendingPathComponent("ModelPlanCockpitWeb/Tests/ModelPlanCockpitWebTests/Fixtures/cockpit.json")))
+        let physical = try XCTUnwrap(NSScreen.main).visibleFrame
+        func placement(_ height:CGFloat) -> (CGRect,CGRect) {
+            (CGRect(x:physical.minX,y:physical.maxY-height,width:physical.width,height:height),
+             CGRect(x:physical.midX-10,y:physical.maxY,width:20,height:22))
+        }
         var pages: [CockpitWindowController] = [], clients = 0
         var nextRendered: XCTestExpectation?
         let previous = CommunityCockpitApplicationFactory.verificationPage
         defer { CommunityCockpitApplicationFactory.verificationPage = previous; pages.forEach { $0.discard() } }
         CommunityCockpitApplicationFactory.verificationPage = { page in
-            page.verificationPlacement = (CGRect(x: 0, y: 0, width: 1400, height: 1000), CGRect(x: 700, y: 1000, width: 20, height: 22))
+            page.verificationPlacement = placement(1000)
             page.verificationDidOpen = { [weak page] web, _ in
                 XCTAssertTrue(web.isHidden, "First paint waits for the initial frozen shell load")
                 XCTAssertFalse(page?.bridge.ready ?? true)
@@ -97,7 +125,7 @@ import ModelPlanWire
             try await click(".ck-head button[aria-label='Open']", page: page)
             _ = try await waitForDOM(page,label:"shutter reopens") { $0["shell"] as? String == "open" }
 
-            page.verificationPlacement = (CGRect(x:0,y:0,width:1400,height:705),CGRect(x:700,y:705,width:20,height:22))
+            page.verificationPlacement = placement(705)
             let forced = try await waitForDOM(page,label:"705pt forces actual compact closed page") { $0["shell"] as? String == "closed" && $0["layout"] as? String == "640" && $0["bodyHeight"] as? Double == 609 }
             XCTAssertEqual(page.verificationRootHeight, 609)
             let state = try XCTUnwrap(page.verificationShellState)
@@ -110,7 +138,7 @@ import ModelPlanWire
             let stillForced = try await snapshot(page)
             XCTAssertEqual(stillForced["shell"] as? String,"closed")
             XCTAssertTrue(try XCTUnwrap(page.verificationShellState).forcedClosed)
-            page.verificationPlacement = (CGRect(x:0,y:0,width:1400,height:1000),CGRect(x:700,y:1000,width:20,height:22))
+            page.verificationPlacement = placement(1000)
             _ = try await waitForDOM(page,label:"resize restores saved open intent") { $0["shell"] as? String == "open" && $0["layout"] as? String == "890" }
             XCTAssertFalse(try XCTUnwrap(page.verificationShellState).forcedClosed)
 
@@ -135,11 +163,7 @@ import ModelPlanWire
         XCTAssertEqual(pages.count,4, "All four normal actions create fresh production pages")
         XCTAssertEqual(clients, 1)
         app.composition.dock.setPresentationAllowed(false); await app.composition.stop()
-        #else
-        throw XCTSkip("Compile only the scheduled WK journey with MODELPLAN_TEST_ONLY_SPI; no GUI in ordinary unit checks")
-        #endif
     }
-    #if MODELPLAN_TEST_ONLY_SPI
     private var nativeRoot: URL {
         var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<3 { root.deleteLastPathComponent() }
@@ -193,11 +217,14 @@ import ModelPlanWire
     }
     private func waitForDOM(_ page:CockpitWindowController,label:String,predicate:([String:Any])->Bool) async throws -> [String:Any] {
         let deadline = ContinuousClock.now.advanced(by:.seconds(3))
+        var last:[String:Any] = [:]
         repeat {
-            let dom = try await snapshot(page)
+            let dom = try await snapshot(page); last = dom
             if predicate(dom) { return dom }
             try await Task.sleep(for:.milliseconds(20))
         } while ContinuousClock.now < deadline
+        let diagnostic:[String:Any] = ["stage":label,"active":last["active"] ?? "missing","state":last["state"] ?? "missing","shell":last["shell"] ?? "missing","layout":last["layout"] ?? "missing","appActive":NSApp.isActive,"appRunning":NSApp.isRunning,"windowCanBecomeKey":page.window?.canBecomeKey ?? false,"windowOnActiveSpace":page.window?.isOnActiveSpace ?? false,"windowAlpha":page.window?.alphaValue ?? -1,"windowVisible":page.window?.isVisible ?? false,"windowKey":page.window?.isKeyWindow ?? false,"windowOccluded":!(page.window?.occlusionState.contains(.visible) ?? false)]
+        print("S6 synthetic window status:",diagnostic)
         XCTFail(label); throw ScriptFailure.deadline
     }
     private func waitForCondition(_ label:String,predicate:()->Bool) async throws {
