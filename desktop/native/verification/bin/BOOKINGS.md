@@ -129,8 +129,11 @@ confirmed closure. It is not repeated here, so the two cannot drift apart.
 M1 does not run there: V1 writes the release with `release.py --lane V1 --host macci
 --coordinator-go GO_URL` (the coordinator's GO comment on the handoff issue, a GitHub
 issue-comment URL) and `MODELPLAN_VERIFICATION_HOST=macci`; the run config sets `"host": "macci"`
-and usually `"launchMode": "launchservices"`. Details, launch modes and the never-started closure
+and usually `"launchMode": "launchservices"` (with `"subjectKind": "app-zip"` for a full signed
+`.app` zip). Details, launch modes, synthetic-data limits and the never-started closure
 are in [`../SKILL.md`](../SKILL.md#macci-lane-v1). On the dev Mac only M1 releases, unchanged.
+The never-started scan matches only by executable path (exact subject or bundle prefix) and by
+helper PID plus start time recorded at spawn; it never reads other processes' environments.
 
 If work is abandoned **while still queued**, replace start/release/launch with:
 

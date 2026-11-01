@@ -10,10 +10,11 @@ Run it in the background right after `book.py start`, before `release.py` and `l
   On every exit path it writes the stop file and, if `--subject-pid-file` names a live subject,
   terminates it (TERM, then KILL) and waits for it to be gone.
 - A subject that never registered (the reservation is still `launching`) is closed by a
-  project-scoped scan instead: the launcher records the run's exact executable path and synthetic
-  HOME in the reservation, and the guardian (once that launcher is gone) stops any owned process
-  inside that scope and rescans. An empty scan reports `subject: never-started`. A reservation
-  without a scope stays unconfirmed. Process names are never used.
+  project-scoped scan instead: the launcher records the run's exact executable path, its scratch
+  prefix and the PID plus start time of each helper it spawns in the reservation, and the guardian
+  (once that launcher is gone) stops any owned process inside that scope and rescans. An empty scan
+  reports `subject: never-started`. A reservation without a scope stays unconfirmed. Process names
+  and other processes' environments are never read.
 - Exit status 0 means closure is verified and the booking may be finished as cleaned: either the
   run ended normally with the subject confirmed gone, or the scan proved the subject never started.
   Anything else means closure is NOT verified.
@@ -145,6 +146,21 @@ def mark_launching(pid_file, lookup=None, scope=None, mode=None):
             record['launchMode'] = mode
         write_atomic(pid_file, record)
         return me
+
+
+def add_helper(pid_file, launcher, helper):
+    """The reserving controller records a helper it just spawned (PID plus start time) in the scope."""
+    with registration(pid_file):
+        try:
+            current = json.loads(pid_file.read_text())
+        except (OSError, ValueError):
+            raise ValueError('reservation missing')
+        if (current.get('state') != 'launching' or not cleanup.matches(launcher, current.get('launcher') or {})
+                or not process_scan.valid_scope(current.get('scan'))):
+            raise ValueError('scoped reservation not held by this controller')
+        current['scan'] = process_scan.with_helper(current['scan'], helper)
+        write_atomic(pid_file, current)
+        return current['scan']
 
 
 def register(pid_file, pid, launcher=None, lookup=None):
