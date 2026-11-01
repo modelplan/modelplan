@@ -133,7 +133,18 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 		t.Fatalf("expected cached scope missing: %s", fmt.Sprint(len(cached)))
 	}
 	legacy := strings.Replace(string(cached), prior, replacement, 1)
-	legacy = strings.Replace(legacy, `"limit":"unknown"`, `"limit":"synthetic-token-shaped-secret requests"`, 1)
+	var cacheState struct {
+		Entries []struct {
+			Account quota.Account `json:"account"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(cached, &cacheState); err != nil {
+		t.Fatal(err)
+	}
+	if len(cacheState.Entries) == 0 || len(cacheState.Entries[0].Account.Windows) == 0 || !strings.HasPrefix(cacheState.Entries[0].Account.Windows[0].Limit, "unknown-") {
+		t.Fatal("expected opaque cached label")
+	}
+	legacy = strings.Replace(legacy, `"limit":"`+cacheState.Entries[0].Account.Windows[0].Limit+`"`, `"limit":"synthetic-token-shaped-secret requests"`, 1)
 	if !strings.Contains(legacy, `"limit":"synthetic-token-shaped-secret requests"`) {
 		t.Fatal("legacy limit injection failed")
 	}

@@ -104,9 +104,7 @@ final class DecodeTests: XCTestCase {
         accounts[0]["windows"] = windows
         rows[0]["accounts"] = accounts
         projection["rows"] = rows
-        let decoded = try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection))
-        XCTAssertTrue(decoded.rows[0].invalid)
-        XCTAssertTrue(decoded.rows[0].accounts.isEmpty)
+        XCTAssertThrowsError(try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection)))
     }
 
     func testRequiredFieldsRemainRequired() throws {

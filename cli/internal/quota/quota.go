@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -211,13 +212,12 @@ func (a Account) MarshalJSON() ([]byte, error) {
 	return json.Marshal(accountJSON(a))
 }
 
-// SafeLimit keeps shape-validated labels from fresh Gemini readings, while
-// retaining the reviewed-vocabulary fence for older, unmarked cached labels.
-// Other providers keep their independent label vocabularies.
+// SafeLimit permits only reviewed IDs or the bounded opaque labels generated for
+// fresh Gemini windows. ScopeKnown alone never makes provider text safe to emit.
 func (a Account) SafeLimit(label string) string {
 	if a.Source == "native:gemini" {
 		for _, w := range a.Windows {
-			if w.ScopeKnown && w.Limit == label && validGeminiLimit(label) {
+			if w.ScopeKnown && w.Limit == label && opaqueGeminiLimit.MatchString(label) {
 				return label
 			}
 		}
@@ -226,17 +226,7 @@ func (a Account) SafeLimit(label string) string {
 	return label
 }
 
-// Fresh Gemini labels are a validated model identifier and an optional fixed
-// token-type suffix. ScopeKnown distinguishes them from unmarked legacy caches.
-func validGeminiLimit(label string) bool {
-	for _, suffix := range []string{" input tokens", " output tokens", " requests", " tokens"} {
-		if strings.HasSuffix(label, suffix) {
-			label = strings.TrimSuffix(label, suffix)
-			break
-		}
-	}
-	return geminiIdentifier.MatchString(label)
-}
+var opaqueGeminiLimit = regexp.MustCompile(`^unknown-[0-9a-f]{16}( input tokens| output tokens| requests| tokens)?$`)
 
 // Gemini labels consist only of a reviewed model ID and a fixed token suffix.
 func safeGeminiLimit(label string) string {

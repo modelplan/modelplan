@@ -80,7 +80,7 @@ func TestLegacyGeminiLabelIsSanitizedInAdviceAndKey(t *testing.T) {
 }
 
 func TestGeminiScopedWindowsHaveDistinctAdviceKeys(t *testing.T) {
-	labels := []string{"gemini-pro requests", "gemini-2.5-pro requests", "gemini-2.5-flash-lite requests", "gemini-3.0-flash requests"}
+	labels := []string{"unknown-0000000000000001 requests", "gemini-2.5-pro requests", "unknown-0000000000000002 requests", "unknown-0000000000000003 requests"}
 	a := quota.Account{Source: "native:gemini"}
 	for _, label := range labels {
 		a.Windows = append(a.Windows, quota.Window{Kind: "unknown", Limit: label, ScopeKnown: true})

@@ -296,7 +296,18 @@ func TestGeminiDistinctBucketLabelsAndCacheKeys(t *testing.T) {
 	if !ok || len(windows) != 4 {
 		t.Fatalf("quota buckets: %v %+v", ok, windows)
 	}
-	want := []string{"gemini-pro requests", "gemini-2.5-pro requests", "gemini-2.5-flash-lite requests", "gemini-3.0-flash requests"}
+	want := make([]string, len(windows))
+	for i, w := range windows {
+		want[i] = w.Limit
+	}
+	if want[1] != "gemini-2.5-pro requests" {
+		t.Fatalf("reviewed label changed: %q", want[1])
+	}
+	for _, i := range []int{0, 2, 3} {
+		if !strings.HasPrefix(want[i], "unknown-") {
+			t.Fatalf("unreviewed label was exposed: %q", want[i])
+		}
+	}
 	a := Account{Source: "native:gemini", Windows: windows}
 	seen := map[string]bool{}
 	for i, w := range windows {
@@ -308,9 +319,23 @@ func TestGeminiDistinctBucketLabelsAndCacheKeys(t *testing.T) {
 			t.Fatalf("model scope was not independently sanitized: %+v", w.ModelIDs)
 		}
 	}
+	again, ok := parseGeminiQuota(q, geminiNow)
+	if !ok || len(again) != len(windows) {
+		t.Fatal("second quota parsing failed")
+	}
+	for i := range windows {
+		if again[i].Limit != windows[i].Limit {
+			t.Fatalf("bucket %d label is not stable", i)
+		}
+	}
 	data, err := json.Marshal(a)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, raw := range []string{"gemini-pro", "gemini-2.5-flash-lite", "gemini-3.0-flash"} {
+		if strings.Contains(string(data), raw) {
+			t.Fatalf("unreviewed provider label leaked: %q", raw)
+		}
 	}
 	var cached Account
 	if err := json.Unmarshal(data, &cached); err != nil {

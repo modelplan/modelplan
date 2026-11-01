@@ -9,8 +9,10 @@ package quota
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"io"
@@ -353,7 +355,12 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if !geminiIdentifier.MatchString(b.Model) {
 			return nil, false
 		}
-		label := b.Model
+		scope := rows.SanitizeModelIDs([]string{b.Model})
+		label := scope[0]
+		if label == "unknown" {
+			sum := sha256.Sum256([]byte("modelplan:gemini-quota-label:v1:" + b.Model))
+			label = fmt.Sprintf("unknown-%x", sum[:8])
+		}
 		switch b.TokenType {
 		case "REQUESTS":
 			label += " requests"
@@ -374,7 +381,7 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if reset != nil && !reset.After(now) {
 			continue
 		}
-		w := Window{Kind: "unknown", Limit: label, ModelIDs: rows.SanitizeModelIDs([]string{b.Model}), ScopeKnown: true, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
+		w := Window{Kind: "unknown", Limit: label, ModelIDs: scope, ScopeKnown: true, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
 		if b.Remaining != nil {
 			if math.IsNaN(*b.Remaining) || math.IsInf(*b.Remaining, 0) || *b.Remaining < 0 || *b.Remaining > 1 {
 				return nil, false
