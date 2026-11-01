@@ -127,6 +127,10 @@ private struct S1Manifest: Decodable {
 
 /// Report-only, opt-in synthetic evidence. It does not mark visual acceptance.
 @MainActor public enum S1Gallery {
+    private static func envPublishedOutput(defaultOutput: URL) -> URL {
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_S1_PUBLISHED_DIR"], !path.isEmpty else { return defaultOutput }
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    }
     public static func run(goldenPath: String, outputPath: String) async throws {
         _ = NSApplication.shared
         let fm = FileManager.default, golden = URL(fileURLWithPath: goldenPath, isDirectory: true)
@@ -145,7 +149,10 @@ private struct S1Manifest: Decodable {
         let oracleURL = URL(fileURLWithPath: oraclePath).standardizedFileURL
         // The HTML uses this project-relative handoff link; verify it resolves
         // to exactly the input whose bytes and hashes are checked below.
-        let linkedGolden = output.appendingPathComponent("../../handoffs/20261101-dock-golden", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        // Reports may be generated in owned scratch and published only after
+        // completion. Validate links against the intended final directory.
+        let publishedOutput = envPublishedOutput(defaultOutput: output)
+        let linkedGolden = publishedOutput.appendingPathComponent("../../handoffs/20261101-dock-golden", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
         guard linkedGolden == golden.standardizedFileURL.resolvingSymlinksInPath() else { throw CocoaError(.fileReadInvalidFileName) }
         let oracleBytes = try Data(contentsOf: oracleURL)
         guard SHA256.hash(data: oracleBytes).map({ String(format: "%02x", $0) }).joined() == "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb" else { throw CocoaError(.fileReadCorruptFile) }
