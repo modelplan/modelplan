@@ -25,6 +25,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// The signed package controls this single beta-only mark switch.
     @_spi(DockResourceChecks) public var zaiMarkEnabled = (Bundle.main.object(forInfoDictionaryKey: "zaiMarkEnabled") as? Bool) ?? false
     @_spi(DockResourceChecks) public var presentedNoticesForChecks: [String: DockNotice] { failed ? [:] : notices }
+    @_spi(DockResourceChecks) public var presentedReadingsForChecks: [String: DockInstrumentReading] { failed ? [:] : readings }
     /// Read-only capture of the currently presented synthetic test surface.
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }

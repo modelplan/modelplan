@@ -82,6 +82,17 @@ private struct S1FlameManifest: Decodable {
     }
 }
 
+/// Mirrors the capture's Claude, single 75% ring and no reset-clock fixture.
+@MainActor private final class S1FlameComparisonProvider: DockContentProvider {
+    func makeContent(_ context: DockContentContext) -> DockContent {
+        var input = DockInstrumentInput(id: "claude", name: "Claude", windows: [
+            .init(id: "synthetic-window", period: .fiveHour, label: "5h", remainingPercent: 75,
+                  resetsAt: nil, durationSeconds: nil)])
+        input.dataState = .fresh; input.vendorResourceKey = "claude"
+        return .init(snapshot: .init(inputs: [input]))
+    }
+}
+
 @MainActor private enum S1PixelReport {
     struct Result {
         let native: Data
@@ -381,8 +392,9 @@ private struct S1FlameManifest: Decodable {
             host.close(); row["status"] = status; records.append(row)
             html += "<tr><td>\(label)</td><td>no golden</td><td>\(cell)</td><td>\(status)</td></tr>"
         }
-        let frameNames = (0..<9).map { "flame-normal-44pt-2x-1mag-pose\($0).png" }
-        let flameNames = frameNames + ["prototype-live-normal-rotating.webm", "prototype-rotating-normal-strip.png"]
+        let flameStates = ["normal", "warning", "critical"]
+        let frameNames = flameStates.flatMap { state in (0..<9).map { "flame-\(state)-52pt-2x-1mag-pose\($0).png" } }
+        let flameNames = frameNames + flameStates.flatMap { ["prototype-live-\($0)-rotating.webm", "prototype-rotating-\($0)-strip.png"] }
         for name in flameNames {
             guard let entry = flameManifest.files.first(where: { $0.file == name }),
                   flameManifest.files.filter({ $0.file == name }).count == 1 else { throw CocoaError(.fileReadCorruptFile) }
@@ -392,40 +404,66 @@ private struct S1FlameManifest: Decodable {
             let target = refRoot.appendingPathComponent("handoffs__shared__s1-flame-frames__" + name)
             try bytes.write(to: target, options: .withoutOverwriting); written.append(target)
         }
-        // Real shared-pool playback, driven exclusively by a synthetic member signal.
-        do {
-            let store = try SettingsStore(url: temp.appendingPathComponent("settings-flame.json"))
-            try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.autoHide = false; $0.motion = .system }
-            let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
-            defer { host.close() }
-            host.captureBackingScaleForChecks = 2
-            host.setDockContentProvider(S1SyntheticProvider(count: 1, now: now))
-            let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
-            await coordinator.reload(); host.setPresentationAllowed(true)
-            let pool = EffectResourcePool()
-            host.installWorkingEffectsForChecks(pool: pool, provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: { false })
-            try host.setWorkingSignals([.init(subscriptionID: "codex", bindingVerified: true, fresh: true, observedOutput: true)])
-            guard host.activeWorkingEffectIDs.contains("codex"), host.rotatingWorkingEffectIDs.contains("codex"),
-                  let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
-            html += "<tr><td>Rotating prototype vs captured frames vs native playback (synthetic, owner review pending)</td><td><video controls width=\"260\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-live-normal-rotating.webm\"></video></td><td><img width=\"260\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-rotating-normal-strip.png\" alt=\"rotating prototype strip\"><br>Captured poses (44 pt, 2x):<br>" + (0..<9).map { "<img width=\"44\" src=\"ref/handoffs__shared__s1-flame-frames__flame-normal-44pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
-            var files = [String]()
-            for pose in 0..<9 {
-                host.seekWorkingEffectsForChecks(Double(pose) / 9 + 0.00001)
-                let w = Int(ceil(host.dockView.bounds.width * 2)), h = Int(ceil(host.dockView.bounds.height * 2))
-                guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
-                context.translateBy(x: 0, y: CGFloat(h)); context.scaleBy(x: 2, y: -2)
-                host.dockView.displayIfNeeded(); layer.render(in: context)
-                guard let image = context.makeImage(), let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
-                let file = "native-working-pose\(pose).png"; try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
-                written.append(output.appendingPathComponent(file)); files.append(file)
-                html += "<img width=\"130\" src=\"\(file)\" alt=\"native pose \(pose)\">"
+        // The source fixture intentionally holds its arc at 75% while varying colour.
+        // The override is available only to detached synthetic hosts, never real panels.
+        for (state, status) in [("normal", DockQuotaStatus.normal), ("warning", .warning), ("critical", .critical)] {
+            var nativeFiles = [String](), scores = [Double]()
+            var rowStatus = "not-run: synthetic playback failed"
+            do {
+                let store = try SettingsStore(url: temp.appendingPathComponent("settings-flame-" + state + ".json"))
+                try await store.update { $0.dockEdge = .right; $0.size = .large; $0.dockDisplayID = "s1-synthetic"; $0.autoHide = false; $0.motion = .system; $0.showPercentages = false }
+                let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+                defer { host.close() }
+                host.captureBackingScaleForChecks = 2
+                host.setDockContentProvider(S1FlameComparisonProvider())
+                let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+                await coordinator.reload(); host.setPresentationAllowed(true)
+                let pool = EffectResourcePool()
+                host.installWorkingEffectsForChecks(pool: pool, provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: { false })
+                host.setComparisonStatusForChecks(id: "claude", status: status)
+                try host.setWorkingSignals([.init(subscriptionID: "claude", bindingVerified: true, fresh: true, observedOutput: true)])
+                guard host.activeWorkingEffectIDs.contains("claude"), host.rotatingWorkingEffectIDs.contains("claude"),
+                      let reading = host.dockView.presentedReadingsForChecks["claude"], reading.status == status,
+                      reading.outer?.fraction == 0.75, reading.inner == nil, reading.vendorResourceKey == "claude", reading.jetEligible,
+                      let skin = host.dockView.presentedSkinForChecks,
+                      let station = skin.stations.first(where: { $0.subscriptionID == "claude" }), abs(station.diameter - 52) < 0.001,
+                      let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
+                let refName = "ref/handoffs__shared__s1-flame-frames__prototype-rotating-" + state + "-strip.png"
+                guard let reference = NSBitmapImageRep(data: try Data(contentsOf: output.appendingPathComponent(refName))),
+                      reference.pixelsWide == 936, reference.pixelsHigh == 104 else { throw CocoaError(.fileReadCorruptFile) }
+                html += "<tr><td>52pt Claude, 75% outer, \(state) (synthetic)</td><td><video controls width=\"104\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-live-\(state)-rotating.webm\"></video></td><td><img width=\"468\" src=\"\(refName)\" alt=\"prototype strip\"><br>Captured poses:<br>" + (0..<9).map { "<img width=\"52\" src=\"ref/handoffs__shared__s1-flame-frames__flame-\(state)-52pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
+                for pose in 0..<9 {
+                    host.seekWorkingEffectsForChecks(Double(pose) / 9 + 0.00001)
+                    let w = Int(ceil(host.dockView.bounds.width * 2)), h = Int(ceil(host.dockView.bounds.height * 2))
+                    guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
+                    context.translateBy(x: 0, y: CGFloat(h)); context.scaleBy(x: 2, y: -2)
+                    host.dockView.displayIfNeeded(); layer.render(in: context)
+                    let crop = CGRect(x: ((station.centre.x - 26 - skin.bounds.minX) * 2).rounded(),
+                                      y: ((station.centre.y - 26 - skin.bounds.minY) * 2).rounded(), width: 104, height: 104)
+                    guard let image = context.makeImage()?.cropping(to: crop), image.width == 104, image.height == 104,
+                          let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+                    let native = NSBitmapImageRep(cgImage: image); var error = 0.0
+                    for y in 0..<104 { for x in 0..<104 {
+                        guard let a = native.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                              let b = reference.colorAt(x: pose * 104 + x, y: y)?.usingColorSpace(.sRGB) else { throw CocoaError(.fileReadCorruptFile) }
+                        let bg: [Double] = [16.0/255, 24.0/255, 28.0/255]
+                        for (ac, bc, background) in zip(zip([a.redComponent, a.greenComponent, a.blueComponent], [b.redComponent, b.greenComponent, b.blueComponent]), bg).map({ ($0.0.0, $0.0.1, $0.1) }) {
+                            error += abs(Double(ac) * Double(a.alphaComponent) + background * (1 - Double(a.alphaComponent)) - Double(bc) * Double(b.alphaComponent) - background * (1 - Double(b.alphaComponent)))
+                        }
+                    }}
+                    scores.append(1 - error / Double(104 * 104 * 3))
+                    let file = "native-working-\(state)-pose\(pose).png"; try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
+                    written.append(output.appendingPathComponent(file)); nativeFiles.append(file)
+                    html += "<img width=\"104\" src=\"\(file)\" alt=\"\(state) native pose \(pose)\">"
+                }
+                html += "</td></tr>"
+                rowStatus = "report-only: 52pt Claude synthetic fixture; owner visual review pending"
+            } catch {
+                html += "<tr><td>\(state) working</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
+                rowStatus = "not-run: \(String(describing: error))"
             }
-            html += "</td></tr>"
-            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "nativeFiles": files, "status": "report-only: rotating prototype reference and native shared-pool playback; owner visual review pending"])
-        } catch {
-            html += "<tr><td>synthetic-working-strip</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
-            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "status": "not-run: \(String(describing: error))"])
+            records.append(["scenario": "synthetic-working-" + state, "fixture": "52pt Claude, 75% outer, independent synthetic state", "nativeFiles": nativeFiles, "frameMetrics": scores, "metricKind": "1 - mean absolute RGB error", "status": rowStatus])
         }
         html += "</table><p>Null metrics are not passes. Metrics exclude only percentage glyph ink, and require geometry and owner review. Button states remain unsupported.</p>"
         try Data(html.utf8).write(to: output.appendingPathComponent("index.html"), options: .withoutOverwriting)

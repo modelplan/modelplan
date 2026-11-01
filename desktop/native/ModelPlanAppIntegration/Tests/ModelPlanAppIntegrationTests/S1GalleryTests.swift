@@ -2,9 +2,23 @@
 import Foundation
 import XCTest
 @testable import S1GalleryCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 
 @MainActor final class S1GalleryTests: XCTestCase {
+    func testComparisonFixtureKeepsSingle75PercentRingAndIdentity() throws {
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        var input = DockInstrumentInput(id: "claude", name: "Claude", windows: [.init(id: "synthetic-window", period: .fiveHour, label: "5h", remainingPercent: 75, resetsAt: nil, durationSeconds: nil)])
+        input.dataState = .fresh; input.vendorResourceKey = "claude"
+        let reading = try DockInstrumentProjection.evaluate(input, now: now)
+        for state in [DockQuotaStatus.normal, .warning, .critical] {
+            let fixture = reading.comparisonFixture(status: state)
+            XCTAssertEqual(fixture.subscriptionID, "claude"); XCTAssertEqual(fixture.vendorResourceKey, "claude")
+            XCTAssertEqual(fixture.outer?.fraction, 0.75); XCTAssertEqual(fixture.outer?.status, state)
+            XCTAssertEqual(fixture.status, state); XCTAssertNil(fixture.inner)
+        }
+        XCTAssertEqual(reading.status, .normal, "The original production projection is unchanged")
+    }
+
     func testGoldenSelectedWeeklyClockUsesReportedReset() throws {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         let input = try XCTUnwrap(S1SyntheticProvider(count: 1, now: now).inputs.first)

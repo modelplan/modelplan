@@ -4,7 +4,7 @@ import OSLog
 import CoreGraphics
 import ModelPlanCore
 import ModelPlanShell
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanCommunityHost
@@ -107,6 +107,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             let first = projection.menuNotice.map { attention.firstAppearance(of: $0.key, on: .menu) } ?? false
             callback(projection.menuNotice, first)
         }
+    }
+    private var comparisonStatuses: [String: DockQuotaStatus] = [:]
+    /// Only detached synthetic hosts may match the prototype's independent fixture level.
+    @_spi(DockResourceChecks) public func setComparisonStatusForChecks(id: String, status: DockQuotaStatus) {
+        guard !createsNativePanels, !retired, !id.isEmpty, status != .unknown else { return }
+        comparisonStatuses = [id: status]; inputGeneration &+= 1; rebuild()
     }
     private var workingSignals: [String: DockWorkingSignal] = [:]
     private var workingDriver: DockWorkingEffects?
@@ -461,7 +467,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let rows = order.compactMap { byID[$0] }.compactMap { input -> DockInstrumentReading? in
             var value = passPreferences.applying(to: input)
             if let signal = workingSignals[input.id] { value.working = signal }
-            return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
+            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow)) else { return nil }
+            if !createsNativePanels, let fixtureStatus = comparisonStatuses[input.id] { return reading.comparisonFixture(status: fixtureStatus) }
+            return reading
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
