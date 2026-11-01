@@ -134,6 +134,12 @@ private actor S4RowsClient: EngineClient {
         let unlinked=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(unlinked)
         try require(entry.composition.resetSignals.first(where:{$0.id == matching.id})?.reset == nil,"unlinked confirmations must be discarded")
+        var linked=events[0];linked["confirms"]=decoded[0].id
+        projection["resetEvents"]=[events[0],linked];data["projection"]=projection
+        let mixed=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(mixed)
+        guard case .available(let retained)=entry.composition.rowEvents else { throw Failure(description:"linked confirmation missing") }
+        try require(retained.count == 1 && retained[0].status == "confirmed","an invalid confirmation must not shadow a later valid confirmation")
         events[0]["status"]="announced"
         projection["resetEvents"]=[];data["projection"]=projection
         let empty=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))

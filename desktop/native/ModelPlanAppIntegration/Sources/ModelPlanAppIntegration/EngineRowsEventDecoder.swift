@@ -27,9 +27,9 @@ public enum EngineRowsEventDecoder {
         var seen=Set<String>()
         let decoded=events.compactMap { event -> EngineResetEvent? in
             guard event.version == 1, event.status.isKnown, rowIDs.contains(event.rowId),
-                  let published=date(event.publishedAt), let expires=date(event.expiresAt), published < expires,
-                  seen.insert(event.rowId+"#"+event.id+"#"+event.status.rawValue).inserted else { return nil }
+                  let published=date(event.publishedAt), let expires=date(event.expiresAt), published < expires else { return nil }
             if event.status == .confirmed && (event.confirms?.isEmpty ?? true) { return nil }
+            guard seen.insert(event.rowId+"#"+event.id+"#"+event.status.rawValue).inserted else { return nil }
             return .init(id:event.id,rowID:event.rowId,provider:event.provider,status:event.status.rawValue,
                          publishedAt:published,expiresAt:expires,planIDs:event.planIds,confirms:event.confirms)
         }
