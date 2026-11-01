@@ -323,3 +323,45 @@ func TestNewLedgerDoesNotShowCopiedForkHistoryAsTwoLiveSessions(t *testing.T) {
 		t.Fatalf("live=%+v rows=%+v", v.LiveSessions(), v.Ledger.Rows)
 	}
 }
+
+func TestLiveRateRejectsInvalidAndOverflowingCachedSamples(t *testing.T) {
+	now := time.Now().UTC()
+	const maxInt64 = int64(^uint64(0) >> 1)
+	for _, tc := range []struct {
+		name           string
+		out, ms        int64
+		valid, invalid int
+		wantN          int
+		wantValue      *float64
+	}{
+		{name: "negative-output", out: -10, ms: 100, invalid: 5},
+		{name: "zero-output", out: 0, ms: 100, invalid: 5},
+		{name: "negative-duration", out: 10, ms: -100, invalid: 5},
+		{name: "zero-duration", out: 10, ms: 0, invalid: 5},
+		{name: "insufficient-valid", out: -10, ms: 100, valid: 4, invalid: 1, wantN: 4},
+		{name: "overflow-output", out: maxInt64, ms: 100, invalid: 5, wantN: 1},
+		{name: "overflow-duration", out: 10, ms: maxInt64, invalid: 5, wantN: 1},
+		{name: "rounded-zero", out: 1, ms: 100000, invalid: 5, wantN: 5, wantValue: floatPtr(0)},
+		{name: "valid-positive", out: 100, ms: 1000, invalid: 5, wantN: 5, wantValue: floatPtr(100)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := LiveRecord{Ref: "0123456789abcdef", Source: "codex", Model: "synthetic", LastAt: now.Add(-time.Second)}
+			for i := 0; i < tc.valid; i++ {
+				r.Samples = append(r.Samples, liveSample{At: now.Add(-time.Second), Out: 100, GenMs: 1000, Eligible: true})
+			}
+			for i := 0; i < tc.invalid; i++ {
+				r.Samples = append(r.Samples, liveSample{At: now.Add(-time.Second), Out: tc.out, GenMs: tc.ms, Eligible: true})
+			}
+			got := (PerfView{OK: true, Recording: true, Now: now, Ledger: PerfLedger{Live: []LiveRecord{r}}}).LiveSessions()
+			if len(got) != 1 || got[0].Rate.N != tc.wantN {
+				t.Fatalf("rate sample count: %#v", got)
+			}
+			value := got[0].Rate.Value
+			if (value == nil) != (tc.wantValue == nil) || value != nil && (*value != *tc.wantValue || *value < 0) {
+				t.Fatalf("rate value: %#v", got[0].Rate)
+			}
+		})
+	}
+}
+
+func floatPtr(value float64) *float64 { return &value }

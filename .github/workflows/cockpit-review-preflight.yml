@@ -1,0 +1,39 @@
+name: Cockpit flock review preflight
+on:
+  push:
+    branches: [ci/414-flock-preflight]
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Format affected Go sources
+        run: gofmt -w cli/internal/speed/speed.go cli/internal/speed/lock_unix.go cli/internal/speed/lock_other.go cli/internal/speed/lock_unix_test.go cli/internal/quota/connect.go cli/internal/consent/consent_test.go cli/cmd/modelplan/cockpit_erase_test.go
+      - name: Save formatting patch
+        if: always()
+        run: git diff --binary > "$RUNNER_TEMP/flock-format.patch"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flock-format-${{ matrix.os }}
+          path: ${{ runner.temp }}/flock-format.patch
+      - name: Vet affected packages
+        working-directory: cli
+        run: go vet ./internal/speed ./internal/consent ./internal/quota ./cmd/modelplan
+      - name: Test affected packages
+        working-directory: cli
+        run: go test -count=1 ./internal/speed ./internal/consent ./internal/quota ./cmd/modelplan
+      - name: Full Go vet and tests
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: cli
+        run: go vet ./... && go test ./...
+      - run: node scripts/check-source-policy.mjs

@@ -89,7 +89,6 @@ const (
 	maxFile    = 2 << 20
 	maxScan    = 8 << 20 // bytes read from one log per run
 	maxLine    = 4 << 20 // longer lines (huge tool output) are skipped unread
-	lockStale  = 10 * time.Second
 	statusGap  = 15 * time.Second // the status line refreshes often; read at most this often from it
 	MinSamples = 5                // fewer requests or turns than this give no median or rate
 )
@@ -431,20 +430,19 @@ func (h Hist) Median() float64 {
 	return 0
 }
 
-func lock(cache, name string) (func(), bool) {
-	p := filepath.Join(cache, "observed", name)
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+// LockLedgersForCleanup uses the same advisory locks and lock order as
+// the speed writers. The caller must already hold the consent reader lock.
+func LockLedgersForCleanup(cache string) (func(), bool) {
+	unlockSpeed, ok := lock(cache, "speed.lock")
+	if !ok {
 		return nil, false
 	}
-	if fi, err := os.Stat(p); err == nil && time.Since(fi.ModTime()) > lockStale {
-		_ = os.Remove(p) // left behind by a killed process
-	}
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
+	unlockPerf, ok := lock(cache, "perf.lock")
+	if !ok {
+		unlockSpeed()
 		return nil, false
 	}
-	f.Close()
-	return func() { _ = os.Remove(p) }, true
+	return func() { unlockPerf(); unlockSpeed() }, true
 }
 
 func write(p string, b []byte) error {
