@@ -3,11 +3,15 @@ on:
   pull_request:
     paths:
       - 'desktop/official-visuals/dock/**'
+      - 'desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
       - '.github/workflows/official-dock.yml'
   push:
     branches: [main]
     paths:
       - 'desktop/official-visuals/dock/**'
+      - 'desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
       - '.github/workflows/official-dock.yml'
 permissions:
   contents: read
@@ -17,8 +21,10 @@ concurrency:
 jobs:
   geometry:
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Synthetic T2 geometry tests
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
+      - name: Generic material seam (no GUI)
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter T2MaterialSeamTests --jobs 2

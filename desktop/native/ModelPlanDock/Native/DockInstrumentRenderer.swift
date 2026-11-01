@@ -45,8 +45,12 @@ public struct DockGlyphMetric: Sendable {public let text:String,font:String;publ
 public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
 
 @MainActor public final class DockInstrumentRenderer {
+    /// Static material only. Reading text, quotas and vendor identity remain in
+    /// the instrument pass so a clear can retire them independently.
+    public typealias Material = @MainActor (DockInstrumentSkin, Int) throws -> CGImage
     private let resources:DockArtworkStore
-    public init(resources:DockArtworkStore){self.resources=resources}
+    private let material:Material?
+    public init(resources:DockArtworkStore, material:Material? = nil){self.resources=resources;self.material=material}
     public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int) throws -> DockRenderResult {
         func finite(_ p:CGPoint)->Bool{p.x.isFinite && p.y.isFinite && abs(p.x)<=1_000_000 && abs(p.y)<=1_000_000}
         func finiteRect(_ r:CGRect)->Bool{finite(r.origin) && r.width.isFinite && r.height.isFinite && r.width>0 && r.height>0 && r.width<=4096 && r.height<=4096}
@@ -76,7 +80,12 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.saveGState();c.clip(to:rect);c.translateBy(x:rect.minX,y:rect.maxY);c.scaleBy(x:1,y:-1)
             c.draw(image,in:CGRect(origin:.zero,size:rect.size));c.restoreGState()
         }
-        if !skin.bodyPolygon.isEmpty {
+        if let material {
+            let backing = try material(skin, scale)
+            guard backing.width == width, backing.height == height else { throw DockArtworkError.invalidManifest }
+            c.saveGState();c.translateBy(x:skin.bounds.minX,y:skin.bounds.maxY);c.scaleBy(x:1,y:-1)
+            c.draw(backing,in:CGRect(origin:.zero,size:skin.bounds.size));c.restoreGState()
+        } else if !skin.bodyPolygon.isEmpty {
             c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath()
         }
         for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect,preserveSourcePixels:true)}
