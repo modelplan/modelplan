@@ -9,7 +9,7 @@ const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
 const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(n/10)));
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
- let nativeShell:ShellState|null=null,profile:Appearance['profile']='full';
+ let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
  const frame=prototypeFrame(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const attach=element('button',undefined,'key'),shutter=element('button',undefined,'key'),close=element('button',undefined,'key');
@@ -30,7 +30,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;shutter.disabled=!active||!nativeShell||forced;open.disabled=!active||!nativeShell||forced;
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   for(const selector of ['.ck-portrow','.ck-eng','.ck-deck','.ck-tape']){const e=root.querySelector<HTMLElement>(selector)!;e.style.display=closed?'none':'';}
-  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(profile==='full'?691:609):(profile==='full'?890:640))+'px');
+  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?890:640))+'px');
   if(closed)stop();
  }
  function localise(){
@@ -66,9 +66,9 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  }
  setEmpty(words.en.waiting);
  return {
-  configure(value){locale=value.locale;profile=value.profile;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.profile=value.profile;const h=value.profile==='full'?890:640,layout=cockpitLayout(h);root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');root.style.setProperty('--body-h',h+'px');frame.settings.textContent=words[locale].settings;frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty(words[locale].waiting);shellControls();},
+  configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);frame.settings.textContent=words[locale].settings;frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty(words[locale].waiting);},
   updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();},
-  shell(value:ShellState){nativeShell=value;shellControls();},
+  shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');shellControls();},
   render(data:WireCockpitData){
    if(disposed)throw Error('closed');const before=displayedState();frame.engine.replaceChildren();
    const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));const members:{key:string;row:WireRow;account:WireAccount}[]=[];const seen=new Set<string>();

@@ -66,7 +66,7 @@ Every host message has exactly these common fields:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "pageId": "00000000-0000-4000-8000-000000000001",
   "requestId": "00000000-0000-4000-8000-000000000002",
   "sessionId": "00000000-0000-4000-8000-000000000003",
@@ -89,9 +89,9 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 
 | Type | Additional fields and effect |
 | --- | --- |
-| `load` | `appearance: {theme: "day" or "night", locale: "en" or "zh-CN", profile: "full" or "compact"}`. Once per page, after an authoritative engine context exists. Clears first; emits `ready` with the load request ID after DOM readiness. |
+| `load` | Version 2 only; `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier}` are required with no extra fields. Once per page, after an authoritative engine context exists. Clears first and applies both states before emitting `ready`. |
 | `appearance` | Exact fields `theme`, `locale`, `reduceMotion`, `reduceTransparency`; applies live without clearing displayed data. Theme remains night in v1. |
-| `shell` | Exact fields `profile` (`open` or `closed`), `attached` and `forcedClosed`. Controls reflect the latest state; forced-closed disables reopening. |
+| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed` and `tier` (`tall` or `compact`). The native-selected tier maps to the 890 or 640 web layout; forced-closed disables reopening. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous, with no retained DTO/pending-render cache. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
 | `clear` | No additional fields. New `viewRevision` must be greater. Clears private DOM, derived history-action IDs and animations before adopting context/emitting `cleared` with this request ID. A new epoch may restart generation; the same epoch cannot decrease it. Retired epochs/sessions cannot return. |
