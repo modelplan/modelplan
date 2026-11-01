@@ -22,7 +22,8 @@ export function mountPrototypeTape(root:HTMLElement){
   const unavailable=coverage==='recording-off'?(locale==='en'?'Session recording off':'会话记录已关闭'):(locale==='en'?'Live session coverage unavailable':'实时会话覆盖情况不可用');
   host.setAttribute('aria-label',coverage==='local-last-seen'?title:unavailable);
   const sessions=coverage==='local-last-seen'?detail?.sessions??[]:[];
-  const rows=sessions.slice(0,count).map(s=>{
+  const shown=sessions.length>count?sessions.slice(0,count-1):sessions.slice(0,count);
+  const rows=shown.map(s=>{
    const rate=speed(s),when=new Date(s.lastObservedAt).toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'});
    const observed=(locale==='en'?'Last observed ':'最近观测 ')+s.lastObservedAt;
    const rateLabel=rate===null?'':(locale==='en'?'Today average ':'今日平均 ')+rate+' t/s';
@@ -30,6 +31,7 @@ export function mountPrototypeTape(root:HTMLElement){
    <i class="chip"></i><span class="t-tool">${esc(s.source)}</span><span class="t-model">${esc(s.model)}</span><span class="t-eff">${esc(s.effort??'--')}</span>
    <span class="t-proj">${esc(s.projectLabel??'--')}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(when)}</span></button>`;
   });
+  if(sessions.length>shown.length){const n=sessions.length-shown.length;rows.push(`<span class="tl t-overflow">${locale==='en'?`${n} more observed`:`另有 ${n} 条观测`}</span>`);}
   while(rows.length<count)rows.push('<span class="tl t-blank" aria-hidden="true"></span>');
   host.innerHTML=`<div class="t-lines">${rows.join('')}</div>`;
   for(const chip of host.querySelectorAll<HTMLElement>('.chip'))chip.style.setProperty('--v','#c6ccd4');

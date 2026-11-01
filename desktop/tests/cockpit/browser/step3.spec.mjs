@@ -13,6 +13,7 @@ test('last-seen strip withholds unbound speed and clears private values',async({
  await expect(tape.locator('.t-proj').first()).toHaveText('<img onerror=alert(1)> CANARY');
  await expect(tape.locator('.t-live').first()).toHaveText('--');await expect(tape.locator('img')).toHaveCount(0);
  await expect(tape).not.toContainText(d.sessions[0].sessionRef);await expect(tape).not.toContainText(/ended|running/i);
+ data.details.sessions=Array.from({length:6},(_,i)=>({...d.sessions[0],sessionRef:String(i+1).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(tape.locator('.t-overflow')).toContainText('2 more observed');
  const bad=structuredClone(data);bad.details.sessions[0].lastObservedAt='bad';expect(await receive(send('display',{data:bad}))).toBe(false);
  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(tape).not.toContainText('CANARY');await expect(tape).toHaveAttribute('data-sessions-available','false');
 });
