@@ -703,7 +703,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable (fallback)" : "停靠栏外观不可用（回退）") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
+            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable" : "挂件外观暂不可用") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
