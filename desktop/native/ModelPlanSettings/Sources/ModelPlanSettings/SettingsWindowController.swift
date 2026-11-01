@@ -3,6 +3,10 @@ import AppKit
 
 enum SettingsWords {
     static func text(_ en: String, _ zh: String, _ language: SettingsLanguage) -> String { language == .english ? en : zh }
+    static func firstRunPreviewTitle(language: SettingsLanguage, unavailable: Bool) -> String {
+        if unavailable { return text("First run… (unavailable until setup is connected)", "首次运行…（设置接通前不可用）", language) }
+        return text("First run…", "首次运行…", language)
+    }
     static func option(_ raw: String, key: SettingKey, language: SettingsLanguage) -> String {
         let pair: (String, String)
         switch raw {
@@ -240,8 +244,11 @@ enum SettingsWords {
         window?.title = SettingsWords.text("Settings", "设置", language)
         searchField.placeholderString = SettingsWords.text("Search settings", "搜索设置", language)
         searchField.setAccessibilityLabel(searchField.placeholderString)
-        firstRunPreviewButton.title = SettingsWords.text("First run…", "首次运行…", language)
-        firstRunPreviewButton.isEnabled = !editor.isSaving && editor.context.capabilities.firstRunPreviewAvailable && editor.canPresentFirstRun
+        let firstRunAvailable = editor.context.capabilities.firstRunPreviewAvailable && editor.canPresentFirstRun
+        let firstRunUnavailable = editor.context.v1NormalEntry && !firstRunAvailable
+        firstRunPreviewButton.title = SettingsWords.firstRunPreviewTitle(language: language, unavailable: firstRunUnavailable)
+        firstRunPreviewButton.isEnabled = !editor.isSaving && firstRunAvailable
+        firstRunPreviewButton.setAccessibilityHelp(firstRunUnavailable ? firstRunPreviewButton.title : nil)
         sidebar.reloadData()
         if let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == selectedPaneID }) {
             sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
@@ -258,7 +265,7 @@ enum SettingsWords {
         }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
-        let desiredAppearance: NSAppearance.Name? = snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
+        let desiredAppearance: NSAppearance.Name? = editor.context.v1NormalEntry ? .darkAqua : snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
         if window?.appearance?.name != desiredAppearance { window?.appearance = desiredAppearance.flatMap(NSAppearance.init(named:)) }
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)

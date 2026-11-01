@@ -11,6 +11,7 @@ import ModelPlanCommunityHost
     private let makeHelp: (@MainActor (SettingsApplicationCoordinator) async -> InstrumentHelpComposition)?
     private var helpTask: Task<InstrumentHelpComposition, Never>?
     private var suspended = false
+    private var menuLanguageObserver: UUID?
     public init(application: SettingsApplicationCoordinator,
                 canPresent: @escaping @MainActor () -> Bool,
                 environment: (@MainActor () -> SettingsEnvironment)? = nil,
@@ -20,7 +21,16 @@ import ModelPlanCommunityHost
         self.makeHelp = makeHelp
         windowHost = SettingsWindowHost(application: application, canPresent: canPresent,
             environment: environment, activate: activate, makeSurface: makeSurface)
-        settingsMenuItem = windowHost.menuItem(title: "Settings… / 设置…")
+        settingsMenuItem = windowHost.menuItem(title: SettingsText("Settings…", "设置…").value(application.editor.snapshot?.preferences.language ?? .chinese))
+        menuLanguageObserver = application.editor.observeChanges { [weak self] in self?.refreshMenuLanguage() }
+    }
+    deinit {
+        let editor = windowHost.application.editor, observer = menuLanguageObserver
+        Task { @MainActor in if let observer { editor.removeChangeObserver(observer) } }
+    }
+    private func refreshMenuLanguage() {
+        guard let language = windowHost.application.editor.snapshot?.preferences.language else { return }
+        settingsMenuItem.title = SettingsText("Settings…", "设置…").value(language)
     }
     public func restorePreferences() async {
         await windowHost.application.reload()

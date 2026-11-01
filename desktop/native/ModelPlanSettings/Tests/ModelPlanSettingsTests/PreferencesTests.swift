@@ -114,7 +114,7 @@ final class PreferencesTests: XCTestCase {
         let snapshot = await store.snapshot(); XCTAssertEqual(snapshot.revision, 20); XCTAssertEqual(snapshot.preferences.subscriptionSettings.count, 20)
     }
     func testInvalidShortcutsAndAliasesAreRejected() throws {
-        var p = SettingsPreferences(); p.dockShortcut = p.openShortcut; XCTAssertThrowsError(try p.validate())
+        var p = SettingsPreferences(); p.openShortcut = .init("O", modifiers: [.command, .shift]); p.dockShortcut = p.openShortcut; XCTAssertThrowsError(try p.validate())
         p = .init(); p.openShortcut = .init("A", modifiers: [.shift]); XCTAssertThrowsError(try p.validate())
         p = .init(); p.openShortcut = .init("Escape", modifiers: [.command]); XCTAssertThrowsError(try p.validate())
         p = .init(); p.subscriptionSettings["a"] = .init(alias: String(repeating: "a", count: 129)); XCTAssertThrowsError(try p.validate())

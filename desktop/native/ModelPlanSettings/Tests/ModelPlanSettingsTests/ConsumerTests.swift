@@ -93,7 +93,9 @@ final class ConsumerTests: XCTestCase {
         p.openShortcut = .init(",", modifiers: [.command]); XCTAssertThrowsError(try p.validate())
     }
     func testDeniedGlobalShortcutStillWorksLocallyAndIMEIsProtected() {
-        let p = SettingsPreferences(); var policy = ShortcutPolicy()
+        var p = SettingsPreferences()
+        p.openShortcut = .init("O", modifiers: [.command, .shift]); p.dockShortcut = .init("D", modifiers: [.command, .shift])
+        var policy = ShortcutPolicy()
         for state in [ShortcutRegistration.notRequested, .conflict, .denied, .unavailable] {
             policy.openRegistration = state
             XCTAssertNil(policy.action(for: p.openShortcut, preferences: p, global: true))

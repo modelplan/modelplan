@@ -108,6 +108,16 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")
         XCTAssertTrue(editor.canPresentFirstRun, "The normal entry must route the first-run action")
         XCTAssertTrue(editor.context.capabilities.firstRunPreviewAvailable, "First-run navigation must be available from Settings")
+        XCTAssertTrue(editor.context.v1NormalEntry)
+        XCTAssertTrue(try XCTUnwrap(editor.effective).darkAppearance)
+        XCTAssertEqual(try XCTUnwrap(editor.effective).opening, .quick)
+        let visible = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+        XCTAssertFalse(visible.contains { [.theme, .opening, .countdown].contains($0.key) })
+        XCTAssertEqual(visible.first { $0.key == .openShortcut }?.availability, .serviceUnavailable)
+        XCTAssertTrue(visible.first { $0.key == .openShortcut }?.subtitle.english.contains("Unavailable") == true)
+        for key in [SettingKey.login, .notificationConsent, .feedback, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink] {
+            XCTAssertEqual(visible.first { $0.key == key }?.availability, .available, "Connected S3 services must enable their controls: \(key)")
+        }
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTExpectFailure("#697: member projection has not yet been integrated") {
             XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
@@ -156,6 +166,23 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(reopened.composition.dock.currentMenuBarPreferences?.dockEdge, .left)
         XCTAssertEqual(reopened.composition.dock.dockView.requestedNozzleDiameter, dock.dockView.requestedNozzleDiameter)
         await reopened.composition.stop()
+
+        let unavailable = EngineRowsEntry.make(configuration: configuration,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("unavailable"), preferredLanguages: ["en-US"]),
+            createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+        let unavailableLogin = JourneyLoginService(); unavailableLogin.state = .unavailable
+        let unavailableNotifications = JourneyNotificationService(); unavailableNotifications.state = .unavailable
+        unavailable.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: unavailableLogin))
+        unavailable.notificationAuthorizationService = unavailableNotifications
+        await unavailable.prepare()
+        let unavailableEditor = unavailable.settingsHost.application.editor
+        let unavailableRows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(unavailableEditor.snapshot).preferences, context: unavailableEditor.context)
+        for key in [SettingKey.login, .notificationConsent] {
+            XCTAssertEqual(unavailableRows.first { $0.key == key }?.availability, .serviceUnavailable)
+            XCTAssertTrue(unavailableRows.first { $0.key == key }?.subtitle.english.contains("Unavailable") == true)
+        }
+        XCTAssertEqual(unavailableLogin.registrations, 0); XCTAssertEqual(unavailableNotifications.requests, 0)
+        await unavailable.composition.stop()
 
         let otherProfile = profile.appendingPathComponent("system-language")
         let chineseStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: otherProfile,
