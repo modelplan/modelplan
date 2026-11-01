@@ -1078,7 +1078,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             items.append(.init(title: nil))
             let english = preferences.language == .english
             let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
-            items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
+            items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
             component.replace(with: items)
             return menu
         }
@@ -1109,7 +1109,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         case (.selfTest, true): quit = "Quit preview"
         case (.selfTest, false): quit = "退出自测版"
         }
-        items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
+        items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         items.append(.init(title: nil))
         items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
         items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))

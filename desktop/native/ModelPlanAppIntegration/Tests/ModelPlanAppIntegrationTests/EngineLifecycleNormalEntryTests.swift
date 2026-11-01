@@ -56,7 +56,46 @@ private actor LifecycleEngine: EngineClient {
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 
+@MainActor private final class LifecycleFirstRunProbe: SettingsWindowSurface {
+    var shows = 0, hides = 0
+    func prepare() async {}
+    func show(paneID: String?) { shows += 1 }
+    func hide() { hides += 1 }
+}
+
 @MainActor final class EngineLifecycleNormalEntryTests: XCTestCase {
+    func testFirstRunWaitsForFreshRowsAndWithdrawsOnPause() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-gate-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        var client: LifecycleEngine?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: {})
+        let surface = LifecycleFirstRunProbe(); app.makeFirstRunSurfaceWithConsent = { _, _ in surface }
+        await app.prepare(); let engine = try XCTUnwrap(client)
+        app.setActivityPaused(true)
+        let workspace = NotificationCenter()
+        app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        await app.restoreFirstRunIfNeeded()
+        XCTAssertEqual(surface.shows, 0, "A blocked gate must not present first run")
+        app.setActivityPaused(false)
+        for _ in 0..<1000 { if surface.shows > 0 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(surface.shows, 1, "First run resumes only after current rows")
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertTrue(app.lifecyclePaused); XCTAssertGreaterThan(surface.hides, 0, "Pause withdraws an already visible first run")
+        await app.restoreFirstRunIfNeeded(); XCTAssertEqual(surface.shows, 1)
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        for _ in 0..<1000 { if await engine.counts().0 >= 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(surface.shows, 1, "Wake without fresh rows must not present first run")
+        try await engine.publishFresh()
+        for _ in 0..<1000 { if surface.shows >= 2 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(surface.shows, 2)
+        try app.settingsHost.application.editor.request(.previewFirstRun)
+        for _ in 0..<1000 { if surface.shows >= 3 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(surface.shows, 3, "Explicit navigation remains available after resumption")
+        await app.stopLifecycle()
+    }
+
     func testConsentFailureWithdrawsNormalEntryUntilRetry() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-consent-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

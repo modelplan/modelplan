@@ -163,7 +163,7 @@ import ModelPlanMenuVerification
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
-                canPresent: { [weak self] in self?.terminating == false },
+                canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false },
                 showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
                 activate: activateSettings, scopeConsentEntry: scopeConsentEntry,
                 makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent)
@@ -194,6 +194,7 @@ import ModelPlanMenuVerification
                 guard let self, !self.terminating else { return }
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle()
                 self.allowDockPresentation(); self.renderMenu()
+                Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
             }, onGateOpen: { [weak self] in self?.renderMenu() })
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
@@ -212,7 +213,7 @@ import ModelPlanMenuVerification
         lifecyclePaused = true
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
-        composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend()
+        composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         renderMenu()
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -288,7 +289,7 @@ import ModelPlanMenuVerification
         }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
-        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu(); await restoreFirstRunIfNeeded() }
+        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english
@@ -322,7 +323,7 @@ import ModelPlanMenuVerification
             .init(title: label("Help…", "说明…")),
             .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
-            .init(title: label("Quit", "退出"), keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }),
+            .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ])
         liveStatusMenu = menu
         if let status { component.attach(to: status) }
