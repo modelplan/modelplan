@@ -134,9 +134,13 @@ private actor SettingsJourneyClient: EngineClient {
         let grantsBeforeConfirmation = await syntheticClient.grantCount()
         XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
         let dock = first.composition.dock
+        XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
+        XCTAssertFalse(dock.interactionEnvironment().active, "The community factory has no official appearance/projection yet")
+        let cockpitButton = try XCTUnwrap(dock.dockView.superview?.subviews.compactMap { $0 as? NSButton }.first)
+        XCTAssertEqual(cockpitButton.accessibilityLabel(), "Open cockpit")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
-        XCTAssertTrue(englishMenu.items.contains { $0.title == "Dock readings…" })
+        XCTAssertTrue(englishMenu.items.contains { $0.title == "Cockpit…" })
         XCTAssertFalse(englishMenu.items.contains { $0.title.contains(" / ") })
         let editor = first.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
@@ -217,9 +221,10 @@ private actor SettingsJourneyClient: EngineClient {
         let grantsAfterDone = await syntheticClient.grantCount()
         XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
+        XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
-        XCTAssertTrue(chineseMenu.items.contains { $0.title == "挂件读数…" })
+        XCTAssertTrue(chineseMenu.items.contains { $0.title == "驾驶舱…" })
         XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })
         await first.composition.stop()
 

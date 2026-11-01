@@ -147,6 +147,11 @@ import ModelPlanShell
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        interactionBinding?.install()
+    }
+    func allowDockPresentation() {
+        guard !terminating else { return }
+        composition.dock.setPresentationAllowed(true)
         interactionBinding?.start()
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -212,8 +217,9 @@ import ModelPlanShell
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         Task {
-            await prepare(); composition.dock.setPresentationAllowed(true); renderMenu()
-            await composition.start(); await restoreFirstRunIfNeeded()
+            await prepare(); guard !terminating else { return }
+            allowDockPresentation(); renderMenu(); await composition.start()
+            guard !terminating else { return }; await restoreFirstRunIfNeeded()
         }
     }
     private func renderMenu() {
@@ -227,7 +233,7 @@ import ModelPlanShell
         refresh.target = self
         menu.addItem(.separator())
         menu.addItem(settingsHost.menuItem(title: EngineRowsText.settings.value(language)))
-        let consoleItem = menu.addItem(withTitle: EngineRowsText.readingsMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
+        let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
         menu.addItem(withTitle: EngineRowsText.quit.value(language), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; liveStatusMenu = menu; status?.menu = menu

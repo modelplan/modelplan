@@ -82,19 +82,24 @@ type Failure struct {
 	At   time.Time `json:"at"`
 }
 
+type ModelScope struct {
+	Models []string `json:"models"`
+}
+
 type Window struct {
-	ID               string     `json:"id"`
-	Role             Role       `json:"role"`
-	DurationSeconds  *int64     `json:"durationSeconds" null:"coalesced"`
-	Label            Text       `json:"label"`
-	LimitKey         string     `json:"limitKey"`
-	PoolKey          string     `json:"poolKey"`
-	ResetMode        ResetMode  `json:"resetMode"`
-	RemainingPercent *float64   `json:"remainingPercent" null:"coalesced"`
-	ResetsAt         *time.Time `json:"resetsAt" null:"coalesced"`
-	ObservedAt       *time.Time `json:"observedAt" null:"coalesced"`
-	Current          bool       `json:"current"`
-	ValidUntil       *time.Time `json:"validUntil" null:"coalesced"`
+	ModelScope       *ModelScope `json:"modelScope,omitempty" null:"coalesced"`
+	ID               string      `json:"id"`
+	Role             Role        `json:"role"`
+	DurationSeconds  *int64      `json:"durationSeconds" null:"coalesced"`
+	Label            Text        `json:"label"`
+	LimitKey         string      `json:"limitKey"`
+	PoolKey          string      `json:"poolKey"`
+	ResetMode        ResetMode   `json:"resetMode"`
+	RemainingPercent *float64    `json:"remainingPercent" null:"coalesced"`
+	ResetsAt         *time.Time  `json:"resetsAt" null:"coalesced"`
+	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
+	Current          bool        `json:"current"`
+	ValidUntil       *time.Time  `json:"validUntil" null:"coalesced"`
 }
 
 type RowsSummary struct {
