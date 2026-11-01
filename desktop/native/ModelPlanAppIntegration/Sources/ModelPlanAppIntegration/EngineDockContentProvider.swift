@@ -15,6 +15,8 @@ import ModelPlanSettings
     public var resetEventState:() -> EngineRowsEventState = { .absentFromSchema }
     public var acknowledgedResetEventIDs:Set<String> = []
     public private(set) var resetEventsByMember:[String:[ResetEventPresentation]] = [:]
+    /// Consumers must discard session placement and scope for these members on every refresh.
+    public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
     private var english:Bool { language == "en" }
     private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
@@ -29,6 +31,7 @@ import ModelPlanSettings
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
+        memberInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
         if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
         resetEventsByMember = [:]
@@ -143,16 +146,16 @@ import ModelPlanSettings
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })
-                let generalRole = period == .fiveHour || period == .week || period == .month
-                // The current wire has no explicit model scope. All windows are
-                // not model-specific; labels, IDs, limit/pool keys prove no scope.
-                projected.isGeneral = generalRole
+                // Only known plan-wide session and weekly limits participate.
+                // Named, unknown and model-scoped pools remain card-only.
+                let generalLimit = (period == .fiveHour && ["main", "five_hour"].contains(window.limitKey)) ||
+                    (period == .week && ["main", "weekly"].contains(window.limitKey))
+                projected.isGeneral = window.modelScope == nil && window.poolKey == "main" && generalLimit
                 input.windows.append(projected)
             }
         func rank(_ period:DockQuotaPeriod) -> Int {
             switch period { case .fiveHour:return 0;case .week:return 1;case .month:return 2;case .day:return 3;case .other:return 4 }
         }
-        // A role can have several windows while no explicit scope field exists.
         // Canonicalize each role's tightest first for rings and the shared pin consumer.
         input.windows.sort { left,right in
             if rank(left.period) != rank(right.period) { return rank(left.period) < rank(right.period) }

@@ -52,6 +52,7 @@ public struct EngineMenuRefreshResult {
     }
     public var rowEvents:EngineRowsEventState { EngineRowsEventDecoder.decode(store.snapshot.rows) }
     public var resetEventPresentation:[String:[EngineDockContentProvider.ResetEventPresentation]] { _ = presentedContent; return adapter.resetEventsByMember }
+    public var memberInstability:[String:Bool] { _ = presentedContent; return adapter.memberInstability }
     func installResetEvents(settings:SettingsStore,live:Bool) {
         let base:URL
         if live {

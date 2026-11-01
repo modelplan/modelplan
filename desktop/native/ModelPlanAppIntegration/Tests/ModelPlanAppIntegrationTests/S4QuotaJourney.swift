@@ -117,15 +117,16 @@ private actor S4RowsClient: EngineClient {
         let original=(account["windows"] as! [[String:Any]])[0]
         func window(_ id:String,_ role:String,_ remaining:Double,_ duration:Int) -> [String:Any] {
             var w=original;w["id"]=id;w["role"]=role;w["remainingPercent"]=remaining;w["durationSeconds"]=duration
+            w.removeValue(forKey:"modelScope")
             w["current"]=true;w["resetsAt"]="2099-01-01T00:00:00Z";w["validUntil"]="2099-01-01T00:00:00Z"
             w["limitKey"]=role == "other" ? "other":"main";w["poolKey"]=role == "other" ? "other":"main"
             return w
         }
         // Array order, duration and low extra all disagree with the semantic role.
-        var scopedWeekly=window("model","weekly",2,604800)
-        scopedWeekly["limitKey"]="other";scopedWeekly["poolKey"]="other"
-        scopedWeekly["label"]=["en":"Model-only looking label","zh":"看似专项的名称"]
-        account["windows"]=[window("weekly","weekly",24,604800),window("extra","other",1,60),scopedWeekly,window("five","session",63,18000),window("month","monthly",80,2592000)]
+        var scopedWeekly=window("model","weekly",2,604800);scopedWeekly["modelScope"]=["models":["opus"]]
+        var special=window("review","weekly",1,604800);special["limitKey"]="code_review";special["poolKey"]="code_review"
+        var unknown=window("unknown","session",3,18000);unknown["limitKey"]="other";unknown["poolKey"]="other"
+        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",80,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
@@ -137,10 +138,10 @@ private actor S4RowsClient: EngineClient {
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
-        try require(reading.remainingPercent == 2,"without an explicit model-scope field, generic weekly windows must participate regardless of names/limit/pool keys")
+        try require(reading.remainingPercent == 24,"restricted and special-pool windows must not determine the general tightest")
         try require(reading.inner?.windowID.hasSuffix("five") == true,"inner must use5h role")
-        try require(reading.outer?.windowID == "model","outer must use the tightest weekly role without guessing model scope")
-        try require(input.windows.first(where:{$0.id == "model"})?.isGeneral == true,"metadata that merely looks scoped must not become a scope field")
+        try require(reading.outer?.windowID == "weekly","outer must use the general weekly window")
+        try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
         try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
@@ -155,14 +156,35 @@ private actor S4RowsClient: EngineClient {
         try require(migrated.subscriptions.order == [input.id] && migrated.subscriptions.hiddenIDs == [input.id],"single-member order/hide migration must use its key")
         var explicit=old;explicit.subscriptionSettings[input.id] = .init(alias:"Member")
         try require(entry.composition.accountMembers.migratingRowPreferences(explicit).subscriptionSettings[input.id]?.alias == "Member","explicit member choice must win over row migration")
-        for (pin,expected) in [(PercentagePin.fiveHour,63.0),(.week,2.0)] {
+        for (pin,expected) in [(PercentagePin.fiveHour,63.0),(.week,24.0)] {
             try await store.update { $0.subscriptionSettings[input.id] = .init(percentagePin:pin) }
             await entry.prepare()
             guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
             let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
             try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
-            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "model","pin must not swap ring roles")
+            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "weekly","pin must not swap ring roles")
         }
+        guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        var generalFive=window("general-five","session",63,18000);generalFive["limitKey"]="five_hour"
+        var generalWeek=window("general-week","weekly",24,604800);generalWeek["limitKey"]="weekly"
+        var scopedFive=window("scoped-five","session",1,18000);scopedFive["modelScope"]=["models":["unknown"]]
+        var namedPool=window("named-pool","weekly",2,604800);namedPool["poolKey"]="reserve"
+        var future=window("future","weekly",3,604800);future["limitKey"]="future_limit"
+        let ordered=[scopedFive,namedPool,future,generalFive,generalWeek]
+        for windows in [ordered,Array(ordered.reversed())] {
+            account["windows"]=windows;row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            let snapshot=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+            try await synthetic.replaceRows(snapshot)
+            guard let next=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"member disappeared on refresh") }
+            let reading=try DockInstrumentProjection.evaluate(next,now:Date())
+            try require(reading.remainingPercent == 24 && reading.inner?.windowID == "general-five" && reading.outer?.windowID == "general-week","general role selection must not depend on order or include model, named or future pools")
+        }
+        account["windows"]=[scopedFive,namedPool,future];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+        let restrictedOnly=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        try await synthetic.replaceRows(restrictedOnly)
+        guard let only=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"restricted-only member disappeared") }
+        let restrictedReading=try DockInstrumentProjection.evaluate(only,now:Date())
+        try require(restrictedReading.remainingPercent == nil && restrictedReading.inner == nil && restrictedReading.outer == nil,"restricted-only accounts must not invent general rings")
         await entry.composition.stop()
     }
     static func members(capture:URL) async throws {
@@ -210,6 +232,7 @@ private actor S4RowsClient: EngineClient {
         account["plan"]=["id":"unknown"];account["valueState"]="none"
         account["credits"]=["balance":55,"unit":"credits"];account.removeValue(forKey:"observedAt")
         var window=(account["windows"] as! [[String:Any]])[0]
+        window.removeValue(forKey:"modelScope");window["limitKey"]="main";window["poolKey"]="main"
         window.removeValue(forKey:"remainingPercent");window.removeValue(forKey:"resetsAt");account["windows"]=[window]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
@@ -236,6 +259,7 @@ private actor S4RowsClient: EngineClient {
         let specs:[(String?,String,Double)]=[("0123456789abcdef","saved_login_api",70),(nil,"saved_login_api",20),(nil,"saved_login_api",30),(nil,"runtime_rpc",40)]
         row["accounts"]=specs.enumerated().map { index,spec in
             var account=base,window=original
+            window.removeValue(forKey:"modelScope")
             account["subscriptionRef"]=spec.0.map{$0 as Any} ?? NSNull()
             account["accountLocator"]=String(repeating:String(index+1),count:16)
             account["route"]=spec.1;account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
@@ -262,6 +286,7 @@ private actor S4RowsClient: EngineClient {
         let catalogue=entry.composition.accountMembers
         let temporary:Set<String>=["codex#saved_login_api#1","codex#saved_login_api#2"]
         try require(catalogue.unstableKeys == temporary && catalogue.members.map(\.isStable) == [true,false,false,true],"only the colliding unbound keys are unstable")
+        try require(entry.composition.memberInstability == ["0123456789abcdef":false,"codex#saved_login_api#1":true,"codex#saved_login_api#2":true,"codex#runtime_rpc":false],"the normal provider must expose per-member instability to placement and scope consumers")
         try require(catalogue.members.filter{!$0.isStable}.allSatisfy {
             $0.persistenceDisabledReason?.english == "can't be told apart until the account is verified" && $0.persistenceDisabledReason?.chinese == "账号验证前无法区分"
         },"Settings must receive the exact localized persistence-disabled reason")
@@ -273,6 +298,14 @@ private actor S4RowsClient: EngineClient {
         let durable=catalogue.persistentPreferences(candidate)
         try require(Set(durable.subscriptionSettings.keys) == ["0123456789abcdef"] && durable.subscriptions.order == ["0123456789abcdef"] && durable.subscriptions.hiddenIDs == ["0123456789abcdef"],"the writer guard must exclude every unstable choice while retaining stable choices")
         var accounts=row["accounts"] as! [[String:Any]]
+        accounts.swapAt(1,2);row["accounts"]=accounts;projection["rows"]=[row];root["projection"]=projection
+        let reordered=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        try await (entry.composition.client as! S4RowsClient).replaceRows(reordered)
+        let refreshed=entry.composition.presentedContent.snapshot.inputs
+        try require(refreshed.compactMap{try? DockInstrumentProjection.evaluate($0,now:Date()).remainingPercent} == [70,30,20,40],"refresh must expose the reordered members without carrying their old identity")
+        try require(entry.composition.memberInstability["codex#saved_login_api#2"] == true,"the reused ordinal must remain marked unstable after refresh")
+        let afterRefresh=entry.composition.accountMembers.persistentPreferences(candidate)
+        try require(afterRefresh.subscriptionSettings["codex#saved_login_api#1"] == nil && afterRefresh.subscriptionSettings["codex#saved_login_api#2"] == nil,"old unstable choices must never become durable after refresh")
         accounts[1]["subscriptionRef"]="fedcba9876543210";row["accounts"]=accounts
         projection["rows"]=[row];root["projection"]=projection;root["sequence"]=8
         let verified=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
@@ -296,6 +329,7 @@ private actor S4RowsClient: EngineClient {
         let base=(row["accounts"] as! [[String:Any]])[0],original=(base["windows"] as! [[String:Any]])[0]
         row["accounts"]=["money","other","credits"].enumerated().map { index,unit in
             var account=base,window=original
+            window.removeValue(forKey:"modelScope")
             account["subscriptionRef"]=String(repeating:String(index+1),count:16)
             account["plan"]=["id":"codex","name":["en":"Standard plan","zh":"标准方案"]]
             account["valueState"]="current";account["observedAt"]="2026-01-01T00:00:00Z";account["freshUntil"]="2099-01-01T00:00:00Z"

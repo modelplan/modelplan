@@ -11,13 +11,13 @@ dispatcher.
 
 | Requirement | Current implementation / evidence |
 | --- | --- |
-| DOCK-3.3-04 | Named 5h/weekly/monthly windows drive tightest; `.other`, daily and unknown roles stay card-only by period. No window is considered model-specific without an explicit wire field. Labels, IDs and limit/pool keys are not scope evidence. |
+| DOCK-3.3-04 | Only unscoped 5h/session and weekly plan limits in the main pool drive the general rings and tightest. Model-scoped, named-pool, unknown and other-period windows stay card-only. |
 | DOCK-3.3-05 | Settings pin uses member key and general role; weekly outer and 5h inner stay fixed. |
 | DOCK-3.8-05 | Member name/duplicate tag, reported plan name, localized route/source and original observation age. No rendering-time observation. |
 | DOCK-3.8-06/07 | Actual reported reset timestamp, formatted relatively at card presentation time. Missing is `--`; past reset is not future fuel. |
 | DOCK-3.8-08 | Reported per-account credits balance/unit only. Reset count/earliest reserve expiry are unavailable in current RowsAccount and omitted. |
 | DOCK-3.8-12/13 | Extras remain card rows; unknown quota is `--`; absent plan/reserve facts stay absent. No cross-member aggregation or inferred plan. |
-| DOCK-3.4-*, DOCK-3.7-*, DOCK-3.8-11 | Deferred pending the public CLI/wire draft. `EngineRowsEventDecoder` explicitly returns `absentFromSchema`; no quota-derived reset announcement or notification. |
+| DOCK-3.4-*, DOCK-3.7-*, DOCK-3.8-11 | Partial: public event decoding, member/card projection, menu marker and notification/acknowledgement seams are present. Official Dock/sliver rendering and real user/device verification remain open. |
 
 Visual/geometry baselines and device acceptance are not established by these
 source and non-windowed checks. GLM `DESIGN: pass` and VERDICT remain required.
@@ -54,13 +54,17 @@ rows clear or a verified ref replaces the key. Placement writers can use
 Verification starts a new stable key from the verified ref with **no migration**
 of temporary choices. Stable choices are retained.
 
-The current RowsWindow wire has no model-scope field, so every window is treated
-as **not model-specific**. The previous limit/pool heuristic is superseded.
-Within a role, the current tightest window is ordered first (stable ID breaks
-ties), keeping rings and role pins independent of CLI array order. The exact
-optional nullable `modelScope` field request is with the schema/producer owner;
-no label, window name, duration or key is used to manufacture it. Actual exclusion
-of model-specific windows awaits that public draft and its typed decoder.
+The merged wire provides optional `modelScope`. A general window must omit it,
+use the `main` pool, and have a role/limit pair of session with `main` or
+`five_hour`, or weekly with `main` or `weekly`. Unknown and other named limits
+or pools are not general. Labels and IDs never establish scope. Within a role,
+the tightest window is ordered first (stable ID breaks ties), keeping rings and
+role pins independent of CLI array order.
+
+`memberInstability` exposes a flag per admitted Dock member. The consuming M2
+placement writer and M3 scope selection must discard unstable session choices
+when the member list refreshes; their actual write paths remain owned by those
+lanes and are not claimed complete by this projection.
 
 Draft integration gates remain: M2's real session-only write path/Settings reason,
 M0's official duplicate-tag presentation and the existing host card-content seam.
@@ -74,10 +78,9 @@ rows, opens no windows, posts no input and starts no engine child.
 
 Observed red→green tracers:
 
-1. With no explicit scope field, the 2% weekly window participates despite its
-   model-looking label/ID/limit/pool metadata. The old heuristic selected 24% and
-   fails this ruling; role-only selection passes. A 1% unclassified-period window
-   remains card-only by its period, not by a model-scope inference.
+1. A restricted 2% weekly window, a 1% code-review pool and an unknown limit
+   cannot replace the 24% general weekly window. Tests vary ordering and cover
+   restricted-only inputs, so neither ring nor tightest invents a general value.
 2. Two verified members: baseline produced one tool row; projection now produces
    two nozzles/catalogue entries with independent account facts.
 3. Actual Dock card content: baseline lost the reported plan; card facts pass
@@ -98,10 +101,9 @@ the CLT runner does not claim to execute XCTest.
 
 ## Main/language integration turn
 
-The ordinary main merge at `9fb85e1e` includes the upstream Kiro clock fix and
-the #396 review-only announced-reset proposal/fixtures. That proposal does not
-yet add generated Swift fields or a production producer; the event boundary
-therefore still reports unsupported rather than manufacturing announcements.
+The ordinary main merges include the upstream Kiro clock fix, #404 model scope,
+and #406's capability-gated reset-event wire. An absent event field remains
+unsupported; events are never inferred from personal quota.
 
 The normal-entry language journey switches Chinese → English → Chinese and
 checks Dock/menu/card copy for each setting. It was behaviorally red on raw
