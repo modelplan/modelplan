@@ -107,6 +107,14 @@
       ]
     },
     {
+      "file": "RowsModelScope.json",
+      "type": "RowsModelScope",
+      "optional": [],
+      "required": [
+        "models"
+      ]
+    },
+    {
       "file": "RowsName.json",
       "type": "RowsName",
       "optional": [
@@ -325,6 +333,14 @@
       "file": "RowsWindow.json",
       "type": "RowsWindow",
       "optional": [
+        {
+          "field": "modelScope",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "durationSeconds",
           "omission": true,

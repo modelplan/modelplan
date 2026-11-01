@@ -1,6 +1,7 @@
 package quota
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -177,6 +178,36 @@ func TestManagedRowsReadOnlyPreRowsCacheAndUnknownProfileTimes(t *testing.T) {
 	afterBytes, _ := json.Marshal(legacyAfter)
 	if string(legacyBytes) != string(afterBytes) {
 		t.Fatal("rows adapter changed legacy quota JSON")
+	}
+}
+
+// Legacy cached Claude data reaches appendReportRows through applyManaged as a
+// claude-code/native account even when no managed profile was projected.
+func TestLegacyManagedReportWindowHasUnknownScope(t *testing.T) {
+	p := claudeTestPaths(t)
+	g := p.ReaderAccess.Grants["claude"]
+	key := readerHash(p.Cache, "claude:profile", g.Profiles[0].Root+"\x00"+g.Profiles[0].AccountFile)
+	grant := readerHash(p.Cache, "claude:grant", g.Generation)
+	pct := float64(25)
+	old := map[string]any{"schemaVersion": 1, "provider": "claude", "grantKey": grant, "entries": []any{map[string]any{"profileKey": key, "status": "ok", "account": &Account{Source: "claude-code", Via: "native", ObservedAt: claudeTestNow, Windows: []Window{{Kind: "weekly", UsedPercent: &pct}}}}}}
+	data, _ := json.Marshal(old)
+	if err := os.MkdirAll(filepath.Dir(readerPath(p.Cache, "claude")), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(readerPath(p.Cache, "claude"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var report Report
+	applyManaged(&report, p, "claude", claudeTestNow)
+	if len(report.Accounts) != 1 || report.Accounts[0].Source != "claude-code" || len(report.Accounts[0].Windows) != 1 || !reflect.DeepEqual(report.Accounts[0].Windows[0].ModelIDs, []string{"unknown"}) {
+		t.Fatalf("legacy scope: %+v", report.Accounts)
+	}
+	saved, err := os.ReadFile(readerPath(p.Cache, "claude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved, data) {
+		t.Fatal("report read rewrote old cache")
 	}
 }
 

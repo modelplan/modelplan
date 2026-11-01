@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 9e4ccc6ad6f5e05c56cf636c7581f9dd8f10ddb2104a4eb89ee1108b8d62e406
+// Schema SHA-256: 8c9eae50494caeac95611b4680da5d888153c30b3ca98cb5b3256a0fceb92318
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -46,6 +46,10 @@ export type WireExpiryState = {
 export type WireFailure = {
   readonly "at": string;
   readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
+};
+
+export type WireModelScope = {
+  readonly "models": ReadonlyArray<"gemini-2.5-flash" | "gemini-2.5-pro" | "opus" | "sonnet" | "unknown">;
 };
 
 export type WireName = {
@@ -138,6 +142,7 @@ export type WireWindow = {
   readonly "id": string;
   readonly "label": WireText;
   readonly "limitKey": string;
+  readonly "modelScope"?: WireModelScope;
   readonly "observedAt": string | null;
   readonly "poolKey": string;
   readonly "remainingPercent": number | null;
@@ -446,6 +451,31 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "at"
+    ],
+    "type": "object"
+  },
+  "ModelScope": {
+    "additionalProperties": false,
+    "properties": {
+      "models": {
+        "items": {
+          "enum": [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "opus",
+            "sonnet",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "maxItems": 32,
+        "minItems": 1,
+        "type": "array",
+        "uniqueItems": true
+      }
+    },
+    "required": [
+      "models"
     ],
     "type": "object"
   },
@@ -963,6 +993,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "limitKey": {
         "type": "string"
+      },
+      "modelScope": {
+        "$ref": "#/$defs/ModelScope"
       },
       "observedAt": {
         "anyOf": [

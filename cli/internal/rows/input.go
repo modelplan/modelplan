@@ -117,6 +117,8 @@ type CreditsInput struct {
 // WindowInput keys/roles/plans may contain raw provider values. The projection
 // applies allow-lists and generic fallbacks before forming any exported field.
 type WindowInput struct {
+	// ModelIDs is explicit provider scope; nil means plan-wide.
+	ModelIDs         []string
 	Kind             string
 	DurationSeconds  *int64
 	Limit            string

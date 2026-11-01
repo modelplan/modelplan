@@ -2,7 +2,7 @@
 # U11 native cockpit bridge
 
 The local WKWebView consumer of the web contract in public #355, pinned here to
-`7429d956b9efba8cc9c1952b37ba1cf02f7a9f80`. The web source stays in
+`f25e1e821411bdd58cb09d9a388b9064505e856c`. The web source stays in
 `desktop/cockpit/`; this package has no renderer, copied DTO or private art.
 
 Production borrows its one existing `ProcessEngineClient` through
@@ -151,9 +151,9 @@ are separate gates.
 
 ## Current v1 bundle pin
 
-Production pins the canonical builds from source `7429d956b9efba8cc9c1952b37ba1cf02f7a9f80`.
-Official manifest: `318d4d05e0ad0272ff60cff708f3c31c5c76d71e5dddd8f7490306a1c6b01663`
-(1069 files); community: `df614e05392b746e40b0a0a2aab0214a5f5f2d3d5e1b84f0262aaf716453f9a6`
+Production pins the canonical community and official builds for the current app-cli schema.
+Official manifest: `a8abde4881032dc2f4d05adf946fe5c2570b01bd7f7d642cc57e32482d798c22`
+(1069 files); community: `750509c8df47319fef826dfc5bcc4046c8991ad3b623f37d3a334e69deb23a11`
 (28 files). Session metadata remains plain tool/project/title/time text.
 
 Active page entry, bridge, text renderer and finite-animation CSS are unchanged
