@@ -1,4 +1,9 @@
 {
+  "modelScope": {
+    "models": [
+      "opus"
+    ]
+  },
   "id": "codex",
   "role": "session",
   "durationSeconds": 1,

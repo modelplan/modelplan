@@ -129,7 +129,10 @@ import ModelPlanCommunityHost
         item.target = self; return item
     }()
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: base.settingsMenuItem.title, action: #selector(openSettings), keyEquivalent: ",")
+        // Retain the session's item: its live language updates must not be lost
+        // in a title copied once by this consent-routing wrapper.
+        let item = base.settingsMenuItem
+        item.action = #selector(openSettings);item.keyEquivalent = ","
         item.keyEquivalentModifierMask = .command; item.target = self; return item
     }()
     public init(base: any CommunitySettingsIntegration, flow: CommunityConnectionFlow) throws {
