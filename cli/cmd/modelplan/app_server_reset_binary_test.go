@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/appcontract"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -36,9 +37,11 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	now := time.Now().UTC()
+	published := now.Add(-time.Minute).Format(time.RFC3339)
+	deadline := now.Add(2 * time.Hour).Truncate(time.Second)
 	dummy := strings.Repeat("a", 64)
-	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "publishedAt": published}}, "windows": []any{}}}
+	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "publishedAt": published, "schedule": map[string]any{"precision": "deadline", "from": deadline, "through": deadline, "label": "before the deadline"}}}, "windows": []any{}}}
 	blob, _ := json.Marshal(component)
 	hash := syntheticHash(blob)
 	refs := map[string]any{}
@@ -88,8 +91,15 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		Data struct {
 			Projection struct {
 				ResetEvents []struct {
-					ID    string `json:"id"`
-					RowID string `json:"rowId"`
+					ID        string    `json:"id"`
+					RowID     string    `json:"rowId"`
+					Status    string    `json:"status"`
+					ExpiresAt time.Time `json:"expiresAt"`
+					Schedule  *struct {
+						Precision string    `json:"precision"`
+						From      time.Time `json:"from"`
+						Through   time.Time `json:"through"`
+					} `json:"schedule"`
 				} `json:"resetEvents"`
 			} `json:"projection"`
 		} `json:"data"`
@@ -99,6 +109,21 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	}
 	if len(env.Data.Projection.ResetEvents) != 1 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
+	}
+	event := env.Data.Projection.ResetEvents[0]
+	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline) {
+		t.Fatalf("point deadline changed: %+v", event)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validator, err := appcontract.NewValidator("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validator.Validate("app-server", encoded); err != nil {
+		t.Fatalf("deadline response violates production schema: %v", err)
 	}
 	cockpit := p.call("cockpit/query", map[string]any{})
 	if cockpit["result"] == nil || !strings.Contains(string(cockpit["result"]), `"resetEvents"`) {

@@ -362,3 +362,9 @@ confirmation references, or an official vendor-host-list interface. Accordingly
 v1 treats unmapped free-form scope as row-wide, drops and counts unlinked
 confirmations, and omits source links while retaining eligible events. The
 publication-side structured links and host interface are separate follow-ups.
+
+A published schedule with `precision: "deadline"` may have identical `from`
+and `through` timestamps. It represents a point deadline, not an interval or
+a personal quota reset; the event expires at that timestamp. Other schedule
+precisions require `through` strictly after `from`, and reversed ranges are
+invalid for every precision.

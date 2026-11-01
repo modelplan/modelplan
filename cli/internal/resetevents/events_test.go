@@ -118,3 +118,43 @@ func TestStableIdentityAndUnsafeInputs(t *testing.T) {
 		t.Fatal("credential URL accepted")
 	}
 }
+
+func TestPointDeadlineAndWindowBoundaries(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	deadline := now.Add(2 * time.Hour)
+	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
+	for _, tc := range []struct {
+		name, precision string
+		from, through   time.Time
+		want            bool
+	}{
+		{"point deadline", "deadline", deadline, deadline, true},
+		{"reversed deadline", "deadline", deadline, deadline.Add(-time.Second), false},
+		{"point window", "window", deadline, deadline, false},
+		{"reversed window", "window", deadline, deadline.Add(-time.Second), false},
+		{"bounded window", "window", deadline, deadline.Add(time.Hour), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := record{ID: "event", Provider: "openai", EventType: "direct_reset_announced", Status: "upstream-announced", PublishedAt: now.Add(-time.Hour), Schedule: &Schedule{Precision: tc.precision, From: tc.from, Through: tc.through}}
+			raw, err := json.Marshal(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d := &digest.Digest{PublicationID: "0123456789abcdef01234567", Resets: []json.RawMessage{raw}}
+			events, _ := Project(d, projection, now)
+			if (len(events) == 1) != tc.want {
+				t.Fatalf("got %d events, want eligible=%v", len(events), tc.want)
+			}
+			if tc.want {
+				e := events[0]
+				if e.Schedule == nil || e.Schedule.Precision != tc.precision || !e.Schedule.From.Equal(tc.from) || !e.Schedule.Through.Equal(tc.through) || !e.ExpiresAt.Equal(tc.through) {
+					t.Fatalf("deadline changed: %+v", e)
+				}
+				expired, _ := Project(d, projection, tc.through)
+				if len(expired) != 0 {
+					t.Fatal("event retained at expiry")
+				}
+			}
+		})
+	}
+}

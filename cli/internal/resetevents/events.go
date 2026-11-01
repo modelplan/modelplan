@@ -79,8 +79,8 @@ func knownPlan(ids *[]string, row rows.Row) ([]string, bool) {
 }
 
 // Project requires an already verified digest. Dropped is an in-memory aggregate;
-// it does not include record IDs and is not sent to telemetry. This is not yet
-// wired to the server: upstream plan/link and official-host interfaces need review.
+// it does not include record IDs and is not sent to telemetry. The server
+// supplies an already verified publication and capability-gates the result.
 func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Event, int) {
 	if d == nil || !publicationID.MatchString(d.PublicationID) {
 		return nil, 0
@@ -127,7 +127,8 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 			default:
 				continue
 			}
-			if !r.Schedule.Through.After(r.Schedule.From) {
+			if r.Schedule.Through.Before(r.Schedule.From) ||
+				(r.Schedule.Through.Equal(r.Schedule.From) && r.Schedule.Precision != "deadline") {
 				continue
 			}
 			expiry = r.Schedule.Through
