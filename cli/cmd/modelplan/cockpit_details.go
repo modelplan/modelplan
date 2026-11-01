@@ -58,7 +58,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			if len(out.ResetCounts) == 64 {
 				break
 			}
-			if card.Kind != "full" && card.Kind != "five_hour" && card.Kind != "weekly" {
+			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {
+				continue
+		}
+		if card.Kind != "full" && card.Kind != "five_hour" && card.Kind != "weekly" {
 				continue
 			}
 			if card.Count != nil && (*card.Count < 0 || *card.Count > 100000) {

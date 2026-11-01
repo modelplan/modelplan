@@ -257,6 +257,9 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if changed {
 		health = wire.Health{State: wire.HealthDegraded, Code: "consent_changed"}
 	}
+	// Evaluation time is not a displayed fact; keeping it would make every
+	// otherwise identical backend view look changed to rows subscribers.
+	report.EvaluatedAt = time.Time{}
 	return View{QuotaReport: report, PublicModels: publicModels, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 

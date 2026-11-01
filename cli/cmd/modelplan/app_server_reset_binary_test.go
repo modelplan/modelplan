@@ -135,8 +135,12 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		t.Fatalf("negotiated cockpit details missing: %s", details["error"])
 	}
 	encodedDetails, err := json.Marshal(details)
-	if err != nil { t.Fatal(err) }
-	if err := validator.Validate("app-server", encodedDetails); err != nil { t.Fatalf("cockpit details violate schema: %v", err) }
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validator.Validate("app-server", encodedDetails); err != nil {
+		t.Fatalf("cockpit details violate schema: %v", err)
+	}
 	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
 	old := legacy.call("rows/subscribe", map[string]any{})
 	legacyCockpit := legacy.call("cockpit/query", map[string]any{})
