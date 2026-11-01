@@ -82,6 +82,33 @@ final class DecodeTests: XCTestCase {
         XCTAssertEqual(fields, 61)
     }
 
+    func testModelScopeAndResetEventsRejectMalformedValues() throws {
+        for (file, type, field) in [("RowsWindow.json", "RowsWindow", "modelScope"),
+                                    ("WireRowsProjection.json", "WireRowsProjection", "resetEvents")] {
+            var value = try object(file)
+            value.removeValue(forKey: field)
+            try check(type, value, accepted: true, context: type + " absent")
+            value[field] = NSNull()
+            try check(type, value, accepted: false, context: type + " null")
+            value[field] = "malformed"
+            try check(type, value, accepted: false, context: type + " wrong type")
+        }
+    }
+
+    func testMalformedNestedModelScopeDoesNotBecomePlanWide() throws {
+        var projection = try object("WireRowsProjection.json")
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
+        var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+        windows[0]["modelScope"] = "malformed"
+        accounts[0]["windows"] = windows
+        rows[0]["accounts"] = accounts
+        projection["rows"] = rows
+        let decoded = try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection))
+        XCTAssertTrue(decoded.rows[0].invalid)
+        XCTAssertTrue(decoded.rows[0].accounts.isEmpty)
+    }
+
     func testRequiredFieldsRemainRequired() throws {
         for entry in try index().cases {
             for field in entry.required {

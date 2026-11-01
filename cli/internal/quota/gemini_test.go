@@ -282,6 +282,47 @@ func TestGeminiCreditsAndFractionsStrict(t *testing.T) {
 	}
 }
 
+func TestGeminiDistinctBucketLabelsAndCacheKeys(t *testing.T) {
+	var q geminiQuota
+	body := `{"buckets":[` +
+		`{"modelId":"gemini-pro","tokenType":"REQUESTS","remainingFraction":0.8},` +
+		`{"modelId":"gemini-2.5-pro","tokenType":"REQUESTS","remainingFraction":0.7},` +
+		`{"modelId":"gemini-2.5-flash-lite","tokenType":"REQUESTS","remainingFraction":0.6},` +
+		`{"modelId":"gemini-3.0-flash","tokenType":"REQUESTS","remainingFraction":0.5}]}`
+	if err := json.Unmarshal([]byte(body), &q); err != nil {
+		t.Fatal(err)
+	}
+	windows, ok := parseGeminiQuota(q, geminiNow)
+	if !ok || len(windows) != 4 {
+		t.Fatalf("quota buckets: %v %+v", ok, windows)
+	}
+	want := []string{"gemini-pro requests", "gemini-2.5-pro requests", "gemini-2.5-flash-lite requests", "gemini-3.0-flash requests"}
+	a := Account{Source: "native:gemini", Windows: windows}
+	seen := map[string]bool{}
+	for i, w := range windows {
+		if w.Limit != want[i] || a.SafeLimit(w.Limit) != want[i] || seen[w.Limit] {
+			t.Fatalf("bucket %d label/key collapsed: %+v", i, w)
+		}
+		seen[w.Limit] = true
+		if i == 1 && (len(w.ModelIDs) != 1 || w.ModelIDs[0] != "gemini-2.5-pro") || i != 1 && (len(w.ModelIDs) != 1 || w.ModelIDs[0] != "unknown") {
+			t.Fatalf("model scope was not independently sanitized: %+v", w.ModelIDs)
+		}
+	}
+	data, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cached Account
+	if err := json.Unmarshal(data, &cached); err != nil {
+		t.Fatal(err)
+	}
+	for i, w := range cached.Windows {
+		if w.Limit != want[i] || cached.SafeLimit(w.Limit) != want[i] {
+			t.Fatalf("cache collapsed bucket %d: %+v", i, w)
+		}
+	}
+}
+
 func TestGeminiDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	p := geminiTestPaths(t)
 	forwarded := false

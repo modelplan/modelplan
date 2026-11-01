@@ -210,6 +210,9 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
+	if name == "RowsWindow" && field == "modelScope" || name == "WireRowsProjection" && field == "resetEvents" {
+		return true
+	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
 		return true
 	}

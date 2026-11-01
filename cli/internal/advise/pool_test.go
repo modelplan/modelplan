@@ -78,3 +78,19 @@ func TestLegacyGeminiLabelIsSanitizedInAdviceAndKey(t *testing.T) {
 		}
 	}
 }
+
+func TestGeminiScopedWindowsHaveDistinctAdviceKeys(t *testing.T) {
+	labels := []string{"gemini-pro requests", "gemini-2.5-pro requests", "gemini-2.5-flash-lite requests", "gemini-3.0-flash requests"}
+	a := quota.Account{Source: "native:gemini"}
+	for _, label := range labels {
+		a.Windows = append(a.Windows, quota.Window{Kind: "unknown", Limit: label, ScopeKnown: true})
+	}
+	seen := map[string]bool{}
+	for i := range a.Windows {
+		key := windowKey(WindowTight, &a, &a.Windows[i])
+		if seen[key] || !strings.Contains(key, "|"+labels[i]+"|") {
+			t.Fatalf("collapsed Gemini advice key: %q", key)
+		}
+		seen[key] = true
+	}
+}
