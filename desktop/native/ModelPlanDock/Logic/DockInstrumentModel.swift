@@ -5,17 +5,19 @@ public enum DockQuotaPeriod: String, Codable, Sendable {
     case fiveHour, day, week, month, other
     // These hints order known period kinds only. They are never a clock/duration observation.
     fileprivate var orderHint: Double {
-        switch self { case .fiveHour:return 18_000;case .day:return 86_400;case .week:return 604_800;case .month,.other:return .infinity }
+        switch self { case .fiveHour:return 18_000;case .day:return 86_400;case .week:return 604_800;case .month:return 2_592_000;case .other:return .infinity }
     }
 }
 public struct DockQuotaWindowInput: Sendable {
     public var id: String, period: DockQuotaPeriod, label: String
     public var remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?
+    /// Participation in named general quota presentation. False is not itself a
+    /// model-scope claim; that classification needs an explicit wire field.
+    public var isGeneral = true
     public init(id: String, period: DockQuotaPeriod, label: String, remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?) {
         self.id=id;self.period=period;self.label=label;self.remainingPercent=remainingPercent
         self.resetsAt=resetsAt;self.durationSeconds=durationSeconds
     }
-    fileprivate var orderingHint: Double { durationSeconds.flatMap{$0.isFinite && $0>0 ? $0:nil} ?? period.orderHint }
 }
 public struct DockWorkingSignal: Sendable {
     public var subscriptionID: String?
@@ -26,10 +28,12 @@ public struct DockWorkingSignal: Sendable {
 }
 public struct DockInstrumentInput: Sendable {
     public var id: String, name: String, alias: String?, vendorResourceKey: String?
+    public var duplicateAccountTag:Int?
     public var windows: [DockQuotaWindowInput]
     public var selectedWindowID: String?
     public var showUsedPercent = false
     public var dataState: DockDataState = .unavailable
+    public var unavailableReason:String?
     public var working: DockWorkingSignal?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
 }
@@ -39,10 +43,12 @@ public struct DockQuotaArc: Equatable, Sendable {
 }
 public struct DockInstrumentReading: Sendable {
     public let subscriptionID: String, name: String, alias: String?, vendorResourceKey: String?
+    public let duplicateAccountTag:Int?
     public let outer: DockQuotaArc?, inner: DockQuotaArc?
     public let selectedWindowID: String?, selectedWindowLabel: String?, selectedResetAt: Date?
     public let remainingPercent: Double?, readout: String, status: DockQuotaStatus
     public let dataState:DockDataState
+    public let unavailableReason:String?
     public let timeLeftFraction: Double?
     /// Position count comes from the frozen appearance provider, not quota percentage or a ten-point helper.
     public func litTimePoints(positions: Int) -> Int? {
@@ -54,9 +60,10 @@ public struct DockInstrumentReading: Sendable {
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
         let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status) }
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias, vendorResourceKey: vendorResourceKey,
+            duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
     }
 }
 
@@ -74,14 +81,17 @@ public enum DockInstrumentProjection {
             guard let r else{return .unknown}
             return r<=redBelow ? .critical : r<41 ? .warning : .normal
         }
-        let sorted=input.windows.enumerated().sorted { a,b in
-            let x=a.element.orderingHint,y=b.element.orderingHint
-            return x==y ? a.offset<b.offset : x<y
+        let general=input.windows.filter(\.isGeneral)
+        // Match the study's ringWindows ordering by typed window length. Restricted
+        // model and named pools have already been excluded from `general`.
+        let sorted=general.enumerated().sorted { left,right in
+            let a=left.element.period.orderHint,b=right.element.period.orderHint
+            return a == b ? left.offset < right.offset : a < b
         }.map(\.element)
         let outer=sorted.first, rest=Array(sorted.dropFirst())
-        let inner=rest.first{$0.period == .week} ?? rest.last
-        let selected=input.selectedWindowID.flatMap{id in input.windows.first{$0.id==id}}
-            ?? input.windows.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? input.windows.first
+        let inner=rest.first { $0.period == .week } ?? rest.last
+        let selected=input.selectedWindowID.flatMap{id in general.first{$0.id==id}}
+            ?? general.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? general.first
         let remaining=selected.flatMap(value), selectedStatus=status(remaining)
         let shown=remaining.map{input.showUsedPercent ? 100-$0:$0}
         let text=shown.map{v in (v.rounded()==v ? String(Int(v)):String(v))+"%"} ?? "--"
@@ -92,8 +102,9 @@ public enum DockInstrumentProjection {
         }
         let working=input.working.map{$0.bindingVerified && $0.fresh && $0.observedOutput && $0.subscriptionID==input.id} == true && input.dataState == .fresh
         func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
-        return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,
+        return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,selectedResetAt:selected?.resetsAt,
-            remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
+            remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
+            unavailableReason:remaining == nil ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
     }
 }

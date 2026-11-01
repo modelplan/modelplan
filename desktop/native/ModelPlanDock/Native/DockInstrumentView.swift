@@ -259,6 +259,17 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if window != nil{onNeedsFreshPresentation?()}
     }
     private func invalidatePresentation(){resetVisuals();onNeedsFreshPresentation?()}
+    public func communityRowText(_ id:String) -> String? {
+        guard community,let r=readings[id] else { return nil }
+        let heading=[r.alias ?? r.name,r.readout].joined(separator:"  ")
+        guard r.remainingPercent == nil else { return heading }
+        let reason=r.unavailableReason?.trimmingCharacters(in:.whitespacesAndNewlines)
+        return heading+"\n"+String((reason?.isEmpty == false ? reason! : locale.hasPrefix("zh") ? "不可用" : "Unavailable").prefix(80))
+    }
+    public func communityRowIsDimmed(_ id:String) -> Bool {
+        guard community, let reading=readings[id] else { return false }
+        return reading.remainingPercent == nil
+    }
     public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();invalidatePresentation()}
     public override func draw(_ dirtyRect:NSRect){
         if let image {
@@ -273,11 +284,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         NSColor.windowBackgroundColor.setFill();bounds.fill()
         if failed {let label=locale.hasPrefix("zh") ? "仪表暂不可用":"Instruments unavailable";(label as NSString).draw(at:CGPoint(x:12,y:12),withAttributes:[.font:NSFont.systemFont(ofSize:12),.foregroundColor:NSColor.secondaryLabelColor]);return}
         for (index,id) in orderedIDs.enumerated(){guard let r=readings[id] else{continue}
-            let value=[r.alias ?? r.name,r.readout].joined(separator:"  ")
+            let value=communityRowText(id) ?? [r.alias ?? r.name,r.readout].joined(separator:"  ")
             let context = NSGraphicsContext.current?.cgContext
             context?.saveGState()
             if let control = stationRect(id) { context?.clip(to: control) }
-            (value as NSString).draw(at:CGPoint(x:12 * communityRowHeight / 44,y:CGFloat(index)*communityRowHeight+14 * communityRowHeight / 44),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12 * communityRowHeight / 44,weight:.regular),.foregroundColor:NSColor.labelColor])
+            let scale=communityRowHeight/44,paragraph=NSMutableParagraphStyle();paragraph.lineBreakMode = .byTruncatingTail
+            (value as NSString).draw(in:CGRect(x:12*scale,y:CGFloat(index)*communityRowHeight+8*scale,width:bounds.width-24*scale,height:communityRowHeight-12*scale),withAttributes:[.font:NSFont.monospacedSystemFont(ofSize:12*scale,weight:.regular),.foregroundColor:communityRowIsDimmed(id) ? NSColor.secondaryLabelColor : NSColor.labelColor,.paragraphStyle:paragraph])
             context?.restoreGState()
         }
     }

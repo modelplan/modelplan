@@ -5,6 +5,9 @@ import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
 import ModelPlanShell
+#if MODELPLAN_U6_DRIVE
+import ModelPlanMenuVerification
+#endif
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -67,6 +70,15 @@ import ModelPlanShell
             if self.liveStatusMenu != nil { self.renderMenu() }
             self.console?.applySettings(value)
         }
+        let application=settings
+        composition.dock.requestHideDock = { [weak application] in
+            Task { _ = try? await application?.editor.commit(SettingsB21Edit.showDock(false)) }
+        }
+        #if MODELPLAN_U6_DRIVE
+        composition.provider.verificationWillClear = { [weak self] invalidation in
+            self?.driveGuard?.recordClearInitiated(invalidation)
+        }
+        #endif
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -147,6 +159,7 @@ import ModelPlanShell
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        renderMenu()
         interactionBinding?.install()
     }
     func allowDockPresentation() {
@@ -213,9 +226,20 @@ import ModelPlanShell
         }, hasPrivateContent: { [weak self] in
             guard let value = self?.composition.provider.dockContent else { return false }
             return !value.dockRows.isEmpty || !value.menuRows.isEmpty
-        }) } catch { NSApplication.shared.terminate(nil); return }
+        }, privateTitle: { [weak self] in
+            self?.composition.provider.dockContent.menuRows.first(where: { !$0.accounts.isEmpty })?.name.en
+        },
+           dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        status?.autosaveName = "ModelPlanCommunity.StatusItem"
+        status?.isVisible = true
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
+            guard let self else { return false }; return menu === self.status?.menu
+        }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
+           actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
+        #endif
         Task {
             await prepare(); guard !terminating else { return }
             allowDockPresentation(); renderMenu(); await composition.start()
@@ -227,28 +251,73 @@ import ModelPlanShell
         let menu = liveStatusMenu ?? NSMenu()
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
         menu.removeAllItems()
+        menu.autoenablesItems = false
+        let english = settings.editor.snapshot?.preferences.language == .english
+        func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let reading = NSMenuItem(title: composition.menuPresentation.detail, action: nil, keyEquivalent: "")
         reading.isEnabled = false; menu.addItem(reading)
-        let refresh = menu.addItem(withTitle: EngineRowsText.refresh.value(language), action: #selector(refreshRows), keyEquivalent: "")
+        let refresh = menu.addItem(withTitle: label("Refresh", "刷新"), action: #selector(refreshRows), keyEquivalent: "")
         refresh.target = self
         menu.addItem(.separator())
-        menu.addItem(settingsHost.menuItem(title: EngineRowsText.settings.value(language)))
         let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
-        menu.addItem(withTitle: EngineRowsText.quit.value(language), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        // r7 SPEC §6.6: public links, update check, Help directly above Settings, About, Quit.
+        for (link, title) in [(SettingsPublicLink.website,label("Website", "网站")), (.methodology,label("Methodology", "方法论")), (.privacy,label("Privacy", "隐私"))] {
+            let item = menu.addItem(withTitle:title,action:#selector(openPublicLink(_:)),keyEquivalent:"")
+            item.target=self;item.representedObject=link.rawValue
+        }
+        let updates=menu.addItem(withTitle:label("Check for updates", "检查更新"),action:#selector(checkForUpdates),keyEquivalent:"")
+        updates.target=self;updates.isEnabled=settings.editor.context.capabilities.updateServiceAvailable && settings.editor.onHostRequest != nil
+        menu.addItem(.separator())
+        let help=menu.addItem(withTitle:label("Help…", "说明…"),action:nil,keyEquivalent:"")
+        // The engine Cockpit does not yet expose an Option-map action. Do not fake delivery.
+        help.isEnabled=false
+        menu.addItem(settingsHost.menuItem(title:label("Settings…", "设置…")))
+        let about=menu.addItem(withTitle:label("About", "关于"),action:#selector(showAbout),keyEquivalent:"");about.target=self
+        menu.addItem(withTitle: label("Quit", "退出"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
-        let image = CommunityMenuBarResources.templateImage()
-        image?.isTemplate = true
-        status?.button?.image = image; status?.button?.contentTintColor = nil
+        if let button=status?.button {
+            Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness)
+            button.contentTintColor = nil
+        }
         status?.button?.title = composition.menuPresentation.title
         status?.button?.toolTip = composition.menuPresentation.detail
         #if MODELPLAN_U6_DRIVE
-        if let button = status?.button { driveGuard?.recordStatusButtonFrame(button) }
+        if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
+    }
+    static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
+        let sized=image?.copy() as? NSImage
+        let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
+        sized?.size=NSSize(width:side,height:side);sized?.isTemplate=true
+        button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func refreshRows() { Task { await composition.refresh() } }
+    @objc private func openPublicLink(_ sender:NSMenuItem) {
+        guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
+        NSWorkspace.shared.open(link.url)
+    }
+    @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
+    @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
+    @objc private func refreshRows() {
+        Task {
+            #if MODELPLAN_U6_DRIVE
+            if let driveGuard {
+                // The product handler owns the one RPC; the test hook only observes its result.
+                var observer: U6DriveGuard.RefreshObservation?
+                for _ in 0..<25 where observer == nil {
+                    observer = driveGuard.beginProductRefresh(composition: composition)
+                    if observer == nil { try? await Task.sleep(for: .milliseconds(20)) }
+                }
+                guard let observer else { return }
+                await composition.refresh(prepared: observer.prepared, onResult: observer.result)
+                return
+            }
+            #endif
+            await composition.refresh()
+        }
+    }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
@@ -256,5 +325,10 @@ import ModelPlanShell
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
+    }
+    public func applicationWillTerminate(_ notification: Notification) {
+        #if MODELPLAN_U6_DRIVE
+        driveGuard?.recordTerminateCompleted()
+        #endif
     }
 }
