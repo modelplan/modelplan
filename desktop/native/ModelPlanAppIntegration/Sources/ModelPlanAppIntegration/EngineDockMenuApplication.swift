@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanEngineClient
+import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
 
@@ -8,6 +9,7 @@ import ModelPlanSettings
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
     private let settings: SettingsApplicationCoordinator
+    private var interactionBinding: EngineDockInteractionBinding?
     public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
     private var lastAboutConnectionReady = false
@@ -38,6 +40,12 @@ import ModelPlanSettings
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.dock.apply($0) }
         super.init()
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
+        // M0's host opts in only when the native interaction port exists.
+        if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
+            let clock = { ProcessInfo.processInfo.systemUptime }
+            interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
+                scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
+        }
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -70,7 +78,7 @@ import ModelPlanSettings
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
         console?.show()
     }
-    public func prepare() async { await settings.reload() }
+    public func prepare() async { await settings.reload(); interactionBinding?.start() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -113,7 +121,7 @@ import ModelPlanSettings
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true; settingsHost.suspend(); console?.hide()
+        terminating = true; interactionBinding?.stop(); settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
