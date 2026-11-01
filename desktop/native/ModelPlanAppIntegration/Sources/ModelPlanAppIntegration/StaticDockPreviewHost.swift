@@ -200,9 +200,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     /// Internal-only registration read used by synthetic offscreen evidence.
-    var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
+    @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
     /// Synthetic offscreen captures may select a deterministic backing scale.
-    var captureBackingScaleForChecks: Int?
+    @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, rendering = false, menuOpen = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?

@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .library(name: "ModelPlanAppIntegration", targets: ["ModelPlanAppIntegration"]),
         .executable(name: "ModelPlanCommunityApp", targets: ["ModelPlanCommunityApp"]),
+        .executable(name: "S1Gallery", targets: ["S1Gallery"]),
     ],
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
@@ -46,11 +47,16 @@ let package = Package(
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),
+        .target(name: "S1GalleryCore", dependencies: ["ModelPlanAppIntegration",
+            .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
+            .product(name: "ModelPlanDockResources", package: "dock-resources")]),
+        .executableTarget(name: "S1Gallery", dependencies: ["S1GalleryCore"]),
         .testTarget(name: "ModelPlanAppCLIConsentContractTests", dependencies: [
             "ModelPlanAppIntegration",
             .product(name: "ModelPlanCore", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ], path: "AppCLIContractTests"),
-        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore")], resources: [.process("Fixtures")]),
+        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", "S1GalleryCore", .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore")], resources: [.process("Fixtures")]),
     ]
 )
