@@ -50,6 +50,8 @@ let package = Package(
         ]),
         .target(name: "S1GalleryCore", dependencies: ["ModelPlanAppIntegration",
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
+            .product(name: "ModelPlanOfficialDock", package: "dock"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
             .product(name: "ModelPlanDockResources", package: "dock-resources")]),
         .executableTarget(name: "S1Gallery", dependencies: ["S1GalleryCore"]),

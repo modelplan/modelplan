@@ -18,10 +18,13 @@ import ModelPlanDock
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         let provider = S1SyntheticProvider(count: 4, now: now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
-        XCTAssertEqual(Set(content.notices.keys), Set(["codex", "claude"]))
-        XCTAssertEqual(content.notices["codex"]?.key.kind, .cardsExpiring)
-        XCTAssertEqual(content.notices["claude"]?.key.kind, .forecast)
-        XCTAssertTrue(content.notices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid })
+        let notices = Dictionary(uniqueKeysWithValues: content.signals.compactMap { signal in
+            DockNoticeProjection.selected(for: signal, at: now).map { (signal.id, $0) }
+        })
+        XCTAssertEqual(Set(notices.keys), Set(["codex", "claude"]))
+        XCTAssertEqual(notices["codex"]?.key.kind, .cardsExpiring)
+        XCTAssertEqual(notices["claude"]?.key.kind, .forecast)
+        XCTAssertTrue(notices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid })
     }
 
     func testProduceOffscreenGallery() async throws {

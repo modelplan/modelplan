@@ -5,6 +5,8 @@ import CoreText
 import CryptoKit
 import Foundation
 import ModelPlanSettings
+import ModelPlanPrimitives
+import ModelPlanOfficialDock
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanDockResources
 @_spi(DockResourceChecks) import ModelPlanAppIntegration
@@ -18,8 +20,11 @@ private struct S1Manifest: Decodable {
 }
 
 @MainActor final class S1SyntheticProvider: DockContentProvider {
+    enum NoticeCase { case fixture, announced, confirmed }
     let inputs: [DockInstrumentInput]
-    init(count: Int, now: Date) {
+    let noticeCase: NoticeCase
+    init(count: Int, now: Date, noticeCase: NoticeCase = .fixture) {
+        self.noticeCase = noticeCase
         // Values are the fixed r7 synthetic scene, including the reported
         // reset times and nominal fixture periods; no time is inferred for an
         // unknown reset or an actual user account.
@@ -48,10 +53,16 @@ private struct S1Manifest: Decodable {
         }
     }
     func makeContent(_ context: DockContentContext) -> DockContent {
-        var notices = [String: DockNotice]()
+        var signals = [DockSubscriptionSignal]()
         for item in inputs {
             var signal = DockSubscriptionSignal(id: item.id); signal.dataState = .fresh
-            if item.id == "codex" {
+            if item.id == "codex", noticeCase != .fixture {
+                switch noticeCase {
+                case .announced: signal.reset = .init(id: "synthetic-reset", status: .announced, announcedAt: context.now.addingTimeInterval(-60))
+                case .confirmed: signal.reset = .init(id: "synthetic-reset", status: .confirmed, confirmedAt: context.now.addingTimeInterval(-60))
+                case .fixture: break
+                }
+            } else if item.id == "codex" {
                 // r7 resetCards: the first of two cards expires after 30 h.
                 signal.cards = [.init(id: "rc-c1", expiresAt: context.now.addingTimeInterval(30 * 3600)),
                                 .init(id: "rc-c2", expiresAt: context.now.addingTimeInterval((12 * 24 + 5) * 3600))]
@@ -59,9 +70,9 @@ private struct S1Manifest: Decodable {
                 // r7 fixture forecast has a 40-minute runway.
                 signal.forecast = .init(windowID: "window-0", validUntil: context.now.addingTimeInterval(40 * 60))
             }
-            if let notice = DockNoticeProjection.selected(for: signal, at: context.now) { notices[item.id] = notice }
+            signals.append(signal)
         }
-        return .init(snapshot: .init(inputs: inputs), notices: notices)
+        return .init(snapshot: .init(inputs: inputs), signals: signals)
     }
 }
 
@@ -332,13 +343,80 @@ private struct S1Manifest: Decodable {
             let metricText = (record["metric"] as? Double).map { String(format: "%.6f", $0) } ?? "not run"
             html += "<tr><td>\(capture.file)</td><td><img width=\"260\" src=\"\(refName)\"></td><td>\(nativeCell)</td><td>\(status)<br>RGB similarity: \(metricText)</td></tr>"
         }
+        // Additional synthetic reset states have no prototype golden; never assign a pixel score.
+        for (label, noticeCase, showPercentages) in [("blue-hollow", S1SyntheticProvider.NoticeCase.announced, true),
+                                                     ("blue-solid", .confirmed, true), ("blue-rim", .announced, false)] {
+            let store = try SettingsStore(url: temp.appendingPathComponent("settings-" + label + ".json"))
+            try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.dockAlongFraction = 0.5; $0.language = .chinese; $0.showPercentages = showPercentages }
+            let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+            host.captureBackingScaleForChecks = 2
+            host.setDockContentProvider(S1SyntheticProvider(count: 1, now: now, noticeCase: noticeCase))
+            let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+            await coordinator.reload()
+            var row: [String: Any] = ["scenario": label, "metric": NSNull()]
+            var cell = "not run", status = "not-run: production appearance failed"
+            if host.lastAppearanceError == nil, let image = host.dockView.presentedImageForChecks,
+               let skin = host.dockView.presentedSkinForChecks,
+               let station = skin.stations.first(where: { $0.subscriptionID == "codex" }),
+               let notice = host.dockView.presentedNoticesForChecks["codex"],
+               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                let expectedShape: DockNotice.Shape = noticeCase == .confirmed ? .solid : .hollow
+                let expectedX = showPercentages ? station.readout.midX + 22 * 44 / 52 : station.centre.x + 44 * 0.25
+                let expectedY = showPercentages ? station.readout.midY : station.centre.y - 44 * 0.433013
+                let pass = notice.tone == .blue && notice.shape == expectedShape && abs(station.eventRect.midX - expectedX) < 0.001 && abs(station.eventRect.midY - expectedY) < 0.001
+                let file = "synthetic-" + label + ".png"
+                try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
+                written.append(output.appendingPathComponent(file)); row["nativeFile"] = file
+                row["noticeAssertion"] = pass ? "pass" : "fail"
+                status = pass ? "report-only: synthetic geometry and tone passed; owner review pending" : "fail: synthetic geometry or tone"
+                cell = "<img width=\"260\" src=\"\(file)\">"
+            }
+            host.close(); row["status"] = status; records.append(row)
+            html += "<tr><td>\(label)</td><td>no golden</td><td>\(cell)</td><td>\(status)</td></tr>"
+        }
+        // Real shared-pool playback, driven exclusively by a synthetic member signal.
+        do {
+            let store = try SettingsStore(url: temp.appendingPathComponent("settings-flame.json"))
+            try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.autoHide = false; $0.motion = .system }
+            let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+            defer { host.close() }
+            host.captureBackingScaleForChecks = 2
+            host.setDockContentProvider(S1SyntheticProvider(count: 1, now: now))
+            let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+            await coordinator.reload(); host.setPresentationAllowed(true)
+            let pool = EffectResourcePool()
+            host.installWorkingEffectsForChecks(pool: pool, provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: { false })
+            try host.setWorkingSignals([.init(subscriptionID: "codex", bindingVerified: true, fresh: true, observedOutput: true)])
+            guard host.activeWorkingEffectIDs.contains("codex"), host.rotatingWorkingEffectIDs.contains("codex"),
+                  let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
+            html += "<tr><td>Prototype Canvas (recording excludes CSS rotation) vs captured frames vs native playback (synthetic, owner review pending)</td><td><video controls width=\"260\" src=\"../../handoffs/shared/s1-flame-frames/prototype-live-normal.webm\"></video></td><td>Captured poses (44 pt, 2x):<br>" + (0..<9).map { "<img width=\"44\" src=\"../../handoffs/shared/s1-flame-frames/flame-normal-44pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
+            var files = [String]()
+            for pose in 0..<9 {
+                host.seekWorkingEffectsForChecks(Double(pose) / 9 + 0.00001)
+                let w = Int(ceil(host.dockView.bounds.width * 2)), h = Int(ceil(host.dockView.bounds.height * 2))
+                guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
+                context.translateBy(x: 0, y: CGFloat(h)); context.scaleBy(x: 2, y: -2)
+                host.dockView.displayIfNeeded(); layer.render(in: context)
+                guard let image = context.makeImage(), let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+                let file = "native-working-pose\(pose).png"; try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
+                written.append(output.appendingPathComponent(file)); files.append(file)
+                html += "<img width=\"130\" src=\"\(file)\" alt=\"native pose \(pose)\">"
+            }
+            html += "</td></tr>"
+            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "nativeFiles": files, "status": "partial: native shared-pool playback; prototype recording excludes CSS rotation; owner visual review pending"])
+        } catch {
+            html += "<tr><td>synthetic-working-strip</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
+            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "status": "not-run: \(String(describing: error))"])
+        }
         html += "</table><p>Null metrics are not passes. Metrics exclude only percentage glyph ink, and require geometry and owner review. Button states remain unsupported.</p>"
         try Data(html.utf8).write(to: output.appendingPathComponent("index.html"), options: .withoutOverwriting)
         let result: [String: Any] = ["schemaVersion":1,"prototypeSourceCommit":manifest.prototypeSourceCommit,"results":records]
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("metrics.json"), options: .withoutOverwriting)
         written.append(output.appendingPathComponent("index.html")); written.append(output.appendingPathComponent("metrics.json"))
         let files = written.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        var readme = "# S1 synthetic offscreen gallery\n\nReport only; null metrics, reset-event content and unsupported button states are not passes. Reference PNGs are linked in place from the sibling handoff, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider, beta-only Z mark in synthetic preview, and absent synthetic jet animation are platform or implementation differences. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
+        let sourceSHA = ProcessInfo.processInfo.environment["MODELPLAN_S1_SOURCE_SHA"] ?? "uncommitted source; no commit attribution"
+        var readme = "# S1 synthetic offscreen gallery\n\nNative source: `\(sourceSHA)`. Golden source: `\(manifest.prototypeSourceCommit)`. Report only; null metrics, synthetic reset signals and unsupported button states are not product acceptance. Reference PNGs and captured prototype video are linked in place, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider and beta-only Z mark in synthetic preview remain differences. The working strip uses synthetic signal and the shared frame pool; owner visual review remains required. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
         for file in files {
             let data = try Data(contentsOf: file), digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             readme += "| \(file.lastPathComponent) | \(data.count) | \(digest) |\n"

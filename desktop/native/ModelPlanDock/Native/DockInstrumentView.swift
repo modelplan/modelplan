@@ -45,11 +45,67 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// The effect driver only receives a currently successful official skin.
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
+    private var noticePulseLayers = [CALayer]()
+    @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
         guard let path = registeredHullPath else { return nil }
         let rect = path.boundingBoxOfPath
         return rect.isNull || rect.isEmpty ? nil : rect
+    }
+    /// The existing instrument renderer supplies every pulse pixel; this only animates a transient crop.
+    public var visibleNoticesForPulse: [(String, DockNotice)] {
+        guard !failed, !community, let skin else { return [] }
+        return skin.stations.compactMap { station in
+            guard let key = station.subscriptionID ?? station.overflowNoticeKey, let notice = notices[key] else { return nil }
+            return (key, notice)
+        }
+    }
+    @discardableResult public func pulseNotice(_ key: String) -> Bool {
+        guard !failed, !community, let skin, let image, let notice = notices[key], let root = layer,
+              let station = skin.stations.first(where: { $0.subscriptionID == key || $0.overflowNoticeKey == key }) else { return false }
+        let local = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+        let pixels = CGRect(x: local.minX * CGFloat(scale), y: local.minY * CGFloat(scale),
+                            width: local.width * CGFloat(scale), height: local.height * CGFloat(scale)).integral
+        guard pixels.width > 0, pixels.height > 0, pixels.width <= 128, pixels.height <= 128,
+              let crop = image.cropping(to: pixels) else { return false }
+        let rim = station.showsReadout == false || station.overflowCount != nil
+        var contents = crop
+        if !rim {
+            guard let c = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8,
+                                    bytesPerRow: crop.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            c.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+            guard let memory = c.data else { return false }
+            let bytes = memory.assumingMemoryBound(to: UInt8.self)
+            for i in 0..<(crop.width * crop.height) {
+                let alpha = Int(bytes[i * 4 + 3])
+                for channel in 0..<3 { bytes[i * 4 + channel] = UInt8(min(alpha, Int((Double(bytes[i * 4 + channel]) * 2.2).rounded()))) }
+            }
+            guard let bright = c.makeImage() else { return false }; contents = bright
+        }
+        let overlay = CALayer(); overlay.contents = contents; overlay.contentsScale = CGFloat(scale)
+        overlay.frame = CGRect(x: pixels.minX / CGFloat(scale), y: pixels.minY / CGFloat(scale),
+                               width: pixels.width / CGFloat(scale), height: pixels.height / CGFloat(scale))
+        let mask = CAShapeLayer(); mask.frame = overlay.bounds
+        let diameter = (notice.shape == .solid ? station.eventSolidDiameter : station.eventHollowDiameter) ?? station.eventRect.width / 2
+        let dot = CGRect(x: overlay.bounds.midX-diameter/2, y: overlay.bounds.midY-diameter/2, width: diameter, height: diameter)
+        let path = CGMutablePath(); path.addEllipse(in: dot)
+        if notice.shape == .hollow {
+            let width = station.eventStrokeWidth ?? 1.2
+            if dot.width > 2 * width { path.addEllipse(in: dot.insetBy(dx: width, dy: width)) }
+            mask.fillRule = .evenOdd
+        }
+        mask.path = path; overlay.mask = mask; root.addSublayer(overlay); noticePulseLayers.append(overlay)
+        let pulse = CAKeyframeAnimation(keyPath: rim ? "transform.scale" : "opacity")
+        pulse.values = rim ? [1, 2.1, 1] : [0, 1, 0]; pulse.keyTimes = [0, 0.35, 1]
+        pulse.duration = rim ? 0.9 : 0.45; pulse.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeOut)]
+        CATransaction.begin(); CATransaction.setCompletionBlock { [weak self, weak overlay] in
+            overlay?.removeFromSuperlayer()
+            self?.noticePulseLayers.removeAll { $0 === overlay }
+        }
+        overlay.add(pulse, forKey: "dock-notice-first-appearance"); CATransaction.commit()
+        return true
     }
     /// Existing material pixels for a destination ghost when the supplier has no vector hull.
     public var registeredMovePreviewImage: CGImage? {
@@ -160,7 +216,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         needsDisplay = true
     }
     public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
-    private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    private func resetVisuals(){noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
     private func clearObservers(){

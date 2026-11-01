@@ -1,16 +1,27 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import CoreGraphics
+import QuartzCore
+
+/// An admitted semantic notice and its appearance-owned relative position.
+public struct DockSliverNoticeMark: Equatable {
+    public let position: CGFloat, notice: DockNotice, unit: CGFloat
+    public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
+}
 
 /// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public var onNeedsFreshPresentation:(()->Void)?
+    public var noticeMarks: [DockSliverNoticeMark] = [] { didSet { if oldValue != noticeMarks { clearPulses(); needsDisplay = true } } }
+    private var noticePulseLayers = [CALayer]()
+    @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
+    private func clearPulses() { noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers = [] }
     public private(set) var retainedBytes=0
     private var image:CGImage?,alpha=[UInt8](),scale=1,failed=true
     public override var isFlipped:Bool{true}
     public override var acceptsFirstResponder:Bool{false}
-    public override init(frame:NSRect){super.init(frame:frame);setAccessibilityElement(false);setAccessibilityRole(.button);setAccessibilityEnabled(false)}
+    public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.masksToBounds=true;setAccessibilityElement(false);setAccessibilityRole(.button);setAccessibilityEnabled(false)}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func apply(image:CGImage?,logicalSize:CGSize,scale:Int,accessibilityLabel:String)throws{
         self.image=nil;alpha=[];retainedBytes=0;failed=true;setAccessibilityElement(false);setAccessibilityLabel(nil);setAccessibilityEnabled(false);needsDisplay=true
@@ -68,6 +79,56 @@ import CoreGraphics
         graphics.cgContext.setShouldAntialias(true)
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil)}
         else{drawNeutralMetal(in:graphics.cgContext)}
+        for mark in noticeMarks where mark.position.isFinite && (0...1).contains(mark.position) && mark.unit.isFinite && mark.unit > 0 {
+            let horizontal = bounds.width > bounds.height
+            let center = horizontal ? CGPoint(x: bounds.width * mark.position, y: bounds.midY) : CGPoint(x: bounds.midX, y: bounds.height * mark.position)
+            let diameter = (mark.notice.shape == .hollow ? 6 : 5) * mark.unit
+            let rect = CGRect(x: center.x-diameter/2, y: center.y-diameter/2, width: diameter, height: diameter)
+            let components: [CGFloat]
+            switch mark.notice.tone {
+            case .amber: components = [234.0/255,193.0/255,123.0/255,1]
+            case .blue: components = [159.0/255,210.0/255,1,1]
+            case .white: components = [1,1,1,1]
+            }
+            let c = graphics.cgContext, color = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: components)!
+            c.saveGState(); c.setAlpha(0.7)
+            if mark.notice.shape == .hollow {
+                let width = 1.2 * mark.unit; c.setStrokeColor(color); c.setLineWidth(width)
+                c.strokeEllipse(in: rect.insetBy(dx: width/2, dy: width/2))
+            } else { c.setFillColor(color); c.fillEllipse(in: rect) }
+            c.restoreGState()
+        }
+    }
+    /// One transient brightness flash on a projected mark; the persistent dot remains in this painter.
+    @discardableResult public func pulseNotice(_ key: DockNoticeKey) -> Bool {
+        guard !failed, let root = layer, let mark = noticeMarks.first(where: { $0.notice.key == key }),
+              mark.position.isFinite, (0...1).contains(mark.position), mark.unit.isFinite, mark.unit > 0 else { return false }
+        let horizontal = bounds.width > bounds.height
+        let center = horizontal ? CGPoint(x: bounds.width * mark.position, y: bounds.midY) : CGPoint(x: bounds.midX, y: bounds.height * mark.position)
+        let diameter = (mark.notice.shape == .hollow ? 6 : 5) * mark.unit
+        let dot = CGRect(x: center.x-diameter/2, y: center.y-diameter/2, width: diameter, height: diameter)
+        let components: [CGFloat]
+        switch mark.notice.tone {
+        case .amber: components = [234.0/255, 193.0/255, 123.0/255]
+        case .blue: components = [159.0/255, 210.0/255, 1]
+        case .white: components = [1, 1, 1]
+        }
+        let bright = components.map { min(1, $0 * 2.2) } + [CGFloat(1)]
+        let color = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: bright)!
+        let overlay = CAShapeLayer(); overlay.frame = bounds
+        if mark.notice.shape == .hollow {
+            let width = 1.2 * mark.unit; overlay.path = CGPath(ellipseIn: dot.insetBy(dx: width/2, dy: width/2), transform: nil)
+            overlay.fillColor = nil; overlay.strokeColor = color; overlay.lineWidth = width
+        } else { overlay.path = CGPath(ellipseIn: dot, transform: nil); overlay.fillColor = color }
+        root.addSublayer(overlay); noticePulseLayers.append(overlay)
+        let pulse = CAKeyframeAnimation(keyPath: "opacity"); pulse.values = [0, 0.7, 0]; pulse.keyTimes = [0, 0.35, 1]
+        pulse.duration = 0.45; pulse.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeOut)]
+        CATransaction.begin(); CATransaction.setCompletionBlock { [weak self, weak overlay] in
+            overlay?.removeFromSuperlayer()
+            self?.noticePulseLayers.removeAll { $0 === overlay }
+        }
+        overlay.add(pulse, forKey: "dock-notice-first-appearance"); CATransaction.commit()
+        return true
     }
     /// Only the neutral fallback is drawn here; supplied artwork and semantic segments stay intact.
     private func drawNeutralMetal(in c:CGContext){
@@ -116,7 +177,7 @@ import CoreGraphics
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){if !failed,!isHiddenOrHasHiddenAncestor{onReveal?()}}
     public func dispose(){
-        failed=true;onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0
+        failed=true;noticeMarks=[];onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0
         setAccessibilityElement(false);setAccessibilityEnabled(false);setAccessibilityLabel(nil);needsDisplay=true
     }
 }

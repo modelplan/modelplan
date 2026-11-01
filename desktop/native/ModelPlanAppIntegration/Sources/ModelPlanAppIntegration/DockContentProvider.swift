@@ -24,13 +24,13 @@ public struct DockContent: Sendable {
     public let snapshot: CommunityDockSnapshot
     public let menuStatusLines: [String]?
     public let emptyText: String?
-    /// Admitted presentation notices, keyed by canonical subscription identity.
-    public let notices: [String: DockNotice]
+    /// Provider-owned semantic signals; presentation is selected by the host.
+    public let signals: [DockSubscriptionSignal]
     public init(snapshot: CommunityDockSnapshot, menuStatusLines: [String]? = nil,
-                emptyText: String? = nil, notices: [String: DockNotice] = [:]) {
+                emptyText: String? = nil, signals: [DockSubscriptionSignal] = []) {
         self.snapshot = snapshot
         self.menuStatusLines = menuStatusLines
-        self.emptyText = emptyText; self.notices = notices
+        self.emptyText = emptyText; self.signals = signals
     }
 }
 

@@ -46,7 +46,7 @@ public enum T2DockSkin {
             var recipe: [String: Any] = [
                 "centre": [station.centre.x, station.centre.y], "diameter": d,
                 "logicalPoints": Int(d), "readout": rect(box(station.readoutCentre, 56*unit, 16*unit)),
-                "eventRect": rect(box(CGPoint(x:station.readoutCentre.x+22*unit,y:station.readoutCentre.y), 12*unit, 12*unit)),
+                "eventRect": rect(box(showsPercentages && !station.isOverflow ? CGPoint(x:station.readoutCentre.x+22*unit,y:station.readoutCentre.y) : CGPoint(x:station.centre.x+d*0.25,y:station.centre.y-d*0.433013), 12*unit, 12*unit)),
                 "glyphRect": rect(box(station.centre, d*0.27, d*0.27)), "layers": layers, "glyphs": logos,
                 "outer": ["radius":outerRadius,"width":outerWidth,"minimumVisibleFraction":minimumArc,"opacity":1.0,"trackOpacity":1.0],
                 "inner": ["radius":innerRadius,"width":innerWidth,"minimumVisibleFraction":1.0/60,"opacity":0.85,"trackOpacity":0.65],
@@ -61,7 +61,7 @@ public enum T2DockSkin {
             if let id=station.subscription?.id, let reading=available[id] {
                 recipe["subscriptionID"] = id
                 if let alias=reading.alias, !alias.isEmpty { recipe["aliasRect"] = rect(box(CGPoint(x:station.readoutCentre.x,y:station.readoutCentre.y-12*unit),56*unit,12*unit)) }
-            } else if station.isOverflow { recipe["overflowCount"] = g.overflow.count }
+            } else if station.isOverflow { recipe["overflowCount"] = g.overflow.count; recipe["overflowNoticeKey"] = "__t2_overflow_notice__" }
             else if station.isEmpty { recipe["placeholderLabel"] = "+" }
             stations.append(recipe)
         }

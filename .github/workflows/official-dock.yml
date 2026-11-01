@@ -15,6 +15,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockWorkingHostInjectionTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/ZaiMarkSwitchTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/S1GalleryTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockContentProviderTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
   push:
@@ -33,6 +34,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockWorkingHostInjectionTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/ZaiMarkSwitchTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/S1GalleryTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/DockContentProviderTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
 permissions:
@@ -49,6 +51,6 @@ jobs:
       - name: Synthetic T2 geometry tests
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
       - name: Generic material seam (no GUI)
-        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests|ZaiMarkSwitchTests|DockWorkingHostInjectionTests)' --jobs 2
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests|ZaiMarkSwitchTests|DockWorkingHostInjectionTests|DockContentProviderTests)' --jobs 2
       - name: Original vendor marks and native fonts (no GUI)
         run: swift test --package-path desktop/third-party/dock-resources --scratch-path .tmp/official-dock-seam --jobs 2

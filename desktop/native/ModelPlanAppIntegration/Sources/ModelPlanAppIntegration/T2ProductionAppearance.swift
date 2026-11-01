@@ -30,10 +30,28 @@ import ModelPlanSettings
         let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in
             try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
-        try view.applyOfficial(skin: skin, rows: rows, notices: view.appearanceNotices, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
+        var notices = view.appearanceNotices
+        if let notice = geometry.overflow.compactMap({ notices[$0.id] }).min(by: { $0.rank < $1.rank }) {
+            notices["__t2_overflow_notice__"] = notice
+        }
+        try view.applyOfficial(skin: skin, rows: rows, notices: notices, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
         let button = try geometry.consoleButtonRect(in: skin.bounds)
         var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
+        let horizontal = edge == .bottom || edge == .top
+        for station in geometry.stations {
+            let position = horizontal ? station.centre.x : station.centre.y
+            let fraction = max(0, min(1, (position - (geometry.placementCentre - geometry.span / 2)) / geometry.span))
+            if let id = station.subscription?.id {
+                result.noticeStationBySubscription[id] = id
+                result.noticeStationPositions[id] = fraction
+            } else if station.isOverflow {
+                let key = "__t2_overflow_station__"
+                result.noticeStationPositions[key] = fraction
+                for member in geometry.overflow { result.noticeStationBySubscription[member.id] = key }
+            }
+        }
+        result.noticeUnit = geometry.input.diameter / 52
         if let hull = view.registeredHullBounds {
             try result.registerSliver(hullBounds: hull, expandedSize: view.bounds.size, edge: preferences.dockEdge,
                                       scale: preferences.size.nozzleDiameter / 44)

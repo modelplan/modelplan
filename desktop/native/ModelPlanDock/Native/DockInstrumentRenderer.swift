@@ -28,6 +28,7 @@ public struct DockStationRecipe: Codable, Sendable {
     /// Optional backing radius when the longer quota window is absent.
     public var singleWindowCaseInnerRadius:CGFloat?
     public var overflowCount:Int?
+    public var overflowNoticeKey:String?
     public var eventSolidDiameter:CGFloat?,eventHollowDiameter:CGFloat?,eventStrokeWidth:CGFloat?
     public var glyphOpacity:Double?
     public var replacementResource:String?,readoutOpacity:Double?
@@ -181,6 +182,24 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             }
             c.restoreGState()
         }
+        func drawNotice(_ notice: DockNotice, _ station: DockStationRecipe) throws {
+                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"
+                let diameter=(notice.shape == .solid ? station.eventSolidDiameter:station.eventHollowDiameter) ?? station.eventRect.width/2
+                let stroke=station.eventStrokeWidth ?? 1.2
+                guard diameter.isFinite,diameter>0,diameter<=station.eventRect.width,stroke.isFinite,stroke>0,stroke<=diameter else{throw DockArtworkError.invalidManifest}
+                let r=CGRect(x:station.eventRect.midX-diameter/2,y:station.eventRect.midY-diameter/2,width:diameter,height:diameter)
+                if notice.shape == .solid {
+                    if let key=station.eventOutlineKey {
+                        let width=station.eventSolidOutlineWidth ?? 0
+                        guard width.isFinite,width>=0,width<=12 else{throw DockArtworkError.invalidManifest}
+                        c.setFillColor(try ink(key));c.fillEllipse(in:r.insetBy(dx:-width,dy:-width))
+                    }
+                    c.setFillColor(try ink(palette));c.fillEllipse(in:r)
+                } else {
+                    if let key=station.eventBackdropKey {c.setFillColor(try ink(key));c.fillEllipse(in:r)}
+                    c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r.insetBy(dx:stroke/2,dy:stroke/2))
+                }
+        }
         for station in skin.stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
@@ -202,7 +221,10 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 }
             }
             guard let id=station.subscriptionID,let reading=readings[id] else {
-                if let n=station.overflowCount {try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))}
+                if let n=station.overflowCount {
+                    try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))
+                    if let key=station.overflowNoticeKey, let notice=notices[key] { try drawNotice(notice, station) }
+                }
                 else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text"))}
                 continue
             }
@@ -245,24 +267,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try text(reading.readout,station.readout,skin.text,try ink(textColor))
             }
             if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
-            if let notice=notices[id] {
-                let palette=notice.tone == .amber ? "noticeAmber":notice.tone == .blue ? "noticeBlue":"noticeWhite"
-                let diameter=(notice.shape == .solid ? station.eventSolidDiameter:station.eventHollowDiameter) ?? station.eventRect.width/2
-                let stroke=station.eventStrokeWidth ?? 1.2
-                guard diameter.isFinite,diameter>0,diameter<=station.eventRect.width,stroke.isFinite,stroke>0,stroke<=diameter else{throw DockArtworkError.invalidManifest}
-                let r=CGRect(x:station.eventRect.midX-diameter/2,y:station.eventRect.midY-diameter/2,width:diameter,height:diameter)
-                if notice.shape == .solid {
-                    if let key=station.eventOutlineKey {
-                        let width=station.eventSolidOutlineWidth ?? 0
-                        guard width.isFinite,width>=0,width<=12 else{throw DockArtworkError.invalidManifest}
-                        c.setFillColor(try ink(key));c.fillEllipse(in:r.insetBy(dx:-width,dy:-width))
-                    }
-                    c.setFillColor(try ink(palette));c.fillEllipse(in:r)
-                } else {
-                    if let key=station.eventBackdropKey {c.setFillColor(try ink(key));c.fillEllipse(in:r)}
-                    c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r.insetBy(dx:stroke/2,dy:stroke/2))
-                }
-            }
+            if let notice=notices[id] { try drawNotice(notice, station) }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
         return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false)

@@ -5,7 +5,7 @@ import ModelPlanSettings
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanDockResources
 import ModelPlanOfficialDock
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 @testable import S1GalleryCore
 import XCTest
 
@@ -30,6 +30,29 @@ import XCTest
             XCTAssertEqual(station.glyphs["zhipu"], enabled ? "logo-zai-white" : nil)
             XCTAssertEqual(station.fallbackVendorName, true)
             XCTAssertNotNil(host.dockView.presentedImageForChecks)
+        }
+    }
+
+    func testNoticePulseIsFirstAppearanceOnlyAndHonoursReduceMotion() async throws {
+        _ = NSApplication.shared
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1470, height: 956), visibleFrame: .init(x: 0, y: 0, width: 1470, height: 930))
+        let environment = DockEdgeEnvironment(displays: [display], layouts: [], primaryDisplayID: "synthetic")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("notice-pulse-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for reduced in [false, true] {
+            let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+            defer { host.close() }
+            host.setDockContentProvider(S1SyntheticProvider(count: 1, now: now, noticeCase: .announced))
+            let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("\(reduced).json"))) { host.apply($0) }
+            await coordinator.reload()
+            XCTAssertNil(host.lastAppearanceError)
+            host.pulseDockNoticesForChecks(reduced: reduced)
+            XCTAssertEqual(host.dockView.noticePulseCountForChecks, reduced ? 0 : 1)
+            host.pulseDockNoticesForChecks(reduced: false)
+            XCTAssertEqual(host.dockView.noticePulseCountForChecks, reduced ? 0 : 1)
+            host.refreshDockContent()
+            XCTAssertEqual(host.dockView.noticePulseCountForChecks, 0)
         }
     }
 
