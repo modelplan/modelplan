@@ -14,6 +14,11 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
     func apply(_ snapshot: EngineStoreSnapshot)
 }
 
+/// Optional synchronous delivery of the exact accepted event, with its original request ID.
+@MainActor public protocol EngineStoreEventSink: EngineStoreSink {
+    func acceptedEvent(_ event: EngineClientEvent)
+}
+
 @MainActor private final class WeakSink {
     weak var value: (any EngineStoreSink)?
     init(_ value: any EngineStoreSink) { self.value = value }
@@ -45,7 +50,10 @@ public typealias EngineStoreFeatureFailure = ModelPlanEngineStoreCore.EngineStor
         if case .clearPrivateViews(let invalidation) = effect {
             for sink in liveSinks() { sink.clearPrivateViews(invalidation) }
         }
-        for sink in liveSinks() { sink.apply(snapshot) }
+        for sink in liveSinks() {
+            (sink as? any EngineStoreEventSink)?.acceptedEvent(event)
+            sink.apply(snapshot)
+        }
     }
 
     private func liveSinks() -> [any EngineStoreSink] {
