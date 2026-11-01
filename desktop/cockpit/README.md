@@ -91,7 +91,7 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 | --- | --- |
 | `load` | Version 2 only; `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}` are required with no extra fields. Once per page, after an authoritative engine context exists. Clears first and applies both states before emitting `ready`. |
 | `appearance` | Exact fields `theme`, `locale`, `reduceMotion`, `reduceTransparency`; applies live without clearing displayed data. Theme remains night in v1. |
-| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed`, `tier` (`tall` or `compact`) and `scope` (`all` or a member display key). The native-selected tier maps to the 890 or 640 web layout; forced-closed disables reopening. |
+| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed`, `tier` (`tall` or `compact`) and `scope` (`all` or a member display key). The native-selected tier maps to the 890 or 640 web layout; the forced-closed cap displays a localized reason. V1 has no user shutter control. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous, with no retained DTO/pending-render cache. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
 | `clear` | No additional fields. New `viewRevision` must be greater. Clears private DOM, derived history-action IDs and animations before adopting context/emitting `cleared` with this request ID. A new epoch may restart generation; the same epoch cannot decrease it. Retired epochs/sessions cannot return. |
@@ -158,4 +158,4 @@ The v1 strip uses the existing official icon in the official edition and a
 neutral community mark in the community edition. Settings, detach/put back and
 close are icon keys with localized accessible names. No ALERT lamp is shown:
 the current cockpit wire does not supply alert state or acknowledgement. Session
-records, Option help and expanded shutter behavior remain post-v1.
+records, Option help and the user shutter control remain post-v1. The `shutterToggle` bridge action remains reserved and is not emitted by the v1 view.

@@ -14,23 +14,21 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let applyScope:((scope:string)=>void)|null=null;
  const frame=prototypeFrame(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
- const attach=element('button',undefined,'key'),shutter=element('button',undefined,'key'),close=element('button',undefined,'key');
- for(const b of [attach,shutter,close]){b.type='button';head.append(b);}
+ const attach=element('button',undefined,'key'),close=element('button',undefined,'key');
+ for(const b of [attach,close]){b.type='button';head.append(b);}
  frame.settings.classList.add('s6-strip-key');attach.classList.add('s6-strip-key');close.classList.add('s6-strip-key');
  const cap=element('section',undefined,'s6-closed-cap');cap.hidden=true;
  cap.style.pointerEvents='auto';cap.style.gridRow='1';cap.style.gridColumn='1';cap.style.alignSelf='end';cap.style.padding='12px';cap.style.background='var(--port-bg)';cap.style.borderRadius='8px';
- const open=element('button',undefined,'key'),reason=element('span');open.type='button';reason.id='s6-closed-reason';open.setAttribute('aria-describedby',reason.id);cap.append(open,reason);root.append(cap);
+ const reason=element('span');reason.id='s6-closed-reason';reason.setAttribute('role','status');cap.append(reason);root.append(cap);
  attach.onclick=e=>{if(e.isTrusted&&nativeShell)action(nativeShell.attached?'detach':'putBack');};
- shutter.onclick=e=>{if(e.isTrusted)action('shutterToggle');};open.onclick=e=>{if(e.isTrusted)action('shutterToggle');};close.onclick=e=>{if(e.isTrusted)action('close');};
+ close.onclick=e=>{if(e.isTrusted)action('close');};
  function shellControls(){
   const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
   attach.textContent=nativeShell?.attached?'⇱':'⇲';
   attach.setAttribute('aria-label',nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back'));close.textContent='✕';close.setAttribute('aria-label',zh?'关闭':'Close');
-  shutter.textContent=closed?(zh?'打开':'Open'):(zh?'收起':'Collapse');shutter.setAttribute('aria-label',shutter.textContent);open.textContent=zh?'打开驾驶舱':'Open Cockpit';
   reason.textContent=forced?(zh?'窗口高度不足，无法打开':'Not enough window height to open'):'';
-  shutter.title=reason.textContent;open.title=reason.textContent;
-  attach.hidden=!nativeShell;shutter.hidden=!nativeShell;close.hidden=!nativeShell;
-  attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;shutter.disabled=!active||!nativeShell||forced;open.disabled=!active||!nativeShell||forced;
+  attach.hidden=!nativeShell;close.hidden=!nativeShell;
+  attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;
   cap.hidden=!closed;cap.style.display=closed?'block':'none';
   for(const selector of ['.ck-portrow','.ck-eng','.ck-deck','.ck-tape']){const e=root.querySelector<HTMLElement>(selector)!;e.style.display=closed?'none':'';}
   root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?890:640))+'px');
@@ -103,6 +101,6 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   },
   clear(){stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value)stop();},
-  dispose(){if(disposed)return;disposed=true;applyScope=null;nativeShell=null;stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;open.onclick=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;applyScope=null;nativeShell=null;stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
