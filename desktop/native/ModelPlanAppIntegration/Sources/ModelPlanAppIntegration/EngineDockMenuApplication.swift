@@ -34,7 +34,8 @@ import ModelPlanSettings
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
-        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
+        var environment = SettingsEnvironment(); environment.v1NormalEntry = true
+        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.dock.apply($0) }
         super.init()
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
         composition.menuDidChange = { [weak self] in
@@ -72,6 +73,7 @@ import ModelPlanSettings
     public func prepare() async { await settings.reload() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         #if MODELPLAN_U6_DRIVE
         do { driveGuard = try U6DriveGuard.attach(ownsMenu: { [weak self] menu in
             guard let self else { return false }; return menu.delegate === self || menu.delegate === self.composition.dock

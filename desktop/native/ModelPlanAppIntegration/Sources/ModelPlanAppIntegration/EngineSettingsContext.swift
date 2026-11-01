@@ -9,6 +9,7 @@ import ModelPlanSettings
     init(bundle: URL, executable: URL) {
         identityMatches = executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL && CommunityConsentBundleIdentity.matches(bundle: bundle)
         var context = CommunityApplicationFactory.makeSettingsContext(bundle: bundle, availability: .unverified)
+        context.v1NormalEntry = true
         if identityMatches { context.about.cliVersion = CommunityConsentBundleIdentity.version }
         base = context
     }

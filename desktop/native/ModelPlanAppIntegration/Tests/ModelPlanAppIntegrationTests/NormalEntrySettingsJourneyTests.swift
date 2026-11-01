@@ -61,6 +61,11 @@ private actor SettingsJourneyClient: EngineClient {
         await first.composition.start()
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
+        XCTAssertTrue(editor.context.v1NormalEntry)
+        XCTAssertTrue(try XCTUnwrap(editor.effective).darkAppearance)
+        XCTAssertEqual(try XCTUnwrap(editor.effective).opening, .quick)
+        let visible = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+        XCTAssertFalse(visible.contains { [.theme, .opening, .countdown].contains($0.key) })
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTExpectFailure("#697: member projection has not yet been integrated") {
             XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")

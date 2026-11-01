@@ -24,7 +24,7 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let opening: OpeningPreference, ignitionSeconds: Double?
     public let redBelow: Int
     public init(_ p: SettingsPreferences, environment e: SettingsEnvironment) {
-        darkAppearance = p.theme == .night || (p.theme == .system && e.darkAppearance)
+        darkAppearance = e.v1NormalEntry || p.theme == .night || (p.theme == .system && e.darkAppearance)
         reduceMotion = p.motion == .on || (p.motion == .system && e.reduceMotion)
         reduceTransparency = p.transparency == .on || (p.transparency == .system && e.reduceTransparency)
         increaseContrast = e.increaseContrast
@@ -35,7 +35,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         showPercentages = p.showPercentages; sliverAlert = p.sliverAlert
         size = p.size; magnification = reduceMotion ? .none : p.magnification
         menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.redBelow
-        opening = p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
