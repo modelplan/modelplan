@@ -54,7 +54,7 @@ import ModelPlanSettings
         // Preserve Dock-owned catalogue, display and placement facts when the
         // engine connection changes; only About's CLI readiness comes from here.
         var context = settings.editor.context
-        context.about = contextSource.make(engineReady: ready).about
+        context.about.cliState = contextSource.make(engineReady: ready).about.cliState
         settings.update(context: context)
     }
     /// Core preferences share the exact foundation store used by Settings.
