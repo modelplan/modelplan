@@ -204,7 +204,7 @@ public actor ProcessEngineClient: EngineClient {
             child = process
             let params = try WireInitializeParams(sessionId: sessionID, protocolVersion: WireProtocol.version,
                 appVersion: configuration.applicationVersion,
-                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "publication", "plugin_install"] + (credentialAgent == nil ? [] : ["credentials"]))
+                capabilities: ["rows", "consent", "diagnostics", "refresh", "history", "cockpit", "publication", "plugin_install", "resetEvents"] + (credentialAgent == nil ? [] : ["credentials"]))
             _ = try enqueue("initialize", params: wireJSON(params), purpose: .initialize, timeout: runtime.requestTimeout)
         } catch {
             failStarts(error as? EngineClientError ?? .invalidConfiguration)

@@ -3,6 +3,10 @@ import Foundation
 import XCTest
 
 @MainActor final class S4QuotaJourneyTests:XCTestCase {
+    func testNormalEntryResetEvents() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.resetEvents(capture:capture)
+    }
     func testNormalEntryRolesAndGeneralTightest() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.roles(capture:capture)

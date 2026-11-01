@@ -12,6 +12,7 @@ import Darwin
             try await S4QuotaJourney.unknownFacts(capture:capture)
             try await S4QuotaJourney.collisions(capture:capture)
             try await S4QuotaJourney.language(capture:capture)
+            try await S4QuotaJourney.resetEvents(capture:capture)
         }
         catch { print("S4 journey FAIL: \(error)");exit(1) }
         print("S4 normal-entry roles and members journey PASS (no windows/input/engine child)")

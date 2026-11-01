@@ -8,6 +8,13 @@ import ModelPlanSettings
 
 /// Shared host seam backed only by admitted app-server rows. Legacy context data is unused.
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
+    public struct ResetEventPresentation:Equatable,Sendable {
+        public let eventID:String
+        public let unacknowledged:Bool
+    }
+    public var resetEventState:() -> EngineRowsEventState = { .absentFromSchema }
+    public var acknowledgedResetEventIDs:Set<String> = []
+    public private(set) var resetEventsByMember:[String:[ResetEventPresentation]] = [:]
     public var language="en"
     private var english:Bool { language == "en" }
     private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
@@ -22,6 +29,9 @@ import ModelPlanSettings
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
+        let events:[EngineResetEvent]
+        if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
+        resetEventsByMember = [:]
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
@@ -40,6 +50,14 @@ import ModelPlanSettings
                 }
             }
             var reserve:[DockCardRow]=[]
+            let memberEvents=events.filter { event in
+                event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
+                (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
+            }
+            resetEventsByMember[member.id]=memberEvents.map { .init(eventID:$0.id,unacknowledged:!acknowledgedResetEventIDs.contains($0.id)) }
+            for event in memberEvents {
+                reserve.append(.init(id:"reset-event:"+event.id,kind:.notice,label:english ? "Public reset announced":"已公告公开重置",value:"",detail:english ? "Announcement; personal quota is not confirmed reset":"公告不代表个人额度已重置"))
+            }
             if account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
                 switch credits.unit {

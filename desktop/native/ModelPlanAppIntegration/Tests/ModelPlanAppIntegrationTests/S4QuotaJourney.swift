@@ -11,6 +11,7 @@ private actor S4RowsClient: EngineClient {
     nonisolated func isCurrent(_ context:EngineDeliveryContext) -> Bool { true }
     let store:EngineStore, rows:WireRowsSnapshot
     let context=EngineDeliveryContext(sessionID:"s4-fixture",floor:.init(storeEpoch:"s4-fixture",generation:1),revision:1)
+    var revision:UInt64=1
     init(store:EngineStore,rows:WireRowsSnapshot) { self.store=store;self.rows=rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
@@ -19,7 +20,8 @@ private actor S4RowsClient: EngineClient {
         return context
     }
     func replaceRows(_ rows:WireRowsSnapshot) async throws {
-        let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:2)
+        revision += 1
+        let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:revision)
         await store.consume(.context(next))
         await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:0))
     }
@@ -41,6 +43,70 @@ private actor S4RowsClient: EngineClient {
 @MainActor enum S4QuotaJourney {
     struct Failure:Error,CustomStringConvertible { let description:String }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
+    static func resetEvents(capture:URL) async throws {
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        let result=document["result"] as! [String:Any]
+        var data=result["data"] as! [String:Any]
+        var projection=data["projection"] as! [String:Any]
+        var events=projection["resetEvents"] as! [[String:Any]]
+        let clock=Date(),formatter=ISO8601DateFormatter()
+        events[0]["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60))
+        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        projection["resetEvents"]=events;data["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-events-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        var deliveries:[String]=[]
+        entry.composition.setResetNotificationDelivery { deliveries.append($0) }
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard case .available(let decoded)=entry.composition.rowEvents else { throw Failure(description:"normal entry must admit the explicit reset event fixture") }
+        try require(decoded.count == 1 && decoded[0].rowID == "codex" && decoded[0].status == "announced", "normal entry must preserve the fixture event and its row")
+        for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+        try require(deliveries == [decoded[0].id],"normal entry must deliver one notification for the event")
+        guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        try await synthetic.replaceRows(rows)
+        try await Task.sleep(for:.milliseconds(50))
+        try require(deliveries == [decoded[0].id],"a repeated event must not produce a second notification")
+        let presentation=entry.composition.resetEventPresentation
+        try require(presentation["0123456789abcdef"]?.first?.unacknowledged == true,"matching member must expose the unacknowledged event")
+        try require(presentation["fedcba9876543210"]?.isEmpty == true,"plan-scoped event must not affect the other member")
+        let card=try entry.composition.dock.cardContent(for:"0123456789abcdef")
+        try require(card?.rows.contains(where:{$0.id == "reset-event:"+decoded[0].id}) == true,"matching card must expose the public reset event")
+        try require(entry.composition.menuPresentation.title == "•","unacknowledged event must expose the menu dot")
+        try entry.composition.acknowledgeResetEvent(decoded[0].id)
+        try require(entry.composition.menuPresentation.title.isEmpty,"acknowledgement must clear the menu dot")
+        try require(entry.composition.resetEventPresentation["0123456789abcdef"]?.first?.unacknowledged == false,"acknowledgement must reach the member model")
+        let ledgerURL=directory.appendingPathComponent("ledger.json")
+        let ledger=try EngineResetEventLedger(url:ledgerURL)
+        try ledger.recordDelivered(decoded[0].id);try ledger.acknowledge(decoded[0].id)
+        let restored=try EngineResetEventLedger(url:ledgerURL)
+        try require(restored.wasDelivered(decoded[0].id) && restored.acknowledged.contains(decoded[0].id),"dedupe and acknowledgement must survive a restart by event id")
+        projection["resetEvents"]=[];data["projection"]=projection
+        let empty=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(empty)
+        try require(entry.composition.rowEvents == .available([]),"empty event list must remain distinct from unsupported")
+        events[0]["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-7200))
+        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(-60))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:clock.addingTimeInterval(-3600)),"through":formatter.string(from:clock.addingTimeInterval(-60))]
+        projection["resetEvents"]=events;data["projection"]=projection
+        let expired=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(expired)
+        try require(entry.composition.resetEventPresentation["0123456789abcdef"]?.isEmpty == true,"expired event must not appear on its member")
+        try require(entry.composition.menuPresentation.title.isEmpty,"expired event must not leave a menu dot")
+        projection.removeValue(forKey:"resetEvents");data["projection"]=projection
+        let absent=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(absent)
+        try require(entry.composition.rowEvents == .absentFromSchema,"omitted event list must remain unsupported")
+        try require(entry.composition.menuPresentation.title.isEmpty,"missing events must clear the menu dot")
+        await entry.composition.stop()
+    }
     static func roles(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any]
