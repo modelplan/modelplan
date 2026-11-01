@@ -40,4 +40,5 @@ jobs:
         working-directory: cli
         run: go vet ./... && go test ./...
       - name: Source policy
+        if: matrix.os != 'windows-latest'
         run: node scripts/check-source-policy.mjs
