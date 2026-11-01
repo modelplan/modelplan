@@ -9,8 +9,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/digest"
-	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 // Stamp is the indivisible consent context. Generation is ordered only within
@@ -23,8 +23,8 @@ type Stamp struct {
 // View is immutable after return. The backend owns admission, reader locks,
 // publication fencing and shared budgets; the server never rebuilds permission.
 type View struct {
-	QuotaReport quota.Report
-	PublicModels []digest.Model
+	QuotaReport               quota.Report
+	PublicModels              []digest.Model
 	Stamp                     Stamp
 	Projection                rows.Projection
 	ResetEvents               *[]rows.ResetEvent
@@ -143,8 +143,10 @@ func ResetEventsEnabled(ctx context.Context) bool {
 
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
+
 type cockpitDetailsContextKey struct{}
+
 func CockpitDetailsEnabled(ctx context.Context) bool {
- enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
- return enabled
+	enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
+	return enabled
 }

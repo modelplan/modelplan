@@ -11,7 +11,10 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
 
-type sharedCockpit struct{ backend appserver.Backend; cache string }
+type sharedCockpit struct {
+	backend appserver.Backend
+	cache   string
+}
 
 func (s sharedCockpit) AdmitCockpit(ctx context.Context, stamp appserver.Stamp) (queries.CockpitAdmission, error) {
 	view, err := s.backend.Get(ctx)
@@ -58,7 +61,9 @@ func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmissi
 	}
 	if appserver.CockpitDetailsEnabled(ctx) {
 		details, err := s.cockpitDetails(ctx, view, a, groups)
-		if err != nil { return wire.CockpitData{}, err }
+		if err != nil {
+			return wire.CockpitData{}, err
+		}
 		data.Details = &details
 	}
 	return data, nil
