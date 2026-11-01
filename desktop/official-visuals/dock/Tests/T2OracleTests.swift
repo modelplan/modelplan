@@ -72,6 +72,24 @@ final class T2OracleTests: XCTestCase {
         }
     }
 
+    func testOriginalP1LayersDepthAndBetaMarkAreExplicit() throws {
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        var input = DockInstrumentInput(id: "synthetic", name: "GLM", windows: [])
+        input.vendorResourceKey = "zhipu"
+        let reading = try DockInstrumentProjection.evaluate(input, now: now)
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: .init(coordinates: .init(edge: .right, width: 1470, height: 956, menuBarExclusion: 26)))
+        let neutral = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
+        let beta = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, allowBetaMarks: true)
+        let station = try XCTUnwrap(beta.stations.first)
+        XCTAssertNil(neutral.stations.first?.glyphs["zhipu"])
+        XCTAssertEqual(station.glyphs["zhipu"], "logo-zai-white")
+        XCTAssertEqual(station.layers, ["a1-01-bell-wall-44px@3x.webp", "a1-03-deep-centre-44px@3x.webp", "a1-02-throat-lip-44px@3x.webp", "a1-04-exit-lip-44px@3x.webp"])
+        let depth = try XCTUnwrap(station.radialOverlay)
+        XCTAssertEqual(depth.alphas.count, 65)
+        XCTAssertEqual(depth.alphas[0], 1 - 0.1 * exp(-4.078), accuracy: 1e-7)
+        XCTAssertEqual(depth.alphas[64], 0, accuracy: 1e-9)
+    }
+
     func testStaticNoiseHasSVGNeutralLatticeAndNoPerRenderRandomness() {
         let noise = T2Grain()
         XCTAssertEqual(noise.channels(x: 0, y: 0), [0.5, 0.5, 0.5, 0.5])

@@ -13,6 +13,8 @@ public struct DockInk: Codable, Sendable {
 public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect;public var opacity:Double?}
 public struct DockRingRecipe: Codable, Sendable {public var radius:CGFloat,width:CGFloat,minimumVisibleFraction:Double,opacity:Double;public var trackOpacity:Double?,unknownDash:[CGFloat]?}
 public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int}
+/// Optional native equivalent of a supplied CSS radial alpha overlay.
+public struct DockRadialOverlayRecipe: Codable, Sendable {public var radius: CGFloat; public var alphas: [CGFloat]}
 public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var language:String?;public var size:CGFloat,weight:Double}
 public struct DockStationRecipe: Codable, Sendable {
     public var subscriptionID:String?
@@ -28,6 +30,7 @@ public struct DockStationRecipe: Codable, Sendable {
     public var glyphOpacity:Double?
     public var replacementResource:String?,readoutOpacity:Double?
     public var eventBackdropKey:String?,eventOutlineKey:String?,eventSolidOutlineWidth:CGFloat?
+    public var radialOverlay: DockRadialOverlayRecipe?
     public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
     public var fallbackVendorName:Bool?
 }
@@ -179,7 +182,23 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         for station in skin.stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
-            if station.replacementResource == nil {for layer in station.layers {try image(layer,frame)}}
+            if station.replacementResource == nil {
+                for layer in station.layers { try image(layer,frame) }
+                if let overlay = station.radialOverlay {
+                    guard overlay.radius.isFinite, overlay.radius > 0, overlay.radius <= station.diameter,
+                          overlay.alphas.count >= 2, overlay.alphas.count <= 128,
+                          overlay.alphas.allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { throw DockArtworkError.invalidManifest }
+                    let space = CGColorSpace(name: CGColorSpace.sRGB)!
+                    let colors = overlay.alphas.map { CGColor(colorSpace: space, components: [0,0,0,$0])! }
+                    let locations = overlay.alphas.indices.map { CGFloat($0) / CGFloat(overlay.alphas.count - 1) }
+                    guard let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: locations) else { throw DockArtworkError.invalidManifest }
+                    c.saveGState(); c.clip(to: frame)
+                    c.drawRadialGradient(gradient, startCenter: station.centre, startRadius: 0,
+                                         endCenter: station.centre, endRadius: overlay.radius,
+                                         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+                    c.restoreGState()
+                }
+            }
             guard let id=station.subscriptionID,let reading=readings[id] else {
                 if let n=station.overflowCount {try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))}
                 else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text"))}

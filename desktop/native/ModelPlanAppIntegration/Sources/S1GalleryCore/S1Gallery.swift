@@ -47,7 +47,22 @@ private struct S1Manifest: Decodable {
             return input
         }
     }
-    func makeContent(_ context: DockContentContext) -> DockContent { .init(snapshot: .init(inputs: inputs)) }
+    func makeContent(_ context: DockContentContext) -> DockContent {
+        var notices = [String: DockNotice]()
+        for item in inputs {
+            var signal = DockSubscriptionSignal(id: item.id); signal.dataState = .fresh
+            if item.id == "codex" {
+                // r7 resetCards: the first of two cards expires after 30 h.
+                signal.cards = [.init(id: "rc-c1", expiresAt: context.now.addingTimeInterval(30 * 3600)),
+                                .init(id: "rc-c2", expiresAt: context.now.addingTimeInterval((12 * 24 + 5) * 3600))]
+            } else if item.id == "claude" {
+                // r7 fixture forecast has a 40-minute runway.
+                signal.forecast = .init(windowID: "window-0", validUntil: context.now.addingTimeInterval(40 * 60))
+            }
+            if let notice = DockNoticeProjection.selected(for: signal, at: context.now) { notices[item.id] = notice }
+        }
+        return .init(snapshot: .init(inputs: inputs), notices: notices)
+    }
 }
 
 @MainActor private enum S1PixelReport {
@@ -57,6 +72,7 @@ private struct S1Manifest: Decodable {
         let similarity: Double
         let maskedPixels: Int
         let ink: [String: Bool]
+        let noticeInk: [String: Bool]
     }
     static func make(reference: Data, image: CGImage, skin: DockInstrumentSkin, capture: S1Manifest.Capture) throws -> Result {
         guard let golden = NSBitmapImageRep(data: reference),
@@ -97,7 +113,13 @@ private struct S1Manifest: Decodable {
             let a = stops[n-1], b = stops[n], t = max(0, min(1, (distance-a.0)/(b.0-a.0)))
             return (a.1.0+(b.1.0-a.1.0)*t,a.1.1+(b.1.1-a.1.1)*t,a.1.2+(b.1.2-a.1.2)*t)
         }
+        let noticeRects = skin.stations.compactMap { station -> (String, CGRect)? in
+            guard let id = station.subscriptionID, id == "codex" || id == "claude",
+                  let diameter = station.eventSolidDiameter else { return nil }
+            return (id, CGRect(x: station.eventRect.midX - diameter/2, y: station.eventRect.midY - diameter/2, width: diameter, height: diameter))
+        }
         var errorSum = 0.0, samples = 0, masked = 0, ink = ["claude":false, "cursor":false]
+        var noticeInk = Dictionary(uniqueKeysWithValues: noticeRects.map { ($0.0, false) })
         for y in 0..<height { for x in 0..<width {
             let gx = capture.clip.x + (Double(x)+0.5)/2, gy = capture.clip.y + (Double(y)+0.5)/2
             let nx = Int(floor((gx-Double(skin.bounds.minX))*2)), ny = Int(floor((gy-Double(skin.bounds.minY))*2))
@@ -109,6 +131,9 @@ private struct S1Manifest: Decodable {
             }
             guard let expected = golden.colorAt(x:x,y:y)?.usingColorSpace(.sRGB) else { throw CocoaError(.fileReadCorruptFile) }
             let expectedRGB = [Double(expected.redComponent)*255, Double(expected.greenComponent)*255, Double(expected.blueComponent)*255]
+            for (id, rect) in noticeRects where rect.contains(CGPoint(x: gx, y: gy)) && rgb[0] >= 205 && rgb[1] >= 150 && rgb[1] <= 220 && rgb[2] <= 165 {
+                noticeInk[id] = true
+            }
             let offset = y * composed.bytesPerRow + x * 4, point = CGPoint(x:gx,y:gy)
             let matching = masks.filter { $0.1.contains(point) }
             if !matching.isEmpty {
@@ -127,7 +152,7 @@ private struct S1Manifest: Decodable {
         guard samples > 0, let nativePNG = composed.representation(using: .png, properties: [:]),
               let diffPNG = difference.representation(using: .png, properties: [:]) else { throw CocoaError(.fileReadCorruptFile) }
         return Result(native: nativePNG, diff: diffPNG, similarity: 1 - errorSum / Double(samples) / 255,
-                      maskedPixels: masked, ink: ink.filter { key, _ in masks.contains { $0.0 == key } })
+                      maskedPixels: masked, ink: ink.filter { key, _ in masks.contains { $0.0 == key } }, noticeInk: noticeInk)
     }
 }
 
@@ -190,6 +215,7 @@ private struct S1Manifest: Decodable {
                 }
                 let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
                 host.captureBackingScaleForChecks = 2
+                host.dockView.allowBetaMarksForChecks = true
                 host.setDockContentProvider(S1SyntheticProvider(count: capture.count, now: now))
                 let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
                 await coordinator.reload()
@@ -201,7 +227,19 @@ private struct S1Manifest: Decodable {
                     let expectedIDs = Array(["codex", "claude", "zhipu", "cursor", "ocgo", "copilot", "kimi"].prefix(capture.count))
                     let countOK = ids == expectedIDs
                     record["registeredStationCount"] = ids.count; record["membershipAssertion"] = countOK ? "pass" : "fail"
-                    record["contentAssertion"] = "not-run: reset-event presentation is not connected to the synthetic provider"
+                    let expectedNoticeIDs = Set(expectedIDs.filter { $0 == "codex" || $0 == "claude" })
+                    let actualNotices = host.dockView.presentedNoticesForChecks
+                    let noticeOK = Set(actualNotices.keys) == expectedNoticeIDs && actualNotices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid }
+                    record["syntheticNoticeAssertion"] = noticeOK ? "pass" : "fail"
+                    record["syntheticNoticeKinds"] = actualNotices.mapValues { String(describing: $0.key.kind) }
+                    let zStation = skin.stations.first { $0.subscriptionID == "zhipu" }
+                    let zOK = !expectedIDs.contains("zhipu") || zStation?.glyphs["zhipu"] == "logo-zai-white"
+                    record["betaZMarkAssertion"] = zOK ? "pass" : "fail"
+                    let sourceSize = capture.size <= 44 ? 44 : 52
+                    let expectedLayers = ["a1-01-bell-wall", "a1-03-deep-centre", "a1-02-throat-lip", "a1-04-exit-lip"].map { "\($0)-\(sourceSize)px@3x.webp" }
+                    let p1OK = skin.stations.filter { $0.subscriptionID != nil }.allSatisfy { $0.layers == expectedLayers && $0.radialOverlay?.alphas.count == 65 }
+                    record["p1LayersAssertion"] = p1OK ? "pass" : "fail"
+                    record["contentAssertion"] = "partial: fixture cards/forecast provided; actual public reset-event provider pending"
                     record["skinBounds"] = [skin.bounds.minX, skin.bounds.minY, skin.bounds.width, skin.bounds.height]
                     let oracle = oracleCases.first { ($0["edge"] as? String) == capture.edge && ($0["D"] as? Int) == capture.size && ($0["count"] as? Int) == capture.count && !($0["aliases"] as? Bool ?? false) }
                     var geometryError = Double.infinity
@@ -233,9 +271,11 @@ private struct S1Manifest: Decodable {
                         record["nativeFile"] = nativeName; record["diffFile"] = diffName
                         record["metric"] = result.similarity; record["metricKind"] = "1 - mean absolute RGB error / 255"
                         record["maskedPercentageGlyphPixels"] = result.maskedPixels; record["inkAssertions"] = result.ink
+                        record["syntheticNoticeInkAssertions"] = result.noticeInk
                         let requiredInk = Set(expectedIDs.filter { $0 == "claude" || $0 == "cursor" })
                         let inkOK = Set(result.ink.keys) == requiredInk && result.ink.values.allSatisfy { $0 } && (requiredInk.isEmpty || result.maskedPixels > 0)
-                        status = countOK && geometryOK && inkOK && result.similarity >= 0.97 ? "partial: metric, membership and geometry pass; reset-event content and owner review pending" : "fail: metric, geometry, ink or membership assertion"
+                        let noticeInkOK = Set(result.noticeInk.keys) == expectedNoticeIDs && result.noticeInk.values.allSatisfy { $0 }
+                        status = countOK && geometryOK && inkOK && noticeOK && noticeInkOK && zOK && p1OK && result.similarity >= 0.97 ? "partial: metric and fixture assertions pass; real reset-event provider and owner review pending" : "fail: metric, geometry, ink, notice, art or membership assertion"
                     } catch {
                         try png.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)
                         written.append(output.appendingPathComponent(nativeName))
@@ -255,7 +295,7 @@ private struct S1Manifest: Decodable {
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("metrics.json"), options: .withoutOverwriting)
         written.append(output.appendingPathComponent("index.html")); written.append(output.appendingPathComponent("metrics.json"))
         let files = written.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        var readme = "# S1 synthetic offscreen gallery\n\nReport only; null metrics, reset-event content and unsupported button states are not passes. Reference PNGs are linked in place from the sibling handoff, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected reset-event state, and absent synthetic jet animation are platform or implementation differences. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
+        var readme = "# S1 synthetic offscreen gallery\n\nReport only; null metrics, reset-event content and unsupported button states are not passes. Reference PNGs are linked in place from the sibling handoff, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider, beta-only Z mark in synthetic preview, and absent synthetic jet animation are platform or implementation differences. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
         for file in files {
             let data = try Data(contentsOf: file), digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             readme += "| \(file.lastPathComponent) | \(data.count) | \(digest) |\n"

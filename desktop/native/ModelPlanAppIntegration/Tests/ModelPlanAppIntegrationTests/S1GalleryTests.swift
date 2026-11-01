@@ -14,6 +14,16 @@ import ModelPlanDock
         XCTAssertEqual(reading.litTimePoints(positions: 37), 28)
     }
 
+    func testGoldenNoticesKeepCardsAndForecastDistinctFromPublicReset() {
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        let provider = S1SyntheticProvider(count: 4, now: now)
+        let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        XCTAssertEqual(Set(content.notices.keys), Set(["codex", "claude"]))
+        XCTAssertEqual(content.notices["codex"]?.key.kind, .cardsExpiring)
+        XCTAssertEqual(content.notices["claude"]?.key.kind, .forecast)
+        XCTAssertTrue(content.notices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid })
+    }
+
     func testProduceOffscreenGallery() async throws {
         let env = ProcessInfo.processInfo.environment
         guard let golden = env["MODELPLAN_S1_GOLDEN_DIR"], let output = env["MODELPLAN_S1_GALLERY_DIR"] else {

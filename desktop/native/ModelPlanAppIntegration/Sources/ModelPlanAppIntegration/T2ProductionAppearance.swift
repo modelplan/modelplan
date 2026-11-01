@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import CoreGraphics
 import Foundation
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanSettings
@@ -19,18 +19,18 @@ import ModelPlanSettings
         }
         let coords = T2EdgeCoordinates(edge: edge, width: screen.width, height: screen.height, menuBarExclusion: view.appearanceMenuBarExclusion)
         let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter, showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
-        let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "") }
+        let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "", hasEvent: view.appearanceNotices[$0.subscriptionID] != nil) }
         let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
-        let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages)
+        let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages, allowBetaMarks: view.allowBetaMarksForChecks)
         let artwork = try T2BundledArtwork.records().mapValues { DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }
         let official = try DockArtworkStore(root: T2BundledArtwork.rootURL(), manifest: .init(files: artwork))
-        let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: false))
+        let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: view.allowBetaMarksForChecks))
         let vendor = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: vendorManifest)
         let material = T2FaceMaterial()
         let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in
             try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
-        try view.applyOfficial(skin: skin, rows: rows, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
+        try view.applyOfficial(skin: skin, rows: rows, notices: view.appearanceNotices, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
         let button = try geometry.consoleButtonRect(in: skin.bounds)
         var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))

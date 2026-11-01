@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import ModelPlanCore
+import ModelPlanDock
 
 /// Existing read-only inputs for the default adapter. An engine-backed provider
 /// may ignore these and read its already-admitted state; it must not run commands.
@@ -23,11 +24,13 @@ public struct DockContent: Sendable {
     public let snapshot: CommunityDockSnapshot
     public let menuStatusLines: [String]?
     public let emptyText: String?
+    /// Admitted presentation notices, keyed by canonical subscription identity.
+    public let notices: [String: DockNotice]
     public init(snapshot: CommunityDockSnapshot, menuStatusLines: [String]? = nil,
-                emptyText: String? = nil) {
+                emptyText: String? = nil, notices: [String: DockNotice] = [:]) {
         self.snapshot = snapshot
         self.menuStatusLines = menuStatusLines
-        self.emptyText = emptyText
+        self.emptyText = emptyText; self.notices = notices
     }
 }
 

@@ -409,7 +409,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let appearanceFollowed = followedDisplayID ?? displayFacts.pointer.flatMap { point in displayFacts.displays.first { $0.frame.contains(point) }?.id } ?? appearancePrimary
         let appearanceSelected = passPreferences.followActiveDisplay ? appearanceFollowed : (passPreferences.dockDisplayID ?? appearancePrimary)
         let display = displayFacts.displays.first { $0.id == appearanceSelected } ?? displayFacts.displays.first { $0.id == appearancePrimary }
+        let admittedIDs = Set(rows.map(\.subscriptionID))
+        let presentationNotices = content.notices.filter { key, value in admittedIDs.contains(key) && value.key.subscriptionID == key }
         for view in [dockView] + alternateViews {
+            view.appearanceNotices = presentationNotices
             view.appearanceDisplaySize = display?.frame.size
             view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
         }

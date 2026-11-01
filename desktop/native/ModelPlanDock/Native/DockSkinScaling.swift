@@ -31,6 +31,7 @@ public extension DockInstrumentSkin {
             v.outer = ring(v.outer); v.inner = ring(v.inner)
             v.clock.radius *= factor; v.clock.dotRadius *= factor; v.clock.backWidth *= factor
             v.notchWidth *= factor; v.caseInnerRadius *= factor
+            if var overlay = v.radialOverlay { overlay.radius *= factor; v.radialOverlay = overlay }
             v.eventSolidDiameter = v.eventSolidDiameter.map { $0 * factor }
             v.eventHollowDiameter = v.eventHollowDiameter.map { $0 * factor }
             v.eventStrokeWidth = v.eventStrokeWidth.map { $0 * factor }
