@@ -86,7 +86,7 @@ private actor S4RowsClient: EngineClient {
         try await Task.sleep(for:.milliseconds(50))
         try require(replay.count == 1,"restored Settings notification ledger must deduplicate across notifier restart")
         secondNotifier.stop()
-        let signals=entry.composition.resetSignals
+        let signals=entry.composition.presentedContent.signals
         guard let matching=signals.first(where:{$0.id == "0123456789abcdef"}),let unmatched=signals.first(where:{$0.id == "fedcba9876543210"}) else { throw Failure(description:"event members missing") }
         try require(matching.reset?.id == decoded[0].id && unmatched.reset == nil,"only the matching member must expose the event signal")
         let card=try entry.composition.dock.cardContent(for:"0123456789abcdef")

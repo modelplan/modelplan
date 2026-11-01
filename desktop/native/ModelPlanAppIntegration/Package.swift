@@ -8,6 +8,7 @@ let package = Package(
     products: [
         .library(name: "ModelPlanAppIntegration", targets: ["ModelPlanAppIntegration"]),
         .executable(name: "ModelPlanCommunityApp", targets: ["ModelPlanCommunityApp"]),
+        .executable(name: "S1Gallery", targets: ["S1Gallery"]),
     ],
     dependencies: [
         .package(name: "ModelPlanNative", path: ".."),
@@ -17,6 +18,8 @@ let package = Package(
         .package(path: "../ModelPlanEngineStore"),
         .package(path: "../../../clients/swift/ModelPlanEngineClient"),
         .package(path: "../../../clients/swift/ModelPlanWire"),
+        .package(path: "../../official-visuals/dock"),
+        .package(path: "../../third-party/dock-resources"),
     ],
     targets: [
         .target(name: "ModelPlanAppIntegration", dependencies: [
@@ -29,11 +32,14 @@ let package = Package(
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanAssembly", package: "ModelPlanNative"),
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
             .product(name: "ModelPlanInstruments", package: "ModelPlanNative"),
             .product(name: "ModelPlanCockpitShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanField", package: "ModelPlanNative"),
             .product(name: "ModelPlanCommunityHost", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
+            .product(name: "ModelPlanOfficialDock", package: "dock"),
+            .product(name: "ModelPlanDockResources", package: "dock-resources"),
         ], resources: [.copy("Resources")]),
         .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
             .product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"),
@@ -44,12 +50,24 @@ let package = Package(
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ]),
+        .target(name: "S1GalleryCore", dependencies: ["ModelPlanAppIntegration",
+            .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
+            .product(name: "ModelPlanOfficialDock", package: "dock"),
+            .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
+            .product(name: "ModelPlanDockResources", package: "dock-resources")]),
+        .executableTarget(name: "S1Gallery", dependencies: ["S1GalleryCore"]),
         .testTarget(name: "ModelPlanAppCLIConsentContractTests", dependencies: [
             "ModelPlanAppIntegration",
             .product(name: "ModelPlanWire", package: "ModelPlanWire"),
             .product(name: "ModelPlanCore", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ], path: "AppCLIContractTests"),
-        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore")], resources: [.process("Fixtures")]),
+        .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", "S1GalleryCore",
+            .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore"),
+            .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
+            .product(name: "ModelPlanOfficialDock", package: "dock"),
+            .product(name: "ModelPlanDockResources", package: "dock-resources")], resources: [.process("Fixtures")]),
     ]
 )

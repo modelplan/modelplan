@@ -18,7 +18,7 @@ public struct DockCardLink:Equatable,Sendable {
 public struct DockCardContent:Equatable,Sendable {
     public let subscriptionID:String,revision:UInt64,name:String,plan:String,sourceAndAge:String,stateLabel:String
     public let rows:[DockCardRow],links:[DockCardLink],enterLabel:String,dismissLabel:String
-    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="Close"){
+    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕"){
         self.subscriptionID=subscriptionID;self.revision=revision;self.name=name;self.plan=plan;self.sourceAndAge=sourceAndAge;self.stateLabel=stateLabel
         self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel
     }
@@ -30,7 +30,7 @@ public struct DockCardContent:Equatable,Sendable {
 
 public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
-    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="Close",at now:Date)throws->DockCardContent{
+    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now)
         var rows=[DockCardRow]()
         for window in input.windows{

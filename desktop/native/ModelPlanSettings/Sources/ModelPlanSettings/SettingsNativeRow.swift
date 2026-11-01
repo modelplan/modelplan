@@ -136,7 +136,7 @@ import AppKit
             }
             surfaceAction?.title = key == .diagnostics ? SettingsWords.text("Copy diagnostics", "复制诊断信息", language)
                 : key == .updateStatus ? SettingsWords.text("Check for updates", "检查更新", language) : row.title.value(language)
-            surfaceAction?.isEnabled = !saving && (key == .diagnostics || hasHost)
+            surfaceAction?.isEnabled = !saving && (key == .diagnostics || (hasHost && row.availability == .available))
                 && (key != .clearAppCache || context.capabilities.appCacheClearAvailable)
                 && (key != .updateStatus || context.capabilities.updateServiceAvailable)
             if key == .updateStatus {
@@ -324,12 +324,18 @@ import AppKit
         let policy = context.shortcutPolicy(preferences: p)
         let state = action == .openCockpit ? policy.openRegistration : policy.dockRegistration
         let status: String
-        switch state {
-        case .registered: status = SettingsWords.text("Global shortcut registered", "全局快捷键已注册", language)
-        case .conflict: status = SettingsWords.text("Global conflict; works in app", "全局冲突；应用内可用", language)
-        case .denied: status = SettingsWords.text("Global access denied; works in app", "全局访问被拒绝；应用内可用", language)
-        case .unavailable: status = SettingsWords.text("Global unavailable; works in app", "全局不可用；应用内可用", language)
-        case .notRequested: status = SettingsWords.text("Not registered; works in app", "未注册；应用内可用", language)
+        if let reason = context.unavailableControls[key] {
+            status = reason.value(language)
+        } else if chord.isUnassigned {
+            status = SettingsWords.text("No shortcut assigned", "尚未设置快捷键", language)
+        } else {
+            switch state {
+            case .registered: status = SettingsWords.text("Global shortcut registered", "全局快捷键已注册", language)
+            case .conflict: status = SettingsWords.text("Global conflict; works in app", "全局冲突；应用内可用", language)
+            case .denied: status = SettingsWords.text("Global access denied; works in app", "全局访问被拒绝；应用内可用", language)
+            case .unavailable: status = SettingsWords.text("Global unavailable; works in app", "全局不可用；应用内可用", language)
+            case .notRequested: status = SettingsWords.text("Not registered; works in app", "未注册；应用内可用", language)
+            }
         }
         if readout.superview == nil { controls.addArrangedSubview(readout) }
         readout.stringValue = status; readout.isHidden = false
@@ -356,7 +362,7 @@ import AppKit
         case .detected: return SettingsWords.text("Detected", "已检测到", language)
         case .denied: return SettingsWords.text("Access denied", "访问被拒绝", language)
         case .unavailable: return SettingsWords.text("Unavailable", "不可用", language)
-        case .unknown: return SettingsWords.text("Not observed", "尚未观测", language)
+        case .unknown: return SettingsWords.text("Not checked", "尚未检查", language)
         }
     }
 }

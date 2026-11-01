@@ -52,7 +52,14 @@ public struct DockNotice: Equatable, Sendable {
     public let key: DockNoticeKey
     public let tone: Tone
     public let shape: Shape
-    public var rank: Int { key.kind.rawValue }
+    public var rank: Int {
+        switch key.kind {
+        case .forecast, .cardsExpiring: return 0
+        case .resetAnnounced: return 1
+        case .resetConfirmed: return 2
+        case .credits: return 3
+        }
+    }
 }
 public enum DockNoticeProjection {
     public static func candidates(for signal: DockSubscriptionSignal, at now: Date) -> [DockNotice] {
@@ -85,7 +92,7 @@ public enum DockNoticeProjection {
         }
         return notices
     }
-    public static func selected(for signal: DockSubscriptionSignal, at now: Date) -> DockNotice? { candidates(for: signal, at: now).first }
+    public static func selected(for signal: DockSubscriptionSignal, at now: Date) -> DockNotice? { candidates(for: signal, at: now).min { $0.rank < $1.rank } }
 }
 public struct DockSliverSegment: Equatable, Sendable {
     public let subscriptionID: String, stationID: String

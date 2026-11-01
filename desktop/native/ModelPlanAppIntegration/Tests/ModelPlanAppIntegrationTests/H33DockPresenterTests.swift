@@ -286,7 +286,8 @@ import ModelPlanSettings
         let labels = views(host.card).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Check reader status in Settings") })
-        let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+        let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
+        XCTAssertEqual(button.title, "设置")
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
         XCTAssertEqual(opens, 1); XCTAssertNil(host.nativePanel)
     }

@@ -103,7 +103,7 @@ import ModelPlanSettings
             name:.init(member.name(english:true),member.name(english:false)),
             plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "") }
         return .init(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
-                     menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status)
+                     menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:signals)
     }
     private func date(_ stamp: WireTimestamp?) -> Date? {
         guard let stamp else { return nil }
