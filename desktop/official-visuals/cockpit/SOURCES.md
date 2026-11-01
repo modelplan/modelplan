@@ -4,7 +4,7 @@
 Owner-approved cockpit re-port, 2026-11-01. Unmodified assets from design branch e7d29f84c5d55c0bdcdfa37fdb750ecc90befc33.
 Strip study manifest: clients/official-visuals/study/strip-integration/asset-manifest.json (source commit 994283b71321ab1d0fc9ecf8e7c2d3b033c4e21c).
 strip-2x.png and canopy-2x.png: design-handoffs/opus-r7/src/assets/shell6; build.cjs describes extraction from the registered concept.
-shell6.css adds the prototype stylesheet with its original rules and a reserved-license notice; the historical prototype release retains its existing MIT grant. The added wordmark.css and engine-few-paging.css preserve the prototype’s final wordmark and paging rules. engine-material.css contains the study's engine material rules without its out-of-scope hull texture.
+shell6.css adds the prototype stylesheet with its original rules and a reserved-license notice; the historical prototype release retains its existing MIT grant. The added wordmark.css and engine-few-paging.css preserve the prototype’s final wordmark and paging rules. engine-material.css contains the study's engine, fader and MFD material rules without its out-of-scope hull texture or record strip.
 
 Distributed in cockpit editions under the reserved visual licence; see ../../LICENSE.md.
 

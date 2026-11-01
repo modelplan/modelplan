@@ -209,12 +209,12 @@ test('study faders and MFD retain empty states without invented cockpit details'
   expect(await receive(send('display',{data:mfdData}))).toBe(true);
   await expect(page.locator('.dk-fad')).toBeVisible();await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
   await expect(page.locator('.fd-strip:disabled')).toHaveCount(3);await expect(page.locator('#cockpit')).toHaveAttribute('data-details-available','false');
-  await expect(page.locator('.mfd-page')).toHaveText('No data available');await page.getByRole('button',{name:'Plans',exact:true}).click();
+  await expect(page.locator('.mfd-page')).toHaveText('Quota only');await page.getByRole('button',{name:'Plans',exact:true}).click();
   await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
-  await expect(page.locator('.mfd-page .sp-now')).toHaveCount(4);await expect(page.locator('.mfd-page')).toContainText('75%');await expect(page.locator('.mfd-page')).toContainText('Last known reading');
+  await expect(page.locator('.mfd-page .sa-list .sa')).toHaveCount(4);await expect(page.locator('.mfd-page')).toContainText('75%');await expect(page.locator('.mfd-page')).toContainText('Last known reading');
   const verified=sample().projection.rows[0].accounts[0].subscriptionRef;
   expect(await receive(send('shell',{...shell,scope:verified}))).toBe(true);await expect(page.locator('.mfd-page .sp-now')).toHaveCount(1);
-  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sp-now')).toHaveCount(4);
+  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sa-list .sa')).toHaveCount(4);
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
   await expect(page.getByRole('button',{name:'订阅',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page')).toContainText('模拟方案');await expect(page.locator('.mfd-page')).toContainText('上次读数');
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.getByRole('button',{name:'总览',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page .sp-now')).toHaveCount(0);

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
-// Transitional fixture adapter until the negotiated cockpitDetailsV1 producer
-// and publication bindings are available. Null means unknown, never an empty
-// observation or a synthetic production reading.
+// Transitional boundary until cockpitDetailsV1 and publication bindings land.
+// Unknown stays null; the default contains no synthetic or inferred readings.
 export interface PrototypeDetailsFixture {
- readonly liveSessions:null;
- readonly publication:null;
- readonly resetEvents:null;
- readonly history:null;
+ readonly liveSessions:unknown|null;
+ readonly publication:unknown|null;
+ readonly resetEvents:unknown|null;
+ readonly history:unknown|null;
 }
 export function unavailablePrototypeDetailsFixture():PrototypeDetailsFixture {
  return {liveSessions:null,publication:null,resetEvents:null,history:null};

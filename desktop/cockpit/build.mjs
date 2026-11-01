@@ -31,7 +31,7 @@ await cp(resolve(here,'study'),resolve(output,'study'),{recursive:true});
 verifyVendorSvg(repo);
 await cp(resolve(repo,'desktop/third-party/vendor-marks'),resolve(output,'vendor-marks'),{recursive:true});
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
-let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+"\n@import url('./study/rocket-r1/cockpit-r5.css');\n@import url('./study/rocket-r1/engine.css');\n"+await readFile(resolve(here,'web/cockpit.css'),'utf8');
+let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+"\n@import url('./study/rocket-r1/cockpit-r5.css');\n@import url('./study/rocket-r1/engine.css');\n@import url('./study/rocket-r1/faders.css');\n@import url('./study/rocket-r1/mfd.css');\n"+await readFile(resolve(here,'web/cockpit.css'),'utf8');
 const notices=['MIT: cockpit bridge, schema adapter and community layout.','Vendor identity marks: third-party rights; see vendor-marks/SOURCES.md.'];
 {
   // Both cockpit editions use the same verified, licence-noticed visual pack.

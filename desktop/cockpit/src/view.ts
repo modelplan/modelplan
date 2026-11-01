@@ -14,7 +14,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
  let applyScope:((scope:string)=>void)|null=null,lastData:WireCockpitData|null=null;
- const frame=prototypeFrame(root);const deck=mountPrototypeDeck(root);const tape=mountPrototypeTape(root);
+ const frame=prototypeFrame(root);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;});const tape=mountPrototypeTape(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
  let drag:{id:number;x:number;start:number;scale:number;moved:boolean}|null=null,suppressClick=false;

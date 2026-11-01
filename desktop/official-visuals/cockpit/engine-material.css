@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0 */
 /* Prototype engine material rules; hull texture assets are out of scope. */
-:root[data-canopy="c01"] #cockpit .ck-eng{--hull-recess:#101419;--hull-lcd:#03060a;--bezel:inset 0 1px 0 #000b,inset 0 -1px 0 #ffffff24;--lcd-glass:var(--hull-lcd)}
+:root[data-canopy="c01"] #cockpit :is(.ck-eng,.dk-fad,.dk-mfd){--hull-recess:#101419;--hull-lcd:#03060a;--bezel:inset 0 1px 0 #000b,inset 0 -1px 0 #ffffff24;--lcd-glass:var(--hull-lcd)}
 /* Keep every key face; remove the extra row frame. LCD content boxes and
    their existing border widths/padding stay registered on the same grid. */
 :root[data-canopy="c01"] #cockpit .eng-krow{background:var(--hull-recess);box-shadow:var(--bezel);border:0}
 :root[data-canopy="c01"] #cockpit .eng-keys{background:none;border:0;box-shadow:none}
-:root[data-canopy="c01"] #cockpit :is(.eng-lcd){border-color:transparent;background-clip:border-box;box-shadow:var(--bezel)}
+:root[data-canopy="c01"] #cockpit :is(.eng-lcd,.mfd-screen,.fd-strip,.bank-lcd){border-color:transparent;background-clip:border-box;box-shadow:var(--bezel)}
 :root[data-canopy="c01"] #cockpit .eng-lcd{background:var(--hull-recess)}
 :root[data-canopy="c01"] #cockpit .eng-cols{background:var(--hull-lcd)}
