@@ -5,7 +5,8 @@
 - direct: the subject is launch.py's own child behind an exec gate (same PID, registered before
   the subject code runs).
 - launchservices: the pinned binary is copied into a minimal .app in run scratch (syntheticTmp),
-  or, with `subjectKind: app-zip`, a pinned zip of a full signed .app is extracted there,
+  or, with `subjectKind: app-zip`, a pinned zip of a full signed .app is extracted there (app-zip
+  also works in direct mode: the extracted main executable is exec'd as the gated child),
   and opened with `open -n -W --env ...`, so macOS launches it like a user-opened app (cooperative
   activation refuses key/active state to processes spawned directly from an agent shell). The
   subject PID is found by its exact bundle executable path, registered, then supervised by its
@@ -39,15 +40,25 @@ def main():
     binary=Path(c['argv'][0]).resolve(strict=True)
     if sha256(binary)!=c['binarySHA256']:raise ValueError('binary identity changed')
     kind=c.get('subjectKind','binary')
-    bundle=(extract_app if kind=='app-zip' else make_bundle)(c,binary,tmp) if mode=='launchservices' else None
+    if kind=='app-zip':bundle=extract_app(c,binary,tmp) # both modes: verified, extracted under run scratch
+    else:bundle=make_bundle(c,binary,tmp) if mode=='launchservices' else None
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
-    if bundle:return launch_services(c,bundle,pid_path,subject_env(home,tmp))
+    if mode=='launchservices':return launch_services(c,bundle,pid_path,subject_env(home,tmp))
     # Until registered, the guardian reports closure unconfirmed unless its scope scan is empty.
-    launcher=mark_launching(pid_path,scope=process_scan.scope_for(binary),mode=mode)
+    if bundle:
+        # app-zip, direct: exec the extracted bundle's main executable itself; scoped by its exact path
+        # and the .app prefix, both under run scratch.
+        argv=[str(bundle['exe']),*c['argv'][1:]];scope=process_scan.scope_for(bundle['exe'],prefix=bundle['app'])
+    else:
+        # The pinned binary may also be running outside this run, so it is never a scope path: the scope
+        # is run scratch only, and the subject (the gate, same PID after exec) matches by PID plus start time.
+        argv=c['argv'];scope=process_scan.scope_for(prefix=tmp)
+    evidence=bundle['evidence'] if bundle else {}
+    launcher=mark_launching(pid_path,scope=scope,mode=mode)
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
-    gate=[sys.executable,'-I','-c',GATE,*c['argv']]
+    gate=[sys.executable,'-I','-c',GATE,*argv]
     child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=subject_env(home,tmp))
     def stop_child(*_):
         child.terminate()
@@ -61,7 +72,7 @@ def main():
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
         stop_child() # Never leave an unregistered child running.
-    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':mode}),flush=True)
+    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':mode,**evidence}),flush=True)
     # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
     # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
     reason=supervise(child,c)
@@ -113,10 +124,16 @@ def extract_app(c,archive,tmp):
     if exe.is_symlink() or not exe.is_file() or not os.access(exe,os.X_OK):raise ValueError('bundle main executable missing')
     verify=subprocess.run([*CODESIGN,'--verify','--deep','--strict',str(app)],capture_output=True,text=True)
     if verify.returncode!=0:raise ValueError('app code signature does not verify')
-    details=subprocess.run([*CODESIGN,'-dv',str(app)],capture_output=True,text=True)
-    signature='adhoc' if 'Signature=adhoc' in details.stderr else 'identity'
+    signature=signature_kind(subprocess.run([*CODESIGN,'-dv',str(app)],capture_output=True,text=True))
     return dict(app=app,exe=exe,evidence=dict(subjectKind='app-zip',bundle=str(app),bundleIdentifier=info.get('CFBundleIdentifier'),
         archiveSHA256=c['binarySHA256'],executableSHA256=sha256(exe),codeSignature=signature))
+def signature_kind(details):
+    """`codesign -dv` (details on stderr): adhoc, identity (an Authority line), else unknown."""
+    if details.returncode!=0:return 'unknown'
+    lines=[x.strip() for x in (details.stderr or '').splitlines()]
+    if 'Signature=adhoc' in lines:return 'adhoc'
+    if any(x.startswith('Authority=') and len(x)>len('Authority=') for x in lines):return 'identity'
+    return 'unknown'
 class Owned:
     """A LaunchServices subject: not our child, so it is polled and signalled only by its start identity."""
     def __init__(self,ident,helper):self.ident=ident;self.pid=ident['pid'];self.helper=helper;self.returncode=None
@@ -136,6 +153,14 @@ class Owned:
                 raise subprocess.TimeoutExpired('subject',timeout)
             time.sleep(0.05)
         return None
+class OpenFailed(RuntimeError):
+    def __init__(self,code):super().__init__(f'open exited ({code}) before the subject appeared');self.code=code
+LS_ERROR=re.compile(r'error\s*\(?(-\d+)\)?')
+def launch_services_error(path):
+    """The LaunchServices error code `open` reported on its own stderr (for example -10810), if any."""
+    try:found=LS_ERROR.findall(Path(path).read_text(errors='replace')[-4096:])
+    except OSError:return None
+    return int(found[-1]) if found else None
 def discover(exe,helper,c,timeout=DISCOVERY_SECONDS,clock=time.time,sleep=time.sleep,scan=None):
     """The one owned process whose executable is exactly the bundle executable; never a name match."""
     scan=scan or (lambda s:process_scan.scan(s,identity))
@@ -146,7 +171,7 @@ def discover(exe,helper,c,timeout=DISCOVERY_SECONDS,clock=time.time,sleep=time.s
         found=scan(scope)
         if len(found)==1:return found[0]
         if len(found)>1:raise RuntimeError('ambiguous LaunchServices subject')
-        if helper.poll() is not None:raise RuntimeError(f'open exited ({helper.returncode}) before the subject appeared')
+        if helper.poll() is not None:raise OpenFailed(helper.returncode)
         sleep(0.1)
     raise RuntimeError('LaunchServices subject never appeared')
 def sweep(scope,helper):
@@ -164,7 +189,8 @@ def launch_services(c,bundle,pid_path,env):
     command=[*OPEN,'-n','-W',*[x for k,v in env.items() for x in ('--env',f'{k}={v}')],
              '--stdout',str(logs/'subject.stdout'),'--stderr',str(logs/'subject.stderr'),str(bundle['app'])]
     if len(c['argv'])>1:command+=['--args',*c['argv'][1:]]
-    helper=subprocess.Popen(command,stdin=subprocess.DEVNULL,env=env)
+    with (logs/'open.stderr').open('wb') as open_err: # open's own diagnostics, e.g. an LSOpen error code
+        helper=subprocess.Popen(command,stdin=subprocess.DEVNULL,stderr=open_err,env=env)
     # Record the open helper by PID plus start time at once, so the guardian can stop it if launch.py dies.
     try:
         ident=identity(helper.pid)
@@ -186,7 +212,9 @@ def launch_services(c,bundle,pid_path,env):
         register(pid_path,found['pid'],launcher) # Identity registered before the guardian supervises it.
         state['child']=child=Owned({k:found[k] for k in ('pid','startSeconds','startMicroseconds')},helper)
     except BaseException as error:
-        print(json.dumps({'launchMode':'launchservices','registered':False,'error':str(error) or type(error).__name__}),file=sys.stderr,flush=True)
+        failure={'launchMode':'launchservices','registered':False,'error':str(error) or type(error).__name__}
+        if isinstance(error,OpenFailed):failure.update(openExit=error.code,launchServicesError=launch_services_error(logs/'open.stderr'))
+        print(json.dumps(failure),file=sys.stderr,flush=True)
         stop_child() # Never leave an unregistered subject running.
     print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':'launchservices',**bundle['evidence']}),flush=True)
     reason=supervise(child,c)
