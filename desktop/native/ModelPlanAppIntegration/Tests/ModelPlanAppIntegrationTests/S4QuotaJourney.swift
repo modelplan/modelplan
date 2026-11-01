@@ -159,7 +159,7 @@ private actor S4RowsClient: EngineClient {
         try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
         try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
-        try require(card.sourceAndAge.contains("Observation time unknown"),"missing observation must not use rendering time")
+        try require(card.sourceAndAge.contains("Reading time unknown"),"missing reading time must not use rendering time")
         await entry.composition.stop()
     }
     static func collisions(capture:URL) async throws {
@@ -218,6 +218,59 @@ private actor S4RowsClient: EngineClient {
         try require(afterVerification.subscriptionSettings["fedcba9876543210"] == nil && afterVerification.subscriptionSettings["codex#saved_login_api#1"] == nil && afterVerification.subscriptionSettings["codex#saved_login_api#2"] == nil,"verification must not migrate any old unstable choice")
         await entry.composition.store.consume(.clearPrivateViews(.init(revision:3,reason:.connectionLost,previous:nil,nextFloor:nil)))
         try require(entry.composition.accountMembers.persistentPreferences(candidate).subscriptionSettings.count == 1,"the unstable namespace must remain non-persistent even after rows are cleared")
+        await entry.composition.stop()
+    }
+    static func language(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        row["name"]=["en":"Tool","zh":"合成工具"]
+        row["reason"]=["code":"ok","text":["en":"Reading ready","zh":"读数已更新"]]
+        row["nextStep"]=["action":"open_settings_consent","text":["en":"Open Settings","zh":"打开设置"]]
+        row["state"]="fresh";row["surfaces"]=["dock","menu","settings"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        let base=(row["accounts"] as! [[String:Any]])[0],original=(base["windows"] as! [[String:Any]])[0]
+        row["accounts"]=["money","other","credits"].enumerated().map { index,unit in
+            var account=base,window=original
+            account["subscriptionRef"]=String(repeating:String(index+1),count:16)
+            account["plan"]=["id":"codex","name":["en":"Standard plan","zh":"标准方案"]]
+            account["valueState"]="current";account["observedAt"]="2026-01-01T00:00:00Z";account["freshUntil"]="2099-01-01T00:00:00Z"
+            account["credits"]=["balance":12.5,"unit":unit]
+            window["id"]="quota";window["role"]="session";window["label"]=["en":"Session quota","zh":"会话额度"]
+            window["limitKey"]="main";window["poolKey"]="main";window["current"]=true;window["remainingPercent"]=50
+            window["resetsAt"]="2099-01-01T00:00:00Z";window["validUntil"]="2099-01-01T00:00:00Z";account["windows"]=[window]
+            return account
+        }
+        var summary=projection["rowsSummary"] as! [String:Any]
+        summary["text"]=["en":"Readings ready","zh":"读数已更新"]
+        summary["reason"]=row["reason"];summary["nextStep"]=row["nextStep"]
+        projection["rows"]=[row];projection["rowsSummary"]=summary;root["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-language-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        for language in [SettingsLanguage.chinese,.english,.chinese] {
+            try await store.update { $0.language=language };await entry.prepare()
+            let content=entry.composition.presentedContent
+            var visible=(content.menuStatusLines ?? [])+[content.emptyText ?? ""]+content.snapshot.inputs.map(\.name)
+            var cards:[DockCardContent]=[]
+            for input in content.snapshot.inputs {
+                guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"localized card missing") }
+                cards.append(card);visible += [card.name,card.plan,card.sourceAndAge,card.stateLabel,card.enterLabel,card.dismissLabel]
+                visible += card.rows.flatMap{[$0.label,$0.value,$0.detail]}
+            }
+            if language == .chinese {
+                try require(!visible.joined().unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
+                try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
+                try require(content.snapshot.inputs.first?.name == "合成工具 · 账号 1","duplicate member copy must use the account term consistently")
+                try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
+                try require(cards.map{$0.rows.first(where:{$0.kind == .reserve})?.label} == ["余额","储备","点数"],"wire units must map to localized facts without inventing a currency")
+            } else {
+                try require(!visible.joined().unicodeScalars.contains{(0x3400...0x9FFF).contains(Int($0.value))},"English projection must not retain Chinese strings after language change")
+                try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5h"},"English quota row must use the glossary label")
+            }
+        }
         await entry.composition.stop()
     }
 }

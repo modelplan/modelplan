@@ -12,25 +12,32 @@ public struct DockContentRow: Sendable {
     public let originalObservedAt: Date?
     public let plan:String, sourceName:String
     public let resetTimes:[String:Date]
+    public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],additionalRows:[DockCardRow]=[]) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[]) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.additionalRows=additionalRows
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
     }
     public func cardSourceAndAge(at now:Date,english:Bool) -> String {
-        guard !sourceName.isEmpty else { return sourceAndAge(at:now) }
         let age:String
         if let originalObservedAt,now >= originalObservedAt {
             let minutes=Int(min(Double(Int.max/60),now.timeIntervalSince(originalObservedAt)/60))
-            age=english ? (minutes == 0 ? "Observed <1m ago":"Observed \(minutes)m ago"):(minutes == 0 ? "1分钟内观测":"\(minutes)分钟前观测")
-        } else { age=english ? "Observation time unknown":"观测时间未知" }
-        return sourceName+" · "+age
+            let hours=minutes/60,days=hours/24
+            if minutes == 0 { age=english ? "Read just now":"刚刚读取" }
+            else if minutes < 60 { age=english ? "Read \(minutes)m ago":"\(minutes)分钟前读取" }
+            else if hours < 24 { age=english ? "Read \(hours)h \(minutes%60)m ago":"\(hours)小时\(minutes%60)分钟前读取" }
+            else { age=english ? "Read \(days)d \(hours%24)h ago":"\(days)天\(hours%24)小时前读取" }
+        } else { age=english ? "Reading time unknown":"读取时间未知" }
+        return sourceName.isEmpty ? age:sourceName+" · "+age
     }
     public func resetDetails(at now:Date,english:Bool) -> [String:String] {
         input.windows.reduce(into:[:]) { result,window in
-            result[window.id]=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
+            let reset=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
+            if let description=windowDescriptions[window.id],!description.isEmpty,description != window.label {
+                result[window.id]=description+" · "+reset
+            } else { result[window.id]=reset }
         }
     }
     private static func resetDetail(_ reset:Date?,now:Date,english:Bool) -> String {

@@ -29,17 +29,29 @@ import ModelPlanSettings
             let message = message(row, now: context.now)
             let account=member.account
             var resets:[String:Date]=[:]
-            for window in account.windows { if let reset=date(window.resetsAt) { resets[window.id]=reset } }
+            var descriptions:[String:String]=[:]
+            for window in account.windows {
+                if let reset=date(window.resetsAt) { resets[window.id]=reset }
+                switch window.role {
+                case .daily: descriptions[window.id]=english ? "Daily":"每日"
+                case .monthly: descriptions[window.id]=english ? "Monthly":"每月"
+                case .other,.unknown: descriptions[window.id]=text(window.label)
+                case .session,.weekly:break
+                }
+            }
             var reserve:[DockCardRow]=[]
             if account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
-                reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",
-                    value:String(balance)+" "+(credits.unit == "credits" && !english ? "点":credits.unit)))
+                switch credits.unit {
+                case "credits": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:String(balance)+(english ? " credits":" 点")))
+                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:english ? "Currency not reported":"未报告币种"))
+                default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not reported":"未报告单位"))
+                }
             }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"),
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,additionalRows:reserve)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve)
         }
         let status: String
         switch value.status {
@@ -84,6 +96,13 @@ import ModelPlanSettings
         }
         return (row.reason, row.nextStep)
     }
+    private func quotaLabel(_ role:RowsRole) -> String {
+        switch role {
+        case .session:return english ? "5h":"5小时"
+        case .weekly:return english ? "Weekly":"每周"
+        case .daily,.monthly,.other,.unknown:return english ? "Other":"其他"
+        }
+    }
     private func makeInput(_ member:EngineAccountMember, now: Date) -> DockInstrumentInput {
         let row=member.row
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
@@ -102,7 +121,7 @@ import ModelPlanSettings
                 case .monthly: period = .month
                 case .other,.unknown: period = .other
                 }
-                var projected=DockQuotaWindowInput(id: window.id, period: period, label: text(window.label),
+                var projected=DockQuotaWindowInput(id: window.id, period: period, label: quotaLabel(window.role),
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })

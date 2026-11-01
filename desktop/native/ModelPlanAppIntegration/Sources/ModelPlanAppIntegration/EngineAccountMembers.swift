@@ -19,7 +19,7 @@ public struct EngineAccountMember:Sendable {
     func name(english:Bool) -> String {
         let base=english ? row.name.en:row.name.zh
         guard let duplicateTag else { return base }
-        return base + (english ? " · Account ":" · 账户 ") + String(duplicateTag)
+        return base + (english ? " · Account ":" · 账号 ") + String(duplicateTag)
     }
 }
 

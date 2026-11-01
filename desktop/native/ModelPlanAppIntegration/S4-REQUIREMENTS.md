@@ -95,3 +95,19 @@ The journey also covers member-key pinning, one-member/multi-member preference
 migration, explicit member preference precedence, unknown plan/quota/reserve/age,
 and synchronous withdrawal. XCTest execution and external CI are separate facts;
 the CLT runner does not claim to execute XCTest.
+
+## Main/language integration turn
+
+The ordinary main merge at `9fb85e1e` includes the upstream Kiro clock fix and
+the #396 review-only announced-reset proposal/fixtures. That proposal does not
+yet add generated Swift fields or a production producer; the event boundary
+therefore still reports unsupported rather than manufacturing announcements.
+
+The normal-entry language journey switches Chinese → English → Chinese and
+checks Dock/menu/card copy for each setting. It was behaviorally red on raw
+`money`/`other` units. Units now render as localized Credits/Balance/Reserve facts;
+unknown currency or unit stays explicit, with no invented denomination. Quota
+labels use 5h/Weekly/Other, with reported other-period descriptions retained.
+Reading age uses user-facing reading copy rather than internal observation
+wording, and duplicate account tags use 账号. Proper model/plan/user names remain
+reported data rather than being guessed or translated by the App.
