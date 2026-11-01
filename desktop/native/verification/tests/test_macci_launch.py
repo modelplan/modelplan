@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,23 @@ exe = os.path.join(bundle, 'Contents', 'MacOS', info['CFBundleExecutable'])
 with open(out, 'ab') as o, open(err, 'ab') as e:
     sys.exit(subprocess.Popen([exe, *rest], env=env, stdout=o, stderr=e, start_new_session=True).wait())
 '''
+
+
+def native_sleeper(test, path):
+    """A real native binary at `path` (never a script: its executable would be the interpreter).
+    Linux copies /bin/sleep; macOS compiles one, because launch constraints stop copied system
+    binaries from running outside their original location."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform != 'darwin':
+        shutil.copyfile('/bin/sleep', path); path.chmod(0o755)
+        return path
+    source = path.with_name(path.name + '.c')
+    source.write_text('#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n')
+    compiler = shutil.which('cc') or shutil.which('clang')
+    if compiler is None or subprocess.run([compiler, '-o', str(path), str(source)], capture_output=True).returncode != 0:
+        test.skipTest('no C compiler for a native in-scope binary')
+    source.unlink()
+    return path
 
 
 def alive(pid):
@@ -232,7 +250,11 @@ class LaunchModes(unittest.TestCase):
             self.assertEqual([x['launchMode'] for x in lines], ['direct', 'direct'])
             record = json.loads(pid_file.read_text())
             self.assertEqual((record['state'], record['launchMode']), ('running', 'direct'))
-            self.assertEqual(record['scan'], dict(executable=os.path.realpath(PY), home=str(root / 'home')))
+            self.assertEqual(record['scan']['executable'], os.path.realpath(PY))
+            self.assertNotIn('home', record['scan'])
+            gate = record['scan']['helpers']  # the exec gate, recorded by PID plus start time at spawn
+            self.assertEqual([h['pid'] for h in gate], [lines[0]['ownedPID']])
+            self.assertEqual(set(gate[0]), {'pid', 'startSeconds', 'startMicroseconds'})
 
 
 @unittest.skipUnless(sys.platform.startswith('linux') and Path('/bin/sleep').exists(),
@@ -253,7 +275,7 @@ class MacCISequence(unittest.TestCase):
         for proc in self.procs:
             if proc.poll() is None:
                 proc.kill(); proc.wait(10)
-        for found in process_scan.scan(dict(home=str(self.root / 'home')), guardian.identity):
+        for found in process_scan.scan(process_scan.scope_for(prefix=self.root / 'tmp'), guardian.identity):
             os.kill(found['pid'], 9)
         self.temp.cleanup()
 
@@ -321,7 +343,8 @@ class MacCISequence(unittest.TestCase):
         self.assertEqual(json.loads(self.guardian_out.read_text()),
                          dict(guardian='stopped', subjectClosed=True, subject='registered'))
         self.assertFalse(alive(record['pid']))
-        self.assertEqual(process_scan.scan(dict(home=str(self.root / 'home')), guardian.identity), [])
+        self.assertEqual(process_scan.scan(process_scan.scope_for(prefix=self.root / 'tmp'), guardian.identity), [])
+        self.assertEqual(len(record['scan']['helpers']), 1)  # the open helper, by PID plus start time
         final = json.loads(self.out.read_text().splitlines()[-1])
         self.assertEqual((final['stoppedBy'], final['launchMode']), ('stop-file', 'launchservices'))
         self.assertEqual(self.finish(ident).returncode, 0)
@@ -332,7 +355,7 @@ class MacCISequence(unittest.TestCase):
         self.assertIn('"registered": false', self.err.read_text())
         self.assertEqual(json.loads(self.paths['pid'].read_text())['state'], 'launching')
         # The launcher is gone before registering: the guardian ends the run, scans the project scope
-        # (exact bundle path + synthetic HOME) and reports the subject as never started.
+        # (bundle path/prefix + recorded helpers) and reports the subject as never started.
         self.assertEqual(self.guardian.wait(30), 0)
         self.assertEqual(json.loads(self.guardian_out.read_text()),
                          dict(guardian='launcher-lost', subjectClosed=True, subject='never-started'))
@@ -351,7 +374,7 @@ class NeverRegisteredClosure(unittest.TestCase):
     def reserve(self, launcher, scope=True):
         record = dict(state='launching', launcher=launcher)
         if scope:
-            record['scan'] = process_scan.scope_for(self.dir / 'App.app/Contents/MacOS/App', self.home)
+            record['scan'] = process_scan.scope_for(self.dir / 'App.app/Contents/MacOS/App', prefix=self.dir / 'App.app')
         self.pid_file.write_text(json.dumps(record))
 
     def test_empty_scope_scan_is_never_started_and_finishable(self):
@@ -361,10 +384,12 @@ class NeverRegisteredClosure(unittest.TestCase):
         self.assertTrue(guardian.finishable('launcher-lost', closed, subject))
 
     def test_unregistered_process_in_scope_is_stopped_but_not_reported_as_never_started(self):
-        stray = subprocess.Popen([PY, '-c', 'import time; time.sleep(60)'], env=dict(PATH='/usr/bin:/bin', HOME=str(self.home)))
+        helper = native_sleeper(self, self.dir / 'App.app' / 'Contents' / 'MacOS' / 'Helper')
+        stray = subprocess.Popen([str(helper), '60'])  # under the bundle prefix, not the exact subject path
         self.addCleanup(lambda: stray.poll() is None and stray.kill())
         self.reserve(self.dead)
-        wait_until(lambda: process_scan.scan(dict(home=str(self.home)), guardian.identity), 5, 'stray not visible')
+        wait_until(lambda: process_scan.scan(process_scan.scope_for(prefix=self.dir / 'App.app'), guardian.identity),
+                   5, 'stray not visible')
         closed, subject = guardian.close(self.pid_file, settle=0)
         self.assertEqual((closed, subject), (True, 'unregistered-stopped'))
         self.assertIsNotNone(stray.wait(5))
@@ -387,7 +412,7 @@ class NeverRegisteredClosure(unittest.TestCase):
     def test_registered_but_not_closed_never_finishes(self):
         subject = dict(pid=4242, startSeconds=1, startMicroseconds=0)
         self.pid_file.write_text(json.dumps(dict(state='running', launcher=self.dead,
-                                                 scan=process_scan.scope_for(None, self.home), **subject)))
+                                                 scan=process_scan.scope_for(prefix=self.dir / 'App.app'), **subject)))
         sent = []
         clock = [0.0]
         def sleep(s): clock[0] += s
@@ -402,12 +427,8 @@ class NeverRegisteredClosure(unittest.TestCase):
         self.assertFalse(guardian.finishable('stopped', False, 'never-started'))
 
     def test_scan_never_matches_by_process_name(self):
-        same_name = self.dir / 'other' / 'App'; same_name.parent.mkdir()
-        shutil.copyfile('/bin/sleep', same_name); same_name.chmod(0o755)
-        ours = self.dir / 'App.app' / 'Contents' / 'MacOS' / 'App'; ours.parent.mkdir(parents=True)
-        shutil.copyfile('/bin/sleep', ours); ours.chmod(0o755)
-        if not sys.platform.startswith('linux'):
-            self.skipTest('exercises the /proc enumeration')
+        same_name = native_sleeper(self, self.dir / 'other' / 'App')
+        ours = native_sleeper(self, self.dir / 'App.app' / 'Contents' / 'MacOS' / 'App')
         other = subprocess.Popen([str(same_name), '60']); mine = subprocess.Popen([str(ours), '60'])
         try:
             found = wait_until(lambda: process_scan.scan(process_scan.scope_for(ours), guardian.identity), 5, 'not found')
@@ -418,6 +439,78 @@ class NeverRegisteredClosure(unittest.TestCase):
             process_scan.scope_for()
         self.assertFalse(process_scan.valid_scope(dict(home='/')))
         self.assertFalse(process_scan.valid_scope(dict(name='App')))
+
+
+class ScopeIsPathOnly(unittest.TestCase):
+    """The scan reads executable paths and owned start identities only, never any environment."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.dir, True)
+        self.home = self.dir / 'home'; self.home.mkdir()
+        self.scope = process_scan.scope_for(self.dir / 'App.app/Contents/MacOS/App', prefix=self.dir / 'App.app')
+
+    def spawn(self, env=None):
+        child = subprocess.Popen([PY, '-c', 'import time; time.sleep(60)'], env=env)
+        self.addCleanup(lambda: (child.kill(), child.wait()))
+        wait_until(lambda: guardian.identity(child.pid), 5, 'child not visible')
+        return child
+
+    def test_matching_home_with_a_different_executable_is_not_matched(self):
+        child = self.spawn(env=dict(PATH='/usr/bin:/bin', HOME=str(self.home)))
+        self.assertNotIn(child.pid, [x['pid'] for x in process_scan.scan(self.scope, guardian.identity)])
+        self.assertFalse(process_scan.valid_scope(dict(self.scope, home=str(self.home))))  # not a scope key
+        with self.assertRaises(TypeError):
+            process_scan.scope_for(self.dir / 'App', home=self.home)
+
+    def test_no_code_path_reads_another_process_environment(self):
+        for name in ('process_scan.py', 'guardian.py', 'launch.py', 'cleanup-run.py'):
+            source = (BIN / name).read_text()
+            for needle in (r'\benviron\b', 'PROCARGS', 'cmdline', 'sysctl', 'KERN_'):
+                self.assertIsNone(re.search(needle, source), f'{name} mentions {needle}')
+        if not sys.platform.startswith('linux'):
+            return
+        opened = []
+        real_open, real_read = os.open, Path.read_bytes
+        def watch_open(path, *a, **k): opened.append(str(path)); return real_open(path, *a, **k)
+        def watch_read(self_, *a, **k): opened.append(str(self_)); return real_read(self_, *a, **k)
+        self.spawn(env=dict(PATH='/usr/bin:/bin', HOME=str(self.home)))
+        with patch('builtins.open', side_effect=lambda *a, **k: self.fail(f'opened {a[0]}')), \
+                patch.object(os, 'open', side_effect=watch_open), patch.object(Path, 'read_bytes', watch_read), \
+                patch.object(Path, 'read_text', side_effect=lambda *a, **k: self.fail('read_text')):
+            process_scan.scan(self.scope, lambda pid: None)
+        self.assertEqual([p for p in opened if p.startswith('/proc/')], [])
+
+    def test_paths_compare_canonicalised_through_symlinked_components(self):
+        # macOS reports /private/var/folders/... while a scope may be written via /var/folders/...
+        real = self.dir / 'real'; (real / 'App.app' / 'Contents' / 'MacOS').mkdir(parents=True)
+        link = self.dir / 'link'; link.symlink_to(real)
+        exe = real / 'App.app' / 'Contents' / 'MacOS' / 'App'; exe.write_bytes(b'x')
+        ident = lambda pid: dict(pid=pid, startSeconds=1, startMicroseconds=0)
+        for scope in (dict(executable=str(link / 'App.app/Contents/MacOS/App')), dict(prefix=str(link / 'App.app')),
+                      process_scan.scope_for(link / 'App.app/Contents/MacOS/App', prefix=link / 'App.app')):
+            for reported in (str(exe), str(link / 'App.app/Contents/MacOS/App')):
+                with self.subTest(scope=scope, reported=reported):
+                    self.assertEqual([x['pid'] for x in process_scan.scan(scope, ident, candidates=[(7, reported)])], [7])
+        self.assertEqual(process_scan.scan(dict(prefix=str(link / 'App.app')), ident,
+                                           candidates=[(7, str(self.dir / 'App.app-other/App'))]), [])
+
+    def test_spawned_helper_is_matched_by_recorded_pid_and_start_time(self):
+        child = self.spawn()  # its executable is the interpreter, outside every path in the scope
+        scope = process_scan.with_helper(self.scope, guardian.identity(child.pid))
+        found = process_scan.scan(scope, guardian.identity)
+        self.assertEqual([(x['pid'], x['matchedBy']) for x in found], [(child.pid, 'helper')])
+        self.assertEqual(process_scan.scan(self.scope, guardian.identity), [])
+
+    def test_reused_pid_with_a_different_start_time_is_not_matched(self):
+        child = self.spawn()
+        ident = guardian.identity(child.pid)
+        stale = process_scan.with_helper(self.scope, ident | dict(startSeconds=ident['startSeconds'] - 1))
+        self.assertEqual(process_scan.scan(stale, guardian.identity), [])
+        recorded = dict(pid=4242, startSeconds=10, startMicroseconds=0)
+        reused = lambda pid: dict(pid=pid, startSeconds=99, startMicroseconds=0) if pid == 4242 else None
+        self.assertEqual(process_scan.scan(process_scan.with_helper(self.scope, recorded), reused, candidates=[]), [])
+        same = lambda pid: dict(recorded) if pid == 4242 else None
+        self.assertEqual([x['pid'] for x in process_scan.scan(process_scan.with_helper(self.scope, recorded), same, candidates=[])], [4242])
 
 
 if __name__ == '__main__':
