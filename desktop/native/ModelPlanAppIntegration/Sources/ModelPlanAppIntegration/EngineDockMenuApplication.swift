@@ -99,6 +99,11 @@ import ModelPlanSettings
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        interactionBinding?.install()
+    }
+    func allowDockPresentation() {
+        guard !terminating else { return }
+        composition.dock.setPresentationAllowed(true)
         interactionBinding?.start()
     }
     public func applicationDidFinishLaunching(_ notification: Notification) {
@@ -122,7 +127,7 @@ import ModelPlanSettings
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
+        Task { await prepare(); guard !terminating else { return }; allowDockPresentation(); renderMenu(); await composition.start() }
     }
     private func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english

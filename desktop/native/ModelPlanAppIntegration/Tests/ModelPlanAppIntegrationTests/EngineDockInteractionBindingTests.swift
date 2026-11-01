@@ -57,4 +57,39 @@ import ModelPlanSettings
         binding.stop()
     }
 
+    func testBindingStartsBeforeHostIsActiveAndRecoversWhenItBecomesActive() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("settings.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let host = InteractionHost(); host.environment.active = false
+        var context = SettingsPageContext()
+        context.subscriptions = [SettingsSubscription(id: "a", name: .init("A", "A")), SettingsSubscription(id: "b", name: .init("B", "B"))]
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: url), context: context) { value in
+            host.environment.preferences = value.snapshot.preferences.subscriptions
+        }
+        await app.reload()
+        let binding = EngineDockInteractionBinding(host: host, application: app, scheduler: InteractionScheduler(), clock: { 0 })
+        binding.start()
+        let controller = try XCTUnwrap(host.controller)
+        XCTAssertFalse(controller.isActive)
+        controller.moveByKeyboard(id: "a", delta: 1)
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, [])
+        host.environment.active = true
+        controller.refresh(); XCTAssertTrue(controller.isActive)
+        controller.moveByKeyboard(id: "a", delta: 1)
+        for _ in 0..<100 where app.editor.snapshot?.preferences.subscriptions.order != ["b", "a"] { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["b", "a"], "A later active host must accept input without restarting the app")
+        host.environment.active = false
+        controller.refresh(); XCTAssertFalse(controller.isActive)
+        controller.moveByKeyboard(id: "b", delta: 1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["b", "a"], "Inactive input must not write")
+        host.environment.active = true
+        controller.refresh(); XCTAssertTrue(controller.isActive)
+        controller.moveByKeyboard(id: "b", delta: 1)
+        for _ in 0..<100 where app.editor.snapshot?.preferences.subscriptions.order != ["a", "b"] { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.editor.snapshot?.preferences.subscriptions.order, ["a", "b"], "Reactivation must restore input")
+        binding.stop()
+        XCTAssertFalse(controller.isRunning)
+    }
+
 }

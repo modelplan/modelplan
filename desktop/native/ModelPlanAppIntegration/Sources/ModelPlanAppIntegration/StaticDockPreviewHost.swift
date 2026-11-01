@@ -210,8 +210,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var outlinePanel: NSPanel?
     private let outlineView = DockSnapOutlineView()
     private var cardID: String?
+    private var cardPinnedVisible = false
     private var interactionController: DockInteractionController?
     var interactionBindingInstalled: Bool { interactionController != nil }
+    var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
+    var cardPinsDock: Bool { environment().presence.cardPinned }
     private var interactionEvents: [DockNozzleEvents] = []
     private var interactionHoveredID: String?
     private var interactionPreviewOrder: [String]?
@@ -686,7 +689,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         presence.lifecycleActive = permitted && !retired
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen
-        presence.cardPinned = interactionController?.cardPinned ?? (cardPanel?.isVisible == true)
+        presence.cardPinned = cardPinnedVisible && !card.isHidden && (!createsNativePanels || cardPanel?.isVisible == true)
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         var auxiliary = cardPanel?.isVisible == true ? cardPanel?.frame : nil
         if overflowPanel?.isVisible == true, let frame = overflowPanel?.frame { auxiliary = auxiliary.map { $0.union(frame) } ?? frame }
@@ -957,16 +960,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
-            if let controller = self.interactionController { controller.dismissCard() } else { self.dismissCard() }
+            if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
+            self.dismissCard()
             guard self.permitted, !self.retired else { return }
             if self.model?.presentationRows[id] != nil { self.showSettings?() }
             else { self.showConsole?() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
-            if let controller = self.interactionController { controller.dismissCard() } else { self.dismissCard() }
+            if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
+            self.dismissCard()
         }
-        do { try card.apply(content, pinned: pinned) } catch { dismissCard(); return }
+        do { try card.apply(content, pinned: pinned); cardPinnedVisible = pinned } catch { dismissCard(); return }
         guard createsNativePanels else { return }
         if cardPanel == nil { cardPanel = makePanel() }
         guard let cardPanel, let panelFrame = panel?.frame, let screen = NSScreen.screens.first(where: { $0.frame.intersects(panelFrame) }) else { return }
@@ -991,7 +996,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         return !createsNativePanels || cardPanel?.isVisible == true
     }
     private func dismissCard() {
-        cardGeneration &+= 1; cardID = nil; card.isHidden = true
+        cardGeneration &+= 1; cardID = nil; cardPinnedVisible = false; card.isHidden = true
         card.dispose(); cardPanel?.orderOut(nil)
     }
     public func close() {
