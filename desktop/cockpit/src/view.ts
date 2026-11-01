@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-import type { WireCockpitData, WireAccount, WireWindow, WireRow } from '../generated/wire.js';
+import type { WireCockpitData, WireWindow } from '../generated/wire.js';
 import type { Appearance,CockpitView,LiveAppearance,ShellState,PageAction } from './bridge.js';
 import { prototypeFrame } from './prototype-frame.js';
 import { cockpitLayout } from './prototype-layout.js';
+import { cockpitMembers } from './members.js';
 const words={en:{all:'All',settings:'Settings',waiting:'Waiting for display data',cleared:'Display data cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待显示数据',cleared:'显示数据已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
 const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
@@ -73,8 +74,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');shellControls();applyScope?.(value.scope);},
   render(data:WireCockpitData){
    if(disposed)throw Error('closed');const before=displayedState();const priorScope=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]')?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');applyScope=null;frame.engine.replaceChildren();
-   const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));const members:{key:string;row:WireRow;account:WireAccount}[]=[];const seen=new Set<string>();
-   for(const row of data.projection.rows)for(const account of row.accounts){const key=account.subscriptionRef&&verified.has(account.subscriptionRef)?account.subscriptionRef:`${row.id}#${account.route}`;if(!seen.has(key)){seen.add(key);members.push({key,row,account});}}
+   const members=cockpitMembers(data),seen=new Set(members.map(member=>member.key));
    if(!members.length){setEmpty('empty');return;}
    const table=element('div',undefined,'u11-engine-table');const pages=element('div',undefined,'s6-pages');const leds=element('nav',undefined,'eng-pg');const pageCount=Math.ceil(members.length/6);
    const allButtons:HTMLButtonElement[]=[];let selected='';
