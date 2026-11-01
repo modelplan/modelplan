@@ -19,6 +19,7 @@ import AppKit
     private var aliasLines: [String: NSStackView] = [:]
     private var aliasLabels: [String: NSTextField] = [:]
     private var subscriptionLabels: [String: NSTextField] = [:]
+    private(set) var memberReasonLabels: [String: NSTextField] = [:]
     private var readerDescriptions: [String: NSTextField] = [:]
     private var controlIDs: [String] = []
     private var tracking: NSTrackingArea?
@@ -66,7 +67,7 @@ import AppKit
         for field in aliases.values { field.retire() }
         shortcut?.retire(); order?.retire(); resetHints?.retire(); surfaceAction?.retire()
         for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
-        choices = [:]; subscriptionLabels = [:]; readerDescriptions = [:]; controlIDs = []
+        choices = [:]; subscriptionLabels = [:]; readerDescriptions = [:]; memberReasonLabels = [:]; controlIDs = []
         aliases = [:]; aliasLines = [:]; aliasLabels = [:]; shortcut = nil; order = nil; resetHints = nil
         surfaceAction = nil; licenseView = nil
     }
@@ -193,6 +194,14 @@ import AppKit
                         line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
                         block.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
                         description.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
+                    } else if key == .visible || key == .percentagePin {
+                        let reason=NSTextField(wrappingLabelWithString:"");reason.font = .systemFont(ofSize:11);reason.textColor = .secondaryLabelColor
+                        memberReasonLabels[id]=reason
+                        let block=NSStackView(views:[line,reason]);block.orientation = .vertical;block.alignment = .leading;block.spacing=3
+                        controls.addArrangedSubview(block)
+                        line.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
+                        block.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
+                        reason.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
                     } else { controls.addArrangedSubview(line); line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true }
                 }
             }
@@ -216,6 +225,8 @@ import AppKit
             popup.setAccessibilityLabel([row.title.value(language), label].filter { !$0.isEmpty }.joined(separator: " · "))
             popup.setAccessibilityHelp(unstableReason ?? (enabled ? row.subtitle.value(language) : SettingsWords.text("Not editable in this build.", "此版本暂不提供编辑。", language)))
             popup.toolTip = unstableReason
+            memberReasonLabels[id]?.stringValue = unstableReason ?? ""
+            memberReasonLabels[id]?.isHidden = unstableReason == nil
             if case .readers(let readers) = row.value, let reader = readers.first(where: { $0.id.rawValue == id }) {
                 readerDescriptions[id]?.stringValue = reader.description.value(language) + " · " + Self.readerStatus(reader.observation, language: language)
             }
@@ -258,11 +269,7 @@ import AppKit
             }
         default: status = ""
         }
-        let unstableReason = [.visible, .percentagePin].contains(key) ? context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language) : nil
-        if let unstableReason {
-            if readout.superview == nil { controls.addArrangedSubview(readout) }
-            readout.stringValue = unstableReason; readout.isHidden = false
-        } else if !status.isEmpty {
+        if !status.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
             readout.stringValue = status; readout.isHidden = false
         } else if !values.isEmpty { readout.isHidden = true }
@@ -276,6 +283,7 @@ import AppKit
             aliases.removeValue(forKey: id)?.retire()
             if let line = aliasLines.removeValue(forKey: id) { controls.removeArrangedSubview(line); line.removeFromSuperview() }
             aliasLabels.removeValue(forKey: id)
+            memberReasonLabels.removeValue(forKey:id)
         }
         for (index, sub) in subs.enumerated() {
             if aliases[sub.id] == nil {
@@ -287,8 +295,14 @@ import AppKit
                 label.setContentHuggingPriority(.defaultLow, for: .horizontal)
                 label.lineBreakMode = .byTruncatingTail; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                 aliasLabels[sub.id] = label
-                let line = NSStackView(views: [label,field]); line.spacing = 6; line.distribution = .fill; aliasLines[sub.id] = line
-                controls.insertArrangedSubview(line, at: index); line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
+                let line = NSStackView(views: [label,field]); line.spacing = 6; line.distribution = .fill
+                let reason=NSTextField(wrappingLabelWithString:"");reason.font = .systemFont(ofSize:11);reason.textColor = .secondaryLabelColor
+                memberReasonLabels[sub.id]=reason
+                let block=NSStackView(views:[line,reason]);block.orientation = .vertical;block.alignment = .leading;block.spacing=3;aliasLines[sub.id]=block
+                controls.insertArrangedSubview(block, at: index)
+                line.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
+                block.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
+                reason.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
             }
             let field = aliases[sub.id]!, line = aliasLines[sub.id]!
             if controls.arrangedSubviews[index] !== line { controls.removeArrangedSubview(line); controls.insertArrangedSubview(line, at: index) }
@@ -298,12 +312,11 @@ import AppKit
             field.isEnabled = reason == nil && (enabled || field.editing)
             field.toolTip = reason
             if let reason { field.setAccessibilityHelp(reason) }
+            memberReasonLabels[sub.id]?.stringValue = reason ?? ""
+            memberReasonLabels[sub.id]?.isHidden = reason == nil
             field.setAccessibilityLabel(SettingsWords.text("Alias: ", "别名：", language) + sub.name)
         }
-        if let reason = context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language) {
-            if readout.superview == nil { controls.addArrangedSubview(readout) }
-            readout.stringValue = reason; readout.isHidden = false
-        } else if subs.isEmpty {
+        if subs.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
             readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language)
         } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
@@ -323,14 +336,11 @@ import AppKit
             names[sub.id] = (alias.isEmpty ? sub.name.value(language) : alias)
                 + (p.subscriptions.hiddenIDs.contains(sub.id) ? SettingsWords.text(" (hidden)", "（隐藏）", language) : "")
         }
-        order?.configure(ids: ids, names: names, language: language, canReset: !p.subscriptions.order.isEmpty)
-        let reason = context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language)
-        order?.isEnabled = enabled && reason == nil
-        if let reason {
-            if readout.superview == nil { controls.addArrangedSubview(readout) }
-            readout.stringValue = reason; readout.isHidden = false
-            order?.setAccessibilityHelp(reason)
-        } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
+        let reasons=Dictionary(uniqueKeysWithValues:context.subscriptions.compactMap { sub in
+            sub.persistenceDisabledReason.map { (sub.id,$0.value(language)) }
+        })
+        order?.configure(ids:ids,names:names,language:language,canReset:!p.subscriptions.order.isEmpty,disabledReasons:reasons)
+        order?.isEnabled = enabled
     }
     private func configureShortcut(_ p: SettingsPreferences, context: SettingsPageContext, enabled: Bool, language: SettingsLanguage,
                                    onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void) {
