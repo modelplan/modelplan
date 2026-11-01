@@ -40,3 +40,23 @@
 #cockpit .s6-brand-mark{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
 #cockpit .s6-brand-mark::before{content:"M";font:600 12px var(--f-silk);color:var(--silk)}
 #cockpit .ck-head .s6-strip-key{width:26px;min-width:26px;height:22px;padding:0;font-size:13px}
+
+/* Owner-directed study strip: neutral community glyph; official vector added by build. */
+#cockpit .ck-head{position:relative;display:flex;align-items:center;gap:6px}
+#cockpit .ck-brand{gap:8px}#cockpit .s6-brand-mark{width:28px;height:28px}
+#cockpit .wordmark{font-family:var(--f-silk);font-size:10px;font-weight:600;letter-spacing:.15em}#cockpit .wordmark b{font-weight:600;color:#df604c}
+#cockpit .shutter-slider{--shutter-travel:0px;position:absolute;left:50%;top:-3px;transform:translateX(-50%);width:152px;height:32px;padding:0;border:0;border-radius:5px;background:linear-gradient(#11151a,#353b42 45%,#11151a);box-shadow:inset 0 1px 4px #000;touch-action:none;cursor:ew-resize}
+#cockpit .shutter-slider[aria-pressed=true]{--shutter-travel:100px}#cockpit .shutter-blind{position:absolute;left:6px;top:5px;height:22px;width:var(--shutter-travel);background:repeating-linear-gradient(#3d444b 0 3px,#20252b 3px 6px)}
+#cockpit .shutter-thumb{position:absolute;left:2px;top:-2px;width:48px;height:36px;transform:translateX(var(--shutter-travel));border-radius:5px;background:linear-gradient(#717982,#252c33 46%,#4d555d);box-shadow:0 2px 5px #000,inset 0 1px #aeb6bd}
+#cockpit .s6-alert{position:relative;display:grid;place-items:center;width:44px;height:22px;border-radius:4px;background:linear-gradient(var(--caution-1),var(--caution-2));box-shadow:var(--raised);font:600 10px var(--f-silk);letter-spacing:.04em;color:var(--ink)}#cockpit .s6-alert .activity{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
+#cockpit[data-shell=closed]{grid-template-rows:16px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}
+#cockpit .s6-closed-cap{height:16px;padding:0!important;align-self:stretch!important;border-radius:3px;background:linear-gradient(#646b72,#282d32 55%,#41474e)!important;box-shadow:inset 0 1px #8c959e}
+#cockpit .s6-closed-cap span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#cockpit .ck-eng .ek-name{font-weight:400}
+#cockpit .ck-eng .eng-keys .ek::after{content:"";position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--vendor-color);opacity:.5;box-shadow:0 0 4px var(--vendor-color);pointer-events:none}
+#cockpit .ck-eng .eng-keys .ek.on::after{opacity:1;box-shadow:0 0 6px var(--vendor-color)}
+
+/* The OpenAI PNG has a 48px glyph in a 96px transparent canvas. Normalize
+   the visible glyph to the same 16px maximum as the other vendor marks. */
+#cockpit .vendor-glyph{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none}
+#cockpit .ck-eng .vendor-glyph img[src$="/openai.png"]{width:32px;height:32px;max-width:none}

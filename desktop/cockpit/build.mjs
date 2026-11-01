@@ -32,9 +32,9 @@ if (official) {
   // Only this explicit edition reads reserved artwork; the default never does.
   const assets=resolve(repo,'desktop/official-visuals');
   verifyVisualPack(repo);
-  // Existing historical-MIT official icon; community keeps the neutral mark.
-  await cp(resolve(assets,'icons/32x32.png'),resolve(output,'brand-mark.png'));
-  css+="\n#cockpit .s6-brand-mark{background-image:url('./brand-mark.png')}#cockpit .s6-brand-mark::before{content:none}\n";
+  // Historical-MIT rocket vector; community keeps the neutral mark.
+  await cp(resolve(assets,'logo.svg'),resolve(output,'brand-mark.svg'));
+  css+="\n#cockpit .s6-brand-mark{background-image:url('./brand-mark.svg')}#cockpit .s6-brand-mark::before{content:none}\n";
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));

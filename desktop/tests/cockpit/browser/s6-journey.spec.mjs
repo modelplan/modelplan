@@ -70,15 +70,19 @@ test('v2 host messages update the built page and shell controls emit native acti
   expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,extra:true}))).toBe(false);
   expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}))).toBe(true);
   await page.getByRole('button',{name:'分离',exact:true}).click();
-  await expect(page.getByRole('button',{name:'收起',exact:true})).toHaveCount(0);
+  const shutter=page.getByRole('button',{name:'舷窗快门'});await expect(shutter).toHaveAttribute('aria-pressed','false');
+  const before=await page.locator('.ck-eng').boundingBox();await shutter.click();
   await page.getByRole('button',{name:'关闭',exact:true}).click();
   expect(await receive(send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact',scope:'all'}))).toBe(true);
-  await expect(page.locator('.s6-closed-cap')).toBeVisible();await expect(page.getByRole('button',{name:'打开驾驶舱'})).toHaveCount(0);
+  await expect(page.locator('.s6-closed-cap')).toBeVisible();await expect(shutter).toBeDisabled();
+  await expect(page.locator('.ck-eng')).toBeVisible();await expect(page.locator('.ck-deck')).toBeVisible();
+  expect((await page.locator('.s6-closed-cap').boundingBox()).height).toBe(16);
+  expect((await page.locator('.ck-eng').boundingBox()).height).toBe(220);expect(before.height).toBe(226);
   await expect(page.locator('#s6-closed-reason')).toContainText('高度不足');
   await page.getByRole('button',{name:'放回',exact:true}).click();
   expect(await receive(send('shell',{profile:'closed',attached:false,forcedClosed:false,tier:'compact',scope:'all'}))).toBe(true);
-  await expect(page.getByRole('button',{name:'打开驾驶舱'})).toHaveCount(0);
-  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['detach','close','putBack']);
+  await expect(shutter).toBeEnabled();await expect(shutter).toHaveAttribute('aria-pressed','true');await shutter.click();
+  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['detach','shutterToggle','close','putBack','shutterToggle']);
   expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}))).toBe(true);
   await expect(page.locator('.eng-cols .ec')).toHaveCount(4);await expect(page.locator('.s6-closed-cap')).toBeHidden();
 });
@@ -90,7 +94,7 @@ test('initial compact closed shell and later tall tier select independent layout
   await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','640');
   await expect(page.locator('#cockpit')).toHaveAttribute('data-shell','closed');
   await expect(page.locator('.s6-closed-cap')).toBeVisible();
-  await expect(page.getByRole('button',{name:'Open Cockpit'})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Porthole shutter'})).toBeDisabled();
   await expect(page.locator('#s6-closed-reason')).toContainText('Not enough window height');
   expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}))).toBe(true);
   await expect(page.locator('#cockpit')).toHaveAttribute('data-layout','890');
@@ -110,6 +114,10 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   expect(await receive(send('display',{data}))).toBe(true);
   await expect(page.locator('.wordmark b')).toHaveCSS('color','rgb(223, 96, 76)');
   await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
+  await expect(page.locator('.s6-page:visible .ek-name').first()).toHaveCSS('font-weight','400');
+  await expect(page.locator('.s6-page:visible img.vendor-mark').first()).toHaveCSS('width','32px');
+  expect(await page.locator('.s6-page:visible .eng-keys .ek').first().evaluate(e=>getComputedStyle(e,'::after').backgroundColor)).toBe('rgb(106, 168, 255)');
+  await expect(page.locator('.s6-alert')).toContainText('ALERT');
   expect(await page.locator('.s6-page:visible img.vendor-mark').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
   await expect(page.getByRole('button',{name:'Page 2'})).toHaveClass(/lv-red/);
   const all=page.getByRole('button',{name:'All',exact:true}).first();await expect(all).toHaveAttribute('aria-pressed','true');
@@ -161,13 +169,31 @@ test('v1 strip uses a brand mark and equal icon keys with localized accessible n
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
   await expect(page.locator('.ck-brand .s6-brand-mark')).toBeVisible();
-  expect(await page.locator('.s6-brand-mark').evaluate(e=>getComputedStyle(e).backgroundImage)).toContain('brand-mark.png');
+  expect(await page.locator('.s6-brand-mark').evaluate(e=>getComputedStyle(e).backgroundImage)).toContain('brand-mark.svg');
   const settings=page.getByRole('button',{name:'Settings',exact:true}),detach=page.getByRole('button',{name:'Detach',exact:true}),close=page.getByRole('button',{name:'Close',exact:true});
   await expect(close).toHaveText('✕');await expect(settings).not.toHaveText('Settings');await expect(detach).not.toHaveText('Detach');
   const sizes=await Promise.all([settings,detach,close].map(b=>b.boundingBox()));expect(sizes.every(r=>r.width===sizes[0].width&&r.height===sizes[0].height)).toBe(true);
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
   await expect(page.getByRole('button',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分离',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'关闭',exact:true})).toHaveText('✕');
-  await expect(page.getByText('ALERT',{exact:true})).toHaveCount(0);
+  await expect(page.getByText('ALERT',{exact:true})).toBeVisible();
+  await expect(page.locator('.s6-alert')).toHaveAttribute('aria-label','告警未激活');
+});
+
+
+test('shutter supports drag and keyboard without toggling twice',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance:{...appearance,reduceMotion:true},shell}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const shutter=page.getByRole('button',{name:'Porthole shutter'}),box=await shutter.boundingBox();
+  await page.mouse.move(box.x+20,box.y+15);await page.mouse.down();await page.mouse.move(box.x+120,box.y+15,{steps:4});await page.mouse.up();
+  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['shutterToggle']);
+  expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);
+  await expect(shutter).toHaveAttribute('aria-pressed','true');
+  expect(await page.locator('.shutter-thumb').evaluate(e=>getComputedStyle(e).transitionDuration)).toBe('0s');
+  await shutter.focus();await page.keyboard.press('ArrowLeft');
+  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['shutterToggle','shutterToggle']);
 });
 
 test('macrev-403-2: colliding unverified members remain distinct through paging and refresh',async({page})=>{
