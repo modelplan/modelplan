@@ -77,8 +77,10 @@ export function positional(a, ui, grey) {
 function reserveOf(a, now) {
   const cards = a.cards || [], cr = a.credits;
   if (!cards.length && !cr) return null;
-  const first = cards.length ? Math.min(...cards.map(c => c.expiresAt)) : null;
-  return {cards: cards.length, warn: cards.some(c => (c.expiresAt - now) / H <= 48), firstExpiry: first,
+  const expiries = cards.map(c => c.expiresAt).filter(v => Number.isFinite(v));
+  const first = expiries.length ? Math.min(...expiries) : null;
+  const count = cards.some(c => c.count === null) ? null : cards.reduce((n,c) => n + (c.count ?? 1), 0);
+  return {cards: cards.length ? count : null, warn: expiries.some(v => (v - now) / H <= 48), firstExpiry: first,
     credits: cr ? cr.balance : null, drawing: !!cr?.drawing};
 }
 function columnOf(a, i, ui, status, now) {

@@ -85,7 +85,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    lastData=data;
    if(disposed)throw Error('closed');const before=displayedState();const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const unstable=priorButton?.dataset.unstable==='true';const priorScope=unstable?'':priorButton?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');if(unstable&&nativeShell)nativeShell={...nativeShell,scope:'all'};applyScope=null;frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,cell,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;});
-   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;deck.scope(nativeShell?.scope??'all');deck.render(data);frame.hud.replaceChildren();
+   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
    if(before!==displayedState())pulse();
   }
  setEmpty('waiting');

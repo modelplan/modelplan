@@ -47,7 +47,7 @@ function reserve(col,m,ui){
   const expiry=r.firstExpiry==null?'':` · ${until(r.firstExpiry,ui.now)}`;
   const full=t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards})+expiry, short=t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards})+expiry.replaceAll(' ','');
   const points=r.credits==null?'':t('eng.creditWords',{n:tok(r.credits)});
-  return `<div class="qrow qrow-r" aria-label="${esc([r.cards?full:'',points].filter(Boolean).join(' · '))}">${r.cards?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p">${esc(points)}</span>`:''}</div>`;
+  return `<div class="qrow qrow-r" aria-label="${esc([r.cards!=null?full:'',points].filter(Boolean).join(' · '))}">${r.cards!=null?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p">${esc(points)}</span>`:''}</div>`;
 }
 // Exactly two extra instruments in the wide-column prototype; missing history stays unplotted.
 function detail(col, ui) {

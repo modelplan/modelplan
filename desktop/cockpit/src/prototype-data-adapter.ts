@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: MIT
-// Study-only display gaps: the current cockpit wire supplies no today-token,
-// average-speed, reset-card or reserve-credit values. Never synthesize them.
-import type { WireAccount } from '../generated/wire.js';
+// Preserve the producer's nulls, empty lists and zero values; join only the
+// verified subscription references already admitted by the wire projection.
+import type {WireAccount,WireCockpitData,WireCockpitDetails} from '../generated/wire.js';
 export interface PrototypeEngineSupplement {
- readonly todayTokens:null; readonly todayAverageGenerationTps:null;
- readonly resetCards:null; readonly reserveCredits:WireAccount["credits"];
+ readonly todayTokens:number|null; readonly todayAverageGenerationTps:number|null;
+ readonly resetCards:WireCockpitDetails['subscriptions'][number]['resetCounts']|null;
+ readonly reserveCredits:WireAccount['credits'];
 }
-export function prototypeEngineSupplement(account:WireAccount):PrototypeEngineSupplement {
- return {todayTokens:null,todayAverageGenerationTps:null,resetCards:null,reserveCredits:account.credits};
+export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitData):PrototypeEngineSupplement {
+ const ref=account.subscriptionRef;
+ const verified=ref!==null&&data?.subscriptions.some(s=>s.subscriptionRef===ref);
+ const matches=verified?data?.details?.subscriptions.filter(s=>s.subscriptionRef===ref)??[]:[];
+ const detail=matches.length===1?matches[0]:null;
+ // Multiple sources cannot be averaged without their underlying denominators.
+ const eligible=detail?.today.filter(t=>t.bindingBasis==='source-wide-current-binding'&&t.observedOutputTokens>=0&&(t.generationTps===null||t.generationTps>=0))??[];
+ const today=eligible.length===1&&detail?.today.length===1?eligible[0]:null;
+ const wireCredits=detail?.credits;
+ return {todayTokens:today?.observedOutputTokens??null,todayAverageGenerationTps:today?.generationTps??null,resetCards:detail?.resetCounts??null,
+  reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
+export const cockpitDetails=(data:WireCockpitData)=>data.details;

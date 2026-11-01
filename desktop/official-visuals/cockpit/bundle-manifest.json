@@ -9,7 +9,7 @@
     },
     {
       "file": "cockpit/SOURCES.md",
-      "sha256": "d3cfa57884a9381f40bae98f3b939af0505d5002be964dcc2afbcd2f5a50b2c3"
+      "sha256": "3bc7686b2aa18197a79e239f63ce99a2a2842a1204243ea54e8f4946ee43a295"
     },
     {
       "file": "cockpit/cockpit.css",
@@ -21,7 +21,7 @@
     },
     {
       "file": "cockpit/engine-material.css",
-      "sha256": "b4b02100c3b633c0cec053e101d0451e21565ee5dcacfafe98e875dedfe675cf"
+      "sha256": "e9726d29d222a81a39492cf693f2743b464ca4f68e00456d272b009b8fdb6125"
     },
     {
       "file": "cockpit/shell6.css",

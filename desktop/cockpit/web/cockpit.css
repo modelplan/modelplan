@@ -70,4 +70,4 @@
 .ck-eng .eng-keys:is([data-slots='5'],[data-slots='6']) .ek-name{display:none}
 
 /* Match the prototype paint context for the in-scope strip and engine only. */
-#cockpit .ck-head,#cockpit .ck-eng,#cockpit .dk-fad,#cockpit .dk-mfd{filter:opacity(1)}
+#cockpit .ck-head,#cockpit .ck-eng,#cockpit .dk-fad,#cockpit .dk-mfd,#cockpit .ck-tape{filter:opacity(1)}
