@@ -73,3 +73,12 @@
 #cockpit .hud{display:none!important}
 /* Keep long, localized study cell annotations inside their own column. */
 .s6-page .qline{min-width:0;overflow:hidden}.s6-page .qtxt{display:flex;gap:3px;min-width:0;overflow:hidden;white-space:nowrap}.s6-page .qtxt>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Study fader/MFD lanes; data unavailable until cockpitDetailsV1/publication. */
+#cockpit .ck-deck{padding-left:var(--bz);display:grid;grid-template-columns:var(--fad-w) minmax(0,1fr);column-gap:var(--gutter);align-items:stretch}
+#cockpit .dk-fad{display:grid!important;flex-direction:initial}
+#cockpit .dk-mfd{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--row-h,18px) minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);height:var(--console-h,217px);padding:0;background:none;box-shadow:none;overflow:hidden}
+#cockpit .mfd-empty{color:var(--lcd-muted)}
+#cockpit .ck-deck{pointer-events:auto}
+/* Preserve the full number line when Today and Reserve share the fixed engine height. */
+.s6-page .qcell{display:flex;flex-direction:column;justify-content:center;gap:2px}.s6-page .qline{height:16px;min-height:16px;flex:none;overflow:visible}.s6-page .qmeter{flex:none}

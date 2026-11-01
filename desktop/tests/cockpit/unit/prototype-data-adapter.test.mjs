@@ -13,3 +13,8 @@ test('study engine data adapter preserves wire credits and leaves absent metrics
  account.credits=null;
  assert.equal(prototypeEngineSupplement(account).reserveCredits,null);
 });
+
+test('details fixture keeps unavailable sources unknown rather than empty',async()=>{
+ const {unavailablePrototypeDetailsFixture}=await import('../../../cockpit/.tmp/compiled/src/prototype-details-fixture-adapter.js');
+ assert.deepEqual(unavailablePrototypeDetailsFixture(),{liveSessions:null,publication:null,resetEvents:null,history:null});
+});

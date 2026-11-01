@@ -116,6 +116,8 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
   await expect(page.locator('.s6-page:visible .ek-name').first()).toHaveCSS('font-weight','400');
   await expect(page.locator('.hud')).toBeHidden();
+  const quotaGeometry=await page.locator('.s6-page:visible .qnum').first().evaluate(e=>{const n=e.getBoundingClientRect(),r=e.closest('.qcell').getBoundingClientRect(),line=e.closest('.qline').getBoundingClientRect();return {number:n.height,line:line.height,cell:r.height};});
+  expect(quotaGeometry.line).toBeGreaterThanOrEqual(quotaGeometry.number);expect(quotaGeometry.cell).toBeGreaterThanOrEqual(quotaGeometry.line);
   await expect(page.locator('.s6-page:visible .qrow-t')).toHaveCount(6);
   await expect(page.locator('.s6-page:visible .qrow-t').first()).toHaveAttribute('data-available','false');
   await expect(page.locator('.s6-page:visible img.vendor-mark').first()).toHaveCSS('width','32px');
@@ -197,6 +199,20 @@ test('shutter supports drag and keyboard without toggling twice',async({page})=>
   expect(await page.locator('.shutter-thumb').evaluate(e=>getComputedStyle(e).transitionDuration)).toBe('0s');
   await shutter.focus();await page.keyboard.press('ArrowLeft');
   expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['shutterToggle','shutterToggle']);
+});
+
+test('study faders and MFD retain empty states without invented cockpit details',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  expect(await receive(send('display',{data:sample()}))).toBe(true);
+  await expect(page.locator('.dk-fad')).toBeVisible();await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
+  await expect(page.locator('.fd-strip:disabled')).toHaveCount(3);await expect(page.locator('#cockpit')).toHaveAttribute('data-details-available','false');
+  await expect(page.locator('.mfd-page')).toHaveText('No data available');await page.getByRole('button',{name:'Plans',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
+  expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+  await expect(page.getByRole('button',{name:'订阅',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page')).toHaveText('暂无数据');
+  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.getByRole('button',{name:'总览',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
 test('macrev-403-2: colliding unverified members remain distinct through paging and refresh',async({page})=>{
