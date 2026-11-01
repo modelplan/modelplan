@@ -1,12 +1,19 @@
+//go:build darwin || linux
+
 // SPDX-License-Identifier: MIT
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -78,10 +85,10 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 			}
 			check(desktop(), true)
 			lock := filepath.Join(st.Dir, "observed", "perf.lock")
+			var held *os.File
 			if !forget {
-				if err := os.WriteFile(lock, nil, 0600); err != nil {
-					t.Fatal(err)
-				}
+				held = holdTestLedgerLock(t, lock)
+				defer held.Close()
 			}
 			state = consent.Capture().State()
 			grant := consent.Grant{RequestID: "remove", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation}
@@ -99,7 +106,10 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 			}
 			check(desktop(), false)
 			if !forget {
-				if err := os.Remove(lock); err != nil {
+				if err := syscall.Flock(int(held.Fd()), syscall.LOCK_UN); err != nil {
+					t.Fatal(err)
+				}
+				if err := held.Close(); err != nil {
 					t.Fatal(err)
 				}
 				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
@@ -122,7 +132,21 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 	}
 }
 
-func TestHistoryCleanupRecoversAbandonedWriterLocks(t *testing.T) {
+// holdTestLedgerLock holds a real advisory lock on the persistent inode.
+func holdTestLedgerLock(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestHistoryCleanupNeverStealsSlowWriterLocks(t *testing.T) {
 	for _, name := range []string{"speed.lock", "perf.lock"} {
 		for _, forget := range []bool{false, true} {
 			t.Run(name+map[bool]string{false: "-revoke", true: "-forget"}[forget], func(t *testing.T) {
@@ -155,8 +179,15 @@ func TestHistoryCleanupRecoversAbandonedWriterLocks(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				lock := filepath.Join(dir, name)
-				if err := os.WriteFile(lock, []byte("active"), 0600); err != nil {
+				path := filepath.Join(dir, name)
+				held := holdTestLedgerLock(t, path)
+				defer held.Close()
+				inode, err := os.Stat(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				old := time.Now().Add(-time.Hour)
+				if err := os.Chtimes(path, old, old); err != nil {
 					t.Fatal(err)
 				}
 				state = consent.Capture().State()
@@ -171,29 +202,42 @@ func TestHistoryCleanupRecoversAbandonedWriterLocks(t *testing.T) {
 					t.Fatal(err)
 				}
 				if len(receipt.CleanupPending) != 1 {
-					t.Fatalf("fresh lock stolen: %#v", receipt)
+					t.Fatalf("slow live lock stolen: %#v", receipt)
 				}
 				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
 					t.Fatal(err)
 				}
 				if !consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {
-					t.Fatal("fresh lock did not preserve pending cleanup")
+					t.Fatal("live lock did not preserve pending cleanup")
 				}
-				if b, err := os.ReadFile(lock); err != nil || string(b) != "active" {
-					t.Fatalf("fresh lock changed: %q, %v", b, err)
+				after, err := os.Stat(path)
+				if err != nil || !os.SameFile(inode, after) {
+					t.Fatal("live lock inode replaced", err)
 				}
-				old := time.Now().Add(-time.Minute)
-				if err := os.Chtimes(lock, old, old); err != nil {
+				// Simulate the writer completing its delayed read-modify-write while
+				// still holding the lock. Cleanup must run only after this write.
+				target := "speed.json"
+				if name == "perf.lock" {
+					target = "perf.json"
+				}
+				if err := os.WriteFile(filepath.Join(dir, target), []byte(`{"rows":[{"source":"codex"},{"source":"claude-code"}]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := syscall.Flock(int(held.Fd()), syscall.LOCK_UN); err != nil {
+					t.Fatal(err)
+				}
+				if err := held.Close(); err != nil {
 					t.Fatal(err)
 				}
 				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
 					t.Fatal(err)
 				}
 				if consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {
-					t.Fatal("stale lock left cleanup pending")
+					t.Fatal("released lock left cleanup pending")
 				}
-				if _, err := os.Stat(lock); !os.IsNotExist(err) {
-					t.Fatalf("stale lock survived: %v", err)
+				after, err = os.Stat(path)
+				if err != nil || !os.SameFile(inode, after) {
+					t.Fatal("cleanup removed persistent lock", err)
 				}
 				for _, file := range []string{"speed.json", "perf.json", "daily-long.json"} {
 					b, err := os.ReadFile(filepath.Join(dir, file))
@@ -203,5 +247,84 @@ func TestHistoryCleanupRecoversAbandonedWriterLocks(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestHistoryLedgerLockChildProcess(t *testing.T) {
+	path := os.Getenv("MODELPLAN_TEST_LEDGER_LOCK_CHILD")
+	if path == "" {
+		return
+	}
+	f := holdTestLedgerLock(t, path)
+	defer f.Close()
+	fmt.Println("locked")
+	time.Sleep(time.Hour)
+}
+
+func TestKilledWriterReleasesLedgerLockForCleanup(t *testing.T) {
+	for _, name := range []string{"speed.lock", "perf.lock"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			cache := t.TempDir()
+			dir := filepath.Join(cache, "observed")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range []string{"speed.json", "perf.json", "daily-long.json"} {
+				if err := os.WriteFile(filepath.Join(dir, file), []byte(`{"rows":[{"source":"codex"},{"source":"claude-code"}]}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			exe, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			path := filepath.Join(dir, name)
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestHistoryLedgerLockChildProcess$")
+			cmd.Env = append(os.Environ(), "MODELPLAN_TEST_LEDGER_LOCK_CHILD="+path)
+			out, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if cmd.ProcessState == nil {
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+				}
+			}()
+			scanner := bufio.NewScanner(out)
+			if !scanner.Scan() || scanner.Text() != "locked" {
+				t.Fatal("child did not acquire ledger lock")
+			}
+			inode, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := quota.EraseScope(quota.Paths{Cache: cache}, consent.ScopeCodexLocalHistory, false); err == nil {
+				t.Fatal("live child lock was ignored")
+			}
+			if err := cmd.Process.Kill(); err != nil {
+				t.Fatal(err)
+			}
+			_ = cmd.Wait()
+			if err := quota.EraseScope(quota.Paths{Cache: cache}, consent.ScopeCodexLocalHistory, false); err != nil {
+				t.Fatal("dead child left cleanup locked", err)
+			}
+			after, err := os.Stat(path)
+			if err != nil || !os.SameFile(inode, after) {
+				t.Fatal("lock inode changed", err)
+			}
+			for _, file := range []string{"speed.json", "perf.json", "daily-long.json"} {
+				b, err := os.ReadFile(filepath.Join(dir, file))
+				if err != nil || strings.Contains(string(b), `"source":"codex"`) || !strings.Contains(string(b), `"source":"claude-code"`) {
+					t.Fatalf("bad cleanup %s: %s, %v", file, b, err)
+				}
+			}
+		})
 	}
 }

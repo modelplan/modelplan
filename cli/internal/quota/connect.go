@@ -15,6 +15,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -369,7 +370,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	if _, err := os.Stat(observed); os.IsNotExist(err) {
 		return nil
 	}
-	locks := []string{"native.lock", "codexbar.lock", "cycles.lock", "pace.lock", "speed.lock", "perf.lock"}
+	locks := []string{"native.lock", "codexbar.lock", "cycles.lock", "pace.lock"}
 	if tool == "codex" {
 		locks = append(locks, "codex-account.lock")
 	}
@@ -388,6 +389,11 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		f.Close()
 		releases = append(releases, func() { os.Remove(path) })
 	}
+	unlockLedgers, ok := speed.LockLedgersForCleanup(p.Cache)
+	if !ok {
+		return errors.New("readings busy; retry disconnect")
+	}
+	defer unlockLedgers()
 	if identity {
 		if err := forgetScopeIdentity(p.Cache, tool, scopeClass); err != nil {
 			return err
