@@ -1062,6 +1062,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 menu.addItem(item)
             }
         }
+        let english = application == nil || preferences.language == .english
+        let quitTitle: String
+        switch (purpose, english) {
+        case (.production, true): quitTitle = "Quit ModelPlan"
+        case (.production, false): quitTitle = "退出 ModelPlan"
+        case (.selfTest, true): quitTitle = "Quit preview"
+        case (.selfTest, false): quitTitle = "退出自测版"
+        }
+        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(.separator())
         let hideTitle=preferences.language == .english ? "Hide Dock" : "隐藏挂件"
         for (title, action) in [(EngineRowsText.cockpitMenu.value(preferences.language), #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings)), (hideTitle, #selector(hideDockMenu))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
