@@ -87,8 +87,8 @@ const (
 	Keep       = 28 * 24 * time.Hour
 	maxRows    = 3000
 	maxFile    = 2 << 20
-	maxScan    = 8 << 20 // bytes read from one log per run
-	maxLine    = 4 << 20 // longer lines (huge tool output) are skipped unread
+	maxScan    = 8 << 20          // bytes read from one log per run
+	maxLine    = 4 << 20          // longer lines (huge tool output) are skipped unread
 	statusGap  = 15 * time.Second // the status line refreshes often; read at most this often from it
 	MinSamples = 5                // fewer requests or turns than this give no median or rate
 )
