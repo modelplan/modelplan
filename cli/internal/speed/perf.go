@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // The performance ledger, <cache>/observed/perf.json, runs beside speed.json and never merges with
@@ -39,6 +41,7 @@ type PerfLedger struct {
 	// Stores: how far each agent database was read (sqlite.go).
 	Stores map[string]DBCursor `json:"stores,omitempty"`
 
+	admission    consent.Admission
 	project      func(cwd string) (ref, label string) // while observing: names a session's project
 	subscription string                               // while observing: the harness account's reference
 }
@@ -55,9 +58,10 @@ type Ingest struct {
 // random reference. It holds no title, path or session id: Key is the log's file key, as the
 // cursors use, and never leaves this file.
 type PerfSession struct {
-	Ref    string `json:"ref"`
-	Key    string `json:"key"`
-	Source string `json:"source"`
+	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
+	Ref        string      `json:"ref"`
+	Key        string      `json:"key"`
+	Source     string      `json:"source"`
 	// ProjectRef: the opaque reference of the session's project (project.go), "" when its log
 	// records no working directory. ProjectLabel: the project folder's name, only while project
 	// labels are on.
@@ -84,6 +88,7 @@ type SessionDay struct {
 
 // PerfRow is one local day of one configuration, as one parser read it.
 type PerfRow struct {
+	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
 	TokenKinds
 	Day          string `json:"day"` // local date of the turns' start, YYYY-MM-DD
 	Source       string `json:"source"`
@@ -157,6 +162,7 @@ func observePerf(cache string, now time.Time, in Ingest, f func(*PerfLedger) boo
 		l.Files = map[string]Cursor{}
 	}
 	l.project, l.subscription = projector(cache, labels), in.Subscription
+	l.admission = consent.Capture()
 	changed := false
 	for i := range l.Sessions {
 		if !labels && l.Sessions[i].ProjectLabel != "" {
@@ -187,12 +193,13 @@ func (l *PerfLedger) scan(path, source, parser string, p parser, now time.Time) 
 const maxSessions = 2000
 
 func (l *PerfLedger) addSession(key, source string, t turn) {
-	if t.at.IsZero() || t.at.Before(l.Since) || len(t.all) == 0 {
+	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) || len(t.all) == 0 {
 		return
 	}
+	epoch := currentEpoch(l.admission, source)
 	var s *PerfSession
 	for i := range l.Sessions {
-		if l.Sessions[i].Key == key && l.Sessions[i].Source == source {
+		if l.Sessions[i].Key == key && l.Sessions[i].Source == source && sameEpoch(l.Sessions[i].GrantEpoch, epoch) {
 			s = &l.Sessions[i]
 		}
 	}
@@ -200,12 +207,12 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s == nil {
 		ref := newRef()
 		for _, r := range l.Live {
-			if r.Key == key && r.Source == source {
+			if r.Key == key && r.Source == source && sameEpoch(r.GrantEpoch, epoch) {
 				ref = r.Ref
 				break
 			}
 		}
-		l.Sessions = append(l.Sessions, PerfSession{Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
+		l.Sessions = append(l.Sessions, PerfSession{GrantEpoch: epoch, Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
 		s = &l.Sessions[len(l.Sessions)-1]
 	}
 	if start.Before(s.FirstAt) {
@@ -261,7 +268,7 @@ func newRef() string {
 }
 
 func (l *PerfLedger) add(source, parser string, t turn) {
-	if t.at.IsZero() || t.at.Before(l.Since) {
+	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) {
 		return // started before the ledger did
 	}
 	d := day(t.at)
@@ -313,6 +320,7 @@ func (r *PerfRow) seen(t time.Time) {
 }
 
 func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
+	epoch := currentEpoch(l.admission, source)
 	status := "reported"
 	if c.effort == "" {
 		status = "unreported"
@@ -320,11 +328,11 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 	for i := range l.Rows {
 		r := &l.Rows[i]
 		if r.Day == d && r.Source == source && r.Model == c.model && r.EffortStatus == status && r.Effort == c.effort && r.Speed == c.speed &&
-			r.Parser == parser && r.Eligibility == EligibilityV1 {
+			r.Parser == parser && r.Eligibility == EligibilityV1 && sameEpoch(r.GrantEpoch, epoch) {
 			return r
 		}
 	}
-	l.Rows = append(l.Rows, PerfRow{Day: d, Source: source, Model: c.model, EffortStatus: status, Effort: c.effort, Speed: c.speed, Parser: parser, Eligibility: EligibilityV1})
+	l.Rows = append(l.Rows, PerfRow{GrantEpoch: epoch, Day: d, Source: source, Model: c.model, EffortStatus: status, Effort: c.effort, Speed: c.speed, Parser: parser, Eligibility: EligibilityV1})
 	return &l.Rows[len(l.Rows)-1]
 }
 
