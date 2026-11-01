@@ -36,6 +36,7 @@ import ModelPlanSettings
         self.contextSource = contextSource
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
         super.init()
+        CommunityPlacementBinding.install(on: composition.dock, application: settings)
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -50,7 +51,11 @@ import ModelPlanSettings
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
         guard ready != lastAboutConnectionReady else { return }
         lastAboutConnectionReady = ready
-        settings.update(context: contextSource.make(engineReady: ready))
+        // Preserve Dock-owned catalogue, display and placement facts when the
+        // engine connection changes; only About's CLI readiness comes from here.
+        var context = settings.editor.context
+        context.about = contextSource.make(engineReady: ready).about
+        settings.update(context: context)
     }
     /// Core preferences share the exact foundation store used by Settings.
     public func coreSnapshot() async -> FoundationCorePreferences? { await foundationStore.coreSnapshot() }
