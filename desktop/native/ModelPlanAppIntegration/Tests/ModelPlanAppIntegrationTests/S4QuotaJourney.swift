@@ -16,14 +16,14 @@ private actor S4RowsClient: EngineClient {
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
         await store.consume(.context(context))
-        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:rows),delivery:context),invalidRowCount:0))
+        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:rows),delivery:context),invalidRowCount:rows.projection.invalidRowCount))
         return context
     }
     func replaceRows(_ rows:WireRowsSnapshot) async throws {
         revision += 1
         let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:revision)
         await store.consume(.context(next))
-        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:0))
+        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:rows.projection.invalidRowCount))
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -43,6 +43,74 @@ private actor S4RowsClient: EngineClient {
 @MainActor enum S4QuotaJourney {
     struct Failure:Error,CustomStringConvertible { let description:String }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
+    static func strictScopeAndEvents(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var account=(row["accounts"] as! [[String:Any]])[0],window=(account["windows"] as! [[String:Any]])[0]
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        window["id"]="scope-check";window["role"]="session";window["limitKey"]="five_hour";window["poolKey"]="main"
+        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z"
+        window.removeValue(forKey:"modelScope");projection.removeValue(forKey:"resetEvents")
+        func decode() throws -> WireDecoded<WireRowsSnapshot> {
+            account["windows"]=[window];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decodeWithDiagnostics(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        func rejected(_ description:String) throws {
+            var accepted=false
+            do { _ = try decode();accepted=true } catch { }
+            try require(!accepted,description)
+        }
+        let initial=try decode().value,directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-strict-wire-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:initial)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        func input() throws -> DockInstrumentInput {
+            guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the valid member") }
+            return input
+        }
+        try require(try input().windows.first?.isGeneral == true,"an omitted scope must remain general")
+        try require(entry.composition.rowEvents == .absentFromSchema,"omitted events must remain absent")
+        window["modelScope"]=["models":["opus"]]
+        try await client.replaceRows(decode().value)
+        try require(try input().windows.first?.isGeneral == false,"a valid scoped window must not become general")
+        window["modelScope"]=NSNull()
+        let isolated=try decode()
+        try require(isolated.invalidRowCount == 1 && isolated.value.projection.rows.first?.invalid == true,"null scope must isolate the semantic row")
+        try await client.replaceRows(isolated.value)
+        try require(entry.composition.presentedContent.snapshot.inputs.isEmpty,"an isolated scope must not produce general capacity")
+        for bad:Any in ["malformed",["models":[42]]] {
+            window["modelScope"]=bad
+            try rejected("structurally malformed scope must reject the frame")
+        }
+        window.removeValue(forKey:"modelScope")
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        let data=(document["result"] as! [String:Any])["data"] as! [String:Any]
+        var event=((data["projection"] as! [String:Any])["resetEvents"] as! [[String:Any]])[0]
+        let clock=Date(),formatter=ISO8601DateFormatter()
+        event["rowId"]=row["id"];event.removeValue(forKey:"planIds")
+        event["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60));event["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        event["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        projection["resetEvents"]=[event]
+        try await client.replaceRows(decode().value)
+        guard case .available(let admitted)=entry.composition.rowEvents else { throw Failure(description:"valid event treated as absent") }
+        try require(admitted.count == 1 && entry.composition.resetSignals.contains(where:{$0.reset?.id == admitted[0].id}),"valid event must reach the normal projection")
+        for bad:Any in [NSNull(),"malformed",[["version":1]],[["version":"malformed"]]] {
+            projection["resetEvents"]=bad
+            try rejected("null or malformed events must reject the frame")
+            guard case .available(let retained)=entry.composition.rowEvents else { throw Failure(description:"rejected events were treated as absent") }
+            try require(retained.count == 1,"rejected event frames must not replace admitted events")
+        }
+        projection["resetEvents"]=[];try await client.replaceRows(decode().value)
+        try require(entry.composition.rowEvents == .available([]),"valid empty events must not be absent")
+        projection.removeValue(forKey:"resetEvents");try await client.replaceRows(decode().value)
+        try require(entry.composition.rowEvents == .absentFromSchema,"omitted events must remain absent on refresh")
+        await entry.composition.stop()
+    }
     static func unstablePersistence(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any], row=(projection["rows"] as! [[String:Any]])[0]

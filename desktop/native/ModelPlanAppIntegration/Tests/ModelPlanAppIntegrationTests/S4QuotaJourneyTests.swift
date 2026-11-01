@@ -3,6 +3,10 @@ import Foundation
 import XCTest
 
 @MainActor final class S4QuotaJourneyTests:XCTestCase {
+    func testNormalEntryStrictScopeAndResetEvents() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.strictScopeAndEvents(capture:capture)
+    }
     func testNormalEntryAnnouncedResetShowsMenuIndicator() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         let title=try await S4QuotaJourney.announcedMenuIndicator(capture:capture)
