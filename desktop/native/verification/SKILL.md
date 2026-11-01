@@ -86,8 +86,9 @@ sequence above, everything else identical:
   coordinator's GO for this run. The receipt records
   `host: macci`, `releasedBy: V1` and `coordinatorGo`, never the M1 release flag, so it cannot
   admit a dev-Mac run, and an M1 receipt cannot admit a MacCI run.
-- The run config sets `"host": "macci"` and, for GUI activation, `"launchMode": "launchservices"`.
-  Do not substitute a custom controller: only launch.py/Drive register the subject the guardian
+- The run config sets `"host": "macci"` and `"launchMode": "direct"`: on MacCI direct children
+  activate (key window, `NSApp.isActive`), while LaunchServices returned -10810 for the ad-hoc
+  ModelPlan.app. Use `"subjectKind": "app-zip"` for the full app. Do not substitute a custom controller: only launch.py/Drive register the subject the guardian
   can close.
 
 Launch modes (`launchMode`, recorded in launch.py's JSON lines, the subject registration and the
