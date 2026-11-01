@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -93,6 +94,31 @@ func Generate(root string) ([]byte, error) {
 	for name, t := range roots {
 		b.defs[name] = b.schema(t, false)
 	}
+	// Promote the reviewed v1 shape to the real rows schema. The web generator
+	// does not support conditional keywords; confirmation linkage is checked by the producer.
+	overlayBytes, err := os.ReadFile(filepath.Join(root, "schema/app-cli/proposals/announced-reset-events.schema.json"))
+	if err != nil {
+		return nil, err
+	}
+	var overlay struct {
+		Properties map[string]any `json:"properties"`
+		Defs       map[string]any `json:"$defs"`
+	}
+	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
+		return nil, err
+	}
+	proposed := overlay.Defs["ProposedResetEvent"].(map[string]any)
+	delete(proposed, "allOf")
+	proposed["properties"].(map[string]any)["version"] = object{"type": "integer", "enum": []int{1}}
+	proposed["properties"].(map[string]any)["status"].(map[string]any)["type"] = "string"
+	schedule := overlay.Defs["ProposedResetSchedule"].(map[string]any)
+	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
+	source := overlay.Defs["ProposedResetSource"].(map[string]any)
+	source["properties"].(map[string]any)["kind"] = object{"type": "string", "enum": []string{"publication"}}
+	b.defs["ResetEvent"] = proposed
+	b.defs["ProposedResetSchedule"] = overlay.Defs["ProposedResetSchedule"]
+	b.defs["ProposedResetSource"] = overlay.Defs["ProposedResetSource"]
+	b.defs["RowsProjection"].(object)["properties"].(object)["resetEvents"] = object{"type": "array", "maxItems": 64, "uniqueItems": true, "items": object{"$ref": "#/$defs/ResetEvent"}}
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)

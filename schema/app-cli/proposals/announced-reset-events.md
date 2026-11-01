@@ -1,12 +1,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Draft: announced public reset events in rows
 
-This review-only proposal does not implement an event producer, change Swift, or
-claim S4 acceptance. The optional `resetEvents` array belongs to the shared
+This document records the reviewed proposal. The production schema and producer
+are promoted separately in #406; this document does not claim S4 acceptance.
+The optional `resetEvents` array belongs to the shared
 `RowsProjection` used by `rows/subscribe`, `rows/changed`, and `cockpit/query`.
 Omission means unsupported; an empty array means known empty. Both peers must
-negotiate `reset_events_v1` before emitting it on any of those paths: the current
-strict schema rejects the additional property, and no gate exists yet.
+negotiate `resetEvents` before emitting it on any of those paths: older strict
+schemas reject the additional property. The production gate is in #406.
 
 Each version 1 event has a stable `id`, public `provider`, affected `rowId`,
 `status` (`announced` or `confirmed`), `publishedAt`, optional bounded

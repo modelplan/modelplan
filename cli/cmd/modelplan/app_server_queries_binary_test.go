@@ -31,9 +31,13 @@ type queryBinary struct {
 	done          chan error
 	id            int
 	notifications []json.RawMessage
+	initialize    map[string]json.RawMessage
 }
 
 func startQueryBinary(t *testing.T, binary string) *queryBinary {
+	return startQueryBinaryCaps(t, binary, []string{"rows", "consent", "history", "cockpit", "refresh", "publication"})
+}
+func startQueryBinaryCaps(t *testing.T, binary string, capabilities []string) *queryBinary {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	cmd := exec.CommandContext(ctx, binary, "app-server")
@@ -86,7 +90,7 @@ func startQueryBinary(t *testing.T, binary string) *queryBinary {
 			t.Errorf("unexpected app-server stderr: %s", b)
 		}
 	})
-	p.call("initialize", map[string]any{"sessionId": "u3c-binary", "protocolVersion": "1.0", "appVersion": "test", "capabilities": []string{"rows", "consent", "history", "cockpit", "refresh", "publication"}})
+	p.initialize = p.call("initialize", map[string]any{"sessionId": "u3c-binary", "protocolVersion": "1.0", "appVersion": "test", "capabilities": capabilities})
 	return p
 }
 func (p *queryBinary) call(method string, params any) map[string]json.RawMessage {
