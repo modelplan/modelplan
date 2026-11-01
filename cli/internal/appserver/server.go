@@ -444,6 +444,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 	}
 	base := context.WithValue(s.ctx, sessionContextKey{}, s.session)
 	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
+	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
 	ctx, cancel := context.WithTimeout(base, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {

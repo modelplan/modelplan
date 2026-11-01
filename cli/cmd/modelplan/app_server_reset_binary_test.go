@@ -129,10 +129,29 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if cockpit["result"] == nil || !strings.Contains(string(cockpit["result"]), `"resetEvents"`) {
 		t.Fatalf("negotiated cockpit missing reset events: %s", cockpit["error"])
 	}
+	detailsClient := startQueryBinaryCaps(t, binary, []string{"rows", "cockpit", "cockpitDetailsV1"})
+	details := detailsClient.call("cockpit/query", map[string]any{})
+	if details["result"] == nil || !strings.Contains(string(details["result"]), `"details"`) || !strings.Contains(string(details["result"]), `"synthetic-announcement"`) {
+		t.Fatalf("negotiated cockpit details missing: %s", details["error"])
+	}
+	encodedDetails, err := json.Marshal(details)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validator.Validate("app-server", encodedDetails); err != nil {
+		t.Fatalf("cockpit details violate schema: %v", err)
+	}
+	configured := detailsClient.call("cockpit/query", map[string]any{"redBelow": 16})
+	if configured["result"] == nil {
+		t.Fatalf("negotiated threshold rejected: %s", configured["error"])
+	}
 	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
+	if rejected := legacy.call("cockpit/query", map[string]any{"redBelow": 16}); rejected["error"] == nil {
+		t.Fatal("legacy client accepted negotiated-only threshold")
+	}
 	old := legacy.call("rows/subscribe", map[string]any{})
 	legacyCockpit := legacy.call("cockpit/query", map[string]any{})
-	if legacyCockpit["result"] == nil || strings.Contains(string(legacyCockpit["result"]), `"resetEvents"`) {
+	if legacyCockpit["result"] == nil || strings.Contains(string(legacyCockpit["result"]), `"resetEvents"`) || strings.Contains(string(legacyCockpit["result"]), `"details"`) {
 		t.Fatalf("legacy cockpit negotiation: %s", legacyCockpit["error"])
 	}
 	if strings.Contains(string(old["result"]), "resetEvents") {

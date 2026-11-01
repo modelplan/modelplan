@@ -36,6 +36,7 @@ type liveSample struct {
 
 // LiveRecord is bounded local observation state, not a public session identifier.
 type LiveRecord struct {
+	GrantEpoch      *GrantEpoch  `json:"grantEpoch,omitempty"`
 	Key             string       `json:"key"`
 	Ref             string       `json:"ref"`
 	Source          string       `json:"source"`
@@ -205,12 +206,13 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 	})
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
-	if x.cfg.model == "" || x.last.IsZero() || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
+	start := grantStart(l.admission, source)
+	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
-	r := LiveRecord{Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
+	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
 	for _, s := range l.Sessions {
-		if s.Key == key && s.Source == source {
+		if s.Key == key && s.Source == source && sameEpoch(s.GrantEpoch, r.GrantEpoch) {
 			r.Ref = s.Ref
 			r.ProjectRef = s.ProjectRef
 			r.SubscriptionRef = s.SubscriptionRef
@@ -222,7 +224,7 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 	}
 	at := -1
 	for i, old := range l.Live {
-		if old.Key == key && old.Source == source {
+		if old.Key == key && old.Source == source && sameEpoch(old.GrantEpoch, r.GrantEpoch) {
 			at = i
 			r.Ref = old.Ref
 			if old.StartedAt.Before(r.StartedAt) {
@@ -241,7 +243,7 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 		r.ProjectRef, _ = l.project(x.cwd)
 	}
 	for _, q := range x.requests {
-		if q.cfg != x.cfg || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
+		if q.cfg != x.cfg || q.end.Before(start) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
 			continue
 		}
 		r.Samples = append(r.Samples, liveSample{At: q.end.UTC(), Out: q.out, GenMs: q.gen.Milliseconds(), Eligible: q.eligible()})
@@ -294,6 +296,7 @@ func (v PerfView) LiveSessions() []LiveSession {
 		}
 		rate := Rate{Source: r.Source, Window: "60s", Scope: "session", Min: MinSamples, Status: "insufficient", Reason: "too-few-samples"}
 		var output, gen int64
+		const maxInt64 = int64(^uint64(0) >> 1)
 		observed := 0
 		for _, s := range r.Samples {
 			if !s.At.After(v.Now.Add(-LiveRateWindow)) || s.At.After(v.Now) {
@@ -304,7 +307,9 @@ func (v PerfView) LiveSessions() []LiveSession {
 				t := s.At
 				rate.LastAt = &t
 			}
-			if s.Eligible {
+			// Cached eligibility is not proof that the persisted numbers are
+			// valid. Skip non-positive or overflowing samples before summing.
+			if s.Eligible && s.Out > 0 && s.GenMs > 0 && s.Out <= maxInt64-output && s.GenMs <= maxInt64-gen {
 				rate.N++
 				output += s.Out
 				gen += s.GenMs

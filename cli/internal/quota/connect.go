@@ -15,6 +15,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -369,7 +370,7 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 	if _, err := os.Stat(observed); os.IsNotExist(err) {
 		return nil
 	}
-	locks := []string{"native.lock", "codexbar.lock", "cycles.lock", "pace.lock", "speed.lock", "perf.lock"}
+	locks := []string{"native.lock", "codexbar.lock", "cycles.lock", "pace.lock"}
 	if tool == "codex" {
 		locks = append(locks, "codex-account.lock")
 	}
@@ -388,6 +389,11 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		f.Close()
 		releases = append(releases, func() { os.Remove(path) })
 	}
+	unlockLedgers, ok := speed.LockLedgersForCleanup(p.Cache)
+	if !ok {
+		return errors.New("readings busy; retry disconnect")
+	}
+	defer unlockLedgers()
 	if identity {
 		if err := forgetScopeIdentity(p.Cache, tool, scopeClass); err != nil {
 			return err
@@ -427,72 +433,83 @@ func forgetTool(p Paths, tool string, history, identity bool, scopeClass string)
 		if scopeClass == consent.Bridge && name == "native.json" || scopeClass == consent.Credential && (name == "native.json" || name == "codexbar.json") {
 			continue
 		}
-		path := filepath.Join(observed, name)
-		f, err := os.Open(path)
-		if errors.Is(err, os.ErrNotExist) {
+		if err := filterCachedSource(filepath.Join(observed, name), name, tool, history); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// filterCachedSource is shared by disconnect and local-history scope cleanup.
+// The caller owns the relevant reader/ledger locks. Each replacement is atomic.
+func filterCachedSource(path, name, tool string, history bool) error {
+	return filterCachedSourceWithWriter(path, name, tool, history, writeAtomic)
+}
+func filterCachedSourceWithWriter(path, name, tool string, history bool, replace func(string, []byte) error) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	b, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
+	f.Close()
+	if err != nil || len(b) > 4<<20 {
+		return errors.New("cached readings unreadable")
+	}
+	var doc map[string]json.RawMessage
+	if json.Unmarshal(b, &doc) != nil {
+		return errors.New("cached readings invalid")
+	}
+	keys := []string{"providers"}
+	if name == "cycles.json" || name == "pace.json" {
+		keys = []string{"cycles"}
+	}
+	if name == "speed.json" || name == "daily-long.json" {
+		keys = []string{"rows"}
+	}
+	if name == "perf.json" {
+		keys = []string{"rows", "sessions", "hourly", "live"}
+	}
+	for _, key := range keys {
+		if doc[key] == nil || string(doc[key]) == "null" {
 			continue
 		}
-		if err != nil {
-			return err
+		var rows []map[string]json.RawMessage
+		if json.Unmarshal(doc[key], &rows) != nil {
+			return errors.New("cached rows invalid")
 		}
-		b, err := io.ReadAll(io.LimitReader(f, (4<<20)+1))
-		f.Close()
-		if err != nil || len(b) > 4<<20 {
-			return errors.New("cached readings unreadable")
-		}
-		var doc map[string]json.RawMessage
-		if json.Unmarshal(b, &doc) != nil {
-			return errors.New("cached readings invalid")
-		}
-		keys := []string{"providers"}
-		if name == "cycles.json" || name == "pace.json" {
-			keys = []string{"cycles"}
-		}
-		if name == "speed.json" || name == "daily-long.json" {
-			keys = []string{"rows"}
-		}
-		if name == "perf.json" {
-			keys = []string{"rows", "sessions", "hourly", "live"}
-		}
-		for _, key := range keys {
-			if doc[key] == nil || string(doc[key]) == "null" {
-				continue
-			}
-			var rows []map[string]json.RawMessage
-			if json.Unmarshal(doc[key], &rows) != nil {
-				return errors.New("cached rows invalid")
-			}
-			kept := []map[string]json.RawMessage{}
-			for _, row := range rows {
-				var id string
-				if key == "providers" {
-					json.Unmarshal(row["provider"], &id)
-				} else {
-					json.Unmarshal(row["source"], &id)
-					if !history && !strings.HasPrefix(id, "native:") && !strings.HasPrefix(id, "codexbar:") {
-						kept = append(kept, row)
-						continue
-					}
-					id = strings.TrimPrefix(strings.TrimPrefix(id, "native:"), "codexbar:")
-					switch id {
-					case "claude-code":
-						id = "claude"
-					case "zcode":
-						id = "zai"
-					case "opencode":
-						id = "opencodego"
-					}
-				}
-				if id != tool {
+		kept := []map[string]json.RawMessage{}
+		for _, row := range rows {
+			var id string
+			if key == "providers" {
+				json.Unmarshal(row["provider"], &id)
+			} else {
+				json.Unmarshal(row["source"], &id)
+				if !history && !strings.HasPrefix(id, "native:") && !strings.HasPrefix(id, "codexbar:") {
 					kept = append(kept, row)
+					continue
+				}
+				id = strings.TrimPrefix(strings.TrimPrefix(id, "native:"), "codexbar:")
+				switch id {
+				case "claude-code":
+					id = "claude"
+				case "zcode":
+					id = "zai"
+				case "opencode":
+					id = "opencodego"
 				}
 			}
-			doc[key], _ = json.Marshal(kept)
+			if id != tool {
+				kept = append(kept, row)
+			}
 		}
-		b, _ = json.Marshal(doc)
-		if err := writeAtomic(path, append(b, '\n')); err != nil {
-			return err
-		}
+		doc[key], _ = json.Marshal(kept)
+	}
+	b, _ = json.Marshal(doc)
+	if err := replace(path, append(b, '\n')); err != nil {
+		return err
 	}
 	return nil
 }
