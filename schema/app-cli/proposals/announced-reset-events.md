@@ -28,11 +28,12 @@ them. The count is a local aggregate, not automatic telemetry. Unknown statuses
 are ignored. Events attach by verified provider/tool mapping, never by inferred
 quota times.
 
-The decision requires an instant and URL, but source records may have neither.
-Until an owner resolves this conflict, the proposal fails closed for such
-records rather than inventing identity. The unscheduled fixture demonstrates
-an event with an identity instant but no bounded display schedule; it does not
-claim to cover records lacking an instant. This remains an S4 design question.
+When the instant or source URL is absent, use the verified publication record’s
+stable event ID instead. The unscheduled fixture exercises this fallback with
+no instant or URL. A future adapter must reject an absent or unsafe fallback ID
+and must not substitute a publication revision ID. If a later revision adds the
+missing hash inputs, stable identity across that transition still needs an
+authoritative correlation rule; the stateless CLI cannot invent one.
 
 An announcement is active during its published window and expires at the window
 end, or 48 hours after publication without a schedule. Confirmation represents

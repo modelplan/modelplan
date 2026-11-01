@@ -108,7 +108,7 @@
         "resetEvents": [
           {
             "version": 1,
-            "id": "0580a117bec0fe2daeff1888c036b529ed2d047a6c81a9bd2985ff573f00abb8",
+            "id": "r-unscheduled",
             "provider": "openai",
             "rowId": "codex",
             "status": "announced",
@@ -116,8 +116,7 @@
             "expiresAt": "2026-11-03T12:00:00Z",
             "source": {
               "kind": "publication",
-              "publicationId": "0123456789abcdef01234567",
-              "url": "https://example.test/reset"
+              "publicationId": "0123456789abcdef01234567"
             }
           }
         ]

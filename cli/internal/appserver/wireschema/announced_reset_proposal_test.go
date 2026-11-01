@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"testing"
 	"time"
@@ -129,18 +130,18 @@ func proposalFixtures(t *testing.T) map[string][]byte {
 		t.Fatal("fixture must contain the affected tool row")
 	}
 	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", URL: "https://example.test/reset"}
-	id, err := proposalID("openai", published.Add(3*time.Hour), source.URL)
+	id, err := proposalID("openai", published.Add(3*time.Hour), source.URL, "r-scheduled")
 	if err != nil {
 		t.Fatal(err)
 	}
 	scheduled := proposedResetEvent{Version: 1, ID: id, Provider: "openai", PlanIDs: []string{"pro"}, RowID: "codex", Status: "announced", PublishedAt: published,
 		Schedule: &proposedResetSchedule{Precision: "window", From: published.Add(time.Hour), Through: published.Add(3 * time.Hour)}, ExpiresAt: published.Add(3 * time.Hour), Source: source}
-	unscheduledID, err := proposalID("openai", published.Add(4*time.Hour), source.URL)
+	unscheduledID, err := proposalID("openai", time.Time{}, "", "r-unscheduled")
 	if err != nil {
 		t.Fatal(err)
 	}
 	unscheduled := proposedResetEvent{Version: 1, ID: unscheduledID, Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: published,
-		ExpiresAt: published.Add(48 * time.Hour), Source: source}
+		ExpiresAt: published.Add(48 * time.Hour), Source: proposedResetSource{Kind: source.Kind, PublicationID: source.PublicationID}}
 	confirmed := proposedResetEvent{Version: 1, ID: id, Provider: "openai", Confirms: id, PlanIDs: []string{"pro"}, RowID: "codex", Status: "confirmed", PublishedAt: published,
 		ExpiresAt: published.Add(24 * time.Hour), Source: source}
 	empty := []proposedResetEvent{}
@@ -284,7 +285,7 @@ func checkProposalSet(events []proposedResetEvent, rowIDs map[string]bool, publi
 func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}
-	id, err := proposalID("openai", now.Add(3*time.Hour), "https://example.test/reset")
+	id, err := proposalID("openai", now.Add(3*time.Hour), "https://example.test/reset", "r-scheduled")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,9 +352,18 @@ func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 }
 
 // proposalID is a review-only reference: length framing avoids ambiguous tuples.
-func proposalID(provider string, instant time.Time, sourceURL string) (string, error) {
+func proposalID(provider string, instant time.Time, sourceURL, verifiedEventID string) (string, error) {
+	if provider == "" {
+		return "", fmt.Errorf("missing provider")
+	}
+	if instant.IsZero() || sourceURL == "" {
+		if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`).MatchString(verifiedEventID) {
+			return "", fmt.Errorf("missing or invalid verified event id")
+		}
+		return verifiedEventID, nil
+	}
 	u, err := url.Parse(sourceURL)
-	if provider == "" || instant.IsZero() || err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
 		return "", fmt.Errorf("missing or invalid identity input")
 	}
 	h := sha256.New()
@@ -393,11 +403,11 @@ func safeProposalLink(raw string, official map[string]bool) string {
 }
 func TestAnnouncedResetProposalIdentityAndDecisions(t *testing.T) {
 	instant := time.Date(2026, 11, 1, 15, 0, 0, 0, time.UTC)
-	id, err := proposalID("openai", instant, "https://example.test/reset")
+	id, err := proposalID("openai", instant, "https://example.test/reset", "r-fallback")
 	if err != nil {
 		t.Fatal(err)
 	}
-	same, _ := proposalID("openai", instant.In(time.FixedZone("other", 3600)), "https://example.test/reset")
+	same, _ := proposalID("openai", instant.In(time.FixedZone("other", 3600)), "https://example.test/reset", "r-fallback")
 	if id != same {
 		t.Fatal("instant must be normalized")
 	}
@@ -406,16 +416,22 @@ func TestAnnouncedResetProposalIdentityAndDecisions(t *testing.T) {
 		when     time.Time
 		source   string
 	}{{"other", instant, "https://example.test/reset"}, {"openai", instant.Add(time.Second), "https://example.test/reset"}, {"openai", instant, "https://example.test/other"}} {
-		other, err := proposalID(in.provider, in.when, in.source)
+		other, err := proposalID(in.provider, in.when, in.source, "r-fallback")
 		if err != nil || other == id {
 			t.Fatal("identity tuple collision")
 		}
 	}
-	if _, err := proposalID("openai", time.Time{}, "https://example.test/reset"); err == nil {
-		t.Fatal("missing instant accepted")
-	}
-	if _, err := proposalID("openai", instant, ""); err == nil {
-		t.Fatal("missing URL accepted")
+	for _, input := range []struct {
+		when   time.Time
+		source string
+	}{{time.Time{}, "https://example.test/reset"}, {instant, ""}, {time.Time{}, ""}} {
+		got, err := proposalID("openai", input.when, input.source, "r-unscheduled")
+		if err != nil || got != "r-unscheduled" {
+			t.Fatal("verified publication fallback not used")
+		}
+		if _, err := proposalID("openai", input.when, input.source, ""); err == nil {
+			t.Fatal("missing verified event ID accepted")
+		}
 	}
 	linked := proposedResetEvent{ID: id, Status: "confirmed", Confirms: id}
 	unlinked := linked

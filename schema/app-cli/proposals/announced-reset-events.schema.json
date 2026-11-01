@@ -34,7 +34,7 @@
         },
         "id": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
         },
         "rowId": {
           "type": "string",
@@ -66,7 +66,7 @@
         },
         "confirms": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
         },
         "planIds": {
           "type": "array",
