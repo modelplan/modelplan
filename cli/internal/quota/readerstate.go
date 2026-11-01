@@ -603,7 +603,10 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit}
 	}
 	for _, w := range a.Windows {
-		v := rows.WindowInput{Kind: w.Kind, Limit: w.Limit, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
+		if (provider == "claude" || provider == "gemini") && !w.ScopeKnown {
+			continue
+		}
+		v := rows.WindowInput{Kind: w.Kind, Limit: w.Limit, ModelIDs: w.ModelIDs, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
 		if w.WindowMinutes > 0 {
 			seconds := int64(w.WindowMinutes) * 60
 			v.DurationSeconds = &seconds

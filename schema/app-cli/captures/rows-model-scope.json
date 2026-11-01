@@ -1,0 +1,125 @@
+{
+  "rowsVersion": 1,
+  "consentGeneration": 7,
+  "rows": [
+    {
+      "id": "codex",
+      "kind": "tool",
+      "order": 1,
+      "name": {
+        "en": "Codex",
+        "zh": "Codex"
+      },
+      "vendorKey": "openai",
+      "surfaces": [
+        "dock",
+        "menu",
+        "settings"
+      ],
+      "consent": "allowed",
+      "state": "fresh",
+      "reason": {
+        "code": "ok",
+        "text": {
+          "en": "Reading available",
+          "zh": "读数可用"
+        }
+      },
+      "nextStep": null,
+      "accounts": [
+        {
+          "route": "unknown",
+          "subscriptionRef": "0123456789abcdef",
+          "accountLocator": null,
+          "plan": {
+            "id": "pro",
+            "name": {
+              "en": "Pro",
+              "zh": "Pro"
+            }
+          },
+          "beta": false,
+          "credits": null,
+          "valueState": "current",
+          "observedAt": "2026-10-29T09:59:00Z",
+          "freshUntil": "2026-10-29T11:00:00Z",
+          "lastFailure": null,
+          "windows": [
+            {
+              "id": "session:18000:main:main:1",
+              "role": "session",
+              "durationSeconds": 18000,
+              "label": {
+                "en": "Session",
+                "zh": "会话"
+              },
+              "limitKey": "main",
+              "poolKey": "main",
+              "resetMode": "fixed",
+              "remainingPercent": 75,
+              "resetsAt": "2026-10-29T10:05:00Z",
+              "observedAt": "2026-10-29T09:59:00Z",
+              "current": true,
+              "validUntil": "2026-10-29T10:05:00Z"
+            },
+            {
+              "modelScope": {
+                "models": [
+                  "opus"
+                ]
+              },
+              "id": "session:18000:main:main:2",
+              "role": "session",
+              "durationSeconds": 18000,
+              "label": {
+                "en": "Session",
+                "zh": "会话"
+              },
+              "limitKey": "main",
+              "poolKey": "main",
+              "resetMode": "fixed",
+              "remainingPercent": 75,
+              "resetsAt": "2026-10-29T10:05:00Z",
+              "observedAt": "2026-10-29T09:59:00Z",
+              "current": true,
+              "validUntil": "2026-10-29T10:05:00Z"
+            }
+          ]
+        }
+      ],
+      "expiresAt": "2026-10-29T10:05:00Z",
+      "stateAfterExpiry": {
+        "state": "stale",
+        "reason": {
+          "code": "stale_reading",
+          "text": {
+            "en": "A retained reading is shown",
+            "zh": "正在显示保留的旧读数"
+          }
+        },
+        "nextStep": {
+          "action": "refresh",
+          "text": {
+            "en": "Refresh when permitted",
+            "zh": "在允许时刷新"
+          }
+        }
+      }
+    }
+  ],
+  "rowsSummary": {
+    "state": "ok",
+    "reason": {
+      "code": "ok",
+      "text": {
+        "en": "Readings and actions are available",
+        "zh": "读数或操作可用"
+      }
+    },
+    "text": {
+      "en": "Readings and actions are available",
+      "zh": "读数或操作可用"
+    },
+    "nextStep": null
+  }
+}

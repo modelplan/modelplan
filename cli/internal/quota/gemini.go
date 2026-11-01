@@ -373,7 +373,7 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if reset != nil && !reset.After(now) {
 			continue
 		}
-		w := Window{Kind: "unknown", Limit: label, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
+		w := Window{Kind: "unknown", Limit: label, ModelIDs: []string{b.Model}, ScopeKnown: true, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
 		if b.Remaining != nil {
 			if math.IsNaN(*b.Remaining) || math.IsInf(*b.Remaining, 0) || *b.Remaining < 0 || *b.Remaining > 1 {
 				return nil, false

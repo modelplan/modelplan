@@ -285,3 +285,28 @@ func TestRowsSubscribeBusyFixture(t *testing.T) {
 		t.Fatalf("wrong busy response: %+v", failure.Error)
 	}
 }
+
+func TestModelScopeContract(t *testing.T) {
+	s := schema(t, "Window")
+	base := rows.Window{ID: "weekly:604800:other:other", Role: rows.RoleWeekly, Label: rows.Text{EN: "Other limit", ZH: "其他限额"}, LimitKey: "other", PoolKey: "other", ResetMode: rows.ResetModeUnknown}
+	for _, scope := range []*rows.ModelScope{nil, {Models: []string{"opus"}}, {Models: []string{"gemini-2.5-pro"}}} {
+		base.ModelScope = scope
+		if err := validate(t, s, base); err != nil {
+			t.Fatalf("valid scope: %v", err)
+		}
+	}
+	for _, models := range [][]string{{}, {"account_token_123"}, {"opus", "opus"}} {
+		base.ModelScope = &rows.ModelScope{Models: models}
+		if err := validate(t, s, base); err == nil {
+			t.Fatalf("invalid models accepted: %v", models)
+		}
+	}
+	base.ModelScope = nil
+	b, _ := json.Marshal(base)
+	var raw map[string]any
+	_ = json.Unmarshal(b, &raw)
+	raw["modelScope"] = nil
+	if err := validate(t, s, raw); err == nil {
+		t.Fatal("null scope accepted")
+	}
+}

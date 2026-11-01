@@ -62,3 +62,12 @@ func TestSharedProjectionKeepsApprovedPOSTOptIn(t *testing.T) {
 		}
 	}
 }
+
+func TestReportRowsCarriesModelScopeAndRejectsOldCache(t *testing.T) {
+	now := time.Now()
+	in := rows.Input{Now: now}
+	appendReportRows(&in, quota.Report{Accounts: []quota.Account{{Source: "native:claude", ObservedAt: now, Windows: []quota.Window{{Kind: "weekly", ScopeKnown: true, ModelIDs: []string{"opus"}}, {Kind: "weekly", ScopeKnown: true}, {Kind: "weekly"}}}}}, false)
+	if len(in.Accounts) != 1 || len(in.Accounts[0].Windows) != 2 || len(in.Accounts[0].Windows[0].ModelIDs) != 1 || in.Accounts[0].Windows[1].ModelIDs != nil {
+		t.Fatalf("scope or cache fence lost: %+v", in.Accounts)
+	}
+}

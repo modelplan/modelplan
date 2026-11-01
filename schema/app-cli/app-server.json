@@ -1116,6 +1116,30 @@
       ],
       "type": "object"
     },
+    "ModelScope": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "items": {
+            "enum": [
+              "gemini-2.5-flash",
+              "gemini-2.5-pro",
+              "opus",
+              "sonnet"
+            ],
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "type": "object"
+    },
     "Name": {
       "additionalProperties": false,
       "properties": {
@@ -2643,6 +2667,9 @@
         },
         "limitKey": {
           "type": "string"
+        },
+        "modelScope": {
+          "$ref": "#/$defs/ModelScope"
         },
         "observedAt": {
           "anyOf": [
