@@ -21,7 +21,7 @@ export function sample() {
     row.accounts.forEach(account=>{
       account.plan.name={en:'Synthetic plan',zh:'模拟方案'};
       account.observedAt='2026-10-29T12:00:00Z';
-      account.windows.forEach(window=>{window.remainingPercent=75;window.label={en:'Session',zh:'会话'};});
+      account.windows.forEach(window=>{window.remainingPercent=75;window.limitKey='main';window.poolKey='main';delete window.modelScope;window.label={en:'Session',zh:'会话'};});
     });
   });
   for(const group of value.subscriptions)for(const member of group.accounts)member.account.plan.name={en:'Synthetic plan',zh:'模拟方案'};

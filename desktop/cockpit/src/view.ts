@@ -6,6 +6,10 @@ import { cockpitLayout } from './prototype-layout.js';
 import { cockpitMembers } from './members.js';
 const words={en:{all:'All',settings:'Settings',waiting:'Waiting for display data',cleared:'Display data cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待显示数据',cleared:'显示数据已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
+// The rows producer maps unrecognized limits to `other`; unknown wire values
+// also stay out of general quota rows rather than gaining a familiar meaning.
+const knownLimits=new Set(['main','reserve','premium_interactions','code_review','requests','tokens','spend','credits','five_hour','daily','weekly','monthly']);
+const generalWindow=(w:WireWindow)=>knownLimits.has(w.limitKey)&&!(w.modelScope?.models.length);
 const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
 const vendorMarks:Readonly<Record<string,string>>={claude:'claude',openai:'openai',cursor:'cursor',copilot:'copilot',kimi:'kimi',glm:'zai-white',opencode:'opencode'};
 const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(n/10)));
@@ -87,7 +91,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
     for(const {key,row,account} of chunk){
      const button=element('button',undefined,'ek bd-r');const mark=row.vendorKey&&Object.hasOwn(vendorMarks,row.vendorKey)?vendorMarks[row.vendorKey]:null;if(mark){const img=element('img',undefined,'vendor-mark');img.src=`vendor-marks/${mark}.png`;img.alt='';button.append(img);}button.append(bilingual(element('span',label(row.name),'ek-name'),row.name.en,row.name.zh));button.type='button';button.dataset.scope=key;button.setAttribute('aria-label',label(row.name));button.onclick=e=>{if(e.isTrusted)select(key,true);};allButtons.push(button);keys.append(button);
      const col=element('article',undefined,'ec');col.dataset.rowId=row.id;
-     const five=account.windows.find(w=>w.role==='session'&&w.durationSeconds===18000),week=account.windows.find(w=>w.role==='weekly'&&w.durationSeconds===604800);
+     const five=account.windows.find(w=>generalWindow(w)&&w.role==='session'&&w.durationSeconds===18000),week=account.windows.find(w=>generalWindow(w)&&w.role==='weekly'&&w.durationSeconds===604800);
      const other=account.windows.filter(w=>w!==five&&w!==week).sort((a,b)=>(a.remainingPercent??Infinity)-(b.remainingPercent??Infinity));
      const alert=[five,week,...other].filter((w):w is WireWindow=>!!w).map(w=>status(w.remainingPercent));if(alert.includes('red'))col.classList.add('tint-red');else if(alert.includes('amber'))col.classList.add('tint-amber');
      col.append(cell(five),cell(week),cell(other[0],true));if(other.length>1)col.lastElementChild?.append(element('span',`+${other.length-1}`,'qextra'));cols.append(col);

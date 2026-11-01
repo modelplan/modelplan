@@ -159,3 +159,8 @@ neutral community mark in the community edition. Settings, detach/put back and
 close are icon keys with localized accessible names. No ALERT lamp is shown:
 the current cockpit wire does not supply alert state or acknowledgement. Session
 records, Option help and the user shutter control remain post-v1. The `shutterToggle` bridge action remains reserved and is not emitted by the v1 view.
+
+The 5h and Weekly rows show only matching known-limit windows without a
+nonempty `modelScope.models`. Restricted and unknown-limit windows remain in
+Other. The current generated wire schema rejects an empty `models` array;
+missing `modelScope` denotes a general window.

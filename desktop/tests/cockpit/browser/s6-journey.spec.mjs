@@ -193,3 +193,24 @@ test('macrev-403-2: colliding unverified members remain distinct through paging 
   expect(await receive(send('shell',{...shell,scope:'codex#saved_login_api#1'}))).toBe(true);
   await expect(page.locator('.s6-page:visible .eng-keys button').nth(0)).toHaveAttribute('aria-pressed','true');
 });
+
+test('macrev2-403-6: only general known 5h and weekly windows occupy named rows',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample();data.projection.rows=[data.projection.rows[0]];data.subscriptions=[];
+  const account=data.projection.rows[0].accounts[0],seed=account.windows[0];account.subscriptionRef=null;
+  const show=async windows=>{account.windows=windows;expect(await receive(send('display',{data}))).toBe(true);return page.locator('.s6-page:visible .ec').first().locator('.qcell');};
+  for(const [role,duration,index] of [['session',18000,0],['weekly',604800,1]]){
+    const general={...structuredClone(seed),role,durationSeconds:duration,limitKey:'main',poolKey:'main',remainingPercent:75};delete general.modelScope;
+    const restricted={...structuredClone(general),limitKey:'code_review',poolKey:'code_review',modelScope:{models:['opus']},remainingPercent:1};
+    for(const pair of [[restricted,general],[general,restricted]]){const cells=await show(pair);await expect(cells.nth(index)).toContainText('75%');await expect(cells.nth(2)).toContainText('1%');}
+    const cells=await show([restricted]);await expect(cells.nth(index)).toBeEmpty();await expect(cells.nth(2)).toContainText('1%');
+    const unknownModel={...restricted,modelScope:{models:['unknown']}};const unknownModelCells=await show([unknownModel]);await expect(unknownModelCells.nth(index)).toBeEmpty();await expect(unknownModelCells.nth(2)).toContainText('1%');
+    const unknown={...structuredClone(general),limitKey:'other',remainingPercent:8};const unknownCells=await show([unknown]);await expect(unknownCells.nth(index)).toBeEmpty();await expect(unknownCells.nth(2)).toContainText('8%');
+    const future={...structuredClone(general),limitKey:'unrecognized',remainingPercent:9};const futureCells=await show([future]);await expect(futureCells.nth(index)).toBeEmpty();await expect(futureCells.nth(2)).toContainText('9%');
+  }
+  const roleUnknown={...structuredClone(seed),role:'other',durationSeconds:604800,limitKey:'main',remainingPercent:12};const cells=await show([roleUnknown]);await expect(cells.nth(1)).toBeEmpty();await expect(cells.nth(2)).toContainText('12%');
+  const invalid={...roleUnknown,modelScope:{models:[]}};account.windows=[invalid];expect(await receive(send('display',{data}))).toBe(false);
+});
