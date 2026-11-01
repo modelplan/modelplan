@@ -97,7 +97,7 @@ class Attempt:
         return dict(profile='synthetic',binarySHA256=c.get('binarySHA256',''),argv=[c.get('binary','')],
                     leasePath=str(self.lease),releasePath=c['releasePath'],stopPath=str(self.stop),
                     expectedLease=dict(runID=c['runID'],epoch=c['epoch'],notBefore=c['start'],expiresAt=c['expiresAt']),
-                    requiredSeconds=required_seconds,booking=c.get('booking'))
+                    requiredSeconds=required_seconds,booking=c.get('booking'),host=c.get('host','dev-mac'))
     def launch(self,mode):
         self.raw=self.out/(mode+'-raw.jsonl')
         home=self.scratch/'home'/mode;tmp=self.scratch/'tmp'/mode;home.mkdir(parents=True);tmp.mkdir(parents=True)

@@ -237,7 +237,7 @@ class LaunchModeHappyPath(M1Sequence):
         report = self.json_lines(out, 2)[1]
         self.assertEqual(report['ownedPID'], subject['pid'])
         self.assertEqual(self.read_json(guardian_out),
-                         dict(guardian='stopped', subjectClosed=True))
+                         dict(guardian='stopped', subjectClosed=True, subject='registered'))
         self.assertFalse(alive(subject['pid']))  # no leftover subject process
 
         finish = self.finish(ident, 'run-launch', 'epoch-launch')
@@ -346,7 +346,7 @@ class CrashedSubject(M1Sequence):
         # clean stop, even though the crashed subject is confirmed gone. Waiting for that exit makes the
         # outcome deterministic instead of racing the guardian's next poll.
         self.assertEqual(guardian.wait(15), 3)
-        self.assertEqual(self.read_json(guardian_out), dict(guardian='launcher-lost', subjectClosed=True))
+        self.assertEqual(self.read_json(guardian_out), dict(guardian='launcher-lost', subjectClosed=True, subject='registered'))
         # No verified-cleanup batch exists for this run, so the closure gate fails ...
         gate_config = self.root / 'gate.json'
         gate_config.write_text(json.dumps(dict(batch=str(self.root / 'batch'),

@@ -26,7 +26,7 @@ python3 desktop/native/verification/bin/book.py start \
   --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" > "$LEASE_PATH"
 # Guardian: heartbeat, stop/deadline, and it stops the subject on any exit path (background).
 python3 desktop/native/verification/bin/guardian.py --lease "$LEASE_PATH" \
-  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" &
+  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" > "$GUARDIAN_OUT" &
 GUARDIAN_PID=$!
 python3 desktop/native/verification/bin/release.py \
   --lane M1 --id "$BOOKING_ID" --lease "$LEASE_PATH" \
@@ -45,8 +45,9 @@ esac
 CONTROLLER_PID=$!
 # ... in launch mode, drive the scenario against the launched subject here ...
 # Close: request stop, then wait for both supervisors. Record --cleaned ONLY when the guardian
-# confirmed closure (exit 0) and launch ended normally (0) or by supervision (3); otherwise do not
-# finish at all and report the run as unconfirmed for coordinator follow-up.
+# confirmed closure (exit 0) and either launch ended normally (0) or by supervision (3), or the
+# guardian reported subject "never-started" (its project-scoped scan found nothing); otherwise do
+# not finish at all and report the run as unconfirmed for coordinator follow-up.
 touch "$STOP_PATH"
 set +e
 wait "$CONTROLLER_PID"; CONTROLLER_STATUS=$?
@@ -55,15 +56,51 @@ DRIVE_CLEAN=0
 if [ "$CONTROLLER_MODE" = drive ]; then
   python3 desktop/native/verification/bin/check_drive_cleanup.py "$RUN_CONFIG" || DRIVE_CLEAN=1
 fi
-if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ]; }; then
+SUBJECT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("subject", ""))' "$GUARDIAN_OUT" 2>/dev/null)
+if [ "$GUARDIAN_STATUS" -eq 0 ] && [ "$DRIVE_CLEAN" -eq 0 ] && { [ "$CONTROLLER_STATUS" -eq 0 ] || [ "$CONTROLLER_STATUS" -eq 3 ] || [ "$SUBJECT" = never-started ]; }; then
   python3 desktop/native/verification/bin/book.py finish \
     --id "$BOOKING_ID" --lane M1 --run-id "$RUN_ID" --epoch "$EPOCH" --cleaned
 else
   # Do not finish: the booking stays started (the Mac stays held) until the coordinator verifies
   # closure or the documented expiry recovery applies.
-  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS drive-cleanup=$DRIVE_CLEAN; report to the coordinator" >&2
+  echo "closure unconfirmed: controller=$CONTROLLER_STATUS guardian=$GUARDIAN_STATUS subject=$SUBJECT drive-cleanup=$DRIVE_CLEAN; report to the coordinator" >&2
 fi
 ```
+
+### MacCI (lane V1)
+
+MacCI is a second test Mac with its own ledger; M1 does not run there. Per the coordinator
+ruling, the coordinator's GO comment on the handoff issue stands in for the M1 release, for
+synthetic-profile runs only. The dev-Mac rule (only M1 releases) is unchanged. Differences from the
+sequence above, everything else identical:
+
+- Set `MODELPLAN_VERIFICATION_HOST=macci` for V1's commands on MacCI only (prefix the commands or
+  export it in V1's run shell; not in a runner service environment). `release.py` and admission
+  refuse when the declared host and this variable disagree; unset means `dev-mac`.
+- Book, start and finish with `--lane V1`. Release with
+  `release.py --lane V1 --host macci --id "$BOOKING_ID" --lease "$LEASE_PATH" --coordinator-go "$GO_URL" --output "$RELEASE_PATH"`,
+  where `GO_URL` is `https://github.com/OWNER/REPO/issues/N#issuecomment-ID` of the coordinator's
+  GO. V1 verifies that comment is the coordinator's GO before releasing. The receipt records
+  `host: macci`, `releasedBy: V1` and `coordinatorGo`, never the M1 release flag, so it cannot
+  admit a dev-Mac run, and an M1 receipt cannot admit a MacCI run.
+- The run config sets `"host": "macci"` and, for GUI activation, `"launchMode": "launchservices"`.
+  Do not substitute a custom controller: only launch.py/Drive register the subject the guardian
+  can close.
+
+Launch modes (`launchMode`, recorded in launch.py's JSON lines, the subject registration and the
+evidence manifest): `direct` (default) keeps the exec-gated child. `launchservices` copies the
+pinned binary into a minimal `.app` under `syntheticTmp/.launchservices/` (hash re-checked; optional
+`bundleIdentifier`, `bundleUIElement` default true, `bundleResources`, `bundleSign: adhoc`), opens
+it with `open -n -W --env HOME=… --env TMPDIR=…`, finds the subject by its exact bundle executable
+path, registers its identity, then supervises it by identity. The app's stdout/stderr go to
+`syntheticTmp/.launchservices/subject.{stdout,stderr}`. A LaunchServices app also inherits the
+user's launchd environment apart from the overridden variables.
+
+Never registered: both modes record the run's scan scope (exact executable path and synthetic
+HOME) in the reservation. If the launcher exits before registering, the guardian stops any owned
+process inside that scope (never by process name), rescans after a settle delay and reports
+`subject: never-started` when nothing was ever found, which permits `finish --cleaned`. A stray it
+had to stop (`unregistered-stopped`) or anything unconfirmed keeps the booking started.
 
 If the booking is abandoned **before start**, use this instead of start/release/launch:
 
@@ -72,14 +109,14 @@ python3 desktop/native/verification/bin/book.py withdraw \
   --id "$BOOKING_ID" --lane M1 --reason "unit no longer ready"
 ```
 
-Keep `LEASE_PATH`, `STOP_PATH` and `SUBJECT_PID_PATH` on the test Mac's local disk (run scratch), never on DevShared: lease writers coordinate with `flock` on `<lease>.lock`, which is only reliable locally. Every lease writer (the guardian, Drive's own guardian, any revocation) goes through `guardian.update_lease`.
+Keep `LEASE_PATH`, `STOP_PATH`, `SUBJECT_PID_PATH` and `GUARDIAN_OUT` on the test Mac's local disk (run scratch), never on DevShared: lease writers coordinate with `flock` on `<lease>.lock`, which is only reliable locally. Every lease writer (the guardian, Drive's own guardian, any revocation) goes through `guardian.update_lease`.
 
 Start issues one lease snapshot with the booked interval and initial heartbeat;
 `bin/guardian.py` keeps that heartbeat within admission's 2-second tolerance, writes the stop file at the deadline minus a 30-second cleanup reserve (at least 25), and stops on SIGTERM; a dead guardian makes admission fail closed. The release writer refuses a lease that differs
-from the started head or has expired. Only M1 writes a release, and an existing
+from the started head or has expired. Only M1 writes a release (V1 on MacCI, see above), and an existing
 receipt is never overwritten. Run configs supply `leasePath`, `releasePath` and
 `stopPath`, plus the matching booking. Both Launch and Drive use `admission.py` to
-reread these files, validate M1's approval reference, heartbeat and timing, then
+reread these files, validate M1's approval reference (V1's coordinator GO on MacCI), heartbeat and timing, then
 check live booking ownership. Inline approval does not grant execution. A started
 booking cannot be withdrawn; it requires finish or the documented expiry recovery.
 
