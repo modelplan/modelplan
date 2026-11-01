@@ -6,10 +6,10 @@ import { cockpitLayout } from './prototype-layout.js';
 import { cockpitMembers } from './members.js';
 const words={en:{all:'All',settings:'Settings',waiting:'Waiting for display data',cleared:'Display data cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待显示数据',cleared:'显示数据已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
-// The rows producer maps unrecognized limits to `other`; unknown wire values
-// also stay out of general quota rows rather than gaining a familiar meaning.
-const knownLimits=new Set(['main','reserve','premium_interactions','code_review','requests','tokens','spend','credits','five_hour','daily','weekly','monthly']);
-const generalWindow=(w:WireWindow)=>knownLimits.has(w.limitKey)&&!(w.modelScope?.models.length);
+// General plan quotas use only main/five_hour/weekly limits in the main pool.
+const generalWindow=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&
+  (w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):
+   w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
 const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
 const vendorMarks:Readonly<Record<string,string>>={claude:'claude',openai:'openai',cursor:'cursor',copilot:'copilot',kimi:'kimi',glm:'zai-white',opencode:'opencode'};
 const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(n/10)));
@@ -77,7 +77,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();},
   shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');shellControls();applyScope?.(value.scope);},
   render(data:WireCockpitData){
-   if(disposed)throw Error('closed');const before=displayedState();const priorScope=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]')?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');applyScope=null;frame.engine.replaceChildren();
+   if(disposed)throw Error('closed');const before=displayedState();const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const unstable=priorButton?.dataset.unstable==='true';const priorScope=unstable?'':priorButton?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');if(unstable&&nativeShell)nativeShell={...nativeShell,scope:'all'};applyScope=null;frame.engine.replaceChildren();
    const members=cockpitMembers(data),seen=new Set(members.map(member=>member.key));
    if(!members.length){setEmpty('empty');return;}
    const table=element('div',undefined,'u11-engine-table');const pages=element('div',undefined,'s6-pages');const leds=element('nav',undefined,'eng-pg');const pageCount=Math.ceil(members.length/6);
@@ -88,8 +88,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
     const chunk=members.slice(page*6,page*6+6),panel=element('div',undefined,'s6-page');panel.dataset.page=String(page);panel.style.setProperty('--n',String(Math.max(3,chunk.length)));
     const keyrow=element('div',undefined,'eng-krow'),all=bilingual(element('button',words[locale].all,'ek ek-all on'),words.en.all,words['zh-CN'].all) as HTMLButtonElement;all.type='button';all.dataset.scope='';all.onclick=e=>{if(e.isTrusted)select('',true);};allButtons.push(all);keyrow.append(all);
     const keys=element('div',undefined,'eng-keys'),lcd=element('div',undefined,'eng-lcd'),labels=element('div',undefined,'eng-labels'),cols=element('div',undefined,'eng-cols');for(let i=0;i<3;i++)labels.append(bilingual(element('span',words[locale].rows[i],'lb'),words.en.rows[i],words['zh-CN'].rows[i]));
-    for(const {key,row,account} of chunk){
-     const button=element('button',undefined,'ek bd-r');const mark=row.vendorKey&&Object.hasOwn(vendorMarks,row.vendorKey)?vendorMarks[row.vendorKey]:null;if(mark){const img=element('img',undefined,'vendor-mark');img.src=`vendor-marks/${mark}.png`;img.alt='';button.append(img);}button.append(bilingual(element('span',label(row.name),'ek-name'),row.name.en,row.name.zh));button.type='button';button.dataset.scope=key;button.setAttribute('aria-label',label(row.name));button.onclick=e=>{if(e.isTrusted)select(key,true);};allButtons.push(button);keys.append(button);
+    for(const {key,row,account,unstable} of chunk){
+     const button=element('button',undefined,'ek bd-r');const mark=row.vendorKey&&Object.hasOwn(vendorMarks,row.vendorKey)?vendorMarks[row.vendorKey]:null;if(mark){const img=element('img',undefined,'vendor-mark');img.src=`vendor-marks/${mark}.png`;img.alt='';button.append(img);}button.append(bilingual(element('span',label(row.name),'ek-name'),row.name.en,row.name.zh));button.type='button';button.dataset.scope=key;button.dataset.unstable=String(unstable);button.setAttribute('aria-label',label(row.name));button.onclick=e=>{if(e.isTrusted)select(key,true);};allButtons.push(button);keys.append(button);
      const col=element('article',undefined,'ec');col.dataset.rowId=row.id;
      const five=account.windows.find(w=>generalWindow(w)&&w.role==='session'&&w.durationSeconds===18000),week=account.windows.find(w=>generalWindow(w)&&w.role==='weekly'&&w.durationSeconds===604800);
      const other=account.windows.filter(w=>w!==five&&w!==week).sort((a,b)=>(a.remainingPercent??Infinity)-(b.remainingPercent??Infinity));

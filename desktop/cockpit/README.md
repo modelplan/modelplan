@@ -32,7 +32,7 @@ from the Go-generated `schema/app-cli/app-server.json`. `npm run generate` updat
 it; `npm run check` rejects drift. The reachable schema is also the production
 runtime validator. Unknown fields, unsupported generator keywords, invalid enum
 values, malformed timestamps, duplicate keys, unsafe numbers and invalid
-identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise uses session-only row and route keys. When unverified members share a row and route, keys gain `#1`, `#2`, and so on in CLI-emitted order; these are not durable identities and do not migrate to a later verified reference. It lays out quota windows without calculating recommendations.
+identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise uses session-only row and route keys. When unverified members share a row and route, keys gain `#1`, `#2`, and so on in CLI-emitted order; these are not durable identities, reset to All on each data refresh, and do not migrate to a later verified reference. It lays out quota windows without calculating recommendations.
 
 ## Native consumer contract
 
@@ -160,7 +160,10 @@ close are icon keys with localized accessible names. No ALERT lamp is shown:
 the current cockpit wire does not supply alert state or acknowledgement. Session
 records, Option help and the user shutter control remain post-v1. The `shutterToggle` bridge action remains reserved and is not emitted by the v1 view.
 
-The 5h and Weekly rows show only matching known-limit windows without a
-nonempty `modelScope.models`. Restricted and unknown-limit windows remain in
-Other. The current generated wire schema rejects an empty `models` array;
-missing `modelScope` denotes a general window.
+The named rows require the main pool and no `modelScope`. General limit keys
+are `main`, `five_hour`, and `weekly`: 5h accepts `main` or `five_hour`, while
+Weekly accepts `main` or `weekly`, with the matching role and duration. Special
+limits, named pools, model-scoped windows and unknown limits stay in Other. The
+wire schema enumerates roles but defines `limitKey` as a string; the producer
+allow-list is in `cli/internal/rows/catalogue.go`. The schema rejects an empty
+`models` array; missing `modelScope` denotes no model restriction.
