@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 55 optional/nullable fields reachable from the production
+This inventory covers the 61 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -41,7 +41,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (45 fields)
+## Outputs (51 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -82,6 +82,10 @@ containers and failure ID retain their required-key checks.
 | rows.Row.ExpiresAt | coalesced | Same projection/decoder: absent/null both have no expiry. |
 | rows.Row.StateAfterExpiry | coalesced | Same projection/decoder: absent/null both have no expiry-state override. |
 | rows.ExpiryState.NextStep | coalesced | [build.go:304](../rows/build.go#L304), expiry-latch projection; `RowsExpiryState` absent/null both have no post-expiry action. |
+| rows.ResetEvent.Confirms | coalesced | An absent or null confirmation reference yields no reference; the producer drops confirmations without an eligible reference. |
+| rows.ResetEvent.PlanIDs | coalesced | Absent/null both mean no published structured plan links; no plan is inferred. |
+| rows.ResetEvent.Schedule | coalesced | Absent/null both mean no published schedule. |
+| rows.ResetSource.URL | coalesced | Absent/null both mean no source link; only producer-approved links can be emitted. |
 | rows.Account.SubscriptionRef | coalesced | [values.go:56](../rows/values.go#L56), `buildAccounts`; `RowsAccount` absent/null both have no subscription reference; present references still validate. |
 | rows.Account.AccountLocator | coalesced | Same projection/decoder: absent/null both have no account locator; present locators still validate. |
 | rows.Account.Credits | coalesced | Same projection/decoder: absent/null both have no credit reading. |
@@ -90,12 +94,14 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Window.ModelScope | forbidden | Omission means plan-wide; explicit null or a malformed object is rejected rather than interpreted as plan-wide. |
 | rows.Window.DurationSeconds | coalesced | [values.go:160](../rows/values.go#L160), `buildWindows`; `RowsWindow` absent/null both have no duration. |
 | rows.Window.RemainingPercent | coalesced | Same projection/decoder: absent/null both are unavailable, not zero percent. |
 | rows.Window.ResetsAt | coalesced | Same projection/decoder: absent/null both have no reset timestamp. |
 | rows.Window.ObservedAt | coalesced | Same projection/decoder: absent/null both have no observation timestamp. |
 | rows.Window.ValidUntil | coalesced | Same projection/decoder: absent/null both have no validity deadline. |
 | rows.RowsSummary.NextStep | coalesced | [build.go:435](../rows/build.go#L435), `summary`; `RowsRowsSummary` absent/null both have no summary action. |
+| RowsProjection.ResetEvents | forbidden | Omission means the source is unavailable; an empty array is known empty. Explicit null or a malformed array is rejected. |
 
 The output DTO implementations are generated together in
 [Generated.swift](../../../clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift).

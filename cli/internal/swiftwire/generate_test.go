@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -16,6 +17,43 @@ func repoRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, _ := runtime.Caller(0)
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../.."))
+}
+
+// Tolerating a malformed optional field is allowed only when the specific
+// producer/consumer behavior is documented in the null-policy audit.
+func TestEveryTolerantOptionalFieldHasAnAuditEntry(t *testing.T) {
+	root := repoRoot(t)
+	m, err := load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.prepare(); err != nil {
+		t.Fatal(err)
+	}
+	audit, err := os.ReadFile(filepath.Join(root, "cli/internal/swiftwire/null-policy-audit.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for key := range m.Used {
+		d := m.Types[key]
+		for _, f := range d.Fields {
+			if !f.Optional || f.Strict {
+				continue
+			}
+			checked++
+			name := d.Go + "." + f.Go
+			if d.Pkg == "rows" {
+				name = "rows." + name
+			}
+			if !strings.Contains(string(audit), "| "+name+" |") {
+				t.Errorf("%s.%s: tolerant optional field has no null-policy audit entry", d.Swift, f.JSON)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no tolerant optional fields checked")
+	}
 }
 
 func TestGeneratedSwiftMatchesProductionContract(t *testing.T) {
@@ -155,5 +193,35 @@ func TestQueryBindingsRemainStrict(t *testing.T) {
 				t.Errorf("query binding %s silently loses a malformed value", field.Field)
 			}
 		}
+	}
+}
+
+func TestModelScopeAndResetEventsAreStrictNonNull(t *testing.T) {
+	files, err := Captures(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var index captureIndex
+	if err := json.Unmarshal(files["index.json"], &index); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"RowsWindow": "modelScope", "WireRowsProjection": "resetEvents"}
+	for _, capture := range index.Cases {
+		field, ok := want[capture.Type]
+		if !ok {
+			continue
+		}
+		for _, f := range capture.Optional {
+			if f.Field != field {
+				continue
+			}
+			if !f.Strict || !f.Omission || f.Null || f.WrongType || f.NullPolicy != wire.NullForbidden {
+				t.Errorf("%s.%s: unsafe optional contract: %+v", capture.Type, field, f)
+			}
+			delete(want, capture.Type)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing strict optional captures: %v", want)
 	}
 }
