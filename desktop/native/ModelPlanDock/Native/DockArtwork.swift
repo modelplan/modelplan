@@ -80,6 +80,35 @@ public struct DockResourceManifest: Codable, Sendable {
         images[key]=Cached(image:image,bytes:bytes,age:age);decodedBytes+=bytes;peakDecodedBytes=max(decodedBytes,peakDecodedBytes)
         return image
     }
+    /// Rasterize at a bounded probe size, then fit the visible alpha extent rather
+    /// than vendor-provided clear space. Source bytes are verified but never edited.
+    public func fittedGlyph(_ id: String, targetPixelSize: Int) throws -> CGImage {
+        guard (1...512).contains(targetPixelSize) else { throw DockArtworkError.invalidManifest }
+        func visible(_ image: CGImage) throws -> CGRect {
+            let w = image.width, h = image.height
+            guard w > 0, h > 0, w <= 4096, h <= 4096,
+                  let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { throw DockArtworkError.invalidManifest }
+            c.clear(CGRect(x: 0, y: 0, width: w, height: h)); c.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            guard let bytes = c.data?.assumingMemoryBound(to: UInt8.self) else { throw DockArtworkError.corruptResource(id) }
+            var minX = w, minY = h, maxX = -1, maxY = -1
+            for y in 0..<h { for x in 0..<w where bytes[(y * w + x) * 4 + 3] > 0 {
+                minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y)
+            }}
+            guard maxX >= minX, maxY >= minY else { throw DockArtworkError.corruptResource(id) }
+            return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        }
+        let probe = try image(id, maximumPixelSize: max(256, targetPixelSize))
+        let bounds = try visible(probe)
+        let fraction = max(bounds.width, bounds.height) / CGFloat(max(probe.width, probe.height))
+        guard fraction.isFinite, fraction > 0 else { throw DockArtworkError.corruptResource(id) }
+        let needed = Int(ceil(CGFloat(targetPixelSize) / fraction))
+        guard needed <= 4096 else { throw DockArtworkError.decodedBudget }
+        let raster = try image(id, maximumPixelSize: max(targetPixelSize, needed))
+        let crop = try visible(raster)
+        guard let glyph = raster.cropping(to: crop), max(glyph.width, glyph.height) > 0 else { throw DockArtworkError.corruptResource(id) }
+        return glyph
+    }
     private func makeRoom(for bytes:Int) throws {
         guard bytes<=decodedBudget else{throw DockArtworkError.decodedBudget}
         while decodedBytes+bytes>decodedBudget,let victim=images.min(by:{$0.value.age<$1.value.age}) {

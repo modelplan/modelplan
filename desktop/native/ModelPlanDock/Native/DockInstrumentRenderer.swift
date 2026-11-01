@@ -79,21 +79,21 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         c.translateBy(x:-skin.bounds.minX,y:-skin.bounds.minY)
         c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
         func ink(_ name:String) throws -> CGColor {guard let v=skin.palette[name],v.valid else{throw DockArtworkError.invalidManifest};return v.cg}
-        func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false) throws {
+        func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false,fitVisibleGlyph:Bool = false) throws {
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
             let size=Int(ceil(max(rect.width,rect.height)*CGFloat(scale)))
             let image: CGImage
-            do { image = try resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels) }
+            do { image = try fitVisibleGlyph ? resources.fittedGlyph(resource,targetPixelSize:max(1,size)) : resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels) }
             catch DockArtworkError.missingResource {
                 guard let supplementalResources else { throw DockArtworkError.missingResource(resource) }
-                image = try supplementalResources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
+                image = try fitVisibleGlyph ? supplementalResources.fittedGlyph(resource,targetPixelSize:max(1,size)) : supplementalResources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
             }
             // Static SVG marks retain their intrinsic aspect ratio in the square
             // placement box, matching SVG's default xMidYMid meet behavior.
             let isVector = resources.isVectorResource(resource) ?? supplementalResources?.isVectorResource(resource) ?? false
             let drawSize: CGSize
-            if isVector {
-                guard max(image.width,image.height) >= size else { throw DockArtworkError.corruptResource(resource) }
+            if isVector || fitVisibleGlyph {
+                guard fitVisibleGlyph || max(image.width,image.height) >= size else { throw DockArtworkError.corruptResource(resource) }
                 let fit = min(rect.width / CGFloat(image.width), rect.height / CGFloat(image.height))
                 drawSize = CGSize(width:CGFloat(image.width)*fit,height:CGFloat(image.height)*fit)
             } else {
@@ -104,7 +104,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.saveGState();c.clip(to:rect)
             // SVG marks are already rasterized at the requested backing scale;
             // do not blur them a second time when placing the checked pixels.
-            if isVector { c.interpolationQuality = .none }
+            if isVector || fitVisibleGlyph { c.interpolationQuality = .none }
             c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
             c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
         }
@@ -244,7 +244,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
                 let opacity=station.glyphOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect)
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)
             } else if station.fallbackVendorName == true {
                 try text(reading.name, station.glyphRect, skin.aliasText, try ink("text"))
             }

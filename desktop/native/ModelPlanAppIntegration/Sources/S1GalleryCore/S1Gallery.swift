@@ -19,6 +19,12 @@ private struct S1Manifest: Decodable {
     let captures: [Capture]
 }
 
+private struct S1FlameManifest: Decodable {
+    struct File: Decodable { let file, sha256: String; let bytes: Int }
+    struct Followup: Decodable { let prototypeSourceCommit, scriptSHA256, scriptUTF8: String }
+    let schemaVersion: Int; let prototypeSourceCommit: String; let files: [File]; let rotatingFollowup: Followup
+}
+
 @MainActor final class S1SyntheticProvider: DockContentProvider {
     enum NoticeCase { case fixture, announced, confirmed }
     let inputs: [DockInstrumentInput]
@@ -191,10 +197,6 @@ private struct S1Manifest: Decodable {
 
 /// Report-only, opt-in synthetic evidence. It does not mark visual acceptance.
 @MainActor public enum S1Gallery {
-    private static func envPublishedOutput(defaultOutput: URL) -> URL {
-        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_S1_PUBLISHED_DIR"], !path.isEmpty else { return defaultOutput }
-        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-    }
     public static func run(goldenPath: String, outputPath: String) async throws {
         _ = NSApplication.shared
         let fm = FileManager.default, golden = URL(fileURLWithPath: goldenPath, isDirectory: true)
@@ -211,13 +213,16 @@ private struct S1Manifest: Decodable {
             throw CocoaError(.fileNoSuchFile)
         }
         let oracleURL = URL(fileURLWithPath: oraclePath).standardizedFileURL
-        // The HTML uses this project-relative handoff link; verify it resolves
-        // to exactly the input whose bytes and hashes are checked below.
-        // Reports may be generated in owned scratch and published only after
-        // completion. Validate links against the intended final directory.
-        let publishedOutput = envPublishedOutput(defaultOutput: output)
-        let linkedGolden = publishedOutput.appendingPathComponent("../../handoffs/20261101-dock-golden", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
-        guard linkedGolden == golden.standardizedFileURL.resolvingSymlinksInPath() else { throw CocoaError(.fileReadInvalidFileName) }
+        guard let flamePath = ProcessInfo.processInfo.environment["MODELPLAN_S1_FLAME_DIR"], !flamePath.isEmpty else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let flame = URL(fileURLWithPath: flamePath, isDirectory: true)
+        let flameManifest = try JSONDecoder().decode(S1FlameManifest.self, from: Data(contentsOf: flame.appendingPathComponent("manifest.json")))
+        guard flameManifest.schemaVersion == 1, flameManifest.prototypeSourceCommit == manifest.prototypeSourceCommit,
+              flameManifest.rotatingFollowup.prototypeSourceCommit == manifest.prototypeSourceCommit,
+              SHA256.hash(data: Data(flameManifest.rotatingFollowup.scriptUTF8.utf8)).map({ String(format: "%02x", $0) }).joined() == flameManifest.rotatingFollowup.scriptSHA256 else { throw CocoaError(.fileReadCorruptFile) }
+        let refRoot = output.appendingPathComponent("ref", isDirectory: true)
+        try fm.createDirectory(at: refRoot, withIntermediateDirectories: false)
         let oracleBytes = try Data(contentsOf: oracleURL)
         guard SHA256.hash(data: oracleBytes).map({ String(format: "%02x", $0) }).joined() == "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb" else { throw CocoaError(.fileReadCorruptFile) }
         guard let oracleRoot = try JSONSerialization.jsonObject(with: oracleBytes) as? [String: Any],
@@ -234,7 +239,9 @@ private struct S1Manifest: Decodable {
             let source = golden.appendingPathComponent(capture.file), bytes = try Data(contentsOf: source)
             let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
             guard hash == capture.sha256 else { throw CocoaError(.fileReadCorruptFile) }
-            let refName = "../../handoffs/20261101-dock-golden/" + capture.file
+            let refName = "ref/handoffs__20261101-dock-golden__" + capture.file
+            let refURL = output.appendingPathComponent(refName)
+            try bytes.write(to: refURL, options: .withoutOverwriting); written.append(refURL)
             let nativeName = String(format: "native-%02d.png", index)
             var record: [String: Any] = ["reference": capture.file, "scenario": capture.scenario, "state": capture.state,
                 "edge": capture.edge, "size": capture.size, "count": capture.count, "theme": capture.theme]
@@ -374,6 +381,17 @@ private struct S1Manifest: Decodable {
             host.close(); row["status"] = status; records.append(row)
             html += "<tr><td>\(label)</td><td>no golden</td><td>\(cell)</td><td>\(status)</td></tr>"
         }
+        let frameNames = (0..<9).map { "flame-normal-44pt-2x-1mag-pose\($0).png" }
+        let flameNames = frameNames + ["prototype-live-normal-rotating.webm", "prototype-rotating-normal-strip.png"]
+        for name in flameNames {
+            guard let entry = flameManifest.files.first(where: { $0.file == name }),
+                  flameManifest.files.filter({ $0.file == name }).count == 1 else { throw CocoaError(.fileReadCorruptFile) }
+            let bytes = try Data(contentsOf: flame.appendingPathComponent(name))
+            guard bytes.count == entry.bytes,
+                  SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == entry.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+            let target = refRoot.appendingPathComponent("handoffs__shared__s1-flame-frames__" + name)
+            try bytes.write(to: target, options: .withoutOverwriting); written.append(target)
+        }
         // Real shared-pool playback, driven exclusively by a synthetic member signal.
         do {
             let store = try SettingsStore(url: temp.appendingPathComponent("settings-flame.json"))
@@ -389,7 +407,7 @@ private struct S1Manifest: Decodable {
             try host.setWorkingSignals([.init(subscriptionID: "codex", bindingVerified: true, fresh: true, observedOutput: true)])
             guard host.activeWorkingEffectIDs.contains("codex"), host.rotatingWorkingEffectIDs.contains("codex"),
                   let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
-            html += "<tr><td>Prototype Canvas (recording excludes CSS rotation) vs captured frames vs native playback (synthetic, owner review pending)</td><td><video controls width=\"260\" src=\"../../handoffs/shared/s1-flame-frames/prototype-live-normal.webm\"></video></td><td>Captured poses (44 pt, 2x):<br>" + (0..<9).map { "<img width=\"44\" src=\"../../handoffs/shared/s1-flame-frames/flame-normal-44pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
+            html += "<tr><td>Rotating prototype vs captured frames vs native playback (synthetic, owner review pending)</td><td><video controls width=\"260\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-live-normal-rotating.webm\"></video></td><td><img width=\"260\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-rotating-normal-strip.png\" alt=\"rotating prototype strip\"><br>Captured poses (44 pt, 2x):<br>" + (0..<9).map { "<img width=\"44\" src=\"ref/handoffs__shared__s1-flame-frames__flame-normal-44pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
             var files = [String]()
             for pose in 0..<9 {
                 host.seekWorkingEffectsForChecks(Double(pose) / 9 + 0.00001)
@@ -404,7 +422,7 @@ private struct S1Manifest: Decodable {
                 html += "<img width=\"130\" src=\"\(file)\" alt=\"native pose \(pose)\">"
             }
             html += "</td></tr>"
-            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "nativeFiles": files, "status": "partial: native shared-pool playback; prototype recording excludes CSS rotation; owner visual review pending"])
+            records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "nativeFiles": files, "status": "report-only: rotating prototype reference and native shared-pool playback; owner visual review pending"])
         } catch {
             html += "<tr><td>synthetic-working-strip</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
             records.append(["scenario": "synthetic-working-strip", "metric": NSNull(), "status": "not-run: \(String(describing: error))"])
@@ -414,12 +432,13 @@ private struct S1Manifest: Decodable {
         let result: [String: Any] = ["schemaVersion":1,"prototypeSourceCommit":manifest.prototypeSourceCommit,"results":records]
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("metrics.json"), options: .withoutOverwriting)
         written.append(output.appendingPathComponent("index.html")); written.append(output.appendingPathComponent("metrics.json"))
-        let files = written.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let files = written.sorted { $0.path < $1.path }
         let sourceSHA = ProcessInfo.processInfo.environment["MODELPLAN_S1_SOURCE_SHA"] ?? "uncommitted source; no commit attribution"
-        var readme = "# S1 synthetic offscreen gallery\n\nNative source: `\(sourceSHA)`. Golden source: `\(manifest.prototypeSourceCommit)`. Report only; null metrics, synthetic reset signals and unsupported button states are not product acceptance. Reference PNGs and captured prototype video are linked in place, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider and beta-only Z mark in synthetic preview remain differences. The working strip uses synthetic signal and the shared frame pool; owner visual review remains required. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
+        var readme = "# S1 synthetic offscreen gallery\n\nNative source: `\(sourceSHA)`. Golden source: `\(manifest.prototypeSourceCommit)`. Report only; null metrics, synthetic reset signals and unsupported button states are not product acceptance. All reference images and the prototype video are copied into this batch. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider and beta-only Z mark in synthetic preview remain differences. The working strip uses synthetic signal and the shared frame pool; owner visual review remains required. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
         for file in files {
             let data = try Data(contentsOf: file), digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            readme += "| \(file.lastPathComponent) | \(data.count) | \(digest) |\n"
+            let relative = String(file.path.dropFirst(output.path.count + 1))
+            readme += "| \(relative) | \(data.count) | \(digest) |\n"
         }
         try Data(readme.utf8).write(to: output.appendingPathComponent("README.md"), options: .withoutOverwriting)
     }

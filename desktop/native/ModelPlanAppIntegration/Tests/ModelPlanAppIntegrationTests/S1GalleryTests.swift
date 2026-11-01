@@ -33,5 +33,16 @@ import ModelPlanDock
             throw XCTSkip("Set MODELPLAN_S1_GOLDEN_DIR and MODELPLAN_S1_GALLERY_DIR to run the synthetic gallery")
         }
         try await S1Gallery.run(goldenPath: golden, outputPath: output)
+        let root = URL(fileURLWithPath: output, isDirectory: true)
+        let html = try String(contentsOf: root.appendingPathComponent("index.html"), encoding: .utf8)
+        let expression = try NSRegularExpression(pattern: #"(?:src|href)="([^"]+)""#)
+        let text = html as NSString
+        let matches = expression.matches(in: html, range: NSRange(location: 0, length: text.length))
+        XCTAssertFalse(matches.isEmpty)
+        for match in matches {
+            let path = text.substring(with: match.range(at: 1))
+            XCTAssertFalse(path.hasPrefix("/")); XCTAssertFalse(path.split(separator: "/").contains(".."))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path), path)
+        }
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import XCTest
 import CoreText
+import CryptoKit
 @_spi(DockResourceChecks) import ModelPlanDock
 @testable @_spi(DockResourceChecks) import ModelPlanDockResources
 
@@ -37,6 +38,43 @@ import CoreText
             XCTAssertFalse((CTFontCopyPostScriptName(font) as String).isEmpty)
             XCTAssertEqual(CTFontGetSize(font), 11)
         }
+    }
+    func testEveryVendorMarkFillsTheSameVisibleDockBox() throws {
+        let root = try DockThirdPartyResources.rootURL(), manifest = try manifest(true)
+        let markFiles = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Marks"), includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension.lowercased() == "svg" }.map(\.lastPathComponent)
+        let records = manifest.files.filter { $0.value.path.hasPrefix("Marks/") && $0.value.path.hasSuffix(".svg") }
+        XCTAssertEqual(Set(markFiles), Set(records.values.map { URL(fileURLWithPath: $0.path).lastPathComponent }))
+        let store = try DockArtworkStore(root: root, manifest: manifest)
+        let target = 28
+        for id in records.keys.sorted() {
+            let image = try store.fittedGlyph(id, targetPixelSize: target)
+            let context = try XCTUnwrap(CGContext(data: nil, width: target, height: target, bitsPerComponent: 8, bytesPerRow: target * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.clear(CGRect(x: 0, y: 0, width: target, height: target)); context.interpolationQuality = .none
+            let factor = min(CGFloat(target) / CGFloat(image.width), CGFloat(target) / CGFloat(image.height))
+            let width = CGFloat(image.width) * factor, height = CGFloat(image.height) * factor
+            context.draw(image, in: CGRect(x: (CGFloat(target)-width)/2, y: (CGFloat(target)-height)/2, width: width, height: height))
+            let bytes = try XCTUnwrap(context.data?.assumingMemoryBound(to: UInt8.self))
+            var minX = target, minY = target, maxX = -1, maxY = -1
+            for y in 0..<target { for x in 0..<target where bytes[(y * target + x) * 4 + 3] > 0 {
+                minX = min(minX, x); minY = min(minY, y); maxX = max(maxX, x); maxY = max(maxY, y)
+            }}
+            XCTAssertGreaterThanOrEqual(maxX, minX, id); XCTAssertGreaterThanOrEqual(maxY, minY, id)
+            let visibleExtent = max(maxX-minX+1, maxY-minY+1)
+            XCTAssertEqual(Double(visibleExtent), Double(target), accuracy: Double(target)*0.06, "Visible extent for \(id)")
+        }
+    }
+    func testVisibleFitKeepsAnAsymmetricOffCenterGlyph() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let data = Data(##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="0" y="0" width="20" height="10" fill="#ffffff"/></svg>"##.utf8)
+        try data.write(to: root.appendingPathComponent("sample.svg"))
+        let sha = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let store = try DockArtworkStore(root: root, manifest: .init(files: ["sample": .init(path: "sample.svg", sha256: sha, bytes: data.count)]))
+        let image = try store.fittedGlyph("sample", targetPixelSize: 28)
+        XCTAssertEqual(Double(image.width), 28, accuracy: 2); XCTAssertEqual(Double(image.height), 14, accuracy: 2)
     }
     func testSVGStyleAllowsOnlySingleLocalSolidFill() throws {
         let prefix = #"<svg viewBox="0 0 10 10"><defs><style>"#
