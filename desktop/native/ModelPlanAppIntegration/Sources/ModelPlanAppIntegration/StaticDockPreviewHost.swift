@@ -46,6 +46,12 @@ public struct StaticDockGeometry {
     }
 }
 
+/// v1 A5 ignition fires on press-down. Holding introduces no second action,
+/// countdown, delay or timer. Native hit testing still owns eligibility.
+@MainActor final class CockpitIgnitionButton: NSButton {
+    override func mouseDown(with event: NSEvent) { performClick(nil) }
+}
+
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
 /// Empty-state copy must not swallow the neutral Dock's background grab area.
 @MainActor private final class StaticDockStatusLabel: NSTextField {
@@ -61,6 +67,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
     public let purpose: DockHostPurpose
     public private(set) var isVisible = false
+    var isPresentationAllowed: Bool { permitted && !retired }
     public var visibilityChanged: (() -> Void)?
     private func reportVisibility(_ visible: Bool) {
         guard visible != isVisible else { return }
@@ -215,7 +222,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "No local subscriptions / 暂无本地订阅")
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
-    private let consoleButton = NSButton(frame: .zero)
+    let consoleButton = CockpitIgnitionButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
@@ -246,7 +253,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
-        consoleButton.setAccessibilityLabel("Open console / 打开控制台")
+        consoleButton.setAccessibilityLabel("Open Cockpit / 打开驾驶舱")
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -756,7 +763,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 menu.addItem(item)
             }
         }
-        for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
+        for (title, action) in [("Open Cockpit / 打开驾驶舱", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
         menu.addItem(.separator())

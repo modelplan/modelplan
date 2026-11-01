@@ -19,6 +19,17 @@ import ModelPlanSettings
     }
 }
 
+/// System-boundary injection for synthetic normal-entry journeys. Production uses
+/// the same fanout/coordinator/console and creates only its normal shared client.
+@MainActor public struct CockpitRuntimeFactory {
+    public let client: (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient
+    public let page: (CockpitEngineContext, CockpitAppearance) throws -> any CockpitPageSurface
+    public init(client: @escaping (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient,
+                page: @escaping (CockpitEngineContext, CockpitAppearance) throws -> any CockpitPageSurface) {
+        self.client = client; self.page = page
+    }
+}
+
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
@@ -30,17 +41,18 @@ import ModelPlanSettings
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
+                            cockpitRuntime: CockpitRuntimeFactory? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
-        if let makeClient {
+        if let makeClient, cockpitRuntime == nil {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
                 createsNativePanels:createsNativePanels,bundleURL:bundleURL,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
-        let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
+        let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore, runtime:cockpitRuntime)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
             createsNativePanels:createsNativePanels,bundleURL:bundleURL,
             makeClient: { configuration, store in
@@ -49,14 +61,17 @@ import ModelPlanSettings
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
                 owner.coordinator=coordinator
-                let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
+                let fanout = CockpitStoreFanout(store:store,cockpit:coordinator)
+                let client = cockpitRuntime?.client(configuration, fanout) ?? ProcessEngineClient(configuration:configuration,consumer:fanout)
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
-                return SharedEngineCockpitConsole(owner:owner,composition:composition)
+                return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:activateSettings)
             },activateSettings:activateSettings)
+        owner.anchor = { [weak application] in application?.cockpitAnchor }
+        owner.visibility = { [weak application] in application?.cockpitVisibilityChanged($0) }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -68,9 +83,14 @@ import ModelPlanSettings
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
     var pageFailure: (() -> Void)?
+    var anchor: (() -> CGRect?)?
+    var visibility: ((Bool) -> Void)?
+    let shell = CockpitShellSession()
+    let runtime: CockpitRuntimeFactory?
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
-    init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
-    func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
+    init(bundle: URL,settingsStore: SettingsStore, runtime: CockpitRuntimeFactory? = nil) { self.bundle=bundle;self.settingsStore=settingsStore;self.runtime=runtime }
+    func makePage(context: CockpitEngineContext, executable: URL) throws -> any CockpitPageSurface {
+        if let runtime { return try runtime.page(context, appearance) }
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
               CommunityConsentBundleIdentity.matches(bundle:bundle) else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
@@ -79,7 +99,7 @@ import ModelPlanSettings
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
-        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance, shellSession:shell, anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
@@ -114,7 +134,10 @@ struct CockpitUnavailableNotice {
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
-        owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
+        owner.coordinator?.onOpened = { [weak self] in self?.owner.visibility?(true) }
+        owner.coordinator?.onClosed = { [weak self] in
+            self?.wantsVisible=false; self?.owner.visibility?(false)
+        }
     }
     func show() {
         wantsVisible=true
@@ -123,26 +146,32 @@ struct CockpitUnavailableNotice {
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
             guard !Task.isCancelled,wantsVisible else { showTask=nil;return }
-            let theme:CockpitAppearance.Theme
-            switch snapshot.preferences.theme {
-            case .day:theme = .day
-            case .night:theme = .night
-            case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
-            }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full)
+            // v1 is night-only, regardless of a retained Day preference.
+            owner.appearance = .init(theme:.night,locale:snapshot.preferences.language == .english ? .en:.zhCN,
+                profile:owner.appearance.profile, reduceMotion: snapshot.preferences.motion == .on ||
+                (snapshot.preferences.motion == .system && NSWorkspace.shared.accessibilityDisplayShouldReduceMotion),
+                shutterClosed: owner.shell.shutterClosed, detached:owner.shell.detached)
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
+                case .close:self.hide()
+                case .toggleAttachment,.toggleShutter:break // handled by the native page
                 }
             }
             activate()
             owner.coordinator?.open();showTask=nil
         }
     }
+    func apply(_ transaction: SettingsApplication) {
+        owner.appearance = .init(theme:.night, locale:transaction.effective.language == .english ? .en:.zhCN,
+            profile:owner.appearance.profile, reduceMotion:transaction.effective.reduceMotion,
+            shutterClosed:owner.shell.shutterClosed, detached:owner.shell.detached)
+        owner.coordinator?.updateAppearance(owner.appearance)
+    }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
-    func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
+    func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();owner.visibility?(false);fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
         let initiatedInForeground=isForeground()

@@ -22,7 +22,7 @@ public struct CockpitQueryTicket: Equatable, Sendable {
   public let context: CockpitEngineContext
   public let viewRevision: UInt64
 }
-public struct CockpitAppearance: Sendable {
+public struct CockpitAppearance: Equatable, Sendable {
   public enum Theme: String, Sendable { case day, night }
   public enum Locale: String, Sendable {
     case en
@@ -30,7 +30,9 @@ public struct CockpitAppearance: Sendable {
   }
   public enum Profile: String, Sendable { case full, compact }
   public let theme: Theme, locale: Locale, profile: Profile
-  public init(theme: Theme, locale: Locale, profile: Profile) {
+  public let reduceMotion: Bool, shutterClosed: Bool, detached: Bool
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, shutterClosed: Bool = false, detached: Bool = false) {
+    self.reduceMotion = reduceMotion; self.shutterClosed = shutterClosed; self.detached = detached
     self.theme = theme
     self.locale = locale
     self.profile = profile
@@ -46,7 +48,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings
+  case chooseSetup, openSettings, close, toggleAttachment, toggleShutter
   case openHistory(String)
 }
 public enum CockpitReceipt: Equatable {
@@ -130,6 +132,7 @@ public final class CockpitBridgeState {
   public private(set) var context: CockpitEngineContext
   public private(set) var viewRevision: UInt64 = 0
   public private(set) var blocked = true, disposed = false, ready = false
+  public private(set) var supportsAppearance = false
   private var authoritative = true
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
@@ -179,6 +182,14 @@ public final class CockpitBridgeState {
           "profile": appearance.profile.rawValue,
         ]
       ], receipt: "ready")
+  }
+  public func setAppearance(_ appearance: CockpitAppearance) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("appearance", extra: ["appearance": [
+      "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
+      "profile": appearance.profile.rawValue, "reduceMotion": appearance.reduceMotion,
+      "shutterClosed": appearance.shutterClosed, "detached": appearance.detached,
+    ]])
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
@@ -260,6 +271,9 @@ public final class CockpitBridgeState {
       switch action {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
+      case "close": intent = .close
+      case "toggleAttachment": intent = .toggleAttachment
+      case "toggleShutter": intent = .toggleShutter
       case "openHistory":
         guard let tool = m["tool"] as? String, historyTools.contains(tool) else {
           throw CockpitBridgeError.invalidMessage
@@ -271,13 +285,16 @@ public final class CockpitBridgeState {
       pageSequence = sequence
       return .action(intent)
     }
-    guard Set(m.keys) == base, let expected = pending[id], expected.kind == type else {
+    let appearanceCapability = type == "ready" && m["appearanceVersion"] as? Int == 1
+    guard Set(m.keys) == (appearanceCapability ? base.union(["appearanceVersion"]) : base),
+      let expected = pending[id], expected.kind == type else {
       throw CockpitBridgeError.invalidMessage
     }
     pending[id] = nil
     pageSequence = sequence
     switch type {
     case "ready":
+      supportsAppearance = appearanceCapability
       ready = true
       blocked = false
       return .ready

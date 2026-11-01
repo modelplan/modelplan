@@ -9,10 +9,12 @@ import ModelPlanWire
   var onIntent: ((CockpitIntent) -> Void)? { get set }
   var onClosed: (() -> Void)? { get set }
   func open()
+  func updateAppearance(_ appearance: CockpitAppearance)
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket)
   func clearPrivateViews(adopting: CockpitEngineContext?) async
   func discard()
 }
+public extension CockpitPageSurface { func updateAppearance(_ appearance: CockpitAppearance) {} }
 extension CockpitWindowController: CockpitPageSurface {}
 
 private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked Sendable {
@@ -33,6 +35,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
   private var page: (any CockpitPageSurface)?
+  private var pageGeneration: UUID?
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
   private var requestTicket: CockpitQueryTicket?
@@ -40,6 +43,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onUnavailable: (() -> Void)?
   public var onClosed: (() -> Void)?
+  public var onOpened: (() -> Void)?
 
   public init(downstream: (any EngineClientEventConsumer)? = nil, makePage: @escaping PageFactory) {
     self.downstream = downstream
@@ -93,24 +97,37 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     }
     if let page {
       page.open()
+      if self.page === page { onOpened?() }
       return
     }
     let newPage: any CockpitPageSurface
     do { newPage = try makePage(context) } catch { onUnavailable?(); return }
-    newPage.onReady = { [weak self] in self?.refresh() }
-    newPage.onIntent = { [weak self] in self?.onIntent?($0) }
+    let generation = UUID()
+    pageGeneration = generation
+    newPage.onReady = { [weak self] in
+      guard self?.pageGeneration == generation else { return }; self?.refresh()
+    }
+    newPage.onIntent = { [weak self] intent in
+      guard self?.pageGeneration == generation else { return }; self?.onIntent?(intent)
+    }
     newPage.onClosed = { [weak self] in
+      guard self?.pageGeneration == generation else { return }
+      self?.pageGeneration = nil
       self?.cancelQuery()
       self?.page = nil
       self?.onClosed?()
     }
     page = newPage
     newPage.open()
+    if page === newPage { onOpened?() }
   }
+  public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
   public func close() {
     cancelQuery()
-    page?.discard()
-    page = nil
+    let previous = page
+    page = nil; pageGeneration = nil
+    previous?.discard()
+    if previous != nil { onClosed?() }
   }
   private func cancelQuery() {
     request?.cancel()

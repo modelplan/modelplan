@@ -278,7 +278,7 @@ enum SettingsWords {
         do {
             let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
-                .filter { !editor.connections.isAvailable || ($0.key != .detectedReaders && $0.key != .optionalReaders) }
+                .filter { SettingsCatalogue.visibleInV1($0.key) && (!editor.connections.isAvailable || ($0.key != .detectedReaders && $0.key != .optionalReaders)) }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]

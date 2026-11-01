@@ -131,6 +131,9 @@ public struct SettingsRow: Equatable, Sendable {
 
 /// Semantic page data only: no view, geometry, drawing, artwork or platform service invocation.
 public enum SettingsCatalogue {
+    /// Stored legacy hold/countdown choices remain decodable, but are not v1 UI.
+    public static func visibleInV1(_ key: SettingKey) -> Bool { key != .opening && key != .countdown }
+
     private struct Definition {
         let key: SettingKey, title: SettingsText, subtitle: SettingsText
         init(_ key: SettingKey, _ en: String, _ zh: String, _ hint: String, _ hintZH: String) {

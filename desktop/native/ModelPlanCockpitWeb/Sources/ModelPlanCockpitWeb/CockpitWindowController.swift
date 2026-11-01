@@ -2,6 +2,7 @@
 import AppKit
 import ModelPlanWire
 import WebKit
+import QuartzCore
 
 public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, localEncoding }
 
@@ -59,7 +60,15 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   WKNavigationDelegate, WKUIDelegate
 {
   private let bundle: VerifiedCockpitBundle
-  private let appearance: CockpitAppearance
+  private var appearance: CockpitAppearance
+  private let shellSession: CockpitShellSession
+  private let anchor: () -> CGRect?
+  private var layout: CockpitShellLayout?
+  private var outsideMonitor: Any?, localMonitor: Any?
+  private var closeTask: Task<Void, Never>?
+  private var dragStart: (point: CGPoint, frame: CGRect, detached: Bool)?
+  private var dragRegion: CockpitTitleDrag?
+  private var snapGuide: NSPanel?
   public let bridge: CockpitBridgeState
   private var web: WKWebView?
   private let proxy = MessageProxy()
@@ -85,16 +94,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
 
   public init(
-    bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance
+    bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance,
+    shellSession: CockpitShellSession? = nil, anchor: @escaping () -> CGRect? = { nil }
   ) {
     self.bundle = bundle
+    self.shellSession = shellSession ?? CockpitShellSession()
+    self.anchor = anchor
     self.appearance = appearance
     self.bridge = CockpitBridgeState(context: context)
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
   public func open() {
+    closeTask?.cancel(); closeTask = nil
     guard web == nil, !bridge.disposed else {
+      window?.alphaValue = 1
       window?.makeKeyAndOrderFront(nil)
       return
     }
@@ -114,13 +128,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     view.navigationDelegate = self
     view.uiDelegate = self
     view.allowsBackForwardNavigationGestures = false
-    let panel = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 636, height: appearance.profile == .full ? 890 : 640),
-      styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+    let panel = CockpitPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+    panel.isOpaque = false; panel.backgroundColor = .clear
+    panel.hasShadow = false; panel.level = .floating; panel.hidesOnDeactivate = false
+    panel.appearance = NSAppearance(named: .darkAqua)
     panel.title = "ModelPlan"
     panel.isReleasedWhenClosed = false
     panel.delegate = self
-    panel.contentView = view
+    let root = NSView(frame: .zero)
+    root.addSubview(view)
+    let drag = CockpitTitleDrag(frame: .zero)
+    drag.event = { [weak self] phase, point in self?.titleDrag(phase, point: point) }
+    root.addSubview(drag); dragRegion = drag
+    panel.contentView = root
     self.window = panel
     web = view
     let center = NotificationCenter.default
@@ -143,9 +163,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           [weak self] _ in Task { @MainActor in self?.visibilityChanged() }
         })
     }
+    applyLayout()
+    installOutsideMonitors()
+    observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+      Task { @MainActor in self?.cancelDrag(); self?.applyLayout() }
+    })
     view.load(URLRequest(url: pageURL))
-    panel.center()
+    panel.alphaValue = appearance.reduceMotion ? 1 : 0
     panel.makeKeyAndOrderFront(nil)
+    if !appearance.reduceMotion {
+      NSAnimationContext.runAnimationGroup { context in context.duration = 0.18; panel.animator().alphaValue = 1 }
+    }
     #if MODELPLAN_TEST_ONLY_SPI
       verificationDidOpen?(view, panel)
     #endif
@@ -210,6 +238,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
       switch receipt {
       case .ready:
+        publishAppearance()
         visibilityChanged()
         onReady?()
       case .cleared:
@@ -219,11 +248,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         clearWaiter = nil
         if bridge.queryTicket != nil {
           web?.isHidden = false
+          publishAppearance()
           lastVisibility = nil
           visibilityChanged()
         }
         waiter?.resume()
-      case .action(let intent): onIntent?(intent)
+      case .action(let intent):
+        switch intent {
+        case .toggleAttachment: toggleAttachment()
+        case .toggleShutter:
+          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+        case .close: closeAnimated()
+        default: onIntent?(intent)
+        }
       case .rendered: onRendered?()
       }
     } catch { /* Reject without logging private message bodies. */  }
@@ -266,6 +303,140 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     withError error: Error
   ) { fail(.provisionalNavigationFailed) }
   public func windowWillClose(_ notification: Notification) { discard() }
+  public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
+  public func updateAppearance(_ value: CockpitAppearance) {
+    appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
+      reduceMotion: value.reduceMotion, shutterClosed: appearance.shutterClosed, detached: shellSession.detached)
+    if value.reduceMotion {
+      if closeTask != nil { discard(); return }
+      window?.alphaValue = 1
+    }
+    publishAppearance()
+  }
+  private func publishAppearance() {
+    guard bridge.ready, !bridge.blocked, !ending else { return }
+    do {
+      if bridge.supportsAppearance { send(try bridge.setAppearance(appearance)) }
+      lastVisibility = nil; visibilityChanged()
+    } catch { fail() }
+  }
+  private var arrangement: String {
+    NSScreen.screens.map { NSStringFromRect($0.frame) }.sorted().joined(separator: ";")
+  }
+  private func environment() -> (CGRect, CGRect)? {
+    let requested = anchor()
+    guard let screen = NSScreen.screens.first(where: { screen in requested.map { screen.frame.intersects($0) } ?? false }) ?? NSScreen.main else { return nil }
+    let icon = requested ?? CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 0, height: 0)
+    return (screen.visibleFrame, icon)
+  }
+  private func applyLayout() {
+    guard let window, let (usable, icon) = environment(),
+          let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+    layout = fit
+    appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
+      reduceMotion: appearance.reduceMotion, shutterClosed: fit.shutterClosed, detached: shellSession.detached)
+    let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
+    window.setFrame(frame, display: true)
+    window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
+    web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
+    dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
+    publishAppearance()
+  }
+  private func toggleAttachment() {
+    guard let window else { return }
+    if !shellSession.detached {
+      shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
+    } else {
+      shellSession.detached = false
+      guard let (usable, icon) = environment(), let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
+      if appearance.reduceMotion { applyLayout() }
+      else {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0.25; context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          window.animator().setFrame(fit.frame, display: true)
+        }
+      }
+    }
+    updateAppearance(appearance)
+  }
+  private func titleDrag(_ phase: CockpitTitleDrag.Phase, point: CGPoint) {
+    guard let window else { return }
+    switch phase {
+    case .began: dragStart = (point, window.frame, shellSession.detached)
+    case .moved:
+      guard let start = dragStart else { return }
+      let dx = point.x - start.point.x, dy = point.y - start.point.y
+      guard shellSession.detached || hypot(dx, dy) * window.backingScaleFactor > 12 else { return }
+      let newlyDetached = !shellSession.detached
+      shellSession.detached = true
+      if newlyDetached { updateAppearance(appearance) }
+      if let (usable, _) = environment(), let layout {
+        window.setFrame(layout.clamping(origin: .init(x: start.frame.minX + dx, y: start.frame.minY + dy), usable: usable), display: true)
+      }
+      if let home = layout?.frame {
+        let ready = hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40
+        showSnapGuide(home, ready: ready)
+      }
+    case .ended:
+      snapGuide?.orderOut(nil)
+      guard dragStart != nil else { return }; dragStart = nil
+      guard shellSession.detached else { return }
+      if let (_, _) = environment(), let home = layout?.frame,
+         hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
+        toggleAttachment()
+      } else { shellSession.remember(window.frame.origin, arrangement: arrangement) }
+    case .cancelled: cancelDrag()
+    }
+  }
+  private func showSnapGuide(_ frame: CGRect, ready: Bool) {
+    guard let window else { return }
+    if snapGuide == nil {
+      let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+      panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = false
+      panel.ignoresMouseEvents = true; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
+      let view = NSView(frame: .init(origin: .zero, size: frame.size)); view.wantsLayer = true
+      view.layer = CAShapeLayer(); panel.contentView = view; panel.level = .floating; snapGuide = panel
+    }
+    snapGuide?.setFrame(frame, display: false)
+    if let shape = snapGuide?.contentView?.layer as? CAShapeLayer {
+      shape.path = CGPath(rect: CGRect(origin: .zero, size: frame.size).insetBy(dx: 1, dy: 1), transform: nil)
+      shape.strokeColor = NSColor.gray.cgColor; shape.fillColor = NSColor.clear.cgColor
+      shape.lineWidth = 1; shape.lineDashPattern = ready ? nil : [6, 4]
+    }
+    snapGuide?.order(.below, relativeTo: window.windowNumber)
+  }
+  private func cancelDrag() {
+    snapGuide?.orderOut(nil)
+    guard let start = dragStart else { return }; dragStart = nil
+    shellSession.detached = start.detached; window?.setFrame(start.frame, display: true)
+    updateAppearance(appearance)
+  }
+  private func installOutsideMonitors() {
+    let events: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] _ in
+      Task { @MainActor in self?.outsidePress(NSEvent.mouseLocation) }
+    }
+    localMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
+      MainActor.assumeIsolated {
+        let point = event.window?.convertPoint(toScreen: event.locationInWindow) ?? NSEvent.mouseLocation
+        self?.outsidePress(point)
+      }
+      return event
+    }
+  }
+  private func outsidePress(_ point: CGPoint) {
+    guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
+    closeAnimated()
+  }
+  public func closeAnimated() {
+    guard !ending, closeTask == nil else { return }
+    guard !appearance.reduceMotion, let window else { discard(); return }
+    NSAnimationContext.runAnimationGroup { context in context.duration = 0.12; window.animator().alphaValue = 0 }
+    closeTask = Task { @MainActor [weak self] in
+      do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+      self?.discard()
+    }
+  }
   private func fail(_ failure: CockpitWindowFailure = .localEncoding) {
     guard !ending else { return }
     onFailure?(failure)
@@ -274,6 +445,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func discard() {
     guard !ending else { return }
     ending = true
+    closeTask?.cancel(); closeTask = nil; cancelDrag()
+    if shellSession.detached, let window { shellSession.remember(window.frame.origin, arrangement: arrangement) }
+    if let outsideMonitor { NSEvent.removeMonitor(outsideMonitor) }; outsideMonitor = nil
+    if let localMonitor { NSEvent.removeMonitor(localMonitor) }; localMonitor = nil
+    dragRegion?.event = nil; dragRegion = nil
+    snapGuide?.close(); snapGuide = nil
     if let raw = bridge.unload(), let web {
       web.callAsyncJavaScript(
         "window.modelPlanCockpit?.receive(raw)", arguments: ["raw": raw], in: nil, in: .page,
@@ -298,4 +475,20 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     waiter?.resume()
     onClosed?()
   }
+}
+
+@MainActor private final class CockpitPanel: NSPanel {
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
+}
+@MainActor private final class CockpitTitleDrag: NSView {
+  enum Phase { case began, moved, ended, cancelled }
+  var event: ((Phase, CGPoint) -> Void)?
+  override var acceptsFirstResponder: Bool { true }
+  private func point(_ event: NSEvent) -> CGPoint { window?.convertPoint(toScreen: event.locationInWindow) ?? .zero }
+  override func mouseDown(with event: NSEvent) { window?.makeFirstResponder(self); self.event?(.began, point(event)) }
+  override func mouseDragged(with event: NSEvent) { self.event?(.moved, point(event)) }
+  override func mouseUp(with event: NSEvent) { self.event?(.ended, point(event)) }
+  override func cancelOperation(_ sender: Any?) { event?(.cancelled, .zero) }
+  override func keyDown(with event: NSEvent) { if event.keyCode == 53 { self.event?(.cancelled, .zero) } else { super.keyDown(with: event) } }
 }

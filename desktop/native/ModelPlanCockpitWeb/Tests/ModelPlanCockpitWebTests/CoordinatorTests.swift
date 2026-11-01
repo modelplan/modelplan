@@ -158,3 +158,41 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 }
+
+@MainActor private final class ShellLifecyclePage: CockpitPageSurface {
+  var queryTicket: CockpitQueryTicket? { nil }
+  var onReady: (() -> Void)?, onIntent: ((CockpitIntent) -> Void)?, onClosed: (() -> Void)?
+  var closeOnOpen = false, discarded = false
+  func open() { if closeOnOpen { discard() } }
+  func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+  func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+  func discard() { discarded = true; onClosed?() }
+}
+extension CoordinatorTests {
+  @MainActor func testRetiredPageCannotCloseAReplacementThroughALateCallback() async throws {
+    var pages: [ShellLifecyclePage] = []
+    let coordinator = EngineCockpitCoordinator { _ in let page = ShellLifecyclePage(); pages.append(page); return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    let context = EngineDeliveryContext(sessionID: "s-00000000-0000-0000-0000-000000000001", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+    await coordinator.consume(.context(context))
+    coordinator.open()
+    let lateClose = pages[0].onClosed
+    coordinator.close(); coordinator.open()
+    lateClose?()
+    coordinator.close()
+    XCTAssertEqual(pages.count, 2)
+    XCTAssertTrue(pages[1].discarded, "A retired close callback must not orphan the replacement page")
+    await coordinator.shutdown()
+  }
+  @MainActor func testSynchronousOpenFailureCannotSuppressDockAsAnOpenedPage() async throws {
+    let coordinator = EngineCockpitCoordinator { _ in let page = ShellLifecyclePage(); page.closeOnOpen = true; return page }
+    let client = HeldClient(); coordinator.bind(client: client)
+    let context = EngineDeliveryContext(sessionID: "s-00000000-0000-0000-0000-000000000001", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+    await coordinator.consume(.context(context))
+    var opened = 0, closed = 0
+    coordinator.onOpened = { opened += 1 }; coordinator.onClosed = { closed += 1 }
+    coordinator.open()
+    XCTAssertEqual(opened, 0); XCTAssertEqual(closed, 1)
+    await coordinator.shutdown()
+  }
+}

@@ -3,6 +3,7 @@ import AppKit
 import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
+import ModelPlanCockpitWeb
 
 /// The exact construction route called by the community executable and synthetic-profile checks.
 @MainActor public enum EngineRowsEntry {
@@ -12,10 +13,11 @@ import ModelPlanEngineClient
     }
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
+                            cockpitRuntime: CockpitRuntimeFactory? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
-        CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
+        CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitRuntime: cockpitRuntime, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
     }
 }

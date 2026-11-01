@@ -6,7 +6,9 @@ import ModelPlanDock
     func show()
     func render()
     func hide()
+    func apply(_ transaction: SettingsApplication)
 }
+public extension EngineRowsConsoleSurface { func apply(_ transaction: SettingsApplication) {} }
 /// Read-only native Dock-reading status; no private cockpit or producer is constructed.
 @MainActor final class EngineRowsConsole: NSWindowController, EngineRowsConsoleSurface {
     private let composition: EngineDockMenuComposition

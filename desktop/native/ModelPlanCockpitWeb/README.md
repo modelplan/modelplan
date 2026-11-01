@@ -176,3 +176,42 @@ used by the real alert too. A deterministic inverse-order test proves page
 disposal, exactly one notice with those actions and no borrowed-client stop.
 Negative controls reproduce both the original missing notice and duplicate
 notices if completion/event ownership is removed.
+
+## S6 native shell and entry
+
+The normal `CommunityApp` → `EngineRowsEntry` factory retains the shell session
+while each close still discards the WebKit page. Left status-icon clicks toggle
+visibility; the right-click menu, Dock menu and A5 press-down quick-open share
+that factory. Holding A5 adds no countdown or delayed action. The legacy hold and
+countdown settings remain decodable but their rows are hidden in the v1 window.
+The Dock companion is temporarily suppressed for an open cockpit and resumes
+its own saved visibility policy on close; the system macOS Dock is not changed.
+
+The native panel is transparent and borderless. It attaches below the status
+icon, supports detach in place and put back (250 ms ease-out), and dismisses on
+outside mouse presses only while attached. Title drag uses 12 physical pixels
+to detach and a 40-physical-pixel home snap zone; Escape/focus loss cancels it.
+Eight display arrangements retain detached origins. Discrete 890/640 profiles
+use roots 877/627 open and 691/609 shuttered, a 636-wide raster, a 6-point top gap
+and a 34-point base reserve. The whole content root scales uniformly when needed.
+Open is a 180 ms fade and close is 120 ms; Reduce Motion makes them immediate.
+No prewarm, polling timer, real account reader or additional renderer is added.
+
+The original `load.appearance` remains exactly `{theme, locale, profile}`.
+A current authenticated `ready` receipt may add `appearanceVersion: 1`. Only a
+page that negotiated that capability receives `appearance` messages with
+`{theme, locale, profile, reduceMotion, shutterClosed, detached}`. Appearance
+changes preserve page/context/query identity and are replayed after a privacy
+clear. Actual visibility stays separate from `shutterClosed`: a closed canopy
+must not lose control authority. The Web consumer pauses its animations when
+shuttered. Page actions are the closed enum `close`, `toggleAttachment`,
+`toggleShutter` plus the existing Settings/setup/history intents; origins,
+sequence, authority, duplicate-key and visibility checks still apply.
+
+Settings commits and accessibility notifications update the native appearance
+without recreating the page. Effective v1 theme remains Night even when a retained
+Day preference changes. The READERS-owned Web counterpart and a reviewed bundle
+pin refresh are required to prove the new fields end to end. This native change
+does not update Web sources or asset pins, approve a rendered baseline, or claim
+latency/resource/device acceptance. DESIGN review and coordinator-scheduled
+M1/MacCI device checks remain separate gates.

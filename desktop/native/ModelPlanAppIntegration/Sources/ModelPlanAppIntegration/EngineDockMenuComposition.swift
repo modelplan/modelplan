@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -13,6 +14,7 @@ import ModelPlanCommunityHost
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
     public var menuDidChange: (() -> Void)?
+    var settingsDidChange: ((SettingsApplication) -> Void)?
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
         let store: EngineStore

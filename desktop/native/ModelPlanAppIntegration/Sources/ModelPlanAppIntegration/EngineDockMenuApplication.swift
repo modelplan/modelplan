@@ -14,6 +14,8 @@ import ModelPlanSettings
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
     private var terminating = false
+    private var cockpitOpen = false
+    private var accessibilityObserver: NSObjectProtocol?
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
     #endif
@@ -34,7 +36,7 @@ import ModelPlanSettings
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
-        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
+        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: SettingsWindowController.systemEnvironment()) { composition.dock.apply($0); composition.settingsDidChange?($0) }
         super.init()
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
@@ -42,6 +44,7 @@ import ModelPlanSettings
             if self?.composition.provider.dockContent.status == .cleared { self?.driveGuard?.recordClear() }
             #endif
         }
+        composition.settingsDidChange = { [weak self] in self?.console?.apply($0) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.showConsole = { [weak self] in self?.showConsole() }
     }
@@ -62,9 +65,29 @@ import ModelPlanSettings
     public func showConsole() {
         guard !terminating else { return }
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        if let latest = settings.latest { console?.apply(latest) }
         console?.show()
     }
-    public func prepare() async { await settings.reload() }
+    var cockpitAnchor: CGRect? {
+        guard let button = status?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+    func toggleCockpit() {
+        if cockpitOpen { console?.hide() } else { showConsole() }
+    }
+    func cockpitVisibilityChanged(_ open: Bool) {
+        cockpitOpen = open
+        composition.dock.setPresentationAllowed(!open && !terminating)
+    }
+    public func prepare() async {
+        if accessibilityObserver == nil {
+            accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+                    Task { @MainActor in self?.settings.update(environment: SettingsWindowController.systemEnvironment()) }
+                }
+        }
+        await settings.reload(); renderMenu()
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         #if MODELPLAN_U6_DRIVE
@@ -88,10 +111,12 @@ import ModelPlanSettings
         refresh.target = self
         menu.addItem(.separator())
         menu.addItem(settingsHost.menuItem(title: "Settings… / 设置…"))
-        let consoleItem = menu.addItem(withTitle: "Dock readings… / Dock 读数…", action: #selector(showConsoleMenu), keyEquivalent: "")
+        let consoleItem = menu.addItem(withTitle: "Open Cockpit / 打开驾驶舱", action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
         menu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
+        menu.delegate = self; liveStatusMenu = menu
+        status?.button?.target = self; status?.button?.action = #selector(statusPressed)
+        status?.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         let image = CommunityMenuBarResources.templateImage()
         image?.isTemplate = true
         status?.button?.image = image; status?.button?.contentTintColor = nil
@@ -102,11 +127,19 @@ import ModelPlanSettings
         #endif
     }
     public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
+    @objc private func statusPressed() {
+        guard let event = NSApp.currentEvent, let button = status?.button else { return }
+        if event.type == .rightMouseUp {
+            if let menu = liveStatusMenu { NSMenu.popUpContextMenu(menu, with: event, for: button) }
+        } else { toggleCockpit() }
+    }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settingsHost.suspend(); console?.hide()
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
+        accessibilityObserver = nil
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
