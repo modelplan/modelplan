@@ -106,11 +106,8 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 		if r.EventType != "direct_reset_announced" || r.Status != "upstream-announced" {
 			continue
 		}
-		// The current publication has a free-form scope but no reviewed plan
-		// mapping. Never silently promote such a record to row-wide.
-		if r.Scope != nil && *r.Scope != "" {
-			continue
-		}
+		// V1 has no reviewed mapping for free-form scope. The coordinator's
+		// explicit fallback is row-wide; never export or parse the raw text.
 		row, ok := byTool["codex"]
 		if !ok {
 			continue

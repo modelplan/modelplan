@@ -359,7 +359,6 @@ refresh; no additional fetch is started.
 
 The current public reset record does not provide reviewed structured plan links,
 confirmation references, or an official vendor-host-list interface. Accordingly
-this draft drops records with unmapped free-form scope, drops and counts unlinked
-confirmations, and omits source links while retaining otherwise eligible events.
-Those fail-closed limits require coordinated publication/consumer work before
-full S4 acceptance.
+v1 treats unmapped free-form scope as row-wide, drops and counts unlinked
+confirmations, and omits source links while retaining eligible events. The
+publication-side structured links and host interface are separate follow-ups.

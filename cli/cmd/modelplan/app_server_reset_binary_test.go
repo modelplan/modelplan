@@ -38,7 +38,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	}
 	published := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
 	dummy := strings.Repeat("a", 64)
-	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published}}, "windows": []any{}}}
+	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "publishedAt": published}}, "windows": []any{}}}
 	blob, _ := json.Marshal(component)
 	hash := syntheticHash(blob)
 	refs := map[string]any{}

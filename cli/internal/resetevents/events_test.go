@@ -49,8 +49,8 @@ func TestVerifiedResetNormalization(t *testing.T) {
 	announce.Scope = &scopeText
 	d.Resets = []json.RawMessage{encode(announce)}
 	events, _ = Project(d, p, now)
-	if len(events) != 0 {
-		t.Fatal("unmapped scope treated as plan-wide")
+	if len(events) != 1 || len(events[0].PlanIDs) != 0 {
+		t.Fatal("unmapped scope must use the row-wide v1 fallback")
 	}
 	announce.Scope = nil
 	plans := []string{"plus"}
@@ -68,6 +68,23 @@ func TestVerifiedResetNormalization(t *testing.T) {
 		t.Fatal("matching scoped plan dropped")
 	}
 }
+
+// V1 has no official-host interface: links are omitted for every source while
+// otherwise eligible announcements remain visible.
+func TestSourceLinksAreOmittedInV1(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
+	for _, rawURL := range []string{"https://vendor.example/reset", "https://unlisted.example/reset"} {
+		r := record{ID: "record", Provider: "openai", EventType: "direct_reset_announced", Status: "upstream-announced", PublishedAt: now.Add(-time.Hour), At: &now, URL: rawURL}
+		b, _ := json.Marshal(r)
+		d := &digest.Digest{PublicationID: "0123456789abcdef01234567", Resets: []json.RawMessage{b}}
+		events, _ := Project(d, projection, now)
+		if len(events) != 1 || events[0].Source.URL != "" {
+			t.Fatal("v1 exposed a source link or dropped an eligible event")
+		}
+	}
+}
+
 func TestDuplicateAnnouncementIdentityFailsClosed(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	p := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
