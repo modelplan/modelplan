@@ -672,3 +672,70 @@ func TestPublicMutationResultSurvivesConsentChange(t *testing.T) {
 		t.Fatalf("public mutation receipt was discarded: %s", response["error"])
 	}
 }
+
+type resetCapabilityBackend struct{ *memoryBackend }
+
+func (b resetCapabilityBackend) Capabilities() []string {
+	return []string{"rows", CapabilityResetEvents}
+}
+
+func TestResetEventsCapabilityControlsSnapshotsAndChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		caps    []string
+		enabled bool
+	}{
+		{"negotiated", []string{"rows", "resetEvents"}, true},
+		{"legacy", []string{"rows"}, false},
+		{"obsolete alias", []string{"rows", "reset_events_v1"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newMemoryBackend()
+			events := []rows.ResetEvent{{ID: "first", RowID: "claude"}}
+			b.view.ResetEvents = &events
+			c := startClient(t, Config{Backend: resetCapabilityBackend{b}})
+			c.readMessages()
+			c.send(t, 1, "initialize", wire.InitializeParams{SessionID: "s-test", ProtocolVersion: wire.ProtocolVersion, AppVersion: "test", Capabilities: tc.caps})
+			var init wire.Envelope[wire.InitializeResult]
+			if err := json.Unmarshal(c.response(t, 1)["result"], &init); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, cap := range init.Data.Capabilities {
+				if cap == "resetEvents" {
+					found = true
+				}
+				if cap == "reset_events_v1" {
+					t.Fatal("obsolete capability advertised")
+				}
+			}
+			if !found {
+				t.Fatal("resetEvents not advertised")
+			}
+			c.send(t, 2, "rows/subscribe", wire.Empty{})
+			var first wire.Envelope[wire.RowsSnapshot]
+			if err := json.Unmarshal(c.response(t, 2)["result"], &first); err != nil {
+				t.Fatal(err)
+			}
+			if (first.Data.Projection.ResetEvents != nil) != tc.enabled {
+				t.Fatalf("subscription capability mismatch: %+v", first.Data.Projection.ResetEvents)
+			}
+			b.mu.Lock()
+			changed := []rows.ResetEvent{{ID: "second", RowID: "claude"}}
+			b.view.ResetEvents = &changed
+			b.mu.Unlock()
+			b.changed <- struct{}{}
+			msg := c.next(t, func(m map[string]json.RawMessage) bool { return string(m["method"]) == `"rows/changed"` })
+			var next wire.Envelope[wire.RowsSnapshot]
+			if err := json.Unmarshal(msg["params"], &next); err != nil {
+				t.Fatal(err)
+			}
+			if (next.Data.Projection.ResetEvents != nil) != tc.enabled {
+				t.Fatalf("notification capability mismatch: %+v", next.Data.Projection.ResetEvents)
+			}
+			if tc.enabled && (*next.Data.Projection.ResetEvents)[0].ID != "second" {
+				t.Fatal("notification lost updated event")
+			}
+		})
+	}
+}

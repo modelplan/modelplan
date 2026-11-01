@@ -347,7 +347,7 @@ supervision require their own device evidence; Linux engine checks do not earn i
 
 ### Public reset event capability
 
-The server advertises `reset_events_v1` when the verified-publication source is
+The server advertises `resetEvents` when the verified-publication source is
 configured. A client must include that capability in `initialize` to receive
 optional `resetEvents` on the shared rows projection in `rows/subscribe`,
 `rows/changed`, or `cockpit/query`. An omitted field means the verified source

@@ -127,6 +127,9 @@ func SessionID(ctx context.Context) string {
 }
 
 // ResetEventsEnabled reports the capability negotiated by the current session.
+// CapabilityResetEvents names the opt-in for public reset event projections.
+const CapabilityResetEvents = "resetEvents"
+
 type resetEventsContextKey struct{}
 
 func ResetEventsEnabled(ctx context.Context) bool {

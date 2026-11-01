@@ -64,7 +64,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 func (b *SharedBackend) Capabilities() []string {
 	caps := []string{"rows", "consent", "credentials", "diagnostics"}
 	if b.config.ResetPublication != nil {
-		caps = append(caps, "reset_events_v1")
+		caps = append(caps, CapabilityResetEvents)
 	}
 	return caps
 }

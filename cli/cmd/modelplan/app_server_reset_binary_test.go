@@ -71,7 +71,18 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if raw, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v: %s", err, raw)
 	}
-	p := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
+	p := startQueryBinaryCaps(t, binary, []string{"rows", "resetEvents"})
+	var handshake struct {
+		Data struct {
+			Capabilities []string `json:"capabilities"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(p.initialize["result"], &handshake); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCapability(handshake.Data.Capabilities, "resetEvents") || containsCapability(handshake.Data.Capabilities, "reset_events_v1") {
+		t.Fatalf("unexpected server capabilities: %v", handshake.Data.Capabilities)
+	}
 	response := p.call("rows/subscribe", map[string]any{})
 	var env struct {
 		Data struct {
@@ -89,9 +100,26 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if len(env.Data.Projection.ResetEvents) != 1 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
 	}
-	legacy := startQueryBinaryCaps(t, binary, []string{"rows"})
+	cockpit := p.call("cockpit/query", map[string]any{})
+	if cockpit["result"] == nil || !strings.Contains(string(cockpit["result"]), `"resetEvents"`) {
+		t.Fatalf("negotiated cockpit missing reset events: %s", cockpit["error"])
+	}
+	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
 	old := legacy.call("rows/subscribe", map[string]any{})
+	legacyCockpit := legacy.call("cockpit/query", map[string]any{})
+	if legacyCockpit["result"] == nil || strings.Contains(string(legacyCockpit["result"]), `"resetEvents"`) {
+		t.Fatalf("legacy cockpit negotiation: %s", legacyCockpit["error"])
+	}
 	if strings.Contains(string(old["result"]), "resetEvents") {
 		t.Fatal("unnegotiated client received reset events")
 	}
+}
+
+func containsCapability(caps []string, want string) bool {
+	for _, cap := range caps {
+		if cap == want {
+			return true
+		}
+	}
+	return false
 }
