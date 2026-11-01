@@ -210,6 +210,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var outlinePanel: NSPanel?
     private let outlineView = DockSnapOutlineView()
     private var cardID: String?
+    private var interactionController: DockInteractionController?
+    private var nozzleEvents: DockNozzleEvents?
+    private var fallbackInteractionAction: ((DockInstrumentAction) -> Void)?
+    private var hoveredNozzleID: String?
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "No local subscriptions / 暂无本地订阅")
@@ -325,9 +329,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !retired else { return }
         inputGeneration &+= 1
         permitted = allowed
-        if allowed { rebuild(); edge.start() }
-        else { pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        if allowed { rebuild(); edge.start(); interactionController?.start() }
+        else { interactionController?.stop(preservingPin: true); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
         syncDisplayFollower()
+        interactionController?.refresh()
     }
     private func makeDisplayFollower() -> ActiveDisplayFollower {
         let follower = ActiveDisplayFollower(currentDisplayIdentifier: { [weak self] in
@@ -476,6 +481,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
         }
         edgeGeometries = nextGeometries; edgeViews = nextViews
+        bindInteractionEvents()
         if sliverPrepared {
             let logical = sliverLogicalSize
             // AppKit can round the owned window to whole backing pixels. A data-only
@@ -491,7 +497,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
-        if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
+        if let cardID {
+            if order.contains(cardID) { showCard(cardID, pinned: interactionController?.presentation?.card.isPinned ?? true) }
+            else { dismissCard() }
+        }
         if permitted {
             edge.start(); edge.refresh()
             // Pixel/material changes can leave the geometric presentation equal. Flush that
@@ -764,8 +773,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
     }
-    public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
-    public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh(); interactionController?.refresh() }
+    public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh(); interactionController?.refresh() }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() {
@@ -773,7 +782,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1; displayFollower.forgetLastDisplay()
         rebuild(); syncDisplayFollower(); edge.refresh()
     }
-    private func showCard(_ id: String) {
+    private func showCard(_ id: String, pinned: Bool = true) {
         let now = currentDate()
         guard permitted, !retired, preferences.showDock,
               (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
@@ -790,6 +799,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
+            self.interactionController?.dismissCard()
             self.dismissCard()
             guard self.permitted, !self.retired else { return }
             if self.model?.presentationRows[id] != nil { self.showSettings?() }
@@ -797,9 +807,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
+            self.interactionController?.dismissCard()
             self.dismissCard()
         }
-        do { try card.apply(content, pinned: true) } catch { dismissCard(); return }
+        do { try card.apply(content, pinned: pinned) } catch { dismissCard(); return }
         guard createsNativePanels else { return }
         if cardPanel == nil { cardPanel = makePanel() }
         guard let cardPanel, let anchor = panel?.frame, let screen = NSScreen.screens.first(where: { $0.frame.intersects(anchor) }) else { return }
@@ -833,11 +844,67 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         edge.onPresent = nil; edge.onCommittedPlacement = nil
         onPlacementObserved = nil
         dockView.onNeedsFreshPresentation = nil
+        if let interactionController { uninstallInteraction(interactionController) }
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
+    }
+}
+
+
+extension StaticDockPreviewHost: DockInteractionHostPort {
+    public func interactionEnvironment() -> DockInteractionEnvironment {
+        let orientation = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let view = edgeViews[orientation] ?? dockView
+        let ids = model?.inputs.map(\.id) ?? []
+        return .init(catalogue: ids, preferences: preferences.subscriptions,
+                     targets: view.interactionTargets(edge: orientation), bindingRevision: inputGeneration,
+                     hoveredID: hoveredNozzleID, insideShared: nil, parentOwnsHide: true,
+                     parentExpanded: permitted && (edge.presentation?.state == .expanded),
+                     menuActuallyOpen: menuOpen, active: !retired,
+                     reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation)
+    }
+    public func installInteraction(_ controller: DockInteractionController) {
+        if let old = interactionController { uninstallInteraction(old) }
+        interactionController = controller
+        fallbackInteractionAction = dockView.onAction
+        let events = DockNozzleEvents(controller: controller) { [weak self] in
+            guard let self else { return .right }
+            return self.edge.presentation?.placement?.edge ?? self.nativeEdge(self.preferences.dockEdge)
+        }
+        events.onHover = { [weak self] id in self?.hoveredNozzleID = id }
+        events.insideMainDrop = { [weak self] point in
+            guard let self, self.permitted, !self.retired else { return false }
+            if let panel = self.panel { return panel.frame.contains(point) }
+            return !self.createsNativePanels && self.dockView.bounds.contains(point)
+        }
+        nozzleEvents = events
+        controller.onPresent = { [weak self] value in
+            guard let self, self.permitted, !self.retired else { return }
+            if let id = value.card.subscriptionID { self.showCard(id, pinned: value.card.isPinned) }
+            else { self.dismissCard() }
+        }
+        bindInteractionEvents()
+    }
+    private func bindInteractionEvents() {
+        guard let events = nozzleEvents else { return }
+        for view in [dockView] + alternateViews {
+            events.install(on: view)
+            view.keyboardNavigationEnabled = true
+        }
+    }
+    public func uninstallInteraction(_ controller: DockInteractionController) {
+        guard interactionController === controller else { return }
+        controller.onPresent = nil
+        for view in [dockView] + alternateViews {
+            view.nozzleEventDelegate = nil
+            view.keyboardNavigationEnabled = false
+            view.onAction = fallbackInteractionAction
+        }
+        fallbackInteractionAction = nil
+        nozzleEvents = nil; interactionController = nil; hoveredNozzleID = nil
     }
 }
 

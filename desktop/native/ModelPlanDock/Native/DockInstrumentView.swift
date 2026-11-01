@@ -194,6 +194,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             context?.restoreGState()
         }
     }
+    /// Reorder targets use the current rendered station positions, not a separate layout.
+    public func interactionTargets(edge: DockEdge) -> [DockReorderTarget] {
+        orderedIDs.compactMap { id in
+            guard let rect = stationRect(id) else { return nil }
+            return DockReorderTarget(id: id, along: edge == .bottom ? rect.midX : rect.midY)
+        }
+    }
     private func stationRect(_ id:String)->CGRect? {
         if community {
             guard let i=orderedIDs.firstIndex(of:id) else{return nil}
@@ -212,7 +219,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in
                 guard let self,let node,self.nodes[key] === node,self.permitsAction?(action,.accessibility) ?? true else{return false}
                 // A gate may synchronously refresh the snapshot; recheck this stable AX node afterward.
-                guard self.nodes[key] === node,let onAction=self.onAction else{return false};onAction(action);return true
+                guard self.nodes[key] === node,let onAction=self.onAction else{return false}
+                if self.keyboardNavigationEnabled, case .subscription(let id) = action {
+                    self.keyboardTargetID = id; self.window?.makeFirstResponder(self)
+                }
+                onAction(action);return true
             }
             nodes[key]=node;children.append(node);used.insert(key)
             if oldValue != value {NSAccessibility.post(element:node,notification:.valueChanged)}
@@ -300,6 +311,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         // A gate can replace/reorder stations without removing their readings. Re-hit-test the
         // original physical pointer against the current presentation, rather than validating only ID existence.
         guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action else{return false}
+        if keyboardNavigationEnabled, case .subscription(let id) = action {
+            keyboardTargetID = id; window?.makeFirstResponder(self)
+        }
         if nozzleGlobal != nil,case .subscription(let id)=action,let handler=nozzleEventDelegate{return handler.beginNozzle(id:id,local:current)}
         guard let onAction else{return false};onAction(action);return true
     }
