@@ -336,10 +336,10 @@
         {
           "field": "modelScope",
           "omission": true,
-          "null": true,
-          "wrongType": true,
-          "strict": false,
-          "nullPolicy": "coalesced"
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         },
         {
           "field": "durationSeconds",
@@ -1127,10 +1127,10 @@
         {
           "field": "resetEvents",
           "omission": true,
-          "null": true,
-          "wrongType": true,
-          "strict": false,
-          "nullPolicy": "coalesced"
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
