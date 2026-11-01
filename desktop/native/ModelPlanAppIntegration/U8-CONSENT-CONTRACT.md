@@ -30,9 +30,10 @@ local-history defaults remain separate from first-run explicit selection.
 
 ## Presentation
 
-The scope surface replaces the synthetic `Settings65Homes.subscriptions` rows
-in the normal Settings pane and search. The legacy table is retained only for
-compatibility/legacy callers; it is not a second product permission model.
+The scope surface replaces only the legacy `detectedReaders` / `optionalReaders`
+consent rows in the normal Settings pane and search. Per-subscription visibility,
+alias and read-only data-source rows remain available and searchable (SET-9-16).
+The legacy consent table is not a second product permission model.
 Copy diagnostics is absent from scope consent; About remains its home. The
 controller's allowlisted-copy API remains compatible, with no new clipboard
 writer or implicit copy operation.

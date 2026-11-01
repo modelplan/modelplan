@@ -114,18 +114,33 @@ private actor RowsEntryClient: EngineClient {
         await app.composition.store.consume(.consentChanged(reply))
         XCTAssertEqual(entry.controller.facts?.consentTextVersion, facts.consentTextVersion)
         XCTAssertTrue(entry.controller.isMutationServiceReady)
+        var pageContext=app.settingsHost.application.editor.context
+        pageContext.subscriptions=[.init(id:"synthetic-sub",name:.init("Synthetic subscription","合成订阅"),source:.fresh)]
+        app.settingsHost.application.update(context:pageContext)
         let window = SettingsWindowController(editor: app.settingsHost.application.editor, scopeConsentEntry: entry)
         func find(_ view: NSView, _ id: String) -> Bool { view.accessibilityIdentifier() == id || view.subviews.contains { find($0, id) } }
         XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
         await window.prepare();window.selectPane("subscriptions")
         let shown=await window.acceptanceCheckpoint()
-        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:Set(Settings65Homes.subscriptions.keys.map(\.rawValue))),"U8 replaces the synthetic reader/subscription controls")
+        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue,SettingKey.source.rawValue]
+        let replaced:Set<String>=[SettingKey.detectedReaders.rawValue,SettingKey.optionalReaders.rawValue]
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription controls must remain")
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:replaced),"U8 replaces only the legacy consent rows")
         XCTAssertFalse(shown.windowVisible,"construction proof must not order a Settings window")
         func falseEmpty(_ view:NSView) -> Bool {
             if let text=view as? NSTextField,["No matching settings","没有匹配的设置"].contains(text.stringValue),!text.isHiddenOrHasHiddenAncestor { return true }
             return view.subviews.contains(where:falseEmpty)
         }
         XCTAssertFalse(try XCTUnwrap(window.window?.contentView).subviews.contains(where:falseEmpty),"visible consent controls are not an empty pane")
+        func searchField(_ root:NSView) -> NSSearchField? {
+            (root as? NSSearchField) ?? root.subviews.lazy.compactMap(searchField).first
+        }
+        let search=try XCTUnwrap(searchField(try XCTUnwrap(window.window?.contentView)))
+        search.stringValue="synthetic-sub"
+        window.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:search))
+        let searched=await window.acceptanceCheckpoint()
+        XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 controls must remain searchable by subscription")
+        XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isDisjoint(with:replaced))
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
         XCTAssertFalse(entry.controller.canMutate)

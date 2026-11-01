@@ -74,6 +74,16 @@ private actor U8JourneyEngine:EngineClient {
         try require(firstRun.window == nil && entry.view.window == nil,"journey must remain non-windowed")
         await app.composition.start()
         try require(entry.controller.facts?.scopes.count == 4,"normal entry must share accepted consent facts")
+        var settingsContext=app.settingsHost.application.editor.context
+        settingsContext.subscriptions=[.init(id:"synthetic-sub",name:.init("Synthetic subscription","合成订阅"),source:.fresh)]
+        app.settingsHost.application.update(context:settingsContext)
+        let preferences=await store.snapshot().preferences
+        for (pane,query) in [(Optional("subscriptions"),""),(nil,"synthetic-sub")] {
+            let rows=try SettingsCatalogue.rows(preferences:preferences,context:settingsContext,paneID:pane,query:query)
+            let retained=entry.retainingNonConsentRows(rows)
+            try require(Set(retained.map(\.key)).isSuperset(of:[.visible,.alias,.source]),"SET-9-16 per-subscription visibility, alias and source must survive consent replacement in pane and search")
+            try require(!retained.contains{[SettingKey.detectedReaders,.optionalReaders].contains($0.key)},"only replaced legacy consent rows may be suppressed")
+        }
         try require(entry.controller.selectedIDs.isEmpty,"first-run facts must not pre-check standard or browser scopes")
         entry.controller.selectAll()
         try require(entry.controller.selectedIDs == ["codex.local_history","cursor.saved_login"],"select all must include only known standard paths, never browser or unknown routes")

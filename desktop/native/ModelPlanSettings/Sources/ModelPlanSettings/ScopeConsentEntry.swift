@@ -35,6 +35,10 @@ import ModelPlanWire
     public func endFirstRunPresentation() {
         firstRunView?.retirePresentation();firstRunView=nil;controller.endFirstRunDraft()
     }
+    /// The native Settings renderer and non-windowed journey share this replacement boundary.
+    public func retainingNonConsentRows(_ rows:[SettingsRow]) -> [SettingsRow] {
+        rows.filter{$0.key != .detectedReaders && $0.key != .optionalReaders}
+    }
 
     /// Only call from the owner’s accepted event fanout, synchronously on the main actor.
     public func acceptedFacts(_ facts: WireConsentFacts) { controller.receiveAcceptedFacts(facts) }

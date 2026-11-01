@@ -282,12 +282,10 @@ enum SettingsWords {
         status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
-            let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
+            let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
+            let visible = (scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued)
                 .filter { row in
-                    // The normal consent entry replaces the synthetic subscription
-                    // controls in both the pane and search, without changing stored preferences.
-                    if scopeConsentEntry != nil && Settings65Homes.subscriptions.keys.contains(row.key) { return false }
                     return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
                 }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
