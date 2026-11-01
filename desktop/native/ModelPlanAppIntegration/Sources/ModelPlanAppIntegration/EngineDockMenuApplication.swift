@@ -35,6 +35,7 @@ import ModelPlanShell
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
+    public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
@@ -140,7 +141,8 @@ import ModelPlanShell
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
                 canPresent: { [weak self] in self?.terminating == false },
                 showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
-                activate: activateSettings, makeFirstRun: makeFirstRunSurface)
+                activate: activateSettings, scopeConsentEntry: scopeConsentEntry,
+                makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent)
         }
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()

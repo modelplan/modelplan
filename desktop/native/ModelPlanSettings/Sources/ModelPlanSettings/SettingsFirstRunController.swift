@@ -7,6 +7,10 @@ import AppKit
 @MainActor public final class SettingsFirstRunController: NSWindowController, NSWindowDelegate {
     public let editor: SettingsEditor
     public let host: FirstRunHost
+    private let scopeConsentEntry: ScopeConsentEntry?
+    private let scopePresentation: FirstRunConsentPresentation?
+    private var scopeObserver: UUID?
+    private var scopeUnavailable = false
     public private(set) var errorMessage: String?
     let doneButton = NSButton(), helpButton = NSButton()
     let loginButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
@@ -27,8 +31,9 @@ import AppKit
     private var connectionObserver: UUID?
     private var saveTask: Task<Void, Never>?
 
-    public init(editor: SettingsEditor, host: FirstRunHost = .popup) {
-        self.editor = editor; self.host = host
+    public init(editor: SettingsEditor, host: FirstRunHost = .popup, scopeConsentEntry: ScopeConsentEntry? = nil) {
+        self.editor = editor; self.host = host; self.scopeConsentEntry = scopeConsentEntry
+        self.scopePresentation = scopeConsentEntry.map { FirstRunConsentPresentation(entry: $0) }
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
                               styleMask: [.titled,.closable,.resizable], backing: .buffered, defer: false)
@@ -46,15 +51,29 @@ import AppKit
             let editor = self.editor
             Task { @MainActor in editor.connections.removeObserver(connectionObserver) }
         }
+        if let scopeObserver, let controller = scopeConsentEntry?.controller {
+            Task { @MainActor in controller.removeObserver(scopeObserver) }
+        }
     }
     public func prepare() async {
-        active = true; generation &+= 1; errorMessage = nil
+        active = true; generation &+= 1; let token = generation; errorMessage = nil
+        scopeUnavailable = scopeConsentEntry != nil
         options = nil; baseRevision = nil; touchedLogin = false; touchedReaders = []; pageValid = false
         if observer == nil { observer = editor.observeChanges { [weak self] in self?.refresh() } }
         if connectionObserver == nil { connectionObserver = editor.connections.observe { [weak self] in self?.refreshEnabled() } }
-        await editor.reload(); refresh()
+        await editor.reload()
+        guard active, generation == token, !Task.isCancelled else { return }
+        if let scopeConsentEntry {
+            do {
+                try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
+                scopeUnavailable = false; errorMessage = nil
+                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refreshEnabled() } }
+            } catch { scopeUnavailable = true }
+        }
+        refresh()
         connectionsView.followingKeyView = loginButton
-        if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
+        if scopeConsentEntry != nil { window?.initialFirstResponder = loginButton }
+        else if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
     }
     public func present() async { await prepare(); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
     public func suspend() {
@@ -62,6 +81,8 @@ import AppKit
         if let observer { editor.removeChangeObserver(observer); self.observer = nil }
         if let connectionObserver { editor.connections.removeObserver(connectionObserver); self.connectionObserver = nil }
         connectionsView.suspend()
+        if let scopeObserver { scopeConsentEntry?.controller.removeObserver(scopeObserver); self.scopeObserver = nil }
+        scopePresentation?.suspend(); scopeUnavailable = false
         refreshEnabled()
     }
     public func windowWillClose(_ notification: Notification) { suspend() }
@@ -97,7 +118,8 @@ import AppKit
         for (a,b) in zip(focusOrder,focusOrder.dropFirst()) {a.nextKeyView=b}
         window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
-        for view in [titleLabel,privacy,subscriptions,connectionsView,readerStack,login,status,buttons] {
+        let firstRunScopes = scopePresentation?.container ?? NSStackView()
+        for view in [titleLabel,privacy,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
@@ -125,7 +147,9 @@ import AppKit
             titleLabel.stringValue = SettingsWords.text("Set up ModelPlan", "设置 ModelPlan", language)
             privacy.stringValue = page.privacy.value(language)
             connectionsView.apply(language: language)
-            readerStack.isHidden = editor.connections.isAvailable
+            connectionsView.isHidden = scopeConsentEntry != nil
+            scopePresentation?.apply(language: language)
+            readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
             subscriptions.isHidden = editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
@@ -140,6 +164,7 @@ import AppKit
             loginSubtitle.stringValue = page.loginSubtitle.value(language)
             loginButton.setAccessibilityHelp(loginSubtitle.stringValue)
             doneButton.title = page.done.value(language); helpButton.title = page.seeWhatsHere.value(language)
+            if scopeUnavailable { errorMessage = SettingsWords.text("Reading permissions are busy. Close and try again.", "读取权限正在处理，请关闭后重试。", language) }
             status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
             let appearance: NSAppearance.Name? = p.theme == .system ? nil : p.theme == .night ? .darkAqua : .aqua
             if window?.appearance?.name != appearance { window?.appearance = appearance.flatMap(NSAppearance.init(named:)) }
@@ -150,7 +175,10 @@ import AppKit
         refreshEnabled()
     }
     private func refreshEnabled() {
-        let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil
+        let scopeIdle: Bool
+        if let scopeConsentEntry { if case .idle = scopeConsentEntry.controller.phase { scopeIdle = true } else { scopeIdle = false } }
+        else { scopeIdle = true }
+        let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         doneButton.isEnabled = enabled
