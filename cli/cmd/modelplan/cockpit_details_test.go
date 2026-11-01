@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -38,6 +39,15 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	}
 	if len(data.Alerts) != 1 || data.Alerts[0].Severity != "critical" || data.SessionCoverage != "recording-off" {
 		t.Fatalf("wrong facts: %#v", data)
+	}
+	if slices.Contains(data.Sources, "reset-events") {
+		t.Fatal("unavailable publication reported as an empty available source")
+	}
+	emptyEvents := []rows.ResetEvent{}
+	view.ResetEvents = &emptyEvents
+	data, err = (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
+	if err != nil || !slices.Contains(data.Sources, "reset-events") || len(data.ResetEvents) != 0 {
+		t.Fatalf("empty verified reset source lost: %#v, %v", data, err)
 	}
 	stamp.Generation++
 	if _, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, nil); err == nil {

@@ -20,7 +20,7 @@ import (
 )
 
 func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, admission queries.CockpitAdmission, groups map[string][]wire.CockpitAccount) (wire.CockpitDetails, error) {
-	result := wire.CockpitDetails{Version: 1, Sources: []string{"local-history", "quota-reserve", "quota-thresholds", "reset-events"}, Subscriptions: []wire.CockpitSubscriptionDetails{}, Sessions: []wire.CockpitSession{}, SessionCoverage: "unavailable", ResetEvents: []rows.ResetEvent{}, Alerts: []wire.CockpitAlert{}}
+	result := wire.CockpitDetails{Version: 1, Sources: []string{"quota-reserve", "quota-thresholds"}, Subscriptions: []wire.CockpitSubscriptionDetails{}, Sessions: []wire.CockpitSession{}, SessionCoverage: "unavailable", ResetEvents: []rows.ResetEvent{}, Alerts: []wire.CockpitAlert{}}
 	current := consent.Capture()
 	f := current.Fence()
 	if f.StoreEpoch != admission.Stamp.Epoch || f.Generation != admission.Stamp.Generation {
@@ -100,6 +100,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 	}
 	if view.ResetEvents != nil {
+		result.Sources = append(result.Sources, "reset-events")
 		result.ResetEvents = append(result.ResetEvents, (*view.ResetEvents)...)
 		sort.Slice(result.ResetEvents, func(i, j int) bool { return result.ResetEvents[i].ID < result.ResetEvents[j].ID })
 		if len(result.ResetEvents) > 64 {
@@ -164,6 +165,8 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		return result, ctx.Err()
 	}
 	result.SessionCoverage = "local-last-seen"
+	result.Sources = append(result.Sources, "local-history")
+	sort.Strings(result.Sources)
 	for _, today := range cockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
