@@ -132,5 +132,22 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(reopened.composition.dock.currentMenuBarPreferences?.dockEdge, .left)
         XCTAssertEqual(reopened.composition.dock.dockView.requestedNozzleDiameter, dock.dockView.requestedNozzleDiameter)
         await reopened.composition.stop()
+
+        let otherProfile = profile.appendingPathComponent("system-language")
+        let chineseStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: otherProfile,
+            preferredLanguages: ["fr-FR", "zh-Hans", "en-US"])
+        let chineseSnapshot = await chineseStore.snapshot()
+        XCTAssertEqual(chineseSnapshot.preferences.language, .chinese,
+                       "Use the first supported macOS language")
+        let legacyProfile = profile.appendingPathComponent("legacy-language")
+        let legacyFile = legacyProfile.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+        try FileManager.default.createDirectory(at: legacyFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let legacyBytes = Data(#"{"schemaVersion":1,"preferences":{"language":"zh-CN"}}"#.utf8)
+        try legacyBytes.write(to: legacyFile)
+        let migrated = try EngineRowsEntry.makeSettingsStore(applicationSupport: legacyProfile, preferredLanguages: ["en-US"])
+        let migratedSnapshot = await migrated.snapshot()
+        XCTAssertEqual(migratedSnapshot.preferences.language, .chinese,
+                       "A migrated language choice takes precedence over the system default")
+        XCTAssertEqual(try Data(contentsOf: legacyFile), legacyBytes)
     }
 }
