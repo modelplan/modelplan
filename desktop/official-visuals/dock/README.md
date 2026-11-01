@@ -5,6 +5,12 @@ This package contains the native official visual implementation. It is covered
 by the adjacent official visual license, independently of the generic Dock API.
 Vendor marks retain their owners' rights and are not licensed by this package.
 
+`Resources/artwork.json` binds the original P1 lossless layers and the A5
+night button layers to byte counts and SHA-256 hashes. A5 resource copies must
+remain identical to their canonical files in `runtime/ignition-a5`; no pixels
+are recoloured or redrawn. This pack contains no vendor marks. The bundle
+loader refuses unregistered names and altered bytes before decoding.
+
 Current scope:
 
 | Requirements | Implementation and evidence |

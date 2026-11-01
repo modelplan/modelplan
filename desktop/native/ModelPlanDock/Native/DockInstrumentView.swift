@@ -26,6 +26,20 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
     public var keyboardTargetID:String?
+    public var interactionProjectionAvailable: Bool { !community && !failed && skin != nil }
+    /// Registered local geometry, never a second layout or an input window.
+    public func interactionTargets(edge: DockEdge) -> [DockReorderTarget] {
+        guard !community, !failed else { return [] }
+        return orderedIDs.compactMap { id in
+            guard let rect = stationRect(id) else { return nil }
+            return DockReorderTarget(id:id,along:Double(edge == .bottom ? rect.midX : rect.midY))
+        }
+    }
+    public var interactionOverflowIDs: Set<String> {
+        guard !community, !failed, skin?.stations.contains(where: { $0.overflowCount != nil }) == true else { return [] }
+        return Set(orderedIDs).subtracting(skin?.stations.compactMap(\.subscriptionID) ?? [])
+    }
+    public func interactionAnchor(_ id: String) -> CGRect? { stationRect(id) }
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?
@@ -226,7 +240,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
                 case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
                 case .cardsExpiring:label=zh ? "重置卡即将过期":"Reset card expiring"
-                case .credits:label=zh ? "正在使用余额":"Using credits"
+                case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
                 append("notice."+id,label,nil,label,station.eventRect.offsetBy(dx:-origin.x,dy:-origin.y),.notice(id))
             }
