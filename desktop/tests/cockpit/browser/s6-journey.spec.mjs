@@ -205,14 +205,19 @@ test('study faders and MFD retain empty states without invented cockpit details'
   await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  expect(await receive(send('display',{data:sample()}))).toBe(true);
+  const mfdData=sample();mfdData.projection.rows[0].accounts[0].valueState='retained';
+  expect(await receive(send('display',{data:mfdData}))).toBe(true);
   await expect(page.locator('.dk-fad')).toBeVisible();await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
   await expect(page.locator('.fd-strip:disabled')).toHaveCount(3);await expect(page.locator('#cockpit')).toHaveAttribute('data-details-available','false');
   await expect(page.locator('.mfd-page')).toHaveText('No data available');await page.getByRole('button',{name:'Plans',exact:true}).click();
   await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.mfd-page .sp-now')).toHaveCount(4);await expect(page.locator('.mfd-page')).toContainText('75%');await expect(page.locator('.mfd-page')).toContainText('Last known reading');
+  const verified=sample().projection.rows[0].accounts[0].subscriptionRef;
+  expect(await receive(send('shell',{...shell,scope:verified}))).toBe(true);await expect(page.locator('.mfd-page .sp-now')).toHaveCount(1);
+  expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sp-now')).toHaveCount(4);
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
-  await expect(page.getByRole('button',{name:'订阅',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page')).toHaveText('暂无数据');
-  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.getByRole('button',{name:'总览',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('button',{name:'订阅',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page')).toContainText('模拟方案');await expect(page.locator('.mfd-page')).toContainText('上次读数');
+  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.getByRole('button',{name:'总览',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.mfd-page .sp-now')).toHaveCount(0);
 });
 
 test('record strip preserves unknown live-session coverage across tier and clear',async({page})=>{

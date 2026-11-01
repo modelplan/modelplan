@@ -3,13 +3,15 @@
 // Current bridge has no cockpitDetailsV1 or publication payload: no study
 // fixture readings, rankings or invented session controls are displayed.
 import {unavailablePrototypeDetailsFixture} from './prototype-details-fixture-adapter.js';
+import type {WireCockpitData} from '../generated/wire.js';
+import {cockpitMembers} from './members.js';
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
 const pages=[{id:'overview',en:'Overview',zh:'总览'},{id:'plans',en:'Plans',zh:'订阅'},{id:'tune',en:'Tune',zh:'档位'},{id:'where',en:'Where',zh:'去向'}] as const;
 export function mountPrototypeDeck(root:HTMLElement){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  const details=unavailablePrototypeDetailsFixture();
- let locale:Locale='en',selected=0;root.dataset.detailsAvailable=String(details.liveSessions!==null);
+ let locale:Locale='en',selected=0,scope='all',data:WireCockpitData|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
  const label=node('span','silk sc-led'),lcd=node('span','sc-lcd'),travel=node('span','sc-travel');
  const levels=['Max','XHigh','High','Med','Low'];for(const [i,level] of levels.entries()){const b=node('button','silk sc-l',level);b.type='button';b.disabled=true;b.tabIndex=-1;b.style.setProperty('--k',String(i/4));travel.append(b);}scale.replaceChildren(label,lcd,travel);
  for(let i=0;i<3;i++){
@@ -25,7 +27,17 @@ export function mountPrototypeDeck(root:HTMLElement){
  function paint(){
   label.textContent=locale==='en'?'Status':'状态';bar.setAttribute('aria-label',locale==='en'?'Cockpit pages':'驾驶舱页面');
   buttons.forEach(({b,caption},i)=>{caption.textContent=locale==='en'?pages[i].en:pages[i].zh;b.classList.toggle('on',i===selected);b.setAttribute('aria-pressed',String(i===selected));});
-  page.className='mfd-page pg-'+pages[selected].id;page.replaceChildren(node('p','mfd-empty',locale==='en'?'No data available':'暂无数据'));
+  page.className='mfd-page pg-'+pages[selected].id;page.replaceChildren();
+  if(selected===1&&data){
+   const all=cockpitMembers(data),scoped=scope==='all'?all:all.filter(member=>member.key===scope),members=scoped.length?scoped:all;
+   for(const {row,account} of members){
+    const card=node('div','sp-now'),head=node('div','sp-h');head.append(node('b',undefined,locale==='en'?row.name.en:row.name.zh));card.append(head);
+    if(account.plan.name)card.append(node('div','sp-sub',locale==='en'?account.plan.name.en:account.plan.name.zh));
+    if(account.valueState==='retained')card.append(node('div','sp-sub',locale==='en'?'Last known reading':'上次读数'));
+    const windows=node('div','sp-ws');for(const w of account.valueState==='none'?[]:account.windows){const line=node('div','sp-w');line.append(node('span','lbl',locale==='en'?w.label.en:w.label.zh),node('b','v',w.remainingPercent===null?'--':`${Math.round(w.remainingPercent)}%`));windows.append(line);}card.append(windows);page.append(card);
+   }
+  }
+  if(!page.childElementCount)page.append(node('p','mfd-empty',locale==='en'?'No data available':'暂无数据'));
  }
- paint();return {locale(value:Locale){locale=value;paint();},clear(){selected=0;paint();},dispose(){for(const {b} of buttons)b.onclick=null;}};
+ paint();return {locale(value:Locale){locale=value;paint();},render(value:WireCockpitData){data=value;paint();},scope(value:string){scope=value;paint();},clear(){data=null;scope='all';selected=0;paint();},dispose(){data=null;for(const {b} of buttons)b.onclick=null;}};
 }
