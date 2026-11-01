@@ -51,6 +51,23 @@ with open(out, 'ab') as o, open(err, 'ab') as e:
 '''
 
 
+def native_sleeper(test, path):
+    """A real native binary at `path` (never a script: its executable would be the interpreter).
+    Linux copies /bin/sleep; macOS compiles one, because launch constraints stop copied system
+    binaries from running outside their original location."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform != 'darwin':
+        shutil.copyfile('/bin/sleep', path); path.chmod(0o755)
+        return path
+    source = path.with_name(path.name + '.c')
+    source.write_text('#include <unistd.h>\nint main(void) { sleep(60); return 0; }\n')
+    compiler = shutil.which('cc') or shutil.which('clang')
+    if compiler is None or subprocess.run([compiler, '-o', str(path), str(source)], capture_output=True).returncode != 0:
+        test.skipTest('no C compiler for a native in-scope binary')
+    source.unlink()
+    return path
+
+
 def alive(pid):
     try:
         os.kill(pid, 0)
@@ -367,8 +384,7 @@ class NeverRegisteredClosure(unittest.TestCase):
         self.assertTrue(guardian.finishable('launcher-lost', closed, subject))
 
     def test_unregistered_process_in_scope_is_stopped_but_not_reported_as_never_started(self):
-        helper = self.dir / 'App.app' / 'Contents' / 'MacOS' / 'Helper'; helper.parent.mkdir(parents=True)
-        shutil.copyfile('/bin/sleep', helper); helper.chmod(0o755)
+        helper = native_sleeper(self, self.dir / 'App.app' / 'Contents' / 'MacOS' / 'Helper')
         stray = subprocess.Popen([str(helper), '60'])  # under the bundle prefix, not the exact subject path
         self.addCleanup(lambda: stray.poll() is None and stray.kill())
         self.reserve(self.dead)
@@ -411,12 +427,8 @@ class NeverRegisteredClosure(unittest.TestCase):
         self.assertFalse(guardian.finishable('stopped', False, 'never-started'))
 
     def test_scan_never_matches_by_process_name(self):
-        same_name = self.dir / 'other' / 'App'; same_name.parent.mkdir()
-        shutil.copyfile('/bin/sleep', same_name); same_name.chmod(0o755)
-        ours = self.dir / 'App.app' / 'Contents' / 'MacOS' / 'App'; ours.parent.mkdir(parents=True)
-        shutil.copyfile('/bin/sleep', ours); ours.chmod(0o755)
-        if not sys.platform.startswith('linux'):
-            self.skipTest('exercises the /proc enumeration')
+        same_name = native_sleeper(self, self.dir / 'other' / 'App')
+        ours = native_sleeper(self, self.dir / 'App.app' / 'Contents' / 'MacOS' / 'App')
         other = subprocess.Popen([str(same_name), '60']); mine = subprocess.Popen([str(ours), '60'])
         try:
             found = wait_until(lambda: process_scan.scan(process_scan.scope_for(ours), guardian.identity), 5, 'not found')
@@ -467,6 +479,20 @@ class ScopeIsPathOnly(unittest.TestCase):
                 patch.object(Path, 'read_text', side_effect=lambda *a, **k: self.fail('read_text')):
             process_scan.scan(self.scope, lambda pid: None)
         self.assertEqual([p for p in opened if p.startswith('/proc/')], [])
+
+    def test_paths_compare_canonicalised_through_symlinked_components(self):
+        # macOS reports /private/var/folders/... while a scope may be written via /var/folders/...
+        real = self.dir / 'real'; (real / 'App.app' / 'Contents' / 'MacOS').mkdir(parents=True)
+        link = self.dir / 'link'; link.symlink_to(real)
+        exe = real / 'App.app' / 'Contents' / 'MacOS' / 'App'; exe.write_bytes(b'x')
+        ident = lambda pid: dict(pid=pid, startSeconds=1, startMicroseconds=0)
+        for scope in (dict(executable=str(link / 'App.app/Contents/MacOS/App')), dict(prefix=str(link / 'App.app')),
+                      process_scan.scope_for(link / 'App.app/Contents/MacOS/App', prefix=link / 'App.app')):
+            for reported in (str(exe), str(link / 'App.app/Contents/MacOS/App')):
+                with self.subTest(scope=scope, reported=reported):
+                    self.assertEqual([x['pid'] for x in process_scan.scan(scope, ident, candidates=[(7, reported)])], [7])
+        self.assertEqual(process_scan.scan(dict(prefix=str(link / 'App.app')), ident,
+                                           candidates=[(7, str(self.dir / 'App.app-other/App'))]), [])
 
     def test_spawned_helper_is_matched_by_recorded_pid_and_start_time(self):
         child = self.spawn()  # its executable is the interpreter, outside every path in the scope

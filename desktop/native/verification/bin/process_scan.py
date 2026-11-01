@@ -96,13 +96,20 @@ def _darwin_candidates():
             yield pid, os.fsdecode(path.raw[:n])
 
 
+def _canonical(path):
+    """Both sides compare canonicalised: on macOS proc_pidpath and realpath may differ by symlinked
+    components such as /var -> /private/var (TMPDIR lives under /var/folders)."""
+    return os.path.realpath(path)
+
+
 def _in_scope(exe, scope):
-    if not isinstance(exe, str):
+    if not isinstance(exe, str) or not exe.startswith('/'):
         return None
-    if scope.get('executable') is not None and exe == scope['executable']:
+    exe = _canonical(exe)
+    if scope.get('executable') is not None and exe == _canonical(scope['executable']):
         return 'executable'
     prefix = scope.get('prefix')
-    if prefix is not None and exe.startswith(prefix.rstrip('/') + '/'):
+    if prefix is not None and exe.startswith(_canonical(prefix).rstrip('/') + '/'):
         return 'prefix'
     return None
 
