@@ -15,8 +15,8 @@ import (
 
 type CockpitAdmission struct {
 	RedBelow int
-	Stamp  appserver.Stamp
-	Scopes []string
+	Stamp    appserver.Stamp
+	Scopes   []string
 }
 
 // CockpitSource admits every covered scope before reading display values.
@@ -104,18 +104,33 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 // cockpitParams keeps legacy empty queries valid while requiring an explicit
 // negotiated capability for the App-owned critical threshold.
 func cockpitParams(raw json.RawMessage, enabled bool) (int, error) {
- raw = bytes.TrimSpace(raw)
- if len(raw) == 0 { return 25, nil }
- if raw[0] != '{' { return 0, protocol(wire.CodeInvalidParams) }
- decoder := json.NewDecoder(bytes.NewReader(raw))
- decoder.DisallowUnknownFields()
- var p wire.CockpitQueryParams
- if decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF { return 0, protocol(wire.CodeInvalidParams) }
- var presence map[string]json.RawMessage
- if json.Unmarshal(raw, &presence) != nil { return 0, protocol(wire.CodeInvalidParams) }
- value, present := presence["redBelow"]
- if !present { return 25, nil }
- if !enabled || bytes.Equal(bytes.TrimSpace(value), []byte("null")) { return 0, protocol(wire.CodeInvalidParams) }
- switch p.RedBelow { case 10, 16, 20, 25: return p.RedBelow, nil }
- return 0, protocol(wire.CodeInvalidParams)
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return 25, nil
+	}
+	if raw[0] != '{' {
+		return 0, protocol(wire.CodeInvalidParams)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var p wire.CockpitQueryParams
+	if decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF {
+		return 0, protocol(wire.CodeInvalidParams)
+	}
+	var presence map[string]json.RawMessage
+	if json.Unmarshal(raw, &presence) != nil {
+		return 0, protocol(wire.CodeInvalidParams)
+	}
+	value, present := presence["redBelow"]
+	if !present {
+		return 25, nil
+	}
+	if !enabled || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return 0, protocol(wire.CodeInvalidParams)
+	}
+	switch p.RedBelow {
+	case 10, 16, 20, 25:
+		return p.RedBelow, nil
+	}
+	return 0, protocol(wire.CodeInvalidParams)
 }

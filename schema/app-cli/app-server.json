@@ -315,6 +315,22 @@
       ],
       "type": "object"
     },
+    "CockpitQueryParams": {
+      "additionalProperties": false,
+      "properties": {
+        "redBelow": {
+          "enum": [
+            10,
+            16,
+            20,
+            25
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
     "CockpitResetCount": {
       "additionalProperties": false,
       "properties": {
@@ -2265,8 +2281,7 @@
               "const": "cockpit/query"
             },
             "params": {
-              "maxProperties": 0,
-              "type": "object"
+              "$ref": "#/$defs/CockpitQueryParams"
             }
           },
           "required": [

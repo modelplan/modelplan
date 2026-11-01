@@ -1652,6 +1652,30 @@ public struct WireCockpitDetails: Codable, Sendable {
     }
 }
 
+public struct WireCockpitQueryParams: Codable, Sendable {
+    public let `redBelow`: Int?
+    private enum CodingKeys: String, CodingKey {
+        case `redBelow`
+    }
+    public init(`redBelow`: Int? = nil) throws {
+        self.`redBelow` = `redBelow`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`redBelow`), try c.decodeNil(forKey: .`redBelow`) { throw WireDecodeError.invalidIdentity }
+        self.`redBelow` = try? c.decodeIfPresent(Int.self, forKey: .`redBelow`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`redBelow`, forKey: .`redBelow`)
+    }
+    private func validate() throws {
+    }
+}
+
 public struct WireCockpitResetCount: Codable, Sendable {
     public let `kind`: String
     public let `count`: Int?

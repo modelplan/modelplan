@@ -141,7 +141,14 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err := validator.Validate("app-server", encodedDetails); err != nil {
 		t.Fatalf("cockpit details violate schema: %v", err)
 	}
+	configured := detailsClient.call("cockpit/query", map[string]any{"redBelow": 16})
+	if configured["result"] == nil {
+		t.Fatalf("negotiated threshold rejected: %s", configured["error"])
+	}
 	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
+	if rejected := legacy.call("cockpit/query", map[string]any{"redBelow": 16}); rejected["error"] == nil {
+		t.Fatal("legacy client accepted negotiated-only threshold")
+	}
 	old := legacy.call("rows/subscribe", map[string]any{})
 	legacyCockpit := legacy.call("cockpit/query", map[string]any{})
 	if legacyCockpit["result"] == nil || strings.Contains(string(legacyCockpit["result"]), `"resetEvents"`) || strings.Contains(string(legacyCockpit["result"]), `"details"`) {

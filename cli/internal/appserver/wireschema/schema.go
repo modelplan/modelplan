@@ -86,7 +86,7 @@ func Generate(root string) ([]byte, error) {
 		"HistoryQueryParams":   reflect.TypeFor[wire.HistoryQueryParams](),
 		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
 		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
-		"CockpitQueryParams": reflect.TypeFor[wire.CockpitQueryParams](),
+		"CockpitQueryParams":   reflect.TypeFor[wire.CockpitQueryParams](),
 		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
 		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
 		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
@@ -150,7 +150,9 @@ func Generate(root string) ([]byte, error) {
 		}
 		if param != "" {
 			props["params"] = object{"$ref": "#/$defs/" + param}
-			if method != "cockpit/query" { required = append(required, "params") }
+			if method != "cockpit/query" {
+				required = append(required, "params")
+			}
 		} else {
 			props["params"] = object{"type": "object", "maxProperties": 0}
 		}

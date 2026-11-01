@@ -28,7 +28,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	}
 	now := time.Now()
 	redBelow := admission.RedBelow
-	if redBelow == 0 { redBelow = 25 }
+	if redBelow == 0 {
+		redBelow = 25
+	}
 	byRef := map[string]*wire.CockpitSubscriptionDetails{}
 	refs := make([]string, 0, len(groups))
 	for ref := range groups {

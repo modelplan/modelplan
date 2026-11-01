@@ -121,7 +121,11 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	case reflect.Bool:
 		v.SetBool(false)
 	case reflect.Int, reflect.Int64:
-		if name == "RedBelow" { v.SetInt(25) } else { v.SetInt(1) }
+		if name == "RedBelow" {
+			v.SetInt(25)
+		} else {
+			v.SetInt(1)
+		}
 	case reflect.Uint64:
 		v.SetUint(7)
 	case reflect.Float64:

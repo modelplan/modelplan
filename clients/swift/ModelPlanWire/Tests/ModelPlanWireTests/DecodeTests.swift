@@ -51,6 +51,14 @@ final class DecodeTests: XCTestCase {
         else { XCTAssertThrowsError(try decodeCapture(type, bytes), context) }
     }
 
+    func testCockpitThresholdIsStrictAndBounded() throws {
+        let decoder = JSONDecoder()
+        XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(#"{"redBelow":16}"#.utf8)).redBelow, 16)
+        for json in [#"{"redBelow":17}"#, #"{"redBelow":"16"}"#, #"{"redBelow":null}"#] {
+            XCTAssertThrowsError(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)))
+        }
+    }
+
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)

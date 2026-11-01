@@ -471,6 +471,21 @@
       ]
     },
     {
+      "file": "WireCockpitQueryParams.json",
+      "type": "WireCockpitQueryParams",
+      "optional": [
+        {
+          "field": "redBelow",
+          "omission": true,
+          "null": false,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": []
+    },
+    {
       "file": "WireCockpitResetCount.json",
       "type": "WireCockpitResetCount",
       "optional": [
