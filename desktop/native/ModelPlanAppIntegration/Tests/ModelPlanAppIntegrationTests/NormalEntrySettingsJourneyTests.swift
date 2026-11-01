@@ -61,6 +61,8 @@ private actor SettingsJourneyClient: EngineClient {
         await first.composition.start()
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
+        XCTAssertTrue(editor.canPresentFirstRun, "The normal entry must route the first-run action")
+        XCTAssertTrue(editor.context.capabilities.firstRunPreviewAvailable, "First-run navigation must be available from Settings")
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
         let initialNozzle = dock.dockView.requestedNozzleDiameter
