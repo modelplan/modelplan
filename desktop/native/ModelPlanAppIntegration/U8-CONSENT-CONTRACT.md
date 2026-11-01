@@ -3,7 +3,10 @@
 The normal entry exposes `app.scopeConsentEntry`. It is backed by the existing
 EngineClient, accepted EngineStore event fanout and live ConsentGrantFactory.
 Do not create a second consent service or restore grants from local reader
-booleans. Requirements: SET-9-17, SET-9-20, FR-9-05.
+booleans. Implemented backend requirements: SET-9-17 and scoped SET-9-20.
+The first-run API is **interface only for consumer #398**: it provides the backend
+for FR-9-05 but does not implement its normal-launch presentation. #398 owns
+FR-9-05/FR-9-09 window activation and ordering.
 
 ## First-run consumer
 
@@ -55,6 +58,9 @@ no optimistic grant, signed/unsigned guidance, view retirement, privacy clear
 and restore without a saved grant. Native Settings tests additionally assert
 that the legacy controls are absent; the CLT runner does not claim XCTest.
 
-This consent backend lands before the first-run composition consumer. U6 drive,
+This consent backend lands before first-run composition consumer #398. The
+retained-menu-item compatibility fix applies to the existing legacy integration;
+it does not claim normal-entry MENU-08 wiring, which remains separate work.
+U6 drive,
 device runs and final-package/L2/L3 evidence are separate later acceptance work,
 not prerequisites to merging this backend. Required CI/reviews still apply.
