@@ -219,6 +219,10 @@ private actor S4RowsClient: EngineClient {
             throw Failure(description:"announced event must reach the normal host before the menu indicator is tested")
         }
         let displayed = entry.noticeIndicator.notice == entry.composition.dock.menuNotice
+        entry.composition.dock.setPresentationAllowed(true)
+        try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
+        entry.composition.dock.acknowledgeDockReveal()
+        try require(entry.noticeIndicator.notice == nil, "opening Dock must clear the indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }

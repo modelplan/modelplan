@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
+import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 @testable import ModelPlanCockpitWeb
@@ -115,15 +116,28 @@ final class CommunityCockpitEntryTests:XCTestCase {
             await app.prepare(); app.composition.dock.setPresentationAllowed(true)
             app.renderMenu()
             let status=try XCTUnwrap(app.liveStatusMenu)
-            let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "即将推出 / Coming soon") })
+            let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
             XCTAssertEqual(statusItem.isEnabled,enabled)
             let menu=app.composition.dock.menu()
-            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "即将推出 / Coming soon") })
+            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
             XCTAssertEqual(item.isEnabled,enabled)
             app.composition.dock.perform(NSSelectorFromString("openConsole"))
             app.perform(NSSelectorFromString("showConsoleMenu"))
             XCTAssertEqual(constructed,enabled ? 1 : 0)
             XCTAssertEqual(surface.shows,enabled ? 2 : 0)
+            if !enabled {
+                let editor = app.settingsHost.application.editor
+                _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+                app.renderMenu()
+                let chinese = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "即将推出" })
+                XCTAssertFalse(chinese.isEnabled)
+                let chineseDock = app.composition.dock.menu()
+                XCTAssertFalse(try XCTUnwrap(chineseDock.items.first { $0.title == "即将推出" }).isEnabled)
+                app.composition.dock.pauseForLifecycle()
+                let paused = app.composition.dock.menu()
+                XCTAssertTrue(paused.items.contains { $0.title == "退出 ModelPlan" })
+                XCTAssertTrue(paused.items.contains { $0.title == "即将推出" && !$0.isEnabled })
+            }
             await app.composition.stop()
         }
     }

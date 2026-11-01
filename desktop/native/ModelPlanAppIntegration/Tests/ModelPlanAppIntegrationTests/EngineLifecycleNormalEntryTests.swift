@@ -14,6 +14,10 @@ private actor LifecycleEngine: EngineClient {
     private var current: EngineDeliveryContext?
     private var first: EngineDeliveryContext?
     private var starts = 0, stops = 0
+    private var consentError: EngineClientError = .unsupportedCapability
+    private var consentCalls = 0
+    func consentCount() -> Int { consentCalls }
+    func failConsent() { consentError = .protocolViolation }
     private var holdStop = false
     private var stopGate: CheckedContinuation<Void, Never>?
     func holdNextStop() { holdStop = true }
@@ -42,7 +46,7 @@ private actor LifecycleEngine: EngineClient {
         if starts == 1, let current { try await publish(current) }
         return .init(requestID: .string("synthetic-subscribe-\(starts)"))
     }
-    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { consentCalls += 1; throw consentError }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -53,6 +57,23 @@ private actor LifecycleEngine: EngineClient {
 }
 
 @MainActor final class EngineLifecycleNormalEntryTests: XCTestCase {
+    func testConsentFailureWithdrawsNormalEntryUntilRetry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-consent-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        var client: LifecycleEngine?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"]), createsNativePanels: false, makeClient: { _, store in let value = LifecycleEngine(store: store, rows: fixture); client = value; return value }, activateSettings: {})
+        await app.prepare(); let engine = try XCTUnwrap(client); await engine.failConsent()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if await engine.consentCount() > 0 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let count = await engine.consentCount(); XCTAssertEqual(count, 1)
+        try await Task.sleep(for: .milliseconds(30))
+        XCTAssertTrue(app.lifecyclePaused, "A real consent failure must withdraw the normal presentation")
+        XCTAssertEqual(app.liveStatusMenu?.items.first?.title, "Waiting for current readings. Refresh to retry.")
+        await app.stopLifecycle()
+    }
+
     func testSleepWakeAndActivityGateNeverReshowOldRows() async throws {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("lifecycle-journey-" + UUID().uuidString)

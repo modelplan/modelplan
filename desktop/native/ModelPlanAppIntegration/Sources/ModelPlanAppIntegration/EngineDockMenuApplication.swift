@@ -313,7 +313,7 @@ import ModelPlanMenuVerification
             .init(title: detail),
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
             .init(title: nil),
-            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : "即将推出 / Coming soon", action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
+            .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
             .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
             .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),

@@ -98,7 +98,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let appearance: Appearance?
     private var attention = DockAttentionState()
     private var attentionSignals: [DockSubscriptionSignal] = []
-    private var attentionWasSliver = false
+    private var attentionWasExpanded = false
     public private(set) var menuNotice: DockNotice?
     /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
     public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
@@ -960,7 +960,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
-            attentionWasSliver = false; pointerSurface.stop()
+            attentionWasExpanded = false; pointerSurface.stop()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil { panel = makePanel(forDock: true) }
@@ -984,7 +984,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
@@ -997,11 +997,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
-        if panel.isVisible, value.state == .expanded, attentionWasSliver {
-            try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
-            publishAttention()
-        }
-        attentionWasSliver = panel.isVisible && value.state == .sliver
+        if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
+        attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
         publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
@@ -1076,10 +1073,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         var items: [DockMenuPresentationItem] = []
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.cockpitMenu.value(preferences.language)))
+            items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
             items.append(.init(title: EngineRowsText.settings.value(preferences.language)))
             items.append(.init(title: nil))
-            let quit = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+            let english = preferences.language == .english
+            let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
             items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
             component.replace(with: items)
             return menu
@@ -1113,7 +1111,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
         items.append(.init(title: nil))
-        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : "即将推出 / Coming soon", action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
+        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
         items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
         items.append(.init(title: english ? "Hide Dock" : "隐藏挂件", action: { [weak self] in self?.hideDockMenu() }))
         component.replace(with: items)
@@ -1121,6 +1119,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    func acknowledgeDockReveal() {
+        guard permitted, !retired else { return }
+        try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
+        publishAttention()
+    }
     public func acknowledgeCockpitOpening() {
         guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())

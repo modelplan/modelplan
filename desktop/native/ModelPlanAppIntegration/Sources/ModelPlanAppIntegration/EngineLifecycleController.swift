@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import ModelPlanCore
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -43,9 +44,15 @@ import ModelPlanShell
                 self.expected = context
                 _ = try await self.composition.client.subscribeRows(timeout: nil)
                 guard self.desired, self.generation == token, !Task.isCancelled else { return }
+                do { _ = try await self.composition.client.consent(timeout: nil) }
+                catch EngineClientError.unsupportedCapability { /* Older engines may not expose consent. */ }
+                guard self.desired, self.generation == token, !Task.isCancelled else { return }
                 self.subscriptionReady = true; self.publishIfFresh()
-                _ = try? await self.composition.client.consent(timeout: nil)
-            } catch { /* Keep the presentation withdrawn until a current subscription succeeds. */ }
+            } catch {
+                guard self.desired, self.generation == token, !Task.isCancelled else { return }
+                Logger(subsystem: "org.modelplan.community", category: "lifecycle").error("Engine restart or consent failed")
+                self.subscriptionReady = false; self.delivered = false; self.onPause()
+            }
         }
     }
     func stopAndWait() async {
