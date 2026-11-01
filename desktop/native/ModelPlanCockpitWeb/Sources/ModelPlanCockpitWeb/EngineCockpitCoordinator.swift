@@ -222,7 +222,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         reply.envelope.consentGeneration == delivery.floor.generation
       {
         scopeMembers=CockpitMemberScopes.keys(reply.envelope.data)
-        if !scopeMembers.contains(selectedScope) { selectedScope="all" }
+        if CockpitMemberScopes.isIndexedFallback(selectedScope) || !scopeMembers.contains(selectedScope) { selectedScope="all" }
         page?.display(reply.envelope.data, ticket: ticket)
         page?.updateScope(selectedScope)
       }

@@ -241,6 +241,37 @@ extension CoordinatorTests {
     replacement.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"all")
     await coordinator.shutdown();await client.stop()
   }
+  @MainActor func testUnverifiedIndexedSelectionResetsAfterMemberReorder() async throws {
+    var page:PageProbe?
+    let coordinator=EngineCockpitCoordinator { context in let value=PageProbe(context);page=value;return value }
+    let client=HeldClient();coordinator.bind(client:client)
+    let delivery=EngineDeliveryContext(sessionID:"s-00000000-0000-0000-0000-000000000001",floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+    await coordinator.consume(.context(delivery));coordinator.open()
+    for _ in 0..<100 { if await client.requests==1 { break };await Task.yield() }
+    let url=try XCTUnwrap(Bundle.module.url(forResource:"cockpit",withExtension:"json",subdirectory:"Fixtures"))
+    var root=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:url)) as? [String:Any])
+    var projection=try XCTUnwrap(root["projection"] as? [String:Any])
+    var rows=try XCTUnwrap(projection["rows"] as? [[String:Any]])
+    var first=try XCTUnwrap((rows[0]["accounts"] as? [[String:Any]])?.first),second=first
+    first.removeValue(forKey:"subscriptionRef");second.removeValue(forKey:"subscriptionRef")
+    first["accountLocator"]="1111111111111111";second["accountLocator"]="2222222222222222"
+    func data(_ accounts:[[String:Any]]) throws -> WireCockpitData {
+      rows[0]["accounts"]=accounts;projection["rows"]=rows;root["projection"]=projection;root["subscriptions"]=[]
+      return try JSONDecoder().decode(WireCockpitData.self,from:JSONSerialization.data(withJSONObject:root))
+    }
+    func response(_ data:WireCockpitData) throws -> EngineClientEvent {
+      .response(requestID:.string(UUID().uuidString),.cockpit(.init(envelope:try .init(sessionId:delivery.sessionID,storeEpoch:delivery.floor.storeEpoch,consentGeneration:1,data:data),delivery:delivery)))
+    }
+    await coordinator.consume(try response(data([first,second])))
+    let current=try XCTUnwrap(page);current.onIntent?(.scopeSelect("codex#saved_login_api#2"))
+    XCTAssertEqual(coordinator.selectedScope,"codex#saved_login_api#2")
+    await client.complete();await coordinator.joinCurrentQueryForVerification();coordinator.refresh()
+    for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
+    await coordinator.consume(try response(data([second,first])))
+    XCTAssertEqual(coordinator.selectedScope,"all","An ordinal cannot follow a different account across refresh")
+    XCTAssertEqual(current.scopeUpdates.last?.0,"all")
+    await coordinator.shutdown();await client.stop()
+  }
   @MainActor func testRemovedAuthoritativeMemberResetsScopeWithoutRetagging() async throws {
     var page:PageProbe?
     let coordinator=EngineCockpitCoordinator { context in let value=PageProbe(context);page=value;return value }
@@ -256,6 +287,10 @@ extension CoordinatorTests {
     current.onIntent?(.scopeSelect("0123456789abcdef"));XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef")
     await client.complete();await coordinator.joinCurrentQueryForVerification();coordinator.refresh()
     for _ in 0..<100 { if await client.requests==2 { break };await Task.yield() }
+    await coordinator.consume(try response(data))
+    XCTAssertEqual(coordinator.selectedScope,"0123456789abcdef","A verified reference remains selected across refresh")
+    await client.complete();await coordinator.joinCurrentQueryForVerification();coordinator.refresh()
+    for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
     let empty=try WireCockpitData(projection:.init(rowsVersion:1,rows:[],rowsSummary:data.projection.rowsSummary),subscriptions:[])
     await coordinator.consume(try response(empty))
     XCTAssertEqual(coordinator.selectedScope,"all");XCTAssertEqual(current.queryTicket,ticket)

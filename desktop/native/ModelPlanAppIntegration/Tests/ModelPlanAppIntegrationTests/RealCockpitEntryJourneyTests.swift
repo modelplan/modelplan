@@ -151,7 +151,9 @@ import ModelPlanWire
                 let refreshed=expectation(description:"fresh synthetic response renders both collision members");nextRendered=refreshed
                 try await client.notifyRowsChanged()
                 await fulfillment(of:[refreshed],timeout:10)
-                _ = try await waitForDOM(page,label:"collision scope survives refresh") { $0["scopeKey"] as? String == "codex#saved_login_api#2" }
+                _ = try await waitForDOM(page,label:"unstable collision scope resets on refresh") { $0["scopeKey"] as? String == "all" }
+                XCTAssertEqual(page.verificationShellState?.scope,"all")
+                try await click(".eng-led[data-page='1']",page:page)
                 try await waitForValue("75%")
                 try await click(".eng-led[data-page='0']",page:page)
                 try await waitForValue("18%")

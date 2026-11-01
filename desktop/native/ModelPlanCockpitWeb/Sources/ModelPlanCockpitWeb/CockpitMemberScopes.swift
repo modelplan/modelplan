@@ -29,6 +29,12 @@ enum CockpitMemberScopes {
         }
         return keys
     }
+    /// Numbered fallbacks describe only one rendered member list, not an account.
+    static func isIndexedFallback(_ key:String) -> Bool {
+        guard isValidKey(key), let separator=key.lastIndex(of:"#") else { return false }
+        let suffix=key[key.index(after:separator)...]
+        return !suffix.isEmpty && suffix.utf8.allSatisfy { (48...57).contains($0) }
+    }
     static func isValidKey(_ key:String) -> Bool {
         if key=="all" { return true }
         if key.utf8.count==16 && key.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) { return true }
