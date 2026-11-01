@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/replay-context.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "U6 replay context",
+  "description": "Run-derived inputs of the offline oracle: registered subject, lease window, seed title hash, synthetic HOME hash, kit manifest pins and the pins prepare verified in the launched bundle.",
+  "x-file": "context.json (replay input only; the final entry point derives it from the run files)",
+  "type": "object",
+  "required": [
+    "schema",
+    "runID",
+    "epoch",
+    "subjectPID",
+    "leaseNotBefore",
+    "leaseExpiresAt",
+    "seedTitleSHA256",
+    "homeSHA256",
+    "pins",
+    "launchedPins",
+    "seedReadingSHA256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "u6-replay-context/1"
+    },
+    "runID": {
+      "$ref": "common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "common.json#/$defs/epoch"
+    },
+    "subjectPID": {
+      "$ref": "common.json#/$defs/pid"
+    },
+    "leaseNotBefore": {
+      "$ref": "common.json#/$defs/at"
+    },
+    "leaseExpiresAt": {
+      "$ref": "common.json#/$defs/at"
+    },
+    "seedTitleSHA256": {
+      "$ref": "common.json#/$defs/sha256"
+    },
+    "homeSHA256": {
+      "$ref": "common.json#/$defs/sha256"
+    },
+    "pins": {
+      "$ref": "#/$defs/pins"
+    },
+    "launchedPins": {
+      "$ref": "#/$defs/pins"
+    },
+    "seedReadingSHA256": {
+      "$ref": "common.json#/$defs/sha256",
+      "description": "synthetic-seed.json readingSHA256 (C2.6 D)."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "pins": {
+      "type": "object",
+      "required": [
+        "mainExecutable",
+        "engine",
+        "consentHelper"
+      ],
+      "properties": {
+        "mainExecutable": {
+          "$ref": "common.json#/$defs/sha256"
+        },
+        "engine": {
+          "$ref": "common.json#/$defs/sha256"
+        },
+        "consentHelper": {
+          "$ref": "common.json#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

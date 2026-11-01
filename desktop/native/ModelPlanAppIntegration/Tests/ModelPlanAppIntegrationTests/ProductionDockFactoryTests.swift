@@ -19,6 +19,25 @@ import ModelPlanSettings
         XCTAssertTrue(preview.menu().items.contains { $0.title.contains("Quit preview") })
         XCTAssertNil(production.nativePanel); XCTAssertNil(preview.nativePanel)
     }
+    func testQuitMenuFollowsLoadedLanguageWithoutOpeningWindows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-menu-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        let production = ProductionDockFactory.community()
+        let preview = StaticDockPreviewHost(purpose: .selfTest)
+        defer { production.close(); preview.close() }
+        let app = SettingsApplicationCoordinator(store: store) { value in production.apply(value); preview.apply(value) }
+        for (language, expectedProduction, expectedPreview) in [(SettingsLanguage.chinese, "退出 ModelPlan", "退出自测版"), (.english, "Quit ModelPlan", "Quit preview")] {
+            try await store.update { $0.language = language }
+            await app.reload()
+            for (host, title) in [(production, expectedProduction), (preview, expectedPreview)] {
+                let item = try XCTUnwrap(host.menu().items.first { $0.title == title })
+                XCTAssertEqual(item.action, #selector(NSApplication.terminate(_:)))
+                XCTAssertEqual(item.keyEquivalent, "q")
+                XCTAssertNil(host.nativePanel)
+            }
+        }
+    }
     func testOfficialProductionFactoryRequiresAndUsesTheActualSupplier() async throws {
         XCTAssertThrowsError(try ProductionDockFactory.official(appearance: nil))
         var calls = 0

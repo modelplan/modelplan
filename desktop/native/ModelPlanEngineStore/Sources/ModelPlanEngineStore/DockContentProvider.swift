@@ -14,10 +14,16 @@ public struct DockContentSnapshot: Sendable {
 @MainActor public final class EngineDockMenuProvider: EngineStoreSink {
     public private(set) var dockContent = DockContentSnapshot(status: .loading, dockRows: [], menuRows: [], summary: nil)
     public var dockContentDidChange: (() -> Void)?
+    #if MODELPLAN_U6_DRIVE
+    public var verificationWillClear: ((EngineInvalidation) -> Void)?
+    #endif
     private let store: EngineStore
     private var attachment: UUID?
     public init(store: EngineStore) { self.store = store; attachment = store.attach(self) }
     public func clearPrivateViews(_ invalidation: EngineInvalidation) {
+        #if MODELPLAN_U6_DRIVE
+        verificationWillClear?(invalidation)
+        #endif
         dockContent = .init(status: .cleared, dockRows: [], menuRows: [], summary: nil)
         dockContentDidChange?()
     }

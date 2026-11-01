@@ -66,7 +66,8 @@ private actor CardDismissalClient: EngineClient {
             for child in view.subviews { if let found = button(child, id: id) { return found } }
             return nil
         }
-        dock.dockView.onAction?(.subscription("codex"))
+        // Member identity rule: cards use the verified subscription member ID.
+        dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
         XCTAssertTrue(dock.cardPinsDock, "An actually visible pinned card must protect the Dock")
         try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
@@ -74,7 +75,8 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertFalse(dock.cardPinsDock)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
-        dock.dockView.onAction?(.subscription("codex"))
+        // Member identity rule: the same verified member ID reopens the card.
+        dock.dockView.onAction?(.subscription("0123456789abcdef"))
         try XCTUnwrap(button(dock.card, id: "dock.card.enter")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "Enter must close the Dock card before navigation")
         XCTAssertEqual(navigations, 1)
