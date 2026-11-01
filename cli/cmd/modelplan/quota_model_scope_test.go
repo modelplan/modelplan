@@ -63,11 +63,14 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("synthetic provider was not read: %d", calls)
 	}
-	check := func() {
+	check := func(preScope bool) {
 		t.Helper()
 		code, out, stderr := consentRun([]string{"quota", "--json", "--offline"}, "")
 		if code != 0 {
 			t.Fatalf("quota exit %d: %s", code, stderr)
+		}
+		if strings.Contains(out, "synthetic-token-shaped-secret") {
+			t.Fatal("unreviewed synthetic provider text appeared in quota JSON")
 		}
 		var report quota.Report
 		if err := json.Unmarshal([]byte(out), &report); err != nil {
@@ -112,11 +115,11 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 				}
 			}
 		}
-		if !scopes["unknown"] || !scopes["gemini-2.5-pro"] {
+		if (!preScope && !scopes["unknown"]) || !scopes["gemini-2.5-pro"] {
 			t.Fatalf("rows lost safe scoped windows: %+v", scopes)
 		}
 	}
-	check()
+	check(false)
 	// Simulate an existing older cache that stored the raw identifier. The quota
 	// JSON boundary must still sanitize it when that cache is read.
 	path := filepath.Join(st.Dir, "observed", "readers", "gemini.json")
@@ -129,8 +132,20 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 	if !strings.Contains(string(cached), prior) {
 		t.Fatalf("expected cached scope missing: %s", fmt.Sprint(len(cached)))
 	}
-	if err = os.WriteFile(path, []byte(strings.Replace(string(cached), prior, replacement, 1)), 0600); err != nil {
+	legacy := strings.Replace(string(cached), prior, replacement, 1)
+	legacy = strings.Replace(legacy, `"limit":"unknown"`, `"limit":"synthetic-token-shaped-secret"`, 1)
+	if !strings.Contains(legacy, `"limit":"synthetic-token-shaped-secret"`) {
+		t.Fatal("legacy limit injection failed")
+	}
+	if err = os.WriteFile(path, []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
-	check()
+	check(false)
+	// A pre-scope cache lacks both the marker and modelIds entirely.
+	legacy = strings.Replace(legacy, replacement+",", "", 1)
+	legacy = strings.Replace(legacy, `"scopeKnown":true,`, "", 1)
+	if err = os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	check(true)
 }

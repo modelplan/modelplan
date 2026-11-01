@@ -198,6 +198,35 @@ type Account struct {
 	SharedPool *SharedPoolBinding `json:"sharedPool,omitempty"`
 }
 
+// MarshalJSON also protects Gemini labels in caches written before model IDs
+// were sanitized. Other providers have their own independent label vocabularies.
+func (a Account) MarshalJSON() ([]byte, error) {
+	type accountJSON Account
+	if a.Source == "native:gemini" {
+		a.Windows = append([]Window(nil), a.Windows...)
+		for i := range a.Windows {
+			a.Windows[i].Limit = safeGeminiLimit(a.Windows[i].Limit)
+		}
+	}
+	return json.Marshal(accountJSON(a))
+}
+
+// Gemini labels consist only of a reviewed model ID and a fixed token suffix.
+func safeGeminiLimit(label string) string {
+	if label == "" {
+		return ""
+	}
+	suffix := ""
+	for _, candidate := range []string{" input tokens", " output tokens", " requests", " tokens"} {
+		if strings.HasSuffix(label, candidate) {
+			suffix = candidate
+			label = strings.TrimSuffix(label, candidate)
+			break
+		}
+	}
+	return rows.SanitizeModelIDs([]string{label})[0] + suffix
+}
+
 // SharedPoolBinding describes eligibility without asserting a cross-tool account
 // link. An unverified pool is never additive capacity, even across different refs.
 type SharedPoolBinding struct {

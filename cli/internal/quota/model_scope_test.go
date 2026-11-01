@@ -70,3 +70,27 @@ func TestGeminiModelScopeNeverExportsUnreviewedIDs(t *testing.T) {
 		t.Fatalf("unsafe scope output: %s", fields["modelIds"])
 	}
 }
+
+func TestGeminiAccountJSONSanitizesLegacyLabels(t *testing.T) {
+	for _, tc := range []struct{ label, want string }{
+		{"synthetic-token-shaped-secret input tokens", "unknown input tokens"},
+		{"gemini-2.5-pro requests", "gemini-2.5-pro requests"},
+		{"synthetic-token-shaped-secret arbitrary suffix", "unknown"},
+	} {
+		a := Account{Source: "native:gemini", Windows: []Window{{Limit: tc.label}}}
+		data, err := json.Marshal(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded Account
+		if err := json.Unmarshal(data, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if got := decoded.Windows[0].Limit; got != tc.want {
+			t.Errorf("label %q: got %q, want %q", tc.label, got, tc.want)
+		}
+		if a.Windows[0].Limit != tc.label {
+			t.Fatal("marshalling mutated the source account")
+		}
+	}
+}

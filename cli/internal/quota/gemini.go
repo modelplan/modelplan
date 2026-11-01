@@ -353,7 +353,7 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if !geminiIdentifier.MatchString(b.Model) {
 			return nil, false
 		}
-		label := b.Model
+		label := rows.SanitizeModelIDs([]string{b.Model})[0]
 		switch b.TokenType {
 		case "REQUESTS":
 			label += " requests"

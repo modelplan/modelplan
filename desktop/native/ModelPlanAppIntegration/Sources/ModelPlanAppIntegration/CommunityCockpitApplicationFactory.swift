@@ -25,11 +25,6 @@ import ModelPlanSettings
         "community":"41bd9038cea780ed790f13fad0378cfb5be702a36aa8d9ea776d42c2cb780e27",
         "official":"1e83637e7414be19fa6e3bb6efac8f10f176d550c15e461c7c6b549996b6c2b7",
     ]
-    // Used by the normal console entry and its non-windowed admission test.
-    static func admitCockpitBundle(root: URL, edition: String) throws -> VerifiedCockpitBundle {
-        guard let pin = manifestPins[edition] else { throw CockpitBridgeError.unavailable }
-        return try VerifiedCockpitBundle(root: root, manifestSHA256: pin, allowOfficial: edition == "official")
-    }
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     #endif
@@ -82,8 +77,8 @@ import ModelPlanSettings
         var edition="community"
         if let data=try? Data(contentsOf:editionURL),data.count<=1024,
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
-        let verified=try CommunityCockpitApplicationFactory.admitCockpitBundle(
-            root:bundle.appendingPathComponent("Contents/Resources/Cockpit"), edition:edition)
+        let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
+            manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
