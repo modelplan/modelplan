@@ -103,7 +103,9 @@ func TestReaderLockChildProcess(t *testing.T) {
 }
 
 func TestKilledReaderReleasesKernelAdmission(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -124,8 +126,21 @@ func TestKilledReaderReleasesKernelAdmission(t *testing.T) {
 	if !scan.Scan() || scan.Text() != "locked" {
 		t.Fatal("child did not take lock")
 	}
+	path := Path() + ".readers.lock"
+	inode, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := ReaderLock(); err == nil {
-		t.Fatal("overlapping reader admitted")
+		t.Fatal("aged live reader lock was stolen")
+	}
+	after, err := os.Stat(path)
+	if err != nil || !os.SameFile(inode, after) {
+		t.Fatal("reader lock inode changed", err)
 	}
 	if err := cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
@@ -136,4 +151,8 @@ func TestKilledReaderReleasesKernelAdmission(t *testing.T) {
 		t.Fatal("killed reader left admission stuck", err)
 	}
 	unlock()
+	after, err = os.Stat(path)
+	if err != nil || !os.SameFile(inode, after) {
+		t.Fatal("reader lock was not persistent", err)
+	}
 }

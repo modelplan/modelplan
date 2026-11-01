@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
+  请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
+
 - Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
   C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
 

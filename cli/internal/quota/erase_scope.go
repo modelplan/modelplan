@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // EraseScope is the engine's cleanup hook. It never reads tool credentials,
@@ -24,6 +25,9 @@ func EraseScope(p Paths, scope string, forget bool) error {
 			return err
 		}
 		defer unlock()
+		if err := forgetLocalSpeedLedgers(p.Cache, tool); err != nil {
+			return err
+		}
 		if err := localusage.ForgetProductionHistoryLocked(p.Cache, tool); err != nil {
 			return err
 		}
@@ -52,4 +56,25 @@ func EraseScope(p Paths, scope string, forget bool) error {
 		return forgetTool(p, tool, false, forget, "")
 	} // Erase established cache formats even after a reader retires.
 	return forgetTool(p, tool, false, forget, d.Class)
+}
+
+// Caller holds ReaderLock. perf.flock also guards the daily-long rollup.
+func forgetLocalSpeedLedgers(cache, tool string) error {
+	observed := filepath.Join(cache, "observed")
+	if _, err := os.Stat(observed); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	unlock, ok := speed.LockLedgersForCleanup(cache)
+	if !ok {
+		return errors.New("readings busy; retry cleanup")
+	}
+	defer unlock()
+	for _, name := range []string{"speed.json", "perf.json", "daily-long.json"} {
+		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
