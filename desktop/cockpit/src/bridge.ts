@@ -5,14 +5,21 @@ export const MAX_MESSAGE_BYTES = 1024 * 1024;
 export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly profile:'full'|'compact' }
+export interface LiveAppearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean }
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean }
+export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle';
 export interface Header extends Context { readonly version:1; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance} |
+  ({readonly type:'appearance'} & LiveAppearance) |
+  ({readonly type:'shell'} & ShellState) |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
   {readonly type:'clear'} | {readonly type:'unload'});
 export interface CockpitView {
   configure(appearance:Appearance):void;
+  updateAppearance(appearance:LiveAppearance):void;
+  shell(state:ShellState):void;
   render(data:WireCockpitData):void;
   clear():void;
   active(active:boolean):void;
@@ -42,6 +49,8 @@ function message(raw:string):HostMessage|null {
   const keys=(extra:string[]=[])=>exact(m,[...header,'type',...extra]);
   switch(m.type) {
     case 'load': if(!keys(['appearance'])||!exact(m.appearance,['theme','locale','profile'])||!['day','night'].includes(m.appearance.theme as string)||!['en','zh-CN'].includes(m.appearance.locale as string)||!['full','compact'].includes(m.appearance.profile as string)) return null; break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency'])||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return null; break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed'])||!['open','closed'].includes(m.profile as string)||typeof m.attached!=='boolean'||typeof m.forcedClosed!=='boolean') return null; break;
     case 'display': if(!keys(['data'])||!validData(m.data)) return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
     case 'clear': case 'unload': if(!keys()) return null; break;
@@ -62,6 +71,7 @@ export class CockpitBridge {
   private occluded=true;
   private key=false;
   private hidden=true;
+  private shellState:ShellState|null=null;
   private historyTools=new Set<string>();
   private retiredSessions=new Set<string>();
   private retiredEpochs=new Set<string>();
@@ -83,7 +93,7 @@ export class CockpitBridge {
   ready():void {
     if(this.ended||this.domReady) return;
     this.domReady=true;
-    if(this.loaded&&this.loadRequestId) {this.emit('ready',this.loadRequestId);this.loadRequestId=null;}
+    if(this.loaded&&this.loadRequestId) {this.emit('ready',this.loadRequestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
     this.view.active(this.isActive());
   }
   documentHidden(hidden:boolean):void {if(this.ended)return;this.hidden=hidden; this.view.active(this.isActive());}
@@ -104,7 +114,7 @@ export class CockpitBridge {
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
       this.view.configure(m.appearance); this.view.active(this.isActive());
-      if(this.domReady) {this.emit('ready',m.requestId);this.loadRequestId=null;}
+      if(this.domReady) {this.emit('ready',m.requestId,{appearanceVersion:2,capabilities:['appearanceUpdates','shellState','shellActions']});this.loadRequestId=null;}
       return true;
     }
     if(!this.context) return false;
@@ -123,6 +133,12 @@ export class CockpitBridge {
     }
     if(!same(m,this.context)) return false;
     switch(m.type) {
+      case 'appearance':
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency});} catch {this.unload();return false;}
+        this.sequence=BigInt(m.sequence);return true;
+      case 'shell':
+        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed});} catch {this.unload();return false;}
+        this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed};this.sequence=BigInt(m.sequence);return true;
       case 'display':
         if(!this.domReady) return false;
         // Render is synchronous, with no queued/private snapshot cache to revive.
@@ -136,14 +152,18 @@ export class CockpitBridge {
       default:return false;
     }
   }
-  action(action:'chooseSetup'|'openSettings'|'openHistory',tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openHistory'].includes(action)) return false;
+  action(action:PageAction,tool?:string):boolean {
+    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle'].includes(action)) return false;
+    if(['close','detach','putBack','shutterToggle'].includes(action)) {
+      if(!this.shellState)return false;
+      if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
   unload():void {
     if(this.ended) return;
     this.view.clear();this.historyTools.clear();this.view.active(false);this.view.dispose();
-    this.context=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
+    this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
   }
 }

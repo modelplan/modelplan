@@ -5,7 +5,7 @@ import { CockpitBridge,MAX_MESSAGE_BYTES } from '../../../cockpit/.tmp/compiled/
 import { appearance,capture,commands,pageId,sessionId,source } from '../fixture.mjs';
 function fixture() {
   const events=[],calls=[];let retained=null,id=100;
-  const view={clear(){retained=null;calls.push('clear');},render(data){retained=data;calls.push('render');},configure(){calls.push('configure');},active(v){calls.push('active:'+v);},dispose(){calls.push('dispose');}};
+  const view={clear(){retained=null;calls.push('clear');},render(data){retained=data;calls.push('render');},configure(){calls.push('configure');},updateAppearance(){calls.push('appearance');},shell(){calls.push('shell');},active(v){calls.push('active:'+v);},dispose(){calls.push('dispose');}};
   const bridge=new CockpitBridge(pageId,source.origin,value=>{events.push(JSON.parse(value));calls.push(JSON.parse(value).type);},view,()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`);
   const send=commands();bridge.documentHidden(false);bridge.ready();assert.equal(bridge.receive(send('load',{appearance}),source),true);
   assert.equal(bridge.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
@@ -110,4 +110,42 @@ test('declared plan rows remain visible but cannot request tool history',()=>{
   assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
   assert.equal(f.retained().projection.rows.length,data.projection.rows.length);
   assert.equal(f.bridge.action('openHistory','declared:synthetic'),false);
+});
+
+test('v2 readiness, strict live appearance and native shell state',()=>{
+  const f=fixture(), ready=f.events.find(e=>e.type==='ready');
+  assert.equal(ready.appearanceVersion,2);
+  assert.deepEqual(ready.capabilities,['appearanceUpdates','shellState','shellActions']);
+  const appearance={theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:false};
+  assert.equal(f.bridge.receive(f.send('appearance',appearance),source),true);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,unknown:true}),source),false);
+  assert.equal(f.bridge.receive(f.send('appearance',{...appearance,reduceMotion:'yes'}),source),false);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,extra:1}),source),false);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'compact',attached:true,forcedClosed:false}),source),false);
+});
+test('shell actions are gated by native state and visibility',()=>{
+  const f=fixture();
+  for(const action of ['close','detach','putBack','shutterToggle']) assert.equal(f.bridge.action(action),false);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false}),source),true);
+  assert.equal(f.bridge.action('detach'),true);assert.equal(f.bridge.action('putBack'),false);
+  assert.equal(f.bridge.action('close'),true);assert.equal(f.bridge.action('shutterToggle'),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true}),source),true);
+  assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),true);assert.equal(f.bridge.action('shutterToggle'),false);
+  assert.equal(f.bridge.action('close','extra'),false);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.action('putBack'),false);
+  assert.deepEqual(f.events.filter(e=>e.type==='action').map(e=>e.action),['detach','close','shutterToggle','putBack']);
+});
+
+test('ready capabilities are present when DOM readiness follows load',()=>{
+  const events=[],view={clear(){},render(){},configure(){},updateAppearance(){},shell(){},active(){},dispose(){}};
+  const bridge=new CockpitBridge(pageId,source.origin,value=>events.push(JSON.parse(value)),view,()=>pageId),send=commands();
+  assert.equal(bridge.receive(send('load',{appearance}),source),true);assert.equal(events.length,0);bridge.ready();
+  assert.equal(events[0].appearanceVersion,2);assert.deepEqual(events[0].capabilities,['appearanceUpdates','shellState','shellActions']);
+  const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false});
+  assert.equal(bridge.receive(m,{...source,isMainFrame:false}),false);assert.equal(bridge.receive(m,source),true);assert.equal(bridge.receive(m,source),false);
+  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,viewRevision:'4'}),source),false);
+  assert.equal(bridge.receive(send('unload'),source),true);
+  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false}),source),false);
 });

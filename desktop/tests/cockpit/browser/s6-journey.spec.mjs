@@ -52,3 +52,33 @@ test('account members get separate c3 columns and monthly-only readings stay in 
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
   await expect(page.locator('.eng-cols .ec')).toHaveCount(0);
 });
+
+test('v2 host messages update the built page and shell controls emit native actions',async({page})=>{
+  await page.setViewportSize({width:636,height:890});
+  await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance}))).toBe(true);
+  const ready=await page.evaluate(()=>window.__events.find(e=>e.type==='ready'));
+  expect(ready.appearanceVersion).toBe(2);expect(ready.capabilities).toEqual(['appearanceUpdates','shellState','shellActions']);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  expect(await receive(send('display',{data:sample()}))).toBe(true);
+  expect(await receive(send('appearance',{theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:true}))).toBe(true);
+  await expect(page.locator('.eng-lcd')).toContainText('每周');await expect(page.locator('.eng-cols .ec')).toHaveCount(4);
+  expect(await page.locator('html').getAttribute('data-theme')).toBe('night');
+  expect(await page.locator('html').getAttribute('data-reduce-motion')).toBe('true');
+  expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,extra:true}))).toBe(false);
+  expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false}))).toBe(true);
+  await page.getByRole('button',{name:'分离',exact:true}).click();
+  await page.getByRole('button',{name:'收起',exact:true}).click();
+  await page.getByRole('button',{name:'关闭',exact:true}).click();
+  expect(await receive(send('shell',{profile:'closed',attached:false,forcedClosed:true}))).toBe(true);
+  await expect(page.locator('.s6-closed-cap')).toBeVisible();await expect(page.getByRole('button',{name:'打开驾驶舱'})).toBeDisabled();
+  await expect(page.locator('#s6-closed-reason')).toContainText('高度不足');
+  await page.getByRole('button',{name:'放回',exact:true}).click();
+  expect(await receive(send('shell',{profile:'closed',attached:false,forcedClosed:false}))).toBe(true);
+  await page.getByRole('button',{name:'打开驾驶舱'}).click();
+  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').map(e=>e.action))).toEqual(['detach','shutterToggle','close','putBack','shutterToggle']);
+  expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false}))).toBe(true);
+  await expect(page.locator('.eng-cols .ec')).toHaveCount(4);await expect(page.locator('.s6-closed-cap')).toBeHidden();
+});
