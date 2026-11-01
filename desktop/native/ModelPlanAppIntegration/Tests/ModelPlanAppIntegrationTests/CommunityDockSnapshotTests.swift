@@ -484,7 +484,7 @@ import ModelPlanSettings
                 host.dockView.onAction?(.subscription(id))
                 let labels = descendants(host.card).compactMap { $0 as? NSTextField }
                 let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
-                XCTAssertTrue(source.stringValue.contains(accountRow ? "<1m" : "unknown"))
+                XCTAssertEqual(source.stringValue, accountRow ? "读取于 1 分钟内" : "读数时间未知")
                 XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
                 if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
                 let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
