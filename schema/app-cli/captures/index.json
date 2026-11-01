@@ -429,8 +429,8 @@
           "field": "balance",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],
@@ -446,8 +446,8 @@
           "field": "details",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],
@@ -493,16 +493,16 @@
           "field": "count",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         },
         {
           "field": "expiresAt",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],
@@ -526,24 +526,24 @@
           "field": "effort",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         },
         {
           "field": "projectLabel",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         },
         {
           "field": "rate",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],
@@ -572,8 +572,8 @@
           "field": "credits",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],
@@ -591,8 +591,8 @@
           "field": "generationTps",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         }
       ],

@@ -1550,7 +1550,7 @@ public struct WireCockpitCredits: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`balance` = try? c.decodeIfPresent(Double.self, forKey: .`balance`)
+        self.`balance` = try c.decodeIfPresent(Double.self, forKey: .`balance`)
         self.`observedAt` = try c.decode(WireTimestamp.self, forKey: .`observedAt`)
         try validate()
     }
@@ -1581,7 +1581,7 @@ public struct WireCockpitData: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`details` = try? c.decodeIfPresent(WireCockpitDetails.self, forKey: .`details`)
+        self.`details` = try c.decodeIfPresent(WireCockpitDetails.self, forKey: .`details`)
         self.`projection` = try c.decode(WireRowsProjection.self, forKey: .`projection`)
         self.`subscriptions` = try c.decode([WireCockpitSubscription].self, forKey: .`subscriptions`)
         try validate()
@@ -1695,8 +1695,8 @@ public struct WireCockpitResetCount: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`kind` = try c.decode(String.self, forKey: .`kind`)
-        self.`count` = try? c.decodeIfPresent(Int.self, forKey: .`count`)
-        self.`expiresAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`expiresAt`)
+        self.`count` = try c.decodeIfPresent(Int.self, forKey: .`count`)
+        self.`expiresAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`expiresAt`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -1749,11 +1749,11 @@ public struct WireCockpitSession: Codable, Sendable {
         self.`source` = try c.decode(String.self, forKey: .`source`)
         self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
         self.`model` = try c.decode(String.self, forKey: .`model`)
-        self.`effort` = try? c.decodeIfPresent(String.self, forKey: .`effort`)
-        self.`projectLabel` = try? c.decodeIfPresent(String.self, forKey: .`projectLabel`)
+        self.`effort` = try c.decodeIfPresent(String.self, forKey: .`effort`)
+        self.`projectLabel` = try c.decodeIfPresent(String.self, forKey: .`projectLabel`)
         self.`lastObservedAt` = try c.decode(WireTimestamp.self, forKey: .`lastObservedAt`)
         self.`state` = try c.decode(String.self, forKey: .`state`)
-        self.`rate` = try? c.decodeIfPresent(Double.self, forKey: .`rate`)
+        self.`rate` = try c.decodeIfPresent(Double.self, forKey: .`rate`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -1770,6 +1770,7 @@ public struct WireCockpitSession: Codable, Sendable {
         try c.encode(`rate`, forKey: .`rate`)
     }
     private func validate() throws {
+        try WireValidation.reference(`sessionRef`)
         if let value = `subscriptionRef` { try WireValidation.reference(value) }
     }
 }
@@ -1825,7 +1826,7 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`subscriptionRef` = try c.decode(String.self, forKey: .`subscriptionRef`)
         self.`resetCounts` = try c.decode([WireCockpitResetCount].self, forKey: .`resetCounts`)
-        self.`credits` = try? c.decodeIfPresent(WireCockpitCredits.self, forKey: .`credits`)
+        self.`credits` = try c.decodeIfPresent(WireCockpitCredits.self, forKey: .`credits`)
         self.`today` = try c.decode([WireCockpitToday].self, forKey: .`today`)
         try validate()
     }
@@ -1864,7 +1865,7 @@ public struct WireCockpitToday: Codable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.`source` = try c.decode(String.self, forKey: .`source`)
         self.`observedOutputTokens` = try c.decode(Int64.self, forKey: .`observedOutputTokens`)
-        self.`generationTps` = try? c.decodeIfPresent(Double.self, forKey: .`generationTps`)
+        self.`generationTps` = try c.decodeIfPresent(Double.self, forKey: .`generationTps`)
         self.`bindingBasis` = try c.decode(String.self, forKey: .`bindingBasis`)
         try validate()
     }

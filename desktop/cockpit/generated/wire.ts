@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: b48e064f30e6a51dae5b27f67dd2c805a4a33bb96c4561f73e90f8c0abe3fe35
+// Schema SHA-256: 5b0542dd04388a59464ce0edaca0df01e4adb732e651e3b1c4a3f55e93ecdab7
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -357,6 +357,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
         "type": "string"
       },
       "windowId": {
@@ -589,6 +591,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "subscriptionRef": {
         "anyOf": [
           {
+            "maxLength": 16,
+            "pattern": "^[a-f0-9]{16}$",
             "type": "string"
           },
           {

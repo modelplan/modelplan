@@ -60,18 +60,33 @@ func EraseScope(p Paths, scope string, forget bool) error {
 // Caller holds ReaderLock. perf.lock also guards the daily-long rollup.
 func forgetLocalSpeedLedgers(cache, tool string) error {
 	observed := filepath.Join(cache, "observed")
-	if _, err := os.Stat(observed); os.IsNotExist(err) { return nil } else if err != nil { return err }
+	if _, err := os.Stat(observed); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
 	var releases []func()
-	defer func() { for _, release := range releases { release() } }()
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+	}()
 	for _, name := range []string{"speed.lock", "perf.lock"} {
 		path := filepath.Join(observed, name)
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil { return errors.New("readings busy; retry cleanup") }
-		if err := f.Close(); err != nil { _ = os.Remove(path); return err }
+		if err != nil {
+			return errors.New("readings busy; retry cleanup")
+		}
+		if err := f.Close(); err != nil {
+			_ = os.Remove(path)
+			return err
+		}
 		releases = append(releases, func() { _ = os.Remove(path) })
 	}
 	for _, name := range []string{"speed.json", "perf.json", "daily-long.json"} {
-		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil { return err }
+		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -157,6 +157,8 @@
           "type": "string"
         },
         "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
           "type": "string"
         },
         "windowId": {
@@ -420,6 +422,8 @@
         "subscriptionRef": {
           "anyOf": [
             {
+              "maxLength": 16,
+              "pattern": "^[a-f0-9]{16}$",
               "type": "string"
             },
             {

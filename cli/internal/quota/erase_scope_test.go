@@ -180,9 +180,15 @@ func TestHistoryScopeCleanupErasesOnlyItsPerformanceRecords(t *testing.T) {
 func TestHistoryLedgerRewriteFailureLeavesOriginal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "perf.json")
 	before := []byte(`{"rows":[{"source":"codex"},{"source":"claude-code"}]}`)
-	if err := os.WriteFile(path, before, 0600); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(path, before, 0600); err != nil {
+		t.Fatal(err)
+	}
 	err := filterCachedSourceWithWriter(path, "perf.json", "codex", true, func(string, []byte) error { return errors.New("simulated failure before atomic rename") })
-	if err == nil { t.Fatal("rewrite failure was ignored") }
+	if err == nil {
+		t.Fatal("rewrite failure was ignored")
+	}
 	after, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(after, before) { t.Fatalf("failed rewrite changed original: %s, %v", after, err) }
+	if err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("failed rewrite changed original: %s, %v", after, err)
+	}
 }
