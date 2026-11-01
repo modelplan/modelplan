@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"io"
 	"math"
 	"net/http"
@@ -352,7 +353,7 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if !geminiIdentifier.MatchString(b.Model) {
 			return nil, false
 		}
-		label := b.Model
+		label := rows.SanitizeModelIDs([]string{b.Model})[0]
 		switch b.TokenType {
 		case "REQUESTS":
 			label += " requests"
@@ -373,7 +374,7 @@ func parseGeminiQuota(q geminiQuota, now time.Time) ([]Window, bool) {
 		if reset != nil && !reset.After(now) {
 			continue
 		}
-		w := Window{Kind: "unknown", Limit: label, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
+		w := Window{Kind: "unknown", Limit: label, ModelIDs: rows.SanitizeModelIDs([]string{b.Model}), ScopeKnown: true, ResetsAt: reset, ResetMode: "unknown", ObservedAt: now.UTC()}
 		if b.Remaining != nil {
 			if math.IsNaN(*b.Remaining) || math.IsInf(*b.Remaining, 0) || *b.Remaining < 0 || *b.Remaining > 1 {
 				return nil, false

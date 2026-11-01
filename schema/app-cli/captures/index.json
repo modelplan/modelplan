@@ -107,6 +107,14 @@
       ]
     },
     {
+      "file": "RowsModelScope.json",
+      "type": "RowsModelScope",
+      "optional": [],
+      "required": [
+        "models"
+      ]
+    },
+    {
       "file": "RowsName.json",
       "type": "RowsName",
       "optional": [
@@ -174,6 +182,74 @@
       "required": [
         "code",
         "text"
+      ]
+    },
+    {
+      "file": "RowsResetEvent.json",
+      "type": "RowsResetEvent",
+      "optional": [
+        {
+          "field": "confirms",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "planIds",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "schedule",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "version",
+        "id",
+        "provider",
+        "rowId",
+        "status",
+        "publishedAt",
+        "expiresAt",
+        "source"
+      ]
+    },
+    {
+      "file": "RowsResetSchedule.json",
+      "type": "RowsResetSchedule",
+      "optional": [],
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ]
+    },
+    {
+      "file": "RowsResetSource.json",
+      "type": "RowsResetSource",
+      "optional": [
+        {
+          "field": "url",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "kind",
+        "publicationId"
       ]
     },
     {
@@ -257,6 +333,14 @@
       "file": "RowsWindow.json",
       "type": "RowsWindow",
       "optional": [
+        {
+          "field": "modelScope",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "durationSeconds",
           "omission": true,
@@ -879,7 +963,16 @@
     {
       "file": "WireRowsProjection.json",
       "type": "WireRowsProjection",
-      "optional": [],
+      "optional": [
+        {
+          "field": "resetEvents",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
       "required": [
         "rowsVersion",
         "rows",

@@ -5,19 +5,36 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
+// The test binary doubles as the stand-in runtime: re-executed with this
+// variable set, it echoes its arguments. /bin/echo cannot be used because
+// multi-call coreutils (Ubuntu 26.04) dispatch on argv[0], which is the Amp path.
+func init() {
+	if os.Getenv("MODELPLAN_TEST_AMP_ECHO") == "1" {
+		fmt.Println(strings.Join(os.Args[1:], " "))
+		os.Exit(0)
+	}
+}
+
 func TestAmpExecutesSealedBytesAfterPathReplacement(t *testing.T) {
 	isolateHome(t)
-	// A harmless system echo executable stands in for an audited native runtime.
+	// This test binary, in echo mode, stands in for an audited native runtime.
 	// No Amp runtime, account, credential or provider is accessed.
-	body, err := os.ReadFile("/bin/echo")
+	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MODELPLAN_TEST_AMP_ECHO", "1")
 	path := filepath.Join(t.TempDir(), "amp")
 	if err := os.WriteFile(path, body, 0700); err != nil {
 		t.Fatal(err)

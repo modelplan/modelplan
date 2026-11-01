@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: b977376c5993c3075a9b9f032499952211bd68cd0026a1735a17872de664f315
+// Schema SHA-256: 8c9eae50494caeac95611b4680da5d888153c30b3ca98cb5b3256a0fceb92318
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -48,6 +48,10 @@ export type WireFailure = {
   readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
 };
 
+export type WireModelScope = {
+  readonly "models": ReadonlyArray<"gemini-2.5-flash" | "gemini-2.5-pro" | "opus" | "sonnet" | "unknown">;
+};
+
 export type WireName = {
   readonly "en": string;
   readonly "userAuthored"?: boolean;
@@ -66,9 +70,35 @@ export type WirePlan = {
   readonly "name"?: WireName | null;
 };
 
+export type WireProposedResetSchedule = {
+  readonly "from": string;
+  readonly "precision": "window" | "date" | "approximate" | "deadline";
+  readonly "through": string;
+};
+
+export type WireProposedResetSource = {
+  readonly "kind": "publication";
+  readonly "publicationId": string;
+  readonly "url"?: string;
+};
+
 export type WireReason = {
   readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
+};
+
+export type WireResetEvent = {
+  readonly "confirms"?: string;
+  readonly "expiresAt": string;
+  readonly "id": string;
+  readonly "planIds"?: ReadonlyArray<string>;
+  readonly "provider": string;
+  readonly "publishedAt": string;
+  readonly "rowId": string;
+  readonly "schedule"?: WireProposedResetSchedule;
+  readonly "source": WireProposedResetSource;
+  readonly "status": "announced" | "confirmed";
+  readonly "version": 1;
 };
 
 export type WireRow = {
@@ -88,6 +118,7 @@ export type WireRow = {
 };
 
 export type WireRowsProjection = {
+  readonly "resetEvents"?: ReadonlyArray<WireResetEvent>;
   readonly "rows": ReadonlyArray<WireRow>;
   readonly "rowsSummary": WireRowsSummary;
   readonly "rowsVersion": number;
@@ -111,6 +142,7 @@ export type WireWindow = {
   readonly "id": string;
   readonly "label": WireText;
   readonly "limitKey": string;
+  readonly "modelScope"?: WireModelScope;
   readonly "observedAt": string | null;
   readonly "poolKey": string;
   readonly "remainingPercent": number | null;
@@ -422,6 +454,31 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "ModelScope": {
+    "additionalProperties": false,
+    "properties": {
+      "models": {
+        "items": {
+          "enum": [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "opus",
+            "sonnet",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "maxItems": 32,
+        "minItems": 1,
+        "type": "array",
+        "uniqueItems": true
+      }
+    },
+    "required": [
+      "models"
+    ],
+    "type": "object"
+  },
   "Name": {
     "additionalProperties": false,
     "properties": {
@@ -514,6 +571,59 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "ProposedResetSchedule": {
+    "additionalProperties": false,
+    "properties": {
+      "from": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "precision": {
+        "enum": [
+          "window",
+          "date",
+          "approximate",
+          "deadline"
+        ],
+        "type": "string"
+      },
+      "through": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "required": [
+      "precision",
+      "from",
+      "through"
+    ],
+    "type": "object"
+  },
+  "ProposedResetSource": {
+    "additionalProperties": false,
+    "properties": {
+      "kind": {
+        "enum": [
+          "publication"
+        ],
+        "type": "string"
+      },
+      "publicationId": {
+        "pattern": "^[a-f0-9]{24}$",
+        "type": "string"
+      },
+      "url": {
+        "maxLength": 2048,
+        "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "kind",
+      "publicationId"
+    ],
+    "type": "object"
+  },
   "Reason": {
     "additionalProperties": false,
     "properties": {
@@ -578,6 +688,75 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "text"
+    ],
+    "type": "object"
+  },
+  "ResetEvent": {
+    "additionalProperties": false,
+    "properties": {
+      "confirms": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "type": "string"
+      },
+      "expiresAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "id": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "type": "string"
+      },
+      "planIds": {
+        "items": {
+          "pattern": "^[a-z][a-z0-9-]{0,47}$",
+          "type": "string"
+        },
+        "maxItems": 32,
+        "minItems": 1,
+        "type": "array",
+        "uniqueItems": true
+      },
+      "provider": {
+        "pattern": "^[a-z][a-z0-9-]{0,47}$",
+        "type": "string"
+      },
+      "publishedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "rowId": {
+        "pattern": "^[a-z][a-z0-9-]{0,47}$",
+        "type": "string"
+      },
+      "schedule": {
+        "$ref": "#/$defs/ProposedResetSchedule"
+      },
+      "source": {
+        "$ref": "#/$defs/ProposedResetSource"
+      },
+      "status": {
+        "enum": [
+          "announced",
+          "confirmed"
+        ],
+        "type": "string"
+      },
+      "version": {
+        "enum": [
+          1
+        ],
+        "type": "integer"
+      }
+    },
+    "required": [
+      "version",
+      "id",
+      "rowId",
+      "status",
+      "publishedAt",
+      "expiresAt",
+      "source",
+      "provider"
     ],
     "type": "object"
   },
@@ -708,6 +887,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
   "RowsProjection": {
     "additionalProperties": false,
     "properties": {
+      "resetEvents": {
+        "items": {
+          "$ref": "#/$defs/ResetEvent"
+        },
+        "maxItems": 64,
+        "type": "array",
+        "uniqueItems": true
+      },
       "rows": {
         "items": {
           "$ref": "#/$defs/Row"
@@ -806,6 +993,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "limitKey": {
         "type": "string"
+      },
+      "modelScope": {
+        "$ref": "#/$defs/ModelScope"
       },
       "observedAt": {
         "anyOf": [

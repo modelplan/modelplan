@@ -30,7 +30,9 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
         }
         guard let lowest else { return .empty }
         let shown = lowest.used ? 100 - lowest.remaining : lowest.remaining
-        let basis = lowest.used ? "Used / 已用" : "Remaining / 剩余"
+        let basis = lowest.used
+            ? (preferences.language == .english ? "Used" : "已用")
+            : (preferences.language == .english ? "Remaining" : "剩余")
         return .init(title: "\(Int(shown.rounded()))%", detail: (lowest.reading.alias ?? lowest.reading.name) + " · " + basis + " " + lowest.reading.readout)
     }
 }

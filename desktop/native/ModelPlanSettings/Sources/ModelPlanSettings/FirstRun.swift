@@ -22,12 +22,15 @@ public struct FirstRunPage: Sendable {
     public let subscriptions: [SettingsSubscription]
     public let readers: [ReaderSetting]
     public let login: LoginSetting
+    /// V1's web cockpit does not yet expose Option help; it is tracked for post-v1.
+    public let showsExploration: Bool
     public init(preferences: SettingsPreferences, context: SettingsPageContext) throws {
         guard Set(context.subscriptions.map(\.id)).count == context.subscriptions.count,
               context.subscriptions.allSatisfy({ !$0.id.isEmpty }) else { throw SettingsError.invalidCatalogue }
         subscriptions = context.subscriptions
         readers = ReaderSetting.project(consent: preferences.readerConsent, observations: context.readerObservations)
         login = .init(preferences: preferences, capabilities: context.capabilities)
+        showsExploration = !context.v1NormalEntry
     }
 }
 public enum LoginRequestReason: Equatable, Sendable { case explicitUserChoice, firstRunCompletion, restoration, systemObservation }

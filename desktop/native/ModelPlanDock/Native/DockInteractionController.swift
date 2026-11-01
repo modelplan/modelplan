@@ -21,13 +21,15 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     private var cards=DockCardInteraction(),gesture=DockNozzleInteraction(),overflowOpen=false,gestureRevision:UInt64?
     private let clock:()->TimeInterval,read:()->DockInteractionEnvironment,scheduler:any DockEdgeScheduling
     private var running=false,refreshing=false,generation:UInt64=0
+    public var isRunning: Bool { running }
+    public private(set) var isActive = false
     private var pendingOrders=[UUID:(DockOrderRequest,Bool)]()
     public init(clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockInteractionEnvironment){self.clock=clock;self.scheduler=scheduler;self.read=read}
     public var cardPinned:Bool{cards.visibility.isPinned}
     public var hasCapture:Bool{gesture.source != nil}
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(preservingPin:Bool=true){
-        running=false;generation &+= 1;scheduler.cancel();gesture.cancel();gestureRevision=nil;cards.suspend(preservingPin:preservingPin);overflowOpen=false;pendingOrders=[:]
+        running=false;isActive=false;generation &+= 1;scheduler.cancel();gesture.cancel();gestureRevision=nil;cards.suspend(preservingPin:preservingPin);overflowOpen=false;pendingOrders=[:]
         publish(.init(card:.hidden,content:nil,reorder:nil,overflowIDs:[]))
     }
     public func refresh(){
@@ -35,7 +37,11 @@ public struct DockInteractionPresentation:Equatable,Sendable {
         generation &+= 1;let token=generation;scheduler.cancel()
         do{
             let env=read();guard running,generation==token else{return}
-            guard env.active else{stop();return}
+            guard env.active else {
+                isActive=false;gesture.cancel();gestureRevision=nil;cards.suspend(preservingPin:true);overflowOpen=false;pendingOrders=[:]
+                publish(.init(card:.hidden,content:nil,reorder:nil,overflowIDs:[]));return
+            }
+            isActive=true
             if let revision=gestureRevision,revision != env.bindingRevision || !gesture.matches(catalogue:env.catalogue,preferences:env.preferences){gesture.cancel();gestureRevision=nil}
             try cards.step(catalogue:env.catalogue,hoveredID:gesture.preview == nil ? env.hoveredID:nil,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock())
             if !env.parentExpanded{gesture.cancel();gestureRevision=nil;overflowOpen=false}

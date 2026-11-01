@@ -1,5 +1,20 @@
 {
   "projection": {
+    "resetEvents": [
+      {
+        "version": 1,
+        "id": "synthetic-reset",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-31T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      }
+    ],
     "rowsVersion": 1,
     "rows": [
       {
@@ -58,6 +73,11 @@
             },
             "windows": [
               {
+                "modelScope": {
+                  "models": [
+                    "opus"
+                  ]
+                },
                 "id": "codex",
                 "role": "session",
                 "durationSeconds": 1,
@@ -154,6 +174,11 @@
             },
             "windows": [
               {
+                "modelScope": {
+                  "models": [
+                    "opus"
+                  ]
+                },
                 "id": "codex",
                 "role": "session",
                 "durationSeconds": 1,

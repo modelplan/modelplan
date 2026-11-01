@@ -4,6 +4,7 @@ import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
 import ModelPlanCommunityHost
+import ModelPlanSettings
 
 /// Normal-entry composition. Construction creates no engine child or native panel when requested.
 @MainActor public final class EngineDockMenuComposition {
@@ -13,6 +14,13 @@ import ModelPlanCommunityHost
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
     public var menuDidChange: (() -> Void)?
+    public private(set) var latestSettings: SettingsApplication?
+    public var settingsDidChange: ((SettingsApplication) -> Void)?
+    public func applySettings(_ value: SettingsApplication) {
+        latestSettings = value
+        dock.apply(value)
+        settingsDidChange?(value)
+    }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
         let store: EngineStore
@@ -42,6 +50,8 @@ import ModelPlanCommunityHost
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
         catch { /* Accepted client events own errors and current data, never the Task completion. */ }
+        do { _ = try await client.consent(timeout: nil) }
+        catch { /* The accepted event stream owns consent state and failures. */ }
     }
     public func refresh() async {
         do { _ = try await client.refresh(try .init(), timeout: nil) }

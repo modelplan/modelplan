@@ -3,6 +3,10 @@ import AppKit
 
 enum SettingsWords {
     static func text(_ en: String, _ zh: String, _ language: SettingsLanguage) -> String { language == .english ? en : zh }
+    static func firstRunPreviewTitle(language: SettingsLanguage, unavailable: Bool) -> String {
+        if unavailable { return text("First run… (unavailable until setup is connected)", "首次运行…（设置接通前不可用）", language) }
+        return text("First run…", "首次运行…", language)
+    }
     static func option(_ raw: String, key: SettingKey, language: SettingsLanguage) -> String {
         let pair: (String, String)
         switch raw {
@@ -13,7 +17,7 @@ enum SettingsWords {
         case "remaining": pair = ("Remaining", "剩余")
         case "used": pair = ("Used", "已用")
         case "auto": pair = ("Auto (tightest)", "自动（最紧的）")
-        case "5h": pair = ("5 hours", "5 小时")
+        case "5h": pair = ("5h", "5小时")
         case "week": pair = ("Weekly", "每周")
         case "true": pair = key == .showPercentages ? ("Shown", "显示") : ("On", "开启")
         case "false": pair = key == .showPercentages ? ("Hidden", "隐藏") : ("Off", "关闭")
@@ -24,7 +28,7 @@ enum SettingsWords {
         case "subtle": pair = ("Subtle", "轻微")
         case "strong": pair = ("Strong", "明显")
         case "icon": pair = ("Icon only", "仅图标")
-        case "tightest": pair = ("Tightest percentage", "最紧张百分比")
+        case "tightest": pair = ("Tightest percentage", "最紧的百分比")
         case "twoWindows": pair = ("Two windows", "两个窗口")
         case "zh-CN": pair = ("Simplified Chinese", "简体中文")
         case "en": pair = ("English", "英语")
@@ -101,6 +105,7 @@ enum SettingsWords {
     private let glass = NSVisualEffectView()
     private let stack = NSStackView()
     private lazy var connectionsView = SettingsConnectionsView(editor: editor)
+    private let scopeConsentEntry: ScopeConsentEntry?
     private let heading = NSTextField(labelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
     private let empty = NSTextField(wrappingLabelWithString: "")
@@ -119,8 +124,8 @@ enum SettingsWords {
     let firstRunPreviewButton = NSButton()
 
     public init(editor: SettingsEditor, environmentProvider: (@MainActor () -> SettingsEnvironment)? = nil,
-                clipboard: SettingsDiagnosticClipboard? = nil) {
-        self.editor = editor; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
+                clipboard: SettingsDiagnosticClipboard? = nil, scopeConsentEntry: ScopeConsentEntry? = nil) {
+        self.editor = editor; self.scopeConsentEntry = scopeConsentEntry; self.environmentProvider = environmentProvider ?? Self.systemEnvironment
         self.clipboard = clipboard ?? SystemDiagnosticClipboard()
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
@@ -167,7 +172,7 @@ enum SettingsWords {
     public func refreshEnvironment() { editor.update(environment: environmentProvider()) }
     public func windowWillClose(_ notification: Notification) {
         for row in rows.values { row.diagram?.stop() }
-        connectionsView.suspend()
+        if scopeConsentEntry == nil { connectionsView.suspend() }
     }
     public func controlTextDidChange(_ obj: Notification) { if obj.object as? NSSearchField === searchField { refresh() } }
     public func numberOfRows(in tableView: NSTableView) -> Int { SettingsStructure.task65.panes.count }
@@ -210,8 +215,9 @@ enum SettingsWords {
         status.setAccessibilityIdentifier("settings.status"); status.setAccessibilityRole(.staticText)
         empty.font = .systemFont(ofSize: 13); empty.textColor = .secondaryLabelColor
         for view in [heading, status, empty] { stack.addArrangedSubview(view); view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
-        stack.addArrangedSubview(connectionsView)
-        connectionsView.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
+        stack.addArrangedSubview(connectionContent)
+        connectionContent.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         NSLayoutConstraint.activate([
             side.leadingAnchor.constraint(equalTo: root.leadingAnchor), side.topAnchor.constraint(equalTo: root.topAnchor),
             side.bottomAnchor.constraint(equalTo: root.bottomAnchor), side.widthAnchor.constraint(equalToConstant: 236),
@@ -240,8 +246,11 @@ enum SettingsWords {
         window?.title = SettingsWords.text("Settings", "设置", language)
         searchField.placeholderString = SettingsWords.text("Search settings", "搜索设置", language)
         searchField.setAccessibilityLabel(searchField.placeholderString)
-        firstRunPreviewButton.title = SettingsWords.text("First run…", "首次运行…", language)
-        firstRunPreviewButton.isEnabled = !editor.isSaving && editor.context.capabilities.firstRunPreviewAvailable && editor.canPresentFirstRun
+        let firstRunAvailable = editor.context.capabilities.firstRunPreviewAvailable && editor.canPresentFirstRun
+        let firstRunUnavailable = editor.context.v1NormalEntry && !firstRunAvailable
+        firstRunPreviewButton.title = SettingsWords.firstRunPreviewTitle(language: language, unavailable: firstRunUnavailable)
+        firstRunPreviewButton.isEnabled = !editor.isSaving && firstRunAvailable
+        firstRunPreviewButton.setAccessibilityHelp(firstRunUnavailable ? firstRunPreviewButton.title : nil)
         sidebar.reloadData()
         if let index = SettingsStructure.task65.panes.firstIndex(where: { $0.id == selectedPaneID }) {
             sidebar.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
@@ -258,15 +267,19 @@ enum SettingsWords {
         }
         // Accessibility appearance names are matching-only, not constructible (NSAppearance.h).
         // AppKit resolves the system contrast variant; semantic inks are re-resolved on workspace changes.
-        let desiredAppearance: NSAppearance.Name? = snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
+        let desiredAppearance: NSAppearance.Name? = editor.context.v1NormalEntry ? .darkAqua : snapshot.preferences.theme == .system ? nil : effective.darkAppearance ? .darkAqua : .aqua
         if window?.appearance?.name != desiredAppearance { window?.appearance = desiredAppearance.flatMap(NSAppearance.init(named:)) }
         glass.isHidden = effective.reduceTransparency
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let connectionsWereHidden = connectionsView.isHidden
-        connectionsView.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
+        scopeConsentEntry?.view.apply(language: language)
+        let connectionContent: NSView = scopeConsentEntry?.view ?? connectionsView
+        let connectionsWereHidden = connectionContent.isHidden
+        connectionContent.isHidden = query.isEmpty ? selectedPaneID != "subscriptions"
             : !["connect", "tool", "plugin", "连接", "工具", "插件", "订阅"].contains(where: { query.localizedCaseInsensitiveContains($0) })
-        if connectionsView.isHidden && !connectionsWereHidden { connectionsView.suspend() }
-        connectionsView.apply(language: language)
+        if scopeConsentEntry == nil {
+            if connectionContent.isHidden && !connectionsWereHidden { connectionsView.suspend() }
+            connectionsView.apply(language: language)
+        }
         heading.stringValue = query.isEmpty
             ? SettingsStructure.task65.panes.first(where: { $0.id == selectedPaneID })!.title.value(language)
             : SettingsWords.text("Search results", "搜索结果", language)
@@ -276,9 +289,12 @@ enum SettingsWords {
         status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
-            let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
+            let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
-                .filter { !editor.connections.isAvailable || ($0.key != .detectedReaders && $0.key != .optionalReaders) }
+            let visible = (scopeConsentEntry?.retainingNonConsentRows(catalogued) ?? catalogued)
+                .filter { row in
+                    return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
+                }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -314,7 +330,7 @@ enum SettingsWords {
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
             if effective.reduceMotion { for row in rows.values { row.diagram?.stop() } }
-            empty.isHidden = !visible.isEmpty
+            empty.isHidden = !visible.isEmpty || !connectionContent.isHidden
             empty.stringValue = SettingsWords.text("No matching settings", "没有匹配的设置", language)
         } catch {
             for row in rows.values { row.retireControls() }

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
 	"os"
 	"sort"
@@ -51,6 +52,10 @@ func (w *Window) evalRequests(now time.Time) {
 }
 
 type Window struct {
+	// ModelIDs records explicit provider scope; nil means plan-wide.
+	ModelIDs []string `json:"modelIds,omitempty"`
+	// ScopeKnown distinguishes fresh plan-wide windows from older cached records.
+	ScopeKnown    bool       `json:"scopeKnown,omitempty"`
 	Kind          string     `json:"kind"` // five_hour | weekly | monthly | spend | unknown
 	Limit         string     `json:"limit,omitempty"`
 	UsedPercent   *float64   `json:"usedPercent"`
@@ -80,6 +85,14 @@ type Window struct {
 	observedUsedPercent *float64 // retained only in memory for clock-independent snapshot revisions
 	observedUsedUSD     *float64
 	recent              []Sample // earlier readings of this window in its current cycle, oldest first
+}
+
+// MarshalJSON protects all quota JSON and cache output, including legacy
+// cached values written before provider identifiers were normalized.
+func (w Window) MarshalJSON() ([]byte, error) {
+	type windowJSON Window
+	w.ModelIDs = rows.SanitizeModelIDs(w.ModelIDs)
+	return json.Marshal(windowJSON(w))
 }
 
 // Sample is one earlier reading of a window, kept to measure the recent rate of use.
@@ -183,6 +196,44 @@ type Account struct {
 	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
 	Pool       string             `json:"pool,omitempty"`
 	SharedPool *SharedPoolBinding `json:"sharedPool,omitempty"`
+}
+
+// MarshalJSON also protects Gemini labels in caches written before model IDs
+// were sanitized. Other providers have their own independent label vocabularies.
+func (a Account) MarshalJSON() ([]byte, error) {
+	type accountJSON Account
+	if a.Source == "native:gemini" {
+		a.Windows = append([]Window(nil), a.Windows...)
+		for i := range a.Windows {
+			a.Windows[i].Limit = a.SafeLimit(a.Windows[i].Limit)
+		}
+	}
+	return json.Marshal(accountJSON(a))
+}
+
+// SafeLimit protects Gemini labels at all presentation boundaries while leaving
+// other providers' independent label vocabularies unchanged.
+func (a Account) SafeLimit(label string) string {
+	if a.Source == "native:gemini" {
+		return safeGeminiLimit(label)
+	}
+	return label
+}
+
+// Gemini labels consist only of a reviewed model ID and a fixed token suffix.
+func safeGeminiLimit(label string) string {
+	if label == "" {
+		return ""
+	}
+	suffix := ""
+	for _, candidate := range []string{" input tokens", " output tokens", " requests", " tokens"} {
+		if strings.HasSuffix(label, candidate) {
+			suffix = candidate
+			label = strings.TrimSuffix(label, candidate)
+			break
+		}
+	}
+	return rows.SanitizeModelIDs([]string{label})[0] + suffix
 }
 
 // SharedPoolBinding describes eligibility without asserting a cross-tool account

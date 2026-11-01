@@ -38,6 +38,20 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
     public var keyboardTargetID:String?
+    public var interactionProjectionAvailable: Bool { !community && !failed && skin != nil }
+    /// Registered local geometry, never a second layout or an input window.
+    public func interactionTargets(edge: DockEdge) -> [DockReorderTarget] {
+        guard !community, !failed else { return [] }
+        return orderedIDs.compactMap { id in
+            guard let rect = stationRect(id) else { return nil }
+            return DockReorderTarget(id:id,along:Double(edge == .bottom ? rect.midX : rect.midY))
+        }
+    }
+    public var interactionOverflowIDs: Set<String> {
+        guard !community, !failed, skin?.stations.contains(where: { $0.overflowCount != nil }) == true else { return [] }
+        return Set(orderedIDs).subtracting(skin?.stations.compactMap(\.subscriptionID) ?? [])
+    }
+    public func interactionAnchor(_ id: String) -> CGRect? { stationRect(id) }
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?
