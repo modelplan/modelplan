@@ -29,4 +29,4 @@ go test ./...
 
 `go test ./internal/desktopcontract -run TestContractV1Goldens -update-contract` is an explicit review tool for initial/new-version schema and golden generation, not a routine way to make failures pass. Review semantics and the version before updating a frozen contract.
 
-On macOS, Core decodes the same documents using `swift run --package-path desktop/native ModelPlanContractV1Checks "$PWD/testdata/contract-v1"`. Native CI also executes the transferred latest-Xcode check binary on macOS 14, without recompilation.
+On macOS, Core decodes the same documents using `swift run --package-path desktop/native ModelPlanContractV1Checks "$PWD/testdata/contract-v1"`.

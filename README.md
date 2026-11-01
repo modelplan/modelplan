@@ -228,7 +228,7 @@ Yes: the read-only API needs no key ([OpenAPI](https://modelplan.ai/openapi.json
 | Open data | [`data/`](data/) | The reviewed data behind the site: plan tiers, prices, quota metering, calendars, model identities and effort policies. Mirrored from modelplan.ai on every change, one pull request each |
 | Methodology | [`METHODOLOGY.md`](METHODOLOGY.md) | How ability, cost, time and the ★ effort are worked out, and the sources |
 
-Mac beta installation (ad-hoc signed, not notarized): [English](docs/mac-beta-install.md) · [简体中文](docs/mac-beta-install.zh-CN.md).
+Mac beta installation (ad-hoc signed, not notarized): [English](docs/install-beta.md) · [简体中文](docs/mac-beta-install.zh-CN.md).
 
 ## Contributing
 

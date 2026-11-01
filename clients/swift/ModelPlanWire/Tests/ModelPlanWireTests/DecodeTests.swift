@@ -34,7 +34,7 @@ final class DecodeTests: XCTestCase {
 
     func testRowsSubscribeBusyFixtureIsTypedRPCError() throws {
         let failure = try WireDecoder.decode(WireFailure.self, from: data("rows-subscribe-busy.json"))
-        XCTAssertEqual(failure.error.code, -32013)
+        XCTAssertEqual(failure.error.code, WireErrorCode.busy)
         XCTAssertEqual(failure.error.message, "busy")
         XCTAssertEqual(failure.error.data.sessionId, "s-synthetic")
     }

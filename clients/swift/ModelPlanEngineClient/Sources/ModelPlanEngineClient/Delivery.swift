@@ -272,13 +272,13 @@ extension ProcessEngineClient {
             case .failure(let failure):
                 guard failure.error.data.sessionId == sessionID else { return }
                 let key = failure.id.map(requestKey)
-                if failure.error.code == -32010, let key, pending[key]?.purpose == .initialize { protocolMismatch(); return }
+                if failure.error.code == WireErrorCode.protocolMismatch, let key, pending[key]?.purpose == .initialize { protocolMismatch(); return }
                 if let epoch = failure.error.data.storeEpoch, let generation = failure.error.data.consentGeneration {
                     _ = observe(EngineConsentFloor(storeEpoch: epoch, generation: generation))
                 }
                 if let key, let entry = pending[key] {
                     let error = EngineClientError.rpc(code: failure.error.code, context: failure.error.data)
-                    if entry.purpose == .bootstrap, entry.method == "rows/subscribe", failure.error.code == -32013 {
+                    if entry.purpose == .bootstrap, entry.method == "rows/subscribe", failure.error.code == WireErrorCode.busy {
                         finishRequest(key, error: error)
                         retryBusyRowsBootstrap(id, error: error)
                         return

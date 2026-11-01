@@ -228,7 +228,7 @@ OpenAI、Anthropic、Google、xAI、智谱、Kimi、小米、MiniMax、Meta、�
 | 开放数据 | [`data/`](data/) | 网站背后经过审核的数据：套餐档位、价格、额度计量、日历、模型身份和档位策略。每次变化从 modelplan.ai 同步过来，一次一个 PR |
 | 方法与来源 | [`METHODOLOGY.zh-CN.md`](METHODOLOGY.zh-CN.md) | 能力、成本、耗时和 ★ 推荐档怎么算，以及数据源 |
 
-Mac 测试版安装（ad-hoc 签名，未公证）：[简体中文](docs/mac-beta-install.zh-CN.md) · [English](docs/mac-beta-install.md)。
+Mac 测试版安装（ad-hoc 签名，未公证）：[简体中文](docs/mac-beta-install.zh-CN.md) · [English](docs/install-beta.md)。
 
 ## 参与贡献
 

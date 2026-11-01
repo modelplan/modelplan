@@ -74,6 +74,26 @@ func TestPaceWarningConjunction(t *testing.T) {
 	}
 }
 
+func TestWeeklyRunoutModelNoticeDoesNotRequirePaceLead(t *testing.T) {
+	testenv.IsolateHome(t)
+	t.Setenv("MODELPLAN_HISTORY", "")
+	at := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	// Exactly on pace, but the last day's use would exhaust the window before reset.
+	a := paceAccount(t, at, 40, 20)
+	w := a.Windows[0]
+	if w.ElapsedPercent == nil || *w.UsedPercent-*w.ElapsedPercent >= 10 || w.LastDayRunout(at) == nil {
+		t.Fatalf("invalid synthetic fixture: %+v", w)
+	}
+	state := advise.Load(t.TempDir())
+	if got := paceOnly(advise.Derive(advise.Input{Report: quota.Report{Accounts: []quota.Account{a}}, State: state, Now: at})); len(got) != 0 {
+		t.Fatalf("user pace warning must require a ten-point lead: %+v", got)
+	}
+	notices := state.QuotaNotices("synthetic-thread", &a, at)
+	if len(notices) != 1 || notices[0].Kind != "low" || notices[0].Window != "weekly" || notices[0].RateOver != "day" || notices[0].RunsOutIn == nil {
+		t.Fatalf("model must receive the factual run-out notice: %+v", notices)
+	}
+}
+
 func TestPaceWarningOncePerToolWindowAcrossModels(t *testing.T) {
 	testenv.IsolateHome(t)
 	t.Setenv("MODELPLAN_HISTORY", "")
