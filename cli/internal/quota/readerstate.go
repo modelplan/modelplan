@@ -707,6 +707,15 @@ func applyManaged(r *Report, p Paths, provider string, now time.Time) {
 			a := *e.Account
 			a.Beta = true
 			a.Windows = append([]Window(nil), a.Windows...)
+			// Old cached records do not say whether a window was scoped. Preserve
+			// its value on the legacy report path, but never label it plan-wide.
+			if provider == "claude" || provider == "gemini" {
+				for i := range a.Windows {
+					if !a.Windows[i].ScopeKnown {
+						a.Windows[i].ModelIDs = []string{"unknown"}
+					}
+				}
+			}
 			pruneReaderWindows(&a, now)
 			key := e.ProfileKey
 			if a.Subscription != nil && a.Subscription.Ref != "" {
