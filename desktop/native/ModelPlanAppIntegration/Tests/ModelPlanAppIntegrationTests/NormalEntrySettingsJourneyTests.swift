@@ -64,7 +64,7 @@ private actor SettingsJourneyClient: EngineClient {
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         func makeApp() throws -> EngineDockMenuApplication {
             EngineRowsEntry.make(configuration: configuration,
-                settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile),
+                settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
                 createsNativePanels: false,
                 makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) },
                 activateSettings: {})
@@ -82,6 +82,7 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
+        XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
         _ = try await editor.commit(SettingsB21Edit.login(true))
         XCTAssertEqual(login.registrations, 1, "An explicit login choice reaches the system-service adapter")
@@ -102,6 +103,7 @@ private actor SettingsJourneyClient: EngineClient {
             try await Task.sleep(for: .milliseconds(25))
         }
         XCTAssertEqual(dock.currentMenuBarPreferences?.dockEdge, .left, "The dragged edge applies without a restart")
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         await editor.reload()
         let beforeDone = try XCTUnwrap(editor.snapshot)
         let done = try await editor.completeFirstRun(options: .init(preferences: beforeDone.preferences),
@@ -123,6 +125,7 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(reopenedLogin.registrations, 0, "Restoration must not register the login service")
         let saved = await reopened.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.size, .large)
+        XCTAssertEqual(saved.preferences.language, .chinese, "An explicit choice survives relaunch even when the OS prefers English")
         XCTAssertEqual(saved.preferences.dockEdge, .left)
         XCTAssertEqual(saved.preferences.dockDisplayID, "synthetic-display")
         XCTAssertEqual(saved.preferences.dockAlongFraction, 0.3, accuracy: 0.0001)
