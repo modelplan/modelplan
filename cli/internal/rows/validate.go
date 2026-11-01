@@ -268,6 +268,24 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 	}
 	seen := map[string]bool{}
 	for _, w := range a.Windows {
+		if w.ModelScope != nil {
+			scope, ok := modelScope(w.ModelScope.Models)
+			if !ok || !reflect.DeepEqual(scope, w.ModelScope) {
+				return fail("model scope")
+			}
+			found := false
+			for _, account := range in.Accounts {
+				for _, raw := range account.Windows {
+					candidate, valid := modelScope(raw.ModelIDs)
+					if valid && reflect.DeepEqual(candidate, w.ModelScope) {
+						found = true
+					}
+				}
+			}
+			if !found {
+				return fail("model scope provenance")
+			}
+		}
 		if !limitKeys[w.LimitKey] || !poolKeys[w.PoolKey] {
 			return fail("window key allow-lists")
 		}

@@ -151,10 +151,10 @@ are separate gates.
 
 ## Current v1 bundle pin
 
-Production now pins #355 `533ce0852b91eb44c6d5b49e14667a2ae4666907`.
-Official manifest: `b0acd07ad0e4f6e5c2fef1e5e70f1413d96c1b81bf6f689ef4b911b448fd9360`
-(1069 files); community: `a06423b7730a3b158ff61e1d20d85a649301ae58717877eba48b0c2a0dc5aafe`
-(28 files). Session metadata remains plain tool/project/title/time text.
+Production pins the canonical community and official builds for the current app-cli schema.
+Official manifest: `743796c2fa7507baf96ae65ebde5ce9efa62b4d11c2fe85cc365f04357ac12d2`
+(1080 files); community: `c979c8f7bd5799f0c432f61f5e25e6ba2b603515f5b1cb15bcc0e73e559f250c`
+(38 files). Session metadata remains plain tool/project/title/time text.
 
 Active page entry, bridge, text renderer and finite-animation CSS are unchanged
 from the accepted shared-route measurement. The build now copies only current
