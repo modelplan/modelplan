@@ -127,6 +127,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let currentDate: @MainActor () -> Date
     private let readerCapabilities: CommunityReaderCapabilities
     private let createsNativePanels: Bool
+    private let prepareDetachedAlternateAppearances: Bool
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
     private let elapsedClock: (() -> TimeInterval)?
     private let edgeScheduling: (any DockEdgeScheduling)?
@@ -422,7 +423,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
-         sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+         prepareDetachedAlternateAppearances: Bool = false, sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
          readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
          contentProvider: (any DockContentProvider)? = nil, pointerSampleSource: (() -> CGPoint?)? = nil) {
@@ -433,6 +434,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
+        self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
@@ -658,7 +660,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
-                try registerSliver(&geometry, view: dockView, preferences: passPreferences)
             }
             else {
                 try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
@@ -720,16 +721,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 nextGeometries[orientation] = candidate; nextViews[orientation] = dockView
             }
         }
-        // Resolve every official orientation before tracking. Detached hosts use the
-        // same registered layouts so integration checks exercise the production geometry.
-        if let appearance {
+        // The official factory opts detached integration hosts into production
+        // edge layouts; arbitrary injected appearances retain their own lifecycle.
+        if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
             for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
                     var candidate = try appearance(view, rows, oriented)
                     candidate.scaleRegistration(by: view.appliedGeometryScale)
-                    try registerSliver(&candidate, view: view, preferences: oriented)
                     guard passIsCurrent(generation) else { return }
                     view.onAction = dockView.onAction
                     view.permitsAction = { [weak self, weak view] _, source in
@@ -836,13 +836,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         value.revealDwell = Double(preferences.revealMilliseconds) / 1000
         value.wakeDepth = sliverParameters.trackingDepth
         return value
-    }
-    private func registerSliver(_ geometry: inout StaticDockGeometry, view: DockInstrumentView, preferences: SettingsPreferences) throws {
-        guard let hull = view.registeredHullBounds else { return }
-        let scales = sliverParameters.sizeScales
-        let factor = preferences.size == .small ? scales.small : preferences.size == .large ? scales.large : scales.medium
-        try geometry.registerSliver(hullBounds: hull, expandedSize: view.frame.size, edge: preferences.dockEdge,
-                                    parameters: sliverParameters, scale: factor)
     }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
