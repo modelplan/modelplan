@@ -187,9 +187,9 @@ test('macrev-403-2: colliding unverified members remain distinct through paging 
   await keys.nth(1).click();expect(await page.evaluate(()=>window.__events.filter(e=>e.action==='scopeSelect').at(-1).key)).toBe('codex#saved_login_api#2');
   await page.getByRole('button',{name:'Page 2'}).click();await page.getByRole('button',{name:'Page 1'}).click();
   await expect(page.locator('.s6-page:visible .eng-keys button').nth(1)).toHaveAttribute('aria-pressed','true');
-  expect(await receive(send('display',{data}))).toBe(true);
-  await expect(page.locator('.s6-page:visible .ec').nth(0)).toContainText('18%');await expect(page.locator('.s6-page:visible .ec').nth(1)).toContainText('75%');
-  await expect(page.locator('.s6-page:visible .eng-keys button').nth(1)).toHaveAttribute('aria-pressed','true');
+  row.accounts.reverse();expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.locator('.s6-page:visible .ec').nth(0)).toContainText('75%');await expect(page.locator('.s6-page:visible .ec').nth(1)).toContainText('18%');
+  await expect(page.getByRole('button',{name:'All',exact:true}).first()).toHaveAttribute('aria-pressed','true');
   expect(await receive(send('shell',{...shell,scope:'codex#saved_login_api#1'}))).toBe(true);
   await expect(page.locator('.s6-page:visible .eng-keys button').nth(0)).toHaveAttribute('aria-pressed','true');
 });
@@ -206,6 +206,11 @@ test('macrev2-403-6: only general known 5h and weekly windows occupy named rows'
     const general={...structuredClone(seed),role,durationSeconds:duration,limitKey:'main',poolKey:'main',remainingPercent:75};delete general.modelScope;
     const restricted={...structuredClone(general),limitKey:'code_review',poolKey:'code_review',modelScope:{models:['opus']},remainingPercent:1};
     for(const pair of [[restricted,general],[general,restricted]]){const cells=await show(pair);await expect(cells.nth(index)).toContainText('75%');await expect(cells.nth(2)).toContainText('1%');}
+    const namedPool={...structuredClone(general),limitKey:'code_review',poolKey:'code_review',remainingPercent:2};
+    for(const pair of [[namedPool,general],[general,namedPool]]){const cells=await show(pair);await expect(cells.nth(index)).toContainText('75%');await expect(cells.nth(2)).toContainText('2%');}
+    const poolOnly={...structuredClone(general),poolKey:'code_review',remainingPercent:3};const poolCells=await show([poolOnly]);await expect(poolCells.nth(index)).toBeEmpty();await expect(poolCells.nth(2)).toContainText('3%');
+    const alias={...structuredClone(general),limitKey:role==='session'?'five_hour':'weekly'};const aliasCells=await show([alias]);await expect(aliasCells.nth(index)).toContainText('75%');
+    const wrongAlias={...structuredClone(general),limitKey:role==='session'?'weekly':'five_hour',remainingPercent:4};const wrongCells=await show([wrongAlias]);await expect(wrongCells.nth(index)).toBeEmpty();await expect(wrongCells.nth(2)).toContainText('4%');
     const cells=await show([restricted]);await expect(cells.nth(index)).toBeEmpty();await expect(cells.nth(2)).toContainText('1%');
     const unknownModel={...restricted,modelScope:{models:['unknown']}};const unknownModelCells=await show([unknownModel]);await expect(unknownModelCells.nth(index)).toBeEmpty();await expect(unknownModelCells.nth(2)).toContainText('1%');
     const unknown={...structuredClone(general),limitKey:'other',remainingPercent:8};const unknownCells=await show([unknown]);await expect(unknownCells.nth(index)).toBeEmpty();await expect(unknownCells.nth(2)).toContainText('8%');
@@ -213,4 +218,13 @@ test('macrev2-403-6: only general known 5h and weekly windows occupy named rows'
   }
   const roleUnknown={...structuredClone(seed),role:'other',durationSeconds:604800,limitKey:'main',remainingPercent:12};const cells=await show([roleUnknown]);await expect(cells.nth(1)).toBeEmpty();await expect(cells.nth(2)).toContainText('12%');
   const invalid={...roleUnknown,modelScope:{models:[]}};account.windows=[invalid];expect(await receive(send('display',{data}))).toBe(false);
+});
+
+test('verified scope remains selected across a display refresh',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample();expect(await receive(send('display',{data}))).toBe(true);
+  await page.getByRole('button',{name:'Codex',exact:true}).click();expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.getByRole('button',{name:'Codex',exact:true})).toHaveAttribute('aria-pressed','true');
 });
