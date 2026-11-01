@@ -70,6 +70,8 @@ private actor SettingsJourneyClient: EngineClient {
         first.composition.dock.setPresentationAllowed(true)
         await first.composition.start()
         let dock = first.composition.dock
+        XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
+        XCTAssertFalse(dock.interactionEnvironment().active, "The community factory has no official appearance/projection yet")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Dock readings…" })

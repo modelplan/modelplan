@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/app-cli/proposals/announced-reset-events-v1.json",
+  "title": "Proposed additive fields for RowsProjection",
+  "description": "Draft overlay only; not a production app-server schema or capability.",
+  "type": "object",
+  "properties": {
+    "resetEvents": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/ProposedResetEvent"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "ProposedResetEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "rowId",
+        "status",
+        "publishedAt",
+        "expiresAt",
+        "source",
+        "provider"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "rowId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "status": {
+          "enum": [
+            "announced",
+            "confirmed"
+          ]
+        },
+        "publishedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ProposedResetSchedule"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "$ref": "#/$defs/ProposedResetSource"
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,47}$"
+        },
+        "confirms": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "planIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "confirmed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "confirms"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "confirms"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ProposedResetSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ],
+      "properties": {
+        "precision": {
+          "enum": [
+            "window",
+            "date",
+            "approximate",
+            "deadline"
+          ]
+        },
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "through": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "ProposedResetSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "publicationId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "publication"
+        },
+        "publicationId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{24}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?$"
+        }
+      }
+    }
+  }
+}

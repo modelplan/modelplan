@@ -3,13 +3,6 @@ import Foundation
 import ModelPlanDock
 import ModelPlanSettings
 
-/// The Dock view owns geometry, event routing and presentation. The application owns persistence.
-@MainActor public protocol DockInteractionHostPort: AnyObject {
-    func interactionEnvironment() -> DockInteractionEnvironment
-    func installInteraction(_ controller: DockInteractionController)
-    func uninstallInteraction(_ controller: DockInteractionController)
-}
-
 @MainActor public final class EngineDockInteractionBinding {
     private weak var host: (any DockInteractionHostPort)?
     private let application: SettingsApplicationCoordinator
