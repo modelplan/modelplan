@@ -23,7 +23,7 @@ class Clock:
     def sleep(self, s): self.t += s
 
 
-def no_kill(pid_file): return True
+def no_kill(pid_file): return True, 'none'
 
 
 class GuardianTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class GuardianTests(unittest.TestCase):
         def sleep(s):
             clock.sleep(s); seen.append(json.loads(self.lease.read_text())['guardianHeartbeatAt'])
             if clock.t >= 1010: self.stop.write_text('{}')
-        self.assertEqual(guardian.run(self.lease, self.stop, clock=clock, sleep=sleep, kill=no_kill), ('stopped', True))
+        self.assertEqual(guardian.run(self.lease, self.stop, clock=clock, sleep=sleep, kill=no_kill), ('stopped', True, 'none'))
         record = json.loads(self.lease.read_text())
         self.assertIs(record['guardian'], True)
         self.assertEqual({k: record[k] for k in guardian.IDENTITY}, {k: self.base[k] for k in guardian.IDENTITY})
@@ -121,7 +121,7 @@ class LaunchSupervisionTests(unittest.TestCase):
         self.assertEqual(reason, 'guardian-heartbeat-stale'); self.assertIsNotNone(code)
 
     def test_stop_file_and_revocation_stop_the_child(self):
-        self.assertEqual(self.run_child(dict(self.config(self.lease(), True), quitGraceSeconds=0))[0], 'stop-file')  # no guardian beats here, so a grace would end as heartbeat-stale
+        self.assertEqual(self.run_child(self.config(self.lease(), True))[0], 'stop-file')
         self.assertEqual(self.run_child(self.config(self.lease(ownerPreempted=True), False))[0], 'lease-revoked')
 
     def test_child_that_exits_itself_is_not_flagged(self):
@@ -160,7 +160,7 @@ class OwnedSubjectTests(unittest.TestCase):
         lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1.0, expiresAt=100.0, exclusive=True, ownerPreempted=False)))
         bad_stop = self.dir / 'missing-dir' / 'STOP'  # cannot be written
         outcome = guardian.run(lease, bad_stop, clock=Clock(1.0), sleep=lambda s: None, running=lambda: False,
-                               kill=lambda f: killed.append(f) or True)
+                               kill=lambda f: killed.append(f) or (True, 'none'))
         self.assertEqual(outcome[0], 'signalled'); self.assertEqual(len(killed), 1)
 
     def test_launch_kills_child_when_registration_fails(self):
@@ -212,7 +212,7 @@ class RoundThreeTests(unittest.TestCase):
         lost = launcher or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0)
         pid_file.write_text(json.dumps(dict(state='running', launcher=lost, **guardian.identity(child.pid))))
         outcome = guardian.run(lease, stop, pid_file=pid_file, sleep=lambda s: time.sleep(0.05))
-        self.assertEqual(outcome, ('launcher-lost', True))
+        self.assertEqual(outcome, ('launcher-lost', True, 'registered'))
         self.assertIsNotNone(child.wait(5))
 
     def test_reserve_must_cover_termination(self):
@@ -299,70 +299,6 @@ class DriveCleanupGateTests(unittest.TestCase):
                     good | dict(cleanup=ok | dict(scratchRemoved=['home'])),
                     good | dict(runID='other'), good | dict(epoch='older')):
             self.assertFalse(self.check(bad), bad)
-
-
-class RunBoundRegistrationTests(unittest.TestCase):
-    """The registration names its run, so check_launch_cleanup.py can tell this run's subject from a stale one."""
-    def setUp(self):
-        self.dir = tempfile.TemporaryDirectory(); self.pid_file = Path(self.dir.name) / 'subject.pid'
-        self.child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
-
-    def tearDown(self):
-        self.child.kill(); self.child.wait(); self.dir.cleanup()
-
-    def test_register_records_the_run_and_refuses_another_runs_reservation(self):
-        run = dict(runID='r1', epoch='e1')
-        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file, run=run), run=run)
-        record = json.loads(self.pid_file.read_text())
-        self.assertEqual((record['state'], record['runID'], record['epoch'], record['pid']), ('running', 'r1', 'e1', self.child.pid))
-        self.pid_file.unlink()
-        launcher = guardian.mark_launching(self.pid_file, run=run)
-        with self.assertRaisesRegex(ValueError, 'another run'):
-            guardian.register(self.pid_file, self.child.pid, launcher, run=dict(runID='r1', epoch='e2'))
-        for bad in (dict(runID='r1'), dict(runID='', epoch='e1'), 'r1'):
-            with self.assertRaisesRegex(ValueError, 'run identity invalid'):
-                guardian.mark_launching(self.pid_file, run=bad)
-
-    def test_unbound_registration_is_unchanged(self):
-        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file))
-        self.assertNotIn('runID', json.loads(self.pid_file.read_text()))
-        self.assertNotIn('startedAt', json.loads(self.pid_file.read_text()))
-
-    def test_register_records_the_subject_start_time(self):  # lease-window qualification input (C2.2 section 4)
-        run = dict(runID='r1', epoch='e1')
-        guardian.register(self.pid_file, self.child.pid, guardian.mark_launching(self.pid_file, run=run), run=run,
-                          started_at=1234.5)
-        self.assertEqual(json.loads(self.pid_file.read_text())['startedAt'], 1234.5)
-        for bad in ('1234', float('nan'), True):
-            self.pid_file.unlink()
-            launcher = guardian.mark_launching(self.pid_file, run=run)
-            with self.assertRaisesRegex(ValueError, 'start time invalid'):
-                guardian.register(self.pid_file, self.child.pid, launcher, run=run, started_at=bad)
-
-
-class BoundedGuardianCodesTests(unittest.TestCase):
-    """C2.2 section 5: the guardian's receipts (stdout, stderr, stop file) carry fixed codes, never free text."""
-    def cli(self, lease_text):
-        with tempfile.TemporaryDirectory() as d:
-            lease, stop = Path(d) / 'lease.json', Path(d) / 'STOP'
-            lease.write_text(lease_text)
-            out = subprocess.run([sys.executable, '-B', str(Path(guardian.__file__)), '--lease', str(lease), '--stop', str(stop),
-                                  '--subject-pid-file', str(Path(d) / 'subject.pid')], capture_output=True, text=True, timeout=20)
-            return out, json.loads(stop.read_text()) if stop.exists() else None
-
-    def test_cli_errors_are_fixed_codes(self):
-        out, stop = self.cli(json.dumps(dict(runID='r', epoch='e', notBefore=1.0)))
-        self.assertEqual((out.returncode, json.loads(out.stderr)), (2, dict(error='lease-identity-missing')))
-        self.assertEqual(stop['reason'], 'guardian-error')
-        out, _ = self.cli('{"runID": "alice@example.test token sk-123"')  # unparseable: the parser's text never leaks
-        self.assertEqual(json.loads(out.stderr), dict(error='unknown'))
-        self.assertNotIn('alice', out.stderr + out.stdout)
-
-    def test_reason_code_maps_free_text_to_unknown(self):
-        self.assertEqual(guardian.reason_code('stopped', guardian.OUTCOMES), 'stopped')
-        self.assertEqual(guardian.reason_code('engine-error', guardian.OUTCOMES), 'engine-error')
-        for bad in ('Provider says: quota exceeded', None, 3, ''):
-            self.assertEqual(guardian.reason_code(bad, guardian.OUTCOMES), 'unknown')
 
 
 if __name__ == '__main__':

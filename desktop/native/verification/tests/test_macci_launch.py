@@ -1,0 +1,424 @@
+# SPDX-License-Identifier: MIT
+"""MacCI host role (V1 + coordinator GO release), launch modes and never-registered closure.
+
+Synthetic ledgers and fixtures only. The LaunchServices leg replaces /usr/bin/open with a fake that
+starts the bundle executable the way LaunchServices would (fresh environment from --env only), so
+the bundle, PID discovery by exact executable path, registration and guardian closure run for real
+on Linux. Whether a LaunchServices launch actually becomes key/active can only be checked on MacCI.
+"""
+import hashlib
+import json
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+
+BIN = Path(__file__).resolve().parents[1] / 'bin'
+sys.path.insert(0, str(BIN))
+import admission  # noqa: E402
+import book  # noqa: E402
+import guardian  # noqa: E402
+import launch  # noqa: E402
+import process_scan  # noqa: E402
+import release  # noqa: E402
+
+PY = sys.executable
+GO = 'https://github.com/example-owner/example-repo/issues/570#issuecomment-3456789012'
+APPROVAL = 'https://example.test/coordinator#issuecomment-1'
+MACCI = {release.HOST_ENV: 'macci'}
+FAKE_OPEN = '''import os, plistlib, subprocess, sys
+args = sys.argv[1:]; env = {}; out = err = None; rest = []
+while args:
+    a = args.pop(0)
+    if a in ('-n', '-W'): continue
+    if a == '--env': k, _, v = args.pop(0).partition('='); env[k] = v; continue
+    if a == '--stdout': out = args.pop(0); continue
+    if a == '--stderr': err = args.pop(0); continue
+    if a == '--args': rest = args; break
+    bundle = a
+if MODE == 'fail': sys.exit(1)  # LaunchServices refused: the subject never starts
+info = plistlib.loads(open(os.path.join(bundle, 'Contents', 'Info.plist'), 'rb').read())
+exe = os.path.join(bundle, 'Contents', 'MacOS', info['CFBundleExecutable'])
+with open(out, 'ab') as o, open(err, 'ab') as e:
+    sys.exit(subprocess.Popen([exe, *rest], env=env, stdout=o, stderr=e, start_new_session=True).wait())
+'''
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return guardian.identity(pid) is not None  # not a zombie
+
+
+def wait_until(condition, timeout, message):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        value = condition()
+        if value:
+            return value
+        time.sleep(0.05)
+    raise AssertionError(message)
+
+
+class Fixture(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.now = time.time()
+        self.ledger = book.Ledger(self.root / 'ledger.jsonl', clock=lambda: self.now)
+        self.ident = self.ledger.request('V1', 'U11a', ['cold'])['id']
+        self.lease = self.ledger.start(self.ident, 'V1', 'run', 'epoch')
+        self.output = self.root / 'release.json'
+
+
+class MacCIRelease(Fixture):
+    def issue(self, **fields):
+        return release.issue(self.ledger, self.ident, self.lease, self.output,
+                             **(dict(lane='V1', host='macci', go=GO) | fields))
+
+    def contract(self):
+        lease = self.lease | dict(guardian=True)
+        lease_path = self.root / 'lease.json'; lease_path.write_text(json.dumps(lease))
+        return dict(profile='synthetic', host='macci', binarySHA256='a' * 64, argv=['synthetic-app'],
+                    requiredSeconds=60, leasePath=str(lease_path), releasePath=str(self.output),
+                    stopPath=str(self.root / 'stop'),
+                    booking=dict(id=self.ident, lane='V1', unit='U11a', scenario='cold', ledger=str(self.ledger.path)))
+
+    def test_v1_with_coordinator_go_on_macci_is_released_and_admitted(self):
+        record = self.issue()
+        self.assertEqual(record, {k: self.lease[k] for k in release.IDENTITY_FIELDS}
+                         | dict(host='macci', releasedBy='V1', coordinatorGo=GO))
+        self.assertNotIn('m1Released', record)
+        with self.assertRaises(FileExistsError):
+            self.issue()  # never overwritten
+        with patch.dict(os.environ, MACCI):
+            self.assertEqual(admission.load_and_admit(self.contract())['release'], record)
+
+    def test_v1_cannot_release_on_the_dev_mac(self):
+        for fields in (dict(host='dev-mac', go=None, approval=APPROVAL), dict(host='dev-mac'),
+                       dict(host='dev-mac', go=None)):
+            with self.subTest(fields=fields), self.assertRaisesRegex(ValueError, 'only lane M1'):
+                self.issue(**fields)
+        with self.assertRaisesRegex(ValueError, 'only V1 on MacCI'):
+            self.issue(lane='M1')  # M1 does not run on MacCI either
+        with self.assertRaisesRegex(ValueError, 'does not replace the M1 release'):
+            self.issue(lane='M1', host='dev-mac', approval=APPROVAL)
+        self.assertFalse(self.output.exists())
+        # Declaring --host macci on a machine whose role is the dev Mac is refused (CLI, env unset).
+        lease_path = self.root / 'cli-lease.json'; lease_path.write_text(json.dumps(self.lease))
+        env = {k: v for k, v in os.environ.items() if k != release.HOST_ENV}
+        command = [PY, str(BIN / 'release.py'), '--ledger', str(self.ledger.path), '--id', self.ident,
+                   '--lease', str(lease_path), '--output', str(self.output)]
+        for flags in (['--lane', 'V1', '--host', 'macci', '--coordinator-go', GO],
+                      ['--lane', 'V1', '--coordinator-go', GO], ['--lane', 'V1', '--approval', APPROVAL]):
+            result = subprocess.run(command + flags, capture_output=True, text=True, env=env)
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertFalse(self.output.exists())
+        result = subprocess.run(command + ['--lane', 'V1', '--host', 'macci', '--coordinator-go', GO],
+                                capture_output=True, text=True, env=env | MACCI)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())['coordinatorGo'], GO)
+
+    def test_missing_or_malformed_go_is_refused(self):
+        for go in (None, '', '3456789012', '#issuecomment-1', 'http://github.com/o/r/issues/570#issuecomment-1',
+                   'https://example.test/o/r/issues/570#issuecomment-1', 'https://github.com/o/r/pull/570#issuecomment-1',
+                   'https://github.com/o/r/issues/570#issuecomment-', 'https://github.com/o/r/issues/570#issuecomment-1x',
+                   'https://github.com/o/r/issues/570#issuecomment-1 ', 'https://user@github.com/o/r/issues/570#issuecomment-1'):
+            with self.subTest(go=go), self.assertRaisesRegex(ValueError, 'coordinatorGo'):
+                self.issue(go=go)
+        with self.assertRaisesRegex(ValueError, 'not an approval URL'):
+            self.issue(approval=APPROVAL)
+        self.assertFalse(self.output.exists())
+
+    def test_admission_checks_host_and_go_format(self):
+        record = self.issue()
+        c = self.contract()
+        for bad in (record | dict(coordinatorGo='12345'), {k: v for k, v in record.items() if k != 'coordinatorGo'},
+                    record | dict(releasedBy='M1'), record | dict(m1Released=True), record | dict(epoch='other')):
+            self.output.write_text(json.dumps(bad))
+            with self.subTest(bad=bad), patch.dict(os.environ, MACCI), self.assertRaises(ValueError):
+                admission.load_and_admit(c)
+        self.output.write_text(json.dumps(record))
+        with patch.dict(os.environ, {release.HOST_ENV: ''}), self.assertRaisesRegex(ValueError, 'host role mismatch'):
+            admission.load_and_admit(c)  # a MacCI run config on a dev-Mac host
+        with patch.dict(os.environ, {release.HOST_ENV: ''}), self.assertRaisesRegex(ValueError, 'M1 release missing'):
+            admission.load_and_admit(c | dict(host='dev-mac'))  # a MacCI receipt never admits on the dev Mac
+        self.output.write_text(json.dumps({k: self.lease[k] for k in release.IDENTITY_FIELDS}
+                                          | dict(m1Released=True, approval=APPROVAL)))
+        with patch.dict(os.environ, MACCI), self.assertRaisesRegex(ValueError, 'MacCI V1 release missing'):
+            admission.load_and_admit(c)  # and an M1 receipt never admits on MacCI
+
+
+class LaunchModes(unittest.TestCase):
+    def contract(self, **fields):
+        lease = dict(runID='r', epoch='e', notBefore=1000, expiresAt=1900, guardianHeartbeatAt=1019.5,
+                     ownerPreempted=False, exclusive=True)
+        return dict(profile='synthetic', lease=lease, release=lease | dict(m1Released=True, approval=APPROVAL),
+                    requiredSeconds=60, stop=False, argv=['synthetic-app'], binarySHA256='a' * 64) | fields
+
+    def test_launch_mode_is_validated(self):
+        for mode in (None, 'direct', 'launchservices'):
+            c = self.contract() if mode is None else self.contract(launchMode=mode)
+            self.assertTrue(launch.validate(c, 1020))
+        for mode in ('', 'open', 'LaunchServices', 1):
+            with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, 'launchMode'):
+                launch.validate(self.contract(launchMode=mode), 1020)
+        with self.assertRaisesRegex(ValueError, 'host'):
+            launch.validate(self.contract(host='laptop'), 1020)
+
+    def test_evidence_manifest_records_launch_mode(self):
+        import evidence
+        with tempfile.TemporaryDirectory() as d:
+            c = dict(headSHA='a' * 40, profile='synthetic', attributionMethod='fixture',
+                     scenarios=[dict(id='U5-A', outcome='pass')])
+            self.assertEqual(evidence.manifest(c, Path(d))['launchMode'], 'direct')
+            self.assertEqual(evidence.manifest(c | dict(launchMode='launchservices'), Path(d))['launchMode'], 'launchservices')
+            with self.assertRaises(ValueError):
+                evidence.manifest(c | dict(launchMode='other'), Path(d))
+
+    def test_launchservices_refused_without_open_before_any_resource(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); cfg = root / 'run.json'
+            c = dict(launchMode='launchservices', syntheticHome=str(root / 'home'), syntheticTmp=str(root / 'tmp'))
+            cfg.write_text(json.dumps(c))
+            with patch.object(sys, 'argv', ['launch', '--config', str(cfg), '--execute']), \
+                    patch.object(launch, 'load_and_admit', side_effect=lambda x: x), \
+                    patch.object(launch, 'OPEN', [str(root / 'no-open')]), \
+                    patch.object(launch.subprocess, 'Popen') as popen:
+                with self.assertRaisesRegex(ValueError, 'needs macOS'):
+                    launch.main()
+                popen.assert_not_called()
+            self.assertFalse((root / 'home').exists())
+
+    def test_bundle_is_a_verified_copy_with_minimal_info_plist(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); binary = root / 'FakeApp'; binary.write_bytes(b'synthetic-binary'); tmp = root / 'tmp'; tmp.mkdir()
+            c = dict(binarySHA256=hashlib.sha256(b'synthetic-binary').hexdigest())
+            bundle = launch.make_bundle(c, binary, tmp)
+            self.assertEqual(bundle['exe'], tmp / '.launchservices' / 'FakeApp.app' / 'Contents' / 'MacOS' / 'FakeApp')
+            self.assertFalse(bundle['exe'].is_symlink())
+            info = plistlib.loads((bundle['app'] / 'Contents' / 'Info.plist').read_bytes())
+            self.assertEqual((info['CFBundleExecutable'], info['CFBundlePackageType'], info['LSUIElement']), ('FakeApp', 'APPL', True))
+            self.assertEqual(bundle['evidence']['bundledSHA256'], c['binarySHA256'])
+            for bad in (dict(bundleIdentifier='bad id'), dict(bundleUIElement='yes'), dict(bundleSign='developer-id'),
+                        dict(bundleResources=['relative'])):
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    launch.make_bundle(c | bad, binary, root / 'other')
+            with self.assertRaisesRegex(ValueError, 'bundled binary identity'):
+                launch.make_bundle(dict(binarySHA256='b' * 64), binary, root / 'tmp2')
+
+    def test_direct_mode_records_mode_and_scan_scope_in_the_registration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); pid_file = root / 'subject.pid'
+            c = dict(syntheticHome=str(root / 'home'), syntheticTmp=str(root / 'tmp'), subjectPidPath=str(pid_file),
+                     argv=[PY, '-c', 'pass'], binarySHA256=hashlib.sha256(Path(PY).resolve().read_bytes()).hexdigest(),
+                     lease=dict(runID='r', epoch='e'), stopPath=str(root / 'STOP'), leasePath=str(root / 'lease.json'))
+            cfg = root / 'run.json'; cfg.write_text(json.dumps(c))
+            with patch.object(sys, 'argv', ['launch', '--config', str(cfg), '--execute']), \
+                    patch.object(launch, 'load_and_admit', side_effect=lambda x: x), \
+                    patch.object(launch, 'stop_reason', return_value=None), \
+                    patch('builtins.print') as printed, self.assertRaises(SystemExit) as done:
+                launch.main()
+            self.assertEqual(done.exception.code, 0)
+            lines = [json.loads(call.args[0]) for call in printed.call_args_list]
+            self.assertEqual([x['launchMode'] for x in lines], ['direct', 'direct'])
+            record = json.loads(pid_file.read_text())
+            self.assertEqual((record['state'], record['launchMode']), ('running', 'direct'))
+            self.assertEqual(record['scan'], dict(executable=os.path.realpath(PY), home=str(root / 'home')))
+
+
+@unittest.skipUnless(sys.platform.startswith('linux') and Path('/bin/sleep').exists(),
+                     'the fake LaunchServices leg needs /proc and a real executable to bundle')
+class MacCISequence(unittest.TestCase):
+    """book -> guardian -> V1 release with GO -> launch.py (launchservices) -> closure -> finish."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name); self.procs = []
+        self.ledger = self.root / 'ledger.jsonl'
+        self.app = self.root / 'FakeApp'; shutil.copyfile('/bin/sleep', self.app); self.app.chmod(0o755)
+        self.env = dict(os.environ, **MACCI)
+        self.paths = {k: self.root / v for k, v in dict(lease='lease.json', release='release.json',
+                                                         stop='STOP', pid='subject.pid').items()}
+
+    def tearDown(self):
+        for proc in self.procs:
+            if proc.poll() is None:
+                proc.kill(); proc.wait(10)
+        for found in process_scan.scan(dict(home=str(self.root / 'home')), guardian.identity):
+            os.kill(found['pid'], 9)
+        self.temp.cleanup()
+
+    def cli(self, *args):
+        return subprocess.run([PY, *map(str, args)], capture_output=True, text=True, timeout=120, env=self.env)
+
+    def book(self, *args):
+        return self.cli(BIN / 'book.py', '--ledger', self.ledger, *args)
+
+    def start(self, open_mode):
+        ident = json.loads(self.book('request', '--lane', 'V1', '--unit', 'U11a', '--scenario', 'cold', '--minutes', '2').stdout)['id']
+        started = self.book('start', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci')
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.paths['lease'].write_text(started.stdout)
+        self.guardian_out = self.root / 'guardian.out'
+        with self.guardian_out.open('w') as out:
+            self.guardian = subprocess.Popen([PY, str(BIN / 'guardian.py'), '--lease', str(self.paths['lease']),
+                                              '--stop', str(self.paths['stop']), '--subject-pid-file', str(self.paths['pid'])],
+                                             stdout=out, stderr=subprocess.DEVNULL, env=self.env)
+        self.procs.append(self.guardian)
+        wait_until(lambda: json.loads(self.paths['lease'].read_text()).get('guardian'), 10, 'guardian did not start')
+        released = self.cli(BIN / 'release.py', '--ledger', self.ledger, '--id', ident, '--lane', 'V1', '--host', 'macci',
+                            '--lease', self.paths['lease'], '--output', self.paths['release'], '--coordinator-go', GO)
+        self.assertEqual(released.returncode, 0, released.stderr)
+        fake_open = self.root / f'open-{open_mode}.py'; fake_open.write_text(f'MODE = {open_mode!r}\n' + FAKE_OPEN)
+        config = self.root / 'run.json'
+        config.write_text(json.dumps(dict(
+            profile='synthetic', host='macci', launchMode='launchservices',
+            binarySHA256=hashlib.sha256(self.app.read_bytes()).hexdigest(), argv=[str(self.app), '600'],
+            leasePath=str(self.paths['lease']), releasePath=str(self.paths['release']), stopPath=str(self.paths['stop']),
+            syntheticHome=str(self.root / 'home'), syntheticTmp=str(self.root / 'tmp'),
+            subjectPidPath=str(self.paths['pid']), requiredSeconds=30,
+            booking=dict(id=ident, lane='V1', unit='U11a', scenario='cold', ledger=str(self.ledger)))))
+        runner = (f'import sys; sys.path.insert(0, {str(BIN)!r}); import launch; '
+                  f'launch.OPEN = [sys.executable, {str(fake_open)!r}]; '
+                  f'sys.argv = ["launch.py", "--config", {str(config)!r}, "--execute"]; launch.main()')
+        self.out, self.err = self.root / 'launch.out', self.root / 'launch.err'
+        with self.out.open('w') as out, self.err.open('w') as err:
+            self.controller = subprocess.Popen([PY, '-c', runner], stdout=out, stderr=err, env=self.env)
+        self.procs.append(self.controller)
+        return ident
+
+    def finish(self, ident):
+        return self.book('finish', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci', '--cleaned')
+
+    def test_launchservices_subject_registers_by_bundle_path_and_closes(self):
+        ident = self.start('ok')
+        def registered():
+            try:
+                record = json.loads(self.paths['pid'].read_text())
+            except (OSError, ValueError):
+                return None
+            return record if record.get('state') == 'running' else None
+        record = wait_until(registered, 15, 'LaunchServices subject never registered')
+        bundled = self.root / 'tmp' / '.launchservices' / 'FakeApp.app' / 'Contents' / 'MacOS' / 'FakeApp'
+        self.assertEqual(os.readlink(f'/proc/{record["pid"]}/exe'), str(bundled))  # found by exact path
+        self.assertNotEqual(record['pid'], self.controller.pid)
+        self.assertEqual(record['launchMode'], 'launchservices')
+        first = wait_until(lambda: self.out.read_text().splitlines(), 10, 'no launch report')
+        report = json.loads(first[0])
+        self.assertEqual((report['launchMode'], report['ownedPID'], report['bundleSign']), ('launchservices', record['pid'], 'none'))
+        self.paths['stop'].write_text('')
+        self.assertEqual(self.controller.wait(30), 3, self.err.read_text())  # stopped by supervision
+        self.assertEqual(self.guardian.wait(30), 0)
+        self.assertEqual(json.loads(self.guardian_out.read_text()),
+                         dict(guardian='stopped', subjectClosed=True, subject='registered'))
+        self.assertFalse(alive(record['pid']))
+        self.assertEqual(process_scan.scan(dict(home=str(self.root / 'home')), guardian.identity), [])
+        final = json.loads(self.out.read_text().splitlines()[-1])
+        self.assertEqual((final['stoppedBy'], final['launchMode']), ('stop-file', 'launchservices'))
+        self.assertEqual(self.finish(ident).returncode, 0)
+
+    def test_subject_that_never_registers_is_scan_proven_and_finishes_cleaned(self):
+        ident = self.start('fail')
+        self.assertEqual(self.controller.wait(60), 3)
+        self.assertIn('"registered": false', self.err.read_text())
+        self.assertEqual(json.loads(self.paths['pid'].read_text())['state'], 'launching')
+        # The launcher is gone before registering: the guardian ends the run, scans the project scope
+        # (exact bundle path + synthetic HOME) and reports the subject as never started.
+        self.assertEqual(self.guardian.wait(30), 0)
+        self.assertEqual(json.loads(self.guardian_out.read_text()),
+                         dict(guardian='launcher-lost', subjectClosed=True, subject='never-started'))
+        finish = self.finish(ident)
+        self.assertEqual(finish.returncode, 0, finish.stderr)
+        state = json.loads(self.book('status').stdout)
+        self.assertEqual((state['head'], state['history'][-1]['state']), (None, 'finished'))
+
+
+class NeverRegisteredClosure(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.dir, True)
+        self.pid_file = self.dir / 'subject.pid'; self.home = self.dir / 'home'
+        dead = subprocess.Popen([PY, '-c', 'pass']); self.dead = guardian.identity(dead.pid) or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0); dead.wait()
+
+    def reserve(self, launcher, scope=True):
+        record = dict(state='launching', launcher=launcher)
+        if scope:
+            record['scan'] = process_scan.scope_for(self.dir / 'App.app/Contents/MacOS/App', self.home)
+        self.pid_file.write_text(json.dumps(record))
+
+    def test_empty_scope_scan_is_never_started_and_finishable(self):
+        self.reserve(self.dead)
+        closed, subject = guardian.close(self.pid_file, settle=0)
+        self.assertEqual((closed, subject), (True, 'never-started'))
+        self.assertTrue(guardian.finishable('launcher-lost', closed, subject))
+
+    def test_unregistered_process_in_scope_is_stopped_but_not_reported_as_never_started(self):
+        stray = subprocess.Popen([PY, '-c', 'import time; time.sleep(60)'], env=dict(PATH='/usr/bin:/bin', HOME=str(self.home)))
+        self.addCleanup(lambda: stray.poll() is None and stray.kill())
+        self.reserve(self.dead)
+        wait_until(lambda: process_scan.scan(dict(home=str(self.home)), guardian.identity), 5, 'stray not visible')
+        closed, subject = guardian.close(self.pid_file, settle=0)
+        self.assertEqual((closed, subject), (True, 'unregistered-stopped'))
+        self.assertIsNotNone(stray.wait(5))
+        self.assertFalse(guardian.finishable('launcher-lost', closed, subject))
+        self.assertTrue(guardian.finishable('stopped', closed, subject))
+
+    def test_unscoped_or_live_launcher_or_failed_scan_stays_unconfirmed(self):
+        self.reserve(self.dead, scope=False)
+        self.assertEqual(guardian.close(self.pid_file, settle=0), (False, 'unregistered-unscoped'))
+        self.reserve(guardian.identity(os.getpid()))  # this process: a live launcher
+        self.assertEqual(guardian.close(self.pid_file, settle=0, launcher_wait=0.2), (False, 'unregistered-launcher-alive'))
+        self.reserve(self.dead)
+        def broken(scope): raise OSError('process table unreadable')
+        self.assertEqual(guardian.close(self.pid_file, settle=0, scan=broken), (False, 'unregistered-scan-failed'))
+        survivor = dict(pid=4242, startSeconds=1, startMicroseconds=0)
+        self.assertEqual(guardian.close(self.pid_file, settle=0, scan=lambda s: [survivor], send=lambda *a: None,
+                                        lookup=lambda pid: survivor if pid == 4242 else None, grace=0.1),
+                         (False, 'unregistered-still-running'))
+
+    def test_registered_but_not_closed_never_finishes(self):
+        subject = dict(pid=4242, startSeconds=1, startMicroseconds=0)
+        self.pid_file.write_text(json.dumps(dict(state='running', launcher=self.dead,
+                                                 scan=process_scan.scope_for(None, self.home), **subject)))
+        sent = []
+        clock = [0.0]
+        def sleep(s): clock[0] += s
+        closed, state = guardian.close(self.pid_file, lookup=lambda pid: subject if pid == 4242 else None,
+                                       send=lambda *a: sent.append(a), clock=lambda: clock[0], sleep=sleep,
+                                       scan=lambda s: self.fail('a registered subject is never closed by scan'))
+        self.assertEqual((closed, state), (False, 'registered'))
+        self.assertEqual([sig for _, sig in sent], [15, 9])
+        for outcome in ('stopped', 'signalled', 'deadline', 'launcher-lost'):
+            self.assertFalse(guardian.finishable(outcome, closed, state))
+        self.assertFalse(guardian.finishable('launcher-lost', True, 'registered'))
+        self.assertFalse(guardian.finishable('stopped', False, 'never-started'))
+
+    def test_scan_never_matches_by_process_name(self):
+        same_name = self.dir / 'other' / 'App'; same_name.parent.mkdir()
+        shutil.copyfile('/bin/sleep', same_name); same_name.chmod(0o755)
+        ours = self.dir / 'App.app' / 'Contents' / 'MacOS' / 'App'; ours.parent.mkdir(parents=True)
+        shutil.copyfile('/bin/sleep', ours); ours.chmod(0o755)
+        if not sys.platform.startswith('linux'):
+            self.skipTest('exercises the /proc enumeration')
+        other = subprocess.Popen([str(same_name), '60']); mine = subprocess.Popen([str(ours), '60'])
+        try:
+            found = wait_until(lambda: process_scan.scan(process_scan.scope_for(ours), guardian.identity), 5, 'not found')
+            self.assertEqual([(x['pid'], x['matchedBy']) for x in found], [(mine.pid, 'executable')])
+        finally:
+            other.kill(); mine.kill(); other.wait(); mine.wait()
+        with self.assertRaises(ValueError):
+            process_scan.scope_for()
+        self.assertFalse(process_scan.valid_scope(dict(home='/')))
+        self.assertFalse(process_scan.valid_scope(dict(name='App')))
+
+
+if __name__ == '__main__':
+    unittest.main()

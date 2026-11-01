@@ -22,23 +22,6 @@ struct PointerPlan: Decodable {
     let subjectPID: Int32, subjectBundle: String
     let allowedRectangles: [[Double]]
     let steps: [PointerStep]
-    let u6InputKind: String?, u6Observations: String?
-    let u6FrameSeq: UInt64?, u6StatusFrameGeneration: UInt64?
-    let u6StatusWindowNumber: Int?
-    let statusWindowCheck: String?
-    let purpose:String?,parkDisplayBounds:[Double]?,parkExclusions:[[Double]]?
-    init(profile:String,runID:String,epoch:String,lease:String,stop:String,output:String,
-         subjectPID:Int32,subjectBundle:String,allowedRectangles:[[Double]],steps:[PointerStep],
-         u6InputKind:String? = nil,u6Observations:String? = nil,u6FrameSeq:UInt64? = nil,
-         u6StatusFrameGeneration:UInt64? = nil,u6StatusWindowNumber:Int? = nil,statusWindowCheck:String? = nil,
-         purpose:String? = nil,parkDisplayBounds:[Double]? = nil,parkExclusions:[[Double]]? = nil) {
-        self.profile=profile;self.runID=runID;self.epoch=epoch;self.lease=lease;self.stop=stop;self.output=output
-        self.subjectPID=subjectPID;self.subjectBundle=subjectBundle;self.allowedRectangles=allowedRectangles;self.steps=steps
-        self.u6InputKind=u6InputKind;self.u6Observations=u6Observations;self.u6FrameSeq=u6FrameSeq
-        self.u6StatusFrameGeneration=u6StatusFrameGeneration;self.u6StatusWindowNumber=u6StatusWindowNumber
-        self.statusWindowCheck=statusWindowCheck
-        self.purpose=purpose;self.parkDisplayBounds=parkDisplayBounds;self.parkExclusions=parkExclusions
-    }
 }
 enum DriveError: Error { case invalidPlan, outsideScope, staleLease, subjectEnded, cannotCreateEvent }
 
@@ -81,116 +64,6 @@ final class ButtonGuard: @unchecked Sendable {
 }
 
 @MainActor @main enum PointerDrive {
-    private struct NativeFrame: Decodable {
-        struct Checks: Decodable {
-            let settled:Bool?,visible:Bool?,frameGeneration:UInt64?,windowNumber:Int?
-            let stableSinceMono:Double?,cgX:Double?,cgY:Double?,width:Double?,height:Double?
-            let x:Double?,y:Double?
-            let observedCGFrame:[Double]?
-            let displayBounds:[Double]?,menuBarBand:[Double]?
-        }
-        let runID:String,epoch:String,pid:Int32,seq:UInt64,mono:Double
-        let event:String?,checks:Checks?
-    }
-    static func windowID(_ number:Int) throws -> CGWindowID {
-        guard number>0,let id=CGWindowID(exactly:number) else { throw DriveError.outsideScope }
-        return id
-    }
-    static func parkShape(_ p:PointerPlan) throws {
-        guard p.purpose=="park" || p.u6InputKind=="park" else { return }
-        guard p.purpose=="park",p.steps.count==1,p.steps[0].action == .move,p.steps[0].seconds==0,
-              let d=p.parkDisplayBounds,d.count==4,d.allSatisfy(\.isFinite),d[2]>0,d[3]>0,
-              p.steps[0].x==d[0]+d[2]/2,p.steps[0].y==d[1]+d[3]/2,
-              let exclusions=p.parkExclusions,!exclusions.isEmpty else { throw DriveError.invalidPlan }
-        for r in exclusions {
-            guard r.count==4,r.allSatisfy(\.isFinite),r[2]>0,r[3]>0 else { throw DriveError.invalidPlan }
-            let dx=max(r[0]-p.steps[0].x,0,p.steps[0].x-r[0]-r[2])
-            let dy=max(r[1]-p.steps[0].y,0,p.steps[0].y-r[1]-r[3])
-            guard hypot(dx,dy)>=200 else { throw DriveError.invalidPlan }
-        }
-    }
-    static func currentPark(_ p:PointerPlan,displays:[CGRect]) throws {
-        guard p.purpose=="park" else { return };try parkShape(p)
-        guard let d=p.parkDisplayBounds,displays.contains(CGRect(x:d[0],y:d[1],width:d[2],height:d[3])),
-              let path=p.u6Observations else { throw DriveError.outsideScope }
-        let url=URL(fileURLWithPath:path)
-        guard (try url.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else { throw DriveError.outsideScope }
-        let data=try Data(contentsOf:url);guard data.count<=8_000_000 else { throw DriveError.outsideScope }
-        var dock:NativeFrame?,status:NativeFrame?,kinds=Set<String>()
-        for line in data.split(separator:10) {
-            let row=try JSONDecoder().decode(NativeFrame.self,from:Data(line))
-            guard row.runID==p.runID,row.epoch==p.epoch,row.pid==p.subjectPID,
-                  let event=row.event,event=="dock-surface-frame" || event=="status-item-frame",let c=row.checks else { continue }
-            if event=="dock-surface-frame" { dock=row }
-            else { status=row }
-            let raw=event=="status-item-frame" ? c.observedCGFrame : nil
-            guard raw==nil || raw?.count==4,
-                  let x=raw?[0] ?? (event=="dock-surface-frame" ? c.x : c.cgX),
-                  let y=raw?[1] ?? (event=="dock-surface-frame" ? c.y : c.cgY),
-                  let w=raw?[2] ?? c.width,let h=raw?[3] ?? c.height else { continue }
-            guard [x,y,w,h].allSatisfy(\.isFinite),w>0,h>0 else { throw DriveError.outsideScope }
-            kinds.insert(event)
-            guard hypot(max(x-p.steps[0].x,0,p.steps[0].x-x-w),max(y-p.steps[0].y,0,p.steps[0].y-y-h))>=200 else { throw DriveError.outsideScope }
-        }
-        guard kinds.count==2,let s=status?.checks,(s.observedCGFrame?.count==4 || (s.cgX != nil && s.cgY != nil && s.width != nil && s.height != nil)),
-              let c=dock?.checks,c.displayBounds==d,let x=c.x,let y=c.y,let w=c.width,let h=c.height,
-              CGRect(x:d[0],y:d[1],width:d[2],height:d[3]).contains(CGPoint(x:x+w/2,y:y+h/2)) else { throw DriveError.outsideScope }
-    }
-    static func statusMode(_ p:PointerPlan) throws -> String {
-        guard let number=p.u6StatusWindowNumber else { throw DriveError.outsideScope }
-        let expected=number>0 && CGWindowID(exactly:number) != nil ? "required" : "unavailable"
-        guard p.statusWindowCheck==expected else { throw DriveError.outsideScope }
-        return expected
-    }
-    static func statusReceiptMode(_ p:PointerPlan) -> String {
-        p.statusWindowCheck=="required" ? "verified" : p.statusWindowCheck=="unavailable" ? "unavailable" : "not-applicable"
-    }
-    static func currentStatusFrame(_ p:PointerPlan,now:Double=ProcessInfo.processInfo.systemUptime) throws {
-        let bound=p.u6InputKind == "status" || p.u6FrameSeq != nil && p.steps.contains { $0.action == .click }
-        guard bound else { return }
-        guard let path=p.u6Observations,let generation=p.u6StatusFrameGeneration,generation>0,
-              let number=p.u6StatusWindowNumber,
-              let sequence=p.u6FrameSeq else { throw DriveError.outsideScope }
-        _=try statusMode(p)
-        let url=URL(fileURLWithPath:path)
-        guard (try url.resourceValues(forKeys:[.isSymbolicLinkKey])).isSymbolicLink != true else { throw DriveError.outsideScope }
-        let data=try Data(contentsOf:url);guard data.count<=8_000_000 else { throw DriveError.outsideScope }
-        var latest:NativeFrame?,lastSequence:UInt64=0,lastMono = -Double.infinity
-        for line in data.split(separator:10) where !line.isEmpty {
-            let row=try JSONDecoder().decode(NativeFrame.self,from:Data(line))
-            guard row.runID==p.runID,row.epoch==p.epoch,row.pid==p.subjectPID else { continue }
-            guard row.seq>lastSequence,row.mono.isFinite,row.mono>=lastMono else { throw DriveError.outsideScope }
-            lastSequence=row.seq;lastMono=row.mono
-            if row.event=="status-item-frame" { latest=row }
-        }
-        guard let row=latest,let c=row.checks,c.settled==true,c.visible==true,
-              c.frameGeneration==generation,c.windowNumber==number,row.seq>=sequence,
-              now.isFinite,now-row.mono>=0,now-row.mono<=2,
-              let since=c.stableSinceMono,since.isFinite,row.mono-since>=0.5,
-              let x=c.cgX,let y=c.cgY,let w=c.width,let h=c.height,
-              [x,y,w,h].allSatisfy(\.isFinite),w>0,h>0,
-              let d=c.displayBounds,let b=c.menuBarBand,d.count==4,b.count==4,
-              (d+b).allSatisfy(\.isFinite),d[2]>0,d[3]>0,b[2]>0,b[3]>0,
-              y<=d[1]+1,y+h>=d[1]-1,b[0]==d[0],b[1]==d[1],b[2]==d[2],b[3]<=d[3] else { throw DriveError.outsideScope }
-        let frame=CGRect(x:x,y:y,width:w,height:h),display=CGRect(x:d[0],y:d[1],width:d[2],height:d[3])
-        let band=CGRect(x:b[0],y:b[1],width:b[2],height:b[3])
-        guard p.steps.allSatisfy({ let point=CGPoint(x:$0.x,y:$0.y);return frame.contains(point) && display.contains(point) && band.contains(point) }) else { throw DriveError.outsideScope }
-    }
-    /// Query only the exact native-bound own window; no global window/AX scan,
-    /// image capture, title read or other-application geometry is used.
-    static func currentStatusWindow(_ p:PointerPlan) throws {
-        guard p.u6InputKind=="status" || p.u6FrameSeq != nil && p.steps.contains(where:{$0.action == .click}) else { return }
-        if try statusMode(p)=="unavailable" { return }
-        guard let number=p.u6StatusWindowNumber else { throw DriveError.outsideScope }
-        let id=try windowID(number)
-        guard let entries=CGWindowListCopyWindowInfo(.optionIncludingWindow,id) as? [[String:Any]],
-              entries.count==1,let entry=entries.first,
-              (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value==p.subjectPID,
-              entry[kCGWindowIsOnscreen as String] as? Bool == true,
-              let raw=entry[kCGWindowBounds as String] as? [String:Any],
-              let bounds=CGRect(dictionaryRepresentation:raw as CFDictionary),
-              p.steps.allSatisfy({ bounds.contains(CGPoint(x:$0.x,y:$0.y)) }) else { throw DriveError.outsideScope }
-    }
     static func permission() -> [String: Any] {
         ["event":"pointer-host-permission","postEvents":AXIsProcessTrusted(),
          "helperPID":ProcessInfo.processInfo.processIdentifier,
@@ -216,200 +89,94 @@ final class ButtonGuard: @unchecked Sendable {
         p.allowedRectangles.contains { r in r.count == 4 && r.allSatisfy(\.isFinite) && r[2]>0 && r[3]>0 &&
             CGRect(x:r[0],y:r[1],width:r[2],height:r[3]).contains(point) }
     }
-    static func activeDisplayBounds() throws -> [CGRect] {
-        var count: UInt32=0
-        guard CGGetActiveDisplayList(0,nil,&count) == .success,count>0,count<=64 else { throw DriveError.outsideScope }
-        var ids=[CGDirectDisplayID](repeating:0,count:Int(count));var actual=count
-        let result=ids.withUnsafeMutableBufferPointer { CGGetActiveDisplayList(UInt32($0.count),$0.baseAddress,&actual) }
-        guard result == .success,actual>0,actual<=count else { throw DriveError.outsideScope }
-        let bounds=ids.prefix(Int(actual)).map { CGDisplayBounds($0) }
-        guard bounds.allSatisfy({ !$0.isEmpty && !$0.isInfinite && !$0.isNull }) else { throw DriveError.outsideScope }
-        return bounds
-    }
-    static func onDisplay(_ point: CGPoint, _ displays: [CGRect]) -> Bool {
-        displays.contains { $0.contains(point) }
-    }
-    static func validate(_ p: PointerPlan, displays: [CGRect]) throws {
-        try parkShape(p)
+    static func validate(_ p: PointerPlan) throws {
         guard p.profile == "synthetic", !p.runID.isEmpty, !p.epoch.isEmpty, p.subjectPID>0,
               !p.steps.isEmpty, p.steps.count<=4096, !p.allowedRectangles.isEmpty,
               p.steps.allSatisfy({ [$0.x,$0.y,$0.seconds,$0.dwell].allSatisfy(\.isFinite) && $0.seconds>=0 && $0.dwell>=0 }),
               p.steps.reduce(0,{$0+$1.seconds+$1.dwell})<=1200,
-              !displays.isEmpty,
-              p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) && onDisplay(CGPoint(x:$0.x,y:$0.y),displays) }) else { throw DriveError.invalidPlan }
+              p.steps.allSatisfy({ pointAllowed(CGPoint(x:$0.x,y:$0.y),p) }) else { throw DriveError.invalidPlan }
     }
     // Construct the complete pair before pressing, then post down and up back to back with
     // no I/O between them; receipts are written only after the button is released. The
     // guard covers the remaining window: a SIGTERM/SIGINT from verification cleanup that
     // arrives while a button is held posts the matching up before the process exits.
     static func click(at point: CGPoint, post: (CGEvent) -> Void,
-                      record: (CGEventType, Double, Double) throws -> Void, guardState: ButtonGuard = .shared,
-                      beforePress: () throws -> Void = {}) throws {
+                      record: (CGEventType) throws -> Void, guardState: ButtonGuard = .shared) throws {
         guard let down = CGEvent(mouseEventSource:nil,mouseType:.leftMouseDown,mouseCursorPosition:point,mouseButton:.left),
               let up = CGEvent(mouseEventSource:nil,mouseType:.leftMouseUp,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
         down.setIntegerValueField(.mouseEventClickState,value:1)
         up.setIntegerValueField(.mouseEventClickState,value:1)
-        try beforePress() // file/window checks finish before the atomic down/up pair
-        let downMono=ProcessInfo.processInfo.systemUptime, downAt=Date().timeIntervalSince1970
         guardState.press(down: down, up: up, post: post)
         guardState.release(post: post)
-        let upMono=ProcessInfo.processInfo.systemUptime, upAt=Date().timeIntervalSince1970
-        try record(.leftMouseDown,downMono,downAt)
-        try record(.leftMouseUp,upMono,upAt)
+        try record(.leftMouseDown)
+        try record(.leftMouseUp)
     }
     static func execute(_ p: PointerPlan, file: FileHandle) throws {
-        try parkShape(p) // rejects park clicks before any display or permission query
-        // Reject malformed U6 window bindings before any display/permission or
-        // subject query. This path must remain a bounded refusal, never a cast trap.
-        try currentStatusFrame(p)
-        try validate(p,displays:activeDisplayBounds())
+        try validate(p)
         try live(p)
-        try currentPark(p,displays:activeDisplayBounds())
-        try currentStatusFrame(p);try currentStatusWindow(p)
-        var access = permission();access["statusWindowCheck"]=statusReceiptMode(p);access["purpose"]=p.purpose ?? "drive";try append(access,to:file)
+        let access = permission(); try append(access,to:file)
         guard access["postEvents"] as? Bool == true else {
-            try append(["event":"pointer-result","outcome":"not-run","reason":"postEvents-not-granted","statusWindowCheck":statusReceiptMode(p),"purpose":p.purpose ?? "drive"],to:file);return
+            try append(["event":"pointer-result","outcome":"not-run","reason":"postEvents-not-granted"],to:file);return
         }
         var previous = CGPoint(x:p.steps[0].x,y:p.steps[0].y)
         for (index,step) in p.steps.enumerated() {
             let end = CGPoint(x:step.x,y:step.y)
-            let displays=try activeDisplayBounds()
-            guard pointAllowed(previous,p),pointAllowed(end,p),onDisplay(previous,displays),onDisplay(end,displays) else { throw DriveError.outsideScope }
+            guard pointAllowed(previous,p),pointAllowed(end,p) else { throw DriveError.outsideScope }
             let count = max(1,Int(ceil(step.seconds*60)))
             for frame in 1...count {
                 try live(p)
                 guard AXIsProcessTrusted() else { throw DriveError.outsideScope }
                 let f = Double(frame)/Double(count)
                 let point = CGPoint(x:previous.x+(end.x-previous.x)*f,y:previous.y+(end.y-previous.y)*f)
-                guard pointAllowed(point,p),onDisplay(point,try activeDisplayBounds()) else { throw DriveError.outsideScope }
+                guard pointAllowed(point,p) else { throw DriveError.outsideScope }
                 guard let event = CGEvent(mouseEventSource:nil,mouseType:.mouseMoved,mouseCursorPosition:point,mouseButton:.left) else { throw DriveError.cannotCreateEvent }
-                try currentStatusFrame(p);try currentStatusWindow(p)
-                try currentPark(p,displays:activeDisplayBounds())
                 event.post(tap:.cghidEventTap)
-                try append(["event":"mouse-moved-posted","kind":"move","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,
+                try append(["event":"mouse-moved-posted","runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,
                     "step":index,"x":point.x,"y":point.y,"uptimeSeconds":ProcessInfo.processInfo.systemUptime,
-                    "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
-                    "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap","statusWindowCheck":statusReceiptMode(p),"purpose":p.purpose ?? "drive"],to:file)
+                    "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
                 if step.seconds>0 { Thread.sleep(forTimeInterval:step.seconds/Double(count)) }
             }
             if step.action == .click {
                 try live(p)
-                guard AXIsProcessTrusted(),pointAllowed(end,p),onDisplay(end,try activeDisplayBounds()) else { throw DriveError.outsideScope }
-                try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type,mono,at in
-                    try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted","kind":"click",
-                        "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"targetPID":p.subjectPID,"step":index,
+                guard AXIsProcessTrusted(),pointAllowed(end,p) else { throw DriveError.outsideScope }
+                try click(at:end,post: { $0.post(tap:.cghidEventTap) },record: { type in
+                    try append(["event":type == .leftMouseDown ? "mouse-button-down-posted" : "mouse-button-up-posted",
+                        "runID":p.runID,"epoch":p.epoch,"subjectPID":p.subjectPID,"step":index,
                         "x":end.x,"y":end.y,"button":"left","clickCount":1,
-                        "uptimeSeconds":mono,"mono":mono,"at":at,
-                        "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap","statusWindowCheck":statusReceiptMode(p)],to:file)
-                },beforePress: { try currentStatusFrame(p);try currentStatusWindow(p) })
+                        "uptimeSeconds":ProcessInfo.processInfo.systemUptime,
+                        "timestamp":ISO8601DateFormatter().string(from:Date()),"tap":"kCGHIDEventTap"],to:file)
+                })
             }
             let until = ProcessInfo.processInfo.systemUptime+step.dwell
             while ProcessInfo.processInfo.systemUptime<until { try live(p);Thread.sleep(forTimeInterval:0.025) }
             previous = end
         }
-        try append(["event":"pointer-result","outcome":"posted","runID":p.runID,"epoch":p.epoch,
-            "targetPID":p.subjectPID,"mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,
-            "arrivalProof":"requires-correlated-native-receipts","statusWindowCheck":statusReceiptMode(p),"purpose":p.purpose ?? "drive"],to:file)
+        try append(["event":"pointer-result","outcome":"posted","arrivalProof":"requires-correlated-native-receipts"],to:file)
     }
     static func entry() throws {
         let args = CommandLine.arguments
-        if args.count == 3 && args[1] == "--fixture-receipts" {
-            // Serialization capture only: no live(), permission(), CGEvent or AX call.
-            let data=try Data(contentsOf:URL(fileURLWithPath:args[2]))
-            guard let rows=try JSONSerialization.jsonObject(with:data) as? [[String:Any]] else { throw DriveError.invalidPlan }
-            for row in rows { try append(row,to:FileHandle.standardOutput) }
-            return
-        }
         if args.count == 2 && args[1] == "--self-test" {
             try StatusMenuDrive.selfTest() // Decode/validate only; no AX query, I/O or input.
-            func parkFixture(_ action:PointerAction) -> PointerPlan {
-                PointerPlan(profile:"synthetic",runID:"park",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",
-                    subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[499,499,2,2]],
-                    steps:[.init(x:500,y:500,seconds:0,dwell:0,action:action)],purpose:"park",
-                    parkDisplayBounds:[0,0,1000,1000],parkExclusions:[[0,0,10,10]])
-            }
-            try validate(parkFixture(.move),displays:[CGRect(x:0,y:0,width:1000,height:1000)])
-            do { try parkShape(parkFixture(.click));preconditionFailure("park click admitted") }
-            catch DriveError.invalidPlan { }
-            let validID=try windowID(7),maximumID=try windowID(Int(UInt32.max))
-            precondition(validID==7 && maximumID==UInt32.max)
-            for bad in [0,-1,Int(UInt32.max)+1,Int.max] {
-                do { _=try windowID(bad);preconditionFailure("invalid window ID admitted") }
-                catch DriveError.outsideScope { }
-            }
             func fixture(_ profile: String = "synthetic", _ seconds: Double = 1) -> PointerPlan {
                 PointerPlan(profile:profile,runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[.init(x:10,y:10,seconds:seconds,dwell:0.2)])
             }
-            let displays=[CGRect(x:0,y:0,width:100,height:100)]
-            try validate(fixture(),displays:displays)
-            precondition(!onDisplay(CGPoint(x:30,y:1440),[CGRect(x:0,y:0,width:2560,height:1440)]))
-            precondition(onDisplay(CGPoint(x:1826,y:15),[CGRect(x:0,y:0,width:2560,height:1440)]))
-            precondition(onDisplay(CGPoint(x:-20,y:10),[CGRect(x:0,y:0,width:100,height:100),CGRect(x:-100,y:0,width:100,height:100)]))
-            do { try validate(fixture(),displays:[CGRect(x:100,y:100,width:100,height:100)]);preconditionFailure("off-display point admitted") }
-            catch DriveError.invalidPlan { }
+            try validate(fixture())
             precondition(pointAllowed(CGPoint(x:10,y:10),fixture()))
             precondition(!pointAllowed(CGPoint(x:101,y:10),fixture()))
             for bad in [fixture("owner"),fixture("synthetic",-1),fixture("synthetic",Double.infinity),fixture("synthetic",1201)] {
-                do { try validate(bad,displays:displays); preconditionFailure("invalid plan admitted") } catch DriveError.invalidPlan { }
+                do { try validate(bad); preconditionFailure("invalid plan admitted") } catch DriveError.invalidPlan { }
             }
             let oldStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
             precondition(oldStep.action == nil) // Existing U5 plans remain move-only.
             let clickStep = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"click","x":42,"y":24,"seconds":0,"dwell":0.2}"#.utf8))
             precondition(clickStep.action == .click)
-            // Real file guard plus fake post sink: a state change between plan
-            // creation and delivery must post neither movement nor button input.
-            let frameFile=FileManager.default.temporaryDirectory.appendingPathComponent("u6-frame-"+UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at:frameFile) }
-            func framePlan(_ number:Int,_ mode:String) -> PointerPlan { PointerPlan(profile:"synthetic",runID:"fixture",epoch:"epoch",lease:"unused",stop:"unused",output:"unused",
-                subjectPID:1,subjectBundle:"/unused.app",allowedRectangles:[[0,0,100,100]],steps:[clickStep],
-                u6InputKind:"status",u6Observations:frameFile.path,u6FrameSeq:1,u6StatusFrameGeneration:1,u6StatusWindowNumber:number,statusWindowCheck:mode) }
-            let bound=framePlan(7,"required")
-            let ready:[String:Any] = ["settled":true,"visible":true,"frameGeneration":1,"windowNumber":7,
-                "stableSinceMono":99,"cgX":0,"cgY":0,"width":100,"height":50,
-                "displayBounds":[0,0,100,100],"menuBarBand":[0,0,100,28]]
-            func writeFrames(_ changes:[[String:Any]],number:Int=7) throws {
-                var data=Data()
-                var first=ready;first["windowNumber"]=number
-                for (index,checks) in ([first]+changes).enumerated() {
-                    data += try JSONSerialization.data(withJSONObject:["event":"status-item-frame","runID":"fixture","epoch":"epoch",
-                        "pid":1,"seq":index+1,"mono":100+Double(index)*0.1,"checks":checks]) + Data([10])
-                }
-                try data.write(to:frameFile)
-            }
-            try writeFrames([]);try currentStatusFrame(bound,now:100.2)
-            for number in [0,-1,Int(UInt32.max)+1] {
-                try writeFrames([],number:number)
-                let unavailable=framePlan(number,"unavailable")
-                try currentStatusFrame(unavailable,now:100.2)
-                try currentStatusWindow(unavailable) // explicitly skips CG lookup, no host query
-                precondition(statusReceiptMode(unavailable)=="unavailable")
-                do { try currentStatusFrame(unavailable,now:103);preconditionFailure("stale mode-2 frame admitted") }
-                catch DriveError.outsideScope { }
-                do { try currentStatusFrame(framePlan(number,"required"),now:100.2);preconditionFailure("wrong mode admitted") }
-                catch DriveError.outsideScope { }
-            }
-            for change:[String:Any] in [
-                ["settled":false,"visible":true,"frameGeneration":2,"windowNumber":7],
-                ["settled":false,"visible":false,"frameGeneration":2,"windowNumber":7],
-                ["settled":false,"visible":true,"frameGeneration":2,"windowNumber":8]] {
-                try writeFrames([change]);var postedCount=0
-                do {
-                    try click(at:CGPoint(x:42,y:24),post:{ _ in postedCount+=1 },record:{ _,_,_ in },
-                        beforePress:{ try currentStatusFrame(bound,now:100.2) })
-                    preconditionFailure("invalidated frame delivered")
-                } catch DriveError.outsideScope { }
-                precondition(postedCount==0)
-            }
-            try writeFrames([])
-            do { try currentStatusFrame(bound,now:103);preconditionFailure("stale frame admitted") }
-            catch DriveError.outsideScope { }
             do {
                 _ = try JSONDecoder().decode(PointerStep.self,from:Data(#"{"action":"double-click","x":10,"y":10,"seconds":0,"dwell":0}"#.utf8))
                 preconditionFailure("unknown click action admitted")
             } catch is DecodingError { }
             let target = CGPoint(x:42,y:24)
             var events: [CGEvent] = [], records: [CGEventType] = []
-            try click(at:target,post: { events.append($0) },record: { type,_,_ in records.append(type) })
+            try click(at:target,post: { events.append($0) },record: { records.append($0) })
             precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
             precondition(records == [.leftMouseDown,.leftMouseUp])
             precondition(events.allSatisfy { $0.location == target && $0.getIntegerValueField(.mouseEventButtonNumber) == 0 && $0.getIntegerValueField(.mouseEventClickState) == 1 })
@@ -417,7 +184,7 @@ final class ButtonGuard: @unchecked Sendable {
             for failAt in [CGEventType.leftMouseDown,.leftMouseUp] {
                 events = []
                 do {
-                    try click(at:target,post: { events.append($0) },record: { type,_,_ in if type == failAt { throw ReceiptFailure.expected } })
+                    try click(at:target,post: { events.append($0) },record: { if $0 == failAt { throw ReceiptFailure.expected } })
                     preconditionFailure("receipt failure swallowed")
                 } catch ReceiptFailure.expected { }
                 precondition(events.map(\.type) == [.leftMouseDown,.leftMouseUp])
@@ -426,7 +193,7 @@ final class ButtonGuard: @unchecked Sendable {
             // both events have already been posted.
             final class Posted { var types: [CGEventType] = [] }
             let posted = Posted()
-            try click(at:target,post: { posted.types.append($0.type) },record: { type,_,_ in
+            try click(at:target,post: { posted.types.append($0.type) },record: { type in
                 if type == .leftMouseDown { precondition(posted.types == [.leftMouseDown,.leftMouseUp]) }
             })
             // A termination while the button is held posts exactly one up, after the down.
@@ -446,7 +213,7 @@ final class ButtonGuard: @unchecked Sendable {
             // Termination before any press posts nothing (no up without a down).
             let idle = ButtonGuard(), idleSeen = Seen()
             precondition(!idle.terminate(post: { idleSeen.types.append($0.type) }) && idleSeen.types.isEmpty)
-            print("PASS pointer bounds/profile/duration, current frame generation/window/visibility/freshness, invalidation before click posts nothing, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
+            print("PASS pointer bounds/profile/duration, move compatibility, click pair/coordinates, failure release, no I/O between down and up, termination release; no permission query or event posted");return
         }
         if args.count == 2 && args[1] == "--check" {
             let data = try JSONSerialization.data(withJSONObject:permission(),options:[.sortedKeys]);print(String(decoding:data,as:UTF8.self));return
@@ -461,9 +228,7 @@ final class ButtonGuard: @unchecked Sendable {
         guard FileManager.default.createFile(atPath:path.path,contents:nil,attributes:[.posixPermissions:0o600]) else { throw DriveError.invalidPlan }
         let out = try FileHandle(forWritingTo:path);defer { try? out.close() }
         do { try execute(plan,file:out) }
-        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended",
-            "runID":plan.runID,"epoch":plan.epoch,"targetPID":plan.subjectPID,
-            "mono":ProcessInfo.processInfo.systemUptime,"at":Date().timeIntervalSince1970,"statusWindowCheck":statusReceiptMode(plan),"purpose":plan.purpose ?? "drive"],to:out);throw error }
+        catch { try append(["event":"pointer-result","outcome":"not-run","reason":"scope-lease-or-subject-ended"],to:out);throw error }
     }
     static func main() {
         ButtonGuard.shared.installTerminationRelease()
