@@ -124,6 +124,36 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
+    static func announcedMenuIndicator(capture:URL) async throws -> String {
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        let result=document["result"] as! [String:Any]
+        var data=result["data"] as! [String:Any], projection=data["projection"] as! [String:Any]
+        var events=projection["resetEvents"] as! [[String:Any]]
+        let now=Date(),formatter=ISO8601DateFormatter()
+        events[0]["publishedAt"]=formatter.string(from:now.addingTimeInterval(-60))
+        events[0]["expiresAt"]=formatter.string(from:now.addingTimeInterval(3600))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:now),"through":formatter.string(from:now.addingTimeInterval(3600))]
+        projection["resetEvents"]=events;data["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-menu-notice-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard case .available(let admitted)=entry.composition.rowEvents,
+              admitted.count == 1, admitted[0].status == "announced",
+              entry.composition.resetSignals.contains(where:{$0.reset?.id == admitted[0].id}),
+              entry.composition.dock.menuNotice != nil else {
+            await entry.composition.stop()
+            throw Failure(description:"announced event must reach the normal host before the menu indicator is tested")
+        }
+        let title=entry.composition.menuPresentation.title
+        await entry.composition.stop()
+        return title
+    }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
