@@ -46,9 +46,40 @@ while args:
 if MODE == 'fail': sys.exit(1)  # LaunchServices refused: the subject never starts
 info = plistlib.loads(open(os.path.join(bundle, 'Contents', 'Info.plist'), 'rb').read())
 exe = os.path.join(bundle, 'Contents', 'MacOS', info['CFBundleExecutable'])
+open(out + '.env.json', 'w').write(__import__('json').dumps(env))  # what open was asked to pass
 with open(out, 'ab') as o, open(err, 'ab') as e:
     sys.exit(subprocess.Popen([exe, *rest], env=env, stdout=o, stderr=e, start_new_session=True).wait())
 '''
+FAKE_UNZIP = '''import os, stat, sys, zipfile
+archive, out = sys.argv[-2:]
+with zipfile.ZipFile(archive) as z:
+    for info in z.infolist():
+        mode = info.external_attr >> 16; target = os.path.join(out, info.filename)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if stat.S_ISLNK(mode): os.symlink(z.read(info).decode(), target); continue
+        if info.is_dir(): os.makedirs(target, exist_ok=True); continue
+        open(target, 'wb').write(z.read(info)); os.chmod(target, mode & 0o777 or 0o644)
+'''
+FAKE_CODESIGN = '''import sys
+if '-dv' in sys.argv: sys.stderr.write('Executable=x\\nSignature=adhoc\\n'); sys.exit(0)
+sys.exit(0 if VALID else 1)
+'''
+
+
+def write_app_zip(archive, app_name='FakeApp', executable=None, extra=(), links=()):
+    """A zip of `<app_name>.app` with Info.plist and MacOS/<app_name>; `extra` adds top-level names."""
+    import zipfile
+    with zipfile.ZipFile(archive, 'w') as z:
+        info = plistlib.dumps(dict(CFBundleExecutable=app_name, CFBundleIdentifier='org.example.synthetic', CFBundlePackageType='APPL'))
+        z.writestr(f'{app_name}.app/Contents/Info.plist', info)
+        entry = zipfile.ZipInfo(f'{app_name}.app/Contents/MacOS/{app_name}'); entry.external_attr = (0o100755 << 16)
+        z.writestr(entry, Path(executable).read_bytes() if executable else b'#!/bin/sh\n')
+        for name in extra:
+            z.writestr(name, b'x')
+        for name, target in links:
+            link = zipfile.ZipInfo(f'{app_name}.app/{name}'); link.external_attr = (0o120777 << 16)
+            z.writestr(link, target)
+    return archive
 
 
 def native_sleeper(test, path):
@@ -285,7 +316,7 @@ class MacCISequence(unittest.TestCase):
     def book(self, *args):
         return self.cli(BIN / 'book.py', '--ledger', self.ledger, *args)
 
-    def start(self, open_mode):
+    def start(self, open_mode, subject='binary'):
         ident = json.loads(self.book('request', '--lane', 'V1', '--unit', 'U11a', '--scenario', 'cold', '--minutes', '2').stdout)['id']
         started = self.book('start', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci')
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -301,16 +332,21 @@ class MacCISequence(unittest.TestCase):
                             '--lease', self.paths['lease'], '--output', self.paths['release'], '--coordinator-go', GO)
         self.assertEqual(released.returncode, 0, released.stderr)
         fake_open = self.root / f'open-{open_mode}.py'; fake_open.write_text(f'MODE = {open_mode!r}\n' + FAKE_OPEN)
+        fake_unzip = self.root / 'unzip.py'; fake_unzip.write_text(FAKE_UNZIP)
+        fake_codesign = self.root / 'codesign.py'; fake_codesign.write_text('VALID = True\n' + FAKE_CODESIGN)
+        target = write_app_zip(self.root / 'ModelPlan.zip', executable=self.app) if subject == 'app-zip' else self.app
         config = self.root / 'run.json'
         config.write_text(json.dumps(dict(
-            profile='synthetic', host='macci', launchMode='launchservices',
-            binarySHA256=hashlib.sha256(self.app.read_bytes()).hexdigest(), argv=[str(self.app), '600'],
+            profile='synthetic', host='macci', launchMode='launchservices', subjectKind=subject,
+            binarySHA256=hashlib.sha256(target.read_bytes()).hexdigest(), argv=[str(target), '600'],
             leasePath=str(self.paths['lease']), releasePath=str(self.paths['release']), stopPath=str(self.paths['stop']),
             syntheticHome=str(self.root / 'home'), syntheticTmp=str(self.root / 'tmp'),
             subjectPidPath=str(self.paths['pid']), requiredSeconds=30,
             booking=dict(id=ident, lane='V1', unit='U11a', scenario='cold', ledger=str(self.ledger)))))
         runner = (f'import sys; sys.path.insert(0, {str(BIN)!r}); import launch; '
                   f'launch.OPEN = [sys.executable, {str(fake_open)!r}]; '
+                  f'launch.UNZIP = [sys.executable, {str(fake_unzip)!r}]; '
+                  f'launch.CODESIGN = [sys.executable, {str(fake_codesign)!r}]; '
                   f'sys.argv = ["launch.py", "--config", {str(config)!r}, "--execute"]; launch.main()')
         self.out, self.err = self.root / 'launch.out', self.root / 'launch.err'
         with self.out.open('w') as out, self.err.open('w') as err:
@@ -349,6 +385,31 @@ class MacCISequence(unittest.TestCase):
         self.assertEqual((final['stoppedBy'], final['launchMode']), ('stop-file', 'launchservices'))
         self.assertEqual(self.finish(ident).returncode, 0)
 
+    def test_full_app_zip_is_verified_extracted_and_launched_with_synthetic_home(self):
+        ident = self.start('ok', subject='app-zip')
+        def registered():
+            try:
+                record = json.loads(self.paths['pid'].read_text())
+            except (OSError, ValueError):
+                return None
+            return record if record.get('state') == 'running' else None
+        record = wait_until(registered, 15, 'app subject never registered')
+        app = self.root / 'tmp' / '.launchservices' / 'app' / 'FakeApp.app'
+        self.assertEqual(os.readlink(f'/proc/{record["pid"]}/exe'), str(app / 'Contents' / 'MacOS' / 'FakeApp'))
+        self.assertEqual(record['scan']['prefix'], str(app))
+        report = json.loads(wait_until(lambda: self.out.read_text().splitlines(), 10, 'no launch report')[0])
+        self.assertEqual((report['subjectKind'], report['codeSignature'], report['bundleIdentifier']),
+                         ('app-zip', 'adhoc', 'org.example.synthetic'))
+        self.assertEqual(report['archiveSHA256'], hashlib.sha256((self.root / 'ModelPlan.zip').read_bytes()).hexdigest())
+        env = json.loads((app.parent / 'subject.stdout.env.json').read_text())
+        home = str(self.root / 'home')
+        self.assertEqual((env['HOME'], env['CFFIXED_USER_HOME'], env['TMPDIR']), (home, home, str(self.root / 'tmp')))
+        self.paths['stop'].write_text('')
+        self.assertEqual(self.controller.wait(30), 3, self.err.read_text())
+        self.assertEqual(self.guardian.wait(30), 0)
+        self.assertFalse(alive(record['pid']))
+        self.assertEqual(self.finish(ident).returncode, 0)
+
     def test_subject_that_never_registers_is_scan_proven_and_finishes_cleaned(self):
         ident = self.start('fail')
         self.assertEqual(self.controller.wait(60), 3)
@@ -363,6 +424,69 @@ class MacCISequence(unittest.TestCase):
         self.assertEqual(finish.returncode, 0, finish.stderr)
         state = json.loads(self.book('status').stdout)
         self.assertEqual((state['head'], state['history'][-1]['state']), (None, 'finished'))
+
+
+class FullAppSubject(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.dir, True)
+        unzip = self.dir / 'unzip.py'; unzip.write_text(FAKE_UNZIP)
+        for valid in (True, False):
+            (self.dir / f'codesign-{valid}.py').write_text(f'VALID = {valid}\n' + FAKE_CODESIGN)
+        self.patches = [patch.object(launch, 'UNZIP', [PY, str(unzip)]), patch.object(launch, 'CODESIGN', [PY, str(self.dir / 'codesign-True.py')])]
+        for item in self.patches:
+            item.start(); self.addCleanup(item.stop)
+
+    def extract(self, archive, run='run', pin=None):
+        tmp = self.dir / run; tmp.mkdir()
+        return launch.extract_app(dict(binarySHA256=pin or hashlib.sha256(archive.read_bytes()).hexdigest()), archive, tmp)
+
+    def test_subject_env_redirects_foundation_home_in_both_modes(self):
+        env = launch.subject_env(self.dir / 'home', self.dir / 'tmp')
+        self.assertEqual(env['CFFIXED_USER_HOME'], env['HOME'])
+        self.assertEqual(env['HOME'], str(self.dir / 'home'))
+        self.assertEqual(set(env), {'PATH', 'HOME', 'CFFIXED_USER_HOME', 'TMPDIR', 'LANG'})
+        # direct mode passes the same environment to its exec-gated child
+        with patch.object(launch.subprocess, 'Popen', side_effect=RuntimeError('stop here')) as popen, \
+                patch.object(launch, 'mark_launching', return_value={}), \
+                patch.object(launch, 'load_and_admit', side_effect=lambda x: x):
+            binary = self.dir / 'bin'; binary.write_bytes(b'x')
+            cfg = self.dir / 'run.json'
+            cfg.write_text(json.dumps(dict(syntheticHome=str(self.dir / 'h'), syntheticTmp=str(self.dir / 't'),
+                                           argv=[str(binary)], binarySHA256=hashlib.sha256(b'x').hexdigest(),
+                                           subjectPidPath=str(self.dir / 'pid'))))
+            with patch.object(sys, 'argv', ['launch', '--config', str(cfg), '--execute']), self.assertRaises(RuntimeError):
+                launch.main()
+        env = popen.call_args.kwargs['env']
+        self.assertEqual((env['HOME'], env['CFFIXED_USER_HOME']), (str(self.dir / 'h'), str(self.dir / 'h')))
+
+    def test_verified_zip_extracts_one_app_and_records_its_signature(self):
+        app = self.extract(write_app_zip(self.dir / 'a.zip'))
+        self.assertEqual(app['exe'], self.dir / 'run' / '.launchservices' / 'app' / 'FakeApp.app' / 'Contents' / 'MacOS' / 'FakeApp')
+        self.assertEqual((app['evidence']['subjectKind'], app['evidence']['codeSignature']), ('app-zip', 'adhoc'))
+        self.assertTrue((self.dir / 'run' / '.launchservices' / 'subject.zip').exists())  # extracted from the local copy
+
+    def test_bad_archives_are_refused(self):
+        with self.assertRaisesRegex(ValueError, 'archive identity'):
+            self.extract(write_app_zip(self.dir / 'pin.zip'), run='pin', pin='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'exactly one top-level .app'):
+            self.extract(write_app_zip(self.dir / 'two.zip', extra=['Other.app/x']), run='two')
+        with self.assertRaisesRegex(ValueError, 'exactly one top-level .app'):
+            self.extract(write_app_zip(self.dir / 'loose.zip', extra=['README']), run='loose')
+        with self.assertRaisesRegex(ValueError, 'symlink leaves the bundle'):
+            self.extract(write_app_zip(self.dir / 'link.zip', links=[('Contents/Resources', '/etc')]), run='link')
+        with patch.object(launch, 'CODESIGN', [PY, str(self.dir / 'codesign-False.py')]), \
+                self.assertRaisesRegex(ValueError, 'code signature does not verify'):
+            self.extract(write_app_zip(self.dir / 'sig.zip'), run='sig')
+
+    def test_app_zip_requires_launchservices(self):
+        lease = dict(runID='r', epoch='e', notBefore=1000, expiresAt=1900, guardianHeartbeatAt=1019.5, ownerPreempted=False, exclusive=True)
+        c = dict(profile='synthetic', lease=lease, release=lease | dict(m1Released=True, approval=APPROVAL),
+                 requiredSeconds=60, stop=False, argv=['ModelPlan.zip'], binarySHA256='a' * 64, subjectKind='app-zip')
+        with self.assertRaisesRegex(ValueError, 'only through launchservices'):
+            launch.validate(c, 1020)
+        self.assertTrue(launch.validate(c | dict(launchMode='launchservices'), 1020))
+        with self.assertRaisesRegex(ValueError, 'subjectKind'):
+            launch.validate(c | dict(launchMode='launchservices', subjectKind='dmg'), 1020)
 
 
 class NeverRegisteredClosure(unittest.TestCase):

@@ -91,10 +91,31 @@ Launch modes (`launchMode`, recorded in launch.py's JSON lines, the subject regi
 evidence manifest): `direct` (default) keeps the exec-gated child. `launchservices` copies the
 pinned binary into a minimal `.app` under `syntheticTmp/.launchservices/` (hash re-checked; optional
 `bundleIdentifier`, `bundleUIElement` default true, `bundleResources`, `bundleSign: adhoc`), opens
-it with `open -n -W --env HOME=… --env TMPDIR=…`, finds the subject by its exact bundle executable
-path, registers its identity, then supervises it by identity. The app's stdout/stderr go to
-`syntheticTmp/.launchservices/subject.{stdout,stderr}`. A LaunchServices app also inherits the
-user's launchd environment apart from the overridden variables.
+it with `open -n -W --env HOME=… --env CFFIXED_USER_HOME=… --env TMPDIR=…`, finds the subject by its
+exact bundle executable path, registers its identity, then supervises it by identity. The app's
+stdout/stderr go next to the bundle as `subject.{stdout,stderr}`. A LaunchServices app also inherits
+the user's launchd environment apart from the overridden variables. Both modes set
+`CFFIXED_USER_HOME` to the synthetic home: `HOME` alone does not move Foundation's Application
+Support or preferences paths.
+
+Full app (`"subjectKind": "app-zip"`, launchservices only): `argv[0]` is the zip and
+`binarySHA256` its hash. launch.py copies the zip into `syntheticTmp/.launchservices/`, re-hashes
+the copy, extracts it with `ditto -x -k --noqtn`, requires exactly one top-level `.app` with no
+symlink leaving it, a valid `CFBundleExecutable`, and `codesign --verify --deep --strict` passing
+(ad-hoc accepted; the kind is recorded as `codeSignature`), then launches it as above. The scan
+scope is the exact main executable plus the `.app` prefix, so its bundled helpers are covered.
+Keychain is not redirected by a synthetic HOME: do not grant consent to tools during a synthetic
+run, so no reader touches the host user's Keychain.
+
+Synthetic Dock data: the shipped (release, ad-hoc) app has **no** canned-rows or scenario input. Its
+normal entry takes rows only from its bundled CLI `app-server`, which reads real provider sources
+under HOME (after consent) and verified publication data; the child gets only `HOME`, `PATH`,
+`TMPDIR`, locale and provider API-key variables. The existing synthetic paths are test-only builds:
+`MODELPLAN_E2E_JOURNEY` (app, `DEBUG` plus macro, `package-neutral.sh --e2e-journey`; a fake
+Codex provider), the `tools/u14` CLI constructor overlays (recording providers) and the
+Swift-test `WireRowsSnapshot` captures. A fresh synthetic HOME therefore shows only the empty
+state. Covering several subscriptions, overflow, warning/critical and reset notices needs a
+separate verification build (proposal in the PR); launch.py has no `--scenario` until that exists.
 
 Never registered: both modes record the run's scan scope in the reservation: the exact subject
 executable path, the `.launchservices` bundle prefix (LaunchServices mode) and the PID plus start
