@@ -21,12 +21,14 @@ type Stamp struct {
 // View is immutable after return. The backend owns admission, reader locks,
 // publication fencing and shared budgets; the server never rebuilds permission.
 type View struct {
-	Stamp       Stamp
-	Projection  rows.Projection
-	Scopes      []string
-	Consent     wire.ConsentFacts
-	Diagnostics []wire.ScopeDiag
-	Health      wire.Health
+	Stamp                     Stamp
+	Projection                rows.Projection
+	ResetEvents               *[]rows.ResetEvent
+	DroppedResetConfirmations int
+	Scopes                    []string
+	Consent                   wire.ConsentFacts
+	Diagnostics               []wire.ScopeDiag
+	Health                    wire.Health
 }
 
 type GrantResult struct {
@@ -122,4 +124,12 @@ type sessionContextKey struct{}
 func SessionID(ctx context.Context) string {
 	session, _ := ctx.Value(sessionContextKey{}).(string)
 	return session
+}
+
+// ResetEventsEnabled reports the capability negotiated by the current session.
+type resetEventsContextKey struct{}
+
+func ResetEventsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(resetEventsContextKey{}).(bool)
+	return enabled
 }

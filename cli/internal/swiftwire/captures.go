@@ -25,7 +25,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
-		reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
+		reflect.TypeFor[rows.ResetEvent](), reflect.TypeFor[rows.ResetSource](), reflect.TypeFor[rows.ResetSchedule](), reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
 	}
 	out := []captureRoot{}
 	for _, t := range roots {
@@ -43,6 +43,17 @@ func captureRoots() []captureRoot {
 	)
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	if t == reflect.TypeFor[rows.ResetSource]() {
+		return reflect.ValueOf(rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetSchedule]() {
+		return reflect.ValueOf(rows.ResetSchedule{Precision: "window", From: now.Add(time.Hour), Through: now.Add(3 * time.Hour)}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetEvent]() {
+		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}}), nil
+	}
+
 	if t == reflect.TypeFor[wire.PluginInstallResult]() {
 		return reflect.ValueOf(wire.PluginInstallResult{SchemaVersion: 1, Tool: wire.PluginCodex,
 			Status: wire.PluginPlanned, Commands: [][]string{{"codex", "plugin", "marketplace", "add", "modelplan/modelplan"}, {"codex", "plugin", "add", "modelplan-codex@modelplan"}},

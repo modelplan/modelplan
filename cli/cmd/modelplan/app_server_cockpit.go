@@ -38,7 +38,7 @@ func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmissi
 	if view.Stamp != a.Stamp || !slices.Equal(scopes, a.Scopes) {
 		return wire.CockpitData{}, appserver.ProtocolError{Code: wire.CodeConsentChanged}
 	}
-	data := wire.CockpitData{Projection: wire.Project(view.Projection), Subscriptions: []wire.CockpitSubscription{}}
+	data := wire.CockpitData{Projection: wire.ProjectWithEvents(view.Projection, view.ResetEvents, appserver.ResetEventsEnabled(ctx)), Subscriptions: []wire.CockpitSubscription{}}
 	groups := map[string][]wire.CockpitAccount{}
 	for _, row := range view.Projection.Rows {
 		for _, account := range row.Accounts {

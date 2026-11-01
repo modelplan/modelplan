@@ -344,3 +344,22 @@ revoke/reset, positive reading removal, query isolation/cursors/caps/cancellatio
 recording-provider admission and stopped stdout). The U14 bundle records exact
 source/binary/overlay hashes and outcomes. Native agent prompting and signed app
 supervision require their own device evidence; Linux engine checks do not earn it.
+
+### Public reset event capability
+
+The server advertises `reset_events_v1` when the verified-publication source is
+configured. A client must include that capability in `initialize` to receive
+optional `resetEvents` on the shared rows projection in `rows/subscribe`,
+`rows/changed`, or `cockpit/query`. An omitted field means the verified source
+was unavailable; an empty array means the verified source had no eligible
+records. Older clients never receive the field. This is a public announcement,
+not evidence that any personal quota was reset; acknowledgement and notification
+state belong to the App. The existing publication cache and rows watcher supply
+refresh; no additional fetch is started.
+
+The current public reset record does not provide reviewed structured plan links,
+confirmation references, or an official vendor-host-list interface. Accordingly
+this draft drops records with unmapped free-form scope, drops and counts unlinked
+confirmations, and omits source links while retaining otherwise eligible events.
+Those fail-closed limits require coordinated publication/consumer work before
+full S4 acceptance.
