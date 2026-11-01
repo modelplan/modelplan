@@ -20,7 +20,10 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.ok(!Object.keys(manifest.files).some(name=>name.includes('session-state')));
     assert.doesNotMatch(readFileSync(root+'cockpit.css','utf8'),/--session-|session-transition-flash|[.]session-state/);
     for(const [name,hash]of Object.entries(manifest.files))assert.equal(digest(readFileSync(root+name)),hash,name);
-    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')&&name!=='study/rocket-r1/cockpit-r5.css'))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
+    // The verbatim study file contains an inactive infinite rule; built-page
+    // WebKit tests reject active infinite animations, including pseudo-elements.
+    assert.equal(digest(readFileSync(root+'study/rocket-r1/cockpit-r5.css')),'521a1c4096e97f8e00eeb4a03c770fcfb548c7b267912f38c673ca46e56a230d');
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');
