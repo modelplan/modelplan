@@ -15,13 +15,13 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
-	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 func TestWindowsProjectLabelsOffAndHistoryErasure(t *testing.T) {
 	home, cache := t.TempDir(), t.TempDir()
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("HOME", home)
+	t.Setenv("MODELPLAN_CACHE", cache)
 	ledger := speed.PerfLedger{SchemaVersion: 1, Since: time.Now(), Sessions: []speed.PerfSession{{Ref: "synthetic", Source: "codex", ProjectLabel: "private-project"}}}
 	b, err := json.Marshal(ledger)
 	if err != nil {
@@ -35,7 +35,7 @@ func TestWindowsProjectLabelsOffAndHistoryErasure(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out, stderr bytes.Buffer
-	if code := projectLabelsCmd([]string{"off"}, &out, &stderr, &store.Store{Dir: cache}, common{json: true}); code != 0 {
+	if code := run([]string{"project-labels", "--json", "off"}, nil, &out, &stderr); code != 0 {
 		t.Fatalf("project-labels off exit %d: %s", code, &stderr)
 	}
 	b, err = os.ReadFile(path)
