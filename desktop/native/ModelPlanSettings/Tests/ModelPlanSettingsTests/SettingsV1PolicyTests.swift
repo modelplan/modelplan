@@ -23,4 +23,23 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertEqual(effective.opening, .quick, "V1 opens quickly even with a retained hold preference")
         XCTAssertNil(effective.ignitionSeconds)
     }
+    func testV1NoEffectControlsAreDisabledWithVisibleReasons() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
+        let keys: [SettingKey] = [.login, .automaticUpdates, .menuDisplay, .openShortcut, .dockShortcut,
+            .resetHints, .magnification, .showPercentages, .sliverAlert, .percentagePin, .order,
+            .visible, .alias, .notificationConsent, .forecast, .reset, .official, .expiring, .stale,
+            .projectNames, .language, .motion, .transparency, .fullscreen, .redBelow,
+            .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback]
+        for key in keys {
+            let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
+            XCTAssertEqual(row.availability, .serviceUnavailable, "A no-effect control must not remain enabled: \(key)")
+            XCTAssertTrue(row.subtitle.english.contains("Unavailable"), "Provide an English visible reason: \(key)")
+            XCTAssertTrue(row.subtitle.chinese.contains("不可用"), "Provide a Chinese visible reason: \(key)")
+        }
+        for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode] {
+            XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available)
+        }
+    }
+
 }

@@ -95,6 +95,8 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
 public struct SettingsPageContext: Sendable {
     /// True only for the shipping normal-entry v1 surface.
     public var v1NormalEntry = false
+    public var unavailableControls: [SettingKey: SettingsText] = [:]
+    public mutating func configureV1NormalEntry() { v1NormalEntry = true }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
