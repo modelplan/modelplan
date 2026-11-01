@@ -25,3 +25,11 @@
 .eng-pg{padding-right:40px}
 
 #cockpit .ck-eng{pointer-events:auto}
+
+/* Approved night wordmark and All key indicator. */
+#cockpit .wordmark b{color:#df604c}
+.ck-eng .ek-all::after{content:"";position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--lcd-ink);opacity:.22;pointer-events:none}
+.ck-eng .ek-all.on::after{opacity:1;box-shadow:0 0 6px var(--lcd-ink)}
+.ck-eng .eng-led.lv-amber[aria-current=false]{background:var(--st-mid)}
+.ck-eng .eng-led.lv-red[aria-current=false]{background:var(--st-low)}
+.ck-eng .ek .vendor-mark{width:16px;height:16px;object-fit:contain;flex:none}

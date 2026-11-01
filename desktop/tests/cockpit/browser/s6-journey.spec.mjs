@@ -97,3 +97,26 @@ test('initial compact closed shell and later tall tier select independent layout
   await expect(page.locator('.s6-closed-cap')).toBeHidden();
   expect(await receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'full'}))).toBe(false);
 });
+
+test('wordmark, vendor marks, off-page caution and scope actions follow the actual display',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample(),seed=data.projection.rows[0];data.subscriptions=[];
+  data.projection.rows=Array.from({length:7},(_,i)=>{const row=structuredClone(seed);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.vendorKey=['openai','claude','cursor','copilot','kimi','glm','opencode'][i];row.accounts[0].subscriptionRef=null;row.accounts[0].windows[0].remainingPercent=i===6?15:70;return row;});
+  expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.locator('.wordmark b')).toHaveCSS('color','rgb(223, 96, 76)');
+  await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
+  expect(await page.locator('.s6-page:visible img.vendor-mark').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
+  await expect(page.getByRole('button',{name:'Page 2'})).toHaveClass(/lv-red/);
+  const all=page.getByRole('button',{name:'All',exact:true}).first();await expect(all).toHaveAttribute('aria-pressed','true');
+  expect(await all.evaluate(e=>getComputedStyle(e,'::after').opacity)).toBe('1');
+  await page.getByRole('button',{name:'Tool 0',exact:true}).click();
+  await expect(all).toHaveAttribute('aria-pressed','false');expect(await all.evaluate(e=>getComputedStyle(e,'::after').opacity)).toBe('0.22');
+  let selected=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));expect(selected.action).toBe('scopeSelect');expect(selected.scope).toBe('tool0#saved_login_api');
+  expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:'Tool 0',exact:true})).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('button',{name:'All',exact:true}).first().click();selected=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));expect(selected.scope).toBe('all');
+  await page.getByRole('button',{name:'Page 2'}).click();await expect(page.getByRole('button',{name:'Page 2'})).not.toHaveClass(/lv-red/);await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(1);
+});

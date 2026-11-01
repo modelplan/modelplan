@@ -164,3 +164,17 @@ test('frozen v2 load requires exact initial appearance and tiered shell before r
   assert.equal(b.receive(JSON.stringify(update),source),true);
   assert.deepEqual(calls.filter(Array.isArray).at(-1),['shell',{profile:'open',attached:false,forcedClosed:false,tier:'tall'}]);
 });
+
+test('scope selection only emits an exact currently displayed member or All',()=>{
+  const f=fixture(),data=capture(),row=data.projection.rows[0],ref=row.accounts[0].subscriptionRef;
+  assert.equal(f.bridge.action('scopeSelect','all'),false);
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);assert.equal(f.events.at(-1).scope,ref);assert.equal('tool' in f.events.at(-1),false);
+  assert.equal(f.bridge.action('scopeSelect','all'),true);assert.equal(f.bridge.action('scopeSelect','/secret'),false);
+  const fallback=structuredClone(data);fallback.subscriptions=[];fallback.projection.rows[0].accounts[0].subscriptionRef=null;
+  assert.equal(f.bridge.receive(f.send('display',{data:fallback}),source),true);
+  const key=`${row.id}#${row.accounts[0].route}`;
+  assert.equal(f.bridge.action('scopeSelect',ref),false);assert.equal(f.bridge.action('scopeSelect',key),true);
+  assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'4'}),source),true);
+  assert.equal(f.bridge.action('scopeSelect',key),false);assert.equal(f.bridge.action('scopeSelect','all'),false);
+});
