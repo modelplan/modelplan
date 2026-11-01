@@ -121,3 +121,87 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 		})
 	}
 }
+
+func TestHistoryCleanupRecoversAbandonedWriterLocks(t *testing.T) {
+	for _, name := range []string{"speed.lock", "perf.lock"} {
+		for _, forget := range []bool{false, true} {
+			t.Run(name+map[bool]string{false: "-revoke", true: "-forget"}[forget], func(t *testing.T) {
+				consentFixtureHome(t)
+				st, err := store.Locate()
+				if err != nil {
+					t.Fatal(err)
+				}
+				state, err := consent.EnsureStore(consent.Path())
+				if err != nil {
+					t.Fatal(err)
+				}
+				hooks := consent.GrantHooks{Admit: func(consent.ScopeDefinition) (consent.Record, error) { return consent.Record{}, nil }, Cleanup: func(scope string, forget bool) error {
+					return quota.EraseScope(quota.Paths{Cache: st.Dir}, scope, forget)
+				}}
+				_, err = consent.ApplyGrant(consent.Path(), consent.Grant{RequestID: "allow", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, ConsentTextVersion: consent.TextVersion, Allow: []string{consent.ScopeCodexLocalHistory}}, hooks)
+				if err != nil {
+					t.Fatal(err)
+				}
+				dir := filepath.Join(st.Dir, "observed")
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				for _, file := range []string{"speed.json", "perf.json", "daily-long.json"} {
+					b := []byte(`{"schemaVersion":1,"rows":[{"source":"codex"},{"source":"claude-code"}]}`)
+					if file == "perf.json" {
+						b = []byte(`{"schemaVersion":1,"rows":[{"source":"codex"},{"source":"claude-code"}],"live":[{"source":"codex"},{"source":"claude-code"}]}`)
+					}
+					if err := os.WriteFile(filepath.Join(dir, file), b, 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				lock := filepath.Join(dir, name)
+				if err := os.WriteFile(lock, []byte("active"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				state = consent.Capture().State()
+				request := consent.Grant{RequestID: "remove", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation}
+				if forget {
+					request.Forget = []string{consent.ScopeCodexLocalHistory}
+				} else {
+					request.Deny = []string{consent.ScopeCodexLocalHistory}
+				}
+				receipt, err := consent.ApplyGrant(consent.Path(), request, hooks)
+				if err != nil && !receipt.Committed {
+					t.Fatal(err)
+				}
+				if len(receipt.CleanupPending) != 1 {
+					t.Fatalf("fresh lock stolen: %#v", receipt)
+				}
+				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
+					t.Fatal(err)
+				}
+				if !consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {
+					t.Fatal("fresh lock did not preserve pending cleanup")
+				}
+				if b, err := os.ReadFile(lock); err != nil || string(b) != "active" {
+					t.Fatalf("fresh lock changed: %q, %v", b, err)
+				}
+				old := time.Now().Add(-time.Minute)
+				if err := os.Chtimes(lock, old, old); err != nil {
+					t.Fatal(err)
+				}
+				if err := consent.RetryCleanup(consent.Path(), hooks.Cleanup); err != nil {
+					t.Fatal(err)
+				}
+				if consent.Capture().CleanupPending(consent.ScopeCodexLocalHistory) {
+					t.Fatal("stale lock left cleanup pending")
+				}
+				if _, err := os.Stat(lock); !os.IsNotExist(err) {
+					t.Fatalf("stale lock survived: %v", err)
+				}
+				for _, file := range []string{"speed.json", "perf.json", "daily-long.json"} {
+					b, err := os.ReadFile(filepath.Join(dir, file))
+					if err != nil || strings.Contains(string(b), `"source":"codex"`) || !strings.Contains(string(b), `"source":"claude-code"`) {
+						t.Fatalf("bad cleanup for %s: %s, %v", file, b, err)
+					}
+				}
+			})
+		}
+	}
+}

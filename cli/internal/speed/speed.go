@@ -447,6 +447,21 @@ func lock(cache, name string) (func(), bool) {
 	return func() { _ = os.Remove(p) }, true
 }
 
+// LockLedgersForCleanup uses the same stale-lock recovery and lock order as
+// the speed writers. The caller must already hold the consent reader lock.
+func LockLedgersForCleanup(cache string) (func(), bool) {
+	unlockSpeed, ok := lock(cache, "speed.lock")
+	if !ok {
+		return nil, false
+	}
+	unlockPerf, ok := lock(cache, "perf.lock")
+	if !ok {
+		unlockSpeed()
+		return nil, false
+	}
+	return func() { unlockPerf(); unlockSpeed() }, true
+}
+
 func write(p string, b []byte) error {
 	f, err := os.CreateTemp(filepath.Dir(p), ".speed-*")
 	if err != nil {

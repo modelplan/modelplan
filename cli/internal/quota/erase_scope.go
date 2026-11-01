@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // EraseScope is the engine's cleanup hook. It never reads tool credentials,
@@ -65,24 +66,11 @@ func forgetLocalSpeedLedgers(cache, tool string) error {
 	} else if err != nil {
 		return err
 	}
-	var releases []func()
-	defer func() {
-		for _, release := range releases {
-			release()
-		}
-	}()
-	for _, name := range []string{"speed.lock", "perf.lock"} {
-		path := filepath.Join(observed, name)
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			return errors.New("readings busy; retry cleanup")
-		}
-		if err := f.Close(); err != nil {
-			_ = os.Remove(path)
-			return err
-		}
-		releases = append(releases, func() { _ = os.Remove(path) })
+	unlock, ok := speed.LockLedgersForCleanup(cache)
+	if !ok {
+		return errors.New("readings busy; retry cleanup")
 	}
+	defer unlock()
 	for _, name := range []string{"speed.json", "perf.json", "daily-long.json"} {
 		if err := filterCachedSource(filepath.Join(observed, name), name, tool, true); err != nil {
 			return err
