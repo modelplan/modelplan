@@ -102,12 +102,25 @@ private actor SettingsJourneyClient: EngineClient {
             try await Task.sleep(for: .milliseconds(25))
         }
         XCTAssertEqual(dock.currentMenuBarPreferences?.dockEdge, .left, "The dragged edge applies without a restart")
+        await editor.reload()
+        let beforeDone = try XCTUnwrap(editor.snapshot)
+        let done = try await editor.completeFirstRun(options: .init(preferences: beforeDone.preferences),
+            action: .done, host: .popup, expectedRevision: beforeDone.revision)
+        XCTAssertTrue(done.snapshot.preferences.onboarding.completed)
+        XCTAssertEqual(login.registrations, 1, "Completing first run must not repeat an already applied login choice")
         await first.composition.stop()
 
         let reopened = try makeApp()
+        let reopenedLogin = JourneyLoginService()
+        let reopenedFirstRun = JourneyFirstRunSurface()
+        reopened.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: reopenedLogin))
+        reopened.makeFirstRunSurface = { _ in reopenedFirstRun }
         await reopened.prepare()
         reopened.composition.dock.setPresentationAllowed(true)
         await reopened.composition.start()
+        await reopened.restoreFirstRunIfNeeded()
+        XCTAssertEqual(reopenedFirstRun.shows, 0, "Completed first run stays completed after relaunch")
+        XCTAssertEqual(reopenedLogin.registrations, 0, "Restoration must not register the login service")
         let saved = await reopened.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.size, .large)
         XCTAssertEqual(saved.preferences.dockEdge, .left)

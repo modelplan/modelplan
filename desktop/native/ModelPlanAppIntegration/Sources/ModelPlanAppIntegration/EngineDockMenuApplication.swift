@@ -3,6 +3,7 @@ import AppKit
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanShell
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -10,6 +11,7 @@ import ModelPlanSettings
     private let settings: SettingsApplicationCoordinator
     public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
+    private let appBundleURL: URL
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
@@ -37,6 +39,7 @@ import ModelPlanSettings
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, makeClient: makeClient)
         self.composition = composition
         self.foundationStore = settingsStore
+        self.appBundleURL = bundleURL
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
@@ -76,6 +79,14 @@ import ModelPlanSettings
         console?.show()
     }
     public func prepare() async {
+        if loginServiceAdapter == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL {
+            loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(bundle: bundle))
+        }
+        var context = settings.editor.context
+        context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
+        settings.update(context: context)
+        settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
                 canPresent: { [weak self] in self?.terminating == false },
@@ -83,6 +94,33 @@ import ModelPlanSettings
                 activate: activateSettings, makeFirstRun: makeFirstRunSurface)
         }
         await settings.reload()
+    }
+    private func dispatchHostRequest(_ request: SettingsHostRequest) {
+        guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
+        if let adapter = loginServiceAdapter {
+            let result = adapter.handle(request, current: current, mayChangeLoginItem: true)
+            if result != .unhandled {
+                var context = settings.editor.context
+                context.capabilities.login = adapter.observedState
+                settings.update(context: context)
+            }
+        }
+        switch request.intent {
+        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .firstRunCompleted(let effects, _):
+            for effect in effects {
+                switch effect {
+                case .revealDock: composition.dock.setPresentationAllowed(true)
+                case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
+                case .openCockpit: showConsole()
+                case .closeFirstRunPopup, .latchOptionHelp: break
+                }
+            }
+        default:
+            // Shortcut, notification and help actions remain explicitly deferred
+            // in this draft until their owners supply production consumers.
+            break
+        }
     }
     /// The same restore used by the real launch; it never grants access itself.
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
@@ -130,7 +168,8 @@ import ModelPlanSettings
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true; firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
+        terminating = true; settings.editor.onHostRequest = nil
+        firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
