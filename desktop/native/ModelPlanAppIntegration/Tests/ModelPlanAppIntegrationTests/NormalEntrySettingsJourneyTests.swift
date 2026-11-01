@@ -54,6 +54,14 @@ private actor SettingsJourneyClient: EngineClient {
     func hide() {}
 }
 
+@MainActor private final class JourneyAppearanceConsumer: EngineRowsConsoleSurface {
+    var applied: EffectiveSettings?
+    func show() {}
+    func render() {}
+    func hide() {}
+    func applySettings(_ value: SettingsApplication) { applied = value.effective }
+}
+
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
@@ -69,11 +77,13 @@ private actor SettingsJourneyClient: EngineClient {
         projection["rows"] = rows; root["projection"] = projection
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let appearanceConsumer = JourneyAppearanceConsumer()
         func makeApp() throws -> EngineDockMenuApplication {
             EngineRowsEntry.make(configuration: configuration,
                 settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
                 createsNativePanels: false,
                 makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) },
+                makeConsole: { _ in appearanceConsumer },
                 activateSettings: {})
         }
 
@@ -90,6 +100,10 @@ private actor SettingsJourneyClient: EngineClient {
         await first.restoreFirstRunIfNeeded()
         XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
         let dock = first.composition.dock
+        let englishMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
+        XCTAssertTrue(englishMenu.items.contains { $0.title == "Dock readings…" })
+        XCTAssertFalse(englishMenu.items.contains { $0.title.contains(" / ") })
         let editor = first.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
@@ -108,11 +122,27 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")
         XCTAssertTrue(editor.canPresentFirstRun, "The normal entry must route the first-run action")
         XCTAssertTrue(editor.context.capabilities.firstRunPreviewAvailable, "First-run navigation must be available from Settings")
+        first.showConsole()
+        var syntheticSystem = editor.environment
+        syntheticSystem.reduceMotion = true; syntheticSystem.reduceTransparency = true
+        first.updateSystemAccessibility(syntheticSystem)
+        XCTAssertEqual(appearanceConsumer.applied?.reduceMotion, true)
+        XCTAssertEqual(appearanceConsumer.applied?.reduceTransparency, true)
+        syntheticSystem.reduceMotion = false; syntheticSystem.reduceTransparency = false
+        first.updateSystemAccessibility(syntheticSystem)
+        _ = try await editor.commit(SettingsB20Edit.motion(.on))
+        _ = try await editor.commit(SettingsB20Edit.transparency(.on))
+        XCTAssertEqual(appearanceConsumer.applied?.reduceMotion, true)
+        XCTAssertEqual(appearanceConsumer.applied?.reduceTransparency, true)
+        XCTAssertEqual(first.composition.latestSettings?.effective.reduceMotion, true)
+        XCTAssertEqual(first.composition.latestSettings?.effective.reduceTransparency, true)
         XCTAssertTrue(editor.context.v1NormalEntry)
         XCTAssertTrue(try XCTUnwrap(editor.effective).darkAppearance)
         XCTAssertEqual(try XCTUnwrap(editor.effective).opening, .quick)
         let visible = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
         XCTAssertFalse(visible.contains { [.theme, .opening, .countdown].contains($0.key) })
+        XCTAssertEqual(visible.first { $0.key == .motion }?.availability, .available)
+        XCTAssertEqual(visible.first { $0.key == .transparency }?.availability, .available)
         XCTAssertEqual(visible.first { $0.key == .openShortcut }?.availability, .serviceUnavailable)
         XCTAssertTrue(visible.first { $0.key == .openShortcut }?.subtitle.english.contains("Unavailable") == true)
         for key in [SettingKey.login, .notificationConsent, .feedback, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink] {
@@ -122,6 +152,10 @@ private actor SettingsJourneyClient: EngineClient {
         XCTExpectFailure("#697: member projection has not yet been integrated") {
             XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
         }
+        XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
+        XCTAssertEqual(editor.snapshot?.preferences.percentageMode, .remaining)
+        _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
+        XCTAssertEqual(dock.currentMenuBarPreferences?.percentageMode, .used)
         let initialNozzle = dock.dockView.requestedNozzleDiameter
         _ = try await editor.commit(SettingsB20Edit.size(.large))
         XCTAssertEqual(dock.currentMenuBarPreferences?.size, .large)
@@ -141,6 +175,10 @@ private actor SettingsJourneyClient: EngineClient {
             action: .done, host: .popup, expectedRevision: beforeDone.revision)
         XCTAssertTrue(done.snapshot.preferences.onboarding.completed)
         XCTAssertEqual(login.registrations, 1, "Completing first run must not repeat an already applied login choice")
+        let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
+        XCTAssertTrue(chineseMenu.items.contains { $0.title == "挂件读数…" })
+        XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })
         await first.composition.stop()
 
         let reopened = try makeApp()
@@ -160,6 +198,12 @@ private actor SettingsJourneyClient: EngineClient {
         let saved = await reopened.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.size, .large)
         XCTAssertEqual(saved.preferences.language, .chinese, "An explicit choice survives relaunch even when the OS prefers English")
+        XCTAssertEqual(saved.preferences.language, .chinese, "An explicit choice survives relaunch")
+        XCTAssertEqual(saved.preferences.percentageMode, .used)
+        XCTAssertEqual(saved.preferences.motion, .on)
+        XCTAssertEqual(saved.preferences.transparency, .on)
+        XCTAssertEqual(EngineRowsText.readingsTitle.value(.chinese), "挂件读数")
+        XCTAssertEqual(EngineRowsText.waiting.value(.chinese), "等待读数")
         XCTAssertEqual(saved.preferences.dockEdge, .left)
         XCTAssertEqual(saved.preferences.dockDisplayID, "synthetic-display")
         XCTAssertEqual(saved.preferences.dockAlongFraction, 0.3, accuracy: 0.0001)
