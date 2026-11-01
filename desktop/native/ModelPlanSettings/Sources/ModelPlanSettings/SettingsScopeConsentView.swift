@@ -70,7 +70,7 @@ import ModelPlanWire
         case .savedLoginApi: route = .init("Existing sign-in usage", "使用已有登录读取用量")
         case .runtimeRpc: route = .init("Owning-tool runtime usage", "所属工具运行时用量")
         case .localLog, .localSqlite: route = .init("Local history", "本地历史")
-        case .apiKeyApi: route = .init("Configured API-key usage", "已配置 API 密钥的用量")
+        case .apiKeyApi: route = .init("Configured API-key usage", "已配置密钥的用量")
         case .statusLine: route = .init("Tool status-line readings", "工具状态栏读数")
         case .browserSession: route = .init("Browser-session usage", "浏览器会话用量")
         case .manual: route = .init("Manually supplied readings", "手动提供的读数")
