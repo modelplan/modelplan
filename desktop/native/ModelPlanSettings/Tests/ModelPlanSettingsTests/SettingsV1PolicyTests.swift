@@ -77,4 +77,13 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertEqual(SettingsWords.firstRunPreviewTitle(language: .english, unavailable: false), "First run…")
     }
 
+    func testFreshV1ShortcutsAreUnassignedAndCannotTrigger() throws {
+        let preferences = SettingsPreferences()
+        XCTAssertNoThrow(try preferences.validate())
+        XCTAssertFalse(preferences.openShortcut.isValid, "The cockpit shortcut starts unassigned")
+        XCTAssertFalse(preferences.dockShortcut.isValid, "The Dock shortcut starts unassigned")
+        XCTAssertNil(ShortcutPolicy().action(for: preferences.openShortcut, preferences: preferences, global: false))
+        XCTAssertNil(ShortcutPolicy().action(for: preferences.dockShortcut, preferences: preferences, global: false))
+    }
+
 }
