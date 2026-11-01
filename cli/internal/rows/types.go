@@ -54,28 +54,28 @@ type ExpiryState struct {
 
 type Account struct {
 	Activity        []AccountActivity `json:"activity,omitempty" null:"coalesced"`
-	Route           Route      `json:"route"`
-	SubscriptionRef *string    `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator  *string    `json:"accountLocator" null:"coalesced"`
-	Plan            Plan       `json:"plan"`
-	Beta            bool       `json:"beta"`
-	Credits         *Credits   `json:"credits" null:"coalesced"`
-	ValueState      ValueState `json:"valueState"`
-	ObservedAt      *time.Time `json:"observedAt" null:"coalesced"`
-	FreshUntil      *time.Time `json:"freshUntil" null:"coalesced"`
-	LastFailure     *Failure   `json:"lastFailure" null:"coalesced"`
-	Windows         []Window   `json:"windows"`
+	Route           Route             `json:"route"`
+	SubscriptionRef *string           `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator  *string           `json:"accountLocator" null:"coalesced"`
+	Plan            Plan              `json:"plan"`
+	Beta            bool              `json:"beta"`
+	Credits         *Credits          `json:"credits" null:"coalesced"`
+	ValueState      ValueState        `json:"valueState"`
+	ObservedAt      *time.Time        `json:"observedAt" null:"coalesced"`
+	FreshUntil      *time.Time        `json:"freshUntil" null:"coalesced"`
+	LastFailure     *Failure          `json:"lastFailure" null:"coalesced"`
+	Windows         []Window          `json:"windows"`
 }
 
 // AccountActivity contains no path, transcript, raw session ID or credential.
 // SubscriptionRef must match its parent account; SessionRef is an opaque local ref.
 type AccountActivity struct {
-	SessionRef string `json:"sessionRef"`
-	SubscriptionRef string `json:"subscriptionRef"`
-	BindingVerified bool `json:"bindingVerified"`
-	Phase ActivityPhase `json:"phase"`
-	RecordAt time.Time `json:"recordAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	SessionRef      string        `json:"sessionRef"`
+	SubscriptionRef string        `json:"subscriptionRef"`
+	BindingVerified bool          `json:"bindingVerified"`
+	Phase           ActivityPhase `json:"phase"`
+	RecordAt        time.Time     `json:"recordAt"`
+	ExpiresAt       time.Time     `json:"expiresAt"`
 }
 
 type Plan struct {

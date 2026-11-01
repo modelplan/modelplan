@@ -45,7 +45,9 @@ func captureRoots() []captureRoot {
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
-	if t==reflect.TypeFor[rows.AccountActivity](){return reflect.ValueOf(rows.AccountActivity{SessionRef:"aaaaaaaaaaaaaaaa",SubscriptionRef:"bbbbbbbbbbbbbbbb",BindingVerified:true,Phase:rows.ActivityPhaseTool,RecordAt:now,ExpiresAt:now.Add(5*time.Minute)}),nil}
+	if t == reflect.TypeFor[rows.AccountActivity]() {
+		return reflect.ValueOf(rows.AccountActivity{SessionRef: "aaaaaaaaaaaaaaaa", SubscriptionRef: "bbbbbbbbbbbbbbbb", BindingVerified: true, Phase: rows.ActivityPhaseTool, RecordAt: now, ExpiresAt: now.Add(5 * time.Minute)}), nil
+	}
 	if t == reflect.TypeFor[rows.ResetSource]() {
 		return reflect.ValueOf(rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}), nil
 	}
