@@ -11,7 +11,7 @@ import ModelPlanOfficialDock
 import ModelPlanDockResources
 @_spi(DockResourceChecks) import ModelPlanAppIntegration
 
-private struct S1Manifest: Decodable {
+struct S1Manifest: Decodable {
     struct Clip: Decodable { let x: Double, y: Double, width: Double, height: Double }
     struct Capture: Decodable { let file, scenario: String; let size: Int; let edge: String; let count: Int; let theme, state, sha256: String; let clip: Clip }
     let schemaVersion: Int
@@ -83,7 +83,7 @@ private struct S1FlameManifest: Decodable {
 }
 
 /// Mirrors the capture's Claude, single 75% ring and no reset-clock fixture.
-@MainActor private final class S1FlameComparisonProvider: DockContentProvider {
+@MainActor final class S1FlameComparisonProvider: DockContentProvider {
     func makeContent(_ context: DockContentContext) -> DockContent {
         var input = DockInstrumentInput(id: "claude", name: "Claude", windows: [
             .init(id: "synthetic-window", period: .fiveHour, label: "5h", remainingPercent: 75,
@@ -93,7 +93,7 @@ private struct S1FlameManifest: Decodable {
     }
 }
 
-@MainActor private enum S1PixelReport {
+@MainActor enum S1PixelReport {
     struct Result {
         let native: Data
         let diff: Data

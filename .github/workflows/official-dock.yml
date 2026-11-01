@@ -52,5 +52,9 @@ jobs:
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
       - name: Generic material seam (no GUI)
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests|ZaiMarkSwitchTests|DockWorkingHostInjectionTests|DockContentProviderTests)' --jobs 2
+      - name: Owner-accepted native Dock regression (no GUI)
+        env:
+          MODELPLAN_S1_REGRESSION_BASELINES: ${{ github.workspace }}/desktop/official-visuals/dock/RegressionBaselines
+        run: swift run --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --jobs 2 S1Gallery
       - name: Original vendor marks and native fonts (no GUI)
         run: swift test --package-path desktop/third-party/dock-resources --scratch-path .tmp/official-dock-seam --jobs 2

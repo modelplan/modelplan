@@ -1,0 +1,1018 @@
+{
+  "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
+  "schemaVersion": 1,
+  "sourceCommit": "fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657",
+  "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+  "captures": [
+    {
+      "file": "native-00.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "8036d6e270365af43fe7d547d63a26ed8257815cba351b95ce26d4401f77369f",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1399.3380126953125,
+        "y": 414.12139892578125,
+        "width": 70.6619873046875,
+        "height": 145.90057373046875
+      },
+      "skinBounds": [
+        1417,
+        429,
+        53,
+        114
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-01.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "4be0805364bac1d50741204d4898fd9651b43e46ef9b57b70fc474898a314cff",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1399.3380126953125,
+        "y": 414.12139892578125,
+        "width": 70.6619873046875,
+        "height": 145.90057373046875
+      },
+      "skinBounds": [
+        1417,
+        429,
+        53,
+        114
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-02.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "34a2ac127722a50a807dd190da665df961bbed04e3209226ff7deac94037d3fe",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1387.635009765625,
+        "y": 401.0372619628906,
+        "width": 82.364990234375,
+        "height": 170.32272338867188
+      },
+      "skinBounds": [
+        1405,
+        415,
+        65,
+        139
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-03.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "b9d1e5c60f134a45b6bca32e2f3b5e08d57b20c45686c0163b180ed5454545c2",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1387.635009765625,
+        "y": 401.0372619628906,
+        "width": 82.364990234375,
+        "height": 170.32272338867188
+      },
+      "skinBounds": [
+        1405,
+        415,
+        65,
+        139
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-04.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "a1041293c4a4417deecf7e39c4e5e16db8120dfa07a418e66f3fbf0f8820e691",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1375.9320068359375,
+        "y": 387.953125,
+        "width": 94.0679931640625,
+        "height": 194.744873046875
+      },
+      "skinBounds": [
+        1393,
+        401,
+        77,
+        164
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-05.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "cd3f924d45c56690bcb3076d58d96604e8821167626ed544a854e2f8fd0d70fe",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1375.9320068359375,
+        "y": 387.953125,
+        "width": 94.0679931640625,
+        "height": 194.744873046875
+      },
+      "skinBounds": [
+        1393,
+        401,
+        77,
+        164
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-06.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "e46f0c0322aa81d0dcfa7c4544153318d8d9addf4ebccb6787d78f9794ea41d3",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1396.7230224609375,
+        "y": 328.91827392578125,
+        "width": 73.2769775390625,
+        "height": 316.2886962890625
+      },
+      "skinBounds": [
+        1414,
+        344,
+        56,
+        284
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-07.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "ebd5f958ea27a9c90ec5f867e21894aa4956fb7b790e18722ae8ec11aea8d2c6",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1396.7230224609375,
+        "y": 328.91827392578125,
+        "width": 73.2769775390625,
+        "height": 316.2886962890625
+      },
+      "skinBounds": [
+        1414,
+        344,
+        56,
+        284
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-08.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "954e01d78e45598d77664fb3602055e868b29b83423389628f20e3107cc36585",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1384.43896484375,
+        "y": 296.9122619628906,
+        "width": 85.56103515625,
+        "height": 378.5637512207031
+      },
+      "skinBounds": [
+        1402,
+        311,
+        68,
+        347
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-09.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "50b04b4756cebcfcd0ff16744e88eb0d494ce69fe4b255ce55c38b1d73f9ad8a",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1384.43896484375,
+        "y": 296.9122619628906,
+        "width": 85.56103515625,
+        "height": 378.5637512207031
+      },
+      "skinBounds": [
+        1402,
+        311,
+        68,
+        347
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-10.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "6794979106142e8b01931672cc7e32d3775cd73de7a5bdb7401ff6879dd5b4b4",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1372.155029296875,
+        "y": 264.890625,
+        "width": 97.844970703125,
+        "height": 440.8533935546875
+      },
+      "skinBounds": [
+        1390,
+        278,
+        80,
+        410
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-11.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "1f5540683e142dd59561f86b40f5bf789ef5637b7090c9ad503dccb0ad77f773",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1372.155029296875,
+        "y": 264.890625,
+        "width": 97.844970703125,
+        "height": 440.8533935546875
+      },
+      "skinBounds": [
+        1390,
+        278,
+        80,
+        410
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-12.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "d59a843cf1ad8a1e948f052e0664be7bedb547ad131683ff43ead050f05dd5a5",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1395.7139892578125,
+        "y": 243.63702392578125,
+        "width": 74.2860107421875,
+        "height": 486.7989501953125
+      },
+      "skinBounds": [
+        1413,
+        258,
+        57,
+        455
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-13.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "right",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "b1619f8931860ad03d4294b369bdcbbf656a2b6d2618b47282efe5aaa4dce5b0",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1395.7139892578125,
+        "y": 243.63702392578125,
+        "width": 74.2860107421875,
+        "height": 486.7989501953125
+      },
+      "skinBounds": [
+        1413,
+        258,
+        57,
+        455
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-14.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "c441acc4a02d066af1bda3f1a63c316969ce4d7ca62b84e8de1fa78121a05eb8",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1383.2060546875,
+        "y": 192.67788696289062,
+        "width": 86.7939453125,
+        "height": 586.9660797119141
+      },
+      "skinBounds": [
+        1401,
+        207,
+        69,
+        555
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-15.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "right",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "e39283bb9935cb7bc329c6c6505de1509b3110328b782111f5eea49d33ab69c7",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1383.2060546875,
+        "y": 192.67788696289062,
+        "width": 86.7939453125,
+        "height": 586.9660797119141
+      },
+      "skinBounds": [
+        1401,
+        207,
+        69,
+        555
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-16.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "325eb8f9cdffb47d776b96620c2f9c84cd0366dbf71e5e78aa51e34a16603075",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1370.697998046875,
+        "y": 141.703125,
+        "width": 99.302001953125,
+        "height": 687.1488494873047
+      },
+      "skinBounds": [
+        1388,
+        155,
+        82,
+        656
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-17.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "right",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "78ec99e833c41d2c6775288ca0faba44bfa3d318192b8d5443db77886c67bc5b",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 1370.697998046875,
+        "y": 141.703125,
+        "width": 99.302001953125,
+        "height": 687.1488494873047
+      },
+      "skinBounds": [
+        1388,
+        155,
+        82,
+        656
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-18.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "8b697f450f61b693efea45fe7d4ac54e5ad05e9cca2421d477101e3ee650a0f0",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 654.2249755859375,
+        "y": 884.9180297851562,
+        "width": 169.40362548828125,
+        "height": 71.08197021484375
+      },
+      "skinBounds": [
+        672,
+        902,
+        137,
+        54
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-19.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "77bfbbc849ee145c838176989449ebf231ef79a50b2714b3e4e00dc5d8de4b2d",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 654.2249755859375,
+        "y": 884.9180297851562,
+        "width": 169.40362548828125,
+        "height": 71.08197021484375
+      },
+      "skinBounds": [
+        672,
+        902,
+        137,
+        54
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-20.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "a370e28428ef34d2b655894c3e4fa28471b08a322345fc5440132c4f8c984cf2",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 640.2750244140625,
+        "y": 873.1209716796875,
+        "width": 199.04705810546875,
+        "height": 82.8790283203125
+      },
+      "skinBounds": [
+        658,
+        891,
+        167,
+        65
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-21.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "b3ba6fa7f63f92a07d34966b8dcf35726da646b463bc0b1f19749466da4e09aa",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 640.2750244140625,
+        "y": 873.1209716796875,
+        "width": 199.04705810546875,
+        "height": 82.8790283203125
+      },
+      "skinBounds": [
+        658,
+        891,
+        167,
+        65
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-22.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "ef866147e796f20f298f38157a91df62f7b92f66d6be5f57d444d4baa92853a5",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 626.3250122070312,
+        "y": 861.3250122070312,
+        "width": 228.69061279296875,
+        "height": 94.67498779296875
+      },
+      "skinBounds": [
+        644,
+        879,
+        198,
+        77
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-23.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 1,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "ec84753cd2e43f74013b5a07a3a11d3c460935f96f5c7127100e85abcdc78d14",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 626.3250122070312,
+        "y": 861.3250122070312,
+        "width": 228.69061279296875,
+        "height": 94.67498779296875
+      },
+      "skinBounds": [
+        644,
+        879,
+        198,
+        77
+      ],
+      "registeredStationCount": 1
+    },
+    {
+      "file": "native-24.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "83318a29279ea9658d7ad28d97fbae41d6d51b73c61ca34a6072208ae159d274",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 525.343994140625,
+        "y": 881.948974609375,
+        "width": 427.22210693359375,
+        "height": 74.051025390625
+      },
+      "skinBounds": [
+        543,
+        899,
+        395,
+        57
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-25.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "8bf8aef30dcffab8c3bc391badb0ece520ff4309bdc93edf88b9d5957eae6399",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 525.343994140625,
+        "y": 881.948974609375,
+        "width": 427.22210693359375,
+        "height": 74.051025390625
+      },
+      "skinBounds": [
+        543,
+        899,
+        395,
+        57
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-26.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "88cf40eb002ba98864d891147b6082ee106f94807af6f9845b071efe29046fc5",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 482.7539978027344,
+        "y": 869.4929809570312,
+        "width": 514.1618347167969,
+        "height": 86.50701904296875
+      },
+      "skinBounds": [
+        500,
+        887,
+        483,
+        69
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-27.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "5e855d861d99626b8c54e1497af032b778f99330d1d280c2e0dca5a2170d9211",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 482.7539978027344,
+        "y": 869.4929809570312,
+        "width": 514.1618347167969,
+        "height": 86.50701904296875
+      },
+      "skinBounds": [
+        500,
+        887,
+        483,
+        69
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-28.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "57e50d833c229f8485b52ef07f56c86b9bf0e275843ae4c3dc1a43999dbd6cf6",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 440.1629943847656,
+        "y": 857.0380249023438,
+        "width": 601.1026306152344,
+        "height": 98.96197509765625
+      },
+      "skinBounds": [
+        458,
+        875,
+        570,
+        81
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-29.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 4,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "7d6f309a7f3a87c1d61d3328a1f968d3caad4e160dc2fa6b374f781949c63cbc",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 440.1629943847656,
+        "y": 857.0380249023438,
+        "width": 601.1026306152344,
+        "height": 98.96197509765625
+      },
+      "skinBounds": [
+        458,
+        875,
+        570,
+        81
+      ],
+      "registeredStationCount": 4
+    },
+    {
+      "file": "native-30.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "c7f81658579bfe5c8c6b87e8a0e4b34786b7b7da136b67b020bdc29e6b3279b9",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 396.52801513671875,
+        "y": 881.156982421875,
+        "width": 684.8192749023438,
+        "height": 74.843017578125
+      },
+      "skinBounds": [
+        414,
+        899,
+        653,
+        57
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-31.png",
+      "scenario": "dock",
+      "size": 36,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "5ffb28280b9f9657f3b8dcf3300443fcbc2fb917a656ba569817c150240240a6",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 396.52801513671875,
+        "y": 881.156982421875,
+        "width": 684.8192749023438,
+        "height": 74.843017578125
+      },
+      "skinBounds": [
+        414,
+        899,
+        653,
+        57
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-32.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "b3d764d798a243815f73f93258ee7ccbd758f92ed5b6d72a5021a0ab59b3edef",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 325.31201171875,
+        "y": 868.5260009765625,
+        "width": 828.9945068359375,
+        "height": 87.4739990234375
+      },
+      "skinBounds": [
+        343,
+        886,
+        797,
+        70
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-33.png",
+      "scenario": "dock",
+      "size": 44,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "041db15227905812d01e75407de3178899c9d4946ad2133895ec4b231d055247",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 325.31201171875,
+        "y": 868.5260009765625,
+        "width": 828.9945068359375,
+        "height": 87.4739990234375
+      },
+      "skinBounds": [
+        343,
+        886,
+        797,
+        70
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-34.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "dark",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "3e691fa2805081999082216dd59420283ddd381e3aa2b9a4a20ee96b6a1a236e",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 254.09500122070312,
+        "y": 855.8939819335938,
+        "width": 973.1862487792969,
+        "height": 100.10601806640625
+      },
+      "skinBounds": [
+        272,
+        873,
+        942,
+        83
+      ],
+      "registeredStationCount": 7
+    },
+    {
+      "file": "native-35.png",
+      "scenario": "dock",
+      "size": 52,
+      "edge": "bottom",
+      "count": 7,
+      "theme": "light",
+      "appTheme": "night",
+      "state": "rest",
+      "sha256": "4518916cbe967b7e2e84b9b152e7819a46ab6f739944d37636ef9bde58d95eb1",
+      "prototypeSourceCommit": "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+      "clip": {
+        "x": 254.09500122070312,
+        "y": 855.8939819335938,
+        "width": 973.1862487792969,
+        "height": 100.10601806640625
+      },
+      "skinBounds": [
+        272,
+        873,
+        942,
+        83
+      ],
+      "registeredStationCount": 7
+    }
+  ],
+  "flamePoses": [
+    {
+      "file": "native-working-normal-pose0.png",
+      "sha256": "b01a1e75a45539dfd8b9d911caab79f05af99ec1a7cb88de52c6b90427d7a0d4"
+    },
+    {
+      "file": "native-working-normal-pose1.png",
+      "sha256": "db2cd79411765a548d61305182161415a4402d040dbc72fa1254b05f44367f50"
+    },
+    {
+      "file": "native-working-normal-pose2.png",
+      "sha256": "e2dd7d231bb8ca54fce504d26fbbdf056a7507ae80adca9ea25723a04c7303e1"
+    },
+    {
+      "file": "native-working-normal-pose3.png",
+      "sha256": "4ba9db6dbf3fe04d0714981c1f9867a884728e909b2671b9b6454d815a9340d2"
+    },
+    {
+      "file": "native-working-normal-pose4.png",
+      "sha256": "bf8a9d4e00de227cf8fe8c0baa0946aa4da974478c9153df0f8f583f17cab0ad"
+    },
+    {
+      "file": "native-working-normal-pose5.png",
+      "sha256": "cec1ceb0f0149d6d76244503d1c54a9926ff2bf8eb920cd43791b4cf09221e3d"
+    },
+    {
+      "file": "native-working-normal-pose6.png",
+      "sha256": "391b8904d76fa3d3e6f995d28b52d320a80f46bbcd75515b470531db9cd888ff"
+    },
+    {
+      "file": "native-working-normal-pose7.png",
+      "sha256": "009e9861e8b7ae828f5d83e28a36cb5c91b66b31e9af107fa5d9dd8188337148"
+    },
+    {
+      "file": "native-working-normal-pose8.png",
+      "sha256": "fedc0f44f8b84c53b9f77d111e7530a6851ad7f6c8e972f25461e0cb34cc870a"
+    },
+    {
+      "file": "native-working-warning-pose0.png",
+      "sha256": "97ccaeed6001e5922325e981d5541e46950e2895856f7810b3b75d24818519d7"
+    },
+    {
+      "file": "native-working-warning-pose1.png",
+      "sha256": "250b6d4eaab1f0091f8c602985e3835474cc0c89dcf481de357637dc8017f7c9"
+    },
+    {
+      "file": "native-working-warning-pose2.png",
+      "sha256": "92cc0d7b3b1ef02900c1ae4d64291b7e6cca2ee52bb2288c022f262af70be25e"
+    },
+    {
+      "file": "native-working-warning-pose3.png",
+      "sha256": "9f32c55f20b6f337a125abe1f84730aea31ca63899e08994c18994871296de5b"
+    },
+    {
+      "file": "native-working-warning-pose4.png",
+      "sha256": "118d64fea7c120c2f568beebabdc8013a667b3ce4b18c69ef570567892fbff39"
+    },
+    {
+      "file": "native-working-warning-pose5.png",
+      "sha256": "2ade87af071dae2c39c2d8f5f8e6fbab59815116fb2a63895e5c3f914aa9f778"
+    },
+    {
+      "file": "native-working-warning-pose6.png",
+      "sha256": "47196b5979669e8ba3e11ccecd4eebbb911f120237825c3d8dbaea37d5ae30a0"
+    },
+    {
+      "file": "native-working-warning-pose7.png",
+      "sha256": "81c82d4f86a58f22bc4baeb139ff67f49e338adea7285f9680501210c4774a35"
+    },
+    {
+      "file": "native-working-warning-pose8.png",
+      "sha256": "4d2db887e24c4eb8086923a1135d4c637ab4d943178a65233663cb03ca905abd"
+    },
+    {
+      "file": "native-working-critical-pose0.png",
+      "sha256": "439d7a7c67ceb26e1875d0ed55480a2afec60c3564d1009c156fae4e80fab49a"
+    },
+    {
+      "file": "native-working-critical-pose1.png",
+      "sha256": "c7af1498050e1313d313761906027c8e1588428967f4ca6846e44cc214aedf3c"
+    },
+    {
+      "file": "native-working-critical-pose2.png",
+      "sha256": "e8734cb84227a886e781d0d2350fe804e7033449c2fa4d240715889d6462e7c5"
+    },
+    {
+      "file": "native-working-critical-pose3.png",
+      "sha256": "d77c7376b8659d37ca8b320cdc6b01db156118513a7d88f5d3849a7c24a75ce8"
+    },
+    {
+      "file": "native-working-critical-pose4.png",
+      "sha256": "6e8dc34fbb0a4e9812f4cb7ff00c6c303c23cf98de083424d120a9fbec4f64db"
+    },
+    {
+      "file": "native-working-critical-pose5.png",
+      "sha256": "e865c5d792c9497503006a21b0a328fbc83f8c8f9cf3a8f6a47a64e3349b57d9"
+    },
+    {
+      "file": "native-working-critical-pose6.png",
+      "sha256": "4e300b0b1a8381e6c8e870ed1a05af9826cfbad2d8726b7592091f432afc1a79"
+    },
+    {
+      "file": "native-working-critical-pose7.png",
+      "sha256": "c0553dced98d98873d4bcd3465e4ba1c13a302cd0e815ff90c0bce305a688647"
+    },
+    {
+      "file": "native-working-critical-pose8.png",
+      "sha256": "dac8d2c9d865c76c1063c8957fa421285313a87224a247aaee17b07833c77700"
+    }
+  ]
+}
