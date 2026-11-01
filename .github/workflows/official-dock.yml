@@ -5,8 +5,6 @@ on:
       - 'desktop/official-visuals/dock/**'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
-      - 'desktop/native/ModelPlanAppIntegration/**/DockInteractionHostPort*'
-      - 'desktop/native/ModelPlanAppIntegration/**/StaticDockPreviewHost.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
   push:
@@ -15,8 +13,6 @@ on:
       - 'desktop/official-visuals/dock/**'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentRenderer.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
-      - 'desktop/native/ModelPlanAppIntegration/**/DockInteractionHostPort*'
-      - 'desktop/native/ModelPlanAppIntegration/**/StaticDockPreviewHost.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
 permissions:
@@ -33,4 +29,4 @@ jobs:
       - name: Synthetic T2 geometry tests
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
       - name: Generic material seam (no GUI)
-        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|DockInteractionHostPortTests)' --jobs 2
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter T2MaterialSeamTests --jobs 2
