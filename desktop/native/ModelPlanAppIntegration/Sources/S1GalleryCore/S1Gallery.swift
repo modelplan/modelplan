@@ -457,13 +457,14 @@ private struct S1FlameManifest: Decodable {
                     written.append(output.appendingPathComponent(file)); nativeFiles.append(file)
                     html += "<img width=\"104\" src=\"\(file)\" alt=\"\(state) native pose \(pose)\">"
                 }
-                html += "</td></tr>"
-                rowStatus = "report-only: 52pt Claude synthetic fixture; owner visual review pending"
+                let range = String(format: "%.6f–%.6f", scores.min() ?? 0, scores.max() ?? 0)
+                html += "</td></tr><tr><td colspan=\"4\">RGB similarity range: \(range) (not SSIM). Prototype fixture uses a white Claude glyph; native uses the unchanged official Claude Clay mark. Synthetic colours vary independently of the fixed 75% ring.</td></tr>"
+                rowStatus = "report-only: 52pt Claude, fixed 75% ring; prototype white glyph vs unchanged official Clay mark; owner visual review pending"
             } catch {
                 html += "<tr><td>\(state) working</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
                 rowStatus = "not-run: \(String(describing: error))"
             }
-            records.append(["scenario": "synthetic-working-" + state, "fixture": "52pt Claude, 75% outer, independent synthetic state", "nativeFiles": nativeFiles, "frameMetrics": scores, "metricKind": "1 - mean absolute RGB error", "status": rowStatus])
+            records.append(["scenario": "synthetic-working-" + state, "fixture": "52pt Claude, 75% outer, independent synthetic state", "nativeFiles": nativeFiles, "frameMetrics": scores, "metricKind": "1 - mean absolute RGB error", "documentedDifference": "prototype fixture uses white Claude glyph; native retains unaltered official Claude Clay mark", "status": rowStatus])
         }
         html += "</table><p>Null metrics are not passes. Metrics exclude only percentage glyph ink, and require geometry and owner review. Button states remain unsupported.</p>"
         try Data(html.utf8).write(to: output.appendingPathComponent("index.html"), options: .withoutOverwriting)
