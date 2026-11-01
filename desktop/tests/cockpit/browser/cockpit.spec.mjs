@@ -155,7 +155,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   const event=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
   expect(event.action).toBe('openSettings');expect(event.generation).toBe('41');
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
-  await expect(page.getByRole('button',{name:'Codex · History',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Codex',exact:true})).toBeVisible();
   expect(await page.locator('svg,canvas,img').count()).toBe(0);
   await page.evaluate(()=>window.postMessage({type:'plugin/install',url:'https://example.invalid'},'*'));
   expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(1);

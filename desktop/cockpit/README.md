@@ -32,8 +32,7 @@ from the Go-generated `schema/app-cli/app-server.json`. `npm run generate` updat
 it; `npm run check` rejects drift. The reachable schema is also the production
 runtime validator. Unknown fields, unsupported generator keywords, invalid enum
 values, malformed timestamps, duplicate keys, unsafe numbers and invalid
-identities fail closed. The renderer does not infer subscription groups, merge
-accounts, classify rows or calculate recommendations; it renders the Go DTO.
+identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise keeps account members distinct by row and route. It lays out quota windows without calculating recommendations.
 
 ## Native consumer contract
 
@@ -132,8 +131,7 @@ visible-again, cleared and unloaded states. `document.hidden` is controlled in
 headless tests, not presented as real OS window occlusion. The WebKit report
 attaches per-state counts; visual comparisons also enforce finite iteration counts.
 
-Visual comparisons cover full 636×890 and compact 636×640, both themes and both
-languages, using synthetic Go captures. Ubuntu 24.04 arm64/WebKit 2203 is the
+Existing visual comparisons cover full 636×890 and compact 636×640 and both languages, using synthetic Go captures. The S6 v1 cockpit renders night only; existing day baselines and prior engine-table images require owner review before replacement. Ubuntu 24.04 arm64/WebKit 2203 is the
 pinned baseline profile. Reference images stay under the reserved visual license;
 regeneration requires review. They are implementation references, **not**
 owner-confirmed pixel fidelity or native WKWebView baselines.
@@ -142,9 +140,7 @@ The owner-released G/P6 prototype at
 `1d3f82429f1b853314ee120d4bd0007f84fc051d` supplies the plate/port/engine/deck/tape
 hierarchy, layout calculation and CSS. [Provenance and exclusions](../../docs/borrowed/cockpit-web.md)
 record the MIT release and source hashes. Resource imports, vendor logos, mock
-bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO
-populates readings, verified subscription members, summary and observation times.
-Unbacked faders stay decorative and inactive; Choose setup forwards a native intent.
+bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO populates subscription-member quota readings and the summary. Unbacked faders and setup controls are hidden. Scope selection currently changes only the web view because the host bridge has no shared-scope action; the host also has no live appearance update or app Reduce Motion field.
 The empty canopy awaits U12 media. Native owner review still confirms final fidelity.
 
 The target App + WebContent CPU is at most **6% of one core** in the U11a scenario.
