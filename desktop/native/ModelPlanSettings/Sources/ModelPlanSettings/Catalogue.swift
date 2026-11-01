@@ -115,6 +115,15 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     }
+    /// Consent can be offered only when a real delivery kind is connected.
+    public mutating func updateNotificationConsentAvailability(serviceAvailable: Bool) {
+        let kinds: [SettingKey] = [.forecast, .reset, .official, .expiring, .stale]
+        if serviceAvailable && kinds.contains(where: { unavailableControls[$0] == nil }) {
+            unavailableControls.removeValue(forKey: .notificationConsent)
+        } else {
+            unavailableControls[.notificationConsent] = .init("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        }
+    }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []

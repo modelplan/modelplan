@@ -74,6 +74,47 @@ private actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testSystemLanguageFollowsAcrossLaunchAndPreservesExplicitChoice() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("language-follow-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en-US"])
+        let initial = await first.snapshot().preferences
+        XCTAssertEqual(initial.language, .english)
+        _ = try await first.update { $0.showDock = false }
+        let second = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["zh-CN"])
+        let system = await second.snapshot().preferences
+        XCTAssertEqual(system.language, .chinese); XCTAssertFalse(system.showDock)
+        let application = SettingsApplicationCoordinator(store: second) { _ in }
+        await application.reload()
+        _ = try await application.editor.commit(SettingsB21Edit.language(.english))
+        let third = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["zh-CN"])
+        let explicit = await third.snapshot().preferences
+        XCTAssertEqual(explicit.language, .english); XCTAssertEqual(explicit.followsSystemLanguage, false)
+        // Old documents do not distinguish system defaults from an explicit choice.
+        // Preserve their value until an owner-approved migration rule exists.
+        _ = try await third.update { $0.followsSystemLanguage = nil }
+        let unmarked = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["zh-CN"])
+        let legacy = await unmarked.snapshot().preferences
+        XCTAssertEqual(legacy.language, .english); XCTAssertNil(legacy.followsSystemLanguage)
+    }
+
+    func testFirstRunWiringFailureIsReportedAndUnavailable() async throws {
+        enum SyntheticFailure: Error { case wiring }
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-failure-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
+        var reported: [String] = []
+        app.firstRunFlowBuilder = { throw SyntheticFailure.wiring }
+        app.reportFirstRunWiringFailure = { reported.append($0) }
+        await app.prepare()
+        XCTAssertEqual(reported, ["First-run presentation wiring failed"])
+        XCTAssertFalse(app.settingsHost.application.editor.context.capabilities.firstRunPreviewAvailable)
+        XCTAssertThrowsError(try app.settingsHost.application.editor.request(.previewFirstRun))
+        await app.composition.stop()
+    }
+
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
@@ -146,15 +187,8 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
         XCTAssertEqual(notifications.requests, 0, "Restoration must not request notification authorization")
-        _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
-        for _ in 0..<40 {
-            if editor.context.notificationAuthorization == .authorized { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        XCTAssertEqual(notifications.requests, 1, "Only explicit opt-in requests notification authorization")
-        XCTAssertEqual(editor.context.notificationAuthorization, .authorized)
-        _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
-        XCTAssertEqual(notifications.requests, 1, "Repeated opt-in must not prompt again")
+        do { _ = try await editor.commit(SettingsB22Edit.notificationConsent(true)); XCTFail("No notification delivery kind is available") }
+        catch { XCTAssertEqual(notifications.requests, 0, "Unavailable notifications must not request OS permission") }
         _ = try await editor.commit(SettingsB21Edit.login(true))
         XCTAssertEqual(login.registrations, 1, "An explicit login choice reaches the system-service adapter")
         XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")
@@ -185,9 +219,10 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(visible.first { $0.key == .transparency }?.availability, .available)
         XCTAssertEqual(visible.first { $0.key == .openShortcut }?.availability, .serviceUnavailable)
         XCTAssertTrue(visible.first { $0.key == .openShortcut }?.subtitle.english.contains("Unavailable") == true)
-        for key in [SettingKey.login, .notificationConsent, .feedback, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink] {
+        for key in [SettingKey.login, .feedback, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink] {
             XCTAssertEqual(visible.first { $0.key == key }?.availability, .available, "Connected S3 services must enable their controls: \(key)")
         }
+        XCTAssertEqual(visible.first { $0.key == .notificationConsent }?.availability, .serviceUnavailable)
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTExpectFailure("#697: member projection has not yet been integrated") {
             XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")

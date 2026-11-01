@@ -582,5 +582,10 @@ struct NativeFailure:Error {let message:String}
     print("PASS \(checks) native resource/raster/font checks (synthetic; no visual or input acceptance)")
 }
 MainActor.assumeIsolated {
-    do{try nativeChecks(URL(fileURLWithPath:CommandLine.arguments[1]))}catch{fputs("FAIL \(error)\n",stderr);exit(1)}
+    do {
+        if CommandLine.arguments.dropFirst().first == "--b23-only" {
+            let checks = try b23CardAccessibilityChecks()
+            print("PASS \(checks) B23 card accessibility checks (offscreen metadata only)")
+        } else { try nativeChecks(URL(fileURLWithPath: CommandLine.arguments[1])) }
+    } catch { fputs("FAIL \(error)\n", stderr); exit(1) }
 }

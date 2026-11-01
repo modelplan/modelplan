@@ -14,10 +14,13 @@ import ModelPlanDock
         for theme in [NSAppearance.Name.aqua,.darkAqua] {
             revision+=1;view.appearance=NSAppearance(named:theme)
             let row=DockCardRow(id:"window.5h",kind:.quota,label:chinese ? "5 小时":"5 hours",value:"50%",detail:chinese ? "剩余额度":"Remaining quota",remainingFraction:0.5,tone:.normal)
-            let content=DockCardContent(subscriptionID:"b23",revision:revision,name:"Synthetic",rows:[row],enterLabel:chinese ? "打开":"Open",dismissLabel:chinese ? "关闭":"Close")
+            let input=DockInstrumentInput(id:"b23",name:"Synthetic",windows:[])
+            let content=try DockCardProjection.content(input:input,revision:revision,additionalRows:[row],enterLabel:chinese ? "打开":"Open",dismissLabel:"✕",dismissAccessibilityLabel:chinese ? "关闭":"Close",at:Date())
             try view.apply(content,pinned:true)
             guard let bar=descendants(view).first(where:{$0.accessibilityIdentifier()=="dock.card.quota.window.5h"}),
                   let button=descendants(view).first(where:{$0.accessibilityIdentifier()=="dock.card.enter"}) as? NSButton else{throw NativeFailure(message:"B23: missing card controls")}
+            let close = descendants(view).first(where:{$0.accessibilityIdentifier()=="dock.card.close"}) as? NSButton
+            try require(close?.title == "✕" && close?.accessibilityLabel() == (chinese ? "关闭" : "Close"), "production card close has a localized accessible name")
             try require(bar.accessibilityLabel()==row.label,"quota label uses the localized source row")
             try require(bar.accessibilityHelp()==row.value+" · "+row.detail,"quota readout and detail remain available")
             try require((bar.accessibilityValue() as? NSNumber)?.intValue==50,"quota value")

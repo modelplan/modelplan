@@ -47,6 +47,17 @@ final class SettingsV1PolicyTests: XCTestCase {
         }
     }
 
+    func testNotificationConsentRequiresAnAvailableKindAndService() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        context.updateNotificationConsentAvailability(serviceAvailable: true)
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .notificationConsent }?.availability, .serviceUnavailable)
+        context.unavailableControls.removeValue(forKey: .reset)
+        context.updateNotificationConsentAvailability(serviceAvailable: false)
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .notificationConsent }?.availability, .serviceUnavailable)
+        context.updateNotificationConsentAvailability(serviceAvailable: true)
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .notificationConsent }?.availability, .available)
+    }
+
     @MainActor func testDisabledControlsShowReasonAndDoNotClaimShortcutWorks() async throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let preferences = SettingsPreferences(), snapshot = SettingsSnapshot(revision: 0, preferences: preferences)

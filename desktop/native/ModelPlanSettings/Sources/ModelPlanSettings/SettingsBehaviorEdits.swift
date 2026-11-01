@@ -66,7 +66,7 @@ public enum SettingsB21Edit: Sendable {
         case .login(let v): p.openAtLogin = v
         case .automaticUpdates(let v): p.automaticUpdates = v
         case .menuDisplay(let v): p.menuDisplay = v
-        case .language(let v): p.language = v
+        case .language(let v): p.language = v; p.followsSystemLanguage = false
         case .opening(let v): p.opening = v
         case .countdown(let v): p.beatMilliseconds = v
         case .shortcut(let action, let chord):

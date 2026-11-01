@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
@@ -28,6 +29,8 @@ import ModelPlanShell
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
     private var firstRunFlow: CommunityConnectionFlow?
+    var firstRunFlowBuilder: (@MainActor () throws -> CommunityConnectionFlow)?
+    var reportFirstRunWiringFailure: @MainActor (String) -> Void = { assertionFailure($0) }
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
@@ -129,20 +132,22 @@ import ModelPlanShell
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
-        if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
-            context.unavailableControls.removeValue(forKey: .notificationConsent)
-        }
+        context.updateNotificationConsentAvailability(serviceAvailable: notificationAuthorizationService != nil && observedAuthorization != .unavailable)
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
         }
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
-            firstRunFlow = try? CommunityConnectionFlow(application: settings,
+            do { firstRunFlow = try firstRunFlowBuilder?() ?? CommunityConnectionFlow(application: settings,
                 canPresent: { [weak self] in self?.terminating == false },
                 showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
                 activate: activateSettings, scopeConsentEntry: scopeConsentEntry,
                 makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent)
+            } catch {
+                Logger(subsystem: "org.modelplan.community", category: "first-run").error("First-run presentation wiring failed")
+                reportFirstRunWiringFailure("First-run presentation wiring failed")
+            }
         }
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
@@ -166,6 +171,7 @@ import ModelPlanShell
         }
         switch request.intent {
         case .notificationConsentChanged:
+            guard settings.editor.context.unavailableControls[.notificationConsent] == nil else { return }
             let effect = notificationConsumer.committedConsent(request, snapshot: current)
             if case .requestAuthorization(let token) = effect, let service = notificationAuthorizationService {
                 Task { [weak self] in

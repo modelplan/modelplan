@@ -946,7 +946,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
                 enterLabel: model?.presentationRows[id] == nil
                     ? EngineRowsText.cockpitAction.value(preferences.language)
-                    : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: "✕", at: now)
+                    : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: "✕", dismissAccessibilityLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }
     private func showCard(_ id: String, pinned: Bool = true, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,

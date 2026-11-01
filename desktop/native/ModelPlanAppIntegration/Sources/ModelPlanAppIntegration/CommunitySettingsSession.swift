@@ -21,7 +21,7 @@ import ModelPlanCommunityHost
         self.makeHelp = makeHelp
         windowHost = SettingsWindowHost(application: application, canPresent: canPresent,
             environment: environment, activate: activate, makeSurface: makeSurface)
-        settingsMenuItem = windowHost.menuItem(title: SettingsText("Settings…", "设置…").value(application.editor.snapshot?.preferences.language ?? .chinese))
+        settingsMenuItem = windowHost.menuItem(title: SettingsText("Settings…", "设置…").value(application.editor.snapshot?.preferences.language ?? .english))
         menuLanguageObserver = application.editor.observeChanges { [weak self] in self?.refreshMenuLanguage() }
     }
     deinit {
