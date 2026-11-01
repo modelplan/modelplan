@@ -344,3 +344,27 @@ revoke/reset, positive reading removal, query isolation/cursors/caps/cancellatio
 recording-provider admission and stopped stdout). The U14 bundle records exact
 source/binary/overlay hashes and outcomes. Native agent prompting and signed app
 supervision require their own device evidence; Linux engine checks do not earn it.
+
+### Public reset event capability
+
+The server advertises `resetEvents` when the verified-publication source is
+configured. A client must include that capability in `initialize` to receive
+optional `resetEvents` on the shared rows projection in `rows/subscribe`,
+`rows/changed`, or `cockpit/query`. An omitted field means the verified source
+was unavailable; an empty array means the verified source had no eligible
+records. Older clients never receive the field. This is a public announcement,
+not evidence that any personal quota was reset; acknowledgement and notification
+state belong to the App. The existing publication cache and rows watcher supply
+refresh; no additional fetch is started.
+
+The current public reset record does not provide reviewed structured plan links,
+confirmation references, or an official vendor-host-list interface. Accordingly
+v1 treats unmapped free-form scope as row-wide, drops and counts unlinked
+confirmations, and omits source links while retaining eligible events. The
+publication-side structured links and host interface are separate follow-ups.
+
+A published schedule with `precision: "deadline"` may have identical `from`
+and `through` timestamps. It represents a point deadline, not an interval or
+a personal quota reset; the event expires at that timestamp. Other schedule
+precisions require `through` strictly after `from`, and reversed ranges are
+invalid for every precision.

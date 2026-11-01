@@ -81,15 +81,9 @@ func proposalSchema(t *testing.T) *jsonschema.Schema {
 	}
 	defs := base["$defs"].(map[string]any)
 	for key, value := range overlay["$defs"].(map[string]any) {
-		if _, exists := defs[key]; exists {
-			t.Fatalf("schema definition collision: %s", key)
-		}
 		defs[key] = value
 	}
 	props := defs["RowsProjection"].(map[string]any)["properties"].(map[string]any)
-	if _, exists := props["resetEvents"]; exists {
-		t.Fatal("production schema already has resetEvents")
-	}
 	props["resetEvents"] = overlay["properties"].(map[string]any)["resetEvents"]
 	encoded, err := json.Marshal(base)
 	if err != nil {
@@ -193,8 +187,8 @@ func TestAnnouncedResetProposalGeneratedFixturesAndCompatibility(t *testing.T) {
 			if name == "legacy-omitted.json" && oldErr != nil {
 				t.Fatalf("legacy message rejected: %v", oldErr)
 			}
-			if name != "legacy-omitted.json" && oldErr == nil {
-				t.Fatal("strict old schema accepted the new field; capability gate is required")
+			if oldErr != nil {
+				t.Fatalf("production schema rejected fixture: %v", oldErr)
 			}
 		})
 	}
@@ -252,7 +246,8 @@ func checkProposalSemantics(event proposedResetEvent, rowIDs map[string]bool, ve
 	if event.PublishedAt.IsZero() || !event.ExpiresAt.After(event.PublishedAt) {
 		return fmt.Errorf("invalid lifetime")
 	}
-	if event.Schedule != nil && !event.Schedule.Through.After(event.Schedule.From) {
+	if event.Schedule != nil && (event.Schedule.Through.Before(event.Schedule.From) ||
+		(event.Schedule.Through.Equal(event.Schedule.From) && event.Schedule.Precision != "deadline")) {
 		return fmt.Errorf("invalid window")
 	}
 	if event.Status == "announced" && event.Schedule != nil && !event.ExpiresAt.Equal(event.Schedule.Through) {
@@ -342,6 +337,19 @@ func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 	invalid.Schedule = &proposedResetSchedule{Precision: "window", From: now.Add(3 * time.Hour), Through: now.Add(time.Hour)}
 	if checkProposalSemantics(invalid, rows, source.PublicationID) == nil {
 		t.Fatal("reversed window accepted")
+	}
+	point := event
+	point.Schedule = &proposedResetSchedule{Precision: "deadline", From: now.Add(time.Hour), Through: now.Add(time.Hour)}
+	point.ExpiresAt = now.Add(time.Hour)
+	if err := checkProposalSemantics(point, rows, source.PublicationID); err != nil {
+		t.Fatalf("valid point deadline: %v", err)
+	}
+	if proposalPhase(point, now) != "announced" || proposalPhase(point, now.Add(time.Hour)) != "expired" {
+		t.Fatal("point deadline lifecycle")
+	}
+	point.Schedule.Precision = "window"
+	if checkProposalSemantics(point, rows, source.PublicationID) == nil {
+		t.Fatal("zero-length window accepted")
 	}
 	// Publication refresh changes provenance, not the stable event or notification key.
 	updated := event

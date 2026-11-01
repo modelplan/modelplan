@@ -98,6 +98,9 @@ func load(root string) (*model, error) {
 			dir = "appserver/wire"
 		}
 		files := []string{"types.go", "enums.go"}
+		if pkg == "rows" {
+			files = append(files, "reset_events.go")
+		}
 		if pkg == "wire" {
 			files = append(files, "cockpit.go", "results.go")
 		}
