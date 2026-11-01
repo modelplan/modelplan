@@ -212,6 +212,7 @@ private actor RowsEntryClient: EngineClient {
         app.menuWillOpen(trackedStatus); app.composition.dock.menuWillOpen(trackedDock)
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: trackedDock)
         let retainedButUntrackedDock = app.composition.dock.menu()
+        XCTAssertFalse(trackedDock === retainedButUntrackedDock, "A retained old menu must remain independently scrubbed")
         let unrelated = NSMenu()
         unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
         let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items

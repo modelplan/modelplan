@@ -9,15 +9,28 @@ import ModelPlanCore
     private let gate: LifecycleCoordinator
     private let workspace: NotificationCenter
     private let local: NotificationCenter
-    private let distributed: DistributedNotificationCenter
+    private let distributed: NotificationCenter
     private let displayIDs: @MainActor () -> Set<UInt32>
+    private let onConsole: @MainActor () -> Bool?
+    private let displaysAsleep: @MainActor (Set<UInt32>) -> Bool
     private var previousDisplays: Set<UInt32> = []
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []
     public init(gate: LifecycleCoordinator, workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
-                local: NotificationCenter = .default, distributed: DistributedNotificationCenter = .default(),
-                displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() }) {
+                local: NotificationCenter = .default, distributed: NotificationCenter = DistributedNotificationCenter.default(),
+                displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() },
+                onConsole: @escaping @MainActor () -> Bool? = {
+                    (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
+                }, displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { ids in
+                    !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
+                }) {
         self.gate = gate; self.workspace = workspace; self.local = local
-        self.distributed = distributed; self.displayIDs = displayIDs
+        self.distributed = distributed; self.displayIDs = displayIDs; self.onConsole = onConsole; self.displaysAsleep = displaysAsleep
+    }
+    public static func currentConsoleState() -> Bool? {
+        (CGSessionCopyCurrentDictionary() as? [String: Any])?[kCGSessionOnConsoleKey as String] as? Bool
+    }
+    public static func allDisplaysAsleep(_ ids: Set<UInt32>) -> Bool {
+        !ids.isEmpty && ids.allSatisfy { CGDisplayIsAsleep($0) != 0 }
     }
     public static func currentDisplayIDs() -> Set<UInt32> {
         Set(NSScreen.screens.compactMap { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value })
@@ -40,11 +53,8 @@ import ModelPlanCore
         observe(local, .NSSystemTimeZoneDidChange) { [weak gate] in gate?.clockChanged() }
         observe(local, NSApplication.didChangeScreenParametersNotification) { [weak self] in self?.screensChanged() }
         // Public on-console/display-asleep queries seed state when launched during a paused session.
-        if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-           let onConsole = session[kCGSessionOnConsoleKey as String] as? Bool {
-            gate.set(.sessionInactive, blocked: !onConsole)
-        }
-        gate.set(.screenSleep, blocked: !previousDisplays.isEmpty && previousDisplays.allSatisfy { CGDisplayIsAsleep($0) != 0 })
+        if let onConsole = onConsole() { gate.set(.sessionInactive, blocked: !onConsole) }
+        gate.set(.screenSleep, blocked: displaysAsleep(previousDisplays))
         gate.start()
     }
     public func stop() {

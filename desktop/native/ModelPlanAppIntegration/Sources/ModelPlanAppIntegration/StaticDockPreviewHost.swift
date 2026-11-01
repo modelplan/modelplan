@@ -198,6 +198,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     private var permitted = false, retired = false, rendering = false, menuOpen = false
+    private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
     private var rebuildPending = false
@@ -207,6 +208,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
     private var edgeViews: [DockEdge: DockInstrumentView] = [:]
     private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
+    func ownsDockMenu(_ menu: NSMenu) -> Bool {
+        if menu.delegate === self { return true }
+        return (menu.delegate as? DockSliverMenu)?.owner === self
+    }
     private var outlinePanel: NSPanel?
     private let outlineView = DockSnapOutlineView()
     private var cardID: String?
@@ -472,6 +477,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.snapshot = snapshot; self.diagnostics = diagnostics
         rebuild()
     }
+    func pauseForLifecycle() {
+        lifecycleSuspended = true
+        NotificationCenter.default.post(name: LivePrivateMenus.lifecyclePause, object: self)
+        setPresentationAllowed(false)
+    }
+    func resumeFromLifecycle() { lifecycleSuspended = false }
     public func setPresentationAllowed(_ allowed: Bool) {
         guard !retired else { return }
         inputGeneration &+= 1
@@ -885,44 +896,49 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
     func menu() -> NSMenu {
-        let menu = NSMenu(); menu.delegate = self
+        let component = DockSliverMenu(labels: [:], handlers: [:])
+        component.owner = self
+        component.onMenuActuallyOpen = { [weak self] open in
+            guard let self else { return }; self.menuOpen = open; self.edge.refresh()
+        }
+        let menu = component.menu
+        component.retainWithMenu()
+        var items: [DockMenuPresentationItem] = []
+        if lifecycleSuspended {
+            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.cockpitMenu.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.settings.value(preferences.language)))
+            items.append(.init(title: nil))
+            let quit = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+            items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
+            component.replace(with: items)
+            return menu
+        }
         if let lines = contentMenuStatusLines {
             for (index, text) in lines.enumerated() {
-                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.provider-status.\(index)")
-                menu.addItem(status)
+                items.append(.init(title: text, accessibilityID: "dock.provider-status.\(index)"))
             }
-            if !lines.isEmpty { menu.addItem(.separator()) }
+            if !lines.isEmpty { items.append(.init(title: nil)) }
         } else if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
-            if let emptyStatus {
-                let status = NSMenuItem(title: emptyStatus, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.empty-reader-status-menu")
-                menu.addItem(status)
-            }
+            if let emptyStatus { items.append(.init(title: emptyStatus, accessibilityID: "dock.empty-reader-status-menu")) }
             for (index, text) in CommunityReaderStatusPresentation.menuLines(model, english: preferences.language == .english).enumerated() {
-                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.reader-status.\(index)")
-                menu.addItem(status)
+                items.append(.init(title: text, accessibilityID: "dock.reader-status.\(index)"))
             }
-            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
+            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { items.append(.init(title: nil)) }
         }
         if let model {
             for row in model.presentationRows.values.sorted(by: { $0.input.id < $1.input.id }) {
-                let item = NSMenuItem(title: row.input.name + ": " + row.reason + " — " + row.nextStep, action: #selector(openSettings), keyEquivalent: "")
-                item.target = self
-                menu.addItem(item)
+                items.append(.init(title: row.input.name + ": " + row.reason + " — " + row.nextStep,
+                                   action: { [weak self] in self?.openSettings() }))
             }
         }
-        for (title, action) in [(EngineRowsText.cockpitMenu.value(preferences.language), #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings))] {
-            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
-        }
-        menu.addItem(.separator())
-        let quitTitle = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
-        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        items.append(.init(title: EngineRowsText.cockpitMenu.value(preferences.language), action: { [weak self] in self?.openConsole() }))
+        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: nil))
+        let quit = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+        items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
+        component.replace(with: items)
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }

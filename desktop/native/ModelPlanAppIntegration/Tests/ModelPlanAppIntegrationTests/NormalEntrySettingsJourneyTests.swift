@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import XCTest
 import ModelPlanSettings
+import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -34,7 +35,8 @@ private actor SettingsJourneyClient: EngineClient {
 
 @MainActor private final class JourneyAppearanceConsumer: EngineRowsConsoleSurface {
     var applied: EffectiveSettings?
-    func show() {}
+    private(set) var shows = 0
+    func show() { shows += 1 }
     func render() {}
     func hide() {}
     func applySettings(_ value: SettingsApplication) { applied = value.effective }
@@ -75,6 +77,18 @@ private actor SettingsJourneyClient: EngineClient {
         let cockpitButton = try XCTUnwrap(dock.dockView.superview?.subviews.compactMap { $0 as? NSButton }.first)
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "Open cockpit")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(englishMenu.delegate is DockStatusMenu, "The normal status menu must use the shared component")
+        let englishDockMenu = dock.menu()
+        XCTAssertTrue(englishDockMenu.delegate is DockSliverMenu, "The Dock menu must use the shared component")
+        XCTAssertEqual(Array(englishMenu.items.filter { !$0.isSeparatorItem }.dropFirst()).map(\.title), ["Refresh", "Settings…", "Cockpit…", "Quit"])
+        let refreshItem = try XCTUnwrap(englishMenu.items.first { $0.title == "Refresh" })
+        XCTAssertEqual(refreshItem.action, NSSelectorFromString("refreshRows"), "The existing Refresh arrival observer must retain its native selector")
+        XCTAssertEqual(Array(englishDockMenu.items.filter { !$0.isSeparatorItem }.suffix(3)).map(\.title), ["Cockpit…", "Settings…", "Quit ModelPlan / 退出 ModelPlan"])
+        let statusCockpit = try XCTUnwrap(englishMenu.items.first { $0.title == "Cockpit…" })
+        _ = (try XCTUnwrap(statusCockpit.target as? NSObject)).perform(try XCTUnwrap(statusCockpit.action), with: statusCockpit)
+        let dockCockpit = try XCTUnwrap(englishDockMenu.items.first { $0.title == "Cockpit…" })
+        _ = (try XCTUnwrap(dockCockpit.target as? NSObject)).perform(try XCTUnwrap(dockCockpit.action), with: dockCockpit)
+        XCTAssertEqual(appearanceConsumer.shows, 2, "Both shared menu components must dispatch the retained cockpit route")
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Cockpit…" })
         XCTAssertFalse(englishMenu.items.contains { $0.title.contains(" / ") })
@@ -125,6 +139,11 @@ private actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(chineseMenu.delegate is DockStatusMenu)
+        let chineseDockMenu = dock.menu()
+        XCTAssertTrue(chineseDockMenu.delegate is DockSliverMenu)
+        XCTAssertEqual(Array(chineseMenu.items.filter { !$0.isSeparatorItem }.dropFirst()).map(\.title), ["刷新", "设置…", "驾驶舱…", "退出"])
+        XCTAssertEqual(Array(chineseDockMenu.items.filter { !$0.isSeparatorItem }.suffix(3)).map(\.title), ["驾驶舱…", "设置…", "Quit ModelPlan / 退出 ModelPlan"])
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "驾驶舱…" })
         XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })

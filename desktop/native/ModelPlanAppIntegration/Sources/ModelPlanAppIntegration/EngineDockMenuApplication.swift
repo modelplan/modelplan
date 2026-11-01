@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import ModelPlanCore
+import ModelPlanShell
 import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
@@ -17,7 +19,11 @@ import ModelPlanSettings
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
+    private var statusMenuComponent: DockStatusMenu?
     private var terminating = false
+    private var lifecycleController: EngineLifecycleController?
+    private var activityPaused = false
+    private(set) var lifecyclePaused = false
     private var accessibilityObserver: NSObjectProtocol?
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
@@ -26,7 +32,7 @@ import ModelPlanSettings
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
@@ -83,7 +89,7 @@ import ModelPlanSettings
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
     public func showConsole() {
-        guard !terminating else { return }
+        guard !terminating, !lifecyclePaused else { return }
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
@@ -109,6 +115,42 @@ import ModelPlanSettings
         composition.dock.setPresentationAllowed(true)
         interactionBinding?.start()
     }
+    func startLifecycle(workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
+                        local: NotificationCenter = .default,
+                        lockEvents: NotificationCenter = DistributedNotificationCenter.default(),
+                        displayIDs: @escaping @MainActor () -> Set<UInt32> = { SystemEvents.currentDisplayIDs() },
+                        onConsole: @escaping @MainActor () -> Bool? = { SystemEvents.currentConsoleState() },
+                        displaysAsleep: @escaping @MainActor (Set<UInt32>) -> Bool = { SystemEvents.allDisplaysAsleep($0) }) {
+        guard !terminating, lifecycleController == nil else { return }
+        lifecyclePaused = true
+        let controller = EngineLifecycleController(composition: composition, workspace: workspace, local: local,
+            lockEvents: lockEvents, displayIDs: displayIDs, onConsole: onConsole, displaysAsleep: displaysAsleep,
+            onPause: { [weak self] in self?.withdrawForLifecycle() },
+            onReady: { [weak self] in
+                guard let self, !self.terminating else { return }
+                self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle()
+                self.allowDockPresentation(); self.renderMenu()
+            }, onGateOpen: { [weak self] in self?.renderMenu() })
+        lifecycleController = controller
+        controller.setActivityPaused(activityPaused)
+        withdrawForLifecycle(); controller.start()
+    }
+    /// M4's activity observer sets an independent pause reason; it never clears OS reasons.
+    public func setActivityPaused(_ paused: Bool) {
+        activityPaused = paused; lifecycleController?.setActivityPaused(paused)
+    }
+    func stopLifecycle() async {
+        guard let controller = lifecycleController else { return }
+        await controller.stop(); lifecycleController = nil
+    }
+    private func withdrawForLifecycle() {
+        guard !terminating else { return }
+        lifecyclePaused = true
+        // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
+        if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
+        composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend()
+        renderMenu()
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -123,48 +165,72 @@ import ModelPlanSettings
         }
         #if MODELPLAN_U6_DRIVE
         do { driveGuard = try U6DriveGuard.attach(ownsMenu: { [weak self] menu in
-            guard let self else { return false }; return menu.delegate === self || menu.delegate === self.composition.dock
+            guard let self else { return false }; return menu === self.liveStatusMenu || self.composition.dock.ownsDockMenu(menu)
         }, hasPrivateContent: { [weak self] in
             guard let value = self?.composition.provider.dockContent else { return false }
             return !value.dockRows.isEmpty || !value.menuRows.isEmpty
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        Task { await prepare(); guard !terminating else { return }; allowDockPresentation(); renderMenu(); await composition.start() }
+        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     private func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english
-        let menu = liveStatusMenu ?? NSMenu()
+        let component: DockStatusMenu
+        if let current = statusMenuComponent { component = current }
+        else {
+            component = DockStatusMenu(labels: [:], handlers: [:])
+            component.onMenuActuallyOpen = { [weak self] open in
+                guard open, let self, let menu = self.liveStatusMenu else { return }
+                self.menuWillOpen(menu)
+            }
+            statusMenuComponent = component
+        }
+        let menu = component.menu
+        let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
+        let detail = lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
-        menu.removeAllItems()
-        let reading = NSMenuItem(title: composition.menuPresentation.detail, action: nil, keyEquivalent: "")
-        reading.isEnabled = false; menu.addItem(reading)
-        let refresh = menu.addItem(withTitle: EngineRowsText.refresh.value(language), action: #selector(refreshRows), keyEquivalent: "")
-        refresh.target = self
-        menu.addItem(.separator())
-        menu.addItem(settingsHost.menuItem(title: EngineRowsText.settings.value(language)))
-        let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
-        consoleItem.target = self
-        menu.addItem(withTitle: EngineRowsText.quit.value(language), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
+        component.replace(with: [
+            .init(title: detail),
+            .init(title: EngineRowsText.refresh.value(language), target: (!lifecyclePaused || canRetry) ? self : nil,
+                  selector: (!lifecyclePaused || canRetry) ? #selector(refreshRows) : nil),
+            .init(title: nil),
+            .init(title: EngineRowsText.settings.value(language), keyEquivalent: ",", action: !lifecyclePaused ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: EngineRowsText.cockpitMenu.value(language), action: !lifecyclePaused ? { [weak self] in self?.showConsoleMenu() } : nil),
+            .init(title: EngineRowsText.quit.value(language), keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }),
+        ])
+        liveStatusMenu = menu
+        if let status { component.attach(to: status) }
         let image = CommunityMenuBarResources.templateImage()
         image?.isTemplate = true
         status?.button?.image = image; status?.button?.contentTintColor = nil
         status?.button?.title = composition.menuPresentation.title
-        status?.button?.toolTip = composition.menuPresentation.detail
+        status?.button?.toolTip = detail
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.recordStatusButtonFrame(button) }
         #endif
     }
-    public func menuWillOpen(_ menu: NSMenu) { menu.items.first?.title = composition.menuPresentation.detail }
+    public func menuWillOpen(_ menu: NSMenu) {
+        let language = composition.latestSettings?.effective.language ?? .english
+        let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
+        menu.items.first?.title = lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail
+    }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func refreshRows() { Task { await composition.refresh() } }
+    @objc private func refreshRows() {
+        if lifecyclePaused { lifecycleController?.retryPending(); return }
+        Task { await composition.refresh() }
+    }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
-        Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
+        statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
+        Task {
+            if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
+            else { await composition.stop() }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
         return .terminateLater
     }
 }
