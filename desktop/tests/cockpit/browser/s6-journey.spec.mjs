@@ -169,3 +169,27 @@ test('v1 strip uses a brand mark and equal icon keys with localized accessible n
   await expect(page.getByRole('button',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分离',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'关闭',exact:true})).toHaveText('✕');
   await expect(page.getByText('ALERT',{exact:true})).toHaveCount(0);
 });
+
+test('macrev-403-2: colliding unverified members remain distinct through paging and refresh',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.addInitScript(()=>{window.__events=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__events.push(JSON.parse(raw));}}}};});
+  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample(),row=data.projection.rows[0];data.subscriptions=[];row.accounts[0].subscriptionRef=null;row.accounts[0].windows[0].remainingPercent=18;
+  const second=structuredClone(row.accounts[0]);second.subscriptionRef='fedcba9876543210';second.windows[0].remainingPercent=75;row.accounts.push(second);
+  const seed=structuredClone(row);seed.accounts=[structuredClone(row.accounts[0])];data.projection.rows=[row,...Array.from({length:5},(_,i)=>{const r=structuredClone(seed);r.id='other'+i;r.name={en:'Other '+i,zh:'其他 '+i};return r;})];
+  expect(await receive(send('display',{data}))).toBe(true);
+  const first=page.locator('.s6-page:visible .ec').nth(0),other=page.locator('.s6-page:visible .ec').nth(1);
+  await expect(first).toContainText('18%');await expect(other).toContainText('75%');
+  const keys=page.locator('.s6-page:visible .eng-keys button');await expect(keys).toHaveCount(6);
+  await expect(keys.nth(0)).toHaveAttribute('data-scope','codex#saved_login_api#1');await expect(keys.nth(1)).toHaveAttribute('data-scope','codex#saved_login_api#2');
+  await keys.nth(1).click();expect(await page.evaluate(()=>window.__events.filter(e=>e.action==='scopeSelect').at(-1).key)).toBe('codex#saved_login_api#2');
+  await page.getByRole('button',{name:'Page 2'}).click();await page.getByRole('button',{name:'Page 1'}).click();
+  await expect(page.locator('.s6-page:visible .eng-keys button').nth(1)).toHaveAttribute('aria-pressed','true');
+  expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.locator('.s6-page:visible .ec').nth(0)).toContainText('18%');await expect(page.locator('.s6-page:visible .ec').nth(1)).toContainText('75%');
+  await expect(page.locator('.s6-page:visible .eng-keys button').nth(1)).toHaveAttribute('aria-pressed','true');
+  expect(await receive(send('shell',{...shell,scope:'codex#saved_login_api#1'}))).toBe(true);
+  await expect(page.locator('.s6-page:visible .eng-keys button').nth(0)).toHaveAttribute('aria-pressed','true');
+});

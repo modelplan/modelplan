@@ -178,3 +178,15 @@ test('scope selection only emits an exact currently displayed member or All',()=
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'4'}),source),true);
   assert.equal(f.bridge.action('scopeSelect',key),false);assert.equal(f.bridge.action('scopeSelect','all'),false);
 });
+
+test('macrev-403-2: indexed fallback scopes are current, canonical and session-only',()=>{
+  const f=fixture(),data=capture(),row=data.projection.rows[0];data.subscriptions=[];row.accounts[0].subscriptionRef=null;
+  const duplicate=structuredClone(row.accounts[0]);duplicate.subscriptionRef='fedcba9876543210';row.accounts.push(duplicate);
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  for(const key of ['codex#saved_login_api#1','codex#saved_login_api#2'])assert.equal(f.bridge.action('scopeSelect',key),true);
+  for(const key of ['codex#saved_login_api','codex#saved_login_api#0','codex#saved_login_api#3','codex#saved_login_api#01'])assert.equal(f.bridge.action('scopeSelect',key),false);
+  assert.equal(f.bridge.receive(f.send('shell',{...shell,scope:'codex#saved_login_api#2'}),source),true);
+  for(const key of ['codex#saved_login_api#0','codex#saved_login_api#01','codex#saved_login_api#1025'])assert.equal(f.bridge.receive(f.send('shell',{...shell,scope:key}),source),false);
+  assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'4'}),source),true);
+  assert.equal(f.bridge.action('scopeSelect','codex#saved_login_api#1'),false);
+});

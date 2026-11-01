@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { definitions, type WireCockpitData } from '../generated/wire.js';
 import { conforms, exact, parseMessage, record } from './schema.js';
+import { cockpitMembers } from './members.js';
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
 export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
@@ -48,7 +49,7 @@ function message(raw:string):HostMessage|null {
   if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return null;
   const keys=(extra:string[]=[])=>exact(m,[...header,'type',...extra]);
   const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency'])&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
-  const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const split=v.lastIndexOf('#');return split>0&&identity(v.slice(0,split))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(v.slice(split+1));};
+  const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'])||!validAppearance(m.appearance)||!validShell(m.shell)) return null; break;
@@ -150,8 +151,7 @@ export class CockpitBridge {
         // Render is synchronous, with no queued/private snapshot cache to revive.
         try {this.view.render(m.data);} catch {this.unload();return false;}
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
-        const verified=new Set(m.data.subscriptions.map(s=>s.subscriptionRef));
-        this.scopeMembers=new Set(m.data.projection.rows.flatMap(row=>row.accounts.map(account=>account.subscriptionRef&&verified.has(account.subscriptionRef)?account.subscriptionRef:`${row.id}#${account.route}`)));
+        this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;
         this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId); return true;
       case 'visibility':

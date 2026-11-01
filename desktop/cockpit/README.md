@@ -32,7 +32,7 @@ from the Go-generated `schema/app-cli/app-server.json`. `npm run generate` updat
 it; `npm run check` rejects drift. The reachable schema is also the production
 runtime validator. Unknown fields, unsupported generator keywords, invalid enum
 values, malformed timestamps, duplicate keys, unsafe numbers and invalid
-identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise keeps account members distinct by row and route. It lays out quota windows without calculating recommendations.
+identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise uses session-only row and route keys. When unverified members share a row and route, keys gain `#1`, `#2`, and so on in CLI-emitted order; these are not durable identities and do not migrate to a later verified reference. It lays out quota windows without calculating recommendations.
 
 ## Native consumer contract
 
