@@ -11,7 +11,8 @@ public enum DockQuotaPeriod: String, Codable, Sendable {
 public struct DockQuotaWindowInput: Sendable {
     public var id: String, period: DockQuotaPeriod, label: String
     public var remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?
-    /// Scoped/model extras remain in cards but never drive general quota rings/readout.
+    /// Participation in named general quota presentation. False is not itself a
+    /// model-scope claim; that classification needs an explicit wire field.
     public var isGeneral = true
     public init(id: String, period: DockQuotaPeriod, label: String, remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?) {
         self.id=id;self.period=period;self.label=label;self.remainingPercent=remainingPercent

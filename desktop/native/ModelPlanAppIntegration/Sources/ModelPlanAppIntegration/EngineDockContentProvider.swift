@@ -106,12 +106,21 @@ import ModelPlanSettings
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })
                 let generalRole = period == .fiveHour || period == .week || period == .month
-                // Unknown scope is not evidence of a general account limit. Keep it
-                // in the card, including when the producer retained a weekly role.
-                let extraKeys:Set<String>=["other","code_review","reserve"]
-                projected.isGeneral = generalRole && !extraKeys.contains(window.limitKey) && !extraKeys.contains(window.poolKey)
+                // The current wire has no explicit model scope. All windows are
+                // not model-specific; labels, IDs, limit/pool keys prove no scope.
+                projected.isGeneral = generalRole
                 input.windows.append(projected)
             }
+        func rank(_ period:DockQuotaPeriod) -> Int {
+            switch period { case .fiveHour:return 0;case .week:return 1;case .month:return 2;case .day:return 3;case .other:return 4 }
+        }
+        // A role can have several windows while no explicit scope field exists.
+        // Canonicalize each role's tightest first for rings and the shared pin consumer.
+        input.windows.sort { left,right in
+            if rank(left.period) != rank(right.period) { return rank(left.period) < rank(right.period) }
+            let a=left.remainingPercent ?? .infinity,b=right.remainingPercent ?? .infinity
+            return a == b ? left.id < right.id:a < b
+        }
         input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable
         return input
     }

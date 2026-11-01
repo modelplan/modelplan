@@ -52,7 +52,8 @@ private actor S4RowsClient: EngineClient {
         // Array order, duration and low extra all disagree with the semantic role.
         var scopedWeekly=window("model","weekly",2,604800)
         scopedWeekly["limitKey"]="other";scopedWeekly["poolKey"]="other"
-        account["windows"]=[scopedWeekly,window("extra","other",1,60),window("weekly","weekly",24,604800),window("five","session",63,18000),window("month","monthly",80,2592000)]
+        scopedWeekly["label"]=["en":"Model-only looking label","zh":"看似专项的名称"]
+        account["windows"]=[window("weekly","weekly",24,604800),window("extra","other",1,60),scopedWeekly,window("five","session",63,18000),window("month","monthly",80,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
@@ -64,9 +65,10 @@ private actor S4RowsClient: EngineClient {
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
-        try require(reading.remainingPercent == 24,"tightest must exclude model-specific extra (expected24)")
+        try require(reading.remainingPercent == 2,"without an explicit model-scope field, generic weekly windows must participate regardless of names/limit/pool keys")
         try require(reading.inner?.windowID.hasSuffix("five") == true,"inner must use5h role")
-        try require(reading.outer?.windowID.hasSuffix("weekly") == true,"outer must useweekly role")
+        try require(reading.outer?.windowID == "model","outer must use the tightest weekly role without guessing model scope")
+        try require(input.windows.first(where:{$0.id == "model"})?.isGeneral == true,"metadata that merely looks scoped must not become a scope field")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
         try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
@@ -81,13 +83,13 @@ private actor S4RowsClient: EngineClient {
         try require(migrated.subscriptions.order == [input.id] && migrated.subscriptions.hiddenIDs == [input.id],"single-member order/hide migration must use its key")
         var explicit=old;explicit.subscriptionSettings[input.id] = .init(alias:"Member")
         try require(entry.composition.accountMembers.migratingRowPreferences(explicit).subscriptionSettings[input.id]?.alias == "Member","explicit member choice must win over row migration")
-        for (pin,expected) in [(PercentagePin.fiveHour,63.0),(.week,24.0)] {
+        for (pin,expected) in [(PercentagePin.fiveHour,63.0),(.week,2.0)] {
             try await store.update { $0.subscriptionSettings[input.id] = .init(percentagePin:pin) }
             await entry.prepare()
             guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
             let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
             try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
-            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "weekly","pin must not swap ring roles")
+            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "model","pin must not swap ring roles")
         }
         await entry.composition.stop()
     }
