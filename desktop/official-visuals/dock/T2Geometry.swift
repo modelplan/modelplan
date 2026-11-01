@@ -20,10 +20,10 @@ public struct T2GeometryInput: Sendable {
     public let ignitionAtEnd: Bool
     public init(coordinates: T2EdgeCoordinates, diameter: CGFloat = 44,
                 showsPercentages: Bool = true, along: CGFloat = 0.5,
-                ignitionAtEnd: Bool = false) {
+                ignitionAtEnd: Bool? = nil) {
         self.coordinates = coordinates; self.diameter = diameter
         self.showsPercentages = showsPercentages; self.along = along
-        self.ignitionAtEnd = ignitionAtEnd
+        self.ignitionAtEnd = ignitionAtEnd ?? (coordinates.edge == .bottom)
     }
 }
 
@@ -41,6 +41,7 @@ public struct T2Station: Sendable {
 /// Pure native translation of the accepted T2 study's geometry.js.
 /// Coordinates remain top-left-origin throughout, including local samples.
 public struct T2Geometry: Sendable {
+    public let input: T2GeometryInput
     public let stations: [T2Station]
     public let shown: [T2Subscription]
     public let overflow: [T2Subscription]
@@ -209,7 +210,7 @@ public struct T2Geometry: Sendable {
                 readoutCentre: readout, pitch: m.pitches[i])
         }
         let gripS = p.ignitionAtEnd ? m.start + 18 * scale : m.end - 18 * scale
-        return Self(stations: stations, shown: visible, overflow: more, outline: localOutline.map(screen),
+        return Self(input: p, stations: stations, shown: visible, overflow: more, outline: localOutline.map(screen),
             outlineLocal: localOutline, button: screen(CGPoint(x: buttonU, y: buttonDepth)),
             grip: screen(m.local(gripS, max(9 * scale, m.width(at: gripS) / 2), face: true)),
             buttonOverhang: overhang(buttonU), radius: m.radius, sliceAngle: m.angle, arcLength: m.arcLength,

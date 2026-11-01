@@ -2,9 +2,14 @@
   "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
   "schemaVersion": 1,
   "files": {
-    "Package.swift": "15d1c17b8f48d4f2c170e650cc5ecf4566daea2ac41871da13a4c238e3b7de71",
+    "Package.swift": "d09b339eea717c07f4bd63fc12f6a7ccea65a380acd2361e9940f08e3401d755",
+    "README.md": "f2d4cc52c0c74beefd87f090e81ba9e1df0ed878e89eb009b083906b69badc2e",
     "T2EdgeCoordinates.swift": "3a6d9945c0bec5ce152c8cad2a55e9cef453ad33f12994f4769dbf185a6d7f67",
-    "T2Geometry.swift": "b4905f74c1e187dfa502e347606167666bfafb1bf5ee4774f7e457176dbcc8c1",
-    "Tests/T2GeometryTests.swift": "bedc57f00c4ae8100954e1a3bee89759c452b3421956c44c48a2514173b2ec24"
+    "T2FaceMaterial.swift": "f80cb0f51cff1ee6a43ca3a104c701db004f85014f3f5c8204d4fe408e81b6fb",
+    "T2Geometry.swift": "271b088c88c3170e60ce01efa15167284786e93429d0f12cc50dfdc8ef7889af",
+    "T2Grain.swift": "1eac7ddb5d4d8daaab6a472005e30c734b27e2cec75f82a40cf37647f008940d",
+    "Tests/T2GeometryTests.swift": "bedc57f00c4ae8100954e1a3bee89759c452b3421956c44c48a2514173b2ec24",
+    "Tests/T2OracleTests.swift": "6fe1625c1d47b2fcfc257cc9df6437aefa3d48d4eb7fd6df1bee031dda904d71",
+    "Tests/geometry-oracle.json": "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb"
   }
 }
