@@ -8,6 +8,7 @@ def manifest(config,root):
         if not isinstance(config.get(k),str) or not config[k]:raise ValueError('missing '+k)
     if config['profile']!='synthetic':raise ValueError('synthetic evidence only')
     if not config.get('scenarios') or any(not x.get('id') or x.get('outcome') not in OUTCOMES for x in config['scenarios']):raise ValueError('explicit scenario outcomes required')
+    if config.get('launchMode','direct') not in ('direct','launchservices'):raise ValueError('launchMode must be direct or launchservices')
     root=root.resolve(strict=True)
     scenarios=[]
     for original in config['scenarios']:
@@ -22,7 +23,8 @@ def manifest(config,root):
         target=root/p
         if any((root/Path(*p.parts[:i])).is_symlink() for i in range(1,len(p.parts)+1)) or not target.is_file():raise ValueError('regular evidence file required')
         data=target.read_bytes();files.append({'path':p.as_posix(),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
-    return {'schemaVersion':1,**{k:config[k] for k in ('headSHA','profile','attributionMethod','scenarios')},'files':files,'scenarios':scenarios}
+    # launchMode records how the subject was started (launch.py run config); direct when absent.
+    return {'schemaVersion':1,**{k:config[k] for k in ('headSHA','profile','attributionMethod','scenarios')},'launchMode':config.get('launchMode','direct'),'files':files,'scenarios':scenarios}
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--config',type=Path,required=True);p.add_argument('--batch',type=Path,required=True);a=p.parse_args()
     # Caller selects the approved exchange batch; no fallback/copy/upload route.
