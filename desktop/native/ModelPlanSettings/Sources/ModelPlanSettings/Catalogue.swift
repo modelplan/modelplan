@@ -348,7 +348,8 @@ public enum SettingsCatalogue {
         }
     }
     private static func shortcut(_ chord: ShortcutChord) -> String {
-        [ShortcutChord.Modifier.command, .control, .option, .shift].filter { chord.modifiers.contains($0) }.map(\.rawValue).joined(separator: "+") + "+" + chord.key
+        guard !chord.isUnassigned else { return "--" }
+        return [ShortcutChord.Modifier.command, .control, .option, .shift].filter { chord.modifiers.contains($0) }.map(\.rawValue).joined(separator: "+") + "+" + chord.key
     }
 }
 private extension Array { func appending(contentsOf values: [Element]) -> Self { self + values } }

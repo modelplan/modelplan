@@ -326,6 +326,8 @@ import AppKit
         let status: String
         if let reason = context.unavailableControls[key] {
             status = reason.value(language)
+        } else if chord.isUnassigned {
+            status = SettingsWords.text("No shortcut assigned", "尚未设置快捷键", language)
         } else {
             switch state {
             case .registered: status = SettingsWords.text("Global shortcut registered", "全局快捷键已注册", language)
