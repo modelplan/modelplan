@@ -70,6 +70,8 @@ private actor SettingsJourneyClient: EngineClient {
         first.composition.dock.setPresentationAllowed(true)
         await first.composition.start()
         let dock = first.composition.dock
+        XCTAssertNotNil(dock.dockView.nozzleEventDelegate, "The production entry must install the Dock interaction controller")
+        XCTAssertTrue(dock.dockView.keyboardNavigationEnabled, "Keyboard reorder must be reachable on the real Dock view")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Dock readings…" })
@@ -165,5 +167,97 @@ private actor SettingsJourneyClient: EngineClient {
         let migratedSnapshot = await migrated.snapshot()
         XCTAssertEqual(migratedSnapshot.preferences.language, .chinese)
         XCTAssertEqual(try Data(contentsOf: legacyFile), legacyBytes)
+    }
+    func testNormalEntryNozzleDragKeyboardAndDwellReachRealHost() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-port-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+        var second = rows[0]; second["id"] = "synthetic-second"
+        rows.append(second); projection["rows"] = rows; root["projection"] = projection
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: configuration,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+        await app.prepare(); app.composition.dock.setPresentationAllowed(true); await app.composition.start()
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, dock = app.composition.dock
+        var context = editor.context
+        context.subscriptions = [.init(id: "codex", name: .init("First", "首个")), .init(id: "synthetic-second", name: .init("Second", "第二个"))]
+        app.settingsHost.application.update(context: context)
+        _ = try await editor.commit(SettingsB21Edit.autoHide(false))
+        let events = try XCTUnwrap(dock.dockView.nozzleEventDelegate, "Normal entry must install the host port")
+        XCTAssertTrue(dock.dockView.keyboardNavigationEnabled)
+        XCTAssertTrue(events.beginNozzle(id: "codex", local: CGPoint(x: 25, y: 22)))
+        events.moveNozzle(local: CGPoint(x: 25, y: 66))
+        events.endNozzle(global: CGPoint(x: 25, y: 66), currentID: "synthetic-second")
+        for _ in 0..<100 where editor.snapshot?.preferences.subscriptions.order != ["synthetic-second", "codex"] { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(editor.snapshot?.preferences.subscriptions.order, ["synthetic-second", "codex"], "Drag must persist the shared order")
+        let nodes = dock.dockView.accessibilityChildren() ?? []
+        let node = try XCTUnwrap(nodes.compactMap { $0 as? NSAccessibilityElement }.first { $0.accessibilityIdentifier() == "dock.subscription.codex" })
+        XCTAssertTrue(node.accessibilityPerformPress())
+        let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option,
+            timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 126))
+        dock.dockView.keyDown(with: key)
+        for _ in 0..<100 where editor.snapshot?.preferences.subscriptions.order != ["codex", "synthetic-second"] { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(editor.snapshot?.preferences.subscriptions.order, ["codex", "synthetic-second"], "Option-arrow must persist the shared order")
+        XCTAssertTrue(dock.card.isHidden, "Keyboard reorder closes the previously pinned card")
+        events.hoverNozzle("codex")
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertTrue(dock.card.isHidden, "Card must not open before the dwell deadline")
+        try await Task.sleep(for: .milliseconds(140))
+        XCTAssertFalse(dock.card.isHidden, "Dwell should open the real card")
+        let currentNodes = dock.dockView.accessibilityChildren() ?? []
+        let pinned = try XCTUnwrap(currentNodes.compactMap { $0 as? NSAccessibilityElement }.first { $0.accessibilityIdentifier() == "dock.subscription.codex" })
+        XCTAssertTrue(pinned.accessibilityPerformPress())
+        dock.card.onDismiss?()
+        events.hoverNozzle(nil)
+        XCTAssertTrue(dock.card.isHidden, "A dismissed pinned card must not reappear on refresh")
+        XCTAssertTrue(pinned.accessibilityPerformPress())
+        XCTAssertFalse(dock.card.isHidden, "The next press after close must reopen the card")
+        dock.setPresentationAllowed(false)
+        XCTAssertTrue(dock.card.isHidden)
+        dock.setPresentationAllowed(true)
+        XCTAssertFalse(dock.card.isHidden, "A pinned card returns when its parent Dock resumes")
+        await app.composition.stop()
+    }
+
+}
+
+/// This window-owning journey runs only in an explicitly booked synthetic GUI slot.
+@MainActor final class DockWindowPolicyJourneyTests: XCTestCase {
+    func testNormalEntryFullscreenAndWindowSharingSettings() async throws {
+        guard ProcessInfo.processInfo.environment["MODELPLAN_EXCLUSIVE_GUI"] == "1" else {
+            throw XCTSkip("Requires an explicitly booked synthetic GUI window")
+        }
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-window-policy-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings.json")),
+            createsNativePanels: true, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+        await app.prepare(); app.composition.dock.setPresentationAllowed(true); await app.composition.start()
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.autoHide(false))
+        let panel = try XCTUnwrap(app.composition.dock.nativePanel)
+        XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary))
+        XCTAssertNotEqual(panel.sharingType, .none, "The owner chose capture hiding off by default")
+        _ = try await editor.commit(SettingsB21Edit.fullscreen(true))
+        XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
+        _ = try await editor.commit(SettingsB21Edit(key: .captureHiding, value: "true"))
+        XCTAssertEqual(panel.sharingType, .none)
+        _ = try await editor.commit(SettingsB21Edit(key: .captureHiding, value: "false"))
+        XCTAssertNotEqual(panel.sharingType, .none)
+        await app.composition.stop()
     }
 }
