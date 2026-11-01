@@ -51,6 +51,10 @@ export type WireCockpitDetails = {
   readonly "version": number;
 };
 
+export type WireCockpitQueryParams = {
+  readonly "redBelow"?: 10 | 16 | 20 | 25;
+};
+
 export type WireCockpitResetCount = {
   readonly "count": number | null;
   readonly "expiresAt": string | null;
@@ -478,6 +482,22 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "resetEvents",
       "alerts"
     ],
+    "type": "object"
+  },
+  "CockpitQueryParams": {
+    "additionalProperties": false,
+    "properties": {
+      "redBelow": {
+        "enum": [
+          10,
+          16,
+          20,
+          25
+        ],
+        "type": "integer"
+      }
+    },
+    "required": [],
     "type": "object"
   },
   "CockpitResetCount": {
