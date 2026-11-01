@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanEngineClient
+import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
 
@@ -10,12 +11,14 @@ import ModelPlanSettings
     private let scopeBinding: EngineScopeConsentBinding
     public var scopeConsentEntry: ScopeConsentEntry { scopeBinding.entry }
     private let settings: SettingsApplicationCoordinator
+    private var interactionBinding: EngineDockInteractionBinding?
     public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
     private var terminating = false
+    private var accessibilityObserver: NSObjectProtocol?
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
     #endif
@@ -37,8 +40,21 @@ import ModelPlanSettings
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
-        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false)) { composition.dock.apply($0) }
+        var environment = SettingsEnvironment(); environment.v1NormalEntry = true
+        settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.applySettings($0) }
         super.init()
+        CommunityPlacementBinding.install(on: composition.dock, application: settings)
+        // M0's host opts in only when the native interaction port exists.
+        if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
+            let clock = { ProcessInfo.processInfo.systemUptime }
+            interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
+                scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
+        }
+        composition.settingsDidChange = { [weak self] value in
+            guard let self, !self.terminating else { return }
+            if self.liveStatusMenu != nil { self.renderMenu() }
+            self.console?.applySettings(value)
+        }
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -53,7 +69,11 @@ import ModelPlanSettings
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
         guard ready != lastAboutConnectionReady else { return }
         lastAboutConnectionReady = ready
-        settings.update(context: contextSource.make(engineReady: ready))
+        // Preserve Dock-owned catalogue, display and placement facts when the
+        // engine connection changes; only About's CLI readiness comes from here.
+        var context = settings.editor.context
+        context.about.cliState = contextSource.make(engineReady: ready).about.cliState
+        settings.update(context: context)
     }
     /// Core preferences share the exact foundation store used by Settings.
     public func coreSnapshot() async -> FoundationCorePreferences? { await foundationStore.coreSnapshot() }
@@ -65,11 +85,42 @@ import ModelPlanSettings
     public func showConsole() {
         guard !terminating else { return }
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
+        if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
     }
-    public func prepare() async { await settings.reload() }
+    /// OS accessibility changes are presentation facts, never saved user choices.
+    func updateSystemAccessibility(_ observed: SettingsEnvironment) {
+        guard !terminating else { return }
+        var current = settings.editor.environment
+        current.reduceMotion = observed.reduceMotion
+        current.reduceTransparency = observed.reduceTransparency
+        current.increaseContrast = observed.increaseContrast
+        current.macOSMajor = observed.macOSMajor
+        settings.update(environment: current)
+    }
+    public func prepare() async {
+        updateSystemAccessibility(SettingsWindowController.systemEnvironment())
+        await settings.reload()
+        guard !terminating else { return }
+        interactionBinding?.install()
+    }
+    func allowDockPresentation() {
+        guard !terminating else { return }
+        composition.dock.setPresentationAllowed(true)
+        interactionBinding?.start()
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        if accessibilityObserver == nil {
+            accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.updateSystemAccessibility(SettingsWindowController.systemEnvironment())
+                }
+            }
+        }
         #if MODELPLAN_U6_DRIVE
         do { driveGuard = try U6DriveGuard.attach(ownsMenu: { [weak self] menu in
             guard let self else { return false }; return menu.delegate === self || menu.delegate === self.composition.dock
@@ -79,21 +130,22 @@ import ModelPlanSettings
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
+        Task { await prepare(); guard !terminating else { return }; allowDockPresentation(); renderMenu(); await composition.start() }
     }
     private func renderMenu() {
+        let language = composition.latestSettings?.effective.language ?? .english
         let menu = liveStatusMenu ?? NSMenu()
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
         menu.removeAllItems()
         let reading = NSMenuItem(title: composition.menuPresentation.detail, action: nil, keyEquivalent: "")
         reading.isEnabled = false; menu.addItem(reading)
-        let refresh = menu.addItem(withTitle: "Refresh / 刷新", action: #selector(refreshRows), keyEquivalent: "")
+        let refresh = menu.addItem(withTitle: EngineRowsText.refresh.value(language), action: #selector(refreshRows), keyEquivalent: "")
         refresh.target = self
         menu.addItem(.separator())
-        menu.addItem(settingsHost.menuItem(title: "Settings… / 设置…"))
-        let consoleItem = menu.addItem(withTitle: "Dock readings… / Dock 读数…", action: #selector(showConsoleMenu), keyEquivalent: "")
+        menu.addItem(settingsHost.menuItem(title: EngineRowsText.settings.value(language)))
+        let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
-        menu.addItem(withTitle: "Quit / 退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: EngineRowsText.quit.value(language), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; liveStatusMenu = menu; status?.menu = menu
         let image = CommunityMenuBarResources.templateImage()
         image?.isTemplate = true
@@ -109,7 +161,9 @@ import ModelPlanSettings
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true; settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
+        terminating = true
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
+        interactionBinding?.stop(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }

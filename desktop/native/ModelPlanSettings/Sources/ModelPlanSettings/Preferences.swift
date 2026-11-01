@@ -52,6 +52,8 @@ public struct ShortcutChord: Codable, Equatable, Sendable {
         try c.encode(key, forKey: .key)
         try c.encode(modifiers.sorted { $0.rawValue < $1.rawValue }, forKey: .modifiers)
     }
+    public static let unassigned = ShortcutChord("", modifiers: [])
+    public var isUnassigned: Bool { key.isEmpty && modifiers.isEmpty }
     public var isValid: Bool {
         key.count == 1 && key.utf8.count <= 8 && key == key.uppercased() && key != "+"
             && !key.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -89,8 +91,8 @@ public struct SettingsPreferences: Codable, Sendable {
     /// Saved preference only; observing/performing update checks belongs to the application service.
     public var automaticUpdates = true
     public var menuDisplay: MenuDisplay = .icon
-    public var openShortcut = ShortcutChord("O", modifiers: [.command, .shift])
-    public var dockShortcut = ShortcutChord("D", modifiers: [.command, .shift])
+    public var openShortcut = ShortcutChord.unassigned
+    public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
     public var opening: OpeningPreference = .hold
     public var beatMilliseconds = 250
@@ -140,8 +142,10 @@ public struct SettingsPreferences: Codable, Sendable {
         func validID(_ id: String) -> Bool { !id.isEmpty && id.utf8.count <= 256 && !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
         guard dockAlongFraction.isFinite, (0...1).contains(dockAlongFraction), dockDisplayID.map(validID) ?? true,
               [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
-              [150, 200, 250].contains(beatMilliseconds), openShortcut.isValid, dockShortcut.isValid,
-              openShortcut != dockShortcut, subscriptionSettings.count <= 1000, subscriptions.order.count <= 1000,
+              [150, 200, 250].contains(beatMilliseconds),
+              openShortcut.isValid || openShortcut.isUnassigned, dockShortcut.isValid || dockShortcut.isUnassigned,
+              openShortcut.isUnassigned || dockShortcut.isUnassigned || openShortcut != dockShortcut,
+              subscriptionSettings.count <= 1000, subscriptions.order.count <= 1000,
               subscriptions.hiddenIDs.count <= 1000, subscriptions.order.allSatisfy(validID),
               subscriptions.hiddenIDs.allSatisfy(validID), subscriptionSettings.allSatisfy({ id, value in
                   validID(id) && value.alias.count <= 128 && value.alias.utf8.count <= 1024 && !value.alias.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
@@ -185,9 +189,10 @@ public actor SettingsStore {
     /// One canonical actor for the new settings/core document. Existing or
     /// corrupt targets never trigger legacy migration or automatic replacement.
     public init(foundationAt applicationSupport: URL, product: FoundationSettingsMigration.ProductIdentity,
-                rowIDMap: [String: String] = [:], onboardingDefinition: OnboardingDefinition = .task65) throws {
+                rowIDMap: [String: String] = [:], defaultLanguage: SettingsLanguage? = nil,
+                onboardingDefinition: OnboardingDefinition = .task65) throws {
         let location = try FoundationPreferenceLocation(applicationSupport: applicationSupport, product: product)
-        let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap)
+        let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage)
         self.url = location.target; self.onboardingDefinition = onboardingDefinition
         self.current = opened.document.settings; self.foundationBacking = opened
         current.onboarding.reconcile(in: onboardingDefinition)
