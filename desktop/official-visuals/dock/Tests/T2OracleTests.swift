@@ -79,7 +79,7 @@ final class T2OracleTests: XCTestCase {
         let reading = try DockInstrumentProjection.evaluate(input, now: now)
         let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: .init(coordinates: .init(edge: .right, width: 1470, height: 956, menuBarExclusion: 26)))
         let neutral = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
-        let beta = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, allowBetaMarks: true)
+        let beta = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, zaiMarkEnabled: true)
         let station = try XCTUnwrap(beta.stations.first)
         XCTAssertNil(neutral.stations.first?.glyphs["zhipu"])
         XCTAssertEqual(station.glyphs["zhipu"], "logo-zai-white")

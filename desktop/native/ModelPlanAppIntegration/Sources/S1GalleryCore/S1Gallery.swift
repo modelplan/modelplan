@@ -89,7 +89,7 @@ private struct S1Manifest: Decodable {
         }
         let composed = try bitmap(), difference = try bitmap()
         guard let pixels = composed.bitmapData, let diffs = difference.bitmapData else { throw CocoaError(.fileReadCorruptFile) }
-        let resources = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: false)))
+        let resources = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: false)))
         let font = try resources.font("font-jetbrains-mono", size: skin.text.size, weight: skin.text.weight)
         var masks = [(String, CGRect)]()
         for station in skin.stations {
@@ -215,7 +215,7 @@ private struct S1Manifest: Decodable {
                 }
                 let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
                 host.captureBackingScaleForChecks = 2
-                host.dockView.allowBetaMarksForChecks = true
+                host.dockView.zaiMarkEnabled = true
                 host.setDockContentProvider(S1SyntheticProvider(count: capture.count, now: now))
                 let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
                 await coordinator.reload()

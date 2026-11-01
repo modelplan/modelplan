@@ -22,8 +22,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var appearanceMenuBarExclusion: CGFloat = 0
     /// Current admitted notices, kept out of the static material cache.
     public var appearanceNotices: [String: DockNotice] = [:]
-    /// Only synthetic beta capture opts into beta-only assets.
-    @_spi(DockResourceChecks) public var allowBetaMarksForChecks = false
+    /// The signed package controls this single beta-only mark switch.
+    @_spi(DockResourceChecks) public var zaiMarkEnabled = (Bundle.main.object(forInfoDictionaryKey: "zaiMarkEnabled") as? Bool) ?? false
     @_spi(DockResourceChecks) public var presentedNoticesForChecks: [String: DockNotice] { failed ? [:] : notices }
     /// Read-only capture of the currently presented synthetic test surface.
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }

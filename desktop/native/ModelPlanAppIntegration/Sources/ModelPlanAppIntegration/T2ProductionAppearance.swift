@@ -21,10 +21,10 @@ import ModelPlanSettings
         let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter, showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
         let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "", hasEvent: view.appearanceNotices[$0.subscriptionID] != nil) }
         let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
-        let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages, allowBetaMarks: view.allowBetaMarksForChecks)
+        let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages, zaiMarkEnabled: view.zaiMarkEnabled)
         let artwork = try T2BundledArtwork.records().mapValues { DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }
         let official = try DockArtworkStore(root: T2BundledArtwork.rootURL(), manifest: .init(files: artwork))
-        let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: view.allowBetaMarksForChecks))
+        let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
         let vendor = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: vendorManifest)
         let material = T2FaceMaterial()
         let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in

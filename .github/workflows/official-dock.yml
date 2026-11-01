@@ -12,6 +12,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/ProductionDockFactory.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/OfficialDockEntryJourneyTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/ZaiMarkSwitchTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/S1GalleryTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
@@ -28,6 +29,7 @@ on:
       - 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/ProductionDockFactory.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/T2MaterialSeamTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/OfficialDockEntryJourneyTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/ZaiMarkSwitchTests.swift'
       - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/S1GalleryTests.swift'
       - 'desktop/native/ModelPlanDock/Native/DockInstrumentView.swift'
       - '.github/workflows/official-dock.yml'
@@ -45,6 +47,6 @@ jobs:
       - name: Synthetic T2 geometry tests
         run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2
       - name: Generic material seam (no GUI)
-        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests)' --jobs 2
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/official-dock-seam --filter '(T2MaterialSeamTests|OfficialDockEntryJourneyTests|S1GalleryTests|ZaiMarkSwitchTests)' --jobs 2
       - name: Original vendor marks and native fonts (no GUI)
         run: swift test --package-path desktop/third-party/dock-resources --scratch-path .tmp/official-dock-seam --jobs 2

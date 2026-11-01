@@ -6,7 +6,7 @@ import CoreText
 
 @MainActor final class DockResourcesTests: XCTestCase {
     private func manifest(_ beta: Bool) throws -> DockResourceManifest {
-        try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: beta))
+        try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: beta))
     }
     func testResourceLookupSupportsFlatAndNestedBundleLayouts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("resource-layout-" + UUID().uuidString)

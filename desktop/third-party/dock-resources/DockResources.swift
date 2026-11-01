@@ -17,12 +17,12 @@ public enum DockThirdPartyResources {
     }
     /// Beta-only marks are excluded unless the distribution consumer explicitly
     /// opts into the approved beta policy. No runtime downloader is involved.
-    public static func manifestData(allowBetaMarks: Bool) throws -> Data {
+    public static func manifestData(zaiMarkEnabled: Bool) throws -> Data {
         let data = try Data(contentsOf: rootURL().appendingPathComponent("manifest.json"))
         guard var value = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               value["schemaVersion"] as? Int == 1,
               let files = value["files"] as? [String: [String: Any]], files.count <= 128 else { throw Failure.invalidManifest }
-        value["files"] = files.filter { allowBetaMarks || ($0.value["betaOnly"] as? Bool != true) }
+        value["files"] = files.filter { zaiMarkEnabled || ($0.value["betaOnly"] as? Bool != true) }
         return try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     }
 }

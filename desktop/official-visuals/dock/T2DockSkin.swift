@@ -7,7 +7,7 @@ import ModelPlanDock
 /// Translates the accepted geometry and checked resource names into the generic
 /// renderer's data-only skin. All coordinates remain in study space.
 public enum T2DockSkin {
-    public static func make(geometry g: T2Geometry, rows: [DockInstrumentReading], showsPercentages: Bool, allowBetaMarks: Bool = false) throws -> DockInstrumentSkin {
+    public static func make(geometry g: T2Geometry, rows: [DockInstrumentReading], showsPercentages: Bool, zaiMarkEnabled: Bool = false) throws -> DockInstrumentSkin {
         let d = g.input.diameter, unit = d / 52
         let bounds = g.outline.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
             .union(g.ignitionBounds.insetBy(dx: -4 * unit, dy: -4 * unit)).integral
@@ -19,7 +19,7 @@ public enum T2DockSkin {
         let layers = names.map { "\($0)-\(sourceSize)px@3x.webp" }
         let available = Dictionary(uniqueKeysWithValues: rows.map { ($0.subscriptionID, $0) })
         var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "opencode":"logo-opencode"]
-        if allowBetaMarks { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
+        if zaiMarkEnabled { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
         let outerWidth = d * 0.058, innerWidth = d * 0.031
         let outerRadius = d/2 - 1 - outerWidth/2
         let innerRadius = outerRadius - outerWidth/2 - 2 - innerWidth/2
