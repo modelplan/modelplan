@@ -10,7 +10,7 @@ public struct DockInk: Codable, Sendable {
     var valid:Bool{[r,g,b,a].allSatisfy{$0.isFinite && (0...1).contains($0)}}
     var cg:CGColor{CGColor(colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!,components:[r,g,b,a])!}
 }
-public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect}
+public struct DockBitmapLayer: Codable, Sendable {public var resource:String;public var rect:CGRect;public var opacity:Double?}
 public struct DockRingRecipe: Codable, Sendable {public var radius:CGFloat,width:CGFloat,minimumVisibleFraction:Double,opacity:Double;public var trackOpacity:Double?,unknownDash:[CGFloat]?}
 public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotRadius:CGFloat,backWidth:CGFloat;public var positions:Int}
 public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var language:String?;public var size:CGFloat,weight:Double}
@@ -29,6 +29,7 @@ public struct DockStationRecipe: Codable, Sendable {
     public var replacementResource:String?,readoutOpacity:Double?
     public var eventBackdropKey:String?,eventOutlineKey:String?,eventSolidOutlineWidth:CGFloat?
     public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
+    public var fallbackVendorName:Bool?
 }
 public struct DockInstrumentSkin: Codable, Sendable {
     public var schemaVersion:Int
@@ -49,8 +50,9 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
     /// the instrument pass so a clear can retire them independently.
     public typealias Material = @MainActor (DockInstrumentSkin, Int) throws -> CGImage
     private let resources:DockArtworkStore
+    private let supplementalResources:DockArtworkStore?
     private let material:Material?
-    public init(resources:DockArtworkStore, material:Material? = nil){self.resources=resources;self.material=material}
+    public init(resources:DockArtworkStore, supplementalResources:DockArtworkStore? = nil, material:Material? = nil){self.resources=resources;self.supplementalResources=supplementalResources;self.material=material}
     public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int) throws -> DockRenderResult {
         func finite(_ p:CGPoint)->Bool{p.x.isFinite && p.y.isFinite && abs(p.x)<=1_000_000 && abs(p.y)<=1_000_000}
         func finiteRect(_ r:CGRect)->Bool{finite(r.origin) && r.width.isFinite && r.height.isFinite && r.width>0 && r.height>0 && r.width<=4096 && r.height<=4096}
@@ -74,11 +76,27 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false) throws {
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
             let size=Int(ceil(max(rect.width,rect.height)*CGFloat(scale)))
-            let image=try resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
-            // Image pixels and logical geometry are distinct; no nominal @2x relabelling.
-            guard image.width>=Int(ceil(rect.width*CGFloat(scale))),image.height>=Int(ceil(rect.height*CGFloat(scale))) else{throw DockArtworkError.corruptResource(resource)}
-            c.saveGState();c.clip(to:rect);c.translateBy(x:rect.minX,y:rect.maxY);c.scaleBy(x:1,y:-1)
-            c.draw(image,in:CGRect(origin:.zero,size:rect.size));c.restoreGState()
+            let image: CGImage
+            do { image = try resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels) }
+            catch DockArtworkError.missingResource {
+                guard let supplementalResources else { throw DockArtworkError.missingResource(resource) }
+                image = try supplementalResources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
+            }
+            // Static SVG marks retain their intrinsic aspect ratio in the square
+            // placement box, matching SVG's default xMidYMid meet behavior.
+            let isVector = resources.isVectorResource(resource) ?? supplementalResources?.isVectorResource(resource) ?? false
+            let drawSize: CGSize
+            if isVector {
+                guard max(image.width,image.height) >= size else { throw DockArtworkError.corruptResource(resource) }
+                let fit = min(rect.width / CGFloat(image.width), rect.height / CGFloat(image.height))
+                drawSize = CGSize(width:CGFloat(image.width)*fit,height:CGFloat(image.height)*fit)
+            } else {
+                guard image.width>=Int(ceil(rect.width*CGFloat(scale))),image.height>=Int(ceil(rect.height*CGFloat(scale))) else{throw DockArtworkError.corruptResource(resource)}
+                drawSize = rect.size
+            }
+            let target = CGRect(x:rect.midX-drawSize.width/2,y:rect.midY-drawSize.height/2,width:drawSize.width,height:drawSize.height)
+            c.saveGState();c.clip(to:rect);c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
+            c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
         }
         if let material {
             let backing = try material(skin, scale)
@@ -88,14 +106,26 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         } else if !skin.bodyPolygon.isEmpty {
             c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath()
         }
-        for fixed in skin.fixedLayers {try image(fixed.resource,fixed.rect,preserveSourcePixels:true)}
+        for fixed in skin.fixedLayers {
+            let opacity = fixed.opacity ?? 1
+            guard opacity.isFinite, (0...1).contains(opacity) else { throw DockArtworkError.invalidManifest }
+            c.saveGState(); c.setAlpha(opacity)
+            do { try image(fixed.resource,fixed.rect,preserveSourcePixels:true); c.restoreGState() }
+            catch { c.restoreGState(); throw error }
+        }
         // Retain only material/fixed art for a failed data/profile transaction, never old readings.
         guard let backgroundImage = c.makeImage() else { throw DockArtworkError.invalidManifest }
         var metrics=[DockGlyphMetric]()
         func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
             guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
             let font:CTFont
-            if let id=recipe.fontResource {font=try resources.font(id,size:recipe.size,weight:recipe.weight)}
+            if let id=recipe.fontResource {
+                do { font = try resources.font(id,size:recipe.size,weight:recipe.weight) }
+                catch DockArtworkError.missingResource {
+                    guard let supplementalResources else { throw DockArtworkError.missingResource(id) }
+                    font = try supplementalResources.font(id,size:recipe.size,weight:recipe.weight)
+                }
+            }
             else if recipe.useSystemUIFont == true {font=CTFontCreateUIFontForLanguage(.system,recipe.size,recipe.language.map{$0 as CFString})!}
             else if let name=recipe.systemFontName {
                 guard !name.isEmpty,name.utf8.count<=128 else{throw DockArtworkError.invalidManifest}
@@ -168,6 +198,8 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 let opacity=station.glyphOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                 c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect)
+            } else if station.fallbackVendorName == true {
+                try text(reading.name, station.glyphRect, skin.aliasText, try ink("text"))
             }
             }
             if reading.timeLeftFraction != nil {

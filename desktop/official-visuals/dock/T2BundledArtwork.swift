@@ -15,7 +15,10 @@ public enum T2BundledArtwork {
     public enum Failure: Error { case missing, invalidManifest, outsideRoot, changedBytes }
     private struct Manifest: Decodable { let schemaVersion: Int; let files: [String: T2ArtworkRecord] }
     public static func rootURL() throws -> URL {
-        guard let manifest = Bundle.module.url(forResource: "artwork", withExtension: "json") else { throw Failure.missing }
+        let packaged = (Bundle.main.resourceURL?.appendingPathComponent("ModelPlanOfficialDock_ModelPlanOfficialDock.bundle")).flatMap { Bundle(url: $0) }
+        if Bundle.main.bundleURL.pathExtension == "app", packaged == nil { throw Failure.missing }
+        let bundle = packaged ?? Bundle.module
+        guard let manifest = bundle.url(forResource: "artwork", withExtension: "json") else { throw Failure.missing }
         let root = manifest.deletingLastPathComponent()
         return root.standardizedFileURL.resolvingSymlinksInPath()
     }

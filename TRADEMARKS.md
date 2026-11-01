@@ -3,6 +3,7 @@
 “ModelPlan” and “Model Plan” are variants of the same mark. ModelPlan names, logos and official product identity identify the official project; software licenses do not grant a general right to impersonate or imply endorsement by its maintainers. This notice states the project's brand-use policy and does not assert that every mark is registered in every jurisdiction.
 
 Third-party names and logos are trademarks of their respective owners and are used only to identify the corresponding service.
+See [the separate third-party trademark notice](THIRD-PARTY-TRADEMARKS.md).
 
 You may truthfully refer/link to ModelPlan, describe compatibility, and show ordinary screenshots for documentation, review or reporting, subject to applicable rights and law. Keep the context accurate and avoid implying that a modified build or another service is the official ModelPlan distribution.
 

@@ -10,7 +10,7 @@ import ModelPlanDock
                                  nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
                                  elapsedClock: (() -> TimeInterval)? = nil,
                                  edgeScheduling: (any DockEdgeScheduling)? = nil) -> StaticDockPreviewHost {
-        StaticDockPreviewHost(currentDate: { Date() }, createsNativePanels: createsNativePanels,
+        StaticDockPreviewHost(appearance: T2ProductionAppearance.apply, currentDate: { Date() }, createsNativePanels: createsNativePanels,
             nativeEnvironment: nativeEnvironment, elapsedClock: elapsedClock, edgeScheduling: edgeScheduling,
             purpose: .production)
     }

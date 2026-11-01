@@ -17,6 +17,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     @_spi(DockResourceChecks) public var presentedNozzleDiameters: [CGFloat] { skin?.stations.map(\.diameter) ?? [] }
     /// The host resolves the destination screen even while this view is detached/collapsed.
     public var presentationBackingScale: Int?
+    /// Destination display facts are supplied by the host, never inferred from raster size.
+    public var appearanceDisplaySize: CGSize?
+    public var appearanceMenuBarExclusion: CGFloat = 0
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }

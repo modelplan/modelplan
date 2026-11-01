@@ -2,7 +2,7 @@
   "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
   "schemaVersion": 1,
   "files": {
-    "Package.swift": "1a32f3ee41bda1c8d90b1414b62788616467943becf25e7f321f47c504082bfd",
+    "Package.swift": "07a4e5397e61d46f09c97ac607dc8103f00edaa34d1f2aa37d686d84ca234f99",
     "README.md": "e796bda98d8473e3d49f56b76239c6c00c50f9e1d335fa20d1e9fba54ae99a31",
     "Resources/A5/a5-cap-night-idle-44x44@3x.png": "d62839aa24cf7d136204e6472185ff2cc9c4ef193642aec036fff338b30151ae",
     "Resources/A5/a5-cap-night-pressed-44x44@3x.png": "51e76c95cf6f752ced63aabb8d88f42cdc8206a409b15bcb5e903fb39309c165",
@@ -26,7 +26,8 @@
     "Resources/Nozzle/a1-04-exit-lip-52px@3x.webp": "dec3f4f3d21ae9f72f9571e7f3340642e5fefa36654174ee8163c526698ff9ad",
     "Resources/Nozzle/a1-04-exit-lip-64px@2x.webp": "bfaacdbef39840ed1b7ae34b088a858ff4737a46cbc9669d3fc058f4c15fc08f",
     "Resources/artwork.json": "23c13b15206a61e2a24fe11121f47acdb0472215a5a33151b1a2cd137acf8348",
-    "T2BundledArtwork.swift": "c4e435cd0fd6b588dda609328f9eca50bfc7ef56e43f103f02040802003c61b9",
+    "T2BundledArtwork.swift": "c427c393035e9dd28f4ddfa9472693630c1342eff3dfb28df4b72f1b20e698a6",
+    "T2DockSkin.swift": "221d19c42356c22a51d92a5be04d23ad426481e0bf08e753938d3b3557dfa2fd",
     "T2EdgeCoordinates.swift": "3a6d9945c0bec5ce152c8cad2a55e9cef453ad33f12994f4769dbf185a6d7f67",
     "T2FaceMaterial.swift": "d17deb29f911abeb206f17908f425ac8f4d4df75232748df0d4cd6c87ad7322f",
     "T2Geometry.swift": "d7bb66ab09a1b9f4598fe09de0b2f95df2c84bbd09d76e6913844f9a63519bf8",

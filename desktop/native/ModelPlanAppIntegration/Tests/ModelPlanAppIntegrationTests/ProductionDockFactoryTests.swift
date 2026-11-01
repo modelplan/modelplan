@@ -36,8 +36,8 @@ import ModelPlanSettings
         XCTAssertGreaterThan(calls, 0, "the actual returned Host must use the supplied appearance")
         XCTAssertNil(dock.nativePanel, "construction and a settings transaction must not launch panels")
     }
-    func testFreshCommunityProductionFactoryRegistersItsActualPaintedBodyWithoutAnOfficialSkin() async throws {
-        let host = ProductionDockFactory.community()
+    func testNeutralHostRegistersItsActualPaintedBodyWithoutAnOfficialSkin() async throws {
+        let host = StaticDockPreviewHost(purpose: .production)
         defer { host.close() }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("community-drag-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -47,7 +47,7 @@ import ModelPlanSettings
         XCTAssertNotNil(host.dockView.registeredMoveOutlinePath, "The real neutral rectangle must supply its own move outline")
         XCTAssertNil(host.dockView.registeredHullPath, "Movement cannot fabricate a supplier hull or override supplied sliver geometry")
         let regions = try XCTUnwrap(host.dockView.registeredDragRegions(excluding: []),
-            "Normal Community construction must offer a painted drag area without any injected official skin")
+            "A neutral host must offer a painted drag area without any injected official skin")
         XCTAssertTrue(regions.contains(CGPoint(x: 2, y: 2)))
         XCTAssertFalse(regions.contains(CGPoint(x: -1, y: 2)))
         XCTAssertNil(host.nativePanel)

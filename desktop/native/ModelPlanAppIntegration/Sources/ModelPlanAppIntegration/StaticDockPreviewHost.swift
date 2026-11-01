@@ -398,6 +398,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let backingScale = destinationBackingScale()
         dockView.presentationBackingScale = backingScale
         alternateViews.forEach { $0.presentationBackingScale = backingScale }
+        let displayFacts = environment()
+        let appearancePrimary = displayFacts.primaryDisplayID
+        let appearanceFollowed = followedDisplayID ?? displayFacts.pointer.flatMap { point in displayFacts.displays.first { $0.frame.contains(point) }?.id } ?? appearancePrimary
+        let appearanceSelected = passPreferences.followActiveDisplay ? appearanceFollowed : (passPreferences.dockDisplayID ?? appearancePrimary)
+        let display = displayFacts.displays.first { $0.id == appearanceSelected } ?? displayFacts.displays.first { $0.id == appearancePrimary }
+        for view in [dockView] + alternateViews {
+            view.appearanceDisplaySize = display?.frame.size
+            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
+        }
+        var appearanceFallback = false
         do {
             if let appearance {
                 let candidate = try appearance(dockView, rows, passPreferences)
@@ -412,26 +422,22 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
         } catch {
             guard passIsCurrent(generation) else { return }
-            if appearance != nil {
-                // A transient official refresh must not replace the supplied hull with a theme rectangle.
-                dockView.retireOfficialPresentation()
-            } else {
-                try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
-                geometry = .init(hoverRects: [dockView.bounds])
-            }
+            appearanceFallback = appearance != nil
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+            geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
         model = next
-        if rows.isEmpty && appearance == nil {
+        if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable (fallback)" : "停靠栏外观不可用（回退）") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
             if empty.superview == nil { dockView.addSubview(empty) }
         } else { empty.removeFromSuperview() }
-        if appearance == nil {
+        if appearance == nil || appearanceFallback {
             geometry.hoverRects = [dockView.bounds]
             let scales = sliverParameters.sizeScales
             let factor = passPreferences.size == .small ? scales.small : passPreferences.size == .large ? scales.large : scales.medium
