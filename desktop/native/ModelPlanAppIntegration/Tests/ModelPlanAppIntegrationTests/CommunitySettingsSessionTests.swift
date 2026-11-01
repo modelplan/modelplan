@@ -33,4 +33,17 @@ import ModelPlanCommunityHost
         session.suspend()
         XCTAssertEqual(activated, 1); XCTAssertEqual(surface.shown.count, 1); XCTAssertEqual(surface.hidden, 1)
     }
+    func testSettingsMenuUsesTheCurrentLanguageWithoutOpeningAWindow() async throws {
+        let app = try application()
+        let session = CommunitySettingsSession(application: app, canPresent: { false },
+            activate: { XCTFail("Language changes must not activate the app") },
+            makeSurface: { _ in XCTFail("Language changes must not create a window"); return TestSettingsSurface() })
+        await session.restorePreferences()
+        XCTAssertEqual(session.settingsMenuItem.title, "设置…")
+        _ = try await app.editor.commit(SettingsB21Edit.language(.english))
+        XCTAssertEqual(session.settingsMenuItem.title, "Settings…")
+        _ = try await app.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(session.settingsMenuItem.title, "设置…")
+    }
+
 }
