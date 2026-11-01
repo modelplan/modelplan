@@ -205,10 +205,19 @@ func (a Account) MarshalJSON() ([]byte, error) {
 	if a.Source == "native:gemini" {
 		a.Windows = append([]Window(nil), a.Windows...)
 		for i := range a.Windows {
-			a.Windows[i].Limit = safeGeminiLimit(a.Windows[i].Limit)
+			a.Windows[i].Limit = a.SafeLimit(a.Windows[i].Limit)
 		}
 	}
 	return json.Marshal(accountJSON(a))
+}
+
+// SafeLimit protects Gemini labels at all presentation boundaries while leaving
+// other providers' independent label vocabularies unchanged.
+func (a Account) SafeLimit(label string) string {
+	if a.Source == "native:gemini" {
+		return safeGeminiLimit(label)
+	}
+	return label
 }
 
 // Gemini labels consist only of a reviewed model ID and a fixed token suffix.

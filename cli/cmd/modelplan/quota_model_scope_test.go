@@ -133,14 +133,15 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 		t.Fatalf("expected cached scope missing: %s", fmt.Sprint(len(cached)))
 	}
 	legacy := strings.Replace(string(cached), prior, replacement, 1)
-	legacy = strings.Replace(legacy, `"limit":"unknown"`, `"limit":"synthetic-token-shaped-secret"`, 1)
-	if !strings.Contains(legacy, `"limit":"synthetic-token-shaped-secret"`) {
+	legacy = strings.Replace(legacy, `"limit":"unknown"`, `"limit":"synthetic-token-shaped-secret requests"`, 1)
+	if !strings.Contains(legacy, `"limit":"synthetic-token-shaped-secret requests"`) {
 		t.Fatal("legacy limit injection failed")
 	}
 	if err = os.WriteFile(path, []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
 	check(false)
+	scopedLegacy := legacy
 	// A pre-scope cache lacks both the marker and modelIds entirely.
 	legacy = strings.Replace(legacy, replacement+",", "", 1)
 	legacy = strings.Replace(legacy, `"scopeKnown":true,`, "", 1)
@@ -148,4 +149,24 @@ func TestQuotaJSONSanitizesGeminiScopeThroughCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(true)
+	for i, cache := range [][]byte{cached, []byte(scopedLegacy), []byte(legacy)} {
+		if err = os.WriteFile(path, cache, 0600); err != nil {
+			t.Fatal(err)
+		}
+		code, plain, stderr := consentRun([]string{"quota", "--offline"}, "")
+		if code != 0 {
+			t.Fatalf("plain quota exit %d: %s", code, stderr)
+		}
+		if strings.Contains(plain, "synthetic-token-shaped-secret") {
+			t.Fatal("legacy provider label leaked in plaintext quota output")
+		}
+		if i > 0 && !strings.Contains(plain, "unknown requests") {
+			t.Fatalf("sanitized legacy suffix missing: %s", plain)
+		}
+		for _, expected := range []string{"unknown", "gemini-2.5-pro", "50%", "20%"} {
+			if !strings.Contains(plain, expected) {
+				t.Fatalf("plain quota missing %q: %s", expected, plain)
+			}
+		}
+	}
 }
