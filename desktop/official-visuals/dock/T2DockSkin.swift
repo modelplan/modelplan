@@ -53,10 +53,10 @@ public enum T2DockSkin {
             ["resource":"a5-recessed-guard-52x52@3x.png", "rect":rect(box(button,guardSize,guardSize))]
         ]
         func ink(_ r: Double,_ g: Double,_ b: Double,_ a: Double=1) -> [String:Double] { ["r":r/255,"g":g/255,"b":b/255,"a":a] }
-        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255)]
+        let palette: [String: [String: Double]] = ["body":ink(16,19,24),"case":ink(5,6,8),"track":ink(255,255,255,28/255),"notch":ink(14,17,22),"normal":ink(90,217,186),"warning":ink(234,193,123),"critical":ink(239,68,68),"unknown":ink(125,134,142),"clock":ink(255,255,255,0.6),"clockBack":ink(5,6,8,0.55),"text":ink(255,255,255),"lcdWhite":ink(233,237,240),"alias":ink(230,233,235),"noticeBlue":ink(159,210,255),"noticeAmber":ink(234,193,123),"noticeWhite":ink(255,255,255)]
         let text: [String: Any] = ["fontResource":"font-jetbrains-mono","size":11*unit,"weight":400]
         let alias: [String: Any] = ["useSystemUIFont":true,"size":10*unit,"weight":400]
-        let object: [String: Any] = ["schemaVersion":1,"bounds":rect(bounds),"bodyPolygon":g.outline.map{[$0.x,$0.y]},"fixedLayers":fixed,"stations":stations,"palette":palette,"text":text,"aliasText":alias]
+        let object: [String: Any] = ["schemaVersion":1,"bounds":rect(bounds),"bodyPolygon":g.outline.map{[$0.x,$0.y]},"fixedLayers":fixed,"stations":stations,"palette":palette,"text":text,"aliasText":alias,"readoutPalette":["normal":"lcdWhite"]]
         return try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: object))
     }
 }
