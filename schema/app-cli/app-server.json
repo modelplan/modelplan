@@ -1533,6 +1533,59 @@
       ],
       "type": "object"
     },
+    "ProposedResetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "precision": {
+          "enum": [
+            "window",
+            "date",
+            "approximate",
+            "deadline"
+          ],
+          "type": "string"
+        },
+        "through": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ],
+      "type": "object"
+    },
+    "ProposedResetSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "publication"
+          ],
+          "type": "string"
+        },
+        "publicationId": {
+          "pattern": "^[a-f0-9]{24}$",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "publicationId"
+      ],
+      "type": "object"
+    },
     "PublicationCapability": {
       "additionalProperties": false,
       "properties": {
@@ -2196,6 +2249,116 @@
         }
       ]
     },
+    "ResetEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "confirms": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "planIds": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,47}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9-]{0,47}$",
+          "type": "string"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "rowId": {
+          "pattern": "^[a-z][a-z0-9-]{0,47}$",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ProposedResetSchedule"
+        },
+        "source": {
+          "$ref": "#/$defs/ProposedResetSource"
+        },
+        "status": {
+          "enum": [
+            "announced",
+            "confirmed"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "id",
+        "rowId",
+        "status",
+        "publishedAt",
+        "expiresAt",
+        "source",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "ResetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "precision": {
+          "type": "string"
+        },
+        "through": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ],
+      "type": "object"
+    },
+    "ResetSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "publicationId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "publicationId"
+      ],
+      "type": "object"
+    },
     "Response": {
       "anyOf": [
         {
@@ -2415,6 +2578,14 @@
     "RowsProjection": {
       "additionalProperties": false,
       "properties": {
+        "resetEvents": {
+          "items": {
+            "$ref": "#/$defs/ResetEvent"
+          },
+          "maxItems": 64,
+          "type": "array",
+          "uniqueItems": true
+        },
         "rows": {
           "items": {
             "$ref": "#/$defs/Row"
