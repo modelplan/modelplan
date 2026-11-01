@@ -9,6 +9,8 @@ import ModelPlanShell
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
+    private let scopeBinding: EngineScopeConsentBinding
+    public var scopeConsentEntry: ScopeConsentEntry { scopeBinding.entry }
     private let settings: SettingsApplicationCoordinator
     private var interactionBinding: EngineDockInteractionBinding?
     public let foundationStore: SettingsStore
@@ -33,7 +35,7 @@ import ModelPlanShell
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
-    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, makeSurface: makeSettingsSurface)
+    public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                 makeClient: (@MainActor (EngineClientConfiguration, ModelPlanEngineStore.EngineStore) -> any EngineClient)? = nil,
@@ -42,6 +44,7 @@ import ModelPlanShell
                 activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) {
         let composition = EngineDockMenuComposition(configuration: configuration, createsNativePanels: createsNativePanels, makeClient: makeClient)
         self.composition = composition
+        self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
@@ -213,7 +216,7 @@ import ModelPlanShell
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
-        interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
+        interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
