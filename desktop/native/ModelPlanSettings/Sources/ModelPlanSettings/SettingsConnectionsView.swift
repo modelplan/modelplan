@@ -69,7 +69,7 @@ import AppKit
         let cleanupUnverified = controller.phase == .failed(.cleanupReadbackUnavailable)
         if cleanupReported || cleanupUnverified {
             label(.init("The last Forget reported unfinished cache cleanup. The app cannot verify manual cookie cleanup. Read the CLI disconnect instructions; any credential-related approval stays separate. A later explicit Forget can verify completion.",
-                        "上次忘记读数报告缓存清理未完成；应用无法核验手动cookie清理。请阅读CLI disconnect说明，任何凭据相关批准都需单独确认；随后可再次主动确认忘记读数来核验完成情况。"))
+                        "上次忘记读数报告缓存清理未完成；应用无法核验手动清理浏览器会话缓存的结果。请阅读命令行工具的断开连接说明，任何凭据相关批准都需单独确认；随后可再次主动确认忘记读数，核验完成情况。"))
             addArrangedSubview(button(.init("View manual cleanup instructions in About", "在关于中查看手动清理说明"), id: "connections.cleanupHelp",
                 enabled: editor.canPresentConnectionHelp) { [weak self] in try? self?.editor.requestConnectionHelp() })
         }
@@ -194,8 +194,7 @@ import AppKit
         label(advanced ? .init("Advanced browser sessions — off by default", "高级浏览器会话——默认关闭") : .init("Standard tools", "标准工具"), heading: true)
         if advanced { label(.init("Separate explicit consent is required. A detected or selected tool is not authorized.", "需要单独明确授权；已检测到或已选择均不代表已授权。")) }
         for value in tools {
-            let suffix = value.beta ? " · beta" : ""
-            label(.init(value.tool.title + suffix, value.tool.title + suffix), heading: true)
+            label(.init(value.tool.title + (value.beta ? " · beta":""), value.tool.title + (value.beta ? " · 公测":"")), heading: true)
             label(SettingsConnectionPresentation.summary(value))
             let hosts = value.providerHosts.isEmpty ? SettingsText("None reported", "未报告")
                 : SettingsText(value.providerHosts.joined(separator: ", "), value.providerHosts.joined(separator: ", "))
