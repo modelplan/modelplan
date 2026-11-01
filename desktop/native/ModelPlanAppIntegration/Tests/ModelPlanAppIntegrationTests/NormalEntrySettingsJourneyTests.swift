@@ -101,6 +101,8 @@ private actor SettingsJourneyClient: EngineClient {
         }
         XCTAssertEqual(notifications.requests, 1, "Only explicit opt-in requests notification authorization")
         XCTAssertEqual(editor.context.notificationAuthorization, .authorized)
+        _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
+        XCTAssertEqual(notifications.requests, 1, "Repeated opt-in must not prompt again")
         _ = try await editor.commit(SettingsB21Edit.login(true))
         XCTAssertEqual(login.registrations, 1, "An explicit login choice reaches the system-service adapter")
         XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")
@@ -131,7 +133,9 @@ private actor SettingsJourneyClient: EngineClient {
 
         let reopened = try makeApp()
         let reopenedLogin = JourneyLoginService()
+        let reopenedNotifications = JourneyNotificationService()
         let reopenedFirstRun = JourneyFirstRunSurface()
+        reopened.notificationAuthorizationService = reopenedNotifications
         reopened.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: reopenedLogin))
         reopened.makeFirstRunSurface = { _ in reopenedFirstRun }
         await reopened.prepare()
@@ -140,6 +144,7 @@ private actor SettingsJourneyClient: EngineClient {
         await reopened.restoreFirstRunIfNeeded()
         XCTAssertEqual(reopenedFirstRun.shows, 0, "Completed first run stays completed after relaunch")
         XCTAssertEqual(reopenedLogin.registrations, 0, "Restoration must not register the login service")
+        XCTAssertEqual(reopenedNotifications.requests, 0, "Restoration must not request notification authorization")
         let saved = await reopened.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.size, .large)
         XCTAssertEqual(saved.preferences.language, .chinese, "An explicit choice survives relaunch even when the OS prefers English")

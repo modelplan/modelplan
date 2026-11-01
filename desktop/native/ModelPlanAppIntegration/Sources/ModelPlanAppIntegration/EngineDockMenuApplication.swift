@@ -26,6 +26,7 @@ import ModelPlanShell
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
@@ -81,11 +82,22 @@ import ModelPlanShell
     }
     public func prepare() async {
         if loginServiceAdapter == nil, let bundle = Bundle(url: appBundleURL),
-           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL {
+           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
             loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(bundle: bundle))
         }
+        if notificationAuthorizationService == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL,
+           bundle.bundleIdentifier != nil, bundle.bundleURL.pathExtension == "app" {
+            notificationAuthorizationService = SystemNotificationAuthorizationService()
+        }
+        let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
+        guard !terminating else { return }
+        notificationConsumer.observeAuthorization(observedAuthorization)
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
+        context.notificationAuthorization = observedAuthorization
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
@@ -107,6 +119,18 @@ import ModelPlanShell
             }
         }
         switch request.intent {
+        case .notificationConsentChanged:
+            let effect = notificationConsumer.committedConsent(request, snapshot: current)
+            if case .requestAuthorization(let token) = effect, let service = notificationAuthorizationService {
+                Task { [weak self] in
+                    let observed = await service.requestAuthorization()
+                    guard let self, !self.terminating else { return }
+                    self.notificationConsumer.receivedAuthorization(observed, request: token)
+                    var context = self.settings.editor.context
+                    context.notificationAuthorization = self.notificationConsumer.policy.authorization
+                    self.settings.update(context: context)
+                }
+            }
         case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
@@ -118,7 +142,7 @@ import ModelPlanShell
                 }
             }
         default:
-            // Shortcut, notification and help actions remain explicitly deferred
+            // Shortcut, notification delivery and help actions remain explicitly deferred
             // in this draft until their owners supply production consumers.
             break
         }
