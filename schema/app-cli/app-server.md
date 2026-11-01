@@ -308,7 +308,7 @@ public protocol CredentialAgent: Sendable {
 | -32010 | `protocol_mismatch` | The major version differs. The server exits and the app does not restart it |
 | -32011 | `not_initialized` | A method was called before `initialize` |
 | -32012 | `wrong_session` | The `sessionId` does not match the current session |
-| -32013 | `busy` | Over an in-flight or queue cap. Retry later; nothing was started |
+| -32013 | `busy` | Over an in-flight or queue cap, or a sensitive result could not acquire its publication lock within the bounded wait. Retry read-only requests later; no result was published |
 | -32020 | `consent_stale` | `expectGeneration` is older than current. `error.data.consentGeneration` gives the current one |
 | -32021 | `consent_rejected` | An `allow` for an unknown scope or a forbidden access class, or while readers are off. Deny and forget are never rejected for a known or retired scope |
 | -32022 | `request_mismatch` | A known `requestId` arrived with a different payload |

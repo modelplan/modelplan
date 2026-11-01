@@ -25,6 +25,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   macos-skeleton:
+    permissions:
+      contents: read
+      actions: read
     if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
     runs-on: macos-latest
     timeout-minutes: 45
@@ -56,6 +59,8 @@ jobs:
           node scripts/check-source-policy.mjs
           python3 -m unittest discover -s tools/u14/tests -p test_macos_runner.py -v
       - name: Build actual bundle, launch synthetic app, collect AX and offscreen evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 tools/u14/macos_runner.py --output "$GITHUB_WORKSPACE/.tmp/u14-macos" --case "$U14_CASE" --scenarios "$U14_SCENARIOS"
       - name: Preserve only the part-B synthetic evidence bundle
         if: always()

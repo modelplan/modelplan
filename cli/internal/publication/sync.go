@@ -214,6 +214,7 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 		if _, _, err := Load(c.Store); err != nil {
 			return Result{}, err
 		}
+		c.syncCachedCalendar(ctx, *st)
 		return Result{PublicationID: st.PublicationID, NotModified: true}, nil
 	}
 	var p pointer
@@ -228,6 +229,7 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 			return Result{}, err
 		}
 		st.ETag = newTag
+		c.syncCachedCalendar(ctx, *st)
 		return Result{PublicationID: p.PublicationID, NotModified: true}, nil
 	}
 
@@ -274,7 +276,9 @@ func (c *Client) sync(ctx context.Context, st *store.State) (Result, error) {
 	st.PublicationID, st.ManifestHash, st.PublishedAt = p.PublicationID, p.ManifestHash, m.PublishedAt
 	st.Component, st.ComponentHash, st.ETag = name, comp.Hash, newTag
 	st.VerifiedAt = c.Now()
-	c.Store.Prune(map[string]bool{comp.Hash: true, prev: true})
+	keep := map[string]bool{comp.Hash: true, prev: true}
+	c.syncCalendar(ctx, m, keep)
+	c.Store.Prune(keep)
 	return Result{PublicationID: p.PublicationID, Switched: true}, nil
 }
 
@@ -317,6 +321,10 @@ func Load(s *store.Store) (*digest.Digest, store.State, error) {
 }
 
 func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, int, error) {
+	return c.getLimit(ctx, path, etag, maxObjectBytes)
+}
+
+func (c *Client) getLimit(ctx context.Context, path, etag string, budget int64) ([]byte, string, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+path, nil)
 	if err != nil {
 		return nil, "", 0, errors.New("invalid publication request")
@@ -340,15 +348,15 @@ func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, in
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", resp.StatusCode, fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, maxObjectBytes+1))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, budget+1))
 	if err != nil {
 		return nil, "", 0, err
 	}
-	if len(b) > maxObjectBytes {
+	if int64(len(b)) > budget {
 		return nil, "", 0, fmt.Errorf("GET %s: response too large", path)
 	}
 	if strings.HasPrefix(path, "/publications/objects/") {
-		b, err = decodeStorage(b)
+		b, err = decodeStorageLimit(b, budget)
 		if err != nil {
 			return nil, "", 0, err
 		}
@@ -418,6 +426,10 @@ func verify(m manifest, ob []byte) error {
 	return err
 }
 func decodeStorage(b []byte) ([]byte, error) {
+	return decodeStorageLimit(b, maxObjectBytes)
+}
+
+func decodeStorageLimit(b []byte, budget int64) ([]byte, error) {
 	if !bytes.HasPrefix(b, []byte{'M', 'P', 'G', 'Z', '1', 0}) {
 		return b, nil
 	}
@@ -425,7 +437,7 @@ func decodeStorage(b []byte) ([]byte, error) {
 		return nil, errors.New("client: corrupt storage envelope")
 	}
 	length := int(binary.BigEndian.Uint32(b[6:10]))
-	if length < 4096 || length > maxObjectBytes {
+	if length < 4096 || int64(length) > budget {
 		return nil, errors.New("client: storage size budget")
 	}
 	r, err := gzip.NewReader(bytes.NewReader(b[10:]))

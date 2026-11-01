@@ -56,8 +56,8 @@ import ModelPlanCore
         let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         try bytes.write(to: root.appendingPathComponent("Contents/Helpers/modelplan"))
         try Data((hash + "\n").utf8).write(to: root.appendingPathComponent("Contents/Resources/modelplan.sha256"))
-        let info = ["CFBundleShortVersionString": "1.2.3", "ModelPlanPublicSource": String(repeating: "a", count: 40),
-            "ModelPlanHelperVersion": "0.5.49", "ModelPlanSourceHelperSHA256": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture["arm64"]!,
+        let info: [String: Any] = ["CFBundleShortVersionString": "1.2.3", "ModelPlanPublicSource": String(repeating: "a", count: 40),
+            "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version, "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture,
             "ModelPlanBundledHelperSHA256": hash]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: root.appendingPathComponent("Contents/Info.plist"))
         return root
@@ -68,7 +68,7 @@ import ModelPlanCore
         let about = CommunityApplicationFactory.makeSettingsContext(bundle: root, availability: port.availability,
             operatingSystem: .init(majorVersion: 15, minorVersion: 4, patchVersion: 3)).about
         XCTAssertEqual(about.cliState, .ready)
-        XCTAssertEqual(about.cliVersion, "0.5.49")
+        XCTAssertEqual(about.cliVersion, CommunityConsentBundleIdentity.version)
         XCTAssertEqual(about.version, "1.2.3")
         XCTAssertEqual(about.macOSVersion, "15.4.3")
     }

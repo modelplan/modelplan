@@ -1,0 +1,93 @@
+{
+  "SPDX-License-Identifier": "MIT",
+  "sourceCommit": "1d3f82429f1b853314ee120d4bd0007f84fc051d",
+  "sourceRoot": "design-handoffs/opus-r7/src/",
+  "release": "Owner authorized MIT web cockpit port, 2026-10-29; confirmed 2026-10-30. Assets retain their independent grants.",
+  "files": [
+    {
+      "source": "design-handoffs/opus-r7/src/style.css",
+      "sourceSha256": "045ef5df31d1c25c8b58214b981c826138ee979be3bc80ceee5d3a96d1ce1400",
+      "destination": "prototype/prototype-style.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/theme.css",
+      "sourceSha256": "16f3bbd47f3b727562d3504f957b5656d840b599b086bdd29173952283267f92",
+      "destination": "prototype/prototype-theme.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/rocket.css",
+      "sourceSha256": "aec0ce34dd291531483a17d4fe6d63be2209eb8925dddad183748ca94cb8a67b",
+      "destination": "prototype/prototype-rocket.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/cockpit-r5.css",
+      "sourceSha256": "521a1c4096e97f8e00eeb4a03c770fcfb548c7b267912f38c673ca46e56a230d",
+      "destination": "prototype/prototype-cockpit-r5.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/engine.css",
+      "sourceSha256": "3776e22eb8ada2d23b885cecf38632fdabaccdf76dfc6d89473ab870dc9de090",
+      "destination": "prototype/prototype-engine.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/mfd.css",
+      "sourceSha256": "e37cc7f8a56a53bff1979ed29c90d03b0d9e79a52b7419f2132838f5de45a9a0",
+      "destination": "prototype/prototype-mfd.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/faders.css",
+      "sourceSha256": "69ccf0421ed79172df0a740f5230cc4db72e084a361a22cdc476238dbbe05a54",
+      "destination": "prototype/prototype-faders.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/shell6.css",
+      "sourceSha256": "ad485e968c57c62580fe17f70f73f3f8d2acf59d5cac8fda370c35eb146596ba",
+      "destination": "prototype/prototype-shell6.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/hull-r3.css",
+      "sourceSha256": "73617d9c1d884f65c6dcc362bb946e244fd22b12d8ed51640077d054bf3dc076",
+      "destination": "prototype/prototype-hull-r3.css",
+      "transform": "MIT owner release; remove study-only comments/imports and all private/external resource URLs; public font alias; remove private font-face declarations (use only public OFL/system fallback); remove prototype animation declarations and keyframes (finite pulse is owned by the local-window adapter)"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/cockpit-fit.js",
+      "sourceSha256": "98cd0f3b90a0141ee03d9a453e835af48331c9d86a4888efde72ca27c698bd7f",
+      "destination": "src/prototype-layout.ts",
+      "transform": "Reuse cockpitLayout only; TypeScript parameter annotations; no native-window placement"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/cockpit.js",
+      "sourceSha256": "ad229bd297c2ea33c98551dde68aaaff3fa3884c409c12162c4c5d5b4cc4019c",
+      "destination": "src/prototype-frame.ts",
+      "transform": "Port buildCockpit static hierarchy only; native window controls, logos and source imports omitted"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/mfd-pages/fmt.js",
+      "sourceSha256": "3cafacf1e2250ad612d97398f3d68824834176b026b8eca051f1ede02f77fd47",
+      "destination": "src/view.ts",
+      "transform": "Port litTens display arithmetic only; Go provides account groups and classifications"
+    }
+  ],
+  "fixtureAudit": {
+    "file": "design-handoffs/opus-r7/src/workbench-data.js",
+    "sha256": "90b63e65229df207595a8237d81fdd5294a1d83faba5427ad9468087d4fc7c53",
+    "result": "synthetic pools/models/session labels; no account identifiers, credentials, local paths or network endpoints found",
+    "copied": false
+  },
+  "excluded": [
+    "vendor logos/SVGs and all source assets",
+    "private study imports",
+    "porthole/three.js scenes and U12 media",
+    "legacy account/subscription inference and scorer/classifier helpers",
+    "demo/mock-data bootstrap, prewarm and all JS animation/timer loops"
+  ]
+}

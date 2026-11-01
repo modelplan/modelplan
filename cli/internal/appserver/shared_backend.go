@@ -76,7 +76,9 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := consent.Publish(fenceOf(stamp), func() error {
+	called := false
+	err := consent.PublishContext(ctx, fenceOf(stamp), func() error {
+		called = true
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -86,7 +88,17 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return ProtocolError{wire.CodeConsentChanged}
+		if called {
+			return err
+		}
+		switch {
+		case errors.Is(err, consent.ErrBusy):
+			return ProtocolError{wire.CodeBusy}
+		case errors.Is(err, consent.ErrChanged):
+			return ProtocolError{wire.CodeConsentChanged}
+		default:
+			return err
+		}
 	}
 	return nil
 }

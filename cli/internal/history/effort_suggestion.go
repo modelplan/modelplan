@@ -21,17 +21,22 @@ import (
 // leaves repeated headroom; 90% average or two limit hits means repeated pressure.
 // The middle range deliberately abstains.
 const (
-	suggestionWeeks    = 3
-	suggestionWeek     = 7 * 24 * time.Hour
-	minObservedPoints  = 5.0
-	minAttributedShare = .60
-	minDominantShare   = .60
-	minDominantWeeks   = 2
-	tightLimitCycles   = 2
-	underusedAverage   = 60.0
-	underusedMaximum   = 75.0
-	tightAverage       = 90.0
+	suggestionWeeks       = 3
+	suggestionWeek        = 7 * 24 * time.Hour
+	suggestionResetWindow = 24 * time.Hour
+	minObservedPoints     = 5.0
+	minAttributedShare    = .60
+	minDominantShare      = .60
+	minDominantWeeks      = 2
+	tightLimitCycles      = 2
+	underusedAverage      = 60.0
+	underusedMaximum      = 75.0
+	tightAverage          = 90.0
 )
+
+// Owner-controlled rollout: no automatic activation on the earliest go-live
+// date (2026-11-07). Local on/env opt-in is available for review.
+const effortSuggestionDefaultEnabled = false
 
 // EffortSuggestion is personal, local advice, never agent context. CostRatio is a
 // published reference-cost ratio, not a prediction of the user's quota consumption.
@@ -113,7 +118,7 @@ func suggestEffort(l Ledger, d *digest.Digest, now time.Time, current *Share) *E
 	var candidates []*EffortSuggestion
 	for k, cs := range groups {
 		sort.Slice(cs, func(i, j int) bool { return cs[i].ResetsAt.After(cs[j].ResetsAt) })
-		if len(cs) < suggestionWeeks || !now.Before(cs[0].ResetsAt.Add(suggestionWeek)) {
+		if len(cs) < suggestionWeeks || !now.Before(cs[0].ResetsAt.Add(suggestionResetWindow)) {
 			continue
 		}
 		cs = cs[:suggestionWeeks]
@@ -228,7 +233,7 @@ func suggestEffort(l Ledger, d *digest.Digest, now time.Time, current *Share) *E
 		candidates = append(candidates, &EffortSuggestion{Source: k.source, Plan: k.plan, ModelID: m.ID, ModelName: m.Name, Direction: direction,
 			FromEffort: from.Effort, FromLabel: from.Label, ToEffort: to.Effort, ToLabel: to.Label, Recommended: m.Recommended, Fast: dominant.fast,
 			Cycles: suggestionWeeks, AverageUsed: avg, HitLimitCycles: hits, CostRatio: ratio, CostBasisID: from.CostBasisID, PublicationID: d.PublicationID,
-			ResetAt: cs[0].ResetsAt, ExpiresAt: cs[0].ResetsAt.Add(suggestionWeek)})
+			ResetAt: cs[0].ResetsAt, ExpiresAt: cs[0].ResetsAt.Add(suggestionResetWindow)})
 	}
 	// One line: newest reset, then stable source/plan/model ordering (never map order).
 	sort.Slice(candidates, func(i, j int) bool {
@@ -266,6 +271,7 @@ func publishedFast(d *digest.Digest, model, source, plan string) bool {
 type effortSuggestionState struct {
 	SchemaVersion  int       `json:"schemaVersion"`
 	Disabled       bool      `json:"disabled"`
+	Enabled        bool      `json:"enabled,omitempty"`
 	DismissedUntil time.Time `json:"dismissedUntil"`
 	LastShownAt    time.Time `json:"lastShownAt"`
 }
@@ -274,6 +280,9 @@ func EffortSuggestionPath(cache string) string {
 	return filepath.Join(cache, "observed", "effort-suggestion.json")
 }
 func effortSuggestionOff() bool { return Off() || os.Getenv("MODELPLAN_EFFORT_SUGGESTION") == "off" }
+func (s effortSuggestionState) enabled() bool {
+	return !s.Disabled && (effortSuggestionDefaultEnabled || s.Enabled || os.Getenv("MODELPLAN_EFFORT_SUGGESTION") == "on")
+}
 func loadEffortState(cache string) (effortSuggestionState, error) {
 	s := effortSuggestionState{SchemaVersion: 1}
 	b, err := os.ReadFile(EffortSuggestionPath(cache))
@@ -303,7 +312,7 @@ func saveEffortState(cache string, s effortSuggestionState) error {
 }
 
 // EffortView is read-only. Revision hashes observed inputs, never the clock;
-// Boundaries tells the desktop when clock-only eligibility changes.
+// Boundaries reports clock-only eligibility changes.
 type EffortView struct {
 	Suggestion *EffortSuggestion
 	Revision   string
@@ -325,22 +334,23 @@ func ReadEffortSuggestion(cache string, d *digest.Digest, now time.Time) EffortV
 	b, _ := json.Marshal(struct {
 		Ledger         Ledger
 		Disabled       bool
+		Enabled        bool
 		DismissedUntil time.Time
-	}{l, s.Disabled, s.DismissedUntil})
+	}{l, s.Disabled, s.enabled(), s.DismissedUntil})
 	h := sha256.Sum256(b)
 	v := EffortView{Revision: hex.EncodeToString(h[:])}
 	for _, c := range l.Cycles {
-		v.Boundaries = append(v.Boundaries, c.ResetsAt, c.ResetsAt.Add(suggestionWeek))
+		v.Boundaries = append(v.Boundaries, c.ResetsAt, c.ResetsAt.Add(suggestionResetWindow))
 	}
 	v.Boundaries = append(v.Boundaries, s.DismissedUntil)
-	if !s.Disabled && !now.Before(s.DismissedUntil) {
+	if s.enabled() && !now.Before(s.DismissedUntil) {
 		v.Suggestion = SuggestEffort(l, d, now)
 	}
 	return v
 }
 
 // NotifyEffortSuggestion claims one user-facing notice per rolling week shared
-// by history, status-line hints and hooks. Desktop inspection remains read-only.
+// by text history and status-line hints. Never call from plugin/agent outputs.
 func NotifyEffortSuggestion(cache string, d *digest.Digest, now time.Time) *EffortSuggestion {
 	if effortSuggestionOff() {
 		return nil
@@ -352,7 +362,7 @@ func NotifyEffortSuggestion(cache string, d *digest.Digest, now time.Time) *Effo
 // precomputed suggestion, including one based on an explicit current default.
 // Call only when the caller will render it; previews and discarded output do not claim.
 func ClaimEffortSuggestion(cache string, v *EffortSuggestion, now time.Time) *EffortSuggestion {
-	if effortSuggestionOff() || v == nil || v.ResetAt.IsZero() || now.Before(v.ResetAt) || !now.Before(v.ExpiresAt) {
+	if effortSuggestionOff() || v == nil || v.ResetAt.IsZero() || now.Before(v.ResetAt) || !now.Before(v.ResetAt.Add(suggestionResetWindow)) || !now.Before(v.ExpiresAt) {
 		return nil
 	}
 	unlock, ok := lockNamed(cache, "effort-suggestion.lock")
@@ -361,7 +371,7 @@ func ClaimEffortSuggestion(cache string, v *EffortSuggestion, now time.Time) *Ef
 	}
 	defer unlock()
 	s, err := loadEffortState(cache)
-	if err != nil || s.Disabled || now.Before(s.DismissedUntil) || (!s.LastShownAt.IsZero() && now.Before(s.LastShownAt.Add(suggestionWeek))) {
+	if err != nil || !s.enabled() || now.Before(s.DismissedUntil) || (!s.LastShownAt.IsZero() && now.Before(s.LastShownAt.Add(suggestionWeek))) {
 		return nil
 	}
 	s.LastShownAt = now.UTC()
@@ -393,6 +403,7 @@ func SetEffortSuggestion(cache, action string, now time.Time) error {
 		s.Disabled = true
 	case "on":
 		s.Disabled = false
+		s.Enabled = true
 		s.DismissedUntil = time.Time{}
 	}
 	return saveEffortState(cache, s)

@@ -57,6 +57,7 @@ type Server struct {
 	mu                                              sync.Mutex
 	refreshMu                                       sync.Mutex
 	initialized, initializing, subscribed, stopping bool
+	rowsPending                                     bool
 	session                                         string
 	view                                            View
 	sequence                                        uint64
@@ -200,14 +201,17 @@ func (s *Server) isCurrent(stamp Stamp) bool {
 
 // Check the shared store immediately before writing as well as at enqueue, so
 // an external revoke need not wait for its filesystem watcher to drain data.
-func (s *Server) mayEmit(stamp Stamp) bool {
+func (s *Server) mayEmit(stamp Stamp) error {
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.WriteTimeout)
 	defer cancel()
 	if err := s.backend.Publish(ctx, stamp, func() error { return nil }); err != nil {
 		s.scheduleRefresh()
-		return false
+		return err
 	}
-	return s.isCurrent(stamp)
+	if !s.isCurrent(stamp) {
+		return ProtocolError{wire.CodeConsentChanged}
+	}
+	return nil
 }
 func (s *Server) currentStamp() Stamp { s.mu.Lock(); defer s.mu.Unlock(); return s.view.Stamp }
 func (s *Server) errorMessage(id wire.ID, code int) wire.Failure {
@@ -508,7 +512,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 					reply.Scopes = s.view.Scopes
 					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.Project(s.view.Projection)}
 				}
-				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func() { s.sendError(r.ID, wire.CodeConsentChanged) })
+				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
 			})
 			if err != nil {
@@ -654,12 +658,16 @@ func (s *Server) readView(ctx context.Context) error {
 		s.mu.Unlock()
 		return ProtocolError{wire.CodeConsentChanged}
 	}
-	if reflect.DeepEqual(old, v) {
+	changed := !reflect.DeepEqual(old, v)
+	if !changed && !s.rowsPending {
 		s.mu.Unlock()
 		return nil
 	}
-	s.view = v
-	s.sequence++
+	if changed {
+		s.view = v
+		s.sequence++
+		s.rowsPending = s.subscribed
+	}
 	session, seq, subscribed := s.session, s.sequence, s.subscribed
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
@@ -669,15 +677,27 @@ func (s *Server) readView(ctx context.Context) error {
 		}
 	}
 	s.mu.Unlock()
-	if old.Stamp != v.Stamp || !reflect.DeepEqual(old.Consent, v.Consent) {
+	if changed && (old.Stamp != v.Stamp || !reflect.DeepEqual(old.Consent, v.Consent)) {
 		s.out.controlMessage(notification(session, "consent/changed", v.Stamp, nil, v.Consent))
 	}
-	if old.Health != v.Health {
+	if changed && old.Health != v.Health {
 		s.out.controlMessage(notification(session, "engine/health", v.Stamp, nil, v.Health))
 	}
 	if subscribed {
 		if err := s.backend.Publish(ctx, v.Stamp, func() error {
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.Project(v.Projection)}), v.Stamp)
+			s.mu.Lock()
+			if s.sequence == seq {
+				s.rowsPending = false
+			}
+			s.mu.Unlock()
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.Project(v.Projection)}), v.Stamp, func(error) {
+				s.mu.Lock()
+				if s.sequence == seq {
+					s.rowsPending = true
+				}
+				s.mu.Unlock()
+				s.scheduleRefresh()
+			})
 			return nil
 		}); err != nil {
 			s.scheduleRefresh()

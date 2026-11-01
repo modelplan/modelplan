@@ -12,21 +12,56 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
-// QuotaNotice is a single factual line for the prompt hook's model context.
+// QuotaNotice is a single factual line for the prompt hook's model context, with the one step
+// advise.NoticeSteps allows (to ★ from above it, or a cheaper model as strong).
 func (s Style) QuotaNotice(n advise.QuotaNotice) string {
 	q := s.qt()
 	if s.T == EN {
 		label := map[string]string{"five_hour": "5-hour quota", "weekly": "Weekly quota"}[n.Window]
-		if n.Reset {
+		if n.Kind == "reset" {
 			label = map[string]string{"five_hour": "5-hour window reset", "weekly": "Weekly window reset"}[n.Window]
 		}
-		return fmt.Sprintf("%s: %g%% left, resets in %s.", label, n.Remaining, q.Dur(n.ResetsIn))
+		x := fmt.Sprintf("%s: %g%% left, resets in %s", label, n.Remaining, q.Dur(n.ResetsIn))
+		if n.RunsOutIn != nil {
+			x += fmt.Sprintf("; at the %s rate it runs out in ~%s", map[string]string{"day": "last day's", "recent": "recent"}[n.RateOver], q.Dur(*n.RunsOutIn))
+		}
+		if n.Kind == "surplus" {
+			x += "; what is left lapses at the reset"
+		}
+		x += "."
+		if d := n.Down; d != nil {
+			x += fmt.Sprintf(" The effort is above ★: ★%s uses ×%.2f the quota of the current effort%s; suggest it to the user once.", d.Label, *d.CostRatio, pts(d.AbilityDelta, " (%+.1f pts)"))
+		} else if c := n.Cheaper; c != nil && c.CostRatio != nil {
+			x += fmt.Sprintf(" %s %s scores as well at ×%.2f the cost%s.", c.ModelName, c.Label, *c.CostRatio, pts(c.AbilityDelta, " (%+.1f pts)"))
+		}
+		return x
 	}
 	label := map[string]string{"five_hour": "5小时额度", "weekly": "每周额度"}[n.Window]
-	if n.Reset {
+	if n.Kind == "reset" {
 		label = map[string]string{"five_hour": "5小时窗口已重置", "weekly": "每周窗口已重置"}[n.Window]
 	}
-	return fmt.Sprintf("%s：剩余%g%%，%s后重置。", label, n.Remaining, q.Dur(n.ResetsIn))
+	x := fmt.Sprintf("%s：剩余%g%%，%s后重置", label, n.Remaining, q.Dur(n.ResetsIn))
+	if n.RunsOutIn != nil {
+		x += fmt.Sprintf("；按%s的用量约%s后用完", map[string]string{"day": "最近一天", "recent": "最近"}[n.RateOver], q.Dur(*n.RunsOutIn))
+	}
+	if n.Kind == "surplus" {
+		x += "，没用完的届时作废"
+	}
+	x += "。"
+	if d := n.Down; d != nil {
+		x += fmt.Sprintf("当前档位高于★：★%s 的额度消耗是当前档的 ×%.2f%s，可以向用户提一次。", d.Label, *d.CostRatio, pts(d.AbilityDelta, "（%+.1f 分）"))
+	} else if c := n.Cheaper; c != nil && c.CostRatio != nil {
+		x += fmt.Sprintf("%s %s 能力相当，成本 ×%.2f%s。", c.ModelName, c.Label, *c.CostRatio, pts(c.AbilityDelta, "（%+.1f 分）"))
+	}
+	return x
+}
+
+// pts formats an ability difference, or nothing when it is not published.
+func pts(v *float64, format string) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf(format, *v)
 }
 
 type quotaText struct {

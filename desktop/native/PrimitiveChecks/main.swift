@@ -15,8 +15,14 @@ func check(_ value: Bool, _ message: String) throws { if !value { throw Failure(
 }
 
 @MainActor func awaitCautionDeadline(_ caution: CautionControl, in mode: CFRunLoopMode) throws {
+    // The check runs with activation policy .prohibited, so App Nap / timer coalescing may defer the
+    // 0.1 s caution timer well past 0.25 s on a loaded CI runner (seen on macOS 14: timer overdue by
+    // 0.15 s at the old budget). Opt out of that throttling for this measurement and use the same 2 s
+    // budget as drainUntil; the assertion is that the deadline completes in tracking mode, not latency.
+    let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "B05 caution deadline check")
+    defer { ProcessInfo.processInfo.endActivity(activity) }
     let started = ProcessInfo.processInfo.systemUptime
-    let end = started + 0.25
+    let end = started + 2.0
     var activations = 0, exits: [String] = []
     let main = CFRunLoopGetMain()
     let currentIsMain = CFRunLoopGetCurrent() === main

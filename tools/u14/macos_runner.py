@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Hosted synthetic macOS infrastructure, consuming U14 parts A and B."""
 import argparse
+import importlib.util
 import os
 from pathlib import Path
 import platform
@@ -20,6 +21,9 @@ from engine_process import EngineFailure, EngineProcess, EngineTimeout
 from shape_home import CASES, build_home
 
 REPO = ROOT.parent.parent
+_credential_spec = importlib.util.spec_from_file_location('u14_credential_artifact', REPO/'desktop/native/tools/distribution/fetch_credential_artifact.py')
+credential_artifact = importlib.util.module_from_spec(_credential_spec)
+_credential_spec.loader.exec_module(credential_artifact)
 UI_IDS = tuple(f'A{i:02d}' for i in range(1, 20))
 # Feature DRIs register assertion functions here after their production consumers
 # land. Empty infrastructure or a captured image never implies a scenario pass.
@@ -133,8 +137,10 @@ def command(args, cwd, env, timeout, log):
 
 def build_app(work):
     """Reuse the production packager; supply same-source real CLI archives."""
+    binding = credential_artifact.acquire(work/'credential-input')
     archive = new_directory(work/'archives')
-    env = dict(os.environ)
+    env = {k: v for k, v in os.environ.items() if k not in ('GH_TOKEN', 'GITHUB_TOKEN')}
+    env.update(binding['environment'])
     env.update({'GOCACHE':str(work/'go-cache'),'GOMODCACHE':str(work/'go-mod'),
                 'TMPDIR':str(work/'tmp'), 'CGO_ENABLED':'0','GOOS':'darwin','GOFLAGS':'-modcacherw'})
     (work/'tmp').mkdir(mode=0o700)

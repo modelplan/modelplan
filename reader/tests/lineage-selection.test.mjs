@@ -99,3 +99,28 @@ test('selection additions retain content-hash and dependency verification', asyn
   const dependency = await publication(c => { c.dependencies.registry = '0'.repeat(64); });
   await assert.rejects(verifyClientDigest(dependency), /publication_dependency_mismatch/);
 });
+
+const effort = (key, extra = {}) => ({
+  effort: key, label: key, available: true, ability: 50, abilityBasis: 'abilityWithinModel',
+  cost: 1, costBasisId: 'synthetic-reference', time: null, timeEstimated: false, timeBasis: null, ...extra,
+});
+
+test('an effort may carry provisional: true and the reader keeps it verbatim', async () => {
+  const value = await publication(c => {
+    c.data.models[0].recommended = 'medium';
+    c.data.models[0].efforts = [effort('medium'), effort('xhigh', {ability: 61, provisional: true})];
+  });
+  await verifyClientDigest(value);
+  const [plain, provisional] = value.component.data.models[0].efforts;
+  assert.equal('provisional' in plain, false);
+  assert.equal(provisional.provisional, true);
+});
+
+test('provisional accepts only true, and other unknown effort fields stay rejected', async () => {
+  for (const extra of [{provisional: false}, {provisional: 'true'}, {provisional: null}, {unreviewedField: true}, {provisional: true, unreviewedField: true}]) {
+    const value = await publication(c => {
+      c.data.models[0].efforts = [effort('medium', extra)];
+    });
+    await assert.rejects(verifyClientDigest(value), /publication_invalid_data_client/);
+  }
+});

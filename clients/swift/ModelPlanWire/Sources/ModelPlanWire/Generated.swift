@@ -9,6 +9,12 @@ public enum WireProtocol {
     public static let maxFrameBytes = 8388608
 }
 
+// Named JSON-RPC error codes used by the Swift client.
+public enum WireErrorCode {
+    public static let protocolMismatch: Int = -32010
+    public static let busy: Int = -32013
+}
+
 // Generated from Go supervision; key names only, never environment values.
 public enum WireChildEnvironment {
     public static let allowedKeys: Set<String> = ["HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"]

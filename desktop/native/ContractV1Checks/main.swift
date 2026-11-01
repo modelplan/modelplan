@@ -68,7 +68,7 @@ struct ScenarioIndex: Decodable {
                     try require(suggestion.fromEffort == (up ? "medium" : "high") && suggestion.toEffort == (up ? "high" : "medium") && suggestion.recommended == "medium", "adjacent effort/star keys changed")
                     try require(abs(suggestion.costRatio - (up ? 1.5 : 2.0 / 3.0)) < 1e-8 && suggestion.costBasisId == "synthetic-reference", "published reference-cost ratio/basis changed")
                     try require(abs(suggestion.averageUsed - (up ? 45.0 : 295.0 / 3.0)) < 1e-8 && suggestion.hitLimitCycles == (up ? 0 : 2) && !suggestion.fast, "observed history summary changed")
-                    try require(suggestion.publicationId == publication.publicationId && suggestion.expiresAt.date.timeIntervalSince(suggestion.resetAt.date) == 7 * 24 * 60 * 60, "publication/reset/expiry lost")
+                    try require(suggestion.publicationId == publication.publicationId && suggestion.expiresAt.date.timeIntervalSince(suggestion.resetAt.date) == 24 * 60 * 60, "publication/reset/expiry lost")
                     try require(suggestion.message?.contains("past 3 weeks") == true, "localized user message lost")
                 }
             }

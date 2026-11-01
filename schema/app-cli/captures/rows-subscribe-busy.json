@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "rows-1",
+  "error": {
+    "code": -32013,
+    "message": "busy",
+    "data": {
+      "sessionId": "s-synthetic",
+      "storeEpoch": "e-synthetic",
+      "consentGeneration": 7
+    }
+  }
+}

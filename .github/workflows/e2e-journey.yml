@@ -16,6 +16,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   e2e-journey:
+    permissions:
+      contents: read
+      actions: read
     # Legacy (beta07-architecture) app journey. That app is frozen by foundation v2, and its consent contract
     # no longer matches the CLI (schema-2 consent). It now runs only on manual dispatch. The U14 runner
     # (tools/u14) carries the engine scenarios, and the new app's UI scenarios replace this job in U6/U8/U10.
@@ -50,6 +53,8 @@ jobs:
       - name: Test journey runtime gates and actual card routing
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/journey-tests" --jobs 2 -Xswiftc -DMODELPLAN_E2E_JOURNEY --filter JourneyCI
       - name: Build same-commit CLI and debug-only neutral app
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 desktop/native/tools/e2e-journey/build.py "$RUNNER_TEMP/e2e-build"
       - name: Run real app journey without network or accounts
         run: python3 desktop/native/tools/e2e-journey/run.py "$RUNNER_TEMP/e2e-build" "$RUNNER_TEMP/e2e-report"

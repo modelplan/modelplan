@@ -435,11 +435,29 @@ func claudeSessionAdmission(a localusage.HistoryAccess) string {
 }
 
 // The selected native projection replaces optional snapshots as one unit;
-// missing values remain unknown. An optional hook never fills the holes.
+// missing values remain unknown. An optional hook never fills the holes. The one
+// exception is the caller's own status-line reading taken after the projection's:
+// the transcript carries a /model or /effort change only from the next message, so
+// that reading replaces model, effort and fast mode, again as one unit.
 func applyClaudeSessionProjection(account *Account, projection ClaudeSessionProjection) {
+	line := account.Harness
 	account.Harness = &Harness{}
-	if selected := projection.Selected; selected != nil {
-		account.Harness = &Harness{Model: selected.Model, Effort: selected.Effort, FastMode: selected.FastMode, SessionKey: selected.SessionKey, ObservedAt: &selected.ObservedAt, Attribution: selected.Attribution, Origin: selected.Origin}
+	selected := projection.Selected
+	if selected == nil {
+		return
+	}
+	account.Harness = &Harness{Model: selected.Model, Effort: selected.Effort, FastMode: selected.FastMode, SessionKey: selected.SessionKey, ObservedAt: &selected.ObservedAt, Attribution: selected.Attribution, Origin: selected.Origin}
+	if line == nil || line.Attribution != "current-thread" || selected.Attribution != "current-thread" {
+		return
+	}
+	at := account.ObservedAt
+	if line.ObservedAt != nil {
+		at = *line.ObservedAt
+	}
+	if at.After(selected.ObservedAt) {
+		h := *account.Harness
+		h.Model, h.Effort, h.FastMode, h.ObservedAt = line.Model, line.Effort, line.FastMode, &at
+		account.Harness = &h
 	}
 }
 

@@ -104,6 +104,20 @@ class DriveTests(unittest.TestCase):
         self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
         self.assertEqual(result['cleanup']['outcome'], 'cleaned', result['cleanup'])
 
+    def test_absolute_deadline_survives_slow_preflight(self):
+        # Preflight time must count once against the absolute deadline, not twice.
+        self.args.deadline = time.time() + 17.5  # 15s reserve, 1.5s preflight, 1s work; the old double count left none
+        self.args.scenario_timeout = 20
+        real = drive.qualification
+        def slow(*a, **k):
+            time.sleep(1.5)
+            return real(*a, **k)
+        with patch.object(drive, 'IDS', ['U2-migration', 'U2-two-writers']), patch.object(drive, 'qualification', slow):
+            status, result = self.execute()
+        self.assertEqual(status, 1)
+        self.assertEqual(result['scenarios'][0]['outcome'], 'timeout')
+        self.assertEqual(result['scenarios'][1]['outcome'], 'not-run')
+
     def test_stop_during_case_ends_owned_process_and_keeps_remaining_not_run(self):
         self.args.stop_file = self.root / 'stop-during'
         timer = threading.Timer(.25, self.args.stop_file.touch)

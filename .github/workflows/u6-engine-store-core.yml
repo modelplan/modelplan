@@ -28,38 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Prepare owned scratch and record subject
-        shell: bash
-        run: |
-          mkdir -p .tmp/tmp
-          printf '*\n' > .tmp/.gitignore
-          echo "TMPDIR=$GITHUB_WORKSPACE/.tmp/tmp" >> "$GITHUB_ENV"
-          { git rev-parse HEAD; uname -srm; swift --version; } > .tmp/subject.txt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      - name: Event sequence tables with real Go captures
-        shell: bash
-        run: |
-          set -o pipefail
-          swift test --package-path clients/swift/ModelPlanEngineStoreCore --scratch-path .tmp/swift-build --jobs 2 2>&1 | tee .tmp/sequences.log
-      - name: Source policy
-        run: node scripts/check-source-policy.mjs
-      - name: Preserve synthetic test evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: u6-core-${{ matrix.os }}-${{ github.sha }}
-          path: |
-            .tmp/subject.txt
-            .tmp/sequences.log
-          retention-days: 14
-      - name: Remove owned scratch after evidence upload
-        if: always()
-        run: rm -rf -- .tmp
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cdaf222b4c25645aed15b6a6c99982525d7d1852
+    with:
+      task: sequences
+      os: ${{ matrix.os }}

@@ -319,7 +319,7 @@ func ReadPermitted(p Paths, now time.Time) Report {
 		r.Sources = append(r.Sources, st)
 	}
 	if s.Allows("claude", consent.Local, mode) {
-		add(readClaudeCode(p.Cache, p.ClaudeSession))
+		add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	}
 	if s.Allows("codex", consent.Local, mode) {
 		add(readCodex(p.CodexHome, p.CodexThread))

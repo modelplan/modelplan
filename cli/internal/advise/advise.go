@@ -25,6 +25,7 @@ import (
 const (
 	WindowExhausted = "window_exhausted"
 	WindowTight     = "window_tight"
+	WindowPace      = "window_pace_warning"
 	SwitchBack      = "reset_passed_switch_back"
 	// BetterModel: the publication marks the session's model as beaten (dominatedBy), and the
 	// model that beats it runs in this harness at an effort that scores within a tie for clearly
@@ -40,7 +41,7 @@ const (
 	PublicReset       = "public_reset_announced"
 )
 
-var rank = map[string]int{WindowExhausted: 0, WindowTight: 1, SwitchBack: 2, BetterModel: 3, ResetSoonSurplus: 4, AnnouncedSurplus: 5, PeakStartsSoon: 6, OffpeakStartsSoon: 7, CardsExpiring: 8, PublicReset: 9}
+var rank = map[string]int{WindowExhausted: 0, WindowPace: 1, WindowTight: 2, SwitchBack: 2, BetterModel: 3, ResetSoonSurplus: 4, AnnouncedSurplus: 5, PeakStartsSoon: 6, OffpeakStartsSoon: 7, CardsExpiring: 8, PublicReset: 9}
 
 const (
 	// A surplus counts as "reset soon" in the last quarter of the window, as in quota's pace rule.
@@ -205,6 +206,7 @@ func Derive(in Input) []Event {
 		// A declared plan a session is linked to is advised through that session.
 		if !(a.Source == "user" && linked[strings.ToLower(a.Plan)]) {
 			es = append(accountEvents(a, in.Digest, now, plan), announcedEvents(a, in.Digest, in.State, now)...)
+			es = append(es, paceEvents(a, in.State, now)...)
 		}
 		if in.State != nil {
 			in.State.arm(es)
@@ -305,6 +307,12 @@ func windowKey(prefix string, a *quota.Account, w *quota.Window) string {
 	return strings.Join([]string{prefix, a.Source, a.Plan, w.Kind, w.Limit, at}, "|")
 }
 
+// resetSoonSurplus: a window of the account's pool in its last quarter with a surplus.
+func resetSoonSurplus(a *quota.Account, w *quota.Window) bool {
+	return a.InPool(w) && w.Pace == "surplus" && w.ResetsInMinutes != nil && w.WindowMinutes > 0 &&
+		float64(*w.ResetsInMinutes) <= float64(w.WindowMinutes)*soonShare
+}
+
 func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan) []Event {
 	w := deciding(a)
 	if a.Headroom == "spend" {
@@ -312,8 +320,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		w = nil
 		for i := range a.Windows {
 			x := &a.Windows[i]
-			if a.InPool(x) && x.Pace == "surplus" && x.ResetsInMinutes != nil && x.WindowMinutes > 0 && float64(*x.ResetsInMinutes) <= float64(x.WindowMinutes)*soonShare &&
-				(w == nil || *x.ResetsInMinutes < *w.ResetsInMinutes) {
+			if resetSoonSurplus(a, x) && (w == nil || *x.ResetsInMinutes < *w.ResetsInMinutes) {
 				w = x
 			}
 		}
@@ -497,7 +504,7 @@ func tie(l *lineup.Lineup) float64 {
 // within a tie of the current configuration and costs at most betterSaving of it. It follows
 // the published verdict; nil when the model is not beaten or nothing qualifies.
 func (c config) better(d *digest.Digest, harness string) *Step {
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || c.plan != nil || d == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || c.cur.Cost == nil || c.plan != nil || d == nil || harness == "" {
 		return nil
 	}
 	l := d.Lineup(c.model.DeveloperID)
@@ -516,7 +523,7 @@ func (c config) better(d *digest.Digest, harness string) *Step {
 	var best *digest.Effort
 	for i := range m.Efforts {
 		e := &m.Efforts[i]
-		if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-t || *e.Cost > *c.cur.Cost*betterSaving {
+		if !crossModel(e) || e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-t || *e.Cost > *c.cur.Cost*betterSaving {
 			continue
 		}
 		if best == nil || *e.Cost < *best.Cost {
@@ -530,6 +537,10 @@ func (c config) better(d *digest.Digest, harness string) *Step {
 	s.AbilityDelta, s.CostRatio = ratio(best, c.cur)
 	return s
 }
+
+// crossModel reports whether a configuration may be compared with another model's. A provisional
+// ability is published for its own model's ladder only.
+func crossModel(e *digest.Effort) bool { return e != nil && !e.Provisional }
 
 func kindOf(delta, tie float64) string {
 	if delta > tie {
@@ -546,7 +557,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 	if c.plan != nil {
 		return c.cheaperInPlan(d, harness)
 	}
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || c.cur.Cost == nil || d == nil || harness == "" {
 		return nil
 	}
 	l := d.Lineup(c.model.DeveloperID)
@@ -562,7 +573,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 		}
 		for i := range m.Efforts {
 			e := &m.Efforts[i]
-			if e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-tie(l) || *e.Cost >= *c.cur.Cost {
+			if !crossModel(e) || e.Ability == nil || e.Cost == nil || e.CostBasisID != c.cur.CostBasisID || *e.Ability < *c.cur.Ability-tie(l) || *e.Cost >= *c.cur.Cost {
 				continue
 			}
 			if best == nil || *e.Cost < *best.Cost || (*e.Cost == *best.Cost && *e.Ability > *best.Ability) {
@@ -582,7 +593,7 @@ func (c config) cheaper(d *digest.Digest, harness string) *Step {
 // now. A plan where each model has its own pool, or with unpublished rates, has no cross-model
 // cost: nil.
 func (c config) cheaperInPlan(d *digest.Digest, harness string) *Step {
-	if c.model == nil || c.cur == nil || c.cur.Ability == nil || harness == "" {
+	if c.model == nil || !crossModel(c.cur) || c.cur.Ability == nil || harness == "" {
 		return nil
 	}
 	lo := c.plan.cost(c.model, c.cur, c.now, false)
@@ -600,7 +611,7 @@ func (c config) cheaperInPlan(d *digest.Digest, harness string) *Step {
 		for i := range m.Efforts {
 			e := &m.Efforts[i]
 			v := c.plan.cost(m, e, c.now, true)
-			if e.Ability == nil || v == nil || *e.Ability < *c.cur.Ability || *v >= *lo {
+			if !crossModel(e) || e.Ability == nil || v == nil || *e.Ability < *c.cur.Ability || *v >= *lo {
 				continue
 			}
 			if best == nil || *v < bestCost || (*v == bestCost && *e.Ability > *best.Ability) {
@@ -636,6 +647,29 @@ func fastNow(a *quota.Account, c config, d *digest.Digest) *Speed {
 		return nil
 	}
 	return quotaSpeed(c, d, harnessOf(a.Source))
+}
+
+// NoticeSteps is what a low quota notice to the model may name, from the thread's own reported
+// model and effort (never another thread's). Above ★: the step to ★, when it saves quota on
+// this plan. At or below ★ no step down (★ is where the effort is worth its cost); only another
+// model that scores as well for less, when one exists.
+func NoticeSteps(a *quota.Account, r quota.Report, d *digest.Digest, now time.Time) (down, cheaper *Step) {
+	if a == nil || a.Harness == nil || a.Harness.Effort == "" || a.Harness.Attribution != "current-thread" || d == nil {
+		return nil, nil
+	}
+	eff, plan := Link(a, r, d)
+	c := current(&eff, d)
+	c.plan, c.now = plan, now
+	if c.model == nil || c.cur == nil || c.model.Effort(a.Harness.Effort) == nil {
+		return nil, nil
+	}
+	if c.rec != nil && index(c.model, c.cur) > index(c.model, c.rec) {
+		if s := c.step("step_down", c.rec); s.CostRatio != nil && *s.CostRatio < 1 {
+			return s, nil
+		}
+		return nil, nil
+	}
+	return nil, c.cheaper(d, harnessOf(a.Source))
 }
 
 // down: back to ★ when above it, otherwise one effort lower.
