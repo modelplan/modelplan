@@ -52,7 +52,7 @@ final class T2OracleTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         var input = DockInstrumentInput(id: "synthetic", name: "Synthetic", windows: [
             .init(id: "weekly", period: .week, label: "Weekly", remainingPercent: 76,
-                  resetsAt: now.addingTimeInterval(7410 * 60), durationSeconds: 10080 * 60)])
+                  resetsAt: now.addingTimeInterval(7410.0 * 60), durationSeconds: 10080.0 * 60)])
         input.dataState = .fresh
         let reading = try DockInstrumentProjection.evaluate(input, now: now)
         XCTAssertEqual(reading.litTimePoints(positions: 37), 28)

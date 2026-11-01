@@ -720,8 +720,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 nextGeometries[orientation] = candidate; nextViews[orientation] = dockView
             }
         }
-        // Resolve every official orientation before tracking. Pointer samples reuse prepared pixels.
-        if createsNativePanels, let appearance {
+        // Resolve every official orientation before tracking. Detached hosts use the
+        // same registered layouts so integration checks exercise the production geometry.
+        if let appearance {
             for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
