@@ -10,13 +10,16 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor SettingsJourneyClient: EngineClient {
-    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     let store: EngineStore
     let rows: WireRowsSnapshot
+    private(set) var grantCalls = 0
+    func grantCount() -> Int { grantCalls }
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         return context
     }
@@ -24,7 +27,7 @@ private actor SettingsJourneyClient: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { grantCalls += 1; throw EngineClientError.unsupportedCapability }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-refresh")) }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -49,9 +52,17 @@ private actor SettingsJourneyClient: EngineClient {
 
 @MainActor private final class JourneyFirstRunSurface: SettingsWindowSurface {
     private(set) var shows = 0
-    func prepare() async {}
+    var scopeEntry: ScopeConsentEntry?
+    private(set) var scopePresentation: FirstRunConsentPresentation?
+    var scopeView: SettingsScopeConsentView? { scopePresentation?.view }
+    func prepare() async {
+        if let scopeEntry {
+            let presentation = FirstRunConsentPresentation(entry: scopeEntry)
+            try? presentation.prepare(language: .english); scopePresentation = presentation
+        }
+    }
     func show(paneID: String?) { shows += 1 }
-    func hide() {}
+    func hide() { scopePresentation?.suspend(); scopePresentation = nil }
 }
 
 @MainActor private final class JourneyAppearanceConsumer: EngineRowsConsoleSurface {
@@ -93,12 +104,35 @@ private actor SettingsJourneyClient: EngineClient {
         first.notificationAuthorizationService = notifications
         first.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: login))
         let firstRun = JourneyFirstRunSurface()
-        first.makeFirstRunSurface = { _ in firstRun }
+        first.makeFirstRunSurfaceWithConsent = { _, entry in firstRun.scopeEntry = entry; return firstRun }
         await first.prepare()
         first.composition.dock.setPresentationAllowed(true)
         await first.composition.start()
+        let consentCapture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireConsentFacts.json").standardizedFileURL
+        var consentObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: consentCapture)) as? [String: Any])
+        let baseScope = try XCTUnwrap((consentObject["scopes"] as? [[String: Any]])?.first)
+        consentObject["scopes"] = [("codex.local_history", "local_log"), ("cursor.saved_login", "saved_login_api"), ("cursor.browser_session", "browser_session"), ("cursor.unknown_path", "unknown")].map { id, route in
+            var scope = baseScope; scope["scope"] = id; scope["tool"] = id.hasPrefix("codex") ? "codex" : "cursor"
+            scope["route"] = route; scope["state"] = "unset"; scope["detected"] = true; scope["retired"] = false
+            scope["defaultCheck"] = true; scope["cleanupPending"] = false; scope.removeValue(forKey: "disabledReason"); scope.removeValue(forKey: "keychain")
+            return scope
+        }
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: consentObject))
+        let delivery = try XCTUnwrap(first.composition.store.snapshot.delivery)
+        await first.composition.store.consume(.response(requestID: .string("synthetic-consent"), .consent(.init(envelope: try .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch, consentGeneration: delivery.floor.generation, data: facts), delivery: delivery))))
         await first.restoreFirstRunIfNeeded()
         XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
+        XCTAssertTrue(firstRun.scopeEntry === first.scopeConsentEntry, "First run must use the app's accepted consent controller")
+        XCTAssertNotNil(firstRun.scopeView, "First run must construct its own consent view")
+        XCTAssertTrue(firstRun.scopeView?.superview === firstRun.scopePresentation?.container, "The first-run consent view must be mounted in its actual presentation container")
+        XCTAssertFalse(firstRun.scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
+        XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty, "Restoration must not select or grant any scope")
+        first.scopeConsentEntry.controller.selectAll()
+        XCTAssertEqual(first.scopeConsentEntry.controller.selectedIDs, ["codex.local_history", "cursor.saved_login"], "Select all must exclude browser and unknown paths")
+        let syntheticClient = try XCTUnwrap(first.composition.client as? SettingsJourneyClient)
+        let grantsBeforeConfirmation = await syntheticClient.grantCount()
+        XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
         let dock = first.composition.dock
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
@@ -175,6 +209,12 @@ private actor SettingsJourneyClient: EngineClient {
             action: .done, host: .popup, expectedRevision: beforeDone.revision)
         XCTAssertTrue(done.snapshot.preferences.onboarding.completed)
         XCTAssertEqual(login.registrations, 1, "Completing first run must not repeat an already applied login choice")
+        let retiredScope = try XCTUnwrap(firstRun.scopeView)
+        firstRun.hide()
+        XCTAssertTrue(retiredScope.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
+        let grantsAfterDone = await syntheticClient.grantCount()
+        XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
+        XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "挂件读数…" })
