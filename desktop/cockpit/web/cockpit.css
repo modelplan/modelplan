@@ -17,3 +17,11 @@
 @keyframes cockpit-state-pulse{from{opacity:.8}to{opacity:.35}}
 #cockpit .activity.state-pulse{animation:cockpit-state-pulse 240ms steps(6,end) 2!important}
 @media(prefers-reduced-motion:reduce){#cockpit .activity.state-pulse{animation:none!important}}
+/* S6: six subscription bays, with a three-bay minimum for one or two. */
+.ck-deck{grid-template-columns:1fr}.dk-fad{display:none!important}.u11-engine-table{width:100%;min-width:0}.s6-page[hidden]{display:none!important}.s6-page .eng-keys,.s6-page .eng-cols{grid-template-columns:repeat(var(--n),minmax(0,1fr))}.s6-page .eng-keys .ek,.s6-page .ec{min-width:0}.s6-page .eng-lcd{display:grid;grid-template-columns:44px 1fr;padding:5px 0;min-height:152px}.s6-page .eng-labels,.s6-page .ec{display:grid;grid-template-rows:repeat(3,1fr)}.s6-page .lb{padding-left:3px}.s6-page .ec{padding:0 3px}.s6-page .qcell{padding:2px;min-height:0}.s6-page .qnum{font-size:14px;line-height:16px}.s6-page .qreset{font:9px var(--f-lcd);color:var(--lcd-muted)}.s6-page .qbar i.on{background:var(--st-ok)}.s6-page [data-status=amber] .qnum{color:var(--st-mid)}.s6-page [data-status=amber] .qbar i.on{background:var(--st-mid)}.s6-page [data-status=red] .qnum{color:var(--st-low)}.s6-page [data-status=red] .qbar i.on{background:var(--st-low)}.eng-pg{justify-content:flex-end;padding:3px}.ck-eng .eng-led{padding:0;border:0;color:transparent;overflow:hidden;cursor:pointer}.ck-eng .eng-led[aria-current=true]{width:12px;background:var(--lcd-ink)}
+
+#cockpit .ck-eng{overflow:hidden}.s6-page .eng-lcd{height:150px;min-height:0}
+
+.eng-pg{padding-right:40px}
+
+#cockpit .ck-eng{pointer-events:auto}

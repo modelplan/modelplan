@@ -1,97 +1,103 @@
 // SPDX-License-Identifier: MIT
-import type { WireCockpitData,WireRow,WireAccount,WireWindow } from '../generated/wire.js';
-import type { Appearance,CockpitView } from './bridge.js';
+import type { WireCockpitData, WireAccount, WireWindow, WireRow } from '../generated/wire.js';
+import type { Appearance,CockpitView,LiveAppearance,ShellState,PageAction } from './bridge.js';
 import { prototypeFrame } from './prototype-frame.js';
 import { cockpitLayout } from './prototype-layout.js';
-const words={en:{overview:'Overview',settings:'Settings',setup:'Choose setup',waiting:'Waiting for display data',cleared:'Display data cleared',subscriptions:'Verified subscriptions',history:'History',unknown:'Unknown',none:'No accounts',time:'Time unknown',route:'Source',readings:'READINGS',record:'OBSERVED',empty:'No verified subscriptions'},'zh-CN':{overview:'总览',settings:'设置',setup:'选择方案',waiting:'等待显示数据',cleared:'显示数据已清除',subscriptions:'已验证的订阅',history:'历史记录',unknown:'未知',none:'无账号',time:'时间未知',route:'来源',readings:'读数',record:'观测时间',empty:'无已验证订阅'}};
+const words={en:{all:'All',settings:'Settings',waiting:'Waiting for display data',cleared:'Display data cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待显示数据',cleared:'显示数据已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
-// Ported display-only arithmetic from mfd-pages/fmt.js at the recorded source:
-// this draws a value; it does not classify quota state or group accounts.
-const litTens=(pct:number|null)=>pct===null||pct<=0?0:Math.max(1,Math.min(10,Math.round(pct/10)));
-export function mountCockpit(root:HTMLElement,action:(kind:'chooseSetup'|'openSettings'|'openHistory',tool?:string)=>void):CockpitView {
-  let locale:Appearance['locale']='en',disposed=false,active=false;
-  const frame=prototypeFrame(root);
-  frame.settings.onclick=e=>{if(e.isTrusted)action('openSettings');};
-  frame.setup.onclick=e=>{if(e.isTrusted)action('chooseSetup');};
-  const label=(value:{en:string;zh:string})=>locale==='en'?value.en:value.zh;
-  const stop=()=>frame.lamp.classList.remove('state-pulse');
-  const settled=()=>{if(!frame.lamp.getAnimations().some(a=>a.playState==='running'))stop();};
-  frame.lamp.addEventListener('animationend',settled);
-  frame.lamp.addEventListener('animationcancel',settled);
-  // Compare the current private DOM within render; retain no DTO or signature.
-  // Observation times on the tape do not turn a poll into a state change.
-  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
-  const pulse=()=>{
-    stop();
-    if(!active||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-    // Restart finite CSS motion on a changed display only; no scheduled callback.
-    void frame.lamp.offsetWidth;
-    frame.lamp.classList.add('state-pulse');
-  };
-  const setEmpty=(message:string)=>{
-    frame.engine.replaceChildren(element('p',message,'ec-empty'));
-    frame.hud.replaceChildren(element('span',words[locale].overview,'silk'));
-    frame.mfd.replaceChildren(element('p',words[locale].empty,'u11-empty'));
-    frame.tape.replaceChildren(element('span',words[locale].record,'silk'));
-  };
-  function windowReading(window:WireWindow):HTMLElement {
-    const cell=element('div',undefined,'qcell');const line=element('span',undefined,'qline');
-    line.append(element('span',label(window.label),'qtxt'));
-    const number=element('b',undefined,'qnum');number.append(element('span',window.remainingPercent===null?'--':String(window.remainingPercent),'qvalue'));
-    if(window.remainingPercent!==null)number.append(element('small','%'));line.append(number);cell.append(line);
-    const meter=element('span',undefined,'qmeter'),bar=element('span',undefined,'qbar');
-    for(let i=0;i<10;i++)bar.append(element('i',undefined,i<litTens(window.remainingPercent)?'on':''));meter.append(bar);cell.append(meter);return cell;
-  }
-  function account(value:WireAccount):HTMLElement {
-    const container=element('div',undefined,'u11-account');
-    container.append(element('span',value.plan.name?label(value.plan.name):value.plan.id,'u11-plan'));
-    container.append(element('span',`${words[locale].route}: ${value.route}`,'u11-source'));
-    for(const window of value.windows)container.append(windowReading(window));
-    return container;
-  }
-  function column(row:WireRow):HTMLElement {
-    const col=element('article',undefined,'ec');col.dataset.rowId=row.id;
-    col.append(element('span',label(row.reason.text),'u11-reason'));
-    if(!row.accounts.length)col.append(element('span',words[locale].none,'u11-empty'));
-    for(const value of row.accounts)col.append(account(value));return col;
-  }
-  setEmpty(words.en.waiting);
-  return {
-    configure(value){
-      locale=value.locale;document.documentElement.lang=locale;document.documentElement.dataset.theme=value.theme;document.documentElement.dataset.profile=value.profile;
-      const h=value.profile==='full'?890:640,layout=cockpitLayout(h);root.dataset.layout=String(h);
-      root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');root.style.setProperty('--body-h',h+'px');
-      frame.settings.textContent=words[locale].settings;frame.settings.setAttribute('aria-label',words[locale].settings);
-      frame.setup.textContent=words[locale].setup;frame.setup.setAttribute('aria-label',words[locale].setup);
-      setEmpty(words[locale].waiting);
-    },
-    render(data){
-      if(disposed)throw Error('closed');const before=displayedState();
-      frame.engine.replaceChildren();const table=element('div',undefined,'u11-engine-table');table.style.setProperty('--n',String(Math.max(1,data.projection.rows.length)));
-      const keyrow=element('div',undefined,'eng-krow');keyrow.append(element('span',words[locale].readings,'ek ek-all'));const keys=element('div',undefined,'eng-keys');
-      for(const row of data.projection.rows){
-        const key=element('button',undefined,'ek bd-r on');key.type='button';key.append(element('span',label(row.name),'ek-name'));
-        key.setAttribute('aria-label',label(row.name)+' · '+words[locale].history);
-        const tool=row.id;key.onclick=e=>{if(e.isTrusted)action('openHistory',tool);};if(row.kind!=='tool')key.disabled=true;
-        keys.append(key);
-      }
-      keyrow.append(keys);table.append(keyrow);
-      const lcd=element('div',undefined,'eng-lcd');const cols=element('div',undefined,'eng-cols');for(const row of data.projection.rows)cols.append(column(row));lcd.append(cols);table.append(lcd);frame.engine.append(table);
-      frame.hud.replaceChildren(element('span',label(data.projection.rowsSummary.text),'u11-summary'));
-      // Go supplied these groups. Display members directly; no row-account inference.
-      frame.mfd.replaceChildren(element('h2',words[locale].subscriptions,'silk'));
-      if(!data.subscriptions.length)frame.mfd.append(element('p',words[locale].empty,'u11-empty'));
-      for(const group of data.subscriptions){
-        const members=element('section',undefined,'u11-subscription');
-        for(const member of group.accounts)members.append(element('span',`${member.tool} · ${member.account.plan.name?label(member.account.plan.name):member.account.plan.id}`));
-        frame.mfd.append(members);
-      }
-      frame.tape.replaceChildren(element('span',words[locale].record,'silk'));
-      for(const row of data.projection.rows)for(const a of row.accounts)frame.tape.append(element('span',`${label(row.name)} · ${a.observedAt??words[locale].time}`,'u11-observed'));
-      if(before!==displayedState())pulse();
-    },
-    clear(){stop();setEmpty(words[locale].cleared);},
-    active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;frame.setup.disabled=!value;if(!value)stop();},
-    dispose(){if(disposed)return;disposed=true;stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;frame.setup.onclick=null;root.replaceChildren();root.removeAttribute('data-active');},
-  };
+const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
+const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(n/10)));
+export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void):CockpitView {
+ let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
+ let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
+ const frame=prototypeFrame(root);
+ const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
+ const attach=element('button',undefined,'key'),shutter=element('button',undefined,'key'),close=element('button',undefined,'key');
+ for(const b of [attach,shutter,close]){b.type='button';head.append(b);}
+ const cap=element('section',undefined,'s6-closed-cap');cap.hidden=true;
+ cap.style.pointerEvents='auto';cap.style.gridRow='1';cap.style.gridColumn='1';cap.style.alignSelf='end';cap.style.padding='12px';cap.style.background='var(--port-bg)';cap.style.borderRadius='8px';
+ const open=element('button',undefined,'key'),reason=element('span');open.type='button';reason.id='s6-closed-reason';open.setAttribute('aria-describedby',reason.id);cap.append(open,reason);root.append(cap);
+ attach.onclick=e=>{if(e.isTrusted&&nativeShell)action(nativeShell.attached?'detach':'putBack');};
+ shutter.onclick=e=>{if(e.isTrusted)action('shutterToggle');};open.onclick=e=>{if(e.isTrusted)action('shutterToggle');};close.onclick=e=>{if(e.isTrusted)action('close');};
+ function shellControls(){
+  const zh=locale==='zh-CN', closed=nativeShell?.profile==='closed', forced=!!nativeShell?.forcedClosed;
+  attach.textContent=nativeShell?.attached?(zh?'分离':'Detach'):(zh?'放回':'Put back');
+  attach.setAttribute('aria-label',attach.textContent);close.textContent=zh?'关闭':'Close';close.setAttribute('aria-label',close.textContent);
+  shutter.textContent=closed?(zh?'打开':'Open'):(zh?'收起':'Collapse');shutter.setAttribute('aria-label',shutter.textContent);open.textContent=zh?'打开驾驶舱':'Open Cockpit';
+  reason.textContent=forced?(zh?'窗口高度不足，无法打开':'Not enough window height to open'):'';
+  shutter.title=reason.textContent;open.title=reason.textContent;
+  attach.hidden=!nativeShell;shutter.hidden=!nativeShell;close.hidden=!nativeShell;
+  attach.disabled=!active||!nativeShell;close.disabled=!active||!nativeShell;shutter.disabled=!active||!nativeShell||forced;open.disabled=!active||!nativeShell||forced;
+  cap.hidden=!closed;cap.style.display=closed?'block':'none';
+  for(const selector of ['.ck-portrow','.ck-eng','.ck-deck','.ck-tape']){const e=root.querySelector<HTMLElement>(selector)!;e.style.display=closed?'none':'';}
+  root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?890:640))+'px');
+  if(closed)stop();
+ }
+ function localise(){
+  document.documentElement.lang=locale;frame.settings.textContent=words[locale].settings;frame.settings.setAttribute('aria-label',words[locale].settings);
+  for(const e of root.querySelectorAll<HTMLElement>('[data-en][data-zh]')){e.textContent=locale==='en'?e.dataset.en!:e.dataset.zh!;if(e.tagName==='BUTTON')e.setAttribute('aria-label',e.textContent);}
+  for(const e of root.querySelectorAll<HTMLElement>('[data-reset]'))e.textContent=relative(e.dataset.reset??null);
+  shellControls();
+ }
+ const bilingual=(e:HTMLElement,en:string,zh:string)=>{e.dataset.en=en;e.dataset.zh=zh;return e;};
+ frame.settings.onclick=e=>{if(e.isTrusted)action('openSettings');};
+ const label=(v:{en:string;zh:string})=>locale==='en'?v.en:v.zh;
+ const stop=()=>frame.lamp.classList.remove('state-pulse');
+ const settled=()=>{if(!frame.lamp.getAnimations().some(a=>a.playState==='running'))stop();};
+ frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
+ const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
+ const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
+ const setEmpty=(message:string)=>{frame.engine.replaceChildren(element('p',message,'ec-empty'));frame.hud.replaceChildren();frame.mfd.replaceChildren();frame.tape.replaceChildren();};
+ function relative(raw:string|null):string {
+  if(!raw)return '';const delta=Date.parse(raw)-Date.now();if(!Number.isFinite(delta))return '';
+  const mins=Math.max(0,Math.ceil(delta/60000)),d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;
+  const t=[d?`${d}d`:'',h?`${h}h`:'',m||(!d&&!h)?`${m}m`:''].filter(Boolean).join(' ');
+  return locale==='en'?`${words.en.resets} ${t}`:`${t} ${words['zh-CN'].resets}`;
+ }
+ function cell(w:WireWindow|undefined,other=false):HTMLElement {
+  const box=element('div',undefined,'qcell');if(!w)return box;
+  const s=status(w.remainingPercent);box.dataset.status=s;
+  const line=element('div',undefined,'qline'),num=element('b',w.remainingPercent===null?'--':`${w.remainingPercent}%`,'qnum');line.append(num);
+  if(other){const en=w.role==='monthly'?'mo':w.label.en,zh=w.role==='monthly'?'月':w.label.zh;line.append(bilingual(element('span',locale==='en'?en:zh,'qtxt'),en,zh));}
+  box.append(line);const bar=element('span',undefined,'qbar');for(let i=0;i<10;i++)bar.append(element('i',undefined,i<count(w.remainingPercent)?'on':''));box.append(bar);
+  if(w.resetsAt){const txt=relative(w.resetsAt);if(txt){const reset=element('span',txt,'qreset');reset.dataset.reset=w.resetsAt;box.append(reset);}}
+  if(w.resetsAt&&w.durationSeconds&&w.durationSeconds>0){const fraction=Math.max(0,Math.min(1,(Date.parse(w.resetsAt)-Date.now())/(w.durationSeconds*1000)));const dots=element('span',undefined,'qtime');for(let i=0;i<10;i++)dots.append(element('i',undefined,i<(fraction>0?Math.max(1,Math.ceil(fraction*10)):0)?'on':''));box.append(dots);}
+  return box;
+ }
+ setEmpty(words.en.waiting);
+ return {
+  configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);frame.settings.textContent=words[locale].settings;frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty(words[locale].waiting);},
+  updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();},
+  shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');shellControls();},
+  render(data:WireCockpitData){
+   if(disposed)throw Error('closed');const before=displayedState();frame.engine.replaceChildren();
+   const verified=new Set(data.subscriptions.map(s=>s.subscriptionRef));const members:{key:string;row:WireRow;account:WireAccount}[]=[];const seen=new Set<string>();
+   for(const row of data.projection.rows)for(const account of row.accounts){const key=account.subscriptionRef&&verified.has(account.subscriptionRef)?account.subscriptionRef:`${row.id}#${account.route}`;if(!seen.has(key)){seen.add(key);members.push({key,row,account});}}
+   if(!members.length){setEmpty(words[locale].empty);return;}
+   const table=element('div',undefined,'u11-engine-table');const pages=element('div',undefined,'s6-pages');const leds=element('nav',undefined,'eng-pg');const pageCount=Math.ceil(members.length/6);
+   const allButtons:HTMLButtonElement[]=[];let selected='';
+   const select=(key:string)=>{selected=key;for(const b of allButtons){const on=(b.dataset.scope??'')===selected;b.setAttribute('aria-pressed',String(on));b.classList.toggle('on',on);}root.dataset.scope=key?'subscription':'all';};
+   const show=(index:number)=>{for(const el of Array.from(pages.children) as HTMLElement[])el.hidden=Number(el.dataset.page)!==index;for(const el of Array.from(leds.children) as HTMLButtonElement[])el.setAttribute('aria-current',String(Number(el.dataset.page)===index));};
+   for(let page=0;page<pageCount;page++){
+    const chunk=members.slice(page*6,page*6+6),panel=element('div',undefined,'s6-page');panel.dataset.page=String(page);panel.style.setProperty('--n',String(Math.max(3,chunk.length)));
+    const keyrow=element('div',undefined,'eng-krow'),all=bilingual(element('button',words[locale].all,'ek ek-all on'),words.en.all,words['zh-CN'].all) as HTMLButtonElement;all.type='button';all.dataset.scope='';all.onclick=()=>select('');allButtons.push(all);keyrow.append(all);
+    const keys=element('div',undefined,'eng-keys'),lcd=element('div',undefined,'eng-lcd'),labels=element('div',undefined,'eng-labels'),cols=element('div',undefined,'eng-cols');for(let i=0;i<3;i++)labels.append(bilingual(element('span',words[locale].rows[i],'lb'),words.en.rows[i],words['zh-CN'].rows[i]));
+    for(const {key,row,account} of chunk){
+     const button=bilingual(element('button',label(row.name),'ek bd-r'),row.name.en,row.name.zh) as HTMLButtonElement;button.type='button';button.dataset.scope=key;button.setAttribute('aria-label',label(row.name));button.onclick=()=>select(key);allButtons.push(button);keys.append(button);
+     const col=element('article',undefined,'ec');col.dataset.rowId=row.id;
+     const five=account.windows.find(w=>w.role==='session'&&w.durationSeconds===18000),week=account.windows.find(w=>w.role==='weekly'&&w.durationSeconds===604800);
+     const other=account.windows.filter(w=>w!==five&&w!==week).sort((a,b)=>(a.remainingPercent??Infinity)-(b.remainingPercent??Infinity));
+     const alert=[five,week,...other].filter((w):w is WireWindow=>!!w).map(w=>status(w.remainingPercent));if(alert.includes('red'))col.classList.add('tint-red');else if(alert.includes('amber'))col.classList.add('tint-amber');
+     col.append(cell(five),cell(week),cell(other[0],true));if(other.length>1)col.lastElementChild?.append(element('span',`+${other.length-1}`,'qextra'));cols.append(col);
+    }
+    keyrow.append(keys);lcd.append(labels,cols);panel.append(keyrow,lcd);pages.append(panel);
+    const led=element('button',String(page+1),'eng-led');led.type='button';led.dataset.page=String(page);led.setAttribute('aria-label',locale==='en'?`Page ${page+1}`:`第 ${page+1} 页`);led.onclick=()=>show(page);leds.append(led);
+   }
+   table.append(pages,leds);frame.engine.append(table);show(0);select('');frame.hud.replaceChildren(bilingual(element('span',label(data.projection.rowsSummary.text),'u11-summary'),data.projection.rowsSummary.text.en,data.projection.rowsSummary.text.zh));frame.mfd.replaceChildren();frame.tape.replaceChildren();
+   if(before!==displayedState())pulse();
+  },
+  clear(){stop();setEmpty(words[locale].cleared);delete root.dataset.scope;},
+  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value)stop();},
+  dispose(){if(disposed)return;disposed=true;stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;open.onclick=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+ };
 }

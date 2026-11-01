@@ -6,9 +6,10 @@ export const source={origin:'http://127.0.0.1:41783',isMainFrame:true};
 export const capture=()=>JSON.parse(readFileSync(new URL('../../../schema/app-cli/captures/WireCockpitData.json',import.meta.url)));
 export function commands() {
   let sequence=0;
-  return (type,extra={})=>JSON.stringify({version:1,pageId,sessionId,requestId:`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`,sequence:String(sequence),storeEpoch:'epoch-z',generation:'41',viewRevision:'3',type,...extra});
+  return (type,extra={})=>JSON.stringify({version:2,pageId,sessionId,requestId:`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`,sequence:String(sequence),storeEpoch:'epoch-z',generation:'41',viewRevision:'3',type,...extra});
 }
-export const appearance={theme:'night',locale:'en',profile:'full'};
+export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false};
+export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall'};
 export function sample() {
   const value=capture();
   const seed=value.projection.rows[0];

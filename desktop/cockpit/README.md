@@ -32,8 +32,7 @@ from the Go-generated `schema/app-cli/app-server.json`. `npm run generate` updat
 it; `npm run check` rejects drift. The reachable schema is also the production
 runtime validator. Unknown fields, unsupported generator keywords, invalid enum
 values, malformed timestamps, duplicate keys, unsafe numbers and invalid
-identities fail closed. The renderer does not infer subscription groups, merge
-accounts, classify rows or calculate recommendations; it renders the Go DTO.
+identities fail closed. The renderer uses verified subscription references from the Go DTO and otherwise keeps account members distinct by row and route. It lays out quota windows without calculating recommendations.
 
 ## Native consumer contract
 
@@ -67,7 +66,7 @@ Every host message has exactly these common fields:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "pageId": "00000000-0000-4000-8000-000000000001",
   "requestId": "00000000-0000-4000-8000-000000000002",
   "sessionId": "00000000-0000-4000-8000-000000000003",
@@ -90,7 +89,9 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 
 | Type | Additional fields and effect |
 | --- | --- |
-| `load` | `appearance: {theme: "day" or "night", locale: "en" or "zh-CN", profile: "full" or "compact"}`. Once per page, after an authoritative engine context exists. Clears first; emits `ready` with the load request ID after DOM readiness. |
+| `load` | Version 2 only; `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier}` are required with no extra fields. Once per page, after an authoritative engine context exists. Clears first and applies both states before emitting `ready`. |
+| `appearance` | Exact fields `theme`, `locale`, `reduceMotion`, `reduceTransparency`; applies live without clearing displayed data. Theme remains night in v1. |
+| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed` and `tier` (`tall` or `compact`). The native-selected tier maps to the 890 or 640 web layout; forced-closed disables reopening. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous, with no retained DTO/pending-render cache. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
 | `clear` | No additional fields. New `viewRevision` must be greater. Clears private DOM, derived history-action IDs and animations before adopting context/emitting `cleared` with this request ID. A new epoch may restart generation; the same epoch cannot decrease it. Retired epochs/sessions cannot return. |
@@ -105,9 +106,9 @@ reply with the new context. Replays and old view revisions are rejected even whe
 the consent floor itself did not change. An engine restart can adopt its new
 session only through that explicit clear, or by unloading and making a fresh page.
 
-Page responses are `ready`, `rendered`, `cleared` and `action`, with the same
+The `ready` receipt additionally has `appearanceVersion: 2` and `capabilities: ["appearanceUpdates", "shellState", "shellActions"]`. Page responses are `ready`, `rendered`, `cleared` and `action`, with the same
 context/header IDs and the independent output sequence. Fixed actions are
-`chooseSetup`, `openSettings` (no arguments), and `openHistory` with a `tool` from
+`chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle` (no arguments), and `openHistory` with a `tool` from
 the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
@@ -132,8 +133,7 @@ visible-again, cleared and unloaded states. `document.hidden` is controlled in
 headless tests, not presented as real OS window occlusion. The WebKit report
 attaches per-state counts; visual comparisons also enforce finite iteration counts.
 
-Visual comparisons cover full 636×890 and compact 636×640, both themes and both
-languages, using synthetic Go captures. Ubuntu 24.04 arm64/WebKit 2203 is the
+Existing visual comparisons cover full 636×890 and compact 636×640 and both languages, using synthetic Go captures. The S6 v1 cockpit renders night only; existing day baselines and prior engine-table images require owner review before replacement. Ubuntu 24.04 arm64/WebKit 2203 is the
 pinned baseline profile. Reference images stay under the reserved visual license;
 regeneration requires review. They are implementation references, **not**
 owner-confirmed pixel fidelity or native WKWebView baselines.
@@ -142,9 +142,7 @@ The owner-released G/P6 prototype at
 `1d3f82429f1b853314ee120d4bd0007f84fc051d` supplies the plate/port/engine/deck/tape
 hierarchy, layout calculation and CSS. [Provenance and exclusions](../../docs/borrowed/cockpit-web.md)
 record the MIT release and source hashes. Resource imports, vendor logos, mock
-bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO
-populates readings, verified subscription members, summary and observation times.
-Unbacked faders stay decorative and inactive; Choose setup forwards a native intent.
+bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO populates subscription-member quota readings and the summary. Unbacked faders and setup controls are hidden. Scope selection currently changes only the web view because the host bridge has no shared-scope action. Version-2 appearance and shell messages require a compatible native host; M3 owns its integration and repin.
 The empty canopy awaits U12 media. Native owner review still confirms final fidelity.
 
 The target App + WebContent CPU is at most **6% of one core** in the U11a scenario.

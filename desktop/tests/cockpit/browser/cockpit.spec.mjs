@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import { appearance,commands,pageId,sample } from '../fixture.mjs';
+import { appearance,commands,pageId,sample,shell } from '../fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
-async function open(page,options=appearance) {
+async function open(page,options=appearance,shellOptions=shell) {
   await page.addInitScript(()=>{
     const counts={requests:0,callbacks:0,timeouts:0,intervals:0};
     const raf=window.requestAnimationFrame.bind(window),timeout=window.setTimeout.bind(window),interval=window.setInterval.bind(window);
@@ -21,7 +21,7 @@ async function open(page,options=appearance) {
   await page.goto('/?pageId='+pageId);
   await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands();
-  expect(await receive(page,send('load',{appearance:options}))).toBe(true);
+  expect(await receive(page,send('load',{appearance:options,shell:shellOptions}))).toBe(true);
   return {send};
 }
 function receive(page,raw,method='receive') {return page.evaluate(({raw,method})=>window.modelPlanCockpit[method](raw),{raw,method});}
@@ -155,7 +155,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   const event=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
   expect(event.action).toBe('openSettings');expect(event.generation).toBe('41');
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
-  await expect(page.getByRole('button',{name:'Codex · History',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Codex',exact:true})).toBeVisible();
   expect(await page.locator('svg,canvas,img').count()).toBe(0);
   await page.evaluate(()=>window.postMessage({type:'plugin/install',url:'https://example.invalid'},'*'));
   expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(1);
@@ -163,7 +163,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
 for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
     await page.setViewportSize({width:636,height:profile==='full'?890:640});await page.emulateMedia({reducedMotion:'reduce'});
-    const {send}=await open(page,{theme,locale,profile});await display(page,send);
+    const {send}=await open(page,{...appearance,theme,locale},{...shell,tier:profile==='full'?'tall':'compact'});await display(page,send);
     await page.evaluate(()=>document.fonts.ready);
     expect(await infiniteAnimations(page)).toEqual([]);
     await expect(page).toHaveScreenshot(`${profile}-${theme}-${locale}.png`,{animations:'disabled',maxDiffPixels:0});
