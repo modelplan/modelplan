@@ -4,6 +4,7 @@ import XCTest
 import ModelPlanCore
 import ModelPlanSettings
 import ModelPlanAppIntegration
+import ModelPlanWire
 
 @MainActor final class GeneratedConsentPortTests: XCTestCase {
     private actor Wire: ConsentJSONTransport {
@@ -35,8 +36,30 @@ import ModelPlanAppIntegration
     }
     func testGeneratedGrantAndForgetReceiptsIncludingCommittedCleanupFailure() async throws {
         var sawSuccess = false, sawFailure = false, sawPending = false
+        var scopedMutations = Set<String>()
         for entry in try GeneratedAppCLIFixtures.manifest().entries where entry.schema == "consent-grant-response" {
             let payload = try GeneratedAppCLIFixtures.data(XCTUnwrap(entry.request))
+            let request = try XCTUnwrap(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+            let allow = request["allow"] as? [String] ?? []
+            let deny = request["deny"] as? [String] ?? []
+            let forget = request["forget"] as? [String] ?? []
+            // Match the CLI's grantScopes dispatch, not the manifest's shared response schema name.
+            // Scope receipts use the engine wire contract; the legacy tool port requires ok/generation.
+            if !forget.isEmpty || (allow + deny).contains(where: { $0.contains(".") }) {
+                let grant = try WireDecoder.decode(WireConsentGrantParams.self, from: payload)
+                let result = try await Wire(entry).grantConsentJSON(payload)
+                let receipt = try WireDecoder.decode(WireConsentReceipt.self, from: result.stdout)
+                XCTAssertEqual(result.exitCode, 0, entry.file)
+                XCTAssertEqual(receipt.requestId, grant.requestId, entry.file)
+                XCTAssertTrue(receipt.committed, entry.file)
+                XCTAssertEqual(receipt.committedGeneration, grant.expectGeneration + 1, entry.file)
+                XCTAssertEqual(receipt.code, .ok, entry.file)
+                XCTAssertTrue(receipt.cleanupPending?.isEmpty ?? true, entry.file)
+                let response = try GeneratedAppCLIFixtures.object(entry.file)
+                XCTAssertEqual(response["storeEpoch"] as? String, grant.expectStoreEpoch, entry.file)
+                scopedMutations.insert(!forget.isEmpty ? "forget" : !allow.isEmpty ? "grant" : "revoke")
+                continue
+            }
             let port = CommunityCLIConsentPort(transport: try Wire(entry), apiAvailable: true)
             do {
                 try await port.applyConsentJSON(payload)
@@ -51,5 +74,6 @@ import ModelPlanAppIntegration
             }
         }
         XCTAssertTrue(sawSuccess); XCTAssertTrue(sawFailure); XCTAssertTrue(sawPending)
+        XCTAssertEqual(scopedMutations, Set(["grant", "revoke", "forget"]))
     }
 }
