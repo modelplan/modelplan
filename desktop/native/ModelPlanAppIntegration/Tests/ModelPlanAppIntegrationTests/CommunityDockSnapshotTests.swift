@@ -564,7 +564,8 @@ import ModelPlanSettings
             XCTAssertEqual(opens, 0, "identity/revision mismatches cannot enter")
             let live = try retainedConsoleButton(in: host.card)
             XCTAssertEqual(live.title, hide ? "驾驶舱" : "Cockpit")
-            XCTAssertTrue(host.menu().items.contains { $0.title == (hide ? "驾驶舱…" : "Cockpit…") })
+            // MENU-11: the Dock context-menu action is 打开驾驶舱 / Open Cockpit.
+            XCTAssertTrue(host.menu().items.contains { $0.title == (hide ? "打开驾驶舱" : "Open Cockpit") })
             _ = (try XCTUnwrap(live.target as? NSObject)).perform(try XCTUnwrap(live.action), with: live)
             XCTAssertEqual(opens, 1, "a current selector still enters once")
             opens = 0
