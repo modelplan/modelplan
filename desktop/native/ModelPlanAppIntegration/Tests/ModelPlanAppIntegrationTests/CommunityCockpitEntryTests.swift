@@ -67,6 +67,26 @@ private actor RouteClient: EngineClient {
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    @MainActor func testNormalEntryAdmitsCanonicalBundlesWithProductionPins() async throws {
+        var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            if FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) { break }
+            repo.deleteLastPathComponent()
+        }
+        let builds = repo.appendingPathComponent("desktop/cockpit/.tmp")
+        guard FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path),
+              FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
+        else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
+        for edition in ["community", "official"] {
+            let bundle = try CommunityCockpitApplicationFactory.admitCockpitBundle(root: builds.appendingPathComponent(edition), edition: edition)
+            XCTAssertFalse(try bundle.resource(path: "index.html").isEmpty, edition)
+        }
+        do {
+            _ = try CommunityCockpitApplicationFactory.admitCockpitBundle(root: builds.appendingPathComponent("community"), edition: "unknown")
+            XCTFail("Unknown edition must not be admitted")
+        } catch {}
+    }
+
     @MainActor func testBothActualConsoleActionsUseOneFactoryAndOneClient() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-route-"+UUID().uuidString)
         defer{try? FileManager.default.removeItem(at:root)}
