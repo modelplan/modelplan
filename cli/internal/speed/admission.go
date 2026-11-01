@@ -85,3 +85,33 @@ func (v PerfView) Admitted(a consent.Admission) PerfView {
 	v.Ledger = l
 	return v
 }
+
+// LegacyAdmitted withholds denied or cleanup-pending sources even while old
+// unstamped caches remain readable for other sources. The legacy desktop output
+// uses these views while a cleanup retry is pending.
+func LegacyAdmitted(ledger Ledger, perf PerfLedger, long LongLedger, admission consent.Admission) (Ledger, PerfLedger, LongLedger) {
+	allowed := func(source string) bool {
+		scope := sourceScope(source)
+		tool, _, _ := strings.Cut(scope, ".")
+		return scope != "" && admission.State().AllowsScope(scope, admission.Mode()) && !admission.CleanupPending(scope) && !admission.CleanupPending(tool)
+	}
+	rows := make([]Row, 0, len(ledger.Rows))
+	for _, r := range ledger.Rows { if allowed(r.Source) { rows = append(rows, r) } }
+	ledger.Rows = rows
+	perfRows := make([]PerfRow, 0, len(perf.Rows))
+	for _, r := range perf.Rows { if allowed(r.Source) { perfRows = append(perfRows, r) } }
+	perf.Rows = perfRows
+	hourly := make([]Hourly, 0, len(perf.Hourly))
+	for _, r := range perf.Hourly { if allowed(r.Source) { hourly = append(hourly, r) } }
+	perf.Hourly = hourly
+	live := make([]LiveRecord, 0, len(perf.Live))
+	for _, r := range perf.Live { if allowed(r.Source) { live = append(live, r) } }
+	perf.Live = live
+	sessions := make([]PerfSession, 0, len(perf.Sessions))
+	for _, r := range perf.Sessions { if allowed(r.Source) { sessions = append(sessions, r) } }
+	perf.Sessions = sessions
+	longRows := make([]Daily, 0, len(long.Rows))
+	for _, r := range long.Rows { if allowed(r.Source) { longRows = append(longRows, r) } }
+	long.Rows = longRows
+	return ledger, perf, long
+}

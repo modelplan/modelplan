@@ -84,3 +84,24 @@ func TestNewGrantDoesNotRelabelPreGrantObservations(t *testing.T) {
 		t.Fatal("new authorized turn missing provenance")
 	}
 }
+
+func TestLiveSessionHonorsGrantStartAndEpoch(t *testing.T) {
+	now := time.Now().UTC()
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	state.Generation = 2
+	state.Revoked[consent.ScopeCodexLocalHistory] = 1
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed:true, ConsentTextVersion:consent.TextVersion, At:now.Add(-time.Minute)}
+	l := PerfLedger{admission: consent.NewAdmission(state, consent.Automatic)}
+	cfg := config{model:"synthetic-model"}
+	old := liveProbe{cfg:cfg, start:now.Add(-2*time.Minute), last:now.Add(-90*time.Second)}
+	if l.setLive("key", "codex", old, "", now) || len(l.Live) != 0 { t.Fatal("pre-grant session accepted") }
+	fresh := liveProbe{cfg:cfg, start:now.Add(-2*time.Minute), last:now.Add(-time.Second), requests:[]request{{cfg:cfg, end:now.Add(-90*time.Second)}, {cfg:cfg, end:now.Add(-time.Second)}}}
+	if !l.setLive("key", "codex", fresh, "", now) || len(l.Live) != 1 || l.Live[0].GrantEpoch == nil || len(l.Live[0].Samples) != 1 { t.Fatalf("post-grant live record: %#v", l.Live) }
+	before := l.Live[0].Ref
+	state.Generation = 4
+	state.Revoked[consent.ScopeCodexLocalHistory] = 3
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed:true, ConsentTextVersion:consent.TextVersion, At:now.Add(-2*time.Second)}
+	l.admission = consent.NewAdmission(state, consent.Automatic)
+	if !l.setLive("key", "codex", fresh, "", now) || len(l.Live) != 2 || l.Live[1].Ref == before || sameEpoch(l.Live[0].GrantEpoch, l.Live[1].GrantEpoch) { t.Fatalf("old grant identity reused: %#v", l.Live) }
+}

@@ -64,7 +64,7 @@ type CockpitToday struct {
 type CockpitSession struct {
 	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
 	Source          string    `json:"source"`
-	SubscriptionRef *string   `json:"subscriptionRef" null:"coalesced"`
+	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
 	Model           string    `json:"model"`
 	Effort          *string   `json:"effort" null:"coalesced"`
 	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
@@ -74,7 +74,7 @@ type CockpitSession struct {
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`
-	SubscriptionRef  string  `json:"subscriptionRef"`
+	SubscriptionRef  string  `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
 	WindowID         string  `json:"windowId"`
 	Severity         string  `json:"severity"`
 	RemainingPercent float64 `json:"remainingPercent"`

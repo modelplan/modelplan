@@ -59,6 +59,34 @@ final class DecodeTests: XCTestCase {
         }
     }
 
+    func testMalformedCockpitDetailsNeverDisappear() throws {
+        let original = try object("WireCockpitData.json")
+        var invalidVersion = original
+        var details = try XCTUnwrap(invalidVersion["details"] as? [String: Any])
+        details["version"] = 2
+        invalidVersion["details"] = details
+        try check("WireCockpitData", invalidVersion, accepted: false, context: "details version")
+        var invalidReference = original
+        details = try XCTUnwrap(invalidReference["details"] as? [String: Any])
+        var subs = try XCTUnwrap(details["subscriptions"] as? [[String: Any]])
+        subs[0]["subscriptionRef"] = "bad-reference"
+        details["subscriptions"] = subs
+        invalidReference["details"] = details
+        try check("WireCockpitData", invalidReference, accepted: false, context: "details subscription")
+        var missingTime = original
+        details = try XCTUnwrap(missingTime["details"] as? [String: Any])
+        var sessions = try XCTUnwrap(details["sessions"] as? [[String: Any]])
+        sessions[0].removeValue(forKey: "lastObservedAt")
+        details["sessions"] = sessions
+        missingTime["details"] = details
+        try check("WireCockpitData", missingTime, accepted: false, context: "details session time")
+        sessions[0]["lastObservedAt"] = "2026-10-29T12:00:00Z"
+        sessions[0]["sessionRef"] = "bad-reference"
+        details["sessions"] = sessions
+        missingTime["details"] = details
+        try check("WireCockpitData", missingTime, accepted: false, context: "details session reference")
+    }
+
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)

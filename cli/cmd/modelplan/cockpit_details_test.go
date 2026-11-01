@@ -14,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/queries"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -92,4 +93,38 @@ func TestCockpitCoverageDistinguishesMissingAndEmptyLedger(t *testing.T) {
 	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil { t.Fatal(err) }
 	empty, err := source.cockpitDetails(context.Background(), appserver.View{}, admission, nil)
 	if err != nil || empty.SessionCoverage != "local-last-seen" || !slices.Contains(empty.Sources, "local-history") || len(empty.Sessions) != 0 { t.Fatalf("empty ledger: %#v, %v", empty, err) }
+}
+
+func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MODELPLAN_READERS", "automatic")
+	t.Setenv("MODELPLAN_HISTORY", "")
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil { t.Fatal(err) }
+	now := time.Now().UTC()
+	epoch := &speed.GrantEpoch{StoreEpoch: state.StoreEpoch, RevokedGeneration: 0}
+	cache := t.TempDir()
+	ledger := speed.PerfLedger{SchemaVersion:1, Since:now.Add(-time.Hour), Rows:[]speed.PerfRow{}, Live:[]speed.LiveRecord{
+		{Ref:"1111111111111111", Source:"codex", Model:"synthetic-alias", Effort:"high", ProjectRef:"p1", LastAt:now.Add(-time.Second), GrantEpoch:epoch, Running:true},
+		{Ref:"2222222222222222", Source:"codex", Model:"unknown-secret", Effort:"unknown-secret", LastAt:now.Add(-2*time.Second), GrantEpoch:epoch},
+		{Ref:"3333333333333333", Source:"claude-code", Model:"synthetic-alias", LastAt:now.Add(-time.Second), GrantEpoch:epoch},
+		{Ref:"4444444444444444", Source:"codex", Model:"synthetic-alias", LastAt:now.Add(-time.Second)},
+	}, Sessions:[]speed.PerfSession{{Ref:"1111111111111111", Source:"codex", ProjectRef:"p1", ProjectLabel:"Synthetic project", GrantEpoch:epoch}}}
+	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil { t.Fatal(err) }
+	payload, err := json.Marshal(ledger)
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil { t.Fatal(err) }
+	stamp := appserver.Stamp{Epoch:state.StoreEpoch, Generation:state.Generation}
+	view := appserver.View{PublicModels:[]digest.Model{{ID:"public-model", HarnessIDs:map[string][]string{"codex":{"synthetic-alias"}}}}}
+	admission := queries.CockpitAdmission{Stamp:stamp, Scopes:[]string{consent.ScopeCodexLocalHistory}}
+	got, err := (sharedCockpit{cache:cache}).cockpitDetails(context.Background(), view, admission, nil)
+	if err != nil || len(got.Sessions) != 2 { t.Fatalf("scope or epoch filter: %#v, %v", got.Sessions, err) }
+	if got.Sessions[0].SessionRef != "1111111111111111" || got.Sessions[0].Model != "public-model" || got.Sessions[0].Effort == nil || *got.Sessions[0].Effort != "high" || got.Sessions[0].ProjectLabel == nil || *got.Sessions[0].ProjectLabel != "Synthetic project" || got.Sessions[0].SubscriptionRef != nil { t.Fatalf("verified live projection: %#v", got.Sessions[0]) }
+	if got.Sessions[1].Model != "unknown" || got.Sessions[1].Effort != nil || got.Sessions[1].ProjectLabel != nil { t.Fatalf("untrusted fields escaped: %#v", got.Sessions[1]) }
+	labelFile := speed.ProjectLabelsFile(home)
+	if err := os.MkdirAll(filepath.Dir(labelFile), 0700); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(labelFile, []byte(`{"projectLabels":false}`), 0600); err != nil { t.Fatal(err) }
+	got, err = (sharedCockpit{cache:cache}).cockpitDetails(context.Background(), view, admission, nil)
+	if err != nil || len(got.Sessions) != 2 || got.Sessions[0].ProjectLabel != nil { t.Fatalf("disabled labels escaped: %#v, %v", got.Sessions, err) }
 }
