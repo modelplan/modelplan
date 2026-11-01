@@ -131,6 +131,8 @@ M1 does not run there: V1 writes the release with `release.py --lane V1 --host m
 issue-comment URL) and `MODELPLAN_VERIFICATION_HOST=macci`; the run config sets `"host": "macci"`
 and usually `"launchMode": "launchservices"`. Details, launch modes and the never-started closure
 are in [`../SKILL.md`](../SKILL.md#macci-lane-v1). On the dev Mac only M1 releases, unchanged.
+The never-started scan matches only by executable path (exact subject or bundle prefix) and by
+helper PID plus start time recorded at spawn; it never reads other processes' environments.
 
 If work is abandoned **while still queued**, replace start/release/launch with:
 

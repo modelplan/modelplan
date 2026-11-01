@@ -96,9 +96,12 @@ path, registers its identity, then supervises it by identity. The app's stdout/s
 `syntheticTmp/.launchservices/subject.{stdout,stderr}`. A LaunchServices app also inherits the
 user's launchd environment apart from the overridden variables.
 
-Never registered: both modes record the run's scan scope (exact executable path and synthetic
-HOME) in the reservation. If the launcher exits before registering, the guardian stops any owned
-process inside that scope (never by process name), rescans after a settle delay and reports
+Never registered: both modes record the run's scan scope in the reservation: the exact subject
+executable path, the `.launchservices` bundle prefix (LaunchServices mode) and the PID plus start
+time of each helper launch.py spawned (exec gate, `open` helper), so a reused PID never matches.
+The scan reads only resolved executable paths and owned start identities; it never matches by
+process name and never reads any process's environment or arguments. If the launcher exits before
+registering, the guardian stops any owned process inside that scope, rescans after a settle delay and reports
 `subject: never-started` when nothing was ever found, which permits `finish --cleaned`. A stray it
 had to stop (`unregistered-stopped`) or anything unconfirmed keeps the booking started.
 

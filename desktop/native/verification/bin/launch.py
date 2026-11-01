@@ -9,13 +9,15 @@
   activation refuses key/active state to processes spawned directly from an agent shell). The
   subject PID is found by its exact bundle executable path, registered, then supervised by its
   start identity.
-Both modes record the run's scan scope (exact executable path and synthetic HOME) in the
-reservation, so the guardian can prove closure even if the subject never registers.
+Both modes record the run's scan scope in the reservation (exact executable path, the bundle's
+scratch prefix, and the PID plus start time of each helper spawned here: the exec gate or the
+`open` helper), so the guardian can prove closure even if the subject never registers. No
+process's environment is ever read.
 """
 import argparse,hashlib,json,os,plistlib,re,shutil,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
-from guardian import register,mark_launching,identity,stop_identities,cleanup
+from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup
 import process_scan
 OPEN=['/usr/bin/open'];CODESIGN='/usr/bin/codesign';DISCOVERY_SECONDS=20.0
 BUNDLE_ID=re.compile(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+')
@@ -37,7 +39,7 @@ def main():
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
     if bundle:return launch_services(c,bundle,pid_path,subject_env(home,tmp))
     # Until registered, the guardian reports closure unconfirmed unless its scope scan is empty.
-    launcher=mark_launching(pid_path,scope=process_scan.scope_for(binary,home),mode=mode)
+    launcher=mark_launching(pid_path,scope=process_scan.scope_for(binary),mode=mode)
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*c['argv']]
@@ -49,6 +51,7 @@ def main():
         raise SystemExit(3)
     for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
     try:
+        add_helper(pid_path,launcher,identity(child.pid)) # The gate is matched by PID plus start time.
         register(pid_path,child.pid,launcher)
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
@@ -116,22 +119,26 @@ def discover(exe,helper,c,timeout=DISCOVERY_SECONDS,clock=time.time,sleep=time.s
         sleep(0.1)
     raise RuntimeError('LaunchServices subject never appeared')
 def sweep(scope,helper):
-    """Stop everything this run started, by exact path or synthetic HOME (includes the open helper)."""
-    try:stop_identities(process_scan.scan(scope,identity),5.0,identity,os.kill,time.monotonic,time.sleep)
+    """Stop everything this run started: bundle path/prefix, plus recorded helpers (the open helper)."""
+    try:stop_identities(process_scan.scan(scope['scope'],identity),5.0,identity,os.kill,time.monotonic,time.sleep)
     finally:
         if helper.poll() is None:
             helper.terminate()
             try:helper.wait(5)
             except subprocess.TimeoutExpired:helper.kill();helper.wait()
 def launch_services(c,bundle,pid_path,env):
-    scope=process_scan.scope_for(bundle['exe'],env['HOME'])
-    launcher=mark_launching(pid_path,scope=scope,mode='launchservices')
+    scope={'scope':process_scan.scope_for(bundle['exe'],prefix=bundle['app'])}
+    launcher=mark_launching(pid_path,scope=scope['scope'],mode='launchservices')
     logs=bundle['app'].parent;(logs/'subject.stdout').touch();(logs/'subject.stderr').touch()
     command=[*OPEN,'-n','-W',*[x for k,v in env.items() for x in ('--env',f'{k}={v}')],
              '--stdout',str(logs/'subject.stdout'),'--stderr',str(logs/'subject.stderr'),str(bundle['app'])]
     if len(c['argv'])>1:command+=['--args',*c['argv'][1:]]
-    # The open helper carries the synthetic HOME too, so the scope scan covers it if launch.py dies.
     helper=subprocess.Popen(command,stdin=subprocess.DEVNULL,env=env)
+    # Record the open helper by PID plus start time at once, so the guardian can stop it if launch.py dies.
+    try:
+        ident=identity(helper.pid)
+        if ident is not None or helper.poll() is None:scope['scope']=add_helper(pid_path,launcher,ident) # else: already gone
+    except BaseException:sweep(scope,helper);raise
     state={'child':None}
     def stop_child(*_):
         child=state['child']
