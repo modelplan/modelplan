@@ -304,7 +304,7 @@ func windowKey(prefix string, a *quota.Account, w *quota.Window) string {
 	if w.ResetsAt != nil {
 		at = w.ResetsAt.UTC().Format(time.RFC3339)
 	}
-	return strings.Join([]string{prefix, a.Source, a.Plan, w.Kind, w.Limit, at}, "|")
+	return strings.Join([]string{prefix, a.Source, a.Plan, w.Kind, a.SafeLimit(w.Limit), at}, "|")
 }
 
 // resetSoonSurplus: a window of the account's pool in its last quarter with a surplus.
@@ -329,7 +329,7 @@ func accountEvents(a *quota.Account, d *digest.Digest, now time.Time, plan *Plan
 		return nil
 	}
 	base := func(typ, sev string) Event {
-		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, Limit: w.Limit, RemainingPercent: w.RemainingPercent, RunsOutInMinutes: w.RunsOutInMinutes, Stale: a.Stale}
+		e := Event{Type: typ, Key: windowKey(typ, a, w), Severity: sev, Source: a.Source, Plan: a.Plan, Window: w.Kind, Limit: a.SafeLimit(w.Limit), RemainingPercent: w.RemainingPercent, RunsOutInMinutes: w.RunsOutInMinutes, Stale: a.Stale}
 		if plan != nil {
 			e.Basis = plan.Basis
 		}
