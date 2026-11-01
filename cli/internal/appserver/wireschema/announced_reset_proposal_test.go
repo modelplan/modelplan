@@ -3,8 +3,11 @@ package wireschema_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,6 +35,9 @@ type proposedResetSchedule struct {
 type proposedResetEvent struct {
 	Version     int                    `json:"version"`
 	ID          string                 `json:"id"`
+	Provider    string                 `json:"provider"`
+	Confirms    string                 `json:"confirms,omitempty"`
+	PlanIDs     []string               `json:"planIds,omitempty"`
 	RowID       string                 `json:"rowId"`
 	Status      string                 `json:"status"`
 	PublishedAt time.Time              `json:"publishedAt"`
@@ -111,6 +117,10 @@ func proposalFixtures(t *testing.T) map[string][]byte {
 	in := rows.Input{Now: published, ConsentGeneration: 7,
 		Catalogue: []rows.CatalogueEntry{{ToolID: "codex", Detected: true, ReaderExists: true}},
 		Consents:  []rows.ConsentRecord{{ToolID: "codex", Generation: 7, State: rows.ConsentAllowed}}}
+	ref1, ref2 := "0123456789abcdef", "fedcba9876543210"
+	observed, fresh := published.Add(-time.Minute), published.Add(time.Hour)
+	in.Profiles = []rows.ProfileState{{ToolID: "codex", ProfileKey: "a", LatestAttempt: rows.AttemptResultSucceeded, ObservedAt: &observed, WithinFreshness: true, FreshUntil: &fresh}, {ToolID: "codex", ProfileKey: "b", LatestAttempt: rows.AttemptResultSucceeded, ObservedAt: &observed, WithinFreshness: true, FreshUntil: &fresh}}
+	in.Accounts = []rows.AccountInput{{ToolID: "codex", ProfileKey: "a", Route: rows.RouteRuntimeRPC, SubscriptionRef: &ref1, PlanID: "pro"}, {ToolID: "codex", ProfileKey: "b", Route: rows.RouteRuntimeRPC, SubscriptionRef: &ref2, PlanID: "plus"}}
 	projection := rows.Build(in)
 	if err := rows.Validate(in, projection); err != nil {
 		t.Fatal(err)
@@ -119,16 +129,24 @@ func proposalFixtures(t *testing.T) map[string][]byte {
 		t.Fatal("fixture must contain the affected tool row")
 	}
 	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", URL: "https://example.test/reset"}
-	scheduled := proposedResetEvent{Version: 1, ID: "reset-1", RowID: "codex", Status: "announced", PublishedAt: published,
+	id, err := proposalID("openai", published.Add(3*time.Hour), source.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduled := proposedResetEvent{Version: 1, ID: id, Provider: "openai", PlanIDs: []string{"pro"}, RowID: "codex", Status: "announced", PublishedAt: published,
 		Schedule: &proposedResetSchedule{Precision: "window", From: published.Add(time.Hour), Through: published.Add(3 * time.Hour)}, ExpiresAt: published.Add(3 * time.Hour), Source: source}
-	unscheduled := proposedResetEvent{Version: 1, ID: "reset-2", RowID: "codex", Status: "announced", PublishedAt: published,
+	unscheduledID, err := proposalID("openai", published.Add(4*time.Hour), source.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unscheduled := proposedResetEvent{Version: 1, ID: unscheduledID, Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: published,
 		ExpiresAt: published.Add(48 * time.Hour), Source: source}
-	confirmed := proposedResetEvent{Version: 1, ID: "reset-3", RowID: "codex", Status: "confirmed", PublishedAt: published,
+	confirmed := proposedResetEvent{Version: 1, ID: id, Provider: "openai", Confirms: id, PlanIDs: []string{"pro"}, RowID: "codex", Status: "confirmed", PublishedAt: published,
 		ExpiresAt: published.Add(24 * time.Hour), Source: source}
 	empty := []proposedResetEvent{}
 	one := func(e proposedResetEvent) *[]proposedResetEvent { a := []proposedResetEvent{e}; return &a }
 	cases := map[string]*[]proposedResetEvent{"legacy-omitted.json": nil, "known-empty.json": &empty,
-		"scheduled-announcement.json": one(scheduled), "unscheduled-announcement.json": one(unscheduled), "confirmed.json": one(confirmed)}
+		"scheduled-announcement.json": one(scheduled), "unscheduled-announcement.json": one(unscheduled), "confirmed.json": one(confirmed), "app-journey-plan-scoped.json": one(scheduled)}
 	result := make(map[string][]byte, len(cases))
 	for name, events := range cases {
 		message := wire.Success[proposedRowsSnapshot]{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`),
@@ -266,7 +284,11 @@ func checkProposalSet(events []proposedResetEvent, rowIDs map[string]bool, publi
 func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}
-	event := proposedResetEvent{Version: 1, ID: "reset-1", RowID: "codex", Status: "announced", PublishedAt: now,
+	id, err := proposalID("openai", now.Add(3*time.Hour), "https://example.test/reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := proposedResetEvent{Version: 1, ID: id, Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: now,
 		Schedule: &proposedResetSchedule{Precision: "window", From: now.Add(time.Hour), Through: now.Add(3 * time.Hour)}, ExpiresAt: now.Add(3 * time.Hour), Source: source}
 	rows := map[string]bool{"codex": true}
 	if err := checkProposalSemantics(event, rows, source.PublicationID); err != nil {
@@ -290,6 +312,7 @@ func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 	unscheduled.ExpiresAt = now.Add(48 * time.Hour)
 	confirmed := event
 	confirmed.Status = "confirmed"
+	confirmed.Confirms = confirmed.ID
 	confirmed.Schedule = nil
 	confirmed.ExpiresAt = now.Add(24 * time.Hour)
 	for _, e := range []proposedResetEvent{unscheduled, confirmed} {
@@ -324,5 +347,130 @@ func TestAnnouncedResetProposalLifecycleAndTrust(t *testing.T) {
 	updated.Source.PublicationID = "fedcba9876543210fedcba98"
 	if !reflect.DeepEqual([]string{event.Source.Kind, event.ID}, []string{updated.Source.Kind, updated.ID}) {
 		t.Fatal("publication refresh changed event identity")
+	}
+}
+
+// proposalID is a review-only reference: length framing avoids ambiguous tuples.
+func proposalID(provider string, instant time.Time, sourceURL string) (string, error) {
+	u, err := url.Parse(sourceURL)
+	if provider == "" || instant.IsZero() || err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return "", fmt.Errorf("missing or invalid identity input")
+	}
+	h := sha256.New()
+	for _, part := range []string{"modelplan-reset-event-v1", provider, instant.UTC().Format(time.RFC3339Nano), sourceURL} {
+		var size [8]byte
+		binary.BigEndian.PutUint64(size[:], uint64(len(part)))
+		h.Write(size[:])
+		h.Write([]byte(part))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// resolveConfirmations requires an explicit reference to an already-known announcement.
+func resolveConfirmations(events []proposedResetEvent, known map[string]bool) ([]proposedResetEvent, int) {
+	var out []proposedResetEvent
+	dropped := 0
+	for _, e := range events {
+		if e.Status == "confirmed" && (e.Confirms == "" || e.Confirms != e.ID || !known[e.Confirms]) {
+			dropped++
+			continue
+		}
+		if e.Status != "announced" && e.Status != "confirmed" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out, dropped
+}
+
+// safeProposalLink demonstrates exact host membership, not a production registry.
+func safeProposalLink(raw string, official map[string]bool) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || !official[u.Hostname()] {
+		return ""
+	}
+	return raw
+}
+func TestAnnouncedResetProposalIdentityAndDecisions(t *testing.T) {
+	instant := time.Date(2026, 11, 1, 15, 0, 0, 0, time.UTC)
+	id, err := proposalID("openai", instant, "https://example.test/reset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	same, _ := proposalID("openai", instant.In(time.FixedZone("other", 3600)), "https://example.test/reset")
+	if id != same {
+		t.Fatal("instant must be normalized")
+	}
+	for _, in := range []struct {
+		provider string
+		when     time.Time
+		source   string
+	}{{"other", instant, "https://example.test/reset"}, {"openai", instant.Add(time.Second), "https://example.test/reset"}, {"openai", instant, "https://example.test/other"}} {
+		other, err := proposalID(in.provider, in.when, in.source)
+		if err != nil || other == id {
+			t.Fatal("identity tuple collision")
+		}
+	}
+	if _, err := proposalID("openai", time.Time{}, "https://example.test/reset"); err == nil {
+		t.Fatal("missing instant accepted")
+	}
+	if _, err := proposalID("openai", instant, ""); err == nil {
+		t.Fatal("missing URL accepted")
+	}
+	linked := proposedResetEvent{ID: id, Status: "confirmed", Confirms: id}
+	unlinked := linked
+	unlinked.Confirms = "unknown"
+	got, dropped := resolveConfirmations([]proposedResetEvent{linked, unlinked}, map[string]bool{id: true})
+	if len(got) != 1 || dropped != 1 {
+		t.Fatal("unlinked confirmation not counted and dropped")
+	}
+	if safeProposalLink("https://example.test/reset", map[string]bool{"example.test": true}) == "" || safeProposalLink("https://evil.test/reset", map[string]bool{"example.test": true}) != "" {
+		t.Fatal("source host policy")
+	}
+}
+
+// The consumer fixture includes two same-route members; only the named plan matches.
+func TestAnnouncedResetProposalAppJourneyFixture(t *testing.T) {
+	var message struct {
+		Result struct {
+			Data struct {
+				Projection struct {
+					Rows []struct {
+						ID       string `json:"id"`
+						Accounts []struct {
+							Route           string `json:"route"`
+							SubscriptionRef string `json:"subscriptionRef"`
+							Plan            struct {
+								ID string `json:"id"`
+							} `json:"plan"`
+						} `json:"accounts"`
+					} `json:"rows"`
+					ResetEvents []proposedResetEvent `json:"resetEvents"`
+				} `json:"projection"`
+			} `json:"data"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(proposalFixtures(t)["app-journey-plan-scoped.json"], &message); err != nil {
+		t.Fatal(err)
+	}
+	p := message.Result.Data.Projection
+	if len(p.Rows) != 1 || len(p.Rows[0].Accounts) != 2 || len(p.ResetEvents) != 1 {
+		t.Fatal("fixture missing row, members or event")
+	}
+	event := p.ResetEvents[0]
+	if p.Rows[0].ID != event.RowID || event.Provider != "openai" || len(event.PlanIDs) != 1 {
+		t.Fatal("event not mapped to row or plan")
+	}
+	matches := 0
+	for _, account := range p.Rows[0].Accounts {
+		if account.Plan.ID == event.PlanIDs[0] {
+			matches++
+			if account.SubscriptionRef != "0123456789abcdef" {
+				t.Fatal("wrong matching member")
+			}
+		}
+	}
+	if matches != 1 || p.Rows[0].Accounts[0].Route != p.Rows[0].Accounts[1].Route {
+		t.Fatal("plan-scoped fixture does not distinguish same-route members")
 	}
 }

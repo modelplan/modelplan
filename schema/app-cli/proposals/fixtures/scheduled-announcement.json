@@ -25,12 +25,12 @@
               "settings"
             ],
             "consent": "allowed",
-            "state": "pending",
+            "state": "empty",
             "reason": {
-              "code": "not_read_yet",
+              "code": "no_usage_windows",
               "text": {
-                "en": "Waiting for the first reading",
-                "zh": "等待首次读取"
+                "en": "No usage windows were reported",
+                "zh": "未报告用量窗口"
               }
             },
             "nextStep": {
@@ -40,7 +40,46 @@
                 "zh": "等待下一次可用读数"
               }
             },
-            "accounts": [],
+            "accounts": [
+              {
+                "route": "runtime_rpc",
+                "subscriptionRef": "0123456789abcdef",
+                "accountLocator": null,
+                "plan": {
+                  "id": "pro",
+                  "name": {
+                    "en": "Pro",
+                    "zh": "Pro"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "none",
+                "observedAt": "2026-11-01T11:59:00Z",
+                "freshUntil": null,
+                "lastFailure": null,
+                "windows": []
+              },
+              {
+                "route": "runtime_rpc",
+                "subscriptionRef": "fedcba9876543210",
+                "accountLocator": null,
+                "plan": {
+                  "id": "plus",
+                  "name": {
+                    "en": "Plus",
+                    "zh": "Plus"
+                  }
+                },
+                "beta": false,
+                "credits": null,
+                "valueState": "none",
+                "observedAt": "2026-11-01T11:59:00Z",
+                "freshUntil": null,
+                "lastFailure": null,
+                "windows": []
+              }
+            ],
             "expiresAt": null,
             "stateAfterExpiry": null
           }
@@ -69,7 +108,11 @@
         "resetEvents": [
           {
             "version": 1,
-            "id": "reset-1",
+            "id": "3dff9ab9b227f04ccc830141faefbcbe1552681a0a58dbd65fe4a81b9e19d922",
+            "provider": "openai",
+            "planIds": [
+              "pro"
+            ],
             "rowId": "codex",
             "status": "announced",
             "publishedAt": "2026-11-01T12:00:00Z",
