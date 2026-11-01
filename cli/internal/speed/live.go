@@ -296,6 +296,7 @@ func (v PerfView) LiveSessions() []LiveSession {
 		}
 		rate := Rate{Source: r.Source, Window: "60s", Scope: "session", Min: MinSamples, Status: "insufficient", Reason: "too-few-samples"}
 		var output, gen int64
+		const maxInt64 = int64(^uint64(0) >> 1)
 		observed := 0
 		for _, s := range r.Samples {
 			if !s.At.After(v.Now.Add(-LiveRateWindow)) || s.At.After(v.Now) {
@@ -306,7 +307,9 @@ func (v PerfView) LiveSessions() []LiveSession {
 				t := s.At
 				rate.LastAt = &t
 			}
-			if s.Eligible {
+			// Cached eligibility is not proof that the persisted numbers are
+			// valid. Skip non-positive or overflowing samples before summing.
+			if s.Eligible && s.Out > 0 && s.GenMs > 0 && s.Out <= maxInt64-output && s.GenMs <= maxInt64-gen {
 				rate.N++
 				output += s.Out
 				gen += s.GenMs

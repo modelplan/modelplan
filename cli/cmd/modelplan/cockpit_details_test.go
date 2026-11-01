@@ -160,3 +160,39 @@ func TestCockpitDetailsProjectsOnlyAdmittedStampedLiveSessions(t *testing.T) {
 		t.Fatalf("disabled labels escaped: %#v, %v", got.Sessions, err)
 	}
 }
+
+func TestCockpitDetailsWithholdsCorruptCachedSessionRate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MODELPLAN_READERS", "automatic")
+	t.Setenv("MODELPLAN_HISTORY", "")
+	state, err := consent.EnsureStore(consent.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	cache := t.TempDir()
+	samples := []map[string]any{}
+	for i := 0; i < 5; i++ {
+		samples = append(samples, map[string]any{"at": now.Add(-time.Second), "out": -10, "genMs": 100, "eligible": true})
+	}
+	fixture := map[string]any{"schemaVersion": 1, "since": now.Add(-time.Hour), "rows": []any{}, "live": []any{map[string]any{
+		"ref": "0123456789abcdef", "source": "codex", "model": "synthetic", "lastAt": now.Add(-time.Second),
+		"startedAt": now.Add(-time.Minute), "grantEpoch": speed.GrantEpoch{StoreEpoch: state.StoreEpoch}, "samples": samples,
+	}}}
+	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stamp := appserver.Stamp{Epoch: state.StoreEpoch, Generation: state.Generation}
+	admission := queries.CockpitAdmission{Stamp: stamp, Scopes: []string{consent.ScopeCodexLocalHistory}}
+	got, err := (sharedCockpit{cache: cache}).cockpitDetails(context.Background(), appserver.View{}, admission, nil)
+	if err != nil || len(got.Sessions) != 1 || got.Sessions[0].Rate != nil {
+		t.Fatalf("corrupt rate escaped: %#v, %v", got.Sessions, err)
+	}
+}
