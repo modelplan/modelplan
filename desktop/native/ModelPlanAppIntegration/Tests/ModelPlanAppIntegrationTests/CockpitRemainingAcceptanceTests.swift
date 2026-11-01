@@ -75,16 +75,12 @@ import ModelPlanWire
         defer { controller.close() }
         await controller.prepare(); controller.selectPane("appearance")
         XCTAssertFalse(controller.window?.isVisible ?? true,"The normal Settings controller stays offscreen")
-        pending("Partial — completed by #402: M2 v1 Theme policy") {
-            XCTAssertFalse(controller.visibleSettingKeys.contains(.theme),"CKP-MOT-04: Theme is absent in the v1 Appearance pane")
-        }
+        XCTAssertFalse(controller.visibleSettingKeys.contains(.theme),"CKP-MOT-04: Theme is absent in the v1 Appearance pane")
         XCTAssertTrue(controller.visibleSettingKeys.contains(.motion))
         XCTAssertTrue(controller.visibleSettingKeys.contains(.transparency))
         controller.searchField.stringValue = "Theme"
         controller.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:controller.searchField))
-        pending("Partial — completed by #402: M2 v1 Theme search policy") {
-            XCTAssertFalse(controller.visibleSettingKeys.contains(.theme),"Searching must not expose the hidden v1 Theme row")
-        }
+        XCTAssertFalse(controller.visibleSettingKeys.contains(.theme),"Searching must not expose the hidden v1 Theme row")
         for (query,key) in [("Reduce motion",SettingKey.motion),("transparency",.transparency)] {
             controller.searchField.stringValue = query
             controller.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:controller.searchField))

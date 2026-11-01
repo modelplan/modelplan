@@ -11,7 +11,6 @@ import ModelPlanSettings
     func applySettings(_ value: SettingsApplication)
 }
 public extension EngineRowsConsoleSurface { func close() { hide() } }
-}
 public extension EngineRowsConsoleSurface { func applySettings(_ value: SettingsApplication) {} }
 /// Read-only native Dock-reading status; no private cockpit or producer is constructed.
 @MainActor final class EngineRowsConsole: NSWindowController, EngineRowsConsoleSurface {

@@ -100,10 +100,10 @@ import ModelPlanWire
             let rendered = expectation(description: entry + " real pinned page render"); nextRendered = rendered
             if entry == "menu" {
                 let menu = try XCTUnwrap(app.liveStatusMenu)
-                menu.performActionForItem(at: try XCTUnwrap(menu.items.firstIndex { $0.title == "Open Cockpit / 打开驾驶舱" }))
+                menu.performActionForItem(at: try XCTUnwrap(menu.items.firstIndex { $0.title == EngineRowsText.cockpitMenu.value(.english) }))
             } else if entry == "dock" {
                 let menu = app.composition.dock.menu()
-                menu.performActionForItem(at: try XCTUnwrap(menu.items.firstIndex { $0.title == "Open Cockpit / 打开驾驶舱" }))
+                menu.performActionForItem(at: try XCTUnwrap(menu.items.firstIndex { $0.title == EngineRowsText.cockpitMenu.value(.english) }))
             } else if entry == "tray" {
                 app.toggleCockpit()
             } else {
