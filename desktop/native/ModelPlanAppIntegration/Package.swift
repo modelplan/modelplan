@@ -44,6 +44,7 @@ let package = Package(
         ]),
         .testTarget(name: "ModelPlanAppCLIConsentContractTests", dependencies: [
             "ModelPlanAppIntegration",
+            .product(name: "ModelPlanWire", package: "ModelPlanWire"),
             .product(name: "ModelPlanCore", package: "ModelPlanNative"),
             .product(name: "ModelPlanSettings", package: "ModelPlanSettings"),
         ], path: "AppCLIContractTests"),
