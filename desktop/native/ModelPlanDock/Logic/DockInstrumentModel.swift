@@ -30,6 +30,7 @@ public struct DockInstrumentInput: Sendable {
     public var selectedWindowID: String?
     public var showUsedPercent = false
     public var dataState: DockDataState = .unavailable
+    public var unavailableReason:String?
     public var working: DockWorkingSignal?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
 }
@@ -43,6 +44,7 @@ public struct DockInstrumentReading: Sendable {
     public let selectedWindowID: String?, selectedWindowLabel: String?, selectedResetAt: Date?
     public let remainingPercent: Double?, readout: String, status: DockQuotaStatus
     public let dataState:DockDataState
+    public let unavailableReason:String?
     public let timeLeftFraction: Double?
     /// Position count comes from the frozen appearance provider, not quota percentage or a ten-point helper.
     public func litTimePoints(positions: Int) -> Int? {
@@ -86,6 +88,7 @@ public enum DockInstrumentProjection {
         func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
         return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,selectedResetAt:selected?.resetsAt,
-            remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
+            remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
+            unavailableReason:remaining == nil ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
     }
 }

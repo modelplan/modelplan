@@ -150,15 +150,16 @@ struct CockpitUnavailableNotice {
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
             if let requestNotice { requestNotice(notice); return }
-            let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
+            let english=await owner.settingsStore.snapshot().preferences.language == .english
+            let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
-                ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
-                : "Check tool access in Settings, or reinstall this candidate if bundled content is missing. / 请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。"
+                ? (english ? "History is unavailable in this candidate. Open Settings to check connected tools." : "当前候选版尚无历史窗口，请打开设置查看已连接工具。")
+                : (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
             for action in notice.actions {
                 switch action {
-                case .settings:alert.addButton(withTitle:"Open Settings / 打开设置")
-                case .dockReadings:alert.addButton(withTitle:"Dock readings / Dock 读数")
-                case .cancel:alert.addButton(withTitle:"Cancel / 取消")
+                case .settings:alert.addButton(withTitle:english ? "Open Settings" : "打开设置")
+                case .dockReadings:alert.addButton(withTitle:english ? "Cockpit" : "驾驶舱")
+                case .cancel:alert.addButton(withTitle:english ? "Cancel" : "取消")
                 }
             }
             switch alert.runModal() {

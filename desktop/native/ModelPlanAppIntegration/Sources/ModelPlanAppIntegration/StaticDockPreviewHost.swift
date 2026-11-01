@@ -68,6 +68,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public var showConsole: (() -> Void)?
     public var showSettings: (() -> Void)?
+    public var requestHideDock:(() -> Void)?
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
     public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
@@ -246,7 +247,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
-        consoleButton.setAccessibilityLabel("Open console / 打开控制台")
+        consoleButton.setAccessibilityLabel("打开驾驶舱")
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -285,6 +286,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         application = value
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
+        consoleButton.setAccessibilityLabel(preferences.language == .english ? "Open Cockpit" : "打开驾驶舱")
         if !preferences.showDock { dismissCard() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
@@ -390,7 +392,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
         let order = (try? passPreferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
         let rows = order.compactMap { byID[$0] }.compactMap { input -> DockInstrumentReading? in
-            let value = passPreferences.applying(to: input)
+            var value = passPreferences.applying(to: input)
+            value.unavailableReason=next.presentationRows[input.id]?.reason
             return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
@@ -756,18 +759,20 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 menu.addItem(item)
             }
         }
-        for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
+        let english=preferences.language == .english
+        for (title, action) in [(english ? "Open Cockpit" : "打开驾驶舱", #selector(openConsole)), (english ? "Settings…" : "设置…", #selector(openSettings)), (english ? "Hide Dock" : "隐藏挂件", #selector(hideDockMenu))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
-        menu.addItem(.separator())
-        let quitTitle = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
-        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
     @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
+    @objc private func hideDockMenu() {
+        guard permitted,!retired else { return }
+        if let requestHideDock { requestHideDock() } else { setPresentationAllowed(false) }
+    }
     @objc private func displaysChanged() {
         guard permitted, !retired else { return }
         inputGeneration &+= 1; displayFollower.forgetLastDisplay()
@@ -781,9 +786,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
                 sourceAndAge: CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now),
-                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期"),
+                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
-                enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: now) else { dismissCard(); return }
+                enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now) else { dismissCard(); return }
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; card.isHidden = false
@@ -837,7 +842,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
-        showConsole = nil; showSettings = nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
+        showConsole = nil; showSettings = nil; requestHideDock=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }
 

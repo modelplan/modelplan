@@ -7,6 +7,10 @@ import ModelPlanWire
 
 /// Shared host seam backed only by admitted app-server rows. Legacy context data is unused.
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
+    public var language="en"
+    private var english:Bool { language == "en" }
+    private func text(_ value:RowsText) -> String { english ? value.en : value.zh }
+    private func text(_ value:RowsName) -> String { english ? value.en : value.zh }
     private let liveMenus = LivePrivateMenus()
     func bindDockMenuTracking(_ host: StaticDockPreviewHost) { liveMenus.watch(host) }
     func scrubInvalidatedMenus() { if source.dockContent.status == .cleared { liveMenus.scrubAll() } }
@@ -20,21 +24,21 @@ import ModelPlanWire
             let input = makeInput(row, now: context.now)
             inputs.append(input)
             let message = message(row, now: context.now)
-            reasons[row.id] = .init(input: input, reason: message.0.text.en,
-                                    nextStep: message.1?.text.en ?? "Check reading permissions in Settings / 在设置检查读取权限")
+            reasons[row.id] = .init(input: input, reason: text(message.0.text),
+                                    nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"))
         }
         let status: String
         switch value.status {
-        case .loading: status = "Loading readings… / 正在读取…"
-        case .empty: status = "No readings are available. Check Settings. / 暂无读数，请检查设置。"
-        case .failed: status = "Readings unavailable. Check the engine connection. / 读数不可用，请检查引擎连接。"
-        case .cleared: status = "Readings cleared. Waiting for current data. / 读数已清除，正在等待当前数据。"
-        case .ready: status = value.summary?.text.en ?? "Readings / 读数"
+        case .loading: status = english ? "Loading readings…" : "正在读取…"
+        case .empty: status = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
+        case .failed: status = english ? "Readings unavailable. Check the engine connection." : "读数不可用，请检查引擎连接。"
+        case .cleared: status = english ? "Readings cleared. Waiting for current data." : "读数已清除，正在等待当前数据。"
+        case .ready: status = value.summary.map { text($0.text) } ?? (english ? "Readings" : "读数")
         }
         let lines = value.menuRows.map { row -> String in
             let reading = try? DockInstrumentProjection.evaluate(makeInput(row, now: context.now), now: context.now)
             let number = reading?.remainingPercent.map { " · \(Int($0.rounded()))%" } ?? ""
-            return row.name.en + number + " · " + message(row, now: context.now).0.text.en
+            return text(row.name) + number + " · " + text(message(row, now: context.now).0.text)
         }
         return .init(snapshot: .init(inputs: inputs, presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status)
@@ -51,14 +55,14 @@ import ModelPlanWire
         return (row.reason, row.nextStep)
     }
     private func makeInput(_ row: RowsRow, now: Date) -> DockInstrumentInput {
-        var input = DockInstrumentInput(id: row.id, name: row.name.en, windows: [])
+        var input = DockInstrumentInput(id: row.id, name: text(row.name), windows: [])
         input.vendorResourceKey = row.vendorKey
         let rowCurrent = row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
         for (accountIndex, account) in row.accounts.enumerated() {
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             for window in account.windows {
                 let current = accountCurrent && window.current && (date(window.validUntil).map { now < $0 } ?? true)
-                input.windows.append(.init(id: "\(accountIndex):\(window.id)", period: .other, label: window.label.en,
+                input.windows.append(.init(id: "\(accountIndex):\(window.id)", period: .other, label: text(window.label),
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) }))

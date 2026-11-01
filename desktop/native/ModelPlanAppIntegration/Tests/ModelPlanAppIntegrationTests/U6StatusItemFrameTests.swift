@@ -10,7 +10,7 @@ import XCTest
             EngineDockMenuApplication.configureStatusButton(button,image:original,barThickness:thickness)
             let image=try XCTUnwrap(button.image)
             XCTAssertLessThanOrEqual(image.size.width,thickness);XCTAssertLessThanOrEqual(image.size.height,thickness)
-            XCTAssertLessThanOrEqual(image.size.width,18);XCTAssertEqual(button.imageScaling,.scaleProportionallyDown)
+            XCTAssertLessThanOrEqual(image.size.width,16);XCTAssertEqual(button.imageScaling,.scaleProportionallyDown)
             XCTAssertEqual(button.imagePosition,.imageLeading);XCTAssertTrue(image.isTemplate)
             XCTAssertEqual(original.size,NSSize(width:44,height:44))
         }

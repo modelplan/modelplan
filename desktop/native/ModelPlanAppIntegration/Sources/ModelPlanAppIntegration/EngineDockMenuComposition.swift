@@ -39,6 +39,8 @@ public struct EngineMenuRefreshResult {
         }
     }
     public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date())) }
+    func setLanguage(_ language:String) { adapter.language=language }
+    var language:String { adapter.language }
     public var menuPresentation: CommunityMenuBarPresentation {
         let content = presentedContent
         return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
