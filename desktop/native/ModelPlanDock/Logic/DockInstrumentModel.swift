@@ -50,6 +50,14 @@ public struct DockInstrumentReading: Sendable {
         return max(0,min(positions,Int(ceil(timeLeftFraction*Double(positions)))))
     }
     public let isWorking: Bool, jetEligible: Bool
+    /// Gallery-only fixture: the prototype varies level independently of its fixed 75% arc.
+    @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
+        let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status) }
+        return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias, vendorResourceKey: vendorResourceKey,
+            outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
+            selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
+            dataState: dataState, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+    }
 }
 
 /// Truth/identity projection only. Fixed artwork/ring geometry belongs to the injected appearance source.

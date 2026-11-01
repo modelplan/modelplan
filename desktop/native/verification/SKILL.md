@@ -15,8 +15,9 @@ M1 uses this exact sequence (details and coordinator withdrawal are in
 [`bin/BOOKINGS.md`](bin/BOOKINGS.md)). Configure `MODELPLAN_BOOKING_LEDGER` with
 the shared ledger path supplied by the coordinator; there is no default. Use the
 agreed synthetic file paths and run/epoch values below. `APPROVAL_URL` must be the
-https URL of the coordinator's OK comment; M1 verifies that comment before issuing
-the receipt. Copy the returned booking ID into `BOOKING_ID` and the run config.
+https URL of the coordinator's OK comment. `release.py` checks only that it is an https URL;
+before issuing the receipt, M1 itself must open the comment and confirm it is the coordinator's OK
+for this run. Copy the returned booking ID into `BOOKING_ID` and the run config.
 
 ```sh
 set -e  # any failed step before launch stops the sequence (no release, no launch)
@@ -80,25 +81,59 @@ sequence above, everything else identical:
 - Book, start and finish with `--lane V1`. Release with
   `release.py --lane V1 --host macci --id "$BOOKING_ID" --lease "$LEASE_PATH" --coordinator-go "$GO_URL" --output "$RELEASE_PATH"`,
   where `GO_URL` is `https://github.com/OWNER/REPO/issues/N#issuecomment-ID` of the coordinator's
-  GO. V1 verifies that comment is the coordinator's GO before releasing. The receipt records
+  GO. `release.py` checks only that reference's syntax; before releasing, V1 itself must open the
+  comment (for example `gh api repos/OWNER/REPO/issues/comments/ID`) and confirm it is the
+  coordinator's GO for this run. The receipt records
   `host: macci`, `releasedBy: V1` and `coordinatorGo`, never the M1 release flag, so it cannot
   admit a dev-Mac run, and an M1 receipt cannot admit a MacCI run.
-- The run config sets `"host": "macci"` and, for GUI activation, `"launchMode": "launchservices"`.
-  Do not substitute a custom controller: only launch.py/Drive register the subject the guardian
+- The run config sets `"host": "macci"` and `"launchMode": "direct"`: on MacCI direct children
+  activate (key window, `NSApp.isActive`), while LaunchServices returned -10810 for the ad-hoc
+  ModelPlan.app. Use `"subjectKind": "app-zip"` for the full app. Do not substitute a custom controller: only launch.py/Drive register the subject the guardian
   can close.
 
 Launch modes (`launchMode`, recorded in launch.py's JSON lines, the subject registration and the
 evidence manifest): `direct` (default) keeps the exec-gated child. `launchservices` copies the
 pinned binary into a minimal `.app` under `syntheticTmp/.launchservices/` (hash re-checked; optional
 `bundleIdentifier`, `bundleUIElement` default true, `bundleResources`, `bundleSign: adhoc`), opens
-it with `open -n -W --env HOME=… --env TMPDIR=…`, finds the subject by its exact bundle executable
-path, registers its identity, then supervises it by identity. The app's stdout/stderr go to
-`syntheticTmp/.launchservices/subject.{stdout,stderr}`. A LaunchServices app also inherits the
-user's launchd environment apart from the overridden variables.
+it with `open -n -W --env HOME=… --env CFFIXED_USER_HOME=… --env TMPDIR=…`, finds the subject by its
+exact bundle executable path, registers its identity, then supervises it by identity. The app's
+stdout/stderr go next to the bundle as `subject.{stdout,stderr}`. A LaunchServices app also inherits
+the user's launchd environment apart from the overridden variables. Both modes set
+`CFFIXED_USER_HOME` to the synthetic home: `HOME` alone does not move Foundation's Application
+Support or preferences paths.
 
-Never registered: both modes record the run's scan scope (exact executable path and synthetic
-HOME) in the reservation. If the launcher exits before registering, the guardian stops any owned
-process inside that scope (never by process name), rescans after a settle delay and reports
+Full app (`"subjectKind": "app-zip"`, either launch mode): `argv[0]` is the zip and
+`binarySHA256` its hash. launch.py copies the zip into `syntheticTmp/.launchservices/`, re-hashes
+the copy, extracts it with `ditto -x -k --noqtn`, requires exactly one top-level `.app` with no
+symlink leaving it, a valid `CFBundleExecutable`, and `codesign --verify --deep --strict` passing
+(ad-hoc accepted; the kind is recorded as `codeSignature`: `adhoc`, `identity` from an `Authority=`
+line, or `unknown` when `codesign -dv` fails or reports neither). With `launchservices` it opens the
+`.app`; if `open` fails, its LaunchServices error code is recorded as `launchServicesError` (MacCI
+returns -10810 for the ad-hoc ModelPlan.app). With `direct` (use this on MacCI; direct children do
+activate there) the extracted `Contents/MacOS/<CFBundleExecutable>` is exec'd as the gated child
+with the same synthetic HOME, `CFFIXED_USER_HOME` and TMPDIR. Either way the scan scope is the exact
+main executable plus the `.app` prefix under run scratch, so its bundled helpers are covered. For a
+plain binary in direct mode the scope is run scratch only and the subject matches by its recorded
+PID plus start time, so the same binary running outside the run is never matched.
+Keychain is not redirected by a synthetic HOME: do not grant consent to tools during a synthetic
+run, so no reader touches the host user's Keychain.
+
+Synthetic Dock data: the shipped (release, ad-hoc) app has **no** canned-rows or scenario input. Its
+normal entry takes rows only from its bundled CLI `app-server`, which reads real provider sources
+under HOME (after consent) and verified publication data; the child gets only `HOME`, `PATH`,
+`TMPDIR`, locale and provider API-key variables. The existing synthetic paths are test-only builds:
+`MODELPLAN_E2E_JOURNEY` (app, `DEBUG` plus macro, `package-neutral.sh --e2e-journey`; a fake
+Codex provider), the `tools/u14` CLI constructor overlays (recording providers) and the
+Swift-test `WireRowsSnapshot` captures. A fresh synthetic HOME therefore shows only the empty
+state. Covering several subscriptions, overflow, warning/critical and reset notices needs a
+separate verification build (proposal in the PR); launch.py has no `--scenario` until that exists.
+
+Never registered: both modes record the run's scan scope in the reservation: the exact subject
+executable path, the `.launchservices` bundle prefix (LaunchServices mode) and the PID plus start
+time of each helper launch.py spawned (exec gate, `open` helper), so a reused PID never matches.
+The scan reads only resolved executable paths and owned start identities; it never matches by
+process name and never reads any process's environment or arguments. If the launcher exits before
+registering, the guardian stops any owned process inside that scope, rescans after a settle delay and reports
 `subject: never-started` when nothing was ever found, which permits `finish --cleaned`. A stray it
 had to stop (`unregistered-stopped`) or anything unconfirmed keeps the booking started.
 

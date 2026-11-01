@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import CoreGraphics
 import ModelPlanCore
 import ModelPlanShell
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
@@ -17,6 +19,10 @@ public struct StaticDockGeometry {
     public var sliverScale: Int
     public var consoleButton: CGRect?
     public var dragRegions: DockBackgroundDragRegions?
+    /// Identity and along-strip positions supplied by the active appearance.
+    public var noticeStationBySubscription: [String: String] = [:]
+    public var noticeStationPositions: [String: CGFloat] = [:]
+    public var noticeUnit: CGFloat = 1
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -61,6 +67,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
     public let purpose: DockHostPurpose
     public private(set) var isVisible = false
+    public private(set) var lastAppearanceError: Error?
     public var visibilityChanged: (() -> Void)?
     private func reportVisibility(_ visible: Bool) {
         guard visible != isVisible else { return }
@@ -86,10 +93,41 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
+    private var attention = DockAttentionState()
+    private var attentionSignals: [DockSubscriptionSignal] = []
+    private var attentionWasSliver = false
+    public private(set) var menuNotice: DockNotice?
+    /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
+    public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
+    private func publishAttention() {
+        guard let projection = try? attention.project(attentionSignals, stationBySubscription: geometry.noticeStationBySubscription,
+                                                       sliverAlerts: preferences.sliverAlert, at: currentDate()) else { menuNotice = nil; menuNoticeDidChange?(nil, false); return }
+        menuNotice = projection.menuNotice
+        if let callback = menuNoticeDidChange {
+            let first = projection.menuNotice.map { attention.firstAppearance(of: $0.key, on: .menu) } ?? false
+            callback(projection.menuNotice, first)
+        }
+    }
+    private var comparisonStatuses: [String: DockQuotaStatus] = [:]
+    /// Only detached synthetic hosts may match the prototype's independent fixture level.
+    @_spi(DockResourceChecks) public func setComparisonStatusForChecks(id: String, status: DockQuotaStatus) {
+        guard !createsNativePanels, !retired, !id.isEmpty, status != .unknown else { return }
+        comparisonStatuses = [id: status]; inputGeneration &+= 1; rebuild()
+    }
+    private var workingSignals: [String: DockWorkingSignal] = [:]
+    private var workingDriver: DockWorkingEffects?
+    private var workingFrameProvider: (any EffectFrameProvider)?
+    private var workingInstallationError: Error?
+    public private(set) var lastWorkingEffectError: Error?
+    @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
+    @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
+    @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
+    @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
     private let readerCapabilities: CommunityReaderCapabilities
     private let createsNativePanels: Bool
+    private let prepareDetachedAlternateAppearances: Bool
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
     private let elapsedClock: (() -> TimeInterval)?
     private let edgeScheduling: (any DockEdgeScheduling)?
@@ -197,6 +235,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var preferences = SettingsPreferences()
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
+    /// Internal-only registration read used by synthetic offscreen evidence.
+    @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
+    /// Synthetic offscreen captures may select a deterministic backing scale.
+    @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, rendering = false, menuOpen = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -381,7 +423,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
-         sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+         prepareDetachedAlternateAppearances: Bool = false, sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
          readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
          contentProvider: (any DockContentProvider)? = nil, pointerSampleSource: (() -> CGPoint?)? = nil) {
@@ -392,16 +434,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
+        self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         container.addSubview(dockView); container.addSubview(consoleButton)
+        bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
             case .subscription(let id), .notice(let id): self.showCard(id)
-            case .overflow: self.showConsole?()
+            case .overflow: self.openConsole()
             }
         }
         dockView.permitsAction = { [weak self] _, source in
@@ -419,6 +463,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         sliver.onNeedsFreshPresentation = refresh
         card.isHidden = true
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+    private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onEmptyAction = { [weak self, weak view] in
+            guard let self, let view, self.permitted, !self.retired, !self.rendering,
+                  view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
+            showSettings(); return true
+        }
+        view.permitsEmptyAction = { [weak self, weak view] source in
+            guard let self, let view else { return false }
+            return self.acceptsInstrumentAction(from: view, source: source)
+        }
     }
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
@@ -454,21 +509,55 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockConsent = preview
         rebuild()
     }
+    public enum WorkingInjectionError: Error { case invalidSignals }
+    /// Replace an admitted per-member working snapshot; no activity is inferred.
+    public func setWorkingSignals(_ values: [DockWorkingSignal]) throws {
+        guard values.count <= 256 else { throw WorkingInjectionError.invalidSignals }
+        var next = [String: DockWorkingSignal]()
+        for value in values {
+            guard let id = value.subscriptionID, !id.isEmpty, next[id] == nil else { throw WorkingInjectionError.invalidSignals }
+            next[id] = value
+        }
+        guard !retired else { return }
+        workingSignals = next; inputGeneration &+= 1; rebuild()
+    }
+    /// The composition owner supplies the one shared pool and approved frame source.
+    public func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider) {
+        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+    }
+    @_spi(DockResourceChecks) public func installWorkingEffectsForChecks(pool: EffectResourcePool, provider: any EffectFrameProvider,
+                                                                          systemReduceMotion: @escaping () -> Bool) {
+        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: systemReduceMotion)
+    }
+    private func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider, systemReduceMotion: @escaping () -> Bool) {
+        guard !retired else { return }
+        workingInstallationError = nil
+        workingDriver?.stop(); workingDriver = DockWorkingEffects(pool: pool, systemReduceMotion: systemReduceMotion)
+        workingFrameProvider = provider; inputGeneration &+= 1; rebuild()
+    }
+    func recordWorkingEffectFailure(_ error: Error) { workingInstallationError = error; lastWorkingEffectError = error }
+    public func uninstallWorkingEffects() {
+        workingDriver?.stop(); workingDriver = nil; workingFrameProvider = nil; lastWorkingEffectError = nil
+    }
+
     /// Installs the content consumer without replacing window/input ownership.
     public func setDockContentProvider(_ provider: any DockContentProvider) {
         guard !retired else { return }
+        workingSignals = [:]
         contentProvider = provider
         refreshDockContent()
     }
     /// Called by the accepted engine-state consumer; adds no reader or timer.
     public func refreshDockContent() {
         guard !retired else { return }
+        workingSignals = [:]
         inputGeneration &+= 1
         rebuild()
     }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard !retired else { return }
         inputGeneration &+= 1
+        workingSignals = [:]
         self.snapshot = snapshot; self.diagnostics = diagnostics
         rebuild()
     }
@@ -477,7 +566,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
         bindInteractionInput(); interactionController?.refresh()
         syncDisplayFollower()
     }
@@ -546,21 +635,43 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return Set(visible) == Set(canonicalOrder) ? visible : nil
         } ?? canonicalOrder
         let rows = order.compactMap { byID[$0] }.compactMap { input -> DockInstrumentReading? in
-            let value = passPreferences.applying(to: input)
-            return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
+            var value = passPreferences.applying(to: input)
+            if let signal = workingSignals[input.id] { value.working = signal }
+            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow)) else { return nil }
+            if !createsNativePanels, let fixtureStatus = comparisonStatuses[input.id] { return reading.comparisonFixture(status: fixtureStatus) }
+            return reading
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
-        let backingScale = destinationBackingScale()
+        let backingScale = captureBackingScaleForChecks.flatMap { (1...2).contains($0) ? $0 : nil } ?? destinationBackingScale()
         dockView.presentationBackingScale = backingScale
         alternateViews.forEach { $0.presentationBackingScale = backingScale }
+        let displayFacts = environment()
+        let appearancePrimary = displayFacts.primaryDisplayID
+        let appearanceFollowed = followedDisplayID ?? displayFacts.pointer.flatMap { point in displayFacts.displays.first { $0.frame.contains(point) }?.id } ?? appearancePrimary
+        let appearanceSelected = passPreferences.followActiveDisplay ? appearanceFollowed : (passPreferences.dockDisplayID ?? appearancePrimary)
+        let display = displayFacts.displays.first { $0.id == appearanceSelected } ?? displayFacts.displays.first { $0.id == appearancePrimary }
+        let admittedIDs = Set(rows.map(\.subscriptionID))
+        let filteredSignals = content.signals.filter { admittedIDs.contains($0.id) }
+        // Duplicate identities fail closed instead of arbitrarily choosing a source.
+        attentionSignals = Set(filteredSignals.map(\.id)).count == filteredSignals.count ? filteredSignals : []
+        _ = try? attention.project(attentionSignals, stationBySubscription: [:], at: now)
+        let presentationNotices = Dictionary(uniqueKeysWithValues: attentionSignals.compactMap { signal in
+            DockNoticeProjection.selected(for: signal, at: now).map { (signal.id, $0) }
+        })
+        for view in [dockView] + alternateViews {
+            view.appearanceNotices = presentationNotices
+            view.appearanceDisplaySize = display?.frame.size
+            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
+        }
+        var appearanceFallback = false
+        lastAppearanceError = nil
         do {
             if let appearance {
                 let candidate = try appearance(dockView, rows, passPreferences)
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
-                try registerSliver(&geometry, view: dockView, preferences: passPreferences)
             }
             else {
                 try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
@@ -568,26 +679,37 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
         } catch {
             guard passIsCurrent(generation) else { return }
-            if appearance != nil {
-                // A transient official refresh must not replace the supplied hull with a theme rectangle.
-                dockView.retireOfficialPresentation()
-            } else {
-                try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
-                geometry = .init(hoverRects: [dockView.bounds])
+            appearanceFallback = appearance != nil
+            if appearanceFallback {
+                lastAppearanceError = error
+                Logger(subsystem: "ai.modelplan.dock", category: "appearance").error("Official Dock appearance failed: \(String(describing: error), privacy: .private)")
             }
+            try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
+            geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
+        lastWorkingEffectError = workingInstallationError
+        if let driver = workingDriver, let provider = workingFrameProvider,
+           permitted, preferences.showDock, !appearanceFallback,
+           (!createsNativePanels || (dockView.window?.isVisible == true && dockView.window?.occlusionState.contains(.visible) == true)) {
+            do {
+                let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
+                try driver.configure(view: dockView, readings: rows, profile: profile,
+                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+            } catch { driver.stop(); lastWorkingEffectError = error }
+        } else { workingDriver?.stop() }
+        publishAttention()
         model = next
-        if rows.isEmpty && appearance == nil {
+        if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english)
+            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable" : "挂件外观暂不可用") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
             if empty.superview == nil { dockView.addSubview(empty) }
         } else { empty.removeFromSuperview() }
-        if appearance == nil {
+        if appearance == nil || appearanceFallback {
             geometry.hoverRects = [dockView.bounds]
             let scales = sliverParameters.sizeScales
             let factor = passPreferences.size == .small ? scales.small : passPreferences.size == .large ? scales.large : scales.medium
@@ -611,16 +733,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 nextGeometries[orientation] = candidate; nextViews[orientation] = dockView
             }
         }
-        // Resolve every official orientation before tracking. Pointer samples reuse prepared pixels.
-        if createsNativePanels, let appearance {
+        // The official factory opts detached integration hosts into production
+        // edge layouts; arbitrary injected appearances retain their own lifecycle.
+        if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
             for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
                     var candidate = try appearance(view, rows, oriented)
                     candidate.scaleRegistration(by: view.appliedGeometryScale)
-                    try registerSliver(&candidate, view: view, preferences: oriented)
                     guard passIsCurrent(generation) else { return }
+                    bindEmptyStation(to: view)
                     view.onAction = dockView.onAction
                     view.permitsAction = { [weak self, weak view] _, source in
                         guard let self, let view else { return false }
@@ -727,13 +850,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         value.wakeDepth = sliverParameters.trackingDepth
         return value
     }
-    private func registerSliver(_ geometry: inout StaticDockGeometry, view: DockInstrumentView, preferences: SettingsPreferences) throws {
-        guard let hull = view.registeredHullBounds else { return }
-        let scales = sliverParameters.sizeScales
-        let factor = preferences.size == .small ? scales.small : preferences.size == .large ? scales.large : scales.medium
-        try geometry.registerSliver(hullBounds: hull, expandedSize: view.frame.size, edge: preferences.dockEdge,
-                                    parameters: sliverParameters, scale: factor)
-    }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
     }
@@ -821,7 +937,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
-            pointerSurface.stop()
+            attentionWasSliver = false; pointerSurface.stop()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil { panel = makePanel(forDock: true) }
@@ -856,11 +972,42 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
+        if panel.isVisible, value.state == .expanded, attentionWasSliver {
+            try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
+            publishAttention()
+        }
+        attentionWasSliver = panel.isVisible && value.state == .sliver
+        if panel.isVisible { pulsePresentedNotices(value) }
         publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
         #if DEBUG && MODELPLAN_U5_REAL_INPUT
         U5RealInputObservation.install(self, panel: panel)
         #endif
+    }
+    /// Consume a first appearance only on the surface actually presented.
+    private func pulsePresentedNotices(_ value: DockEdgePresentation) {
+        let reduced = (application?.effective.reduceMotion ?? true) || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        switch value.state {
+        case .expanded:
+            let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
+            let view = edgeViews[orientation] ?? dockView
+            pulseDockNotices(view, reduced: reduced)
+        case .sliver:
+            for mark in sliver.noticeMarks {
+                let first = attention.firstAppearance(of: mark.notice.key, on: .sliver)
+                if first && !reduced { _ = sliver.pulseNotice(mark.notice.key) }
+            }
+        case .suppressed: break
+        }
+    }
+    private func pulseDockNotices(_ view: DockInstrumentView, reduced: Bool) {
+        for (key, notice) in view.visibleNoticesForPulse {
+            let first = attention.firstAppearance(of: notice.key, on: .dock)
+            if first && !reduced { _ = view.pulseNotice(key) }
+        }
+    }
+    @_spi(DockResourceChecks) public func pulseDockNoticesForChecks(reduced: Bool) {
+        pulseDockNotices(dockView, reduced: reduced)
     }
     private func hideMovePreview() {
         outlinePanel?.orderOut(nil)
@@ -877,6 +1024,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !retired else { throw DockArtworkError.invalidManifest }
         do {
             let geometry = presentationGeometry
+            let projection = try attention.project(attentionSignals, stationBySubscription: geometry.noticeStationBySubscription,
+                                                   sliverAlerts: preferences.sliverAlert, at: currentDate())
+            var marks = [String: DockSliverNoticeMark]()
+            for dot in projection.dots {
+                guard let position = geometry.noticeStationPositions[dot.stationID] else { continue }
+                if let old = marks[dot.stationID], old.notice.rank <= dot.notice.rank { continue }
+                marks[dot.stationID] = DockSliverNoticeMark(position: position, notice: dot.notice, unit: geometry.noticeUnit)
+            }
+            sliver.noticeMarks = marks.values.sorted { $0.position == $1.position ? $0.notice.key.subscriptionID < $1.notice.key.subscriptionID : $0.position < $1.position }
             let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
                              accessibilityLabel: preferences.language == .english ? "Show Dock" : "显示挂件")
@@ -927,7 +1083,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
-    @objc private func openConsole() { guard permitted, !retired else { return }; dismissCard(); showConsole?() }
+    @objc private func openConsole() {
+        guard permitted, !retired, let showConsole else { return }
+        try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
+        publishAttention(); dismissCard(); showConsole()
+    }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func displaysChanged() {
         guard permitted, !retired else { return }
@@ -964,7 +1124,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             self.dismissCard()
             guard self.permitted, !self.retired else { return }
             if self.model?.presentationRows[id] != nil { self.showSettings?() }
-            else { self.showConsole?() }
+            else { self.openConsole() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
@@ -1002,6 +1162,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func close() {
         guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
         if let controller = interactionController { uninstallInteraction(controller) }
+        workingSignals = [:]; attentionSignals = []; menuNotice = nil; menuNoticeDidChange?(nil, false); menuNoticeDidChange = nil; uninstallWorkingEffects()
         menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil
         dismissCard()
         NotificationCenter.default.removeObserver(self)

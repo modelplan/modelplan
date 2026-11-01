@@ -1,36 +1,62 @@
 # SPDX-License-Identifier: MIT
-"""Project-scoped process scan for one run: owned processes by exact executable path or synthetic HOME.
+"""Project-scoped process scan for one run, by executable path and recorded helper identity only.
 
-Never matches by process name. A process matches only when it belongs to the effective user and
-either its executable path is exactly the run's subject executable (resolved) or its environment
-carries exactly `HOME=<the run's fresh synthetic home>`. Both are unique per run (run scratch,
-`mkdir(exist_ok=False)`), so a match is this run's subject, its exec gate or its LaunchServices
-`open` helper, never an unrelated process.
+Never matches by process name and never reads another process's environment or arguments. A
+process is in scope only when it belongs to the effective user and either
+- its resolved executable path is exactly the run's subject executable,
+- its resolved executable path lies under the run's scratch prefix (the LaunchServices .app), or
+- it is a helper this run spawned itself (exec gate, `open -n` helper), recorded at spawn time by
+  PID plus start time, so a reused PID with a different start time never matches.
+The only per-process reads are the executable path (/proc/<pid>/exe, proc_pidpath) and the owner
+and start identity (the caller's `identity`).
 """
 import ctypes
 import os
-from pathlib import Path
 import sys
+
+SCOPE_KEYS = {'executable', 'prefix', 'helpers'}
+IDENTITY_KEYS = ('pid', 'startSeconds', 'startMicroseconds')
+
+
+def _path(value):
+    return isinstance(value, str) and value.startswith('/') and bool(value.rstrip('/')) and '\0' not in value
+
+
+def _helper(value):
+    return (isinstance(value, dict) and set(value) == set(IDENTITY_KEYS)
+            and all(type(value[k]) is int for k in IDENTITY_KEYS) and value['pid'] > 0)
 
 
 def valid_scope(scope):
-    """A scope names at least one absolute, non-root path; anything else cannot be scanned."""
-    if not isinstance(scope, dict) or set(scope) - {'executable', 'home'}:
+    """At least one absolute, non-root path, and well-formed helper identities; nothing else."""
+    if not isinstance(scope, dict) or set(scope) - SCOPE_KEYS:
         return False
-    values = [v for v in (scope.get('executable'), scope.get('home')) if v is not None]
-    return bool(values) and all(isinstance(v, str) and v.startswith('/') and v.rstrip('/') and '\0' not in v
-                                for v in values)
+    paths = [scope[k] for k in ('executable', 'prefix') if k in scope]
+    helpers = scope.get('helpers', [])
+    return (bool(paths) and all(_path(p) for p in paths)
+            and isinstance(helpers, list) and all(_helper(h) for h in helpers))
 
 
-def scope_for(executable=None, home=None):
+def scope_for(executable=None, prefix=None, helpers=()):
     scope = {}
     if executable is not None:
         scope['executable'] = os.path.realpath(executable)
-    if home is not None:
-        scope['home'] = str(home)  # the literal value placed in the subject's environment
+    if prefix is not None:
+        scope['prefix'] = os.path.realpath(prefix)
+    scope['helpers'] = [{k: h[k] for k in IDENTITY_KEYS} for h in helpers]
     if not valid_scope(scope):
-        raise ValueError('scan scope needs an absolute executable path or synthetic home')
+        raise ValueError('scan scope needs an absolute executable path or scratch prefix')
     return scope
+
+
+def with_helper(scope, ident):
+    """The scope plus one helper identity recorded at spawn time."""
+    if not isinstance(ident, dict):
+        raise ValueError('helper identity unavailable')
+    helper = {k: ident.get(k) for k in IDENTITY_KEYS}
+    if not _helper(helper):
+        raise ValueError('helper identity unavailable')
+    return dict(scope, helpers=[*scope.get('helpers', []), helper])
 
 
 def _linux_candidates():
@@ -42,41 +68,17 @@ def _linux_candidates():
         try:
             if os.stat(f'/proc/{pid}').st_uid != os.geteuid():
                 continue
+            yield pid, os.readlink(f'/proc/{pid}/exe')
         except OSError:
             continue
-        def exe(pid=pid):
-            try:
-                return os.readlink(f'/proc/{pid}/exe')
-            except OSError:
-                return None
-        def home(pid=pid):
-            try:
-                raw = Path(f'/proc/{pid}/environ').read_bytes()
-            except OSError:
-                return None
-            return _home_from(raw.split(b'\0'))
-        yield pid, exe, home
-
-
-def _home_from(items):
-    for item in items:
-        if item == b'':
-            break
-        if item.startswith(b'HOME='):
-            return os.fsdecode(item[5:])
-    return None
 
 
 def _darwin_candidates():
     proc = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
-    libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
     proc.proc_listallpids.argtypes = [ctypes.c_void_p, ctypes.c_int]
     proc.proc_listallpids.restype = ctypes.c_int
     proc.proc_pidpath.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32]
     proc.proc_pidpath.restype = ctypes.c_int
-    libc.sysctl.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_uint, ctypes.c_void_p,
-                            ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
-    libc.sysctl.restype = ctypes.c_int
     estimate = proc.proc_listallpids(None, 0)
     if estimate <= 0:
         raise OSError(ctypes.get_errno(), 'proc_listallpids failed')
@@ -84,35 +86,32 @@ def _darwin_candidates():
     count = proc.proc_listallpids(pids, ctypes.sizeof(pids))
     if count <= 0:
         raise OSError(ctypes.get_errno(), 'proc_listallpids failed')
-    argmax = ctypes.c_int(0); size = ctypes.c_size_t(ctypes.sizeof(argmax))
-    mib = (ctypes.c_int * 2)(1, 8)  # CTL_KERN, KERN_ARGMAX
-    if libc.sysctl(mib, 2, ctypes.byref(argmax), ctypes.byref(size), None, 0) != 0 or argmax.value <= 0:
-        raise OSError(ctypes.get_errno(), 'KERN_ARGMAX unavailable')
-    buffer = ctypes.create_string_buffer(argmax.value)
     me = os.getpid()
+    path = ctypes.create_string_buffer(4096)  # PROC_PIDPATHINFO_MAXSIZE
     for pid in list(pids[:count]):
         if pid <= 0 or pid == me:
             continue
-        def exe(pid=pid):
-            path = ctypes.create_string_buffer(4096)  # PROC_PIDPATHINFO_MAXSIZE
-            n = proc.proc_pidpath(pid, path, 4096)
-            return os.fsdecode(path.raw[:n]) if n > 0 else None
-        def home(pid=pid):
-            length = ctypes.c_size_t(argmax.value)
-            args = (ctypes.c_int * 3)(1, 49, pid)  # CTL_KERN, KERN_PROCARGS2, pid
-            if libc.sysctl(args, 3, buffer, ctypes.byref(length), None, 0) != 0 or length.value < 4:
-                return None
-            raw = buffer.raw[:length.value]
-            argc = int.from_bytes(raw[:4], sys.byteorder)
-            rest = raw[4:]
-            pos = rest.find(b'\0')  # end of exec_path, followed by NUL padding
-            if pos < 0:
-                return None
-            while pos < len(rest) and rest[pos] == 0:
-                pos += 1
-            parts = rest[pos:].split(b'\0')
-            return _home_from(parts[argc:]) if len(parts) > argc else None
-        yield pid, exe, home
+        n = proc.proc_pidpath(pid, path, 4096)
+        if n > 0:
+            yield pid, os.fsdecode(path.raw[:n])
+
+
+def _canonical(path):
+    """Both sides compare canonicalised: on macOS proc_pidpath and realpath may differ by symlinked
+    components such as /var -> /private/var (TMPDIR lives under /var/folders)."""
+    return os.path.realpath(path)
+
+
+def _in_scope(exe, scope):
+    if not isinstance(exe, str) or not exe.startswith('/'):
+        return None
+    exe = _canonical(exe)
+    if scope.get('executable') is not None and exe == _canonical(scope['executable']):
+        return 'executable'
+    prefix = scope.get('prefix')
+    if prefix is not None and exe.startswith(_canonical(prefix).rstrip('/') + '/'):
+        return 'prefix'
+    return None
 
 
 def scan(scope, identity, candidates=None):
@@ -126,16 +125,16 @@ def scan(scope, identity, candidates=None):
         raise ValueError('invalid scan scope')
     if candidates is None:
         candidates = _darwin_candidates() if sys.platform == 'darwin' else _linux_candidates()
-    found = []
-    for pid, exe, home in candidates:
-        matched = None
-        if scope.get('executable') is not None and exe() == scope['executable']:
-            matched = 'executable'
-        elif scope.get('home') is not None and home() == scope['home']:
-            matched = 'home'
-        if matched is None:
+    found, seen = [], set()
+    for helper in scope.get('helpers', []):
+        ident = identity(helper['pid'])
+        if ident is not None and all(ident.get(k) == helper[k] for k in IDENTITY_KEYS):
+            found.append(dict(ident, matchedBy='helper')); seen.add(helper['pid'])
+    for pid, exe in candidates:
+        matched = _in_scope(exe, scope)
+        if matched is None or pid in seen:
             continue
         ident = identity(pid)
         if ident is not None:  # owned by this user and still alive
-            found.append(dict(ident, matchedBy=matched))
+            found.append(dict(ident, matchedBy=matched)); seen.add(pid)
     return found
