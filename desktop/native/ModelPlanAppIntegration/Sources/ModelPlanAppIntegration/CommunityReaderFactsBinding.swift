@@ -79,7 +79,7 @@ public enum CommunityReaderStatusPresentation {
         case "grok": return "Grok"
         case "antigravity": return "Antigravity"
         case "amp": return "Amp"
-        default: return english ? "Reader" : "用量读取"
+        default: return english ? "Reader" : "读取器"
         }
     }
 }
