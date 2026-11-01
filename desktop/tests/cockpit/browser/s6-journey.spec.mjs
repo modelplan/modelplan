@@ -115,8 +115,11 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   await expect(page.locator('.wordmark b')).toHaveCSS('color','rgb(223, 96, 76)');
   await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
   await expect(page.locator('.s6-page:visible .ek-name').first()).toHaveCSS('font-weight','400');
+  await expect(page.locator('.hud')).toBeHidden();
+  await expect(page.locator('.s6-page:visible .qrow-t')).toHaveCount(6);
+  await expect(page.locator('.s6-page:visible .qrow-t').first()).toHaveAttribute('data-available','false');
   await expect(page.locator('.s6-page:visible img.vendor-mark').first()).toHaveCSS('width','32px');
-  expect(await page.locator('.s6-page:visible .eng-keys .ek').first().evaluate(e=>getComputedStyle(e,'::after').backgroundColor)).toBe('rgb(106, 168, 255)');
+  expect(await page.locator('.s6-page:visible .eng-keys .ek .bl').first().evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(106, 168, 255)');
   await expect(page.locator('.s6-alert')).toContainText('ALERT');
   expect(await page.locator('.s6-page:visible img.vendor-mark').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);
   await expect(page.getByRole('button',{name:'Page 2'})).toHaveClass(/lv-red/);

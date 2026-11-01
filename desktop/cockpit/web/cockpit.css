@@ -60,3 +60,16 @@
    the visible glyph to the same 16px maximum as the other vendor marks. */
 #cockpit .vendor-glyph{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none}
 #cockpit .ck-eng .vendor-glyph img[src$="/openai.png"]{width:32px;height:32px;max-width:none}
+
+/* Study engine reserves Today and Reserve tracks; absent wire values stay blank. */
+.s6-page .eng-labels,.s6-page .ec{grid-template-rows:repeat(3,minmax(0,1fr)) 23px 32px}
+
+/* Prototype key hierarchy; the 16px glyph box is normalized to visible bounds. */
+.ck-eng .ek .ek-identity{position:absolute;left:50%;top:3px;transform:translateX(-50%);display:flex;align-items:center;gap:5px;width:max-content;max-width:calc(100% - 8px);height:16px;white-space:nowrap}
+.ck-eng .ek .bl{position:absolute;left:8px;right:8px;bottom:3px;height:2px;border-radius:1px;background:var(--v);opacity:.5;box-shadow:0 0 4px var(--v)}
+#cockpit .ck-eng .eng-keys .ek::after{content:none}
+
+/* Live canopy HUD and scene are post-v1; retain the empty study shell only. */
+#cockpit .hud{display:none!important}
+/* Keep long, localized study cell annotations inside their own column. */
+.s6-page .qline{min-width:0;overflow:hidden}.s6-page .qtxt{display:flex;gap:3px;min-width:0;overflow:hidden;white-space:nowrap}.s6-page .qtxt>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

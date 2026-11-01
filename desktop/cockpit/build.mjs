@@ -36,6 +36,9 @@ if (official) {
   await cp(resolve(assets,'logo.svg'),resolve(output,'brand-mark.svg'));
   css+="\n#cockpit .s6-brand-mark{background-image:url('./brand-mark.svg')}#cockpit .s6-brand-mark::before{content:none}\n";
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
+  await cp(resolve(assets,'cockpit/study-strip'),resolve(output,'study-strip'),{recursive:true});
+  await cp(resolve(assets,'cockpit/SOURCES.md'),resolve(output,'study-strip/SOURCES.md'));
+  css+='\n'+await readFile(resolve(assets,'cockpit/study-strip.css'),'utf8');
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.

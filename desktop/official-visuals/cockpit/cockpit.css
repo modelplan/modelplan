@@ -2,3 +2,30 @@
 /* Copyright (c) 2026 ModelPlan. Existing public c01 exports only; no U12 still. */
 .ck-portrow{isolation:isolate}.ck-port{background:transparent!important;box-shadow:none!important;overflow:visible}.ck-portrow::before{content:'';position:absolute;inset:-1px -30px;z-index:3;pointer-events:none;background:url('./runtime/canopy-c01/canopy-890-2x.png') center/100% 100% no-repeat}.ck-port::before{content:'';position:absolute;inset:-1px -30px;z-index:1;pointer-events:none;background:url('./runtime/canopy-c01/pane-890-2x.png') center/100% 100% no-repeat}.hud{z-index:2}
 [data-profile=compact] .ck-portrow::before{background-image:url('./runtime/canopy-c01/canopy-640-2x.png')}[data-profile=compact] .ck-port::before{background-image:url('./runtime/canopy-c01/pane-640-2x.png')}
+
+/* Owner-selected study imagery; no scene content is enabled. */
+#cockpit .ck-portrow::before{display:none}#cockpit .ck-port::before{display:none}
+#cockpit[data-shell=open] .ck-portrow::after{display:block;content:"";position:absolute;z-index:4;left:-22px;right:-22px;top:-12px;bottom:-1px;pointer-events:none;border-style:solid;border-width:24px 32px 12px;border-image-source:url('./study-strip/canopy-2x.png');border-image-slice:48 64 24 64 fill;border-image-width:24px 32px 12px 32px;border-image-repeat:stretch}
+#cockpit .ck-head{position:relative;display:block;padding:0;min-width:0;border-radius:0;background:none;box-shadow:none}
+#cockpit .ck-head::before{content:"";position:absolute;z-index:-1;left:-22px;right:-22px;top:-9px;height:44px;background:url('./study-strip/strip-panel@3x.png') center/620px 48px no-repeat,url('./study-strip/strip-2x.png') center/620px 26px no-repeat}
+#cockpit .ck-head .ck-brand{position:absolute;left:8px;top:-1px;width:156px;height:28px;display:flex;align-items:center;gap:8px}
+#cockpit .ck-head .s6-brand-mark{width:28px;height:28px}
+#cockpit .ck-head .wordmark{position:relative;display:block;width:112px;height:20px;background:none;font-size:0;letter-spacing:0}
+#cockpit .ck-head .wordmark::before,#cockpit .ck-head .wordmark::after{content:"";position:absolute;inset:0;background:url('./study-strip/wordmark@3x.png') center/112px 20px no-repeat}
+#cockpit .ck-head .wordmark::before{clip-path:inset(0 67px 0 0)}#cockpit .ck-head .wordmark::after{clip-path:inset(0 0 0 45px);transform:translateX(-3.333333px)}#cockpit .ck-head .wordmark b{font-size:0}
+#cockpit .shutter-slider{position:absolute;left:218px;top:-3px;transform:none;width:152px;height:32px;padding:0;border:0;border-radius:0;background:none;box-shadow:none}
+#cockpit .shutter-slider::before{content:"";position:absolute;inset:-4px;background:url('./study-strip/slider-track@3x.png') center/160px 40px no-repeat;pointer-events:none}
+#cockpit .shutter-blind{left:6px;top:5px;height:22px;background:url('./study-strip/shutter-material@3x.png') left top/100px 22px no-repeat;transition:width .18s ease-out}
+#cockpit .shutter-thumb{left:2px;top:-2px;width:48px;height:36px;border-radius:0;background:url('./study-strip/thumb-open@3x.png') center/48px 36px no-repeat;box-shadow:none;transition:transform .18s ease-out}
+#cockpit .shutter-slider[aria-pressed=true] .shutter-thumb{background-image:url('./study-strip/thumb-closed@3x.png')}
+#cockpit .ck-head .ck-lamp{position:absolute;left:388px;top:-3px;width:44px;height:32px;display:block}
+#cockpit .ck-head .s6-alert{position:relative;top:0;width:44px;height:32px;background:none;box-shadow:none;--lamp-rest:url('./study-strip/lamp-off-body@3x.png');--lamp-glow:url('./study-strip/lamp-off-glow@3x.png')}
+#cockpit .ck-head .s6-alert::after{content:"";position:absolute;inset:-4px;background:var(--lamp-rest) center/52px 40px no-repeat;pointer-events:none}
+#cockpit .ck-head .s6-strip-key{position:absolute;top:-3px;width:32px;min-width:0;height:32px;padding:0;border:0;border-radius:4px;background:none;box-shadow:none;transform:none;font-size:0}
+#cockpit .ck-head .s6-strip-key::before{content:"";position:absolute;inset:-4px;background:var(--strip-key,none) center/40px 40px no-repeat,var(--strip-base) center/40px 40px no-repeat;pointer-events:none}
+#cockpit .ck-head [data-settings]{left:460px;--strip-base:url('./study-strip/gear-normal@3x.png')}#cockpit .ck-head [data-settings]:hover{--strip-key:url('./study-strip/gear-hover@3x.png')}#cockpit .ck-head [data-settings]:active{--strip-key:url('./study-strip/gear-pressed@3x.png')}
+#cockpit .ck-head [data-detach]{left:502px;--strip-base:url('./study-strip/detach-normal@3x.png')}#cockpit .ck-head [data-detach]:hover{--strip-key:url('./study-strip/detach-hover@3x.png')}#cockpit .ck-head [data-detach]:active{--strip-key:url('./study-strip/detach-pressed@3x.png')}
+#cockpit .ck-head [data-close]{left:544px;--strip-base:url('./study-strip/close-normal@3x.png')}#cockpit .ck-head [data-close]:hover{--strip-key:url('./study-strip/close-hover@3x.png')}#cockpit .ck-head [data-close]:active{--strip-key:url('./study-strip/close-pressed@3x.png')}
+#cockpit .ck-head [data-detach]::after{content:"";position:absolute;inset:0;background:#e9edf4;mask:url('./study-strip/detach.svg') center/18.5px 18.5px no-repeat}#cockpit .ck-head [data-detach][aria-pressed=true]::after{mask-image:url('./study-strip/put-back.svg')}
+/* Study c01 closed cap uses the selected canopy raster at 16px high. */
+#cockpit .s6-closed-cap{background:url('./runtime/canopy-c01/canopy-890-2x.png') center top/636px 16px no-repeat!important;box-shadow:none;filter:saturate(.12) brightness(.78)}
