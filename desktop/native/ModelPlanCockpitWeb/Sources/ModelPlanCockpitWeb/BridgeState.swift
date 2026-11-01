@@ -40,11 +40,17 @@ public struct CockpitAppearance: Equatable, Sendable {
 }
 public struct CockpitShellState: Equatable, Sendable {
   public enum Profile: String, Sendable { case open, closed }
+  public enum Tier: String, Sendable { case tall, compact }
   public let profile: Profile
+  public let tier: Tier
   public let attached: Bool, forcedClosed: Bool
-  public init(closed: Bool, attached: Bool, forcedClosed: Bool) {
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool, tier: Tier) {
+    self.tier = tier
     self.profile = closed || forcedClosed ? .closed : .open
     self.attached = attached; self.forcedClosed = forcedClosed
+  }
+  var fields: [String: Any] {
+    ["profile": profile.rawValue, "attached": attached, "forcedClosed": forcedClosed, "tier": tier.rawValue]
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {
@@ -133,7 +139,7 @@ enum FlatReply {
         guard i < a.count, a[i] == 93 else { throw CockpitBridgeError.invalidMessage }
         i += 1
       } else {
-        guard i < a.count, (key == "version" && a[i] == 49) || (key == "appearanceVersion" && (a[i] == 49 || a[i] == 50)) else {
+        guard i < a.count, (key == "version" && a[i] == 50) || (key == "appearanceVersion" && (a[i] == 49 || a[i] == 50)) else {
           throw CockpitBridgeError.invalidMessage
         }
         i += 1
@@ -188,7 +194,7 @@ public final class CockpitBridgeState {
     hostSequence += 1
     let id = UUID()
     var body: [String: Any] = [
-      "version": 1, "pageId": pageID.uuidString, "requestId": id.uuidString,
+      "version": 2, "pageId": pageID.uuidString, "requestId": id.uuidString,
       "sessionId": context.sessionID.uuidString, "storeEpoch": context.storeEpoch,
       "generation": String(context.generation), "viewRevision": String(viewRevision),
       "sequence": String(hostSequence), "type": type,
@@ -199,7 +205,7 @@ public final class CockpitBridgeState {
     if let receipt { pending[id] = Pending(kind: receipt, tools: tools) }
     return String(decoding: data, as: UTF8.self)
   }
-  public func load(_ appearance: CockpitAppearance) throws -> String {
+  public func load(_ appearance: CockpitAppearance, shell: CockpitShellState) throws -> String {
     guard !loaded else { throw CockpitBridgeError.unavailable }
     loaded = true
     return try envelope(
@@ -208,7 +214,8 @@ public final class CockpitBridgeState {
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
           "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-        ]
+        ],
+        "shell": shell.fields,
       ], receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance) throws -> String {
@@ -220,8 +227,7 @@ public final class CockpitBridgeState {
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
-    return try envelope("shell", extra: ["profile": shell.profile.rawValue,
-      "attached": shell.attached, "forcedClosed": shell.forcedClosed])
+    return try envelope("shell", extra: shell.fields)
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
@@ -286,7 +292,7 @@ public final class CockpitBridgeState {
       "version", "pageId", "requestId", "sessionId", "storeEpoch", "generation", "viewRevision",
       "sequence", "type",
     ]
-    guard m["version"] as? Int == 1, let page = m["pageId"] as? String,
+    guard m["version"] as? Int == 2, let page = m["pageId"] as? String,
       UUID(uuidString: page) == pageID, let request = m["requestId"] as? String,
       let id = UUID(uuidString: request), let session = m["sessionId"] as? String,
       UUID(uuidString: session) == context.sessionID,

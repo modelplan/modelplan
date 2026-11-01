@@ -54,7 +54,7 @@ private actor HeldClient: EngineClient {
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
-    value["appearance"] = nil
+    value["shell"] = nil; value["appearance"] = nil
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -67,7 +67,7 @@ private actor HeldClient: EngineClient {
       receipt, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
   }
   func open() {
-    ack(try! state.load(.init(theme: .night, locale: .en, profile: .full)), "ready")
+    ack(try! state.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall)), "ready")
     onReady?()
   }
   func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {

@@ -20,7 +20,7 @@ final class BridgeTests: XCTestCase {
     -> String
   {
     var value = try object(outgoing)
-    for key in ["data", "appearance", "visible", "occluded", "key"] { value[key] = nil }
+    for key in ["data", "appearance", "shell", "visible", "occluded", "key"] { value[key] = nil }
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }
@@ -30,7 +30,7 @@ final class BridgeTests: XCTestCase {
     return try encode(value)
   }
   func ready(_ state: CockpitBridgeState) throws -> String {
-    let load = try state.load(.init(theme: .night, locale: .en, profile: .full))
+    let load = try state.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     XCTAssertEqual(try state.accept(reply(load, "ready", 1), source: source), .ready)
     return load
   }
@@ -44,7 +44,7 @@ final class BridgeTests: XCTestCase {
   }
   func testLosslessUInt64AndRejectDuplicateNestedAndNoncanonical() throws {
     let state = CockpitBridgeState(context: try context(UInt64.max))
-    let load = try state.load(.init(theme: .day, locale: .zhCN, profile: .compact))
+    let load = try state.load(.init(theme: .day, locale: .zhCN, profile: .compact), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .compact))
     XCTAssertEqual(try object(load)["generation"] as? String, "18446744073709551615")
     var valid = try object(reply(load, "ready", 1))
     for invalid: Any in ["01", "18446744073709551616", 1, "-1"] {
@@ -59,7 +59,7 @@ final class BridgeTests: XCTestCase {
   }
   func testActualSourceAndContextAreRequired() throws {
     let state = CockpitBridgeState(context: try context())
-    let load = try state.load(.init(theme: .day, locale: .en, profile: .full))
+    let load = try state.load(.init(theme: .day, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     let raw = try reply(load, "ready", 1)
     XCTAssertThrowsError(
       try state.accept(raw, source: .init(mainFrame: false, origin: source.origin)))
@@ -98,7 +98,7 @@ final class BridgeTests: XCTestCase {
     XCTAssertThrowsError(try state.clear(adopting: first))
     XCTAssertNotNil(state.unload())
     XCTAssertNil(state.queryTicket)
-    XCTAssertThrowsError(try state.load(.init(theme: .day, locale: .en, profile: .full)))
+    XCTAssertThrowsError(try state.load(.init(theme: .day, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall)))
   }
   func testActionRequiresVisibleAndCurrentRenderedMembership() throws {
     let state = CockpitBridgeState(context: try context())

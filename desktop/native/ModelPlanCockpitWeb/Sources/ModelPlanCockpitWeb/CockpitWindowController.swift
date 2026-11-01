@@ -87,9 +87,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationPlacement: (usable: CGRect, anchor: CGRect)? {
       didSet { applyLayout() }
     }
-    public var verificationShellState: CockpitShellState {
-      .init(closed: appearance.shutterClosed, attached: !shellSession.detached, forcedClosed: layout?.forcedClosed ?? false)
-    }
+    public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
@@ -132,6 +130,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       configureVerification?(config)
     #endif
     let view = WKWebView(frame: .zero, configuration: config)
+    // The initial v2 load applies appearance and shell before a page can paint.
+    view.isHidden = true
     view.navigationDelegate = self
     view.uiDelegate = self
     view.allowsBackForwardNavigationGestures = false
@@ -245,6 +245,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
       switch receipt {
       case .ready:
+        web?.isHidden = false
         publishAppearance()
         visibilityChanged()
         onReady?()
@@ -301,7 +302,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       fail()
       return
     }
-    do { send(try bridge.load(appearance), bootstrap: true) } catch { fail() }
+    guard let shell = currentShell else { fail(); return }
+    do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail() }
   }
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { fail(.contentTerminated) }
   public func webView(
@@ -322,12 +324,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     publishAppearance()
   }
+  private var currentShell: CockpitShellState? { layout?.shellState(attached: !shellSession.detached) }
   private func publishAppearance() {
     guard bridge.ready, !bridge.blocked, !ending else { return }
     do {
       send(try bridge.setAppearance(appearance))
-      send(try bridge.setShell(.init(closed: appearance.shutterClosed, attached: !shellSession.detached,
-        forcedClosed: layout?.forcedClosed ?? false)))
+      guard let shell = currentShell else { fail(); return }
+      send(try bridge.setShell(shell))
       lastVisibility = nil; visibilityChanged()
     } catch { fail() }
   }

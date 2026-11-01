@@ -2,7 +2,7 @@
 # U11 native cockpit bridge
 
 The local WKWebView consumer of the web contract in public #355, pinned here to
-`f25e1e821411bdd58cb09d9a388b9064505e856c`. The web source stays in
+`61aeba51d9183466edae7000147acf6dce80cca1`. The web source stays in
 `desktop/cockpit/`; this package has no renderer, copied DTO or private art.
 
 Production borrows its one existing `ProcessEngineClient` through
@@ -151,7 +151,7 @@ are separate gates.
 
 ## Current v1 bundle pin
 
-Production now pins #355 `f25e1e821411bdd58cb09d9a388b9064505e856c`.
+Production now pins #355 `61aeba51d9183466edae7000147acf6dce80cca1`.
 Official manifest: `b0acd07ad0e4f6e5c2fef1e5e70f1413d96c1b81bf6f689ef4b911b448fd9360`
 (1069 files); community: `a06423b7730a3b158ff61e1d20d85a649301ae58717877eba48b0c2a0dc5aafe`
 (28 files). Session metadata remains plain tool/project/title/time text.
@@ -203,11 +203,14 @@ ready receipt. Legacy or incomplete receipts remain blocked; there is no
 read-only fallback. The reply scanner admits only scalar fields and that bounded
 three-string capability array, with duplicate keys/nesting still rejected.
 
-Load-time appearance contains only `theme`, `locale`, `reduceMotion` and
-`reduceTransparency`; initial shell state follows the admitted ready receipt.
+Every bridge envelope uses `version: 2`. Load-time appearance contains only
+`theme`, `locale`, `reduceMotion` and `reduceTransparency`. Its initial `shell`
+contains `profile`, `attached`, `forcedClosed` and `tier`, before first paint.
+The WK view stays hidden until this load receives an authenticated v2 ready.
 Native `appearance` updates use flat `theme`, `locale`, `reduceMotion` and
 `reduceTransparency` fields on the context/sequence envelope. Separate `shell`
-updates carry `profile: open|closed`, `attached` and `forcedClosed`. Shell actions
+updates carry `profile: open|closed`, `attached`, `forcedClosed` and
+`tier: tall|compact`, selected solely by the native geometry resolver. Shell actions
 are exactly `close`, `detach`, `putBack`, `shutterToggle`, plus the existing
 setup/settings/history actions. Forced closure below 706 points does not mutate
 saved shutter intent. Actual visibility remains separate from shell closure so
@@ -218,9 +221,11 @@ Settings commits and accessibility notifications update the native appearance
 without recreating the page. Effective v1 theme remains Night even when a retained
 Day preference changes. The READERS-owned #399 Web counterpart and its reviewed bundle
 pin must be adopted before the real-page normal-entry journey can qualify.
-The load/height-tier alignment with the actual producer and scheduled WK window
-are being confirmed at the coordinator seam; current local scaffolding is not
-a passing real-page journey. This native change
+The coordinator has frozen load/height-tier alignment and authorized announced
+synthetic WK windows of at most 20 minutes once the matching bundle is published.
+The matching #399 source61aeba51 manifests were independently rebuilt and
+verified before adoption. Real-page acceptance is recorded separately from
+this source contract; it requires the announced synthetic WK journey. This native change
 does not update Web sources or asset pins, approve a rendered baseline, or claim
 latency/resource/device acceptance. DESIGN review and coordinator-scheduled
 M1/MacCI device checks remain separate gates.

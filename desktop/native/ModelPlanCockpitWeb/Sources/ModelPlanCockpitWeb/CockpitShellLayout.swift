@@ -25,6 +25,10 @@ public struct CockpitShellLayout: Equatable, Sendable {
         return Self(profile: profile, shutterClosed: closed, forcedClosed: usable.height - 66 < 640, scale: scale, rootHeight: height,
                     frame: CGRect(x: x, y: top - size.height, width: size.width, height: size.height))
     }
+    public func shellState(attached: Bool) -> CockpitShellState {
+        .init(closed: shutterClosed, attached: attached, forcedClosed: forcedClosed,
+              tier: profile == .full ? .tall : .compact)
+    }
     public func clamping(origin: CGPoint, usable: CGRect) -> CGRect {
         CGRect(x: max(usable.minX, min(origin.x, usable.maxX - frame.width)),
                y: max(usable.minY, min(origin.y, usable.maxY - frame.height)),

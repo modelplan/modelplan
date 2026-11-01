@@ -15,6 +15,15 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(try fit(956).profile, .full)
         XCTAssertEqual(try fit(955).profile, .compact)
     }
+    func testNativeShellTierAndForcedClosedBoundary() throws {
+        let forced = try fit(705).shellState(attached: true)
+        XCTAssertEqual(forced.profile, .closed); XCTAssertEqual(forced.tier, .compact)
+        XCTAssertTrue(forced.forcedClosed)
+        let fitting = try fit(706).shellState(attached: true)
+        XCTAssertEqual(fitting.profile, .open); XCTAssertEqual(fitting.tier, .compact)
+        XCTAssertFalse(fitting.forcedClosed)
+        XCTAssertEqual(try fit(956).shellState(attached: false).tier, .tall)
+    }
     func testShortAndNarrowDisplaysScaleTheWholeRootIncludingBaseReserve() throws {
         let value = try fit(500, width: 400)
         XCTAssertTrue(value.shutterClosed); XCTAssertTrue(value.forcedClosed)
@@ -40,9 +49,9 @@ final class ShellLayoutTests: XCTestCase {
     }
     func testPinnedLegacyPageIsRejectedBeforeQueryAuthority() throws {
         let state = CockpitBridgeState(context: try .init(sessionID: UUID(), storeEpoch: "synthetic", generation: 1))
-        let load = try state.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true))
+        let load = try state.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
-        ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"
+        ack["shell"] = nil; ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"
         XCTAssertThrowsError(try state.accept(String(decoding: JSONSerialization.data(withJSONObject: ack), as: UTF8.self), source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle")))
         XCTAssertFalse(state.supportsAppearance)
         XCTAssertNil(state.queryTicket)
@@ -50,11 +59,11 @@ final class ShellLayoutTests: XCTestCase {
     }
     func testAppearanceUpdatePreservesPageContextAndRejectsAfterPrivacyBarrier() throws {
         let state = CockpitBridgeState(context: try .init(sessionID: UUID(), storeEpoch: "synthetic", generation: 1))
-        let load = try state.load(.init(theme: .night, locale: .en, profile: .full))
+        let load = try state.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
         let initialAppearance = try XCTUnwrap(ack["appearance"] as? [String: Any])
         XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "reduceMotion", "reduceTransparency"], "v2 load appearance excludes shell/profile state")
-        ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
+        ack["shell"] = nil; ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
         let raw = String(decoding: try JSONSerialization.data(withJSONObject: ack), as: UTF8.self)
         _ = try state.accept(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
         XCTAssertTrue(state.supportsAppearance)
@@ -66,7 +75,7 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
         XCTAssertEqual(appearance["reduceMotion"] as? Bool, true)
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, false)
-        let shellRaw = try state.setShell(.init(closed: true, attached: false, forcedClosed: true))
+        let shellRaw = try state.setShell(.init(closed: true, attached: false, forcedClosed: true, tier: .compact))
         let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
         XCTAssertEqual(shell["profile"] as? String, "closed")
         XCTAssertEqual(shell["attached"] as? Bool, false)
