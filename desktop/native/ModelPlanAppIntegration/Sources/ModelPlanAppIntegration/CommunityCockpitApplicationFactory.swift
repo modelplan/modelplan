@@ -19,14 +19,14 @@ import ModelPlanSettings
     }
 }
 
-/// System-boundary injection for synthetic normal-entry journeys. Production uses
-/// the same fanout/coordinator/console and creates only its normal shared client.
+/// Synthetic process/notice boundaries for normal-entry journeys. Page creation
+/// always uses the production verifier and WK controller, never a substituted page.
 @MainActor public struct CockpitRuntimeFactory {
     public let client: (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient
-    public let page: (CockpitEngineContext, CockpitAppearance) throws -> any CockpitPageSurface
+    public let onUnavailable: (() -> Void)?
     public init(client: @escaping (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient,
-                page: @escaping (CockpitEngineContext, CockpitAppearance) throws -> any CockpitPageSurface) {
-        self.client = client; self.page = page
+                onUnavailable: (() -> Void)? = nil) {
+        self.client = client; self.onUnavailable = onUnavailable
     }
 }
 
@@ -52,7 +52,7 @@ import ModelPlanSettings
                 createsNativePanels:createsNativePanels,bundleURL:bundleURL,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
-        let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore, runtime:cockpitRuntime)
+        let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
             createsNativePanels:createsNativePanels,bundleURL:bundleURL,
             makeClient: { configuration, store in
@@ -68,7 +68,8 @@ import ModelPlanSettings
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
-                return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:activateSettings)
+                return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:activateSettings,
+                    requestNotice: cockpitRuntime?.onUnavailable.map { callback in { (_: CockpitUnavailableNotice) in callback() } })
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.visibility = { [weak application] in application?.cockpitVisibilityChanged($0) }
@@ -86,11 +87,9 @@ import ModelPlanSettings
     var anchor: (() -> CGRect?)?
     var visibility: ((Bool) -> Void)?
     let shell = CockpitShellSession()
-    let runtime: CockpitRuntimeFactory?
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
-    init(bundle: URL,settingsStore: SettingsStore, runtime: CockpitRuntimeFactory? = nil) { self.bundle=bundle;self.settingsStore=settingsStore;self.runtime=runtime }
+    init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> any CockpitPageSurface {
-        if let runtime { return try runtime.page(context, appearance) }
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
               CommunityConsentBundleIdentity.matches(bundle:bundle) else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
@@ -150,6 +149,8 @@ struct CockpitUnavailableNotice {
             owner.appearance = .init(theme:.night,locale:snapshot.preferences.language == .english ? .en:.zhCN,
                 profile:owner.appearance.profile, reduceMotion: snapshot.preferences.motion == .on ||
                 (snapshot.preferences.motion == .system && NSWorkspace.shared.accessibilityDisplayShouldReduceMotion),
+                reduceTransparency: snapshot.preferences.transparency == .on ||
+                (snapshot.preferences.transparency == .system && NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency),
                 shutterClosed: owner.shell.shutterClosed, detached:owner.shell.detached)
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
@@ -157,7 +158,7 @@ struct CockpitUnavailableNotice {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
                 case .close:self.hide()
-                case .toggleAttachment,.toggleShutter:break // handled by the native page
+                case .detach,.putBack,.shutterToggle:break // handled by the native page
                 }
             }
             activate()
@@ -166,7 +167,7 @@ struct CockpitUnavailableNotice {
     }
     func apply(_ transaction: SettingsApplication) {
         owner.appearance = .init(theme:.night, locale:transaction.effective.language == .english ? .en:.zhCN,
-            profile:owner.appearance.profile, reduceMotion:transaction.effective.reduceMotion,
+            profile:owner.appearance.profile, reduceMotion:transaction.effective.reduceMotion, reduceTransparency:transaction.effective.reduceTransparency,
             shutterClosed:owner.shell.shutterClosed, detached:owner.shell.detached)
         owner.coordinator?.updateAppearance(owner.appearance)
     }

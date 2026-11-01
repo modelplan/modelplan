@@ -79,7 +79,8 @@ import XCTest
                     case .paneMembership,.searchFilter:
                         XCTAssertEqual(observation.settings?.selectedPane,pane)
                         let rows=try SettingsCatalogue.rows(preferences:saved.preferences,context:fixture.editor.context,paneID:query.isEmpty ? pane:nil,query:query)
-                        XCTAssertEqual(observation.settings?.visibleKeys,rows.map{$0.key.rawValue})
+                        let expected = rows.filter { $0.key != .opening && $0.key != .countdown }.map { $0.key.rawValue }
+                        XCTAssertEqual(observation.settings?.visibleKeys,expected)
                         XCTAssertEqual(observation.settings?.searchLength,query.count)
                     case .localPopupCommit:
                         let (key,value)=try XCTUnwrap(popup)

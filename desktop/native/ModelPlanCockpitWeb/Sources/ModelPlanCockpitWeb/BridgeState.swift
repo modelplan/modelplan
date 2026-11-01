@@ -3,7 +3,7 @@ import Foundation
 import ModelPlanWire
 
 public enum CockpitBridgeError: Error {
-  case invalidContext, unavailable, limit, invalidMessage, staleContext
+  case invalidContext, unavailable, limit, invalidMessage, staleContext, unsupportedPageContract
 }
 public struct CockpitEngineContext: Equatable, Sendable {
   public let sessionID: UUID, storeEpoch: String, generation: UInt64
@@ -30,12 +30,21 @@ public struct CockpitAppearance: Equatable, Sendable {
   }
   public enum Profile: String, Sendable { case full, compact }
   public let theme: Theme, locale: Locale, profile: Profile
-  public let reduceMotion: Bool, shutterClosed: Bool, detached: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, shutterClosed: Bool = false, detached: Bool = false) {
-    self.reduceMotion = reduceMotion; self.shutterClosed = shutterClosed; self.detached = detached
+  public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false) {
+    self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency; self.shutterClosed = shutterClosed; self.detached = detached
     self.theme = theme
     self.locale = locale
     self.profile = profile
+  }
+}
+public struct CockpitShellState: Equatable, Sendable {
+  public enum Profile: String, Sendable { case open, closed }
+  public let profile: Profile
+  public let attached: Bool, forcedClosed: Bool
+  public init(closed: Bool, attached: Bool, forcedClosed: Bool) {
+    self.profile = closed || forcedClosed ? .closed : .open
+    self.attached = attached; self.forcedClosed = forcedClosed
   }
 }
 public struct CockpitVisibility: Equatable, Sendable {
@@ -48,7 +57,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, toggleAttachment, toggleShutter
+  case chooseSetup, openSettings, close, detach, putBack, shutterToggle
   case openHistory(String)
 }
 public enum CockpitReceipt: Equatable {
@@ -63,8 +72,8 @@ public struct CockpitMessageSource {
   }
 }
 
-// All allowed page replies are flat. Reject nesting/duplicate keys before
-// JSONSerialization can collapse duplicates. The outbound display remains typed.
+// Replies have scalar fields plus one bounded three-string capabilities array.
+// Reject nesting/duplicate keys before JSONSerialization can collapse them.
 enum FlatReply {
   static func parse(_ raw: String) throws -> [String: Any] {
     guard let bytes = raw.data(using: .utf8), bytes.count <= 1_048_576 else {
@@ -109,8 +118,24 @@ enum FlatReply {
       white()
       if i < a.count, a[i] == 34 {
         _ = try string()
+      } else if key == "capabilities", i < a.count, a[i] == 91 {
+        i += 1; white()
+        var count = 0
+        while i < a.count, a[i] != 93 {
+          guard count < 3 else { throw CockpitBridgeError.limit }
+          _ = try string(); count += 1; white()
+          guard i < a.count else { throw CockpitBridgeError.invalidMessage }
+          if a[i] == 93 { break }
+          guard a[i] == 44 else { throw CockpitBridgeError.invalidMessage }
+          i += 1; white()
+          guard i < a.count, a[i] != 93 else { throw CockpitBridgeError.invalidMessage }
+        }
+        guard i < a.count, a[i] == 93 else { throw CockpitBridgeError.invalidMessage }
+        i += 1
       } else {
-        guard i < a.count, a[i] == 49 else { throw CockpitBridgeError.invalidMessage }
+        guard i < a.count, (key == "version" && a[i] == 49) || (key == "appearanceVersion" && (a[i] == 49 || a[i] == 50)) else {
+          throw CockpitBridgeError.invalidMessage
+        }
         i += 1
       }
       white()
@@ -132,7 +157,10 @@ public final class CockpitBridgeState {
   public private(set) var context: CockpitEngineContext
   public private(set) var viewRevision: UInt64 = 0
   public private(set) var blocked = true, disposed = false, ready = false
-  public private(set) var supportsAppearance = false
+  public static let requiredCapabilities: Set<String> = ["appearanceUpdates", "shellState", "shellActions"]
+  public private(set) var readyCapabilities: Set<String> = []
+  public private(set) var appearanceVersion: Int?
+  public var supportsAppearance: Bool { ready && readyCapabilities == Self.requiredCapabilities && appearanceVersion == 2 }
   private var authoritative = true
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
@@ -179,17 +207,21 @@ public final class CockpitBridgeState {
       extra: [
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
-          "profile": appearance.profile.rawValue,
+          "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
         ]
       ], receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance) throws -> String {
     guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
-    return try envelope("appearance", extra: ["appearance": [
+    return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
-      "profile": appearance.profile.rawValue, "reduceMotion": appearance.reduceMotion,
-      "shutterClosed": appearance.shutterClosed, "detached": appearance.detached,
-    ]])
+      "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+    ])
+  }
+  public func setShell(_ shell: CockpitShellState) throws -> String {
+    guard ready, !blocked, supportsAppearance else { throw CockpitBridgeError.unavailable }
+    return try envelope("shell", extra: ["profile": shell.profile.rawValue,
+      "attached": shell.attached, "forcedClosed": shell.forcedClosed])
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) throws -> String {
     guard ticket == queryTicket else { throw CockpitBridgeError.staleContext }
@@ -232,6 +264,7 @@ public final class CockpitBridgeState {
     disposed = true
     blocked = true
     ready = false
+    readyCapabilities.removeAll(); appearanceVersion = nil
     historyTools.removeAll()
     pending.removeAll()
     actionRequests.removeAll()
@@ -272,8 +305,9 @@ public final class CockpitBridgeState {
       case "chooseSetup": intent = .chooseSetup
       case "openSettings": intent = .openSettings
       case "close": intent = .close
-      case "toggleAttachment": intent = .toggleAttachment
-      case "toggleShutter": intent = .toggleShutter
+      case "detach": intent = .detach
+      case "putBack": intent = .putBack
+      case "shutterToggle": intent = .shutterToggle
       case "openHistory":
         guard let tool = m["tool"] as? String, historyTools.contains(tool) else {
           throw CockpitBridgeError.invalidMessage
@@ -285,8 +319,14 @@ public final class CockpitBridgeState {
       pageSequence = sequence
       return .action(intent)
     }
-    let appearanceCapability = type == "ready" && m["appearanceVersion"] as? Int == 1
-    guard Set(m.keys) == (appearanceCapability ? base.union(["appearanceVersion"]) : base),
+    if type == "ready" {
+      guard Set(m.keys) == base.union(["appearanceVersion", "capabilities"]),
+        m["appearanceVersion"] as? Int == 2, let capabilities = m["capabilities"] as? [String],
+        capabilities.count == 3, Set(capabilities) == Self.requiredCapabilities else {
+        throw CockpitBridgeError.unsupportedPageContract
+      }
+    }
+    guard Set(m.keys) == (type == "ready" ? base.union(["appearanceVersion", "capabilities"]) : base),
       let expected = pending[id], expected.kind == type else {
       throw CockpitBridgeError.invalidMessage
     }
@@ -294,7 +334,8 @@ public final class CockpitBridgeState {
     pageSequence = sequence
     switch type {
     case "ready":
-      supportsAppearance = appearanceCapability
+      readyCapabilities = Self.requiredCapabilities
+      appearanceVersion = 2
       ready = true
       blocked = false
       return .ready

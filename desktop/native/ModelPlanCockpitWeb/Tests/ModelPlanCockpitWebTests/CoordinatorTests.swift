@@ -55,6 +55,9 @@ private actor HeldClient: EngineClient {
   func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
     value["appearance"] = nil
+    if type == "ready" {
+      value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
+    }
     value["type"] = type
     sequence += 1
     value["sequence"] = String(sequence)

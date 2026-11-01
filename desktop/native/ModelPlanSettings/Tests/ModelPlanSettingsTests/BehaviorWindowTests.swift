@@ -37,6 +37,7 @@ import XCTest
     }
     func testGeneralChoicesKeepObservedLoginSeparateAndGateNativeOnlyActions() async throws {
         let editor = try await makeEditor()
+        _ = try await editor.commit(SettingsB21Edit.opening(.hold)) // Saved legacy intent survives the v1 UI gate.
         var context = editor.context; context.capabilities.login = .requiresApproval; editor.update(context: context)
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
         await controller.prepare()
@@ -56,9 +57,9 @@ import XCTest
         XCTAssertNil(controller.choice(key: .captureHiding))
         XCTAssertTrue(labels(controller.window!.contentView!).contains("Unavailable"))
         controller.selectPane("cockpit")
-        let opening = try XCTUnwrap(controller.choice(key: .opening))
-        XCTAssertFalse(try XCTUnwrap(opening.itemArray.first { $0.representedObject as? String == "hold" }).isEnabled)
-        XCTAssertFalse(try XCTUnwrap(controller.choice(key: .countdown)).isEnabled)
+        XCTAssertNil(controller.choice(key: .opening), "v1 hides the legacy hold row")
+        XCTAssertNil(controller.choice(key: .countdown), "v1 hides the legacy countdown row")
+        XCTAssertEqual(editor.snapshot?.preferences.opening, .hold, "Hiding controls must not rewrite saved intent")
         XCTAssertEqual(editor.effective?.opening, .quick)
         controller.selectPane("notifications")
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)

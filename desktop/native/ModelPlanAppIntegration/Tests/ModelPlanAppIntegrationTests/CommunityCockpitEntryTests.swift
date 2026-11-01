@@ -54,7 +54,7 @@ private actor RouteClient: EngineClient {
     func open(){
         let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["type"]="ready";value["sequence"]="1";value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
     func display(_ data:WireCockpitData,ticket:CockpitQueryTicket){}

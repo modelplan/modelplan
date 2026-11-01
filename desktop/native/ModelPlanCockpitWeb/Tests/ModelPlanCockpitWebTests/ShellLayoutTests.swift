@@ -38,14 +38,14 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertNil(session.origin(for: "0")); XCTAssertEqual(session.origin(for: "8"), .init(x: 8, y: 8))
         XCTAssertTrue(session.detached); XCTAssertTrue(session.shutterClosed)
     }
-    func testPinnedLegacyPageDoesNotReceiveUnnegotiatedFields() throws {
+    func testPinnedLegacyPageIsRejectedBeforeQueryAuthority() throws {
         let state = CockpitBridgeState(context: try .init(sessionID: UUID(), storeEpoch: "synthetic", generation: 1))
         let load = try state.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
         ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"
-        _ = try state.accept(String(decoding: JSONSerialization.data(withJSONObject: ack), as: UTF8.self), source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
+        XCTAssertThrowsError(try state.accept(String(decoding: JSONSerialization.data(withJSONObject: ack), as: UTF8.self), source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle")))
         XCTAssertFalse(state.supportsAppearance)
-        XCTAssertNotNil(state.queryTicket)
+        XCTAssertNil(state.queryTicket)
         XCTAssertThrowsError(try state.setAppearance(.init(theme: .night, locale: .zhCN, profile: .full)))
     }
     func testAppearanceUpdatePreservesPageContextAndRejectsAfterPrivacyBarrier() throws {
@@ -53,19 +53,24 @@ final class ShellLayoutTests: XCTestCase {
         let load = try state.load(.init(theme: .night, locale: .en, profile: .full))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
         let initialAppearance = try XCTUnwrap(ack["appearance"] as? [String: Any])
-        XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "profile"], "Keep the original pinned page load compatible")
-        ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 1
+        XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "reduceMotion", "reduceTransparency"], "v2 load appearance excludes shell/profile state")
+        ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
         let raw = String(decoding: try JSONSerialization.data(withJSONObject: ack), as: UTF8.self)
         _ = try state.accept(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
         XCTAssertTrue(state.supportsAppearance)
         let ticket = state.queryTicket
         let update = try state.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, shutterClosed: true))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
-        let appearance = try XCTUnwrap(object["appearance"] as? [String: Any])
+        let appearance = object
         XCTAssertEqual(object["type"] as? String, "appearance")
         XCTAssertEqual(appearance["locale"] as? String, "zh-CN")
         XCTAssertEqual(appearance["reduceMotion"] as? Bool, true)
-        XCTAssertEqual(appearance["shutterClosed"] as? Bool, true)
+        XCTAssertEqual(appearance["reduceTransparency"] as? Bool, false)
+        let shellRaw = try state.setShell(.init(closed: true, attached: false, forcedClosed: true))
+        let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
+        XCTAssertEqual(shell["profile"] as? String, "closed")
+        XCTAssertEqual(shell["attached"] as? Bool, false)
+        XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(ticket, state.queryTicket)
         _ = try state.clear()
         XCTAssertThrowsError(try state.setAppearance(.init(theme: .night, locale: .en, profile: .full)))

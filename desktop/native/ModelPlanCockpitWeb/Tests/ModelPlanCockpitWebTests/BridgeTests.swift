@@ -21,6 +21,9 @@ final class BridgeTests: XCTestCase {
   {
     var value = try object(outgoing)
     for key in ["data", "appearance", "visible", "occluded", "key"] { value[key] = nil }
+    if type == "ready" {
+      value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
+    }
     value["type"] = type
     value["sequence"] = String(sequence)
     for (key, item) in extra { value[key] = item }

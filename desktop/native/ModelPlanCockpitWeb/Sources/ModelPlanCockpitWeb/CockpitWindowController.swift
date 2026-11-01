@@ -84,6 +84,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onFailure: ((CockpitWindowFailure) -> Void)?
   #if MODELPLAN_TEST_ONLY_SPI
     public var verificationWebView: WKWebView? { web }
+    public var verificationPlacement: (usable: CGRect, anchor: CGRect)? {
+      didSet { applyLayout() }
+    }
+    public var verificationShellState: CockpitShellState {
+      .init(closed: appearance.shutterClosed, attached: !shellSession.detached, forcedClosed: layout?.forcedClosed ?? false)
+    }
+    public var verificationRootHeight: CGFloat? { layout?.rootHeight }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -255,15 +262,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         waiter?.resume()
       case .action(let intent):
         switch intent {
-        case .toggleAttachment: toggleAttachment()
-        case .toggleShutter:
+        case .detach: setAttached(false)
+        case .putBack: setAttached(true)
+        case .shutterToggle:
           if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
       case .rendered: onRendered?()
       }
-    } catch { /* Reject without logging private message bodies. */  }
+    } catch CockpitBridgeError.unsupportedPageContract { fail(.pageAPIUnavailable) }
+      catch { /* Reject without logging private message bodies. */ }
   }
   private func visibilityChanged() {
     guard let window, bridge.queryTicket != nil else { return }
@@ -306,7 +315,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public func windowDidResignKey(_ notification: Notification) { cancelDrag() }
   public func updateAppearance(_ value: CockpitAppearance) {
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, shutterClosed: appearance.shutterClosed, detached: shellSession.detached)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
@@ -316,7 +325,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private func publishAppearance() {
     guard bridge.ready, !bridge.blocked, !ending else { return }
     do {
-      if bridge.supportsAppearance { send(try bridge.setAppearance(appearance)) }
+      send(try bridge.setAppearance(appearance))
+      send(try bridge.setShell(.init(closed: appearance.shutterClosed, attached: !shellSession.detached,
+        forcedClosed: layout?.forcedClosed ?? false)))
       lastVisibility = nil; visibilityChanged()
     } catch { fail() }
   }
@@ -324,6 +335,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     NSScreen.screens.map { NSStringFromRect($0.frame) }.sorted().joined(separator: ";")
   }
   private func environment() -> (CGRect, CGRect)? {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if let verificationPlacement { return (verificationPlacement.usable, verificationPlacement.anchor) }
+    #endif
     let requested = anchor()
     guard let screen = NSScreen.screens.first(where: { screen in requested.map { screen.frame.intersects($0) } ?? false }) ?? NSScreen.main else { return nil }
     let icon = requested ?? CGRect(x: screen.visibleFrame.midX, y: screen.visibleFrame.maxY, width: 0, height: 0)
@@ -334,7 +348,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, shutterClosed: fit.shutterClosed, detached: shellSession.detached)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
@@ -342,9 +356,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
     publishAppearance()
   }
-  private func toggleAttachment() {
-    guard let window else { return }
-    if !shellSession.detached {
+  private func setAttached(_ attached: Bool) {
+    guard let window, shellSession.detached == attached else { return }
+    if !attached {
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
     } else {
       shellSession.detached = false
@@ -383,7 +397,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       guard shellSession.detached else { return }
       if let (_, _) = environment(), let home = layout?.frame,
          hypot(window.frame.minX - home.minX, window.frame.minY - home.minY) * window.backingScaleFactor <= 40 {
-        toggleAttachment()
+        setAttached(true)
       } else { shellSession.remember(window.frame.origin, arrangement: arrangement) }
     case .cancelled: cancelDrag()
     }
