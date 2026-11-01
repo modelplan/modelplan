@@ -62,10 +62,20 @@ import ModelPlanWire
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             for window in account.windows {
                 let current = accountCurrent && window.current && (date(window.validUntil).map { now < $0 } ?? true)
-                input.windows.append(.init(id: "\(accountIndex):\(window.id)", period: .other, label: text(window.label),
+                let period:DockQuotaPeriod
+                switch window.role {
+                case .session: period = .fiveHour
+                case .daily: period = .day
+                case .weekly: period = .week
+                case .monthly: period = .month
+                case .other,.unknown: period = .other
+                }
+                var projected=DockQuotaWindowInput(id: "\(accountIndex):\(window.id)", period: period, label: text(window.label),
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
-                    durationSeconds: window.durationSeconds.map { Double($0) }))
+                    durationSeconds: window.durationSeconds.map { Double($0) })
+                projected.isGeneral = period == .fiveHour || period == .week || period == .month
+                input.windows.append(projected)
             }
         }
         input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable

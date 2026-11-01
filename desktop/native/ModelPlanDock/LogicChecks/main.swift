@@ -278,11 +278,11 @@ do {
         let week=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:20,resetsAt:now.addingTimeInterval(302400),durationSeconds:604800)
         var input=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[week,five]);input.dataState = .fresh
         var result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","fixed period order, not remaining order")
+        try expect(result.outer?.windowID=="week" && result.inner?.windowID=="5h","S4 role contract: weekly outer, five-hour inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
+        try expect(result.outer?.windowID=="week" && result.inner?.windowID=="5h","pin never swaps quota rings")
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
         for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.critical),(25.0,.critical),(25.01,.warning),(40.0,.warning),(41.0,.normal)] {

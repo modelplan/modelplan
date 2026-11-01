@@ -11,6 +11,8 @@ public enum DockQuotaPeriod: String, Codable, Sendable {
 public struct DockQuotaWindowInput: Sendable {
     public var id: String, period: DockQuotaPeriod, label: String
     public var remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?
+    /// Scoped/model extras remain in cards but never drive general quota rings/readout.
+    public var isGeneral = true
     public init(id: String, period: DockQuotaPeriod, label: String, remainingPercent: Double?, resetsAt: Date?, durationSeconds: TimeInterval?) {
         self.id=id;self.period=period;self.label=label;self.remainingPercent=remainingPercent
         self.resetsAt=resetsAt;self.durationSeconds=durationSeconds
@@ -68,14 +70,11 @@ public enum DockInstrumentProjection {
             guard let r else{return .unknown}
             return r<=redBelow ? .critical : r<41 ? .warning : .normal
         }
-        let sorted=input.windows.enumerated().sorted { a,b in
-            let x=a.element.orderingHint,y=b.element.orderingHint
-            return x==y ? a.offset<b.offset : x<y
-        }.map(\.element)
-        let outer=sorted.first, rest=Array(sorted.dropFirst())
-        let inner=rest.first{$0.period == .week} ?? rest.last
-        let selected=input.selectedWindowID.flatMap{id in input.windows.first{$0.id==id}}
-            ?? input.windows.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? input.windows.first
+        let general=input.windows.filter(\.isGeneral)
+        let outer=general.first{$0.period == .week}
+        let inner=general.first{$0.period == .fiveHour}
+        let selected=input.selectedWindowID.flatMap{id in general.first{$0.id==id}}
+            ?? general.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? general.first
         let remaining=selected.flatMap(value), selectedStatus=status(remaining)
         let shown=remaining.map{input.showUsedPercent ? 100-$0:$0}
         let text=shown.map{v in (v.rounded()==v ? String(Int(v)):String(v))+"%"} ?? "--"
