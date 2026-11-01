@@ -109,7 +109,10 @@ import ModelPlanDock
         XCTAssertEqual(requests.count, after, "restoration/observation is not a user-service request")
     }
     func testShortcutObservationBelongsToItsExactChordAndLocalMatchingSurvivesDenial() async throws {
-        let store = try SettingsStore(url: file()), p = SettingsPreferences()
+        let store = try SettingsStore(url: file())
+        let open = ShortcutChord("O", modifiers: [.command, .shift]), dock = ShortcutChord("D", modifiers: [.command, .shift])
+        try await store.update { $0.openShortcut = open; $0.dockShortcut = dock }
+        let p = await store.snapshot().preferences
         var ctx = context()
         ctx.shortcutObservations = [.init(action: .openCockpit, chord: p.openShortcut, registration: .registered)]
         let editor = SettingsEditor(store: store, context: ctx); await editor.reload()

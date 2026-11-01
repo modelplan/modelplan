@@ -165,7 +165,7 @@ struct CockpitUnavailableNotice {
             owner.coordinator?.open();showTask=nil
         }
     }
-    func apply(_ transaction: SettingsApplication) {
+    func applySettings(_ transaction: SettingsApplication) {
         owner.appearance = .init(theme:.night, locale:transaction.effective.language == .english ? .en:.zhCN,
             profile:owner.appearance.profile, reduceMotion:transaction.effective.reduceMotion, reduceTransparency:transaction.effective.reduceTransparency,
             shutterClosed:owner.shell.shutterClosed, detached:owner.shell.detached)

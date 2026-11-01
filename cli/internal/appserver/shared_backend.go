@@ -13,13 +13,16 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 // SharedConfig adapts the existing production constructors. It owns no parallel
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
+	ResetPublication  func() (*digest.Digest, error)
 	Detect            func() detect.Report
 	Paths             func(consent.Admission) quota.Paths
 	Cleanup           func(string, bool) error
@@ -59,7 +62,11 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	return []string{"rows", "consent", "credentials", "diagnostics"}
+	caps := []string{"rows", "consent", "credentials", "diagnostics"}
+	if b.config.ResetPublication != nil {
+		caps = append(caps, CapabilityResetEvents)
+	}
+	return caps
 }
 func (b *SharedBackend) notify() {
 	select {
@@ -171,6 +178,15 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 	}
 	projection := rows.Build(in)
+	var resetEvents *[]rows.ResetEvent
+	droppedResetConfirmations := 0
+	if !changed && b.config.ResetPublication != nil {
+		if d, err := b.config.ResetPublication(); err == nil && d != nil {
+			events, dropped := resetevents.Project(d, projection, in.Now)
+			droppedResetConfirmations = dropped
+			resetEvents = &events
+		}
+	}
 	facts := wire.ConsentFacts{TextVersion: consent.TextVersion, Scopes: []wire.ConsentScope{}}
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
@@ -237,7 +253,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if changed {
 		health = wire.Health{State: wire.HealthDegraded, Code: "consent_changed"}
 	}
-	return View{Stamp: stampOf(admission.Fence()), Projection: projection, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	return View{Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
@@ -340,7 +356,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					return
 				case <-ticker.C:
 					paths := b.paths(consent.Capture())
-					files := []string{consent.Path(), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
+					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
 					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
 						info, err := os.Stat(file)

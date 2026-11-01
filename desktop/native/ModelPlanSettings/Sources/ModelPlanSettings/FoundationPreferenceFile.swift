@@ -180,7 +180,8 @@ enum FoundationPreferenceFile {
             return name
         } catch { _ = unlinkat(parent, name, 0); throw error }
     }
-    static func open(_ location: FoundationPreferenceLocation, rowIDMap: [String: String] = [:], hooks: Hooks = .init()) throws -> Opened {
+    static func open(_ location: FoundationPreferenceLocation, rowIDMap: [String: String] = [:],
+                     defaultLanguage: SettingsLanguage? = nil, hooks: Hooks = .init()) throws -> Opened {
         if let fd = try directory(location, create: false) {
             defer { Darwin.close(fd) }
             if let value = try existing(read(fd, "settings.json", limit: maximumBytes), location: location, identity: identity(fd)) { return value }
@@ -199,15 +200,22 @@ enum FoundationPreferenceFile {
                 return .init(officialSettings: official, communitySettings: community, core: core)
             }, rowIDMap: rowIDMap)
             guard case .create(let candidate) = decision else { preconditionFailure("absent target must create") }
-            let document = try Document.decode(candidate.document)
-            let temporary = try stage(candidate.document, in: fd); defer { _ = unlinkat(fd, temporary, 0) }
+            var document = try Document.decode(candidate.document)
+            var initialBytes = candidate.document
+            // Only a brand-new default gets the OS language. A migrated or
+            // existing choice is never replaced by a later system preference.
+            if candidate.selection.settings == .defaults, let defaultLanguage {
+                document.settings.language = defaultLanguage
+                initialBytes = try document.encoded()
+            }
+            let temporary = try stage(initialBytes, in: fd); defer { _ = unlinkat(fd, temporary, 0) }
             try hooks.beforePublish?()
             guard linkat(fd, temporary, fd, "settings.json", 0) == 0 else {
                 if errno == EEXIST, let winner = try existing(read(fd, "settings.json", limit: maximumBytes), location: location, identity: id) { return winner }
                 throw posix()
             }
             guard fsync(fd) == 0 else { throw FoundationPreferenceError.durabilityUncertain }
-            return .init(location: location, document: document, bytes: candidate.document, directoryIdentity: id, writeBlocked: false,
+            return .init(location: location, document: document, bytes: initialBytes, directoryIdentity: id, writeBlocked: false,
                 status: .init(path: location.target, createdByMigration: true, readOnlyRecovery: false, selection: candidate.selection, issues: candidate.issues))
         }
     }

@@ -789,6 +789,103 @@ public struct RowsReason: Codable, Sendable {
     }
 }
 
+public struct RowsResetEvent: Codable, Sendable {
+    public let `version`: Int
+    public let `id`: String
+    public let `provider`: String
+    public let `rowId`: String
+    public let `status`: RowsResetEventStatus
+    public let `confirms`: String?
+    public let `planIds`: [String]?
+    public let `publishedAt`: WireTimestamp
+    public let `schedule`: RowsResetSchedule?
+    public let `expiresAt`: WireTimestamp
+    public let `source`: RowsResetSource
+    private enum CodingKeys: String, CodingKey {
+        case `version`
+        case `id`
+        case `provider`
+        case `rowId`
+        case `status`
+        case `confirms`
+        case `planIds`
+        case `publishedAt`
+        case `schedule`
+        case `expiresAt`
+        case `source`
+    }
+    public init(`version`: Int, `id`: String, `provider`: String, `rowId`: String, `status`: RowsResetEventStatus, `confirms`: String? = nil, `planIds`: [String]? = nil, `publishedAt`: WireTimestamp, `schedule`: RowsResetSchedule? = nil, `expiresAt`: WireTimestamp, `source`: RowsResetSource) throws {
+        self.`version` = `version`
+        self.`id` = `id`
+        self.`provider` = `provider`
+        self.`rowId` = `rowId`
+        self.`status` = `status`
+        self.`confirms` = `confirms`
+        self.`planIds` = `planIds`
+        self.`publishedAt` = `publishedAt`
+        self.`schedule` = `schedule`
+        self.`expiresAt` = `expiresAt`
+        self.`source` = `source`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`version` = try c.decode(Int.self, forKey: .`version`)
+        self.`id` = try c.decode(String.self, forKey: .`id`)
+        self.`provider` = try c.decode(String.self, forKey: .`provider`)
+        self.`rowId` = try c.decode(String.self, forKey: .`rowId`)
+        self.`status` = try c.decode(RowsResetEventStatus.self, forKey: .`status`)
+        self.`confirms` = try? c.decodeIfPresent(String.self, forKey: .`confirms`)
+        self.`planIds` = try? c.decodeIfPresent([String].self, forKey: .`planIds`)
+        self.`publishedAt` = try c.decode(WireTimestamp.self, forKey: .`publishedAt`)
+        self.`schedule` = try? c.decodeIfPresent(RowsResetSchedule.self, forKey: .`schedule`)
+        self.`expiresAt` = try c.decode(WireTimestamp.self, forKey: .`expiresAt`)
+        self.`source` = try c.decode(RowsResetSource.self, forKey: .`source`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`version`, forKey: .`version`)
+        try c.encode(`id`, forKey: .`id`)
+        try c.encode(`provider`, forKey: .`provider`)
+        try c.encode(`rowId`, forKey: .`rowId`)
+        try c.encode(`status`, forKey: .`status`)
+        try c.encodeIfPresent(`confirms`, forKey: .`confirms`)
+        try c.encodeIfPresent(`planIds`, forKey: .`planIds`)
+        try c.encode(`publishedAt`, forKey: .`publishedAt`)
+        try c.encodeIfPresent(`schedule`, forKey: .`schedule`)
+        try c.encode(`expiresAt`, forKey: .`expiresAt`)
+        try c.encode(`source`, forKey: .`source`)
+    }
+    private func validate() throws {
+        try WireValidation.identity(`id`)
+        try WireValidation.identity(`provider`)
+    }
+}
+
+public enum RowsResetEventStatus: Codable, Sendable, Equatable {
+    case `announced`
+    case `confirmed`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "announced": self = .`announced`
+        case "confirmed": self = .`confirmed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`announced`: return "announced"
+        case .`confirmed`: return "confirmed"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public enum RowsResetMode: Codable, Sendable, Equatable {
     case `fixed`
     case `rolling`
@@ -814,6 +911,73 @@ public enum RowsResetMode: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct RowsResetSchedule: Codable, Sendable {
+    public let `precision`: String
+    public let `from`: WireTimestamp
+    public let `through`: WireTimestamp
+    private enum CodingKeys: String, CodingKey {
+        case `precision`
+        case `from`
+        case `through`
+    }
+    public init(`precision`: String, `from`: WireTimestamp, `through`: WireTimestamp) throws {
+        self.`precision` = `precision`
+        self.`from` = `from`
+        self.`through` = `through`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`precision` = try c.decode(String.self, forKey: .`precision`)
+        self.`from` = try c.decode(WireTimestamp.self, forKey: .`from`)
+        self.`through` = try c.decode(WireTimestamp.self, forKey: .`through`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`precision`, forKey: .`precision`)
+        try c.encode(`from`, forKey: .`from`)
+        try c.encode(`through`, forKey: .`through`)
+    }
+    private func validate() throws {
+    }
+}
+
+public struct RowsResetSource: Codable, Sendable {
+    public let `kind`: String
+    public let `publicationId`: String
+    public let `url`: String?
+    private enum CodingKeys: String, CodingKey {
+        case `kind`
+        case `publicationId`
+        case `url`
+    }
+    public init(`kind`: String, `publicationId`: String, `url`: String? = nil) throws {
+        self.`kind` = `kind`
+        self.`publicationId` = `publicationId`
+        self.`url` = `url`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`kind` = try c.decode(String.self, forKey: .`kind`)
+        self.`publicationId` = try c.decode(String.self, forKey: .`publicationId`)
+        self.`url` = try? c.decodeIfPresent(String.self, forKey: .`url`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`kind`, forKey: .`kind`)
+        try c.encode(`publicationId`, forKey: .`publicationId`)
+        try c.encodeIfPresent(`url`, forKey: .`url`)
+    }
+    private func validate() throws {
+        try WireValidation.identity(`publicationId`)
+    }
+}
+
 public enum RowsRole: Codable, Sendable, Equatable {
     case `session`
     case `daily`
@@ -2754,16 +2918,19 @@ public struct WireRequest: Codable, Sendable, CustomStringConvertible, CustomDeb
 }
 
 public struct WireRowsProjection: Codable, Sendable {
+    public let `resetEvents`: [RowsResetEvent]?
     public let `rowsVersion`: Int
     public let `rows`: [RowsRow]
     public let `rowsSummary`: RowsRowsSummary
     public var invalidRowCount: Int { `rows`.filter { $0.invalid }.count }
     private enum CodingKeys: String, CodingKey {
+        case `resetEvents`
         case `rowsVersion`
         case `rows`
         case `rowsSummary`
     }
-    public init(`rowsVersion`: Int, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
+    public init(`resetEvents`: [RowsResetEvent]? = nil, `rowsVersion`: Int, `rows`: [RowsRow], `rowsSummary`: RowsRowsSummary) throws {
+        self.`resetEvents` = `resetEvents`
         self.`rowsVersion` = `rowsVersion`
         self.`rows` = `rows`
         self.`rowsSummary` = `rowsSummary`
@@ -2771,6 +2938,7 @@ public struct WireRowsProjection: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`resetEvents` = try? c.decodeIfPresent([RowsResetEvent].self, forKey: .`resetEvents`)
         self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
         var rowElements = try c.nestedUnkeyedContainer(forKey: .`rows`)
         var decodedRows: [RowsRow] = []
@@ -2785,6 +2953,7 @@ public struct WireRowsProjection: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`resetEvents`, forKey: .`resetEvents`)
         try c.encode(`rowsVersion`, forKey: .`rowsVersion`)
         try c.encode(`rows`, forKey: .`rows`)
         try c.encode(`rowsSummary`, forKey: .`rowsSummary`)
