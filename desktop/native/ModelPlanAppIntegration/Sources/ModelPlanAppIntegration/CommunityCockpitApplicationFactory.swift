@@ -31,7 +31,7 @@ import ModelPlanSettings
 }
 
 @MainActor public enum CommunityCockpitApplicationFactory {
-    public static let webSource = "10b4676374447a5e72cc316ad79198997c433123"
+    public static let webSource = "74308ac383c03bb7be80149800156684234aa938"
     public static let manifestPins = [
         "community":"85bcadff7c454058db67b445c7cd88431544fbcd540c438705323686e3f5d4d8",
         "official":"89f0d7cef344d7c778eb2ef5827a5744102b2ed9249fb4dc25dd0a240a7590cb",
