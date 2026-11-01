@@ -186,10 +186,16 @@ private actor SettingsJourneyClient: EngineClient {
 
         let otherProfile = profile.appendingPathComponent("system-language")
         let chineseStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: otherProfile,
+            preferredLanguages: ["zh-Hans", "en-US"])
+        let chinese = await chineseStore.snapshot()
+        XCTAssertEqual(chinese.preferences.language, .chinese, "Use Chinese when the Mac prefers Chinese")
+        let otherLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("other-language"),
             preferredLanguages: ["fr-FR", "zh-Hans", "en-US"])
-        let chineseSnapshot = await chineseStore.snapshot()
-        XCTAssertEqual(chineseSnapshot.preferences.language, .chinese,
-                       "Use the first supported macOS language")
+        let otherSnapshot = await otherLanguage.snapshot()
+        XCTAssertEqual(otherSnapshot.preferences.language, .english, "A non-Chinese Mac preference defaults to English")
+        let noLanguage = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("no-language"), preferredLanguages: [])
+        let noLanguageSnapshot = await noLanguage.snapshot()
+        XCTAssertEqual(noLanguageSnapshot.preferences.language, .english, "A missing Mac preference defaults to English")
         let legacyProfile = profile.appendingPathComponent("legacy-language")
         let legacyFile = legacyProfile.appendingPathComponent("ModelPlan/Native/settings-v1.json")
         try FileManager.default.createDirectory(at: legacyFile.deletingLastPathComponent(), withIntermediateDirectories: true)

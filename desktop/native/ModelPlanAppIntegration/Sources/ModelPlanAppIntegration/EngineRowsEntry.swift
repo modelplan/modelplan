@@ -9,12 +9,8 @@ import ModelPlanEngineClient
     /// One foundation document backs the normal Settings and Core entry.
     public static func makeSettingsStore(applicationSupport: URL, rowIDMap: [String: String] = [:],
                                          preferredLanguages: [String] = Locale.preferredLanguages) throws -> SettingsStore {
-        let language = preferredLanguages.lazy.compactMap { value -> SettingsLanguage? in
-            let tag = value.lowercased().replacingOccurrences(of: "_", with: "-")
-            if tag == "zh" || tag.hasPrefix("zh-") { return .chinese }
-            if tag == "en" || tag.hasPrefix("en-") { return .english }
-            return nil
-        }.first ?? .english
+        let tag = (preferredLanguages.first ?? "").lowercased().replacingOccurrences(of: "_", with: "-")
+        let language: SettingsLanguage = tag == "zh" || tag.hasPrefix("zh-") ? .chinese : .english
         return try SettingsStore(foundationAt: applicationSupport, product: .community,
                                  rowIDMap: rowIDMap, defaultLanguage: language)
     }
