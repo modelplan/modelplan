@@ -175,6 +175,7 @@ test('v1 strip uses a brand mark and equal icon keys with localized accessible n
   expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
   await expect(page.locator('.ck-brand .s6-brand-mark')).toBeVisible();
   expect(await page.locator('.s6-brand-mark').evaluate(e=>getComputedStyle(e).backgroundImage)).toContain('brand-mark.svg');
+  expect(await page.locator('.s6-brand-mark').evaluate(e=>['::before','::after'].map(p=>getComputedStyle(e,p).content))).toEqual(['none','none']);
   const settings=page.getByRole('button',{name:'Settings',exact:true}),detach=page.getByRole('button',{name:'Detach',exact:true}),close=page.getByRole('button',{name:'Close',exact:true});
   await expect(close).toHaveText('');expect(await close.evaluate(e=>getComputedStyle(e,'::before').backgroundImage)).toContain('close-normal');await expect(settings).not.toHaveText('Settings');await expect(detach).not.toHaveText('Detach');
   const sizes=await Promise.all([settings,detach,close].map(b=>b.boundingBox()));expect(sizes.every(r=>r.width===sizes[0].width&&r.height===sizes[0].height)).toBe(true);

@@ -25,7 +25,7 @@
 
 /* V1 control strip: the host supplies attachment and close behavior. */
 #cockpit .s6-brand-mark{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
-#cockpit .s6-brand-mark::before{content:"M";font:600 12px var(--f-silk);color:var(--silk)}
+#cockpit .s6-brand-mark::before,#cockpit .s6-brand-mark::after{content:none}
 
 /* Owner-directed study strip: neutral community glyph; official vector added by build. */
 #cockpit[data-shell=closed]{grid-template-rows:16px 26px var(--eng-h,226px) var(--console-h,257px) var(--tape-h,94px)}
