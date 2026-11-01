@@ -229,6 +229,10 @@ import ModelPlanShell
         menu.removeAllItems()
         let reading = NSMenuItem(title: composition.menuPresentation.detail, action: nil, keyEquivalent: "")
         reading.isEnabled = false; menu.addItem(reading)
+        #if MODELPLAN_VERIFICATION_ROWS
+        let verification = NSMenuItem(title: "VERIFICATION BUILD", action: nil, keyEquivalent: "")
+        verification.isEnabled = false; menu.addItem(verification)
+        #endif
         let refresh = menu.addItem(withTitle: EngineRowsText.refresh.value(language), action: #selector(refreshRows), keyEquivalent: "")
         refresh.target = self
         menu.addItem(.separator())

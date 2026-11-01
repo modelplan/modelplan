@@ -1,0 +1,134 @@
+{
+  "sequence": 7,
+  "projection": {
+    "resetEvents": [
+      {
+        "version": 1,
+        "id": "reset-announced",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "publishedAt": "2026-10-31T12:00:00Z",
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      }
+    ],
+    "rowsVersion": 1,
+    "rows": [
+      {
+        "id": "codex",
+        "kind": "tool",
+        "order": 0,
+        "name": {
+          "en": "OpenAI",
+          "zh": "OpenAI"
+        },
+        "vendorKey": "codex",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000001",
+            "accountLocator": "0000000000000001",
+            "plan": {
+              "id": "codex",
+              "name": {
+                "en": "OpenAI",
+                "zh": "OpenAI"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      }
+    ],
+    "rowsSummary": {
+      "state": "ok",
+      "reason": {
+        "code": "ok",
+        "text": {
+          "en": "synthetic",
+          "zh": "synthetic"
+        }
+      },
+      "text": {
+        "en": "synthetic",
+        "zh": "synthetic"
+      }
+    }
+  }
+}

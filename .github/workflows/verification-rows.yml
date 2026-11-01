@@ -1,0 +1,22 @@
+name: verification rows
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/ModelPlanAppIntegration/**'
+      - 'desktop/native/verification/fixtures/dock-scenarios/**'
+      - 'desktop/native/tools/package-neutral.sh'
+      - '.github/workflows/verification-rows.yml'
+permissions:
+  contents: read
+jobs:
+  verification:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release executable excludes verification path
+        run: |
+          swift build --package-path desktop/native/ModelPlanAppIntegration -c release --product ModelPlanCommunityApp --jobs 2
+          binary=desktop/native/ModelPlanAppIntegration/.build/release/ModelPlanCommunityApp
+          if strings "$binary" | grep -E 'VERIFICATION BUILD|modelplan-verification-rows\.json|VerificationRowsClient'; then exit 1; fi
+      - name: Verification snapshot journeys
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --jobs 2 -Xswiftc -DMODELPLAN_VERIFICATION_ROWS --filter VerificationRowsTests

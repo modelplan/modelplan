@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: MIT
+#if MODELPLAN_VERIFICATION_ROWS
+import AppKit
+import XCTest
+import ModelPlanSettings
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanWire
+@testable import ModelPlanAppIntegration
+
+@MainActor final class VerificationRowsTests: XCTestCase {
+    func testEverySnapshotReachesTheNormalDockEntry() async throws {
+        _ = NSApplication.shared
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../verification/fixtures/dock-scenarios").standardizedFileURL
+        let cases = [("mixed-overflow.json", 8), ("single-window.json", 3), ("reset-announced.json", 1), ("reset-confirmed.json", 1), ("stale.json", 3)]
+        for (name, count) in cases {
+            let home = FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-verification-test-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: home) }
+            try Data("MODELPLAN VERIFICATION HOME\n".utf8).write(to: home.appendingPathComponent(".modelplan-verification-home"))
+            try FileManager.default.copyItem(at: fixtures.appendingPathComponent(name), to: home.appendingPathComponent(".modelplan-verification-rows.json"))
+            let decoded = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: fixtures.appendingPathComponent(name)))
+            XCTAssertEqual(decoded.projection.invalidRowCount, 0, name)
+            if name == "reset-announced.json" { XCTAssertEqual(decoded.projection.resetEvents?.map(\.status.rawValue), ["announced"]) }
+            if name == "reset-confirmed.json" { XCTAssertEqual(decoded.projection.resetEvents?.map(\.status.rawValue), ["announced", "confirmed"]) }
+            let store = try SettingsStore(url: home.appendingPathComponent("settings.json"))
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "verification", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, makeClient: { _, store in VerificationRowsClient(store: store, home: home) })
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            XCTAssertEqual(app.composition.provider.dockContent.dockRows.count, count, name)
+            XCTAssertEqual(app.composition.presentedContent.snapshot.inputs.count, count, name)
+            XCTAssertNil(app.composition.dock.nativePanel)
+            await app.composition.stop()
+        }
+    }
+    func testMissingMarkerFailsClosed() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("missing-marker-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let client = VerificationRowsClient(store: EngineStore(), home: home)
+        do { _ = try await client.start(); XCTFail("unmarked home was accepted") } catch { }
+    }
+}
+#endif

@@ -1,0 +1,799 @@
+{
+  "sequence": 7,
+  "projection": {
+    "resetEvents": [],
+    "rowsVersion": 1,
+    "rows": [
+      {
+        "id": "codex",
+        "kind": "tool",
+        "order": 0,
+        "name": {
+          "en": "OpenAI",
+          "zh": "OpenAI"
+        },
+        "vendorKey": "codex",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000001",
+            "accountLocator": "0000000000000001",
+            "plan": {
+              "id": "codex",
+              "name": {
+                "en": "OpenAI",
+                "zh": "OpenAI"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 76,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 83,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "claude",
+        "kind": "tool",
+        "order": 1,
+        "name": {
+          "en": "Claude",
+          "zh": "Claude"
+        },
+        "vendorKey": "claude",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000002",
+            "accountLocator": "0000000000000002",
+            "plan": {
+              "id": "claude",
+              "name": {
+                "en": "Claude",
+                "zh": "Claude"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 38,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 45,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "gemini",
+        "kind": "tool",
+        "order": 2,
+        "name": {
+          "en": "Gemini",
+          "zh": "Gemini"
+        },
+        "vendorKey": "gemini",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000003",
+            "accountLocator": "0000000000000003",
+            "plan": {
+              "id": "gemini",
+              "name": {
+                "en": "Gemini",
+                "zh": "Gemini"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 12,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 19,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "copilot",
+        "kind": "tool",
+        "order": 3,
+        "name": {
+          "en": "Copilot",
+          "zh": "Copilot"
+        },
+        "vendorKey": "copilot",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000004",
+            "accountLocator": "0000000000000004",
+            "plan": {
+              "id": "copilot",
+              "name": {
+                "en": "Copilot",
+                "zh": "Copilot"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 72,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 79,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "cursor",
+        "kind": "tool",
+        "order": 4,
+        "name": {
+          "en": "Cursor",
+          "zh": "Cursor"
+        },
+        "vendorKey": "cursor",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000005",
+            "accountLocator": "0000000000000005",
+            "plan": {
+              "id": "cursor",
+              "name": {
+                "en": "Cursor",
+                "zh": "Cursor"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 35,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 42,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "zhipu",
+        "kind": "tool",
+        "order": 5,
+        "name": {
+          "en": "Zhipu",
+          "zh": "Zhipu"
+        },
+        "vendorKey": "zhipu",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000006",
+            "accountLocator": "0000000000000006",
+            "plan": {
+              "id": "zhipu",
+              "name": {
+                "en": "Zhipu",
+                "zh": "Zhipu"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 8,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 15,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "extra",
+        "kind": "tool",
+        "order": 6,
+        "name": {
+          "en": "Extra",
+          "zh": "Extra"
+        },
+        "vendorKey": "extra",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000007",
+            "accountLocator": "0000000000000007",
+            "plan": {
+              "id": "extra",
+              "name": {
+                "en": "Extra",
+                "zh": "Extra"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 67,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 74,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      },
+      {
+        "id": "overflow",
+        "kind": "tool",
+        "order": 7,
+        "name": {
+          "en": "Overflow",
+          "zh": "Overflow"
+        },
+        "vendorKey": "overflow",
+        "surfaces": [
+          "dock",
+          "menu"
+        ],
+        "consent": "allowed",
+        "state": "fresh",
+        "reason": {
+          "code": "ok",
+          "text": {
+            "en": "synthetic",
+            "zh": "synthetic"
+          }
+        },
+        "accounts": [
+          {
+            "route": "saved_login_api",
+            "subscriptionRef": "0000000000000008",
+            "accountLocator": "0000000000000008",
+            "plan": {
+              "id": "overflow",
+              "name": {
+                "en": "Overflow",
+                "zh": "Overflow"
+              }
+            },
+            "beta": false,
+            "valueState": "current",
+            "observedAt": "2026-10-31T12:00:00Z",
+            "freshUntil": "2035-10-20T14:05:00Z",
+            "windows": [
+              {
+                "id": "session",
+                "role": "session",
+                "durationSeconds": 18000,
+                "label": {
+                  "en": "session",
+                  "zh": "session"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 25,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              },
+              {
+                "id": "weekly",
+                "role": "weekly",
+                "durationSeconds": 604800,
+                "label": {
+                  "en": "weekly",
+                  "zh": "weekly"
+                },
+                "limitKey": "main",
+                "poolKey": "main",
+                "resetMode": "fixed",
+                "remainingPercent": 32,
+                "resetsAt": "2035-10-20T14:05:00Z",
+                "observedAt": "2026-10-31T12:00:00Z",
+                "current": true,
+                "validUntil": "2035-10-20T14:05:00Z"
+              }
+            ]
+          }
+        ],
+        "expiresAt": "2035-10-20T14:05:00Z",
+        "stateAfterExpiry": {
+          "state": "off",
+          "reason": {
+            "code": "ok",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            }
+          },
+          "nextStep": {
+            "action": "open_settings_consent",
+            "text": {
+              "en": "synthetic",
+              "zh": "synthetic"
+            },
+            "availableAt": "2026-10-29T12:00:00.123456789Z",
+            "disabledReason": "cooldown"
+          }
+        }
+      }
+    ],
+    "rowsSummary": {
+      "state": "ok",
+      "reason": {
+        "code": "ok",
+        "text": {
+          "en": "synthetic",
+          "zh": "synthetic"
+        }
+      },
+      "text": {
+        "en": "synthetic",
+        "zh": "synthetic"
+      }
+    }
+  }
+}

@@ -8,6 +8,7 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+verification_rows=0
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
 credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
@@ -25,7 +26,8 @@ case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
     --e2e-journey) identity_mode=unverified; configuration=debug ;;
-    *) echo 'Optional third argument must be --unverified or --e2e-journey (CI only)' >&2; exit 1 ;;
+    --verification-rows) identity_mode=unverified; verification_rows=1 ;;
+    *) echo 'Optional third argument must be --unverified, --e2e-journey or --verification-rows (verification only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
@@ -42,6 +44,11 @@ for architecture in arm64 x86_64; do
             --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration debug \
             --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp \
             -Xswiftc -DMODELPLAN_E2E_JOURNEY
+    elif [ "$verification_rows" = 1 ]; then
+        swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
+            --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
+            --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp \
+            -Xswiftc -DMODELPLAN_VERIFICATION_ROWS
     else
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
@@ -57,6 +64,7 @@ for architecture in arm64 x86_64; do
     tar -xzf "$archive_dir/$archive" -C "$output_dir/cli-$architecture"
 done
 app="$output_dir/ModelPlan Community.app"
+if [ "$verification_rows" = 1 ]; then app="$output_dir/ModelPlan-verification.app"; fi
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 # The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
@@ -80,6 +88,11 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>NSHumanReadableCopyright</key><string>MIT community software. Intel untested; 3D may stutter.</string>
 </dict></plist>
 PLIST
+if [ "$verification_rows" = 1 ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName ModelPlan-verification" "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ModelPlan-verification" "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier org.modelplan.verification.rows" "$app/Contents/Info.plist"
+fi
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \

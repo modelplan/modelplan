@@ -11,6 +11,10 @@ import ModelPlanWire
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
     @MainActor static func main() {
+        #if MODELPLAN_VERIFICATION_ROWS
+        // Verification binaries never enter a probe route that starts the bundled CLI.
+        runEngineRows()
+        #else
         // Probe routes retain their existing explicit harness; normal launch consumes app-server rows.
         let explicitProbe = CommandLine.arguments.contains("--access-probe") || CommandLine.arguments.contains("--runtime-probe")
         if !explicitProbe && ProcessInfo.processInfo.environment["MODELPLAN_APP_SMOKE"] != "1" {
@@ -131,15 +135,32 @@ import ModelPlanWire
         }
         NSApplication.shared.delegate = delegate
         withExtendedLifetime((delegate, dock, surfaces)) { NSApplication.shared.run() }
+        #endif
     }
     @MainActor private static func runEngineRows() {
         do {
             let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            #if MODELPLAN_VERIFICATION_ROWS
+            let env = ProcessInfo.processInfo.environment
+            guard let path = env["HOME"], path.hasPrefix("/"), let fixed = env["CFFIXED_USER_HOME"] else { throw EngineClientError.invalidConfiguration }
+            let verificationHome = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+            let fixedHome = URL(fileURLWithPath: fixed, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+            let supportPath = support.standardizedFileURL.resolvingSymlinksInPath().path
+            guard verificationHome.path != "/", fixedHome == verificationHome,
+                  supportPath.hasPrefix(verificationHome.path + "/") else { throw EngineClientError.invalidConfiguration }
+            try VerificationRowsClient.validateHome(verificationHome)
+            #endif
             let preferences = try EngineRowsEntry.makeSettingsStore(applicationSupport: support)
-            let app = EngineRowsEntry.make(configuration: .init(
+            let configuration = EngineClientConfiguration(
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
-                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }), settingsStore: preferences)
+                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) })
+            #if MODELPLAN_VERIFICATION_ROWS
+            let app = EngineRowsEntry.make(configuration: configuration, settingsStore: preferences,
+                makeClient: { _, store in VerificationRowsClient(store: store, home: verificationHome) })
+            #else
+            let app = EngineRowsEntry.make(configuration: configuration, settingsStore: preferences)
+            #endif
             NSApplication.shared.delegate = app
             withExtendedLifetime(app) { NSApplication.shared.run() }
         } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }
