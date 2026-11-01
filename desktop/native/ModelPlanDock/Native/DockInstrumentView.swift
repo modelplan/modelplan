@@ -42,6 +42,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var onVisualReset:(()->Void)?
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
+    /// The effect driver only receives a currently successful official skin.
+    var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {

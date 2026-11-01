@@ -83,6 +83,15 @@ public struct DockEffectRotation: Equatable, Sendable {
             consumers[id]=effect
         }
     }
+    /// Reuse the actual admitted view skin; an absent/failed appearance retires effects.
+    public func configure(view: DockInstrumentView, readings: [DockInstrumentReading], profile: RenderProfile,
+                          rotation: DockEffectRotation? = nil,
+                          provider: (DockInstrumentReading) -> (any EffectFrameProvider)?) throws {
+        guard let skin = view.workingEffectSkin else { stop(); return }
+        try configure(view: view, skin: skin, readings: readings, profile: profile,
+                      compositing: .screen, rotation: rotation, provider: provider)
+    }
+
     /// Freeze both timelines at elapsed seconds; the nine-pose contents clock remains unchanged.
     public func seekForCapture(_ phase:Double){
         guard phase.isFinite else{return}

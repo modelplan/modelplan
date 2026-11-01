@@ -5,6 +5,7 @@ import CoreGraphics
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanDock
+import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanCommunityHost
 
@@ -88,6 +89,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private var lastPlacementObservation: PlacementObservation?
     private let appearance: Appearance?
+    private var workingSignals: [String: DockWorkingSignal] = [:]
+    private var workingDriver: DockWorkingEffects?
+    private var workingFrameProvider: (any EffectFrameProvider)?
+    public private(set) var lastWorkingEffectError: Error?
+    @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
+    @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
+    @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     private let sliverParameters: DockSliverParameters
     private let currentDate: @MainActor () -> Date
     private let readerCapabilities: CommunityReaderCapabilities
@@ -309,21 +317,53 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockConsent = preview
         rebuild()
     }
+    public enum WorkingInjectionError: Error { case invalidSignals }
+    /// Replace an admitted per-member working snapshot; no activity is inferred.
+    public func setWorkingSignals(_ values: [DockWorkingSignal]) throws {
+        guard values.count <= 256 else { throw WorkingInjectionError.invalidSignals }
+        var next = [String: DockWorkingSignal]()
+        for value in values {
+            guard let id = value.subscriptionID, !id.isEmpty, next[id] == nil else { throw WorkingInjectionError.invalidSignals }
+            next[id] = value
+        }
+        guard !retired else { return }
+        workingSignals = next; inputGeneration &+= 1; rebuild()
+    }
+    /// The composition owner supplies the one shared pool and approved frame source.
+    public func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider) {
+        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion })
+    }
+    @_spi(DockResourceChecks) public func installWorkingEffectsForChecks(pool: EffectResourcePool, provider: any EffectFrameProvider,
+                                                                          systemReduceMotion: @escaping () -> Bool) {
+        installWorkingEffects(pool: pool, provider: provider, systemReduceMotion: systemReduceMotion)
+    }
+    private func installWorkingEffects(pool: EffectResourcePool, provider: any EffectFrameProvider, systemReduceMotion: @escaping () -> Bool) {
+        guard !retired else { return }
+        workingDriver?.stop(); workingDriver = DockWorkingEffects(pool: pool, systemReduceMotion: systemReduceMotion)
+        workingFrameProvider = provider; inputGeneration &+= 1; rebuild()
+    }
+    public func uninstallWorkingEffects() {
+        workingDriver?.stop(); workingDriver = nil; workingFrameProvider = nil; lastWorkingEffectError = nil
+    }
+
     /// Installs the content consumer without replacing window/input ownership.
     public func setDockContentProvider(_ provider: any DockContentProvider) {
         guard !retired else { return }
+        workingSignals = [:]
         contentProvider = provider
         refreshDockContent()
     }
     /// Called by the accepted engine-state consumer; adds no reader or timer.
     public func refreshDockContent() {
         guard !retired else { return }
+        workingSignals = [:]
         inputGeneration &+= 1
         rebuild()
     }
     public func render(snapshot: JoinedSnapshot?, diagnostics: StoreDiagnostics) {
         guard !retired else { return }
         inputGeneration &+= 1
+        workingSignals = [:]
         self.snapshot = snapshot; self.diagnostics = diagnostics
         rebuild()
     }
@@ -332,7 +372,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
         syncDisplayFollower()
     }
     private func makeDisplayFollower() -> ActiveDisplayFollower {
@@ -396,7 +436,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
         let order = (try? passPreferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
         let rows = order.compactMap { byID[$0] }.compactMap { input -> DockInstrumentReading? in
-            let value = passPreferences.applying(to: input)
+            var value = passPreferences.applying(to: input)
+            if let signal = workingSignals[input.id] { value.working = signal }
             return try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow))
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
@@ -441,6 +482,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             geometry = .init(hoverRects: [dockView.bounds])
         }
         guard passIsCurrent(generation) else { return }
+        lastWorkingEffectError = nil
+        if let driver = workingDriver, let provider = workingFrameProvider,
+           permitted, preferences.showDock, !appearanceFallback,
+           (!createsNativePanels || (dockView.window?.isVisible == true && dockView.window?.occlusionState.contains(.visible) == true)) {
+            do {
+                let profile = RenderProfile(dark: true, scale: backingScale, reduceMotion: application?.effective.reduceMotion ?? true)
+                try driver.configure(view: dockView, readings: rows, profile: profile,
+                                     rotation: DockEffectRotation(period: 1), provider: { _ in provider })
+            } catch { driver.stop(); lastWorkingEffectError = error }
+        } else { workingDriver?.stop() }
         model = next
         if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
@@ -844,6 +895,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     public func close() {
         guard !retired else { return }; inputGeneration &+= 1; retired = true; permitted = false
+        workingSignals = [:]; uninstallWorkingEffects()
         menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil
         dismissCard()
         NotificationCenter.default.removeObserver(self)

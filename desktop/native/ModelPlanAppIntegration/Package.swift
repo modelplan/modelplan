@@ -30,6 +30,7 @@ let package = Package(
             .product(name: "ModelPlanShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanAssembly", package: "ModelPlanNative"),
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
             .product(name: "ModelPlanInstruments", package: "ModelPlanNative"),
             .product(name: "ModelPlanCockpitShell", package: "ModelPlanNative"),
             .product(name: "ModelPlanField", package: "ModelPlanNative"),
@@ -60,6 +61,7 @@ let package = Package(
         .testTarget(name: "ModelPlanAppIntegrationTests", dependencies: ["ModelPlanAppIntegration", "S1GalleryCore",
             .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore"),
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
             .product(name: "ModelPlanOfficialDock", package: "dock"),
             .product(name: "ModelPlanDockResources", package: "dock-resources")], resources: [.process("Fixtures")]),
     ]
