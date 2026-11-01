@@ -25,6 +25,8 @@ public struct DockStationRecipe: Codable, Sendable {
     public var outer:DockRingRecipe,inner:DockRingRecipe
     public var clock:DockClockRecipe
     public var notchWidth:CGFloat,caseInnerRadius:CGFloat
+    /// Optional backing radius when the longer quota window is absent.
+    public var singleWindowCaseInnerRadius:CGFloat?
     public var overflowCount:Int?
     public var eventSolidDiameter:CGFloat?,eventHollowDiameter:CGFloat?,eventStrokeWidth:CGFloat?
     public var glyphOpacity:Double?
@@ -205,8 +207,8 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 continue
             }
             if let replacement=station.replacementResource {try image(replacement,frame)} else {
-            let radius=station.caseInnerRadius
-            guard radius>=0,radius<station.diameter/2 else{throw DockArtworkError.invalidManifest}
+            let radius = reading.inner == nil ? (station.singleWindowCaseInnerRadius ?? station.caseInnerRadius) : station.caseInnerRadius
+            guard radius.isFinite,radius>=0,radius<station.diameter/2 else{throw DockArtworkError.invalidManifest}
             c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
             let rr=(radius+station.diameter/2)/2
             c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))

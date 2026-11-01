@@ -72,6 +72,27 @@ final class T2OracleTests: XCTestCase {
         }
     }
 
+    func testSingleWindowBackingUsesOuterRingRatherThanAbsentInnerRing() throws {
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        var input = DockInstrumentInput(id: "single", name: "Synthetic", windows: [
+            .init(id: "monthly", period: .month, label: "Month", remainingPercent: 61,
+                  resetsAt: nil, durationSeconds: nil)])
+        input.dataState = .fresh
+        let reading = try DockInstrumentProjection.evaluate(input, now: now)
+        XCTAssertNil(reading.inner)
+        for diameter in [CGFloat(36), 44, 52] {
+            let coordinates = T2EdgeCoordinates(edge: .right, width: 1470, height: 956, menuBarExclusion: 26)
+            let geometry = try T2Geometry.make(subscriptions: [.init(id: "single")], input: .init(coordinates: coordinates, diameter: diameter))
+            let skin = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
+            let station = try XCTUnwrap(skin.stations.first)
+            let unit = diameter / 52
+            let expectedOuter = diameter / 2 - unit - diameter * 0.058 / 2
+            XCTAssertEqual(station.outer.radius, expectedOuter, accuracy: 1e-9)
+            XCTAssertEqual(try XCTUnwrap(station.singleWindowCaseInnerRadius), expectedOuter - diameter * 0.058 / 2 - unit, accuracy: 1e-9)
+            XCTAssertGreaterThan(try XCTUnwrap(station.singleWindowCaseInnerRadius), station.caseInnerRadius)
+        }
+    }
+
     func testOriginalP1LayersDepthAndBetaMarkAreExplicit() throws {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         var input = DockInstrumentInput(id: "synthetic", name: "GLM", windows: [])

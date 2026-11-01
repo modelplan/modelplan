@@ -73,8 +73,11 @@ private struct S1Manifest: Decodable {
         let maskedPixels: Int
         let ink: [String: Bool]
         let noticeInk: [String: Bool]
+        let singleWindowRegions: [String: CGRect]
+        let singleWindowMetrics: [String: Double]
     }
-    static func make(reference: Data, image: CGImage, skin: DockInstrumentSkin, capture: S1Manifest.Capture) throws -> Result {
+    static func make(reference: Data, image: CGImage, skin: DockInstrumentSkin, capture: S1Manifest.Capture,
+                     singleWindowIDs: Set<String>) throws -> Result {
         guard let golden = NSBitmapImageRep(data: reference),
               image.width == Int(ceil(skin.bounds.width * 2)), image.height == Int(ceil(skin.bounds.height * 2)),
               let actual = NSBitmapImageRep(cgImage: image).copy() as? NSBitmapImageRep else { throw CocoaError(.fileReadCorruptFile) }
@@ -113,6 +116,14 @@ private struct S1Manifest: Decodable {
             let a = stops[n-1], b = stops[n], t = max(0, min(1, (distance-a.0)/(b.0-a.0)))
             return (a.1.0+(b.1.0-a.1.0)*t,a.1.1+(b.1.1-a.1.1)*t,a.1.2+(b.1.2-a.1.2)*t)
         }
+        let singleRegions: [(String, CGRect)] = skin.stations.compactMap { station in
+            guard let id = station.subscriptionID, singleWindowIDs.contains(id) else { return nil }
+            let radius = max(station.diameter / 2, station.clock.radius + station.clock.dotRadius) + 2
+            let nozzle = CGRect(x: station.centre.x-radius, y: station.centre.y-radius, width: 2*radius, height: 2*radius)
+            return (id, nozzle.union(station.readout).union(station.eventRect))
+        }
+        var regionError = Dictionary(uniqueKeysWithValues: singleRegions.map { ($0.0, 0.0) })
+        var regionSamples = Dictionary(uniqueKeysWithValues: singleRegions.map { ($0.0, 0) })
         let noticeRects = skin.stations.compactMap { station -> (String, CGRect)? in
             guard let id = station.subscriptionID, id == "codex" || id == "claude",
                   let diameter = station.eventSolidDiameter else { return nil }
@@ -145,14 +156,25 @@ private struct S1Manifest: Decodable {
                 pixels[offset+channel] = value
                 let delta = abs(rgb[channel]-expectedRGB[channel])
                 diffs[offset+channel] = matching.isEmpty ? UInt8(max(0,min(255,Int(delta.rounded())))) : 0
-                if matching.isEmpty { errorSum += delta; samples += 1 }
+                if matching.isEmpty {
+                    errorSum += delta; samples += 1
+                    for (id, region) in singleRegions where region.contains(point) {
+                        regionError[id, default: 0] += delta; regionSamples[id, default: 0] += 1
+                    }
+                }
             }
             pixels[offset+3] = 255; diffs[offset+3] = 255
         }}
         guard samples > 0, let nativePNG = composed.representation(using: .png, properties: [:]),
               let diffPNG = difference.representation(using: .png, properties: [:]) else { throw CocoaError(.fileReadCorruptFile) }
+        let clipRect = CGRect(x: capture.clip.x, y: capture.clip.y, width: capture.clip.width, height: capture.clip.height)
+        let metrics = Dictionary(uniqueKeysWithValues: singleRegions.compactMap { id, rect -> (String, Double)? in
+            guard clipRect.contains(rect), let n = regionSamples[id], n > 0, let value = regionError[id] else { return nil }
+            return (id, 1 - value / Double(n) / 255)
+        })
         return Result(native: nativePNG, diff: diffPNG, similarity: 1 - errorSum / Double(samples) / 255,
-                      maskedPixels: masked, ink: ink.filter { key, _ in masks.contains { $0.0 == key } }, noticeInk: noticeInk)
+                      maskedPixels: masked, ink: ink.filter { key, _ in masks.contains { $0.0 == key } }, noticeInk: noticeInk,
+                      singleWindowRegions: Dictionary(uniqueKeysWithValues: singleRegions), singleWindowMetrics: metrics)
     }
 }
 
@@ -216,7 +238,8 @@ private struct S1Manifest: Decodable {
                 let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
                 host.captureBackingScaleForChecks = 2
                 host.dockView.zaiMarkEnabled = true
-                host.setDockContentProvider(S1SyntheticProvider(count: capture.count, now: now))
+                let provider = S1SyntheticProvider(count: capture.count, now: now)
+                host.setDockContentProvider(provider)
                 let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
                 await coordinator.reload()
                 if let error = host.lastAppearanceError {
@@ -262,7 +285,11 @@ private struct S1Manifest: Decodable {
                     record["geometryAssertion"] = geometryOK ? "pass" : "fail"
                     record["geometryMaxErrorPoints"] = geometryError.isFinite ? geometryError : NSNull()
                     do {
-                        let result = try S1PixelReport.make(reference: bytes, image: image, skin: skin, capture: capture)
+                        let singleIDs = Set(provider.inputs.compactMap { input -> String? in
+                            guard let reading = try? DockInstrumentProjection.evaluate(input, now: now), reading.inner == nil else { return nil }
+                            return input.id
+                        })
+                        let result = try S1PixelReport.make(reference: bytes, image: image, skin: skin, capture: capture, singleWindowIDs: singleIDs)
                         let diffName = String(format: "diff-%02d.png", index)
                         try result.native.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)
                         try result.diff.write(to: output.appendingPathComponent(diffName), options: .withoutOverwriting)
@@ -272,6 +299,22 @@ private struct S1Manifest: Decodable {
                         record["metric"] = result.similarity; record["metricKind"] = "1 - mean absolute RGB error / 255"
                         record["maskedPercentageGlyphPixels"] = result.maskedPixels; record["inkAssertions"] = result.ink
                         record["syntheticNoticeInkAssertions"] = result.noticeInk
+                        var singleRows = [[String: Any]]()
+                        for id in singleIDs.sorted() {
+                            guard let region = result.singleWindowRegions[id] else { continue }
+                            let metric = result.singleWindowMetrics[id]
+                            singleRows.append(["id": id, "metric": metric as Any? ?? NSNull(), "status": metric == nil ? "not-run: crop outside reference" : "report-only"])
+                            let left = max(0, Int(floor((Double(region.minX) - capture.clip.x) * 2)))
+                            let top = max(0, Int(floor((Double(region.minY) - capture.clip.y) * 2)))
+                            let width = max(1, Int(ceil(Double(region.width) * 2)))
+                            let height = max(1, Int(ceil(Double(region.height) * 2)))
+                            func crop(_ name: String) -> String {
+                                "<div style=\"position:relative;overflow:hidden;width:\(width)px;height:\(height)px\"><img src=\"\(name)\" style=\"position:absolute;max-width:none;left:-\(left)px;top:-\(top)px\"></div>"
+                            }
+                            let value = metric.map { String(format: "%.6f", $0) } ?? "not run"
+                            html += "<tr><td>Single window: \(id) / \(capture.file)</td><td>\(crop(refName))</td><td>\(crop(nativeName))</td><td>ROI RGB similarity: \(value)</td></tr>"
+                        }
+                        record["singleWindowCases"] = singleRows
                         let requiredInk = Set(expectedIDs.filter { $0 == "claude" || $0 == "cursor" })
                         let inkOK = Set(result.ink.keys) == requiredInk && result.ink.values.allSatisfy { $0 } && (requiredInk.isEmpty || result.maskedPixels > 0)
                         let noticeInkOK = Set(result.noticeInk.keys) == expectedNoticeIDs && result.noticeInk.values.allSatisfy { $0 }

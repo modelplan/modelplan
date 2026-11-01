@@ -21,8 +21,12 @@ public enum T2DockSkin {
         var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "opencode":"logo-opencode"]
         if zaiMarkEnabled { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
         let outerWidth = d * 0.058, innerWidth = d * 0.031
-        let outerRadius = d/2 - 1 - outerWidth/2
-        let innerRadius = outerRadius - outerWidth/2 - 2 - innerWidth/2
+        // workbench-engine.js draws the 52-point nozzle before CSS zoom.
+        let outerRadius = d/2 - unit - outerWidth/2
+        let innerRadius = outerRadius - outerWidth/2 - 2*unit - innerWidth/2
+        let singleWindowRadius = outerRadius - outerWidth/2 - unit
+        let dualWindowRadius = innerRadius - innerWidth/2 - unit
+        let minimumArc = 1.0/60.0 + Double((d*0.014/2) / (2 * CGFloat.pi * outerRadius))
         // dock-view renders the source nozzle at 52 and scales it as a unit.
         let clockRadius = (52.0/2 + 2.2) * unit
         let clockDots = max(24, Int((2 * CGFloat.pi * (52.0/2 + 2.2) / 4.8).rounded()))
@@ -44,10 +48,11 @@ public enum T2DockSkin {
                 "logicalPoints": Int(d), "readout": rect(box(station.readoutCentre, 56*unit, 16*unit)),
                 "eventRect": rect(box(CGPoint(x:station.readoutCentre.x+22*unit,y:station.readoutCentre.y), 12*unit, 12*unit)),
                 "glyphRect": rect(box(station.centre, d*0.27, d*0.27)), "layers": layers, "glyphs": logos,
-                "outer": ["radius":outerRadius,"width":outerWidth,"minimumVisibleFraction":1.0/60,"opacity":1.0,"trackOpacity":1.0],
+                "outer": ["radius":outerRadius,"width":outerWidth,"minimumVisibleFraction":minimumArc,"opacity":1.0,"trackOpacity":1.0],
                 "inner": ["radius":innerRadius,"width":innerWidth,"minimumVisibleFraction":1.0/60,"opacity":0.85,"trackOpacity":0.65],
                 "clock": ["radius":clockRadius,"dotRadius":0.65*unit,"backWidth":1.5*unit,"positions":clockDots],
-                "notchWidth":d*0.014,"caseInnerRadius":max(0,innerRadius-innerWidth/2-1),
+                "notchWidth":d*0.014,"caseInnerRadius":max(0,dualWindowRadius),
+                "singleWindowCaseInnerRadius":max(0,singleWindowRadius),
                 "radialOverlay":["radius":throatRadius,"alphas":throatAlphas],
                 "showsReadout":showsPercentages, "fallbackVendorName":true,
                 "eventSolidDiameter":5*unit, "eventHollowDiameter":6*unit, "eventStrokeWidth":1.2*unit,
