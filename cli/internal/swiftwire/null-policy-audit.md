@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 71 optional/nullable fields reachable from the production
+This inventory covers the 72 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -18,10 +18,11 @@ The compiled catalog mutates the capture for each output field through that
 production decoder and checks normalization/preservation, including any required
 key or authorization rejection.
 
-## Inputs and RPC framing (10 fields)
+## Inputs and RPC framing (11 fields)
 
 | Field | Declaration | Actual consumer and observed rule | Regression evidence |
 | --- | --- | --- | --- |
+| CockpitQueryParams.RedBelow | forbidden | `cockpitParams` accepts an omitted default or one of the App's committed thresholds for a negotiated client; explicit null and unsupported values are rejected before admission. |
 | Request.ID | forbidden | [frame.go:108](../appserver/frame.go#L108), `decodeRequest`/`validID`: absent notification ID is legal; explicit null is rejected. | `TestRequestNullPoliciesAtProductionDecoderAndDispatch`; compiled Swift catalog forbidden-null case. |
 | Request.Params | distinct | [frame.go:98](../appserver/frame.go#L98) preserves raw absence/null. [frame.go:133](../appserver/frame.go#L133), `params[T]`, treats absent as `{}` but rejects null; a raw value must survive until method validation. | Same Go test dispatches both forms to `diagnostics/get`; `testOptionalRawRequestParamsRetainExplicitNull`. |
 | ConsentGrantParams.Forget | coalesced | [server.go:395](../appserver/server.go#L395), `validGrant`, and [shared_backend.go:248](../appserver/shared_backend.go#L248), `Grant`, receive the same empty list for absence/null; neither inspects raw presence. | `TestConsentOptionalNullsThroughGrantHandler`; compiled catalog. |

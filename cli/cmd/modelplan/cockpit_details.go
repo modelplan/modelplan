@@ -27,6 +27,8 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		return result, appserver.ProtocolError{Code: wire.CodeConsentChanged}
 	}
 	now := time.Now()
+	redBelow := admission.RedBelow
+	if redBelow == 0 { redBelow = 25 }
 	byRef := map[string]*wire.CockpitSubscriptionDetails{}
 	refs := make([]string, 0, len(groups))
 	for ref := range groups {
@@ -121,7 +123,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 					continue
 				}
 				severity := "warning"
-				if v <= 25 {
+				if v <= float64(redBelow) {
 					severity = "critical"
 				}
 				result.Alerts = append(result.Alerts, wire.CockpitAlert{Source: row.ID, SubscriptionRef: *account.SubscriptionRef, WindowID: window.ID, Severity: severity, RemainingPercent: v})

@@ -86,6 +86,7 @@ func Generate(root string) ([]byte, error) {
 		"HistoryQueryParams":   reflect.TypeFor[wire.HistoryQueryParams](),
 		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
 		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
+		"CockpitQueryParams": reflect.TypeFor[wire.CockpitQueryParams](),
 		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
 		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
 		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
@@ -123,6 +124,7 @@ func Generate(root string) ([]byte, error) {
 	b.defs["Window"].(object)["properties"].(object)["modelScope"] = object{"$ref": "#/$defs/ModelScope"}
 	scope := b.defs["ModelScope"].(object)
 	scope["properties"].(object)["models"] = object{"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": object{"type": "string", "enum": []string{"gemini-2.5-flash", "gemini-2.5-pro", "opus", "sonnet", "unknown"}}}
+	b.defs["CockpitQueryParams"].(object)["properties"].(object)["redBelow"] = object{"type": "integer", "enum": []int{10, 16, 20, 25}}
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)
@@ -138,7 +140,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -148,7 +150,7 @@ func Generate(root string) ([]byte, error) {
 		}
 		if param != "" {
 			props["params"] = object{"$ref": "#/$defs/" + param}
-			required = append(required, "params")
+			if method != "cockpit/query" { required = append(required, "params") }
 		} else {
 			props["params"] = object{"type": "object", "maxProperties": 0}
 		}

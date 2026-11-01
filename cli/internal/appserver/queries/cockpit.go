@@ -2,8 +2,10 @@
 package queries
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"slices"
 	"sort"
 
@@ -12,6 +14,7 @@ import (
 )
 
 type CockpitAdmission struct {
+	RedBelow int
 	Stamp  appserver.Stamp
 	Scopes []string
 }
@@ -42,8 +45,9 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 		return appserver.Handler{}, protocol(wire.CodeInternal)
 	}
 	return appserver.Handler{Capability: "cockpit", Query: true, Private: true, Handle: func(ctx context.Context, raw json.RawMessage, stamp appserver.Stamp) (appserver.Reply, error) {
-		if !emptyParams(raw) {
-			return appserver.Reply{}, protocol(wire.CodeInvalidParams)
+		threshold, err := cockpitParams(raw, appserver.CockpitDetailsEnabled(ctx))
+		if err != nil {
+			return appserver.Reply{}, err
 		}
 		if err := ctx.Err(); err != nil {
 			return appserver.Reply{}, err
@@ -74,6 +78,7 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 			return appserver.Reply{}, err
 		}
 		admission.Scopes = append([]string{}, scopes...)
+		admission.RedBelow = threshold
 		data, err := config.Source.ReadCockpit(ctx, admission)
 		if err != nil {
 			return appserver.Reply{}, err
@@ -94,4 +99,23 @@ func CockpitHandler(config CockpitConfig) (appserver.Handler, error) {
 		}
 		return appserver.Reply{Stamp: stamp, Scopes: scopes, Data: data}, nil
 	}}, nil
+}
+
+// cockpitParams keeps legacy empty queries valid while requiring an explicit
+// negotiated capability for the App-owned critical threshold.
+func cockpitParams(raw json.RawMessage, enabled bool) (int, error) {
+ raw = bytes.TrimSpace(raw)
+ if len(raw) == 0 { return 25, nil }
+ if raw[0] != '{' { return 0, protocol(wire.CodeInvalidParams) }
+ decoder := json.NewDecoder(bytes.NewReader(raw))
+ decoder.DisallowUnknownFields()
+ var p wire.CockpitQueryParams
+ if decoder.Decode(&p) != nil || decoder.Decode(new(any)) != io.EOF { return 0, protocol(wire.CodeInvalidParams) }
+ var presence map[string]json.RawMessage
+ if json.Unmarshal(raw, &presence) != nil { return 0, protocol(wire.CodeInvalidParams) }
+ value, present := presence["redBelow"]
+ if !present { return 25, nil }
+ if !enabled || bytes.Equal(bytes.TrimSpace(value), []byte("null")) { return 0, protocol(wire.CodeInvalidParams) }
+ switch p.RedBelow { case 10, 16, 20, 25: return p.RedBelow, nil }
+ return 0, protocol(wire.CodeInvalidParams)
 }

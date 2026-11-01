@@ -40,6 +40,10 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	if len(data.Alerts) != 1 || data.Alerts[0].Severity != "critical" || data.SessionCoverage != "recording-off" {
 		t.Fatalf("wrong facts: %#v", data)
 	}
+	data, err = (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp, RedBelow: 10}, map[string][]wire.CockpitAccount{ref: {}})
+	if err != nil || len(data.Alerts) != 1 || data.Alerts[0].Severity != "warning" {
+		t.Fatalf("committed red threshold not used: %#v, %v", data.Alerts, err)
+	}
 	if slices.Contains(data.Sources, "reset-events") {
 		t.Fatal("unavailable publication reported as an empty available source")
 	}
