@@ -56,6 +56,16 @@ final class T2OracleTests: XCTestCase {
         XCTAssertTrue(first.allSatisfy { (0...1).contains($0) })
     }
 
+    @MainActor func testFaceRetinaOutputHasExpectedExtentAndAlpha() async throws {
+        let coordinates = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: T2GeometryInput(coordinates: coordinates))
+        let image = try T2FaceMaterial().render(geometry: geometry, viewport: CGRect(x: 200, y: 100, width: 100, height: 220), scale: 2)
+        XCTAssertEqual(image.width, 200); XCTAssertEqual(image.height, 440)
+        let pixels = NSBitmapImageRep(cgImage: image)
+        XCTAssertEqual(try XCTUnwrap(pixels.colorAt(x: 0, y: 0)).alphaComponent, 0, accuracy: 1.0/255)
+        XCTAssertEqual(try XCTUnwrap(pixels.colorAt(x: 196, y: 220)).alphaComponent, 1, accuracy: 1.0/255)
+    }
+
     // DOCK-3.1-10/-11. This qualifies the isolated face layer, not a complete Dock.
     @MainActor func testFaceIsClippedOpaqueAndRepeatable() async throws {
         let c = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)

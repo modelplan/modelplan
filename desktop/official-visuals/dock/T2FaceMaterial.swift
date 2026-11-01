@@ -3,15 +3,19 @@
 import Foundation
 import CoreGraphics
 import CoreImage
+import CoreImage.CIFilterBuiltins
 
 /// DOCK-3.1-10/-11/-20: native face material, soot and clipped ignition well.
 /// Instruments, the grip and ignition remain later layers.
 @MainActor public final class T2FaceMaterial {
-    public enum RenderError: Error { case invalidViewport, allocation, filter }
+    public enum RenderError: Error { case invalidViewport, allocation, filterStage(String), filterExtent(String), filterRender }
     private let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
     private let linear = CGColorSpace(name: CGColorSpace.linearSRGB)!
     private let grain = T2Grain()
     private lazy var compositor = CIContext(options: [.workingColorSpace: linear, .outputColorSpace: srgb])
+    // Headless runners may not have a usable accelerated renderer. Retain a
+    // bounded Core Image CPU fallback rather than substituting different art.
+    private lazy var softwareCompositor = CIContext(options: [.workingColorSpace: linear, .outputColorSpace: srgb, .useSoftwareRenderer: true])
     public init() {}
 
     /// The viewport is expressed in the same top-left study coordinates as the
@@ -68,14 +72,31 @@ import CoreImage
             size: CGSize(width: width, height: height), format: .RGBAf, colorSpace: linear)
         // feColorMatrix(saturate=0), feFuncA(slope=.018), then the study's
         // feBlend(in=SourceGraphic, mode=soft-light), feComposite(in2=SourceAlpha, in).
-        let gray = noise.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0),
-            "inputGVector": CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0),
-            "inputBVector": CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: T2Grain.opacity)])
+        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        // A bounded extent is part of the rendering contract. In particular,
+        // blur may grow its extent; crop each output to the requested bitmap.
+        func checked(_ value: CIImage?, _ stage: String) throws -> CIImage {
+            guard let value else { throw RenderError.filterStage(stage) }
+            let extent = value.extent
+            guard !extent.isNull, !extent.isEmpty, !extent.isInfinite,
+                  [extent.minX, extent.minY, extent.width, extent.height].allSatisfy(\.isFinite),
+                  extent.contains(canvas) else { throw RenderError.filterExtent(stage) }
+            return value.cropped(to: canvas)
+        }
+        let matrix = CIFilter.colorMatrix()
+        matrix.inputImage = noise
+        matrix.rVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
+        matrix.gVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
+        matrix.bVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
+        matrix.aVector = CIVector(x: 0, y: 0, z: 0, w: T2Grain.opacity)
+        let gray = try checked(matrix.outputImage, "colorMatrix")
         let graphic = CIImage(cgImage: source)
-        let blended = graphic.applyingFilter("CISoftLightBlendMode", parameters: [kCIInputBackgroundImageKey: gray])
-        let clipped = blended.applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: graphic])
+        let blend = CIFilter.softLightBlendMode()
+        blend.inputImage = graphic; blend.backgroundImage = gray
+        let blended = try checked(blend.outputImage, "softLightBlendMode")
+        let clip = CIFilter.sourceInCompositing()
+        clip.inputImage = blended; clip.backgroundImage = graphic
+        let clipped = try checked(clip.outputImage, "sourceInFace")
         // face-view.js places three quadratic soot fans per station. They use
         // the station mapping, never a second fit to the face contour.
         guard let sootContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
@@ -103,10 +124,16 @@ import CoreImage
             }
         }
         guard let sootBitmap = sootContext.makeImage() else { throw RenderError.allocation }
-        let soot = CIImage(cgImage: sootBitmap).applyingFilter("CIGaussianBlur",
-            parameters: [kCIInputRadiusKey: 1.1 * unitScale * CGFloat(scale)])
-            .applyingFilter("CISourceInCompositing", parameters: [kCIInputBackgroundImageKey: graphic])
-        let withSoot = soot.applyingFilter("CISourceOverCompositing", parameters: [kCIInputBackgroundImageKey: clipped])
+        let blur = CIFilter.gaussianBlur()
+        blur.inputImage = CIImage(cgImage: sootBitmap)
+        blur.radius = Float(1.1 * unitScale * CGFloat(scale))
+        let blurred = try checked(blur.outputImage, "gaussianBlur")
+        let sootClip = CIFilter.sourceInCompositing()
+        sootClip.inputImage = blurred; sootClip.backgroundImage = graphic
+        let soot = try checked(sootClip.outputImage, "sourceInSoot")
+        let sootOver = CIFilter.sourceOverCompositing()
+        sootOver.inputImage = soot; sootOver.backgroundImage = clipped
+        let withSoot = try checked(sootOver.outputImage, "sourceOverSoot")
         guard let wellContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * 4, space: srgb,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw RenderError.allocation }
@@ -117,11 +144,12 @@ import CoreImage
         wellContext.setStrokeColor(CGColor(gray: 0, alpha: 11.0/15))
         wellContext.setLineWidth(0.8 * unitScale); wellContext.addEllipse(in: well); wellContext.drawPath(using: .fillStroke)
         guard let wellBitmap = wellContext.makeImage() else { throw RenderError.allocation }
-        let face = CIImage(cgImage: wellBitmap).applyingFilter("CISourceOverCompositing",
-            parameters: [kCIInputBackgroundImageKey: withSoot])
-        guard let result = compositor.createCGImage(face, from: CGRect(x: 0, y: 0, width: width, height: height)) else {
-            throw RenderError.filter
-        }
+        let wellOver = CIFilter.sourceOverCompositing()
+        wellOver.inputImage = CIImage(cgImage: wellBitmap); wellOver.backgroundImage = withSoot
+        let face = try checked(wellOver.outputImage, "sourceOverWell")
+        guard let result = compositor.createCGImage(face, from: canvas)
+                ?? softwareCompositor.createCGImage(face, from: canvas) else { throw RenderError.filterRender }
+        guard result.width == width, result.height == height else { throw RenderError.filterExtent("renderedBitmap") }
         return result
     }
 }

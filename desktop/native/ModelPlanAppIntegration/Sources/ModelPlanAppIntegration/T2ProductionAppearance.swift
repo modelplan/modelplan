@@ -8,8 +8,9 @@ import ModelPlanSettings
 
 /// Connects verified artwork and the registered T2 geometry to the production host.
 @MainActor enum T2ProductionAppearance {
+    enum Failure: Error { case missingDisplay }
     static func apply(_ view: DockInstrumentView, _ rows: [DockInstrumentReading], _ preferences: SettingsPreferences) throws -> StaticDockGeometry {
-        guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw T2Geometry.InputError.invalidGeometry }
+        guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw Failure.missingDisplay }
         let edge: T2Edge
         switch preferences.dockEdge {
         case .left: edge = .left
