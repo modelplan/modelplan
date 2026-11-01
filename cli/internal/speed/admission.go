@@ -11,16 +11,16 @@ import (
 // GrantEpoch is private cache provenance: the consent store epoch and the
 // source scope's revoke watermark. Changes to unrelated grants do not change it.
 type GrantEpoch struct {
-	StoreEpoch string `json:"storeEpoch"`
+	StoreEpoch        string `json:"storeEpoch"`
 	RevokedGeneration uint64 `json:"revokedGeneration"`
 }
 
 func sourceScope(source string) string {
 	return map[string]string{
 		"claude-code": consent.ScopeClaudeLocalHistory,
-		"codex": consent.ScopeCodexLocalHistory,
-		"zcode": consent.ScopeZaiLocalHistory,
-		"opencode": consent.ScopeOpenCodeGoLocalHistory,
+		"codex":       consent.ScopeCodexLocalHistory,
+		"zcode":       consent.ScopeZaiLocalHistory,
+		"opencode":    consent.ScopeOpenCodeGoLocalHistory,
 	}[source]
 }
 
@@ -31,7 +31,9 @@ func currentEpoch(a consent.Admission, source string) *GrantEpoch {
 	if scope == "" || state.StoreEpoch == "" || !state.AllowsScope(scope, a.Mode()) || a.CleanupPending(scope) || a.CleanupPending(tool) {
 		return nil
 	}
-	if state.Revoked[scope] > 0 && state.Scopes[scope].At.IsZero() { return nil }
+	if state.Revoked[scope] > 0 && state.Scopes[scope].At.IsZero() {
+		return nil
+	}
 	return &GrantEpoch{StoreEpoch: state.StoreEpoch, RevokedGeneration: state.Revoked[scope]}
 }
 
@@ -42,7 +44,9 @@ func grantStart(a consent.Admission, source string) time.Time {
 }
 
 func sameEpoch(a, b *GrantEpoch) bool {
-	if a == nil || b == nil { return a == nil && b == nil }
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
 	return *a == *b
 }
 
@@ -55,13 +59,29 @@ func (v PerfView) Admitted(a consent.Admission) PerfView {
 	}
 	l := v.Ledger
 	l.Rows = nil
-	for _, r := range v.Ledger.Rows { if allowed(r.Source, r.GrantEpoch) { l.Rows = append(l.Rows, r) } }
+	for _, r := range v.Ledger.Rows {
+		if allowed(r.Source, r.GrantEpoch) {
+			l.Rows = append(l.Rows, r)
+		}
+	}
 	l.Hourly = nil
-	for _, r := range v.Ledger.Hourly { if allowed(r.Source, r.GrantEpoch) { l.Hourly = append(l.Hourly, r) } }
+	for _, r := range v.Ledger.Hourly {
+		if allowed(r.Source, r.GrantEpoch) {
+			l.Hourly = append(l.Hourly, r)
+		}
+	}
 	l.Live = nil
-	for _, r := range v.Ledger.Live { if allowed(r.Source, r.GrantEpoch) { l.Live = append(l.Live, r) } }
+	for _, r := range v.Ledger.Live {
+		if allowed(r.Source, r.GrantEpoch) {
+			l.Live = append(l.Live, r)
+		}
+	}
 	l.Sessions = nil
-	for _, r := range v.Ledger.Sessions { if allowed(r.Source, r.GrantEpoch) { l.Sessions = append(l.Sessions, r) } }
+	for _, r := range v.Ledger.Sessions {
+		if allowed(r.Source, r.GrantEpoch) {
+			l.Sessions = append(l.Sessions, r)
+		}
+	}
 	v.Ledger = l
 	return v
 }

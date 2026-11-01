@@ -59,9 +59,9 @@ type Ingest struct {
 // cursors use, and never leaves this file.
 type PerfSession struct {
 	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
-	Ref    string `json:"ref"`
-	Key    string `json:"key"`
-	Source string `json:"source"`
+	Ref        string      `json:"ref"`
+	Key        string      `json:"key"`
+	Source     string      `json:"source"`
 	// ProjectRef: the opaque reference of the session's project (project.go), "" when its log
 	// records no working directory. ProjectLabel: the project folder's name, only while project
 	// labels are on.

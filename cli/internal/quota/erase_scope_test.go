@@ -152,17 +152,25 @@ func TestHistoryForgetPreservesHyphenatedNeighbor(t *testing.T) {
 
 func TestHistoryScopeCleanupErasesOnlyItsPerformanceRecords(t *testing.T) {
 	for _, forget := range []bool{false, true} {
-		t.Run(map[bool]string{false:"revoke", true:"forget"}[forget], func(t *testing.T) {
+		t.Run(map[bool]string{false: "revoke", true: "forget"}[forget], func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			cache := t.TempDir()
 			dir := filepath.Join(cache, "observed")
-			if err := os.MkdirAll(dir, 0700); err != nil { t.Fatal(err) }
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
 			path := filepath.Join(dir, "perf.json")
 			b := []byte(`{"schemaVersion":1,"since":"2026-11-01T00:00:00Z","rows":[{"source":"codex"},{"source":"claude-code"}],"live":[{"source":"codex"},{"source":"claude-code"}]}`)
-			if err := os.WriteFile(path, b, 0600); err != nil { t.Fatal(err) }
-			if err := EraseScope(Paths{Cache:cache}, consent.ScopeCodexLocalHistory, forget); err != nil { t.Fatal(err) }
+			if err := os.WriteFile(path, b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := EraseScope(Paths{Cache: cache}, consent.ScopeCodexLocalHistory, forget); err != nil {
+				t.Fatal(err)
+			}
 			after, err := os.ReadFile(path)
-			if err != nil || strings.Contains(string(after), `"codex"`) || !strings.Contains(string(after), `"claude-code"`) { t.Fatalf("wrong source cleanup: %s (%v)", after, err) }
+			if err != nil || strings.Contains(string(after), `"codex"`) || !strings.Contains(string(after), `"claude-code"`) {
+				t.Fatalf("wrong source cleanup: %s (%v)", after, err)
+			}
 		})
 	}
 }

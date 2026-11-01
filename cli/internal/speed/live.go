@@ -36,7 +36,7 @@ type liveSample struct {
 
 // LiveRecord is bounded local observation state, not a public session identifier.
 type LiveRecord struct {
-	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
+	GrantEpoch      *GrantEpoch  `json:"grantEpoch,omitempty"`
 	Key             string       `json:"key"`
 	Ref             string       `json:"ref"`
 	Source          string       `json:"source"`

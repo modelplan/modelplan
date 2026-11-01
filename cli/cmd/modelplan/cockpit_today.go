@@ -31,7 +31,7 @@ func cockpitTodayTotals(accounts []quota.Account, view speed.PerfView) []cockpit
 		return out
 	}
 	type candidate struct {
-		ref string
+		ref       string
 		ambiguous bool
 	}
 	bySource := map[string]candidate{}

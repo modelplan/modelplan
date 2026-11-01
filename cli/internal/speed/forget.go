@@ -36,25 +36,35 @@ func forgetSource(cache, source string, replace func(string, []byte) error) erro
 	}
 	rows := l.Rows[:0]
 	for _, r := range l.Rows {
-		if r.Source != source { rows = append(rows, r) }
+		if r.Source != source {
+			rows = append(rows, r)
+		}
 	}
 	l.Rows = rows
 	hours := l.Hourly[:0]
 	for _, r := range l.Hourly {
-		if r.Source != source { hours = append(hours, r) }
+		if r.Source != source {
+			hours = append(hours, r)
+		}
 	}
 	l.Hourly = hours
 	sessions := l.Sessions[:0]
 	for _, r := range l.Sessions {
-		if r.Source != source { sessions = append(sessions, r) }
+		if r.Source != source {
+			sessions = append(sessions, r)
+		}
 	}
 	l.Sessions = sessions
 	live := l.Live[:0]
 	for _, r := range l.Live {
-		if r.Source != source { live = append(live, r) }
+		if r.Source != source {
+			live = append(live, r)
+		}
 	}
 	l.Live = live
 	b, err := json.Marshal(l)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return replace(PerfPath(cache), b)
 }
