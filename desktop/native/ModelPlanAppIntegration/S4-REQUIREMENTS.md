@@ -1,8 +1,8 @@
 # S4 quota truth consumer
 
 Source: `20261101-design-requirements/requirements.yaml`, consolidated
-`design-handoffs/review/dock-settings-conformance-20261101.md`, and the account
-member contract recorded in private ticket #695, comment 6551743299.
+`design-handoffs/review/dock-settings-conformance-20261101.md`, and the
+coordinator's decided account-member contract (2026-11-01).
 The implementation is isolated in draft PR #401, stacked on #332. It does not
 change the official appearance selection, placement writer, first run, or host
 dispatcher.
@@ -30,7 +30,7 @@ S1/S2 and the coordinator own any later device run.
 duplicate tag. The Dock content and Settings catalogue use the same member keys.
 Clearing the Store synchronously withdraws identities, readings and card facts.
 
-`migratingRowPreferences(_:)` is a pure transformation for M2's one shared
+`migratingRowPreferences(_:)` is a pure transformation for the one shared
 Settings writer to commit. Exactly one unambiguous member inherits a row key;
 multiple/zero members drop that row choice. Existing member alias/pin choices win.
 The App consumer does not add a competing persistence writer.
@@ -38,7 +38,7 @@ The App consumer does not add a competing persistence writer.
 **Unresolved contract details:** current RowsAccount has `route`, but no `source`
 locator. The provisional fallback is `<rowId>#<route.rawValue>`; colliding keys
 are withheld rather than assigned positional/hash identities or duplicated
-totals. The exact stable source/collision rule is requested on #697. Similarly,
+totals. The exact stable source/collision rule is requested from the coordinator. Similarly,
 the wire has no explicit model-scope flag: a model-specific window that retains
 a general role and reports general limit/pool keys cannot be distinguished safely.
 Unknown or explicitly supplemental keys are conservatively card-only. No classification by label,
