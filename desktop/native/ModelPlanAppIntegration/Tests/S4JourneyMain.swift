@@ -8,6 +8,7 @@ import Darwin
         do {
             let capture=URL(fileURLWithPath:CommandLine.arguments[1])
             try await S4QuotaJourney.roles(capture:capture)
+            try await S4QuotaJourney.sourceStates(capture:capture)
             try await S4QuotaJourney.members(capture:capture)
             try await S4QuotaJourney.unknownFacts(capture:capture)
             try await S4QuotaJourney.collisions(capture:capture)

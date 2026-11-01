@@ -101,9 +101,22 @@ import ModelPlanSettings
         }
         let subscriptions=members.map { member in SettingsSubscription(id:member.id,
             name:.init(member.name(english:true),member.name(english:false)),
-            plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "") }
+            plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
+            source:sourceState(member,now:context.now)) }
         return .init(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:signals)
+    }
+    private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
+        let row=member.row, account=member.account
+        if row.consent == .denied { return .denied }
+        if row.state == .off { return .readerDisabled }
+        if row.state == .stale || account.valueState == .retained { return .stale }
+        if row.state == .fresh && account.valueState == .current {
+            if (date(row.expiresAt).map { now >= $0 } ?? false) ||
+                (date(account.freshUntil).map { now >= $0 } ?? false) { return .stale }
+            return .fresh
+        }
+        return .unavailable
     }
     private func date(_ stamp: WireTimestamp?) -> Date? {
         guard let stamp else { return nil }

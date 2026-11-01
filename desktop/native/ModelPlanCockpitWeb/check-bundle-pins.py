@@ -6,9 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import sys
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'verification'))
-from artifact_paths import is_appledouble
+
+
+def is_appledouble(path):
+    """Skip macOS transport metadata, never ordinary invalid bundle content."""
+    return any(part.startswith('._') for part in Path(path).parts)
 
 
 def validate(repo):

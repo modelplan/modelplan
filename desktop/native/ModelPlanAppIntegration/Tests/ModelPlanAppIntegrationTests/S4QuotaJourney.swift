@@ -43,6 +43,38 @@ private actor S4RowsClient: EngineClient {
 @MainActor enum S4QuotaJourney {
     struct Failure:Error,CustomStringConvertible { let description:String }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
+    static func sourceStates(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var account=(row["accounts"] as! [[String:Any]])[0]
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu","settings"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+        func snapshot() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root)) }
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-sources-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store:SettingsStore
+        do { store=try SettingsStore(url:directory.appendingPathComponent("settings.json")) } catch { throw Failure(description:"settings initialization: \(error)") }
+        do { try await store.update { $0.language = .english } } catch { throw Failure(description:"settings fixture: \(error)") }
+        let initial:WireRowsSnapshot
+        do { initial=try snapshot() } catch { throw Failure(description:"source fixture decode: \(error)") }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:initial)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        func source() -> SubscriptionSourceState? { entry.currentSettingsContext.subscriptions.first(where:{$0.id == "0123456789abcdef"})?.source }
+        if source() != .fresh {
+            let observed=source();await entry.composition.stop()
+            throw Failure(description:"the normal Settings catalogue must report a fresh admitted member (observed: \(String(describing:observed)))")
+        }
+        guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        for (state,consent,value,expected) in [("stale","allowed","retained",SubscriptionSourceState.stale)] {
+            row["state"]=state;row["consent"]=consent;account["valueState"]=value;row["accounts"]=[account]
+            projection["rows"]=[row];root["projection"]=projection
+            do { try await client.replaceRows(snapshot()) } catch { throw Failure(description:"refresh \(state): \(error)") }
+            try require(source() == expected,"the normal Settings catalogue must reflect \(state)/\(consent)/\(value)")
+        }
+        await entry.composition.stop()
+    }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
