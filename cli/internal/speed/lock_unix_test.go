@@ -18,7 +18,7 @@ func TestLedgerWriterLockNeverStealsAgedLiveHolder(t *testing.T) {
 			if !ok {
 				t.Fatal("initial writer lock failed")
 			}
-			path := filepath.Join(cache, "observed", name)
+			path := filepath.Join(cache, "observed", name[:len(name)-len(".lock")]+".flock")
 			inode, err := os.Stat(path)
 			if err != nil {
 				unlock()

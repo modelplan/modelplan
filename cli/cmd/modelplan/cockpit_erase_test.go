@@ -84,7 +84,7 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 				}
 			}
 			check(desktop(), true)
-			lock := filepath.Join(st.Dir, "observed", "perf.lock")
+			lock := filepath.Join(st.Dir, "observed", "perf.flock")
 			var held *os.File
 			if !forget {
 				held = holdTestLedgerLock(t, lock)
@@ -147,7 +147,7 @@ func holdTestLedgerLock(t *testing.T, path string) *os.File {
 }
 
 func TestHistoryCleanupNeverStealsSlowWriterLocks(t *testing.T) {
-	for _, name := range []string{"speed.lock", "perf.lock"} {
+	for _, name := range []string{"speed.flock", "perf.flock"} {
 		for _, forget := range []bool{false, true} {
 			t.Run(name+map[bool]string{false: "-revoke", true: "-forget"}[forget], func(t *testing.T) {
 				consentFixtureHome(t)
@@ -217,7 +217,7 @@ func TestHistoryCleanupNeverStealsSlowWriterLocks(t *testing.T) {
 				// Simulate the writer completing its delayed read-modify-write while
 				// still holding the lock. Cleanup must run only after this write.
 				target := "speed.json"
-				if name == "perf.lock" {
+				if name == "perf.flock" {
 					target = "perf.json"
 				}
 				if err := os.WriteFile(filepath.Join(dir, target), []byte(`{"rows":[{"source":"codex"},{"source":"claude-code"}]}`), 0600); err != nil {
@@ -262,7 +262,7 @@ func TestHistoryLedgerLockChildProcess(t *testing.T) {
 }
 
 func TestKilledWriterReleasesLedgerLockForCleanup(t *testing.T) {
-	for _, name := range []string{"speed.lock", "perf.lock"} {
+	for _, name := range []string{"speed.flock", "perf.flock"} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
 			cache := t.TempDir()

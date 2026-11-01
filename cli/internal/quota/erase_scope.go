@@ -58,7 +58,7 @@ func EraseScope(p Paths, scope string, forget bool) error {
 	return forgetTool(p, tool, false, forget, d.Class)
 }
 
-// Caller holds ReaderLock. perf.lock also guards the daily-long rollup.
+// Caller holds ReaderLock. perf.flock also guards the daily-long rollup.
 func forgetLocalSpeedLedgers(cache, tool string) error {
 	observed := filepath.Join(cache, "observed")
 	if _, err := os.Stat(observed); os.IsNotExist(err) {

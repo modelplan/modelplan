@@ -57,7 +57,7 @@ func TestWindowsLockExcludesLiveAndReleasesKilledWriter(t *testing.T) {
 			if !scan.Scan() || scan.Text() != "locked" {
 				t.Fatal("child did not acquire lock")
 			}
-			path := filepath.Join(cache, "observed", name)
+			path := filepath.Join(cache, "observed", name[:len(name)-len(".lock")]+".flock")
 			old := time.Now().Add(-time.Hour)
 			if err := os.Chtimes(path, old, old); err != nil {
 				t.Fatal(err)

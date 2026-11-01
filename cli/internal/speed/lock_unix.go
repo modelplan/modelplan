@@ -11,7 +11,7 @@ import (
 
 // lock keeps a stable inode: a live writer owns it until it closes the file,
 // and the OS releases it on process death. Callers are intentionally nonblocking.
-func lock(cache, name string) (func(), bool) {
+func lockPlatform(cache, name string) (func(), bool) {
 	path := filepath.Join(cache, "observed", name)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, false

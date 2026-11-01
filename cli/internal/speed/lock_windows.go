@@ -11,7 +11,7 @@ import (
 )
 
 // Keep the lock file in place so all writers and cleanup lock the same file.
-func lock(cache, name string) (func(), bool) {
+func lockPlatform(cache, name string) (func(), bool) {
 	path := filepath.Join(cache, "observed", name)
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, false
