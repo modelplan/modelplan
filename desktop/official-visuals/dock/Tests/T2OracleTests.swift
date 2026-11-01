@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 import XCTest
 import AppKit
+import ModelPlanDock
 @testable import ModelPlanOfficialDock
 
 final class T2OracleTests: XCTestCase {
@@ -44,6 +45,25 @@ final class T2OracleTests: XCTestCase {
             XCTAssertEqual(actual.buttonOverhang, try XCTUnwrap(test["overhang"] as? Double), accuracy: 1e-12)
             XCTAssertEqual(actual.gap, try XCTUnwrap(test["gap"] as? Double), accuracy: 1e-7)
             XCTAssertEqual(actual.span, try XCTUnwrap(test["span"] as? Double), accuracy: 1e-7)
+        }
+    }
+
+    func testTimeRingUsesTheUnchanged52PointNozzleScale() throws {
+        let now = Date(timeIntervalSince1970: 1_792_506_300)
+        var input = DockInstrumentInput(id: "synthetic", name: "Synthetic", windows: [
+            .init(id: "weekly", period: .week, label: "Weekly", remainingPercent: 76,
+                  resetsAt: now.addingTimeInterval(7410 * 60), durationSeconds: 10080 * 60)])
+        input.dataState = .fresh
+        let reading = try DockInstrumentProjection.evaluate(input, now: now)
+        XCTAssertEqual(reading.litTimePoints(positions: 37), 28)
+        for diameter in [CGFloat(36), 44, 52] {
+            let coordinates = T2EdgeCoordinates(edge: .right, width: 1470, height: 956, menuBarExclusion: 26)
+            let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: .init(coordinates: coordinates, diameter: diameter))
+            let skin = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
+            let clock = try XCTUnwrap(skin.stations.first?.clock)
+            XCTAssertEqual(clock.positions, 37)
+            XCTAssertEqual(clock.radius, 28.2 * diameter / 52, accuracy: 1e-9)
+            XCTAssertEqual(clock.dotRadius, 0.65 * diameter / 52, accuracy: 1e-9)
         }
     }
 

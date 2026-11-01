@@ -150,6 +150,33 @@ import CoreImage.CIFilterBuiltins
         guard let result = compositor.createCGImage(face, from: canvas)
                 ?? softwareCompositor.createCGImage(face, from: canvas) else { throw RenderError.filterRender }
         guard result.width == width, result.height == height else { throw RenderError.filterExtent("renderedBitmap") }
-        return result
+
+        // Original grip: rocket.css .dk-cap i, positioned by the T2 geometry.
+        // Side edges use 10x22, horizontal edges 22x10, scaled with the face.
+        guard let final = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width * 4, space: srgb,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw RenderError.allocation }
+        final.draw(result, in: canvas)
+        transform(final)
+        let vertical = geometry.input.coordinates.edge == .left || geometry.input.coordinates.edge == .right
+        let gripWidth = (vertical ? 10.0 : 22.0) * unitScale
+        let gripHeight = (vertical ? 22.0 : 10.0) * unitScale
+        let grip = CGRect(x: geometry.grip.x - gripWidth/2, y: geometry.grip.y - gripHeight/2, width: gripWidth, height: gripHeight)
+        let radius = min(6 * unitScale, gripWidth/2, gripHeight/2)
+        let path = CGPath(roundedRect: grip, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        final.addPath(path); final.setLineWidth(2 * unitScale)
+        final.setStrokeColor(CGColor(gray: 0, alpha: 136.0/255)); final.strokePath()
+        final.saveGState(); final.addPath(path); final.clip()
+        let gripColors = [CGColor(colorSpace: srgb, components: [52.0/255,55.0/255,60.0/255,1])!,
+                          CGColor(colorSpace: srgb, components: [29.0/255,31.0/255,35.0/255,1])!]
+        guard let gripGradient = CGGradient(colorsSpace: srgb, colors: gripColors as CFArray, locations: [0, 1]) else { throw RenderError.allocation }
+        final.drawLinearGradient(gripGradient, start: CGPoint(x: grip.midX, y: grip.minY), end: CGPoint(x: grip.midX, y: grip.maxY), options: [])
+        let inset = CGMutablePath()
+        inset.addPath(path)
+        inset.addRoundedRect(in: grip.offsetBy(dx: 0, dy: unitScale), cornerWidth: radius, cornerHeight: radius)
+        final.addPath(inset); final.setFillColor(CGColor(gray: 1, alpha: 28.0/255)); final.drawPath(using: .eoFill)
+        final.restoreGState()
+        guard let finished = final.makeImage() else { throw RenderError.allocation }
+        return finished
     }
 }

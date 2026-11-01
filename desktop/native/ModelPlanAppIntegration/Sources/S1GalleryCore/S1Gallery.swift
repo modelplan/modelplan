@@ -17,22 +17,28 @@ private struct S1Manifest: Decodable {
     let captures: [Capture]
 }
 
-@MainActor private final class S1SyntheticProvider: DockContentProvider {
+@MainActor final class S1SyntheticProvider: DockContentProvider {
     let inputs: [DockInstrumentInput]
     init(count: Int, now: Date) {
-        let fixtures: [(String, String, String, Double, Double?, Double?)] = [
-            ("codex", "ChatGPT", "openai", 89, 76, 198),
-            ("claude", "Claude", "claude", 9, 42, 120),
-            ("zhipu", "GLM", "zhipu", 72, nil, 48),
-            ("cursor", "Cursor", "cursor", 14, nil, nil),
-            ("ocgo", "OC Go", "opencode", 54, nil, nil),
-            ("copilot", "Copilot", "copilot", 61, nil, nil),
-            ("kimi", "Kimi", "kimi", 81, 65, 75)
+        // Values are the fixed r7 synthetic scene, including the reported
+        // reset times and nominal fixture periods; no time is inferred for an
+        // unknown reset or an actual user account.
+        typealias Window = (DockQuotaPeriod, Double, Double?, Double)
+        let fixtures: [(String, String, String, [Window])] = [
+            ("codex", "ChatGPT", "openai", [(.fiveHour, 89, 198, 300), (.week, 76, 7410, 10080)]),
+            ("claude", "Claude", "claude", [(.fiveHour, 9, 120, 300), (.week, 42, 3490, 10080)]),
+            ("zhipu", "GLM", "zhipu", [(.fiveHour, 72, 48, 300)]),
+            ("cursor", "Cursor", "cursor", [(.month, 14, 19020, 43200)]),
+            ("ocgo", "OC Go", "opencode", [(.fiveHour, 54, nil, 300)]),
+            ("copilot", "Copilot", "copilot", [(.month, 61, 15930, 43200)]),
+            ("kimi", "Kimi", "kimi", [(.fiveHour, 81, 75, 300), (.week, 65, 6160, 10080)])
         ]
-        inputs = fixtures.prefix(count).map { id, name, vendor, primary, secondary, minutes in
-            var windows = [DockQuotaWindowInput(id: "primary", period: .fiveHour, label: "5h", remainingPercent: primary,
-                resetsAt: minutes.map { now.addingTimeInterval($0 * 60) }, durationSeconds: 5 * 3600)]
-            if let secondary { windows.append(.init(id: "weekly", period: .week, label: "Weekly", remainingPercent: secondary, resetsAt: nil, durationSeconds: nil)) }
+        inputs = fixtures.prefix(count).map { id, name, vendor, fixtureWindows in
+            let windows = fixtureWindows.enumerated().map { index, value in
+                DockQuotaWindowInput(id: "window-\(index)", period: value.0, label: value.0.rawValue,
+                    remainingPercent: value.1, resetsAt: value.2.map { now.addingTimeInterval($0 * 60) },
+                    durationSeconds: value.3 * 60)
+            }
             var input = DockInstrumentInput(id: id, name: name, windows: windows)
             input.vendorResourceKey = vendor; input.dataState = .fresh
             if id == "codex" || id == "claude" {

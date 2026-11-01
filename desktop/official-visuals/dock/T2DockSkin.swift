@@ -22,7 +22,9 @@ public enum T2DockSkin {
         let outerWidth = d * 0.058, innerWidth = d * 0.031
         let outerRadius = d/2 - 1 - outerWidth/2
         let innerRadius = outerRadius - outerWidth/2 - 2 - innerWidth/2
-        let clockRadius = d/2 + 2.2
+        // dock-view renders the source nozzle at 52 and scales it as a unit.
+        let clockRadius = (52.0/2 + 2.2) * unit
+        let clockDots = max(24, Int((2 * CGFloat.pi * (52.0/2 + 2.2) / 4.8).rounded()))
         var stations = [[String: Any]]()
         for station in g.stations {
             var recipe: [String: Any] = [
@@ -32,7 +34,7 @@ public enum T2DockSkin {
                 "glyphRect": rect(box(station.centre, d*0.27, d*0.27)), "layers": layers, "glyphs": logos,
                 "outer": ["radius":outerRadius,"width":outerWidth,"minimumVisibleFraction":1.0/60,"opacity":1.0,"trackOpacity":1.0],
                 "inner": ["radius":innerRadius,"width":innerWidth,"minimumVisibleFraction":1.0/60,"opacity":0.85,"trackOpacity":0.65],
-                "clock": ["radius":clockRadius,"dotRadius":0.65,"backWidth":1.5,"positions":max(24,Int((2 * CGFloat.pi * clockRadius / 4.8).rounded()))],
+                "clock": ["radius":clockRadius,"dotRadius":0.65*unit,"backWidth":1.5*unit,"positions":clockDots],
                 "notchWidth":d*0.014,"caseInnerRadius":max(0,innerRadius-innerWidth/2-1),
                 "showsReadout":showsPercentages, "fallbackVendorName":true
             ]

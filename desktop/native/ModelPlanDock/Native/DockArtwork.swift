@@ -91,12 +91,33 @@ public struct DockResourceManifest: Codable, Sendable {
         let (_,data)=try checkedResource(id)
         guard data.starts(with:[0,1,0,0]) || data.starts(with:Array("OTTO".utf8)),
               let provider=CGDataProvider(data:data as CFData),let graphics=CGFont(provider) else{throw DockArtworkError.corruptResource(id)}
-        // The descriptor array may start at a named Thin instance, not the font's default instance.
+        // Build the variable font directly from verified bytes. CoreText omits
+        // default-valued axes in CTFontCopyVariation, so verify the explicit
+        // graphics-font instance (and its CoreText round trip) instead.
         let base=CTFontCreateWithGraphicsFont(graphics,size,nil,nil)
         let axes=CTFontCopyVariationAxes(base) as? [[CFString:Any]] ?? []
-        guard axes.contains(where:{($0[kCTFontVariationAxisIdentifierKey] as? NSNumber)?.uint32Value==0x77676874}) else{return base}
-        let desired=CTFontDescriptorCreateWithAttributes([kCTFontVariationAttribute:[NSNumber(value:0x77676874):NSNumber(value:weight)]] as CFDictionary)
-        return CTFontCreateCopyWithAttributes(base,size,nil,desired)
+        guard let axis=axes.first(where:{($0[kCTFontVariationAxisIdentifierKey] as? NSNumber)?.uint32Value==0x77676874}) else{return base}
+        guard let low=(axis[kCTFontVariationAxisMinimumValueKey] as? NSNumber)?.doubleValue,
+              let high=(axis[kCTFontVariationAxisMaximumValueKey] as? NSNumber)?.doubleValue,
+              let defaultValue=(axis[kCTFontVariationAxisDefaultValueKey] as? NSNumber)?.doubleValue,
+              (low...high).contains(weight),
+              let graphicsAxes=graphics.variationAxes as? [[CFString:Any]] else {throw DockArtworkError.corruptResource(id)}
+        // CoreText may localize the axis display name while CoreGraphics uses
+        // its canonical name. Match by the declared range/default, requiring
+        // a unique match rather than assuming a language or axis order.
+        let matches=graphicsAxes.filter {
+            ($0[CGFont.variationAxisMinValue] as? NSNumber)?.doubleValue == low &&
+            ($0[CGFont.variationAxisMaxValue] as? NSNumber)?.doubleValue == high &&
+            ($0[CGFont.variationAxisDefaultValue] as? NSNumber)?.doubleValue == defaultValue
+        }
+        guard matches.count == 1, let name=matches[0][CGFont.variationAxisName] as? String, !name.isEmpty,
+              let instance=graphics.copy(withVariations:[name:weight] as CFDictionary),
+              let values=instance.variations as? [String:NSNumber], let selected=values[name],
+              abs(selected.doubleValue-weight)<0.001 else {throw DockArtworkError.corruptResource(id)}
+        let font=CTFontCreateWithGraphicsFont(instance,size,nil,nil)
+        guard let roundTrip=CTFontCopyGraphicsFont(font,nil).variations as? [String:NSNumber],
+              let actual=roundTrip[name],abs(actual.doubleValue-weight)<0.001 else {throw DockArtworkError.corruptResource(id)}
+        return font
     }
     public func purge() {images.removeAll();decodedBytes=0}
 }

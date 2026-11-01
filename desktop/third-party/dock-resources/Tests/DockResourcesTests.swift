@@ -46,6 +46,17 @@ import CoreText
             XCTAssertThrowsError(try DockStaticSVG.size(Data((prefix + css + suffix).utf8)))
         }
     }
+    func testVariableMonoUsesExplicitRegularWeight() throws {
+        let store = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: manifest(false))
+        let font = try store.font("font-jetbrains-mono", size: 11, weight: 400)
+        let graphics = CTFontCopyGraphicsFont(font, nil)
+        let axes = try XCTUnwrap(graphics.variationAxes as? [[CFString: Any]])
+        XCTAssertEqual(axes.count, 1)
+        let axisName = try XCTUnwrap(axes.first?[CGFont.variationAxisName] as? String)
+        let values = try XCTUnwrap(graphics.variations as? [String: NSNumber])
+        XCTAssertEqual(try XCTUnwrap(values[axisName]).doubleValue, 400, accuracy: 0.001)
+    }
+
     func testDefaultPolicyExcludesBetaOnlyZMark() async throws {
         XCTAssertNil(try manifest(false).files["logo-zai-white"])
         XCTAssertNotNil(try manifest(true).files["logo-zai-white"])

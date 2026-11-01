@@ -95,7 +95,11 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 drawSize = rect.size
             }
             let target = CGRect(x:rect.midX-drawSize.width/2,y:rect.midY-drawSize.height/2,width:drawSize.width,height:drawSize.height)
-            c.saveGState();c.clip(to:rect);c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
+            c.saveGState();c.clip(to:rect)
+            // SVG marks are already rasterized at the requested backing scale;
+            // do not blur them a second time when placing the checked pixels.
+            if isVector { c.interpolationQuality = .none }
+            c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
             c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
         }
         if let material {
