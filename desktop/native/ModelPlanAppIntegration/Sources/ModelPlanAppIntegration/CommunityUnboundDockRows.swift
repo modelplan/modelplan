@@ -10,9 +10,23 @@ public struct DockContentRow: Sendable {
     public let reason: String
     public let nextStep: String
     public let originalObservedAt: Date?
-    public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil) {
+    public let plan:String, sourceName:String
+    public let windowDetails:[String:String]
+    public let additionalRows:[DockCardRow]
+    public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
+                plan:String="",sourceName:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[]) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
+        self.plan=plan;self.sourceName=sourceName;self.windowDetails=windowDetails;self.additionalRows=additionalRows
+    }
+    public func cardSourceAndAge(at now:Date,english:Bool) -> String {
+        guard !sourceName.isEmpty else { return sourceAndAge(at:now) }
+        let age:String
+        if let originalObservedAt,now >= originalObservedAt {
+            let minutes=Int(min(Double(Int.max/60),now.timeIntervalSince(originalObservedAt)/60))
+            age=english ? (minutes == 0 ? "Observed <1m ago":"Observed \(minutes)m ago"):(minutes == 0 ? "1分钟内观测":"\(minutes)分钟前观测")
+        } else { age=english ? "Observation time unknown":"观测时间未知" }
+        return sourceName+" · "+age
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)

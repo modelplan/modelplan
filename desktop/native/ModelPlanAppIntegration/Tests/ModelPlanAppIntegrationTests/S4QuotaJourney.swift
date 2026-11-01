@@ -88,6 +88,12 @@ private actor S4RowsClient: EngineClient {
         try require(content.snapshot.inputs.allSatisfy{$0.windows.count == 1},"one account's windows must not be duplicated into its neighbour")
         try require(content.snapshot.inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2"],"each duplicate-account nozzle needs its tag")
         try require(content.snapshot.subscriptions.map(\.id) == ["0123456789abcdef","fedcba9876543210"],"Settings catalogue must use the same member keys")
+        guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
+              let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
+        try require(firstCard.plan == "synthetic","card must carry the reported plan name")
+        try require(firstCard.rows.contains{$0.kind == .reserve && $0.value.contains("42.5")},"first card needs only its own reported credits")
+        try require(secondCard.rows.contains{$0.kind == .reserve && $0.value.contains("7")},"second card needs its own reported credits")
+        try require(!secondCard.rows.contains{$0.value.contains("42.5")},"source totals must not leak across members")
         await entry.composition.stop()
     }
 }

@@ -34,9 +34,10 @@ public enum DockCardProjection {
         _=try DockInstrumentProjection.evaluate(input,now:now)
         var rows=[DockCardRow]()
         for window in input.windows{
-            var scoped=input;scoped.windows=[window];scoped.selectedWindowID=window.id
+            var scoped=input,cardWindow=window;cardWindow.isGeneral=true
+            scoped.windows=[cardWindow];scoped.selectedWindowID=window.id
             let reading=try DockInstrumentProjection.evaluate(scoped,now:now)
-            rows.append(.init(id:"quota:"+window.id,kind:window.period == .fiveHour || window.period == .week ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
+            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
         }
         let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel)
         try result.validate();return result

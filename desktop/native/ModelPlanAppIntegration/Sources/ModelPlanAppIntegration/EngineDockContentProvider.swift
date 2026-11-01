@@ -27,8 +27,18 @@ import ModelPlanSettings
             let input = makeInput(member, now: context.now)
             inputs.append(input)
             let message = message(row, now: context.now)
+            let account=member.account
+            var details:[String:String]=[:]
+            for window in account.windows { details[window.id]=resetDetail(date(window.resetsAt),now:context.now) }
+            var reserve:[DockCardRow]=[]
+            if let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
+                reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",
+                    value:String(balance)+" "+(credits.unit == "credits" && !english ? "点":credits.unit)))
+            }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
-                                    nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"))
+                nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"),
+                originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
+                sourceName:sourceName(account.route),windowDetails:details,additionalRows:reserve)
         }
         let status: String
         switch value.status {
@@ -54,6 +64,30 @@ import ModelPlanSettings
         guard let stamp else { return nil }
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue)
+    }
+    private func sourceName(_ route:RowsRoute) -> String {
+        switch route {
+        case .savedLoginApi:return english ? "Saved sign-in":"已有登录"
+        case .runtimeRpc:return english ? "Tool runtime":"工具运行时"
+        case .localLog,.localSqlite:return english ? "Local history":"本地历史"
+        case .apiKeyApi:return english ? "Configured key":"已配置密钥"
+        case .browserSession:return english ? "Browser session":"浏览器会话"
+        case .statusLine:return english ? "Tool status line":"工具状态栏"
+        case .manual:return english ? "Manual reading":"手动读数"
+        case .knownUnknown,.unknown:return english ? "Unknown source":"未知来源"
+        }
+    }
+    private func resetDetail(_ reset:Date?,now:Date) -> String {
+        guard let reset else { return "--" }
+        let seconds=reset.timeIntervalSince(now)
+        guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
+        guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
+        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
+        let value:String
+        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
+        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
+        else { value=english ? "\(rest)m":"\(rest)分" }
+        return english ? "Resets in "+value:value+"后重置"
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
         if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {

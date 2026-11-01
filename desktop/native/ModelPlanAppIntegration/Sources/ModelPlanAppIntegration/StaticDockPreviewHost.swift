@@ -778,17 +778,23 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1; displayFollower.forgetLastDisplay()
         rebuild(); syncDisplayFollower(); edge.refresh()
     }
+    /// The same read-only content used by presentation; querying it never opens a card/window.
+    public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
+        let now=date ?? currentDate()
+        guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
+        return try DockCardProjection.content(input: preferences.applying(to: input),
+                revision: application?.snapshot.revision ?? 0,
+                plan:model?.presentationRows[id]?.plan ?? "",
+                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now),
+                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
+                windowDetails:model?.presentationRows[id]?.windowDetails ?? [:],
+                additionalRows: model?.presentationRows[id].map { $0.additionalRows + [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
+                enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
+    }
     private func showCard(_ id: String) {
-        let now = currentDate()
         guard permitted, !retired, preferences.showDock,
               (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
-              let input = model?.inputs.first(where: { $0.id == id }),
-              let content = try? DockCardProjection.content(input: preferences.applying(to: input),
-                revision: application?.snapshot.revision ?? 0,
-                sourceAndAge: CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now),
-                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
-                additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
-                enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now) else { dismissCard(); return }
+              let content=try? cardContent(for:id) else { dismissCard(); return }
         cardGeneration &+= 1
         let token = cardGeneration, feed = inputGeneration
         cardID = id; card.isHidden = false
