@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 import XCTest
+import CoreGraphics
 @testable import ModelPlanOfficialDock
 
 final class T2GeometryTests: XCTestCase {
@@ -61,5 +62,27 @@ final class T2GeometryTests: XCTestCase {
         XCTAssertThrowsError(try T2Geometry.make(subscriptions: [], input: T2GeometryInput(coordinates: c, diameter: 64)))
         XCTAssertThrowsError(try T2Geometry.make(subscriptions: [.init(id: "same"), .init(id: "same")],
             input: T2GeometryInput(coordinates: c)))
+    }
+
+    func testIgnitionControlRegistersTheGuardInRasterLocalCoordinates() throws {
+        for edge in [T2Edge.left, .right, .bottom] {
+            for diameter in [CGFloat(36), 44, 52] {
+                for count in [1, 4, 7] {
+                    let c = T2EdgeCoordinates(edge: edge, width: 1470, height: 956, menuBarExclusion: 26)
+                    let rows = (0..<count).map { T2Subscription(id: "synthetic-\($0)") }
+                    let geometry = try T2Geometry.make(subscriptions: rows, input: T2GeometryInput(coordinates: c, diameter: diameter))
+                    let path = CGMutablePath(); path.addLines(between: geometry.outline); path.closeSubpath()
+                    let raster = path.boundingBoxOfPath.union(geometry.ignitionBounds).insetBy(dx: -18, dy: -18)
+                    let target = try geometry.consoleButtonRect(in: raster)
+                    XCTAssertEqual(target.midX + raster.minX, geometry.button.x, accuracy: 1e-7)
+                    XCTAssertEqual(target.midY + raster.minY, geometry.button.y, accuracy: 1e-7)
+                    XCTAssertEqual(target.width, 34 * diameter / 52, accuracy: 1e-7)
+                    XCTAssertEqual(target.height, target.width, accuracy: 1e-7)
+                    XCTAssertTrue(CGRect(origin: .zero, size: raster.size).contains(target))
+                    XCTAssertThrowsError(try geometry.consoleButtonRect(in:
+                        CGRect(x: geometry.button.x, y: geometry.button.y, width: 1, height: 1)))
+                }
+            }
+        }
     }
 }

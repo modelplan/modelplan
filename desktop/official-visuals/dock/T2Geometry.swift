@@ -66,6 +66,24 @@ public struct T2Geometry: Sendable {
     public let clockRadius: CGFloat
     public let sliverCentre: CGPoint
 
+    /// DOCK-3.1-22/-24: the control is the registered guard, not the smaller
+    /// lacquer cap or the contact shadow. Coordinates use the same study space.
+    public var ignitionBounds: CGRect {
+        let diameter = 34 * input.diameter / 52
+        return CGRect(x: button.x - diameter / 2, y: button.y - diameter / 2,
+                      width: diameter, height: diameter)
+    }
+
+    /// Value for StaticDockGeometry.consoleButton after the appearance chooses
+    /// its raster bounds. Refuse a crop that would leave part of the control
+    /// outside the view rather than silently clipping or guessing a new target.
+    public func consoleButtonRect(in rasterBounds: CGRect) throws -> CGRect {
+        guard !rasterBounds.isEmpty,
+              [rasterBounds.minX, rasterBounds.minY, rasterBounds.width, rasterBounds.height].allSatisfy(\.isFinite),
+              rasterBounds.contains(ignitionBounds) else { throw InputError.invalidGeometry }
+        return ignitionBounds.offsetBy(dx: -rasterBounds.minX, dy: -rasterBounds.minY)
+    }
+
     public func point(arc: CGFloat, depth: CGFloat, onFace: Bool = false) -> CGPoint {
         let first = stations[0].arcPosition
         let depthCentre = stationDepth - radius * cos(first / radius)
