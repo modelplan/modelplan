@@ -20,7 +20,8 @@ import ModelPlanDock
         let context = try XCTUnwrap(CGContext(data:nil,width:width,height:8,bitsPerComponent:8,
             bytesPerRow:width*4,space:CGColorSpace(name:CGColorSpace.sRGB)!,
             bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.setFillColor(CGColor(red:0.25,green:0.5,blue:0.75,alpha:1))
+        context.setFillColor(CGColor(colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!,
+            components:[0.25,0.5,0.75,1])!)
         context.fill(CGRect(x:0,y:0,width:width,height:8))
         return try XCTUnwrap(context.makeImage())
     }
@@ -36,10 +37,16 @@ import ModelPlanDock
         let result = try renderer.render(skin:skin(),readings:[:],scale:1)
         XCTAssertEqual(calls,1)
         for image in [result.image,result.backgroundImage] {
-            let color = try XCTUnwrap(NSBitmapImageRep(cgImage:image).colorAt(x:4,y:4)?.usingColorSpace(.deviceRGB))
-            XCTAssertEqual(color.redComponent,0.25,accuracy:2.0/255)
-            XCTAssertEqual(color.greenComponent,0.5,accuracy:2.0/255)
-            XCTAssertEqual(color.blueComponent,0.75,accuracy:2.0/255)
+            // Read the renderer's declared sRGB RGBA8 pixels directly. AppKit's
+            // colorAt/NSColor conversion may change numeric channels even when
+            // both CGImages contain identical bytes.
+            XCTAssertEqual(image.bitsPerComponent,8); XCTAssertEqual(image.bitsPerPixel,32)
+            let pixels = try XCTUnwrap(image.dataProvider?.data) as Data
+            let offset = 4 * image.bytesPerRow + 4 * 4
+            let expected = [64,128,191,255]
+            for channel in 0..<4 {
+                XCTAssertEqual(Double(pixels[offset+channel]),Double(expected[channel]),accuracy:2)
+            }
         }
     }
     func testWrongSizedOrFailedMaterialRefusesRender() async throws {
