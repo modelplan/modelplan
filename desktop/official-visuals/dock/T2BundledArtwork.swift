@@ -15,7 +15,8 @@ public enum T2BundledArtwork {
     public enum Failure: Error { case missing, invalidManifest, outsideRoot, changedBytes }
     private struct Manifest: Decodable { let schemaVersion: Int; let files: [String: T2ArtworkRecord] }
     public static func rootURL() throws -> URL {
-        guard let root = Bundle.module.resourceURL?.appendingPathComponent("Resources", isDirectory: true) else { throw Failure.missing }
+        guard let manifest = Bundle.module.url(forResource: "artwork", withExtension: "json") else { throw Failure.missing }
+        let root = manifest.deletingLastPathComponent()
         return root.standardizedFileURL.resolvingSymlinksInPath()
     }
     public static func records() throws -> [String: T2ArtworkRecord] {
