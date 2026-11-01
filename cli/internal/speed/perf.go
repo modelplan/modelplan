@@ -196,9 +196,10 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if t.at.IsZero() || t.at.Before(l.Since) || t.at.Before(grantStart(l.admission, source)) || len(t.all) == 0 {
 		return
 	}
+	epoch := currentEpoch(l.admission, source)
 	var s *PerfSession
 	for i := range l.Sessions {
-		if l.Sessions[i].Key == key && l.Sessions[i].Source == source && sameEpoch(l.Sessions[i].GrantEpoch, currentEpoch(l.admission, source)) {
+		if l.Sessions[i].Key == key && l.Sessions[i].Source == source && sameEpoch(l.Sessions[i].GrantEpoch, epoch) {
 			s = &l.Sessions[i]
 		}
 	}
@@ -206,12 +207,12 @@ func (l *PerfLedger) addSession(key, source string, t turn) {
 	if s == nil {
 		ref := newRef()
 		for _, r := range l.Live {
-			if r.Key == key && r.Source == source && sameEpoch(r.GrantEpoch, currentEpoch(l.admission, source)) {
+			if r.Key == key && r.Source == source && sameEpoch(r.GrantEpoch, epoch) {
 				ref = r.Ref
 				break
 			}
 		}
-		l.Sessions = append(l.Sessions, PerfSession{GrantEpoch: currentEpoch(l.admission, source), Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
+		l.Sessions = append(l.Sessions, PerfSession{GrantEpoch: epoch, Ref: ref, Key: key, Source: source, FirstAt: start, LastAt: start})
 		s = &l.Sessions[len(l.Sessions)-1]
 	}
 	if start.Before(s.FirstAt) {
@@ -319,6 +320,7 @@ func (r *PerfRow) seen(t time.Time) {
 }
 
 func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
+	epoch := currentEpoch(l.admission, source)
 	status := "reported"
 	if c.effort == "" {
 		status = "unreported"
@@ -326,11 +328,11 @@ func (l *PerfLedger) row(d, source, parser string, c config) *PerfRow {
 	for i := range l.Rows {
 		r := &l.Rows[i]
 		if r.Day == d && r.Source == source && r.Model == c.model && r.EffortStatus == status && r.Effort == c.effort && r.Speed == c.speed &&
-			r.Parser == parser && r.Eligibility == EligibilityV1 && sameEpoch(r.GrantEpoch, currentEpoch(l.admission, source)) {
+			r.Parser == parser && r.Eligibility == EligibilityV1 && sameEpoch(r.GrantEpoch, epoch) {
 			return r
 		}
 	}
-	l.Rows = append(l.Rows, PerfRow{GrantEpoch: currentEpoch(l.admission, source), Day: d, Source: source, Model: c.model, EffortStatus: status, Effort: c.effort, Speed: c.speed, Parser: parser, Eligibility: EligibilityV1})
+	l.Rows = append(l.Rows, PerfRow{GrantEpoch: epoch, Day: d, Source: source, Model: c.model, EffortStatus: status, Effort: c.effort, Speed: c.speed, Parser: parser, Eligibility: EligibilityV1})
 	return &l.Rows[len(l.Rows)-1]
 }
 

@@ -27,7 +27,8 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	ref := "0123456789abcdef"
 	zero, remaining, balance := 0, 25.0, 0.0
 	until := now.Add(time.Hour)
-	view := appserver.View{QuotaReport: quota.Report{Accounts: []quota.Account{{Source: "codex", Subscription: &quota.Binding{Ref: ref, Status: "verified"}, Cards: []quota.Card{{Kind: "full", Count: &zero}}, Credits: &quota.Credits{Balance: &balance, ObservedAt: now}}}}, Projection: rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{{ID: "weekly", Current: true, ValidUntil: &until, RemainingPercent: &remaining}}}}}}}}
+	expired := now.Add(-time.Hour)
+	view := appserver.View{QuotaReport: quota.Report{Accounts: []quota.Account{{Source: "codex", Subscription: &quota.Binding{Ref: ref, Status: "verified"}, Cards: []quota.Card{{Kind: "full", Count: &zero}, {Kind: "full", Count: &zero, ExpiresAt: &expired}}, Credits: &quota.Credits{Balance: &balance, ObservedAt: now}}}}, Projection: rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{{ID: "weekly", Current: true, ValidUntil: &until, RemainingPercent: &remaining}}}}}}}}
 	data, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
 	if err != nil {
 		t.Fatal(err)

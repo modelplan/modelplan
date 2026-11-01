@@ -206,7 +206,8 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 	})
 }
 func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription string, now time.Time) bool {
-	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(grantStart(l.admission, source)) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
+	start := grantStart(l.admission, source)
+	if x.cfg.model == "" || x.last.IsZero() || x.last.Before(start) || !x.last.After(now.Add(-LiveWithin)) || x.last.After(now) || x.start.IsZero() {
 		return false
 	}
 	r := LiveRecord{GrantEpoch: currentEpoch(l.admission, source), Key: key, Ref: newRef(), Source: source, Model: clip(x.cfg.model), Effort: clip(x.cfg.effort), Speed: speedMode(x.cfg.speed), StartedAt: x.start.UTC(), LastAt: x.last.UTC(), Running: x.running, SubscriptionRef: subscription}
@@ -242,7 +243,7 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 		r.ProjectRef, _ = l.project(x.cwd)
 	}
 	for _, q := range x.requests {
-		if q.cfg != x.cfg || q.end.Before(grantStart(l.admission, source)) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
+		if q.cfg != x.cfg || q.end.Before(start) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
 			continue
 		}
 		r.Samples = append(r.Samples, liveSample{At: q.end.UTC(), Out: q.out, GenMs: q.gen.Milliseconds(), Eligible: q.eligible()})

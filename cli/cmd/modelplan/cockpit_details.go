@@ -55,13 +55,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			continue
 		}
 		for _, card := range account.Cards {
-			if len(out.ResetCounts) == 64 {
-				break
-			}
 			if card.ExpiresAt != nil && !now.Before(*card.ExpiresAt) {
 				continue
-		}
-		if card.Kind != "full" && card.Kind != "five_hour" && card.Kind != "weekly" {
+			}
+			if card.Kind != "full" && card.Kind != "five_hour" && card.Kind != "weekly" {
 				continue
 			}
 			if card.Count != nil && (*card.Count < 0 || *card.Count > 100000) {
@@ -81,14 +78,26 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			if x.Kind != y.Kind {
 				return x.Kind < y.Kind
 			}
-			if x.ExpiresAt == nil {
-				return y.ExpiresAt != nil
+			if x.ExpiresAt == nil && y.ExpiresAt != nil {
+				return true
 			}
-			if y.ExpiresAt == nil {
+			if x.ExpiresAt != nil && y.ExpiresAt == nil {
 				return false
 			}
-			return x.ExpiresAt.Before(*y.ExpiresAt)
+			if x.ExpiresAt != nil && !x.ExpiresAt.Equal(*y.ExpiresAt) {
+				return x.ExpiresAt.Before(*y.ExpiresAt)
+			}
+			if x.Count == nil {
+				return y.Count != nil
+			}
+			if y.Count == nil {
+				return false
+			}
+			return *x.Count < *y.Count
 		})
+		if len(result.Subscriptions[i].ResetCounts) > 64 {
+			result.Subscriptions[i].ResetCounts = result.Subscriptions[i].ResetCounts[:64]
+		}
 	}
 	if view.ResetEvents != nil {
 		result.ResetEvents = append(result.ResetEvents, (*view.ResetEvents)...)
