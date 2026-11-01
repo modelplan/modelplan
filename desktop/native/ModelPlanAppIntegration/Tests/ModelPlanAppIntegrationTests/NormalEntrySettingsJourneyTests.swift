@@ -66,6 +66,8 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(try XCTUnwrap(editor.effective).opening, .quick)
         let visible = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
         XCTAssertFalse(visible.contains { [.theme, .opening, .countdown].contains($0.key) })
+        XCTAssertEqual(visible.first { $0.key == .openShortcut }?.availability, .serviceUnavailable)
+        XCTAssertTrue(visible.first { $0.key == .openShortcut }?.subtitle.english.contains("Unavailable") == true)
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
         XCTExpectFailure("#697: member projection has not yet been integrated") {
             XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")

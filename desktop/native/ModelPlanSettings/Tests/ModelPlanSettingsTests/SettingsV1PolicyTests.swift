@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import XCTest
 @testable import ModelPlanSettings
+
+@MainActor private final class V1RowTarget: NSObject {
+    @objc func selected(_ sender: Any?) {}
+}
 
 final class SettingsV1PolicyTests: XCTestCase {
     func testV1HidesUnsupportedAppearanceAndIgnitionChoices() throws {
@@ -30,7 +35,7 @@ final class SettingsV1PolicyTests: XCTestCase {
             .resetHints, .magnification, .showPercentages, .sliverAlert, .percentagePin, .order,
             .visible, .alias, .notificationConsent, .forecast, .reset, .official, .expiring, .stale,
             .projectNames, .language, .motion, .transparency, .fullscreen, .redBelow,
-            .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback]
+            .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache, .updateStatus]
         for key in keys {
             let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
             XCTAssertEqual(row.availability, .serviceUnavailable, "A no-effect control must not remain enabled: \(key)")
@@ -40,6 +45,36 @@ final class SettingsV1PolicyTests: XCTestCase {
         for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode] {
             XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available)
         }
+    }
+
+    @MainActor func testDisabledControlsShowReasonAndDoNotClaimShortcutWorks() async throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        let preferences = SettingsPreferences(), snapshot = SettingsSnapshot(revision: 0, preferences: preferences)
+        let rows = try SettingsCatalogue.rows(preferences: preferences, context: context)
+        let target = V1RowTarget()
+        func apply(_ key: SettingKey, hasHost: Bool) throws -> SettingsNativeRow {
+            let row = SettingsNativeRow(key: key)
+            row.apply(try XCTUnwrap(rows.first { $0.key == key }), language: .english, saving: false,
+                input: nil, reduced: false, onChoice: #selector(V1RowTarget.selected(_:)), target: target,
+                showGroup: false, snapshot: snapshot, context: context, holdAvailable: false, hasHost: hasHost,
+                onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
+            return row
+        }
+        let shortcut = try apply(.openShortcut, hasHost: false)
+        XCTAssertFalse(try XCTUnwrap(shortcut.shortcut).isEnabled)
+        let text = shortcut.controls.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " ")
+        XCTAssertTrue(text.contains("Unavailable")); XCTAssertFalse(text.contains("works in app"))
+        XCTAssertTrue(shortcut.subtitle.stringValue.contains("Unavailable"))
+        let feedback = try apply(.feedback, hasHost: true)
+        XCTAssertFalse(try XCTUnwrap(feedback.surfaceAction).isEnabled, "A host alone cannot enable an unavailable action")
+        let diagnostics = try apply(.diagnostics, hasHost: false)
+        XCTAssertTrue(try XCTUnwrap(diagnostics.surfaceAction).isEnabled, "Existing local diagnostics remain available")
+    }
+
+    func testUnavailableFirstRunPreviewHasVisibleReason() {
+        XCTAssertEqual(SettingsWords.firstRunPreviewTitle(language: .english, unavailable: true), "First run… (unavailable until setup is connected)")
+        XCTAssertEqual(SettingsWords.firstRunPreviewTitle(language: .chinese, unavailable: true), "首次运行…（设置接通前不可用）")
+        XCTAssertEqual(SettingsWords.firstRunPreviewTitle(language: .english, unavailable: false), "First run…")
     }
 
 }

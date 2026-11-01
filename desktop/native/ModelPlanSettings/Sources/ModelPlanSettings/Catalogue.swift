@@ -96,7 +96,25 @@ public struct SettingsPageContext: Sendable {
     /// True only for the shipping normal-entry v1 surface.
     public var v1NormalEntry = false
     public var unavailableControls: [SettingKey: SettingsText] = [:]
-    public mutating func configureV1NormalEntry() { v1NormalEntry = true }
+    public mutating func configureV1NormalEntry() {
+        v1NormalEntry = true
+        let dock = SettingsText("Unavailable until the Dock supports this setting.", "挂件支持此设置前不可用。")
+        let members = SettingsText("Unavailable until subscription controls are connected.", "订阅控件接通前不可用。")
+        let services = SettingsText("Unavailable until first-run services are connected.", "首次运行服务接通前不可用。")
+        let shortcuts = SettingsText("Unavailable until shortcuts can be registered.", "快捷键可注册前不可用。")
+        let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        let surfaces = SettingsText("Unavailable until all views support this setting.", "所有界面支持此设置前不可用。")
+        for key in [SettingKey.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow] { unavailableControls[key] = dock }
+        for key in [SettingKey.percentagePin, .order, .visible, .alias] { unavailableControls[key] = members }
+        for key in [SettingKey.login, .notificationConsent, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] { unavailableControls[key] = services }
+        for key in [SettingKey.openShortcut, .dockShortcut] { unavailableControls[key] = shortcuts }
+        for key in [SettingKey.forecast, .reset, .official, .expiring, .stale] { unavailableControls[key] = notices }
+        for key in [SettingKey.language, .motion, .transparency, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
+        unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
+        unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
+        unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
+        unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
+    }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
@@ -231,7 +249,9 @@ public enum SettingsCatalogue {
                     }
                     guard baseMatches || (perSubscription && !subs.isEmpty) else { return nil }
                     let subtitle: SettingsText
-                    if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
+                    if let reason = c.unavailableControls[key] {
+                        subtitle = reason
+                    } else if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)
                     } else { subtitle = d.subtitle }
@@ -246,6 +266,7 @@ public enum SettingsCatalogue {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
     private static func availability(_ k: SettingKey, _ c: SettingsPageContext) -> SettingAvailability {
+        if c.unavailableControls[k] != nil { return .serviceUnavailable }
         switch k {
         case .captureHiding: return .unsupportedCaptureHiding
         case .retention, .clearCLI: return .cliOwned
