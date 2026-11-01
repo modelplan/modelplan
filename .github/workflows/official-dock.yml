@@ -1,0 +1,24 @@
+name: Official Dock geometry
+on:
+  pull_request:
+    paths:
+      - 'desktop/official-visuals/dock/**'
+      - '.github/workflows/official-dock.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/official-visuals/dock/**'
+      - '.github/workflows/official-dock.yml'
+permissions:
+  contents: read
+concurrency:
+  group: official-dock-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  geometry:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Synthetic T2 geometry tests
+        run: swift test --package-path desktop/official-visuals/dock --scratch-path .tmp/official-dock-tests --jobs 2

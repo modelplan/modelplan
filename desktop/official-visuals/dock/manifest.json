@@ -1,0 +1,10 @@
+{
+  "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
+  "schemaVersion": 1,
+  "files": {
+    "Package.swift": "15d1c17b8f48d4f2c170e650cc5ecf4566daea2ac41871da13a4c238e3b7de71",
+    "T2EdgeCoordinates.swift": "3a6d9945c0bec5ce152c8cad2a55e9cef453ad33f12994f4769dbf185a6d7f67",
+    "T2Geometry.swift": "b4905f74c1e187dfa502e347606167666bfafb1bf5ee4774f7e457176dbcc8c1",
+    "Tests/T2GeometryTests.swift": "bedc57f00c4ae8100954e1a3bee89759c452b3421956c44c48a2514173b2ec24"
+  }
+}

@@ -5,7 +5,7 @@ import Foundation
 
 /// T2 study coordinates use a top-left origin; callers convert once at the
 /// boundary when drawing into a non-flipped AppKit coordinate space.
-public enum T2Edge: Sendable {
+public enum T2Edge: Sendable, Equatable {
     case left, right, bottom, top
 }
 
