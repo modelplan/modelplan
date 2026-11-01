@@ -96,7 +96,7 @@ func Generate(root string) ([]byte, error) {
 	// Model scope is present only for a non-empty set of reviewed public IDs.
 	b.defs["Window"].(object)["properties"].(object)["modelScope"] = object{"$ref": "#/$defs/ModelScope"}
 	scope := b.defs["ModelScope"].(object)
-	scope["properties"].(object)["models"] = object{"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": object{"type": "string", "enum": []string{"gemini-2.5-flash", "gemini-2.5-pro", "opus", "sonnet"}}}
+	scope["properties"].(object)["models"] = object{"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": object{"type": "string", "enum": []string{"gemini-2.5-flash", "gemini-2.5-pro", "opus", "sonnet", "unknown"}}}
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)

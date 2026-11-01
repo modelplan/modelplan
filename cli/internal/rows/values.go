@@ -134,22 +134,22 @@ func role(kind string) (Role, Text) {
 	}
 }
 
-// Only explicit, reviewed public IDs cross the rows trust boundary. Unknown
-// scoped windows are withheld, never turned into plan-wide quota.
-var scopedModels = map[string]bool{"opus": true, "sonnet": true, "gemini-2.5-pro": true, "gemini-2.5-flash": true}
+// Only reviewed public IDs cross the rows trust boundary. An unrecognized
+// explicit scope becomes a sanitized unknown-scoped marker.
+var scopedModels = map[string]bool{"opus": true, "sonnet": true, "gemini-2.5-pro": true, "gemini-2.5-flash": true, "unknown": true}
 
 func modelScope(ids []string) (*ModelScope, bool) {
 	if ids == nil {
 		return nil, true
 	}
 	if len(ids) == 0 || len(ids) > 32 {
-		return nil, false
+		return &ModelScope{Models: []string{"unknown"}}, true
 	}
 	result := append([]string(nil), ids...)
 	sort.Strings(result)
 	for i, id := range result {
 		if !scopedModels[id] || i > 0 && id == result[i-1] {
-			return nil, false
+			return &ModelScope{Models: []string{"unknown"}}, true
 		}
 	}
 	return &ModelScope{Models: result}, true

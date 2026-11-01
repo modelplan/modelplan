@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: bac304c811e7049e4bf80a86c7df0775416c2dd991a06caaffeed429f83c21f7
+// Schema SHA-256: 0430e6cbb861ae1a2bf7019e75fb1e2171ec89c00c7822b5f778e039e2516710
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -49,7 +49,7 @@ export type WireFailure = {
 };
 
 export type WireModelScope = {
-  readonly "models": ReadonlyArray<"gemini-2.5-flash" | "gemini-2.5-pro" | "opus" | "sonnet">;
+  readonly "models": ReadonlyArray<"gemini-2.5-flash" | "gemini-2.5-pro" | "opus" | "sonnet" | "unknown">;
 };
 
 export type WireName = {
@@ -436,7 +436,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "gemini-2.5-flash",
             "gemini-2.5-pro",
             "opus",
-            "sonnet"
+            "sonnet",
+            "unknown"
           ],
           "type": "string"
         },

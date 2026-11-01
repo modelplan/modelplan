@@ -84,9 +84,6 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
 		}
 		for _, window := range account.Windows {
-			if (account.Source == "native:claude" || account.Source == "native:gemini") && !window.ScopeKnown {
-				continue
-			}
 			raw := rows.WindowInput{Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}
 			if window.WindowMinutes > 0 {
 				duration := int64(window.WindowMinutes) * 60

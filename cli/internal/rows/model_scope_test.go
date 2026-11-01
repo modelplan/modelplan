@@ -23,8 +23,8 @@ func TestModelScopeWireFixtureAndSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	ws := rowByID(t, got, "codex").Accounts[0].Windows
-	if len(ws) != 2 || ws[0].ModelScope != nil || ws[1].ModelScope == nil || !reflect.DeepEqual(ws[1].ModelScope.Models, []string{"opus"}) {
-		t.Fatalf("general / model / withheld: %+v", ws)
+	if len(ws) != 3 || ws[0].ModelScope != nil || ws[1].ModelScope == nil || !reflect.DeepEqual(ws[1].ModelScope.Models, []string{"opus"}) || !reflect.DeepEqual(ws[2].ModelScope.Models, []string{"unknown"}) {
+		t.Fatalf("general / model / unknown scoped: %+v", ws)
 	}
 	reversed := in
 	reversed.Accounts = append([]AccountInput(nil), in.Accounts...)

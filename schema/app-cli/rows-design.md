@@ -338,11 +338,9 @@ explicitly names the affected model or family. Absence means plan-wide. The App
 can exclude scoped windows from its plan-wide tightest value without parsing
 labels. Claude's `seven_day_opus` and `seven_day_sonnet` identify the `opus`
 and `sonnet` families, not a version; Gemini's bucket `modelId` identifies an
-exact model. Only reviewed public model IDs are emitted. A model-scoped window
-whose ID is not in the current allow-list is withheld rather than represented
-as plan-wide. Older Claude/Gemini cache entries without the scope-known marker
-are withheld until refreshed. This draft's deliberately small allow-list needs
-review and extension through a public source before broad Gemini deployment.
+exact model. Only reviewed public model IDs are emitted. A model-scoped window whose ID is not in the current allow-list retains its
+values with the sanitized marker `models: ["unknown"]`, never plan-wide. Older Claude/Gemini cache entries without the scope-known marker
+are withheld until refreshed. The recognized list can be extended through a reviewed public source.
 
 The `modelScope` property is optional and non-null; its `models` array is
 non-empty, unique and sorted. It is an additive wire contract change. Strict

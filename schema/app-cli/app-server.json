@@ -1125,7 +1125,8 @@
               "gemini-2.5-flash",
               "gemini-2.5-pro",
               "opus",
-              "sonnet"
+              "sonnet",
+              "unknown"
             ],
             "type": "string"
           },

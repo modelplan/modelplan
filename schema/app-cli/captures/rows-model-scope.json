@@ -83,6 +83,28 @@
               "observedAt": "2026-10-29T09:59:00Z",
               "current": true,
               "validUntil": "2026-10-29T10:05:00Z"
+            },
+            {
+              "modelScope": {
+                "models": [
+                  "unknown"
+                ]
+              },
+              "id": "session:18000:main:main:3",
+              "role": "session",
+              "durationSeconds": 18000,
+              "label": {
+                "en": "Session",
+                "zh": "会话"
+              },
+              "limitKey": "main",
+              "poolKey": "main",
+              "resetMode": "fixed",
+              "remainingPercent": 75,
+              "resetsAt": "2026-10-29T10:05:00Z",
+              "observedAt": "2026-10-29T09:59:00Z",
+              "current": true,
+              "validUntil": "2026-10-29T10:05:00Z"
             }
           ]
         }

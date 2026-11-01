@@ -289,7 +289,7 @@ func TestRowsSubscribeBusyFixture(t *testing.T) {
 func TestModelScopeContract(t *testing.T) {
 	s := schema(t, "Window")
 	base := rows.Window{ID: "weekly:604800:other:other", Role: rows.RoleWeekly, Label: rows.Text{EN: "Other limit", ZH: "其他限额"}, LimitKey: "other", PoolKey: "other", ResetMode: rows.ResetModeUnknown}
-	for _, scope := range []*rows.ModelScope{nil, {Models: []string{"opus"}}, {Models: []string{"gemini-2.5-pro"}}} {
+	for _, scope := range []*rows.ModelScope{nil, {Models: []string{"opus"}}, {Models: []string{"gemini-2.5-pro"}}, {Models: []string{"unknown"}}} {
 		base.ModelScope = scope
 		if err := validate(t, s, base); err != nil {
 			t.Fatalf("valid scope: %v", err)
