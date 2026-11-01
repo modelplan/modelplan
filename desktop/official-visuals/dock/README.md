@@ -21,6 +21,7 @@ Current scope:
 | DOCK-3.1-10, DOCK-3.1-11 | Isolated native gradient/grain face layer; pixel agreement remains unverified |
 | DOCK-3.6-02 | Size-independent 20-point wake constant; runtime behavior remains separate |
 | DOCK-3.4-03/-04, DOCK-3.7-02 | Reset-dot layout and painting from explicit per-member provider presentation; synthetic unit coverage, production provider/factory binding remains pending |
+| DOCK-3.2-10/-11, MOT-2.3-03/-05/-06 | Impact-jet single-frame Canvas translation under development; production scheduling, admitted working signal and prototype frame comparison are not yet wired or verified |
 
 `Tests/geometry-oracle.json` contains synthetic outputs of the supplied study
 JavaScript. Its source SHA-256 is recorded in the file. Forty-five cases cover
