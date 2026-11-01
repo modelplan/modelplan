@@ -22,6 +22,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public private(set) var phase: ScopeConsentPhase = .idle
     public private(set) var notice: ScopeConsentNotice = .none
     public private(set) var diagnosticsSummary: String?
+    public private(set) var diagnosticsPresentation:SettingsText?
     private let copyReport: (@MainActor (String) throws -> Void)?
     private var diagnosticsToken: UUID?
     private var inspectionToken: UUID?
@@ -36,10 +37,17 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     private var activeRequestToken: UUID?
     private var acceptedFactsCallbackToken = UUID()
     private var visibleDraftBasisToken = UUID()
+    private var firstRunExplicitSelection=false
     private var observers: [UUID: @MainActor () -> Void] = [:]
     public init(commands: any ScopeConsentCommands, copyReport: (@MainActor (String) throws -> Void)? = nil) {
         self.commands = commands; self.copyReport = copyReport
     }
+    /// Presentation policy only; no grant, persistence, inspection or assumed restore.
+    public func beginFirstRunDraft() -> Bool {
+        guard case .idle=phase else { return false }
+        firstRunExplicitSelection=true;selectedIDs=[];changed();return true
+    }
+    public func endFirstRunDraft() { firstRunExplicitSelection=false }
     public var canRequestPlugin: Bool { commands.isReady && pluginToken == nil }
     public func requestPluginInstall(_ tool: WirePluginTool) {
         guard canRequestPlugin, tool.isKnown else { return }
@@ -98,7 +106,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
     public func canChoose(_ id: String) -> Bool {
         guard canMutate, let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
-        return scope.route.isKnown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
+        return scope.route.isKnown && scope.route != .knownUnknown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
     }
     @discardableResult public func requestRevoke(_ id: String) -> ScopeConsentConfirmation? {
         requestTightening(id, mutation: .revoke(scope: id))
@@ -133,7 +141,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
                     if old.state != scope.state || old.keychain != scope.keychain || old.route != scope.route {
                         selectedIDs.remove(scope.scope)
                     }
-                } else if scope.state == .unset && scope.route != .savedLoginApi && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
+                } else if !firstRunExplicitSelection && scope.state == .unset && scope.route != .savedLoginApi && scope.route != .browserSession && scope.route != .knownUnknown && scope.route.isKnown && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
                     selectedIDs.insert(scope.scope)
                 }
             }
@@ -168,6 +176,8 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
         // Final copy allow-list: numeric summary only. No raw errors, identifiers, versions or timestamps.
         let uptime = value.uptimeSeconds >= 0 ? String(value.uptimeSeconds) : "unavailable"
         diagnosticsSummary = "ModelPlan engine diagnostics\nScope count: \(value.scopes.count)\nUptime seconds: \(uptime)"
+        diagnosticsPresentation = .init("Reading paths: \(value.scopes.count)\nRuntime (seconds): \(uptime)",
+            "读取路径数量：\(value.scopes.count)\n运行时间（秒）：\(value.uptimeSeconds >= 0 ? uptime:"未知")")
         changed()
     }
     public func requestDiagnostics() async {
@@ -182,7 +192,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) { rowsSummary = value.projection.rowsSummary; changed() }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
-        activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil; notice = .none
+        activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
         facts = nil; rowsSummary = nil; selectedIDs = []; phase = .idle; changed()
     }
     public func isAllowed(_ id: String) -> Bool { facts?.scopes.first { $0.scope == id }?.state == .allowed }
@@ -192,7 +202,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     public func selectAll() {
         guard canMutate else { return }
-        selectedIDs = Set(facts?.scopes.map(\.scope).filter { canChoose($0) } ?? [])
+        selectedIDs = Set(facts?.scopes.filter { $0.route != .browserSession && canChoose($0.scope) }.map(\.scope) ?? [])
         phase = .idle; changed()
     }
     @discardableResult public func requestAllow() -> ScopeConsentConfirmation? {

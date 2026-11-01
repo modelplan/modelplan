@@ -284,7 +284,12 @@ enum SettingsWords {
         do {
             let visible = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
                                                      paneID: query.isEmpty ? selectedPaneID : nil, query: query)
-                .filter { !editor.connections.isAvailable || ($0.key != .detectedReaders && $0.key != .optionalReaders) }
+                .filter { row in
+                    // The normal consent entry replaces the synthetic subscription
+                    // controls in both the pane and search, without changing stored preferences.
+                    if scopeConsentEntry != nil && Settings65Homes.subscriptions.keys.contains(row.key) { return false }
+                    return !editor.connections.isAvailable || (row.key != .detectedReaders && row.key != .optionalReaders)
+                }
             let ordered = try snapshot.preferences.presentedSubscriptionIDs(editor.context.subscriptions.map(\.id), includingHidden: true)
             let inputs = SettingsDiagrams.inputs(snapshot.preferences, orderedIDs: ordered, lastChangedSubscriptionID: editor.lastChangedSubscriptionID)
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
@@ -320,7 +325,7 @@ enum SettingsWords {
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
             if effective.reduceMotion { for row in rows.values { row.diagram?.stop() } }
-            empty.isHidden = !visible.isEmpty
+            empty.isHidden = !visible.isEmpty || !connectionContent.isHidden
             empty.stringValue = SettingsWords.text("No matching settings", "没有匹配的设置", language)
         } catch {
             for row in rows.values { row.retireControls() }

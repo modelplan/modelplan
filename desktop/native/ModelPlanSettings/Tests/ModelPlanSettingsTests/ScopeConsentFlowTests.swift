@@ -51,8 +51,12 @@ import ModelPlanWire
         controller.receiveAcceptedFacts(try ScopeConsentFixtures.facts(cursorDefault: true))
         XCTAssertFalse(controller.selectedIDs.contains(ScopeConsentFixtures.cursor))
         XCTAssertTrue(controller.selectedIDs.contains(ScopeConsentFixtures.local))
-        let view = SettingsScopeConsentView(controller: controller, language: .english)
+        let view = SettingsScopeConsentView(controller: controller, language: .english,buildSigning:.unsigned)
         XCTAssertTrue(viewTexts(view).contains { $0.localizedCaseInsensitiveContains("needs a signed build") })
+        for signing in [ScopeConsentBuildSigning.signed,.unknown] {
+            let signed=SettingsScopeConsentView(controller:controller,language:.english,buildSigning:signing)
+            XCTAssertFalse(viewTexts(signed).contains{$0.localizedCaseInsensitiveContains("needs a signed build")})
+        }
     }
     func testGrantFactoryReadsAcceptedFactsForIntent() throws {
         let facts = try ScopeConsentFixtures.facts()
@@ -80,12 +84,15 @@ import ModelPlanWire
         XCTAssertNil(entry.controller.facts)
         XCTAssertTrue(entry.controller.selectedIDs.isEmpty)
     }
-    private func control(_ root: NSView, _ id: String) throws -> NSButton {
+    private func optionalControl(_ root: NSView, _ id: String) -> NSButton? {
         func find(_ view: NSView) -> NSButton? {
             if let value = view as? NSButton, value.accessibilityIdentifier() == id { return value }
             return view.subviews.lazy.compactMap(find).first
         }
-        return try XCTUnwrap(find(root))
+        return find(root)
+    }
+    private func control(_ root: NSView, _ id: String) throws -> NSButton {
+        try XCTUnwrap(optionalControl(root,id))
     }
     private func activate(_ root: NSView, _ id: String) async throws {
         let button = try control(root, id)
@@ -226,17 +233,19 @@ import ModelPlanWire
         XCTAssertTrue(viewTexts(view).contains { $0.contains("12") })
         XCTAssertFalse(viewTexts(view).joined().contains("canary"))
         XCTAssertFalse(viewTexts(view).joined().contains("secret-path"))
-        XCTAssertTrue(try control(view, "scope.copyDiagnostics").isEnabled == false, "No injected copy adapter means no side effect")
+        XCTAssertNil(optionalControl(view, "scope.copyDiagnostics"), "Copy diagnostics belongs to About")
         controller.clearAcceptedPrivateState()
         XCTAssertFalse(viewTexts(view).contains { $0.contains("Uptime seconds: 12") })
         var copied: [String] = []
         let withCopy = ScopeConsentController(commands: commands, copyReport: { copied.append($0) })
         let copyView = SettingsScopeConsentView(controller: withCopy, language: .english)
         withCopy.receiveAcceptedDiagnostics(try .init(protocolVersion: "path-canary", serverVersion: "token-canary", uptimeSeconds: 12, scopes: [], lastErrorClass: "account-canary"))
-        try await activate(copyView, "scope.copyDiagnostics")
+        XCTAssertNil(optionalControl(copyView, "scope.copyDiagnostics"), "Even a supplied adapter must not add a second Copy button")
+        withCopy.copyDiagnostics()
         XCTAssertEqual(copied, ["ModelPlan engine diagnostics\nScope count: 0\nUptime seconds: 12"])
         withCopy.clearAcceptedPrivateState()
-        XCTAssertFalse(try control(copyView, "scope.copyDiagnostics").isEnabled)
+        XCTAssertFalse(withCopy.canCopyDiagnostics)
+        XCTAssertNil(optionalControl(copyView, "scope.copyDiagnostics"))
     }
     func testAcceptedCleanupReceiptIsStatusOnlyAndHistoricalReceiptCannotRestoreIt() async throws {
         let engine = ScopeConsentTestClient()

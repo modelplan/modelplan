@@ -2,7 +2,7 @@
 import AppKit
 import CryptoKit
 import XCTest
-import ModelPlanSettings
+@_spi(SettingsAcceptance) import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -117,6 +117,15 @@ private actor RowsEntryClient: EngineClient {
         let window = SettingsWindowController(editor: app.settingsHost.application.editor, scopeConsentEntry: entry)
         func find(_ view: NSView, _ id: String) -> Bool { view.accessibilityIdentifier() == id || view.subviews.contains { find($0, id) } }
         XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
+        await window.prepare();window.selectPane("subscriptions")
+        let shown=await window.acceptanceCheckpoint()
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:Set(Settings65Homes.subscriptions.keys.map(\.rawValue))),"U8 replaces the synthetic reader/subscription controls")
+        XCTAssertFalse(shown.windowVisible,"construction proof must not order a Settings window")
+        func falseEmpty(_ view:NSView) -> Bool {
+            if let text=view as? NSTextField,["No matching settings","没有匹配的设置"].contains(text.stringValue),!text.isHiddenOrHasHiddenAncestor { return true }
+            return view.subviews.contains(where:falseEmpty)
+        }
+        XCTAssertFalse(try XCTUnwrap(window.window?.contentView).subviews.contains(where:falseEmpty),"visible consent controls are not an empty pane")
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
         XCTAssertFalse(entry.controller.canMutate)

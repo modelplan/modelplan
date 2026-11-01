@@ -21,10 +21,12 @@ import ModelPlanWire
 @MainActor public final class SettingsScopeConsentView: NSStackView {
     private let controller: ScopeConsentController
     private var language: SettingsLanguage
+    private let buildSigning:ScopeConsentBuildSigning
     private var observer: UUID?
     private var buttons: [NSButton] = []
-    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese) {
-        self.controller = controller; self.language = language; super.init(frame: .zero)
+    public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
+                buildSigning:ScopeConsentBuildSigning = .current) {
+        self.controller = controller; self.language = language;self.buildSigning=buildSigning; super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
@@ -35,15 +37,15 @@ import ModelPlanWire
         self.language = language; render()
     }
     /// Retire this presentation before detaching it from the accepted-event sink.
-    public func suspend() {
+    public func retirePresentation() {
         if let observer { controller.removeObserver(observer); self.observer = nil }
         for button in buttons {
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
         }
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
-        controller.clearAcceptedPrivateState()
     }
+    public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
@@ -94,8 +96,8 @@ import ModelPlanWire
         }
         addArrangedSubview(button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in await self?.controller.inspectConsent() })
         addArrangedSubview(button(.init("Request sanitized diagnostics", "获取脱敏诊断"), id: "scope.diagnostics", enabled: controller.canRequestDiagnostics) { [weak self] in await self?.controller.requestDiagnostics() })
-        if let report = controller.diagnosticsSummary { label(.init(report, report)) }
-        addArrangedSubview(synchronousButton(.init("Copy diagnostics", "复制诊断"), id: "scope.copyDiagnostics", enabled: controller.canCopyDiagnostics) { [weak self] in self?.controller.copyDiagnostics() })
+        if let report = controller.diagnosticsPresentation { label(report) }
+        // SET-9-20: Copy diagnostics belongs to About, not this consent surface.
         label(.init("Tool plugins", "工具插件"))
         addArrangedSubview(synchronousButton(.init("Install Codex plugin…", "安装 Codex 插件…"), id: "scope.plugin.codex", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.codex) })
         addArrangedSubview(synchronousButton(.init("Install Claude Code plugin…", "安装 Claude Code 插件…"), id: "scope.plugin.claude", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.claudeCode) })
@@ -135,11 +137,11 @@ import ModelPlanWire
             let id = scope.scope
             let title = scopeTitle(scope)
             label(title)
-            if scope.route == .savedLoginApi {
+            if scope.route == .savedLoginApi && buildSigning == .unsigned {
                 label(.init("This reading path needs a signed build.", "此读取路径需要签名版本。"))
             }
-            if !scope.route.isKnown {
-                label(.init("Update the app to allow this new reading path. Revoke and Forget remain available.", "请更新应用后再授权这种新读取路径；仍可撤销或忘记已保存权限。"))
+            if !scope.route.isKnown || scope.route == .knownUnknown {
+                label(.init("This reading path is not recognized. Update the app or check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请更新应用或检查工具连接；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {
                 label(.init("This tool is no longer detected. Saved permissions can still be revoked or forgotten.", "未检测到该工具；仍可撤销或忘记已保存权限。"))
             } else if scope.disabledReason != nil {

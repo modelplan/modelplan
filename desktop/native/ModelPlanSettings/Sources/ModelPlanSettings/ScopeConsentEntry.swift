@@ -9,14 +9,31 @@ import ModelPlanWire
 @MainActor public final class ScopeConsentEntry {
     public let controller: ScopeConsentController
     public let view: SettingsScopeConsentView
+    private let buildSigning:ScopeConsentBuildSigning
+    private weak var firstRunView:SettingsScopeConsentView?
+    public enum PresentationError:Error { case mutationInProgress }
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
                 makeGrant: (@MainActor (ScopeConsentIntent) throws -> WireConsentGrantParams)? = nil,
-                language: SettingsLanguage = .chinese) {
+                language: SettingsLanguage = .chinese,buildSigning:ScopeConsentBuildSigning = .current) {
         let commands = EngineClientScopeConsentCommands(client: client, ready: ready, makeGrant: makeGrant)
         let controller = ScopeConsentController(commands: commands)
         self.controller = controller
-        self.view = SettingsScopeConsentView(controller: controller, language: language)
+        self.buildSigning=buildSigning
+        self.view = SettingsScopeConsentView(controller: controller, language: language,buildSigning:buildSigning)
+    }
+    /// A separate view, the same accepted facts/controller/client. Never steal the
+    /// Settings view's parent, create another consent service, or pre-check scopes.
+    public func makeFirstRunView(language:SettingsLanguage) throws -> SettingsScopeConsentView {
+        if let firstRunView { firstRunView.apply(language:language);return firstRunView }
+        guard controller.beginFirstRunDraft() else { throw PresentationError.mutationInProgress }
+        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning)
+        firstRunView=view;return view
+    }
+    /// Close only that presentation. Current accepted permissions remain available
+    /// in Settings; app/store privacy invalidation still clears every observer.
+    public func endFirstRunPresentation() {
+        firstRunView?.retirePresentation();firstRunView=nil;controller.endFirstRunDraft()
     }
 
     /// Only call from the owner’s accepted event fanout, synchronously on the main actor.
@@ -27,5 +44,5 @@ import ModelPlanWire
     }
     /// Clear on the owner's delivery turn before it acknowledges invalidation.
     public func clearPrivateViews() { controller.clearAcceptedPrivateState() }
-    public func suspend() { view.suspend() }
+    public func suspend() { endFirstRunPresentation();view.suspend() }
 }
