@@ -6,8 +6,8 @@ export interface Context { readonly sessionId:string; readonly storeEpoch:string
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean }
 export type LiveAppearance = Appearance;
-export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact' }
-export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle';
+export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
+export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState} |
@@ -48,11 +48,12 @@ function message(raw:string):HostMessage|null {
   if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return null;
   const keys=(extra:string[]=[])=>exact(m,[...header,'type',...extra]);
   const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency'])&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
-  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string);
+  const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const split=v.lastIndexOf('#');return split>0&&identity(v.slice(0,split))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(v.slice(split+1));};
+  const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'])||!validAppearance(m.appearance)||!validShell(m.shell)) return null; break;
     case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency'])||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return null; break;
-    case 'shell': if(!keys(['profile','attached','forcedClosed','tier'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier})) return null; break;
+    case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return null; break;
     case 'display': if(!keys(['data'])||!validData(m.data)) return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
     case 'clear': case 'unload': if(!keys()) return null; break;
@@ -74,6 +75,8 @@ export class CockpitBridge {
   private key=false;
   private hidden=true;
   private shellState:ShellState|null=null;
+  private scopeMembers=new Set<string>();
+  private hasDisplay=false;
   private historyTools=new Set<string>();
   private retiredSessions=new Set<string>();
   private retiredEpochs=new Set<string>();
@@ -112,7 +115,7 @@ export class CockpitBridge {
     if(m.type==='load') {
       if(this.loaded) return false;
       // First load is also an explicit privacy barrier.
-      this.view.clear(); this.historyTools.clear();
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
       this.sequence=BigInt(m.sequence); this.loaded=true;this.cleared=false;this.loadRequestId=m.requestId;
       try {this.view.configure(m.appearance);this.view.shell(m.shell);} catch {this.unload();return false;}
@@ -126,7 +129,7 @@ export class CockpitBridge {
       if(BigInt(m.viewRevision)<=BigInt(old.viewRevision)||this.retiredSessions.has(m.sessionId)||this.retiredEpochs.has(m.storeEpoch)||
         (m.storeEpoch===old.storeEpoch&&BigInt(m.generation)<BigInt(old.generation))) return false;
       // Epochs are equality-only. Only this explicit host barrier can adopt one.
-      this.view.clear(); this.historyTools.clear();this.cleared=true;
+      this.view.clear(); this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;if(this.shellState)this.shellState={...this.shellState,scope:'all'};this.cleared=true;
       if(m.sessionId!==old.sessionId) this.retiredSessions.add(old.sessionId);
       if(m.storeEpoch!==old.storeEpoch) this.retiredEpochs.add(old.storeEpoch);
       this.context={sessionId:m.sessionId,storeEpoch:m.storeEpoch,generation:m.generation,viewRevision:m.viewRevision};
@@ -140,13 +143,16 @@ export class CockpitBridge {
         try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency});} catch {this.unload();return false;}
         this.sequence=BigInt(m.sequence);return true;
       case 'shell':
-        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier});} catch {this.unload();return false;}
-        this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier};this.sequence=BigInt(m.sequence);return true;
+        try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}
+        this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
       case 'display':
         if(!this.domReady) return false;
         // Render is synchronous, with no queued/private snapshot cache to revive.
         try {this.view.render(m.data);} catch {this.unload();return false;}
-        this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));this.cleared=false;
+        this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
+        const verified=new Set(m.data.subscriptions.map(s=>s.subscriptionRef));
+        this.scopeMembers=new Set(m.data.projection.rows.flatMap(row=>row.accounts.map(account=>account.subscriptionRef&&verified.has(account.subscriptionRef)?account.subscriptionRef:`${row.id}#${account.route}`)));
+        this.hasDisplay=true;this.cleared=false;
         this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId); return true;
       case 'visibility':
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
@@ -156,17 +162,21 @@ export class CockpitBridge {
     }
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle','scopeSelect'].includes(action)) return false;
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
+    }
+    if(action==='scopeSelect') {
+      if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
+      this.emit('action',this.requestId(),{action,key:tool});return true;
     }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
   }
   unload():void {
     if(this.ended) return;
-    this.view.clear();this.historyTools.clear();this.view.active(false);this.view.dispose();
+    this.view.clear();this.historyTools.clear();this.scopeMembers.clear();this.hasDisplay=false;this.view.active(false);this.view.dispose();
     this.context=null;this.shellState=null;this.loadRequestId=null;this.retiredEpochs.clear();this.retiredSessions.clear();this.ended=true;this.loaded=false;
   }
 }

@@ -9,7 +9,7 @@ export function commands() {
   return (type,extra={})=>JSON.stringify({version:2,pageId,sessionId,requestId:`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`,sequence:String(sequence),storeEpoch:'epoch-z',generation:'41',viewRevision:'3',type,...extra});
 }
 export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false};
-export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall'};
+export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'};
 export function sample() {
   const value=capture();
   const seed=value.projection.rows[0];

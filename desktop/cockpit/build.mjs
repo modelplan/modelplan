@@ -24,9 +24,10 @@ for(const file of emitted){
 }
 await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
+await cp(resolve(repo,'desktop/third-party/vendor-marks'),resolve(output,'vendor-marks'),{recursive:true});
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+'\n'+await readFile(resolve(here,'web/cockpit.css'),'utf8');
-const notices=['MIT: cockpit bridge, schema adapter and community layout.'];
+const notices=['MIT: cockpit bridge, schema adapter and community layout.','Vendor identity marks: third-party rights; see vendor-marks/SOURCES.md.'];
 if (official) {
   // Only this explicit edition reads reserved artwork; the default never does.
   const assets=resolve(repo,'desktop/official-visuals');
