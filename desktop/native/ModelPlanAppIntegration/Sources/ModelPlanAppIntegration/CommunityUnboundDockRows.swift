@@ -21,16 +21,9 @@ public struct DockContentRow: Sendable {
         self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
     }
     public func cardSourceAndAge(at now:Date,english:Bool) -> String {
-        let age:String
-        if let originalObservedAt,now >= originalObservedAt {
-            let minutes=Int(min(Double(Int.max/60),now.timeIntervalSince(originalObservedAt)/60))
-            let hours=minutes/60,days=hours/24
-            if minutes == 0 { age=english ? "Read just now":"刚刚读取" }
-            else if minutes < 60 { age=english ? "Read \(minutes)m ago":"\(minutes)分钟前读取" }
-            else if hours < 24 { age=english ? "Read \(hours)h \(minutes%60)m ago":"\(hours)小时\(minutes%60)分钟前读取" }
-            else { age=english ? "Read \(days)d \(hours%24)h ago":"\(days)天\(hours%24)小时前读取" }
-        } else { age=english ? "Reading time unknown":"读取时间未知" }
-        return sourceName.isEmpty ? age:sourceName+" · "+age
+        let age = CommunityObservationAge.text(observedAt: originalObservedAt, now: now,
+                                               language: english ? .english : .chinese)
+        return age
     }
     public func resetDetails(at now:Date,english:Bool) -> [String:String] {
         input.windows.reduce(into:[:]) { result,window in

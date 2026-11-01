@@ -159,6 +159,7 @@ import ModelPlanMenuVerification
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        renderMenu()
         interactionBinding?.install()
     }
     func allowDockPresentation() {
@@ -258,7 +259,7 @@ import ModelPlanMenuVerification
         let refresh = menu.addItem(withTitle: label("Refresh", "刷新"), action: #selector(refreshRows), keyEquivalent: "")
         refresh.target = self
         menu.addItem(.separator())
-        let consoleItem = menu.addItem(withTitle: label("Open Cockpit", "打开驾驶舱"), action: #selector(showConsoleMenu), keyEquivalent: "")
+        let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
         // r7 SPEC §6.6: public links, update check, Help directly above Settings, About, Quit.
         for (link, title) in [(SettingsPublicLink.website,label("Website", "网站")), (.methodology,label("Methodology", "方法论")), (.privacy,label("Privacy", "隐私"))] {

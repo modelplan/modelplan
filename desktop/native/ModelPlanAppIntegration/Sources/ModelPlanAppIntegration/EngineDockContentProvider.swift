@@ -48,6 +48,7 @@ import ModelPlanSettings
                 }
             }
             var reserve:[DockCardRow]=[]
+            reserve.append(.init(id:"source",kind:.statistic,label:english ? "Source":"来源",value:sourceName(account.route)))
             let memberEvents=events.filter { event in
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
@@ -102,7 +103,7 @@ import ModelPlanSettings
         let subscriptions=members.map { member in SettingsSubscription(id:member.id,
             name:.init(member.name(english:true),member.name(english:false)),
             plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
-            source:sourceState(member,now:context.now)) }
+            source:sourceState(member,now:context.now),isUnstable:!member.isStable) }
         return .init(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:signals)
     }

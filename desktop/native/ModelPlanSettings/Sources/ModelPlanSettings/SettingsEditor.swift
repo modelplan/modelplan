@@ -145,6 +145,9 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     }
     @discardableResult public func commit(_ edit: SettingsB21Edit) async throws -> SettingsSnapshot {
         let ids = context.subscriptions.map(\.id)
+        if case .moveSubscription = edit, context.subscriptions.contains(where: \.isUnstable) {
+            throw SettingsEditorError.subscriptionUnavailable
+        }
         let observedLogin = context.capabilities.login
         let kind: SettingsCommittedEdit.Kind
         if case .resetHints = edit { kind = .resetHelpHints } else { kind = .preferences }
@@ -206,11 +209,19 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
     }
     private func transact(subscriptionID: String?, quotaPreviewID: String? = nil, kind: SettingsCommittedEdit.Kind = .preferences,
                           edit: @escaping @Sendable (inout SettingsPreferences) throws -> Void) async throws -> SettingsSnapshot {
-        if let id = subscriptionID, !context.subscriptions.contains(where: { $0.id == id }) {
-            throw SettingsEditorError.subscriptionUnavailable
+        if let id = subscriptionID {
+            guard let member = context.subscriptions.first(where: { $0.id == id }), !member.isUnstable else {
+                throw SettingsEditorError.subscriptionUnavailable
+            }
         }
+        let unstable = Set(context.subscriptions.filter(\.isUnstable).map(\.id))
         return try await persist(quotaPreviewID: quotaPreviewID, kind: kind, operation: { [store] revision in
-            try await store.update(expectedRevision: revision, edit)
+            try await store.update(expectedRevision: revision) { preferences in
+                preferences.subscriptionSettings = preferences.subscriptionSettings.filter { !unstable.contains($0.key) }
+                preferences.subscriptions = .init(order: preferences.subscriptions.order.filter { !unstable.contains($0) },
+                                                   hiddenIDs: preferences.subscriptions.hiddenIDs.subtracting(unstable))
+                try edit(&preferences)
+            }
         }, snapshot: { $0 })
     }
     private func persist<Value: Sendable>(expectedRevision: UInt64? = nil, quotaPreviewID: String? = nil,

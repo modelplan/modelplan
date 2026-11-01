@@ -234,6 +234,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var memberSafePreferences: SettingsPreferences {
+        preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
+    }
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     /// Internal-only registration read used by synthetic offscreen evidence.
@@ -292,10 +295,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
         }
-        let visible = Set((try? preferences.presentedSubscriptionIDs(catalogue)) ?? [])
+        let safePreferences = memberSafePreferences
+        let visible = Set((try? safePreferences.presentedSubscriptionIDs(catalogue)) ?? [])
         var contents: [String: DockCardContent] = [:]
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
-        return DockInteractionEnvironment(catalogue: catalogue, preferences: preferences.subscriptions,
+        return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
             bindingRevision: inputGeneration, hoveredID: interactionHoveredID, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
@@ -381,7 +385,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
-            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(preferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
+            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
             let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
@@ -606,15 +610,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         if choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
         guard passIsCurrent(generation) else { return }
-        let passPreferences = preferences
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
         let content = contentProvider.makeContent(.init(snapshot: snapshot, diagnostics: diagnostics,
             now: now, readerFacts: facts, canonicalConsent: dockConsent))
         let next = content.snapshot
+        let passPreferences = preferences.withoutUnstableMemberChoices(next.subscriptions)
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
-        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
+        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
@@ -1073,7 +1077,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(.separator())
         let hideTitle=preferences.language == .english ? "Hide Dock" : "隐藏挂件"
-        for (title, action) in [(EngineRowsText.cockpitMenu.value(preferences.language), #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings)), (hideTitle, #selector(hideDockMenu))] {
+        let cockpitTitle = preferences.language == .english ? "Open Cockpit" : "打开驾驶舱"
+        for (title, action) in [(cockpitTitle, #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings)), (hideTitle, #selector(hideDockMenu))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
         return menu
@@ -1099,10 +1104,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        return try DockCardProjection.content(input: preferences.applying(to: input),
+        return try DockCardProjection.content(input: memberSafePreferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
+                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id].map { $0.additionalRows + [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
@@ -1111,7 +1116,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, pinned: Bool = true, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,
-              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
+              (try? memberSafePreferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
               let content = supplied ?? interactionCardContent(id), content.subscriptionID == id,
               content.revision == (application?.snapshot.revision ?? 0) else { dismissCard(); return }
         cardGeneration &+= 1
@@ -1153,7 +1158,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               cardID == id, cardGeneration == token, inputGeneration == feed,
               application?.snapshot.revision == revision,
               model?.inputs.contains(where: { $0.id == id }) == true,
-              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true else { return false }
+              (try? memberSafePreferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true else { return false }
         return !createsNativePanels || cardPanel?.isVisible == true
     }
     private func dismissCard() {

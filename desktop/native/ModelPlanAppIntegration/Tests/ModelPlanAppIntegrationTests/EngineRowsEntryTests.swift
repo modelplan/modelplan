@@ -274,10 +274,12 @@ private actor RowsEntryClient: EngineClient {
         let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
         XCTAssertEqual(content.snapshot.inputs.first?.windows.first?.remainingPercent, 73)
         XCTAssertEqual(content.snapshot.inputs.first?.dataState, .fresh)
-        XCTAssertTrue((content.menuStatusLines ?? []).joined().contains("73%"))
+        // macrev2-403-6: model-scoped windows are Other, not the general menu quota.
+        XCTAssertFalse((content.menuStatusLines ?? []).joined().contains("73%"))
         let expired = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: 1_830_297_600)))
         XCTAssertNil(expired.snapshot.inputs.first?.windows.first?.remainingPercent)
-        XCTAssertEqual(expired.snapshot.presentationRows["codex"]?.reason, "Engine expiry reason")
+        // Member identity rule: a verified subscription ref, not its tool row, keys the card.
+        XCTAssertEqual(expired.snapshot.presentationRows["0123456789abcdef"]?.reason, "Engine expiry reason")
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 

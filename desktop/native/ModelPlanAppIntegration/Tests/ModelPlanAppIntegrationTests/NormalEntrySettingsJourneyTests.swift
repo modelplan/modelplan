@@ -190,9 +190,8 @@ private actor SettingsJourneyClient: EngineClient {
             XCTAssertEqual(visible.first { $0.key == key }?.availability, .available, "Connected S3 services must enable their controls: \(key)")
         }
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        XCTExpectFailure("#697: member projection has not yet been integrated") {
-            XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
-        }
+        // Member identity rule: Settings now receives the verified subscription member ID.
+        XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(editor.snapshot?.preferences.percentageMode, .remaining)
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
@@ -327,11 +326,14 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertTrue(dock.interactionEnvironment().active)
         XCTAssertTrue(dock.interactionEnvironment().parentExpanded)
         let interaction = dock.interactionEnvironment()
-        XCTAssertTrue(interaction.catalogue.contains("codex"), "The synthetic row must reach the real controller")
-        XCTAssertNotNil(interaction.contents["codex"], "The real controller must receive card content")
+        // Member identity rule: the verified subscription ref keys the normal-entry card.
+        XCTAssertTrue(interaction.catalogue.contains("0123456789abcdef"), "The synthetic member must reach the real controller")
+        // Member identity rule: card content uses the same member key.
+        XCTAssertNotNil(interaction.contents["0123456789abcdef"], "The real controller must receive card content")
         XCTAssertTrue(dock.interactionControllerRunning)
         XCTAssertNotNil(dock.dockView.nozzleEventDelegate)
-        dock.dockView.onAction?(.subscription("codex"))
+        // Member identity rule: interaction targets the member, not its tool row.
+        dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
         func field(_ view: NSView) -> NSTextField? {
             if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }

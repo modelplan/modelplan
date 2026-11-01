@@ -98,7 +98,7 @@ import AppKit
         }
         let enabled = (SettingsB20Edit.keys.contains(key) || SettingsB21Edit.keys.contains(key) || SettingsB22Edit.keys.contains(key)) && row.availability == .available
         if key == .alias, case .subscriptions(let subs) = row.value {
-            configureAliases(subs, enabled: enabled && !saving, language: language, onEdit: onEdit, onDraftCleared: onDraftCleared); return
+            configureAliases(subs, context: context, enabled: enabled && !saving, language: language, onEdit: onEdit, onDraftCleared: onDraftCleared); return
         }
         if key == .order {
             configureOrder(p, context: context, enabled: enabled && !saving, language: language, onEdit: onEdit); return
@@ -209,11 +209,13 @@ import AppKit
                         ?? SettingsWords.text("Disconnected display", "已断开的显示器", language)
                 }
             }
-            popup.isEnabled = enabled && !saving
+            let unstableReason = context.subscriptions.first { $0.id == id }?.persistenceDisabledReason?.value(language)
+            popup.isEnabled = enabled && !saving && unstableReason == nil
             if key == .countdown { popup.isEnabled = popup.isEnabled && holdAvailable && p.opening == .hold }
             if key == .opening { popup.itemArray.first { $0.representedObject as? String == "hold" }?.isEnabled = holdAvailable }
             popup.setAccessibilityLabel([row.title.value(language), label].filter { !$0.isEmpty }.joined(separator: " · "))
-            popup.setAccessibilityHelp(enabled ? row.subtitle.value(language) : SettingsWords.text("Not editable in this build.", "此版本暂不提供编辑。", language))
+            popup.setAccessibilityHelp(unstableReason ?? (enabled ? row.subtitle.value(language) : SettingsWords.text("Not editable in this build.", "此版本暂不提供编辑。", language)))
+            popup.toolTip = unstableReason
             if case .readers(let readers) = row.value, let reader = readers.first(where: { $0.id.rawValue == id }) {
                 readerDescriptions[id]?.stringValue = reader.description.value(language) + " · " + Self.readerStatus(reader.observation, language: language)
             }
@@ -256,13 +258,17 @@ import AppKit
             }
         default: status = ""
         }
-        if !status.isEmpty {
+        let unstableReason = [.visible, .percentagePin].contains(key) ? context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language) : nil
+        if let unstableReason {
+            if readout.superview == nil { controls.addArrangedSubview(readout) }
+            readout.stringValue = unstableReason; readout.isHidden = false
+        } else if !status.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
             readout.stringValue = status; readout.isHidden = false
         } else if !values.isEmpty { readout.isHidden = true }
     }
 
-    private func configureAliases(_ subs: [SubscriptionRowValue], enabled: Bool, language: SettingsLanguage,
+    private func configureAliases(_ subs: [SubscriptionRowValue], context: SettingsPageContext, enabled: Bool, language: SettingsLanguage,
                                   onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void,
                                   onDraftCleared: @escaping (SettingsAliasControl) -> Void) {
         let ids = Set(subs.map(\.id))
@@ -287,16 +293,24 @@ import AppKit
             let field = aliases[sub.id]!, line = aliasLines[sub.id]!
             if controls.arrangedSubviews[index] !== line { controls.removeArrangedSubview(line); controls.insertArrangedSubview(line, at: index) }
             aliasLabels[sub.id]?.stringValue = sub.name
-            field.configure(committed: sub.value, language: language); field.isEnabled = enabled || field.editing
+            let reason = context.subscriptions.first { $0.id == sub.id }?.persistenceDisabledReason?.value(language)
+            field.configure(committed: reason == nil ? sub.value : "", language: language)
+            field.isEnabled = reason == nil && (enabled || field.editing)
+            field.toolTip = reason
+            if let reason { field.setAccessibilityHelp(reason) }
             field.setAccessibilityLabel(SettingsWords.text("Alias: ", "别名：", language) + sub.name)
         }
-        if subs.isEmpty {
+        if let reason = context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language) {
+            if readout.superview == nil { controls.addArrangedSubview(readout) }
+            readout.stringValue = reason; readout.isHidden = false
+        } else if subs.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
             readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language)
         } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
     }
     private func configureOrder(_ p: SettingsPreferences, context: SettingsPageContext, enabled: Bool, language: SettingsLanguage,
                                 onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void) {
+        let p = p.withoutUnstableMemberChoices(context.subscriptions)
         if order == nil {
             retireControls(); let view = SettingsOrderControl(frame: .zero); order = view; controls.addArrangedSubview(view)
             view.onMove = { onEdit($0, .moveSubscription($1, to: $2, expectedOrder: $3)) }
@@ -310,7 +324,13 @@ import AppKit
                 + (p.subscriptions.hiddenIDs.contains(sub.id) ? SettingsWords.text(" (hidden)", "（隐藏）", language) : "")
         }
         order?.configure(ids: ids, names: names, language: language, canReset: !p.subscriptions.order.isEmpty)
-        order?.isEnabled = enabled
+        let reason = context.subscriptions.first(where: \.isUnstable)?.persistenceDisabledReason?.value(language)
+        order?.isEnabled = enabled && reason == nil
+        if let reason {
+            if readout.superview == nil { controls.addArrangedSubview(readout) }
+            readout.stringValue = reason; readout.isHidden = false
+            order?.setAccessibilityHelp(reason)
+        } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
     }
     private func configureShortcut(_ p: SettingsPreferences, context: SettingsPageContext, enabled: Bool, language: SettingsLanguage,
                                    onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void) {

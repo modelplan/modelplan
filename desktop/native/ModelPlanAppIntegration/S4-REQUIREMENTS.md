@@ -12,7 +12,7 @@ dispatcher.
 | Requirement | Current implementation / evidence |
 | --- | --- |
 | DOCK-3.3-04 | Only unscoped 5h/session and weekly plan limits in the main pool drive the general rings and tightest. Model-scoped, named-pool, unknown and other-period windows stay card-only. |
-| DOCK-3.3-05 | Settings pin uses member key and general role; weekly outer and 5h inner stay fixed. |
+| DOCK-3.3-05 | Settings pin uses the member key; the shortest eligible window is outer and weekly (or the longest remaining window) is inner. A single window has no inner ring. |
 | DOCK-3.8-05 | Member name/duplicate tag, reported plan name, localized route/source and original observation age. No rendering-time observation. |
 | DOCK-3.8-06/07 | Actual reported reset timestamp, formatted relatively at card presentation time. Missing is `--`; past reset is not future fuel. |
 | DOCK-3.8-08 | Reported per-account credits balance/unit only. Reset count/earliest reserve expiry are unavailable in current RowsAccount and omitted. |

@@ -5,7 +5,7 @@ public enum DockQuotaPeriod: String, Codable, Sendable {
     case fiveHour, day, week, month, other
     // These hints order known period kinds only. They are never a clock/duration observation.
     fileprivate var orderHint: Double {
-        switch self { case .fiveHour:return 18_000;case .day:return 86_400;case .week:return 604_800;case .month,.other:return .infinity }
+        switch self { case .fiveHour:return 18_000;case .day:return 86_400;case .week:return 604_800;case .month:return 2_592_000;case .other:return .infinity }
     }
 }
 public struct DockQuotaWindowInput: Sendable {
@@ -18,7 +18,6 @@ public struct DockQuotaWindowInput: Sendable {
         self.id=id;self.period=period;self.label=label;self.remainingPercent=remainingPercent
         self.resetsAt=resetsAt;self.durationSeconds=durationSeconds
     }
-    fileprivate var orderingHint: Double { durationSeconds.flatMap{$0.isFinite && $0>0 ? $0:nil} ?? period.orderHint }
 }
 public struct DockWorkingSignal: Sendable {
     public var subscriptionID: String?
@@ -83,8 +82,14 @@ public enum DockInstrumentProjection {
             return r<=redBelow ? .critical : r<41 ? .warning : .normal
         }
         let general=input.windows.filter(\.isGeneral)
-        let outer=general.first{$0.period == .week}
-        let inner=general.first{$0.period == .fiveHour}
+        // Match the study's ringWindows ordering by typed window length. Restricted
+        // model and named pools have already been excluded from `general`.
+        let sorted=general.enumerated().sorted { left,right in
+            let a=left.element.period.orderHint,b=right.element.period.orderHint
+            return a == b ? left.offset < right.offset : a < b
+        }.map(\.element)
+        let outer=sorted.first, rest=Array(sorted.dropFirst())
+        let inner=rest.first { $0.period == .week } ?? rest.last
         let selected=input.selectedWindowID.flatMap{id in general.first{$0.id==id}}
             ?? general.filter{value($0) != nil}.min{value($0)!<value($1)!} ?? general.first
         let remaining=selected.flatMap(value), selectedStatus=status(remaining)
