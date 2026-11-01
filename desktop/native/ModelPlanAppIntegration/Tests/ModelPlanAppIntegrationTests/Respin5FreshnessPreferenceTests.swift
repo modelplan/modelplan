@@ -166,4 +166,12 @@ import ModelPlanShell
         await runtime.store.stopAndWait()
     }
 
+    func testReadingAgeUsesSelectedLanguageAndGlossaryTerms() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: nil, now: now, language: .english), "Reading time unknown")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: nil, now: now, language: .chinese), "读数时间未知")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: now.addingTimeInterval(-180), now: now, language: .english), "Reading taken 3m ago")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: now.addingTimeInterval(-180), now: now, language: .chinese), "读取于 3 分钟前")
+    }
+
 }

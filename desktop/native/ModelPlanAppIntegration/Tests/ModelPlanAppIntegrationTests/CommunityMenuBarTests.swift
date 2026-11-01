@@ -148,4 +148,20 @@ import ModelPlanSettings
         XCTAssertTrue(host.menuBarReadingItem.title.contains("Settings"))
     }
 
+    func testMenuBarBasisUsesOnlyTheSelectedLanguage() throws {
+        var preferences = SettingsPreferences()
+        preferences.percentageMode = .used
+        preferences.language = .english
+        let projector = CommunityMenuBarProjector(preferences: { preferences })
+        let snapshot = try joined([account("codex", [23])])
+        var detail = projector.make(snapshot: snapshot, diagnostics: ready, now: now).detail
+        XCTAssertTrue(detail.contains("Used")); XCTAssertFalse(detail.contains("已用"))
+        preferences.language = .chinese
+        detail = projector.make(snapshot: snapshot, diagnostics: ready, now: now).detail
+        XCTAssertTrue(detail.contains("已用")); XCTAssertFalse(detail.contains("Used"))
+        preferences.percentageMode = .remaining
+        detail = projector.make(snapshot: snapshot, diagnostics: ready, now: now).detail
+        XCTAssertTrue(detail.contains("剩余")); XCTAssertFalse(detail.contains("Remaining"))
+    }
+
 }
