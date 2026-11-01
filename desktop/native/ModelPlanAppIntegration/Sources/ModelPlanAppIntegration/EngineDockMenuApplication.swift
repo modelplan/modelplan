@@ -21,6 +21,8 @@ import ModelPlanSettings
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
     private var firstRunFlow: CommunityConnectionFlow?
+    /// Injection point for the OS login service; the normal entry supplies the live adapter.
+    public var loginServiceAdapter: CommunityLoginServiceAdapter?
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?

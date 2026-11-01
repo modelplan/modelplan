@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import XCTest
 import ModelPlanSettings
+import ModelPlanShell
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -30,6 +31,13 @@ private actor SettingsJourneyClient: EngineClient {
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
+
+@MainActor private final class JourneyLoginService: PulseLoginService {
+    var state: PulseLoginState = .off
+    private(set) var registrations = 0
+    func register() throws { registrations += 1; state = .on }
+    func unregister() throws { state = .off }
 }
 
 @MainActor private final class JourneyFirstRunSurface: SettingsWindowSurface {
@@ -63,6 +71,8 @@ private actor SettingsJourneyClient: EngineClient {
         }
 
         let first = try makeApp()
+        let login = JourneyLoginService()
+        first.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: login))
         let firstRun = JourneyFirstRunSurface()
         first.makeFirstRunSurface = { _ in firstRun }
         await first.prepare()
@@ -72,6 +82,10 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
+        XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
+        _ = try await editor.commit(SettingsB21Edit.login(true))
+        XCTAssertEqual(login.registrations, 1, "An explicit login choice reaches the system-service adapter")
+        XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")
         XCTAssertTrue(editor.canPresentFirstRun, "The normal entry must route the first-run action")
         XCTAssertTrue(editor.context.capabilities.firstRunPreviewAvailable, "First-run navigation must be available from Settings")
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
