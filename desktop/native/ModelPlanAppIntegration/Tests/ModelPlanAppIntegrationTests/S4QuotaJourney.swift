@@ -67,4 +67,27 @@ private actor S4RowsClient: EngineClient {
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         await entry.composition.stop()
     }
+    static func members(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var first=(row["accounts"] as! [[String:Any]])[0],second=first
+        first["subscriptionRef"]="0123456789abcdef";second["subscriptionRef"]="fedcba9876543210"
+        first["credits"]=["balance":42.5,"unit":"credits"];second["credits"]=["balance":7,"unit":"credits"]
+        row["surfaces"]=["dock","menu","settings"];row["accounts"]=[first,second]
+        projection["rows"]=[row];root["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-members-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        let content=entry.composition.presentedContent
+        try require(content.snapshot.inputs.map(\.id) == ["0123456789abcdef","fedcba9876543210"],"two account members must have their verified display keys")
+        try require(content.snapshot.inputs.allSatisfy{$0.windows.count == 1},"one account's windows must not be duplicated into its neighbour")
+        try require(content.snapshot.inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2"],"each duplicate-account nozzle needs its tag")
+        try require(content.snapshot.subscriptions.map(\.id) == ["0123456789abcdef","fedcba9876543210"],"Settings catalogue must use the same member keys")
+        await entry.composition.stop()
+    }
 }

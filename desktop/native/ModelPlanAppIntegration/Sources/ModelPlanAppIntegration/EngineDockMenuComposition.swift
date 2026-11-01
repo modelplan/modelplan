@@ -41,6 +41,10 @@ public struct EngineMenuRefreshResult {
     public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date())) }
     func setLanguage(_ language:String) { adapter.language=language }
     var language:String { adapter.language }
+    /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
+    public var accountMembers:EngineAccountMemberCatalogue {
+        .init(rows:store.snapshot.rows?.projection.rows ?? [])
+    }
     public var menuPresentation: CommunityMenuBarPresentation {
         let content = presentedContent
         return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
