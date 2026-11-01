@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "notice": "Vendor trademarks remain with their respective owners; see SOURCES.md.",
+  "files": {
+    "openai.svg": "01d158767c4eec0e47bd617e67759c33da0accd1438be1a8d29dfdb99ce87285",
+    "claude.svg": "6d53db4be375e899c937c26cf16684a80d6e869b1928d72b37748bef2560e219",
+    "cursor.svg": "cd0e3e5d8991a4cdd4577f8896cd063105207665165c73e25a1ff918dd367eb7",
+    "copilot.svg": "ae3ac7a6dc1415aeaf7064c7a749d9efd7f1ec49a68450590df7cf0da8d83781",
+    "kimi.svg": "3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9",
+    "opencode.svg": "4e84f87aa7bc2a5f8a72eeb08d3d4f1836b422189256d0bd5e7bfabc830d7ed0",
+    "zai-white.svg": "0f05ddd1fd214e463692baf368ca0455de45a0b2fcc82323304e4767ff5b9522"
+  }
+}

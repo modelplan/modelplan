@@ -1119,13 +1119,14 @@
       "desktop/official-visuals/theme.css": "2727f72a72bb89272be87ec2d1fd543863d5ed6156f19980a6a2d565c72b7860"
     },
     "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256.",
-    "cockpitManifestSha256": "25a0fcaa73af6485cf5bf0115b3e674ba928dcb20def4fe943071843de08ca7f"
+    "cockpitManifestSha256": "c20744fb87803ad8686a40c2b6d7838f5dbe728a3ee60084e1ce083b82884a6a"
   },
   "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix.",
   "thirdPartyFonts": {
     "prefix": "desktop/third-party/fonts/",
     "license": "OFL-1.1",
     "manifest": "desktop/third-party/fonts/manifest.json",
-    "manifestSha256": "538b8193913d2d9ab3fc4e4c4f07082bebe1cd388a99e2875047cb7b8c583574"
-  }
+    "manifestSha256": "404c5011273bb7de5775012d4dc8c7db838431906da7b700764fedb06f5e0014"
+  },
+  "thirdPartyVendorSvgManifestSha256": "477ff2f10a7944a53c8305c77dd22c999890a0c922ae38c8593284cf4754b8ee"
 }

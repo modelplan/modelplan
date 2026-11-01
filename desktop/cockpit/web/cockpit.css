@@ -62,64 +62,12 @@
 #cockpit .s6-brand-mark{display:block;width:28px;height:28px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
 .ck-lamp .activity{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden}
 
-/* The OpenAI raster has a half-size painted glyph inside its canvas. */
-#cockpit .ck-eng .ek .vendor-mark[src$='/openai.png']{width:32px;height:32px;margin:-8px}
 /* Keep the native wrapper while preserving the prototype engine grid. */
 #cockpit .ck-eng{display:block;overflow:hidden}.u11-engine-table{display:grid;grid-template-rows:26px minmax(0,1fr);grid-auto-rows:var(--row-h,18px);row-gap:var(--key-gap,4px);height:100%;width:100%;min-width:0}.s6-page[hidden]{display:none!important}.ck-eng .eng-led{cursor:pointer}
 
-/* Prefer the pinned static OFL faces over legacy study variable-font aliases. */
-@font-face {
-  font-family: 'DM Sans';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./fonts/dm-sans/dm-sans-latin-400-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'DM Sans';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('./fonts/dm-sans/dm-sans-latin-500-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'DM Sans';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('./fonts/dm-sans/dm-sans-latin-600-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'DM Sans';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('./fonts/dm-sans/dm-sans-latin-700-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-500-normal.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('./fonts/jetbrains-mono/jetbrains-mono-latin-600-normal.woff2') format('woff2');
-}
-
-/* Owner-approved tab weight. */
-#cockpit .ck-eng .ek-name{font-weight:400}
 
 /* The CSP-safe CSSOM serialization changes the study's literal style selector. */
 .ck-eng .eng-keys:is([data-slots='5'],[data-slots='6']) .ek-name{display:none}
+
+/* Match the prototype paint context for the in-scope strip and engine only. */
+#cockpit .ck-head,#cockpit .ck-eng{filter:opacity(1)}

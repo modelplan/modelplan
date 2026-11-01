@@ -6,12 +6,14 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { verifyFontPack } from "./check-font-pack.mjs";
+import { verifyVendorSvg } from "./check-vendor-svg.mjs";
 import { verifyCockpitVisuals } from "./check-cockpit-visuals.mjs";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const read = async (p) => readFile(resolve(root, p));
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const policy = JSON.parse(await read("source-policy.json"));
 verifyFontPack(root);
+verifyVendorSvg(root);
 verifyPortholePack(root);
 verifyCockpitVisuals(root);
 const tracked = execFileSync(

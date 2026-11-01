@@ -34,8 +34,8 @@ function fixture(t) {
   return { root, pack, policy, manifest, save, refresh };
 }
 
-test('validates the complete OFL-only static font set offline', () => {
-  assert.equal(verifyFontPack(source).fontCount, 12);
+test('validates the complete OFL-only static and variable font set offline', () => {
+  assert.equal(verifyFontPack(source).fontCount, 15);
 });
 test('rejects altered bytes and a manifest changed without a policy update', t => {
   const f = fixture(t), font = f.manifest.files.find(e => e.kind === 'font');

@@ -114,13 +114,13 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   expect(await receive(send('display',{data}))).toBe(true);
   await expect(page.locator('.wordmark b')).toHaveCSS('color','rgb(223, 96, 76)');
   await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
-  await expect(page.locator('.s6-page:visible .ek-name').first()).toHaveCSS('font-weight','400');
+  await expect(page.locator('.s6-page:visible .ek-name').first()).toHaveCSS('font-weight','500');
   await expect(page.locator('.hud')).toBeHidden();
   const quotaGeometry=await page.locator('.s6-page:visible .qnum').first().evaluate(e=>{const n=e.getBoundingClientRect(),r=e.closest('.qcell').getBoundingClientRect(),line=e.closest('.qline').getBoundingClientRect();return {number:n.height,line:line.height,cell:r.height};});
   expect(quotaGeometry.line).toBeGreaterThanOrEqual(quotaGeometry.number);expect(quotaGeometry.cell).toBeGreaterThanOrEqual(quotaGeometry.line);
   await expect(page.locator('.s6-page:visible .qrow-t')).toHaveCount(6);
   await expect(page.locator('.s6-page:visible .qrow-t').first()).toHaveAttribute('data-available','false');
-  await expect(page.locator('.s6-page:visible img.vendor-mark').first()).toHaveCSS('width','32px');
+  await expect(page.locator('.s6-page:visible img.vendor-mark').first()).toHaveCSS('width','16px');
   expect(await page.locator('.s6-page:visible .eng-keys .ek .bl').first().evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(106, 168, 255)');
   await expect(page.locator('.s6-alert')).toContainText('ALERT');
   expect(await page.locator('.s6-page:visible img.vendor-mark').evaluateAll(imgs=>imgs.every(i=>i.complete&&i.naturalWidth>0))).toBe(true);

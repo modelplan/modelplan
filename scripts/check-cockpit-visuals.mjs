@@ -29,7 +29,7 @@ export function verifyCockpitVisuals(root) {
   let current=base;for(const part of name.split('/')){current=resolve(current,part);assert.ok(!lstatSync(current).isSymbolicLink(),'symlink in reserved visual path');}
   assert.ok(lstatSync(file).isFile());assert.equal(digest(readFileSync(file)),entry.sha256,`cockpit visual hash: ${name}`);
  }
- const expected=new Set(['logo.svg','LICENSE.md','cockpit/study-strip.css','cockpit/cockpit.css','cockpit/SOURCES.md','cockpit/shell6.css','cockpit/wordmark.css','cockpit/engine-few-paging.css']);
+ const expected=new Set(['logo.svg','LICENSE.md','cockpit/study-strip.css','cockpit/cockpit.css','cockpit/SOURCES.md','cockpit/shell6.css','cockpit/wordmark.css','cockpit/engine-few-paging.css','cockpit/engine-material.css']);
  const walk=(dir,prefix)=>{for(const e of readdirSync(resolve(base,dir),{withFileTypes:true})){const n=prefix+e.name;assert.ok(!e.isSymbolicLink());if(e.isDirectory())walk(dir+'/'+e.name,n+'/');else {assert.ok(e.isFile());expected.add(n);}}};
  walk('cockpit/study-strip','cockpit/study-strip/');walk('runtime','runtime/');
  assert.deepEqual([...seen].sort(),[...expected].sort(),'cockpit visual manifest must list every shipped reserved file');

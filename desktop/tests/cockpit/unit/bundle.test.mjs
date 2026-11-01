@@ -34,7 +34,7 @@ test('both editions have reproducible bounded manifests and licensed visual asse
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      if(name.endsWith('.svg'))assert.equal(['brand-mark.svg','study-strip/detach.svg','study-strip/put-back.svg','clients/official-visuals/study/strip-integration/study-strip/detach.svg','clients/official-visuals/study/strip-integration/study-strip/put-back.svg'].includes(name),true);
+      if(name.endsWith('.svg'))assert.equal(['brand-mark.svg','study-strip/detach.svg','study-strip/put-back.svg','clients/official-visuals/study/strip-integration/study-strip/detach.svg','clients/official-visuals/study/strip-integration/study-strip/put-back.svg','vendor-marks/openai.svg','vendor-marks/claude.svg','vendor-marks/cursor.svg','vendor-marks/copilot.svg','vendor-marks/kimi.svg','vendor-marks/opencode.svg','vendor-marks/zai-white.svg'].includes(name),true);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/'))assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }

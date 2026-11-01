@@ -85,6 +85,11 @@ export function verifyFontPack(root = fileURLToPath(new URL('..', import.meta.ur
       stylesheet += `@font-face {\n  font-family: '${name}';\n  font-style: normal;\n  font-weight: ${weight};\n  font-display: swap;\n  src: url('./${file}') format('woff2');\n}\n\n`;
     }
   });
+  for (const [file,family,coverage] of [
+    ['dm-sans/dm-sans-latin-wght-normal.woff2','dm-sans','latin'],
+    ['dm-sans/dm-sans-latin-ext-wght-normal.woff2','dm-sans','latin-ext'],
+    ['jetbrains-mono/jetbrains-mono-latin-wght-normal.woff2','jetbrains-mono','latin'],
+  ]) expected.set(file,{kind:'variable-font',license,family,coverage,style:'normal'});
   const seen = new Set();
   let fontBytes = 0, fontCount = 0;
   for (const entry of manifest.files) {
@@ -95,7 +100,7 @@ export function verifyFontPack(root = fileURLToPath(new URL('..', import.meta.ur
     const bytes = readFileSync(join(directory, entry.file));
     assert.equal(bytes.length, entry.bytes, 'font file size mismatch');
     assert.equal(sha256(bytes), entry.sha256, 'font file hash mismatch');
-    if (entry.kind === 'font') {
+    if (entry.kind === 'font' || entry.kind === 'variable-font') {
       assert.ok(bytes.length > 48 && bytes.toString('ascii', 0, 4) === 'wOF2', 'WOFF2 header');
       assert.equal(bytes.readUInt32BE(8), bytes.length, 'WOFF2 length');
       fontCount++; fontBytes += bytes.length;

@@ -223,15 +223,45 @@
       "file": "NOTICE.md",
       "kind": "notice",
       "license": "MIT",
-      "sha256": "b0ccc26f6164acc77f6ef2d170d2fe086c2c5b2c482ebe036a80550bb8f81e09",
-      "bytes": 1078
+      "sha256": "0ff30e3e274bebf3704a6687e40b3207d7c15c486c120c63095fd3d26f1ab4be",
+      "bytes": 1346
     },
     {
       "file": "README.md",
       "kind": "readme",
       "license": "MIT",
-      "sha256": "df4e91bff0cbe8c108aaee536b1eeb44572cbeacea7854a04f3c965233b1daf7",
-      "bytes": 1956
+      "sha256": "67caf8ba1c7bfce94e4ee67121f51fe002abd62dde14f3bd34c5fb1962f00989",
+      "bytes": 2281
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-wght-normal.woff2",
+      "kind": "variable-font",
+      "license": "OFL-1.1",
+      "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543",
+      "bytes": 36932,
+      "family": "dm-sans",
+      "coverage": "latin",
+      "style": "normal"
+    },
+    {
+      "file": "dm-sans/dm-sans-latin-ext-wght-normal.woff2",
+      "kind": "variable-font",
+      "license": "OFL-1.1",
+      "sha256": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49",
+      "bytes": 18228,
+      "family": "dm-sans",
+      "coverage": "latin-ext",
+      "style": "normal"
+    },
+    {
+      "file": "jetbrains-mono/jetbrains-mono-latin-wght-normal.woff2",
+      "kind": "variable-font",
+      "license": "OFL-1.1",
+      "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+      "bytes": 40404,
+      "family": "jetbrains-mono",
+      "coverage": "latin",
+      "style": "normal"
     }
   ]
 }

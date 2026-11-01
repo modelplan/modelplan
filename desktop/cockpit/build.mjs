@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyVisualPack } from '../../scripts/check-visual-pack.mjs';
+import { verifyVendorSvg } from '../../scripts/check-vendor-svg.mjs';
 import { verifyCockpitVisuals } from '../../scripts/check-cockpit-visuals.mjs';
 const here=fileURLToPath(new URL('.',import.meta.url)),repo=resolve(here,'../..');
 const args=process.argv.slice(2),official=args.length===1&&args[0]==='--official';
@@ -27,6 +28,7 @@ await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'web/neutral.png'),resolve(output,'neutral.png'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
 await cp(resolve(here,'study'),resolve(output,'study'),{recursive:true});
+verifyVendorSvg(repo);
 await cp(resolve(repo,'desktop/third-party/vendor-marks'),resolve(output,'vendor-marks'),{recursive:true});
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+"\n@import url('./study/rocket-r1/cockpit-r5.css');\n@import url('./study/rocket-r1/engine.css');\n"+await readFile(resolve(here,'web/cockpit.css'),'utf8');
@@ -59,17 +61,24 @@ const notices=['MIT: cockpit bridge, schema adapter and community layout.','Vend
   css+='\n'+cockpitCss.slice(0,cockpitCss.indexOf('#cockpit .ck-head'))+cockpitCss.slice(cockpitCss.indexOf('/* Study c01 closed cap'));
   css+='\n'+await readFile(resolve(assets,'cockpit/wordmark.css'),'utf8');
   css+='\n'+await readFile(resolve(assets,'cockpit/engine-few-paging.css'),'utf8');
+  css+='\n'+await readFile(resolve(assets,'cockpit/engine-material.css'),'utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});
   // The unchanged study CSS uses legacy variable-font URLs. Bind those local
-  // URLs to approved OFL static faces; the full weight-specific faces are also
-  // registered by fonts.css, and system fonts cover unsupported glyphs.
+  // URLs to the pinned OFL variable faces; system fonts cover unsupported glyphs.
   await mkdir(resolve(output,'study/assets'),{recursive:true});
-  await cp(resolve(output,'fonts/dm-sans/dm-sans-latin-400-normal.woff2'),resolve(output,'study/assets/dm-sans-latin-wght-normal.woff2'));
-  await cp(resolve(output,'fonts/dm-sans/dm-sans-latin-400-normal.woff2'),resolve(output,'study/assets/dm-sans-latin-ext-wght-normal.woff2'));
-  await cp(resolve(output,'fonts/jetbrains-mono/jetbrains-mono-latin-400-normal.woff2'),resolve(output,'study/assets/jetbrains-mono-latin-wght-normal.woff2'));
-  css="@import url('./fonts/fonts.css');\n"+css;
+  await cp(resolve(output,'fonts/dm-sans/dm-sans-latin-wght-normal.woff2'),resolve(output,'study/assets/dm-sans-latin-wght-normal.woff2'));
+  await cp(resolve(output,'fonts/dm-sans/dm-sans-latin-ext-wght-normal.woff2'),resolve(output,'study/assets/dm-sans-latin-ext-wght-normal.woff2'));
+  await cp(resolve(output,'fonts/jetbrains-mono/jetbrains-mono-latin-wght-normal.woff2'),resolve(output,'study/assets/jetbrains-mono-latin-wght-normal.woff2'));
+  // The study declares the pinned DM Sans and JetBrains variable faces in
+  // cockpit-r5.css. Do not also register their static siblings: CSS font
+  // matching otherwise selects the static face for exact weights.
+  const fontCss=(await readFile(resolve(output,'fonts/fonts.css'),'utf8'))
+    .replace(/@font-face\s*\{[^}]*\}/g,rule=>/font-family:\s*'(?:DM Sans|JetBrains Mono)'/.test(rule)?'':rule)
+    .replaceAll("url('./","url('./fonts/");
+  await writeFile(resolve(output,'cockpit-fonts.css'),fontCss);
+  css="@import url('./cockpit-fonts.css');\n"+css;
   notices.push('Official appearance/artwork: LicenseRef-ModelPlan-Visuals-1.0; see VISUAL-LICENSE.md.','Fonts: OFL-1.1; see fonts/*/OFL.txt and fonts/README.md.');
 }
 await writeFile(resolve(output,'cockpit.css'),css);

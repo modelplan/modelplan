@@ -1,6 +1,6 @@
 # Vendor identity marks
 
-These PNGs are rasterizations of the owner-selected `brands/nozzle-p1` SVG inputs from the design handoff (source commit `69f1b639201f0b9cedd1ad9f109d26423e67e75f`). They retain the source aspect ratio and colours in a transparent 96 × 96 canvas. The marks identify vendors and do not imply endorsement. All trademark and asset rights remain with their respective owners; neither ModelPlan's MIT licence nor its official visuals licence grants rights in these marks. They are used nominatively. Z.ai beta use was selected by the owner; review its terms separately before public release.
+These PNGs and the hash-listed original SVGs are, respectively, rasterizations and exact copies of the owner-selected `brands/nozzle-p1` SVG inputs from the design handoff (source commit `69f1b639201f0b9cedd1ad9f109d26423e67e75f`). They retain the source aspect ratio and colours in a transparent 96 × 96 canvas. The marks identify vendors and do not imply endorsement. All trademark and asset rights remain with their respective owners; neither ModelPlan's MIT licence nor its official visuals licence grants rights in these marks. They are used nominatively. Z.ai beta use was selected by the owner; review its terms separately before public release.
 
 | Mark | Official source | SVG SHA-256 |
 | --- | --- | --- |
@@ -11,3 +11,5 @@ These PNGs are rasterizations of the owner-selected `brands/nozzle-p1` SVG input
 | Kimi | [Moonshot branding guide](https://moonshotai.github.io/Branding-Guide/scenarios/04-k-only/k-only-dark.svg) | `3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9` |
 | OpenCode | [OpenCode brand page](https://opencode.ai/brand), `logoDarkSvg` | `4e84f87aa7bc2a5f8a72eeb08d3d4f1836b422189256d0bd5e7bfabc830d7ed0` |
 | Z.ai | Existing website `zai-white.svg`, pinned private source `d963b4f517e08a83ea18725151b48146af2b45d1` | `0f05ddd1fd214e463692baf368ca0455de45a0b2fcc82323304e4767ff5b9522` |
+
+The original SVGs are distributed for prototype-fidelity rendering; `svg-manifest.json` pins each exact upstream byte sequence. Trademark and asset rights remain with their respective owners.

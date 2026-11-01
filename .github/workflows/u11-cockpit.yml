@@ -11,6 +11,7 @@ on:
       - 'scripts/check-source-policy.mjs'
       - 'scripts/check-visual-pack.mjs'
       - 'scripts/check-cockpit-visuals.mjs'
+      - 'scripts/check-vendor-svg.mjs'
       - '.github/workflows/u11-cockpit.yml'
   push:
     branches: [main]
@@ -24,6 +25,7 @@ on:
       - 'scripts/check-source-policy.mjs'
       - 'scripts/check-visual-pack.mjs'
       - 'scripts/check-cockpit-visuals.mjs'
+      - 'scripts/check-vendor-svg.mjs'
       - '.github/workflows/u11-cockpit.yml'
 permissions:
   contents: read
