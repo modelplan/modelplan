@@ -109,7 +109,7 @@ public struct SettingsPageContext: Sendable {
         for key in [SettingKey.login, .notificationConsent, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] { unavailableControls[key] = services }
         for key in [SettingKey.openShortcut, .dockShortcut] { unavailableControls[key] = shortcuts }
         for key in [SettingKey.forecast, .reset, .official, .expiring, .stale] { unavailableControls[key] = notices }
-        for key in [SettingKey.language, .motion, .transparency, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
+        for key in [SettingKey.language, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
         unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")

@@ -34,7 +34,7 @@ final class SettingsV1PolicyTests: XCTestCase {
         let keys: [SettingKey] = [.login, .automaticUpdates, .menuDisplay, .openShortcut, .dockShortcut,
             .resetHints, .magnification, .showPercentages, .sliverAlert, .percentagePin, .order,
             .visible, .alias, .notificationConsent, .forecast, .reset, .official, .expiring, .stale,
-            .projectNames, .language, .motion, .transparency, .fullscreen, .redBelow,
+            .projectNames, .language, .fullscreen, .redBelow,
             .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache, .updateStatus]
         for key in keys {
             let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
