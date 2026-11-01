@@ -61,9 +61,10 @@ public struct DockInstrumentReading: Sendable {
     @_spi(DockResourceChecks) public func comparisonFixture(status: DockQuotaStatus) -> DockInstrumentReading {
         let fixtureOuter = outer.map { DockQuotaArc(windowID: $0.windowID, fraction: $0.fraction, status: status) }
         return DockInstrumentReading(subscriptionID: subscriptionID, name: name, alias: alias, vendorResourceKey: vendorResourceKey,
+            duplicateAccountTag:duplicateAccountTag,
             outer: fixtureOuter, inner: inner, selectedWindowID: selectedWindowID, selectedWindowLabel: selectedWindowLabel,
             selectedResetAt: selectedResetAt, remainingPercent: remainingPercent, readout: readout, status: status,
-            dataState: dataState, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
+            dataState: dataState, unavailableReason:unavailableReason, timeLeftFraction: timeLeftFraction, isWorking: isWorking, jetEligible: jetEligible)
     }
 }
 
