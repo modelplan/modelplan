@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+
+public extension SettingsPreferences {
+    /// Order-derived identities may refer to a different account after any refresh.
+    func withoutUnstableMemberChoices(_ members: [SettingsSubscription]) -> SettingsPreferences {
+        let unstable = Set(members.filter(\.isUnstable).map(\.id))
+        var result = self
+        result.subscriptionSettings = result.subscriptionSettings.filter { !unstable.contains($0.key) }
+        result.subscriptions = .init(order: result.subscriptions.order.filter { !unstable.contains($0) },
+                                     hiddenIDs: result.subscriptions.hiddenIDs.subtracting(unstable))
+        return result
+    }
+}
 import ModelPlanDock
 
 public struct SettingsEnvironment: Sendable {

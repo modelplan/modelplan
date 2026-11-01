@@ -171,6 +171,7 @@ import ModelPlanMenuVerification
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        renderMenu()
         interactionBinding?.install()
     }
     func allowDockPresentation() {

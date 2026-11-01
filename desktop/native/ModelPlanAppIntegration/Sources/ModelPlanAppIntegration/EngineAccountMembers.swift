@@ -12,7 +12,7 @@ public struct EngineAccountMember:Sendable {
     public let duplicateTag:Int?
     public let isStable:Bool
     public var persistenceDisabledReason:SettingsText? {
-        isStable ? nil:.init("can't be told apart until the account is verified","账号验证前无法区分")
+        isStable ? nil:.init("Unverified account — changes can't be saved yet","未验证账号，暂不能保存设置")
     }
     public let row:RowsRow
     public let account:RowsAccount

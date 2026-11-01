@@ -16,6 +16,11 @@ public struct DockClockRecipe: Codable, Sendable {public var radius:CGFloat,dotR
 /// Optional native equivalent of a supplied CSS radial alpha overlay.
 public struct DockRadialOverlayRecipe: Codable, Sendable {public var radius: CGFloat; public var alphas: [CGFloat]}
 public struct DockTextRecipe: Codable, Sendable {public var fontResource:String?;public var systemFontName:String?;public var useSystemUIFont:Bool?;public var language:String?;public var size:CGFloat,weight:Double}
+/// Optional data-only style for a registered empty station.
+public struct DockPlaceholderStyle: Codable, Sendable {
+    public var fillKey: String, strokeKey: String, textKey: String
+    public var strokeWidth: CGFloat, dash: [CGFloat]
+}
 public struct DockStationRecipe: Codable, Sendable {
     public var subscriptionID:String?
     public var logicalPoints:Int?
@@ -35,6 +40,7 @@ public struct DockStationRecipe: Codable, Sendable {
     public var eventBackdropKey:String?,eventOutlineKey:String?,eventSolidOutlineWidth:CGFloat?
     public var radialOverlay: DockRadialOverlayRecipe?
     public var showsReadout:Bool?,placeholderLabel:String?,placeholderText:DockTextRecipe?
+    public var placeholderStyle: DockPlaceholderStyle?
     public var fallbackVendorName:Bool?
 }
 public struct DockInstrumentSkin: Codable, Sendable {
@@ -203,6 +209,16 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         for station in skin.stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
             let frame=CGRect(x:station.centre.x-station.diameter/2,y:station.centre.y-station.diameter/2,width:station.diameter,height:station.diameter)
+            if let label = station.placeholderLabel, let style = station.placeholderStyle {
+                guard style.strokeWidth.isFinite, style.strokeWidth > 0, style.strokeWidth <= station.diameter,
+                      !style.dash.isEmpty, style.dash.count <= 16,
+                      style.dash.allSatisfy({ $0.isFinite && $0 > 0 && $0 <= station.diameter }) else { throw DockArtworkError.invalidManifest }
+                c.saveGState(); c.setFillColor(try ink(style.fillKey)); c.fillEllipse(in: frame)
+                c.setStrokeColor(try ink(style.strokeKey)); c.setLineWidth(style.strokeWidth); c.setLineDash(phase: 0, lengths: style.dash)
+                c.strokeEllipse(in: frame.insetBy(dx: style.strokeWidth / 2, dy: style.strokeWidth / 2)); c.restoreGState()
+                try text(label, frame, station.placeholderText ?? skin.text, try ink(style.textKey))
+                continue
+            }
             if station.replacementResource == nil {
                 for layer in station.layers { try image(layer,frame) }
                 if let overlay = station.radialOverlay {

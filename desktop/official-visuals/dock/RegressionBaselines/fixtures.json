@@ -1014,5 +1014,17 @@
       "file": "native-working-critical-pose8.png",
       "sha256": "dac8d2c9d865c76c1063c8957fa421285313a87224a247aaee17b07833c77700"
     }
+  ],
+  "emptyCases": [
+    {
+      "file": "native-empty-44-right.png",
+      "sha256": "7583303be7f88168f27abf43b47575fee97fb47eadb81282e57d41f7b9ed793b",
+      "skinBounds": [
+        1405,
+        415,
+        65,
+        139
+      ]
+    }
   ]
 }

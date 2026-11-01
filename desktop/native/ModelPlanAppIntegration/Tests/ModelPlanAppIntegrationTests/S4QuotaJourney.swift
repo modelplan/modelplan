@@ -16,14 +16,14 @@ private actor S4RowsClient: EngineClient {
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
         await store.consume(.context(context))
-        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:rows),delivery:context),invalidRowCount:0))
+        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:rows),delivery:context),invalidRowCount:rows.projection.invalidRowCount))
         return context
     }
     func replaceRows(_ rows:WireRowsSnapshot) async throws {
         revision += 1
         let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:revision)
         await store.consume(.context(next))
-        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:0))
+        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:rows.projection.invalidRowCount))
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -43,6 +43,123 @@ private actor S4RowsClient: EngineClient {
 @MainActor enum S4QuotaJourney {
     struct Failure:Error,CustomStringConvertible { let description:String }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
+    static func strictScopeAndEvents(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var account=(row["accounts"] as! [[String:Any]])[0],window=(account["windows"] as! [[String:Any]])[0]
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        window["id"]="scope-check";window["role"]="session";window["limitKey"]="five_hour";window["poolKey"]="main"
+        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z"
+        window.removeValue(forKey:"modelScope");projection.removeValue(forKey:"resetEvents")
+        func decode() throws -> WireDecoded<WireRowsSnapshot> {
+            account["windows"]=[window];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decodeWithDiagnostics(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        func rejected(_ description:String) throws {
+            var accepted=false
+            do { _ = try decode();accepted=true } catch { }
+            try require(!accepted,description)
+        }
+        let initial=try decode().value,directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-strict-wire-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:initial)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        func input() throws -> DockInstrumentInput {
+            guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the valid member") }
+            return input
+        }
+        try require(try input().windows.first?.isGeneral == true,"an omitted scope must remain general")
+        try require(entry.composition.rowEvents == .absentFromSchema,"omitted events must remain absent")
+        window["modelScope"]=["models":["opus"]]
+        try await client.replaceRows(decode().value)
+        try require(try input().windows.first?.isGeneral == false,"a valid scoped window must not become general")
+        window["modelScope"]=NSNull()
+        let isolated=try decode()
+        try require(isolated.invalidRowCount == 1 && isolated.value.projection.rows.first?.invalid == true,"null scope must isolate the semantic row")
+        try await client.replaceRows(isolated.value)
+        try require(entry.composition.presentedContent.snapshot.inputs.isEmpty,"an isolated scope must not produce general capacity")
+        for bad:Any in ["malformed",["models":[42]]] {
+            window["modelScope"]=bad
+            try rejected("structurally malformed scope must reject the frame")
+        }
+        window.removeValue(forKey:"modelScope")
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        let data=(document["result"] as! [String:Any])["data"] as! [String:Any]
+        var event=((data["projection"] as! [String:Any])["resetEvents"] as! [[String:Any]])[0]
+        let clock=Date(),formatter=ISO8601DateFormatter()
+        event["rowId"]=row["id"];event.removeValue(forKey:"planIds")
+        event["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60));event["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        event["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        projection["resetEvents"]=[event]
+        try await client.replaceRows(decode().value)
+        guard case .available(let admitted)=entry.composition.rowEvents else { throw Failure(description:"valid event treated as absent") }
+        try require(admitted.count == 1 && entry.composition.resetSignals.contains(where:{$0.reset?.id == admitted[0].id}),"valid event must reach the normal projection")
+        for bad:Any in [NSNull(),"malformed",[["version":1]],[["version":"malformed"]]] {
+            projection["resetEvents"]=bad
+            try rejected("null or malformed events must reject the frame")
+            guard case .available(let retained)=entry.composition.rowEvents else { throw Failure(description:"rejected events were treated as absent") }
+            try require(retained.count == 1,"rejected event frames must not replace admitted events")
+        }
+        projection["resetEvents"]=[];try await client.replaceRows(decode().value)
+        try require(entry.composition.rowEvents == .available([]),"valid empty events must not be absent")
+        projection.removeValue(forKey:"resetEvents");try await client.replaceRows(decode().value)
+        try require(entry.composition.rowEvents == .absentFromSchema,"omitted events must remain absent on refresh")
+        await entry.composition.stop()
+    }
+    static func unstablePersistence(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any], row=(projection["rows"] as! [[String:Any]])[0]
+        let original=(row["accounts"] as! [[String:Any]])[0]
+        var accounts=(0..<2).map { index -> [String:Any] in
+            var account=original
+            account["subscriptionRef"]=NSNull();account["route"]="saved_login_api"
+            account["accountLocator"]=String(repeating:String(index+1),count:16)
+            account["credits"]=["balance":index == 0 ? 11:22,"unit":"credits"]
+            return account
+        }
+        row["accounts"]=accounts;row["surfaces"]=["dock","menu","settings"]
+        projection["rows"]=[row];root["projection"]=projection
+        func snapshot() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root)) }
+        let initial=try snapshot(), directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-unstable-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let url=directory.appendingPathComponent("settings.json"),store=try SettingsStore(url:url)
+        let configuration=EngineClientConfiguration(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true)
+        func makeEntry(_ store:SettingsStore,_ rows:WireRowsSnapshot) -> EngineDockMenuApplication {
+            EngineRowsEntry.make(configuration:configuration,settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:rows)},activateSettings:{})
+        }
+        let entry=makeEntry(store,initial);await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        let editor=entry.settingsHost.application.editor, members=editor.context.subscriptions
+        try require(members.count == 2 && members.allSatisfy(\.isUnstable),"normal Settings must flag both order-derived members")
+        try require(members.allSatisfy { $0.persistenceDisabledReason?.english == "Unverified account — changes can't be saved yet" && $0.persistenceDisabledReason?.chinese == "未验证账号，暂不能保存设置" },"Settings must expose the localized reason")
+        let ids=members.map(\.id), before=await store.snapshot()
+        var draft=AliasDraft(subscriptionID:ids[0],committed:"");draft.input("wrong account",composing:false)
+        for edit in [SettingsB21Edit.visible(ids[0],false),.alias(draft),.moveSubscription(ids[0],to:1,expectedOrder:ids)] {
+            do { _ = try await editor.commit(edit); throw Failure(description:"an unstable member edit was persisted") }
+            catch is SettingsEditorError { }
+        }
+        do { _ = try await editor.commit(SettingsB20Edit.percentagePin(ids[0],.week)); throw Failure(description:"an unstable scope was persisted") }
+        catch is SettingsEditorError { }
+        let rejected=await store.snapshot()
+        try require(rejected.revision == before.revision,"rejected edits must not write")
+        accounts.swapAt(0,1);row["accounts"]=accounts;projection["rows"]=[row];root["projection"]=projection
+        let refreshed=try snapshot();try await (entry.composition.client as! S4RowsClient).replaceRows(refreshed)
+        let persisted=await store.snapshot().preferences
+        try require(ids.allSatisfy { persisted.subscriptionSettings[$0] == nil && !persisted.subscriptions.hiddenIDs.contains($0) && !persisted.subscriptions.order.contains($0) },"unstable keys must not be saved")
+        try require(entry.composition.presentedContent.snapshot.inputs.count == 2,"refresh must keep both members visible")
+        await entry.composition.stop()
+        let restart=makeEntry(try SettingsStore(url:url),refreshed);await restart.prepare();await restart.composition.start()
+        defer { restart.composition.dock.close() }
+        let after=await restart.foundationStore.snapshot().preferences
+        try require(ids.allSatisfy { after.subscriptionSettings[$0] == nil && !after.subscriptions.hiddenIDs.contains($0) && !after.subscriptions.order.contains($0) },"restart must not transfer any unstable choice")
+        try require(restart.composition.presentedContent.snapshot.inputs.count == 2,"restart must retain both members")
+        await restart.composition.stop()
+    }
     static func sourceStates(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
@@ -74,6 +191,36 @@ private actor S4RowsClient: EngineClient {
             try require(source() == expected,"the normal Settings catalogue must reflect \(state)/\(consent)/\(value)")
         }
         await entry.composition.stop()
+    }
+    static func announcedMenuIndicator(capture:URL) async throws -> Bool {
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        let result=document["result"] as! [String:Any]
+        var data=result["data"] as! [String:Any], projection=data["projection"] as! [String:Any]
+        var events=projection["resetEvents"] as! [[String:Any]]
+        let now=Date(),formatter=ISO8601DateFormatter()
+        events[0]["publishedAt"]=formatter.string(from:now.addingTimeInterval(-60))
+        events[0]["expiresAt"]=formatter.string(from:now.addingTimeInterval(3600))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:now),"through":formatter.string(from:now.addingTimeInterval(3600))]
+        projection["resetEvents"]=events;data["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-menu-notice-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard case .available(let admitted)=entry.composition.rowEvents,
+              admitted.count == 1, admitted[0].status == "announced",
+              entry.composition.resetSignals.contains(where:{$0.reset?.id == admitted[0].id}),
+              entry.composition.dock.menuNotice != nil else {
+            await entry.composition.stop()
+            throw Failure(description:"announced event must reach the normal host before the menu indicator is tested")
+        }
+        let displayed = entry.noticeIndicator.notice == entry.composition.dock.menuNotice
+        await entry.composition.stop()
+        return displayed
     }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
@@ -118,6 +265,19 @@ private actor S4RowsClient: EngineClient {
         try await Task.sleep(for:.milliseconds(50))
         try require(replay.count == 1,"restored Settings notification ledger must deduplicate across notifier restart")
         secondNotifier.stop()
+        let corruptURL=directory.appendingPathComponent("corrupt-reset-notifications.json")
+        let corrupt=Data("{broken".utf8);try corrupt.write(to:corruptURL)
+        var recoveredDeliveries:[String]=[]
+        let recovered=try EngineResetNotifier.recovering(composition:entry.composition,settings:store,cacheURL:corruptURL,deliverToSystem:false)
+        recovered.deliveryOverride={ recoveredDeliveries.append($0) };recovered.start()
+        for _ in 0..<100 where recoveredDeliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+        try require(recoveredDeliveries == [decoded[0].id+":announced"],"a quarantined corrupt ledger must not disable reset delivery")
+        let quarantined=try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)
+            .filter { $0.lastPathComponent.hasPrefix("corrupt-reset-notifications.json.corrupt-") }
+        try require(quarantined.count == 1 && (try Data(contentsOf:quarantined[0])) == corrupt,"recovery must retain the exact corrupt bytes in one quarantine file")
+        try await synthetic.replaceRows(rows);try await Task.sleep(for:.milliseconds(50))
+        try require(recoveredDeliveries.count == 1,"recovered ledger must deduplicate repeated events")
+        recovered.stop()
         entry.composition.dock.setPresentationAllowed(true)
         try require(entry.noticeIndicator.notice != nil, "normal entry must show the projected menu notice")
         entry.composition.dock.showConsole = {}
@@ -229,8 +389,8 @@ private actor S4RowsClient: EngineClient {
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
         try require(reading.remainingPercent == 24,"restricted and special-pool windows must not determine the general tightest")
-        try require(reading.inner?.windowID.hasSuffix("five") == true,"inner must use5h role")
-        try require(reading.outer?.windowID == "weekly","outer must use the general weekly window")
+        try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
+        try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
@@ -252,7 +412,7 @@ private actor S4RowsClient: EngineClient {
             guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
             let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
             try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
-            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "weekly","pin must not swap ring roles")
+            try require(pinned.outer?.windowID == "five" && pinned.inner?.windowID == "weekly","pin must not swap ring roles")
         }
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         var generalFive=window("general-five","session",63,18000);generalFive["limitKey"]="five_hour"
@@ -267,7 +427,7 @@ private actor S4RowsClient: EngineClient {
             try await synthetic.replaceRows(snapshot)
             guard let next=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"member disappeared on refresh") }
             let reading=try DockInstrumentProjection.evaluate(next,now:Date())
-            try require(reading.remainingPercent == 24 && reading.inner?.windowID == "general-five" && reading.outer?.windowID == "general-week","general role selection must not depend on order or include model, named or future pools")
+            try require(reading.remainingPercent == 24 && reading.outer?.windowID == "general-five" && reading.inner?.windowID == "general-week","general role selection must not depend on order or include model, named or future pools")
         }
         account["windows"]=[scopedFive,namedPool,future];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let restrictedOnly=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
@@ -301,6 +461,7 @@ private actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
+        try require(firstCard.rows.contains { $0.id == "source" && $0.value == "Saved sign-in" },"card must retain its localized reported source")
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value.contains("42.5")},"first card needs only its own reported credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value.contains("7")},"second card needs its own reported credits")
         try require(!secondCard.rows.contains{$0.value.contains("42.5")},"source totals must not leak across members")
@@ -378,7 +539,7 @@ private actor S4RowsClient: EngineClient {
         try require(catalogue.unstableKeys == temporary && catalogue.members.map(\.isStable) == [true,false,false,true],"only the colliding unbound keys are unstable")
         try require(entry.composition.memberInstability == ["0123456789abcdef":false,"codex#saved_login_api#1":true,"codex#saved_login_api#2":true,"codex#runtime_rpc":false],"the normal provider must expose per-member instability to placement and scope consumers")
         try require(catalogue.members.filter{!$0.isStable}.allSatisfy {
-            $0.persistenceDisabledReason?.english == "can't be told apart until the account is verified" && $0.persistenceDisabledReason?.chinese == "账号验证前无法区分"
+            $0.persistenceDisabledReason?.english == "Unverified account — changes can't be saved yet" && $0.persistenceDisabledReason?.chinese == "未验证账号，暂不能保存设置"
         },"Settings must receive the exact localized persistence-disabled reason")
         var candidate=SettingsPreferences()
         candidate.subscriptionSettings["0123456789abcdef"] = .init(alias:"Stable")

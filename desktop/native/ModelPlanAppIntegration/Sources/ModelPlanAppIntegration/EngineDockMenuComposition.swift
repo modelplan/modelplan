@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import OSLog
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -67,8 +68,12 @@ public struct EngineMenuRefreshResult {
             guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
             base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
-        guard let notifier=try? EngineResetNotifier(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live) else { return }
-        resetNotifier=notifier;notifier.start()
+        do {
+            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live)
+            resetNotifier=notifier;notifier.start()
+        } catch {
+            Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
+        }
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {

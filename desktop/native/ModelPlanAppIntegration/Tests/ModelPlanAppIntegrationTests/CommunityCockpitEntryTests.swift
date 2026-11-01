@@ -118,7 +118,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "即将推出 / Coming soon") })
             XCTAssertEqual(statusItem.isEnabled,enabled)
             let menu=app.composition.dock.menu()
-            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Cockpit…" : "即将推出 / Coming soon") })
+            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "即将推出 / Coming soon") })
             XCTAssertEqual(item.isEnabled,enabled)
             app.composition.dock.perform(NSSelectorFromString("openConsole"))
             app.perform(NSSelectorFromString("showConsoleMenu"))

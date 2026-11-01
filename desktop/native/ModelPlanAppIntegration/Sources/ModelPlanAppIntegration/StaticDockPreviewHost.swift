@@ -130,6 +130,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let currentDate: @MainActor () -> Date
     private let readerCapabilities: CommunityReaderCapabilities
     private let createsNativePanels: Bool
+    private let prepareDetachedAlternateAppearances: Bool
     private let nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)?
     private let elapsedClock: (() -> TimeInterval)?
     private let edgeScheduling: (any DockEdgeScheduling)?
@@ -235,6 +236,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var memberSafePreferences: SettingsPreferences {
+        preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
+    }
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
     /// Internal-only registration read used by synthetic offscreen evidence.
@@ -298,10 +302,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
         }
-        let visible = Set((try? preferences.presentedSubscriptionIDs(catalogue)) ?? [])
+        let safePreferences = memberSafePreferences
+        let visible = Set((try? safePreferences.presentedSubscriptionIDs(catalogue)) ?? [])
         var contents: [String: DockCardContent] = [:]
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
-        return DockInteractionEnvironment(catalogue: catalogue, preferences: preferences.subscriptions,
+        return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
             bindingRevision: inputGeneration, hoveredID: interactionHoveredID, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
@@ -387,7 +392,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
-            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(preferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
+            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
             let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
@@ -431,7 +436,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     /// In-memory publication seam for the same host callbacks; no NSWindow is created in checks.
     init(appearance: Appearance? = nil, currentDate: @escaping @MainActor () -> Date, createsNativePanels: Bool,
-         sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+         prepareDetachedAlternateAppearances: Bool = false, sliverParameters: DockSliverParameters = .current, nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
          elapsedClock: (() -> TimeInterval)? = nil, edgeScheduling: (any DockEdgeScheduling)? = nil,
          readerCapabilities: CommunityReaderCapabilities = .init(), purpose: DockHostPurpose = .selfTest,
          contentProvider: (any DockContentProvider)? = nil, pointerSampleSource: (() -> CGPoint?)? = nil) {
@@ -442,6 +447,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.nativeEnvironment = nativeEnvironment; self.elapsedClock = elapsedClock; self.edgeScheduling = edgeScheduling
         self.sliverParameters = sliverParameters
         self.appearance = appearance; self.currentDate = currentDate; self.createsNativePanels = createsNativePanels
+        self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
@@ -449,6 +455,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         cockpitVeil.wantsLayer = true; cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
         cockpitVeil.isHidden = true
         container.addSubview(dockView); container.addSubview(cockpitVeil); container.addSubview(consoleButton)
+        bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
@@ -471,6 +478,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         sliver.onNeedsFreshPresentation = refresh
         card.isHidden = true
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+    private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onEmptyAction = { [weak self, weak view] in
+            guard let self, let view, self.permitted, !self.retired, !self.rendering,
+                  view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
+            showSettings(); return true
+        }
+        view.permitsEmptyAction = { [weak self, weak view] source in
+            guard let self, let view else { return false }
+            return self.acceptsInstrumentAction(from: view, source: source)
+        }
     }
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
@@ -620,15 +638,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         if choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
         guard passIsCurrent(generation) else { return }
-        let passPreferences = preferences
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
         let content = contentProvider.makeContent(.init(snapshot: snapshot, diagnostics: diagnostics,
             now: now, readerFacts: facts, canonicalConsent: dockConsent))
         let next = content.snapshot
+        let passPreferences = preferences.withoutUnstableMemberChoices(next.subscriptions)
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
-        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)" }.joined(separator: "\n")
+        let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)" }.joined(separator: "\n")
         if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
@@ -676,7 +694,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 guard passIsCurrent(generation) else { return }
                 geometry = candidate
                 geometry.scaleRegistration(by: dockView.appliedGeometryScale)
-                try registerSliver(&geometry, view: dockView, preferences: passPreferences)
             }
             else {
                 try dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
@@ -708,7 +725,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if appearanceFallback || (rows.isEmpty && appearance == nil) {
             let factor = passPreferences.size.nozzleDiameter / DockNozzleDiameters.current.medium
             dockView.setFrameSize(CGSize(width: 210 * factor, height: 60 * factor))
-            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable (fallback)" : "停靠栏外观不可用（回退）") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
+            empty.stringValue = appearanceFallback ? (passPreferences.language == .english ? "Dock appearance unavailable" : "挂件外观暂不可用") : (contentEmptyText ?? CommunityReaderStatusPresentation.emptyText(next, english: passPreferences.language == .english))
             empty.setAccessibilityIdentifier("dock.empty-reader-status")
             empty.font = .systemFont(ofSize: 13 * factor)
             empty.frame = dockView.bounds.insetBy(dx: 10 * factor, dy: 10 * factor)
@@ -739,16 +756,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 nextGeometries[orientation] = candidate; nextViews[orientation] = dockView
             }
         }
-        // Resolve every official orientation before tracking. Pointer samples reuse prepared pixels.
-        if createsNativePanels, let appearance {
+        // The official factory opts detached integration hosts into production
+        // edge layouts; arbitrary injected appearances retain their own lifecycle.
+        if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
             for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
                     var candidate = try appearance(view, rows, oriented)
                     candidate.scaleRegistration(by: view.appliedGeometryScale)
-                    try registerSliver(&candidate, view: view, preferences: oriented)
                     guard passIsCurrent(generation) else { return }
+                    bindEmptyStation(to: view)
                     view.onAction = dockView.onAction
                     view.permitsAction = { [weak self, weak view] _, source in
                         guard let self, let view else { return false }
@@ -854,13 +872,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         value.revealDwell = Double(preferences.revealMilliseconds) / 1000
         value.wakeDepth = sliverParameters.trackingDepth
         return value
-    }
-    private func registerSliver(_ geometry: inout StaticDockGeometry, view: DockInstrumentView, preferences: SettingsPreferences) throws {
-        guard let hull = view.registeredHullBounds else { return }
-        let scales = sliverParameters.sizeScales
-        let factor = preferences.size == .small ? scales.small : preferences.size == .large ? scales.large : scales.medium
-        try geometry.registerSliver(hullBounds: hull, expandedSize: view.frame.size, edge: preferences.dockEdge,
-                                    parameters: sliverParameters, scale: factor)
     }
     private var presentationGeometry: StaticDockGeometry {
         edge.presentation?.placement.flatMap { edgeGeometries[$0.edge] } ?? geometry
@@ -1092,12 +1103,19 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                                    action: { [weak self] in self?.openSettings() }))
             }
         }
-        items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : "即将推出 / Coming soon", action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
-        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
-        items.append(.init(title: preferences.language == .english ? "Hide Dock" : "隐藏挂件", action: { [weak self] in self?.hideDockMenu() }))
-        items.append(.init(title: nil))
-        let quit = purpose == .production ? "Quit ModelPlan / 退出 ModelPlan" : "Quit preview / 退出自测版"
+        let english = application == nil || preferences.language == .english
+        let quit: String
+        switch (purpose, english) {
+        case (.production, true): quit = "Quit ModelPlan"
+        case (.production, false): quit = "退出 ModelPlan"
+        case (.selfTest, true): quit = "Quit preview"
+        case (.selfTest, false): quit = "退出自测版"
+        }
         items.append(.init(title: quit, keyEquivalent: "q", action: { NSApplication.shared.terminate(nil) }))
+        items.append(.init(title: nil))
+        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : "即将推出 / Coming soon", action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
+        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: english ? "Hide Dock" : "隐藏挂件", action: { [weak self] in self?.hideDockMenu() }))
         component.replace(with: items)
         return menu
     }
@@ -1126,10 +1144,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        return try DockCardProjection.content(input: preferences.applying(to: input),
+        return try DockCardProjection.content(input: memberSafePreferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
+                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id].map { $0.additionalRows + [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
@@ -1138,7 +1156,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, pinned: Bool = true, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,
-              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
+              (try? memberSafePreferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
               let content = supplied ?? interactionCardContent(id), content.subscriptionID == id,
               content.revision == (application?.snapshot.revision ?? 0) else { dismissCard(); return }
         cardGeneration &+= 1
@@ -1180,7 +1198,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               cardID == id, cardGeneration == token, inputGeneration == feed,
               application?.snapshot.revision == revision,
               model?.inputs.contains(where: { $0.id == id }) == true,
-              (try? preferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true else { return false }
+              (try? memberSafePreferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true else { return false }
         return !createsNativePanels || cardPanel?.isVisible == true
     }
     private func dismissCard() {

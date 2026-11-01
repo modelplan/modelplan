@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import OSLog
 import UserNotifications
 import ModelPlanEngineStore
 import ModelPlanEngineClient
@@ -7,6 +8,7 @@ import ModelPlanSettings
 
 /// Serializes event admission and delivery using the shared Settings notification policy.
 @MainActor final class EngineResetNotifier:EngineStoreSink {
+    private static let logger=Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger")
     private weak var composition:EngineDockMenuComposition?
     private let settings:SettingsStore
     private let consumer:SettingsNotificationConsumer
@@ -22,6 +24,21 @@ import ModelPlanSettings
             ledger=try JSONDecoder().decode(NotificationLedger.self,from:Data(contentsOf:cacheURL))
         } else { ledger=NotificationLedger() }
         consumer=SettingsNotificationConsumer(policy:NotificationPolicy(ledger:ledger))
+    }
+    static func recovering(composition:EngineDockMenuComposition,settings:SettingsStore,cacheURL:URL,deliverToSystem:Bool) throws -> EngineResetNotifier {
+        do {
+            return try .init(composition:composition,settings:settings,cacheURL:cacheURL,deliverToSystem:deliverToSystem)
+        } catch let error as DecodingError {
+            logger.error("Reset notification ledger is corrupt; quarantining it before starting a fresh ledger: \(error.localizedDescription, privacy: .private)")
+            let timestamp=ISO8601DateFormatter().string(from:Date()).replacingOccurrences(of:":",with:"-")
+            let quarantine=cacheURL.deletingLastPathComponent().appendingPathComponent(cacheURL.lastPathComponent+".corrupt-"+timestamp+"-"+UUID().uuidString)
+            do { try FileManager.default.moveItem(at:cacheURL,to:quarantine) }
+            catch { logger.error("Could not quarantine the corrupt reset notification ledger: \(error.localizedDescription, privacy: .private)");throw error }
+            return try .init(composition:composition,settings:settings,cacheURL:cacheURL,deliverToSystem:deliverToSystem)
+        } catch {
+            logger.error("Could not read the reset notification ledger: \(error.localizedDescription, privacy: .private)")
+            throw error
+        }
     }
     func start() { guard let composition,attachment == nil else { return };attachment=composition.store.attach(self) }
     func stop() { if let attachment { composition?.store.detach(attachment) };attachment=nil }

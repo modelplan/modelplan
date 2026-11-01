@@ -76,6 +76,7 @@ func TestGeminiAccountJSONSanitizesLegacyLabels(t *testing.T) {
 		{"synthetic-token-shaped-secret input tokens", "unknown input tokens"},
 		{"gemini-2.5-pro requests", "gemini-2.5-pro requests"},
 		{"synthetic-token-shaped-secret arbitrary suffix", "unknown"},
+		{"account/secret requests", "unknown requests"},
 	} {
 		a := Account{Source: "native:gemini", Windows: []Window{{Limit: tc.label}}}
 		data, err := json.Marshal(a)
@@ -92,5 +93,21 @@ func TestGeminiAccountJSONSanitizesLegacyLabels(t *testing.T) {
 		if a.Windows[0].Limit != tc.label {
 			t.Fatal("marshalling mutated the source account")
 		}
+	}
+}
+
+func TestGeminiMarkedCacheRejectsMalformedLabel(t *testing.T) {
+	secret := "account/secret requests"
+	a := Account{Source: "native:gemini", Windows: []Window{{Limit: secret, ScopeKnown: true}}}
+	data, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Account
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Windows[0].Limit != "unknown requests" {
+		t.Fatalf("malformed label escaped: %q", decoded.Windows[0].Limit)
 	}
 }

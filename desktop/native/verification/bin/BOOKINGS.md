@@ -129,8 +129,11 @@ confirmed closure. It is not repeated here, so the two cannot drift apart.
 M1 does not run there: V1 writes the release with `release.py --lane V1 --host macci
 --coordinator-go GO_URL` (the coordinator's GO comment on the handoff issue, a GitHub
 issue-comment URL) and `MODELPLAN_VERIFICATION_HOST=macci`; the run config sets `"host": "macci"`
-and usually `"launchMode": "launchservices"`. Details, launch modes and the never-started closure
+and `"launchMode": "direct"` (with `"subjectKind": "app-zip"` for a full signed `.app` zip;
+LaunchServices returned -10810 there, and direct children activate). Details, launch modes, synthetic-data limits and the never-started closure
 are in [`../SKILL.md`](../SKILL.md#macci-lane-v1). On the dev Mac only M1 releases, unchanged.
+The never-started scan matches only by executable path (exact subject or bundle prefix) and by
+helper PID plus start time recorded at spawn; it never reads other processes' environments.
 
 If work is abandoned **while still queued**, replace start/release/launch with:
 
@@ -146,7 +149,7 @@ must stay at most two seconds old. On the dev Mac only M1 runs `release.py` (V1 
 lease identity/interval under the ledger lock, refuses expired leases and never
 overwrites a receipt. The receipt contains only that identity and M1's approval
 reference. The lane flag and approval reference attest the operator's authority;
-trusted writers must verify the linked comment is the coordinator's OK.
+`release.py` checks only the reference's syntax (https URL; GitHub issue-comment URL for the MacCI GO), so the releasing lane must itself confirm the linked comment is the coordinator's OK or GO.
 M1 may release a booked session owned by another requesting lane, but must use
 that lane for its booking start/finish operations. Withdrawal cannot cancel an
 already started session. A release never extends a lease or certifies cleanup.

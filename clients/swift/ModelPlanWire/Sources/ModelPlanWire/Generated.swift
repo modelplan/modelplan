@@ -1402,7 +1402,8 @@ public struct RowsWindow: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`modelScope` = try? c.decodeIfPresent(RowsModelScope.self, forKey: .`modelScope`)
+        if c.contains(.`modelScope`), try c.decodeNil(forKey: .`modelScope`) { throw WireDecodeError.invalidIdentity }
+        self.`modelScope` = try c.decodeIfPresent(RowsModelScope.self, forKey: .`modelScope`)
         self.`id` = try c.decode(String.self, forKey: .`id`)
         self.`role` = try c.decode(RowsRole.self, forKey: .`role`)
         self.`durationSeconds` = try? c.decodeIfPresent(Int64.self, forKey: .`durationSeconds`)
@@ -2938,7 +2939,8 @@ public struct WireRowsProjection: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.`resetEvents` = try? c.decodeIfPresent([RowsResetEvent].self, forKey: .`resetEvents`)
+        if c.contains(.`resetEvents`), try c.decodeNil(forKey: .`resetEvents`) { throw WireDecodeError.invalidIdentity }
+        self.`resetEvents` = try c.decodeIfPresent([RowsResetEvent].self, forKey: .`resetEvents`)
         self.`rowsVersion` = try c.decode(Int.self, forKey: .`rowsVersion`)
         var rowElements = try c.nestedUnkeyedContainer(forKey: .`rows`)
         var decodedRows: [RowsRow] = []
