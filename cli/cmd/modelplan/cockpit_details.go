@@ -165,7 +165,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	}
 	ledger, ok := speed.LoadPerf(s.cache)
 	perf := (speed.PerfView{Ledger: ledger, OK: ok, Recording: true, Now: now}).Admitted(current)
-	if !ok {
+	if !ok || ledger.Since.IsZero() {
 		return result, ctx.Err()
 	}
 	result.SessionCoverage = "local-last-seen"

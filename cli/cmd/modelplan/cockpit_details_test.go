@@ -3,6 +3,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -13,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
@@ -68,4 +72,24 @@ func TestCockpitLabelRejectsPathsAndControlCharacters(t *testing.T) {
 	if !safeCockpitLabel("Synthetic project") {
 		t.Fatal("safe label rejected")
 	}
+}
+
+func TestCockpitCoverageDistinguishesMissingAndEmptyLedger(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MODELPLAN_READERS", "automatic")
+	t.Setenv("MODELPLAN_HISTORY", "")
+	if _, err := consent.EnsureStore(consent.Path()); err != nil { t.Fatal(err) }
+	a := consent.Capture()
+	stamp := appserver.Stamp{Epoch: a.Fence().StoreEpoch, Generation: a.Fence().Generation}
+	cache := t.TempDir()
+	admission := queries.CockpitAdmission{Stamp: stamp, Scopes: []string{consent.ScopeCodexLocalHistory}}
+	source := sharedCockpit{cache: cache}
+	missing, err := source.cockpitDetails(context.Background(), appserver.View{}, admission, nil)
+	if err != nil || missing.SessionCoverage != "unavailable" || slices.Contains(missing.Sources, "local-history") { t.Fatalf("missing ledger: %#v, %v", missing, err) }
+	if err := os.MkdirAll(filepath.Dir(speed.PerfPath(cache)), 0700); err != nil { t.Fatal(err) }
+	payload, err := json.Marshal(speed.PerfLedger{SchemaVersion: 1, Since: time.Now().UTC(), Rows: []speed.PerfRow{}})
+	if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(speed.PerfPath(cache), payload, 0600); err != nil { t.Fatal(err) }
+	empty, err := source.cockpitDetails(context.Background(), appserver.View{}, admission, nil)
+	if err != nil || empty.SessionCoverage != "local-last-seen" || !slices.Contains(empty.Sources, "local-history") || len(empty.Sessions) != 0 { t.Fatalf("empty ledger: %#v, %v", empty, err) }
 }
