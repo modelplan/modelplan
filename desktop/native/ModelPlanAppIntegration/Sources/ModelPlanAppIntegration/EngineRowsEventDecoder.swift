@@ -3,8 +3,7 @@ import Foundation
 import ModelPlanWire
 
 public enum EngineRowsEventState:Equatable,Sendable {
-    /// Current public Rows schema has no announced-reset field. No inferred event,
-    /// account fetch, popup, dot or notification can be produced from quota changes.
+    /// The producer did not supply the optional field.
     case absentFromSchema
     case available([EngineResetEvent])
 }
@@ -16,8 +15,7 @@ public struct EngineResetEvent:Equatable,Sendable {
     public let confirms:String?
 }
 
-/// Replace this boundary only against the published CLI/wire draft. Unknown JSON
-/// fields are not an event contract and the existing typed decoder ignores them.
+/// Projects only explicit wire events; quota readings never create notices.
 public enum EngineRowsEventDecoder {
     public static func decode(_ rows:WireRowsSnapshot?) -> EngineRowsEventState {
         guard let events=rows?.projection.resetEvents else { return .absentFromSchema }
@@ -30,10 +28,8 @@ public enum EngineRowsEventDecoder {
         let decoded=events.compactMap { event -> EngineResetEvent? in
             guard event.version == 1, event.status.isKnown, rowIDs.contains(event.rowId),
                   let published=date(event.publishedAt), let expires=date(event.expiresAt), published < expires,
-                  seen.insert(event.rowId+"#"+event.id).inserted else { return nil }
-            // Confirmation must be linked to a previously admitted announcement;
-            // until that stateful check is wired, do not surface confirmations.
-            if event.status == .confirmed { return nil }
+                  seen.insert(event.rowId+"#"+event.id+"#"+event.status.rawValue).inserted else { return nil }
+            if event.status == .confirmed && (event.confirms?.isEmpty ?? true) { return nil }
             return .init(id:event.id,rowID:event.rowId,provider:event.provider,status:event.status.rawValue,
                          publishedAt:published,expiresAt:expires,planIDs:event.planIds,confirms:event.confirms)
         }

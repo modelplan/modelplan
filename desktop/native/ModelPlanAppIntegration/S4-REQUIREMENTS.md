@@ -17,7 +17,7 @@ dispatcher.
 | DOCK-3.8-06/07 | Actual reported reset timestamp, formatted relatively at card presentation time. Missing is `--`; past reset is not future fuel. |
 | DOCK-3.8-08 | Reported per-account credits balance/unit only. Reset count/earliest reserve expiry are unavailable in current RowsAccount and omitted. |
 | DOCK-3.8-12/13 | Extras remain card rows; unknown quota is `--`; absent plan/reserve facts stay absent. No cross-member aggregation or inferred plan. |
-| DOCK-3.4-*, DOCK-3.7-*, DOCK-3.8-11 | Partial: public event decoding, member/card projection, menu marker and notification/acknowledgement seams are present. Official Dock/sliver rendering and real user/device verification remain open. |
+| DOCK-3.4-*, DOCK-3.7-*, DOCK-3.8-11 | Partial: wire-to-member signals, card rows and shared notification-ledger sink are prepared. Host wiring, official rendering and real user/device verification await #397. |
 
 Visual/geometry baselines and device acceptance are not established by these
 source and non-windowed checks. GLM `DESIGN: pass` and VERDICT remain required.
@@ -98,6 +98,19 @@ The journey also covers member-key pinning, one-member/multi-member preference
 migration, explicit member preference precedence, unknown plan/quota/reserve/age,
 and synchronous withdrawal. XCTest execution and external CI are separate facts;
 the CLT runner does not claim to execute XCTest.
+
+## Reset notice unification
+
+The provider derives one `DockSubscriptionSignal` per admitted member from
+explicit public events. Linked confirmations supersede their announcements;
+wire expiry caps the shared notice lifetime and a current restarted reading
+clears a confirmed notice. The App notification sink uses the Settings
+`NotificationPolicy` and `NotificationLedger`, keyed by row and `id:status`,
+and persists only the shared ledger. Dock/menu acknowledgements belong to the
+host's in-memory `DockAttentionState`; they are not notification deduplication.
+The test exercises these projections and a synthetic delivery/restart path.
+The host's `DockContent.signals` integration remains pending #397, so this
+preparation does not claim visible Dock, sliver or menu indicators.
 
 ## Main/language integration turn
 

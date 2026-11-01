@@ -5,6 +5,7 @@ import ModelPlanEngineClient
 import ModelPlanWire
 import ModelPlanCommunityHost
 import ModelPlanSettings
+import ModelPlanDock
 
 /// Normal-entry composition. Construction creates no engine child or native panel when requested.
 public struct EngineMenuRefreshResult {
@@ -17,7 +18,6 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
-    private var resetLedger:EngineResetEventLedger?
     private var resetNotifier:EngineResetNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
@@ -51,7 +51,7 @@ public struct EngineMenuRefreshResult {
         .init(rows:store.snapshot.rows?.projection.rows ?? [])
     }
     public var rowEvents:EngineRowsEventState { EngineRowsEventDecoder.decode(store.snapshot.rows) }
-    public var resetEventPresentation:[String:[EngineDockContentProvider.ResetEventPresentation]] { _ = presentedContent; return adapter.resetEventsByMember }
+    public var resetSignals:[DockSubscriptionSignal] { _ = presentedContent; return adapter.signals }
     public var memberInstability:[String:Bool] { _ = presentedContent; return adapter.memberInstability }
     func installResetEvents(settings:SettingsStore,live:Bool) {
         let base:URL
@@ -59,15 +59,8 @@ public struct EngineMenuRefreshResult {
             guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
             base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
-        guard let ledger=try? EngineResetEventLedger(url:base.appendingPathComponent("reset-events.json")) else { return }
-        resetLedger=ledger;adapter.acknowledgedResetEventIDs=ledger.acknowledged
-        let notifier=EngineResetNotifier(composition:self,settings:settings,ledger:ledger,deliverToSystem:live)
+        guard let notifier=try? EngineResetNotifier(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live) else { return }
         resetNotifier=notifier;notifier.start()
-    }
-    public func acknowledgeResetEvent(_ id:String) throws {
-        guard case .available(let events)=rowEvents,events.contains(where:{$0.id == id}),let resetLedger else { return }
-        try resetLedger.acknowledge(id);adapter.acknowledgedResetEventIDs=resetLedger.acknowledged
-        dock.refreshDockContent();menuDidChange?()
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
@@ -76,8 +69,7 @@ public struct EngineMenuRefreshResult {
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let content = presentedContent
-        let hasReset=adapter.resetEventsByMember.values.joined().contains { $0.unacknowledged }
-        return .init(title: CommunityMenuBarResources.resetDot(hasReset), detail: (content.menuStatusLines ?? []).joined(separator: " · "))
+        return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }

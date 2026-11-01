@@ -5,7 +5,7 @@ import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
-import ModelPlanAppIntegration
+@testable import ModelPlanAppIntegration
 
 private actor S4RowsClient: EngineClient {
     nonisolated func isCurrent(_ context:EngineDeliveryContext) -> Bool { true }
@@ -69,25 +69,72 @@ private actor S4RowsClient: EngineClient {
         guard case .available(let decoded)=entry.composition.rowEvents else { throw Failure(description:"normal entry must admit the explicit reset event fixture") }
         try require(decoded.count == 1 && decoded[0].rowID == "codex" && decoded[0].status == "announced", "normal entry must preserve the fixture event and its row")
         for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id],"normal entry must deliver one notification for the event")
+        try require(deliveries == [decoded[0].id+":announced"],"normal entry must deliver one notification for the event episode")
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         try await synthetic.replaceRows(rows)
         try await Task.sleep(for:.milliseconds(50))
-        try require(deliveries == [decoded[0].id],"a repeated event must not produce a second notification")
-        let presentation=entry.composition.resetEventPresentation
-        try require(presentation["0123456789abcdef"]?.first?.unacknowledged == true,"matching member must expose the unacknowledged event")
-        try require(presentation["fedcba9876543210"]?.isEmpty == true,"plan-scoped event must not affect the other member")
+        try require(deliveries == [decoded[0].id+":announced"],"a repeated event must not produce a second notification")
+        let cacheURL=directory.appendingPathComponent("notification-cache.json")
+        var replay:[String]=[]
+        let firstNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
+        firstNotifier.deliveryOverride={ replay.append($0) };firstNotifier.start()
+        for _ in 0..<100 where replay.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+        try require(replay == [decoded[0].id+":announced"],"fresh notification cache must admit one event")
+        firstNotifier.stop()
+        let secondNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
+        secondNotifier.deliveryOverride={ replay.append($0) };secondNotifier.start()
+        try await Task.sleep(for:.milliseconds(50))
+        try require(replay.count == 1,"restored Settings notification ledger must deduplicate across notifier restart")
+        secondNotifier.stop()
+        let signals=entry.composition.resetSignals
+        guard let matching=signals.first(where:{$0.id == "0123456789abcdef"}),let unmatched=signals.first(where:{$0.id == "fedcba9876543210"}) else { throw Failure(description:"event members missing") }
+        try require(matching.reset?.id == decoded[0].id && unmatched.reset == nil,"only the matching member must expose the event signal")
         let card=try entry.composition.dock.cardContent(for:"0123456789abcdef")
-        try require(card?.rows.contains(where:{$0.id == "reset-event:"+decoded[0].id}) == true,"matching card must expose the public reset event")
-        try require(entry.composition.menuPresentation.title == "•","unacknowledged event must expose the menu dot")
-        try entry.composition.acknowledgeResetEvent(decoded[0].id)
-        try require(entry.composition.menuPresentation.title.isEmpty,"acknowledgement must clear the menu dot")
-        try require(entry.composition.resetEventPresentation["0123456789abcdef"]?.first?.unacknowledged == false,"acknowledgement must reach the member model")
-        let ledgerURL=directory.appendingPathComponent("ledger.json")
-        let ledger=try EngineResetEventLedger(url:ledgerURL)
-        try ledger.recordDelivered(decoded[0].id);try ledger.acknowledge(decoded[0].id)
-        let restored=try EngineResetEventLedger(url:ledgerURL)
-        try require(restored.wasDelivered(decoded[0].id) && restored.acknowledged.contains(decoded[0].id),"dedupe and acknowledgement must survive a restart by event id")
+        try require(card?.rows.contains(where:{$0.id == "reset-event:"+decoded[0].id+":announced"}) == true,"matching card must expose the public reset event")
+        var attention=DockAttentionState()
+        let stations=[matching.id:"station"]
+        let initial=try attention.project(signals,stationBySubscription:stations,at:clock)
+        try require(initial.menuNotice != nil && initial.dots.count == 1,"an announced signal must project menu and sliver notices")
+        guard let firstNotice=initial.menuNotice else { throw Failure(description:"menu notice missing") }
+        try require(attention.firstAppearance(of:firstNotice.key,on:.dock) && !attention.firstAppearance(of:firstNotice.key,on:.dock),"notice pulse must occur on first appearance only")
+        try attention.acknowledge(.cockpitOpening,signals:signals,at:clock)
+        let cockpitOpened=try attention.project(signals,stationBySubscription:stations,at:clock)
+        try require(cockpitOpened.menuNotice == nil && cockpitOpened.dots.count == 1,"opening cockpit must acknowledge only the menu notice")
+        try attention.acknowledge(.dockRevealed,signals:signals,at:clock)
+        let acknowledged=try attention.project(signals,stationBySubscription:stations,at:clock)
+        try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge both indicators")
+        try require(DockNoticeProjection.selected(for:matching,at:clock) != nil,"acknowledgement must not erase the Dock-face notice")
+        events[0]["status"]="confirmed";events[0]["confirms"]=decoded[0].id
+        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(30))
+        var superseded=events[0];superseded["status"]="announced";superseded.removeValue(forKey:"confirms")
+        superseded["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-10))
+        projection["resetEvents"]=[superseded,events[0]];data["projection"]=projection
+        let confirmed=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(confirmed)
+        guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:clock) else { throw Failure(description:"linked confirmation was not projected") }
+        try require(notice.key.kind == .resetConfirmed && notice.shape == .solid,"linked confirmation must project the solid confirmed notice")
+        for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
+        try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
+        try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
+        let captured=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        let originalProjection=captured["projection"] as! [String:Any]
+        let originalRow=(originalProjection["rows"] as! [[String:Any]])[0]
+        let originalAccount=(originalRow["accounts"] as! [[String:Any]])[0]
+        var restartedWindow=(originalAccount["windows"] as! [[String:Any]])[0]
+        restartedWindow.removeValue(forKey:"modelScope");restartedWindow["current"]=true
+        restartedWindow["observedAt"]=formatter.string(from:clock);restartedWindow["resetsAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
+        eventAccounts[0]["valueState"]="current";eventAccounts[0]["windows"]=[restartedWindow]
+        eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
+        let restarted=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(restarted)
+        guard let restartedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"restarted member missing") }
+        try require(restartedSignal.reset?.restartedReading == true && DockNoticeProjection.selected(for:restartedSignal,at:clock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        events[0].removeValue(forKey:"confirms");projection["resetEvents"]=events;data["projection"]=projection
+        let unlinked=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        try await synthetic.replaceRows(unlinked)
+        try require(entry.composition.resetSignals.first(where:{$0.id == matching.id})?.reset == nil,"unlinked confirmations must be discarded")
+        events[0]["status"]="announced"
         projection["resetEvents"]=[];data["projection"]=projection
         let empty=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(empty)
@@ -98,7 +145,7 @@ private actor S4RowsClient: EngineClient {
         projection["resetEvents"]=events;data["projection"]=projection
         let expired=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(expired)
-        try require(entry.composition.resetEventPresentation["0123456789abcdef"]?.isEmpty == true,"expired event must not appear on its member")
+        try require(entry.composition.resetSignals.first(where:{$0.id == "0123456789abcdef"})?.reset == nil,"expired event must not appear on its member")
         try require(entry.composition.menuPresentation.title.isEmpty,"expired event must not leave a menu dot")
         projection.removeValue(forKey:"resetEvents");data["projection"]=projection
         let absent=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))

@@ -35,7 +35,6 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
     }
 }
 @MainActor enum CommunityMenuBarResources {
-    static func resetDot(_ unacknowledged:Bool) -> String { unacknowledged ? "•" : "" }
     static let bundleName = "ModelPlanAppIntegration_ModelPlanAppIntegration.bundle"
     static var buildBundleURL: URL { Bundle.module.bundleURL }
     static func templateImage(appURL: URL? = nil) -> NSImage? {

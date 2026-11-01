@@ -5,25 +5,33 @@ import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanSettings
 
-/// One serialized consumer of admitted public reset events. It never asks for permission.
+/// Serializes event admission and delivery using the shared Settings notification policy.
 @MainActor final class EngineResetNotifier:EngineStoreSink {
     private weak var composition:EngineDockMenuComposition?
     private let settings:SettingsStore
-    private let ledger:EngineResetEventLedger
+    private let consumer:SettingsNotificationConsumer
+    private let cacheURL:URL
     private let deliverToSystem:Bool
     private var pending=Set<String>()
     private var attachment:UUID?
     var deliveryOverride:(@MainActor (String) async throws -> Void)?
-    init(composition:EngineDockMenuComposition,settings:SettingsStore,ledger:EngineResetEventLedger,deliverToSystem:Bool) {
-        self.composition=composition;self.settings=settings;self.ledger=ledger;self.deliverToSystem=deliverToSystem
+    init(composition:EngineDockMenuComposition,settings:SettingsStore,cacheURL:URL,deliverToSystem:Bool) throws {
+        self.composition=composition;self.settings=settings;self.cacheURL=cacheURL;self.deliverToSystem=deliverToSystem
+        let ledger:NotificationLedger
+        if FileManager.default.fileExists(atPath:cacheURL.path) {
+            ledger=try JSONDecoder().decode(NotificationLedger.self,from:Data(contentsOf:cacheURL))
+        } else { ledger=NotificationLedger() }
+        consumer=SettingsNotificationConsumer(policy:NotificationPolicy(ledger:ledger))
     }
     func start() { guard let composition,attachment == nil else { return };attachment=composition.store.attach(self) }
+    func stop() { if let attachment { composition?.store.detach(attachment) };attachment=nil }
     func clearPrivateViews(_ invalidation:EngineInvalidation) { }
     func apply(_ snapshot:EngineStoreSnapshot) {
         guard deliverToSystem || deliveryOverride != nil, case .available(let events)=EngineRowsEventDecoder.decode(snapshot.rows) else { return }
-        for event in events where event.status == "announced" && !ledger.wasDelivered(event.id) && !ledger.acknowledged.contains(event.id) && !pending.contains(event.id) {
-            pending.insert(event.id)
-            Task { @MainActor [weak self] in await self?.sendIfAllowed(event) }
+        for event in events {
+            let key=event.rowID+"#"+event.id+":"+event.status
+            guard pending.insert(key).inserted else { continue }
+            Task { @MainActor [weak self] in await self?.sendIfAllowed(event,key:key) }
         }
     }
     private func affectsMember(_ event:EngineResetEvent,_ composition:EngineDockMenuComposition) -> Bool {
@@ -31,32 +39,34 @@ import ModelPlanSettings
             member.rowID == event.rowID && (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
         }
     }
-    private func sendIfAllowed(_ event:EngineResetEvent) async {
-        defer { pending.remove(event.id) }
-        let preferences=await settings.snapshot().preferences
-        guard preferences.notifications.optedIn,preferences.notifications.kinds.contains(.reset),
-              event.publishedAt <= Date(),event.expiresAt > Date(),let composition,
-              case .available(let current)=EngineRowsEventDecoder.decode(composition.store.snapshot.rows),
-              current.contains(where:{$0.id == event.id && $0.rowID == event.rowID}),affectsMember(event,composition),
-              !ledger.wasDelivered(event.id),!ledger.acknowledged.contains(event.id) else { return }
-        if let deliveryOverride {
-            do { try await deliveryOverride(event.id);try ledger.recordDelivered(event.id) } catch {}
-            return
+    private func isCurrent(_ event:EngineResetEvent,_ composition:EngineDockMenuComposition) -> Bool {
+        guard case .available(let current)=EngineRowsEventDecoder.decode(composition.store.snapshot.rows) else { return false }
+        return current.contains { $0.id == event.id && $0.rowID == event.rowID && $0.status == event.status } && affectsMember(event,composition)
+    }
+    private func sendIfAllowed(_ event:EngineResetEvent,key:String) async {
+        defer { pending.remove(key) }
+        guard let composition,isCurrent(event,composition) else { return }
+        let notice=SettingsNotice(kind:.reset,subscriptionID:event.rowID,episodeID:event.id+":"+event.status,beganAt:event.publishedAt,expiresAt:event.expiresAt)
+        if deliveryOverride != nil { consumer.observeAuthorization(.authorized) }
+        else {
+            let authorization=await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+            consumer.observeAuthorization(authorization == .authorized ? .authorized : authorization == .provisional ? .provisional : .denied)
         }
-        let center=UNUserNotificationCenter.current()
-        let authorization=await center.notificationSettings().authorizationStatus
-        guard authorization == .authorized || authorization == .provisional else { return }
-        let latest=await settings.snapshot().preferences
-        guard latest.notifications.optedIn,latest.notifications.kinds.contains(.reset),!ledger.acknowledged.contains(event.id) else { return }
-        guard case .available(let currentAgain)=EngineRowsEventDecoder.decode(composition.store.snapshot.rows),
-              currentAgain.contains(where:{$0.id == event.id && $0.rowID == event.rowID}),affectsMember(event,composition),
-              event.expiresAt > Date(),!ledger.wasDelivered(event.id) else { return }
-        let english=latest.language == .english
-        let content=UNMutableNotificationContent();content.title=english ? "Public reset announced":"已公告公开重置"
-        content.body=english ? "A provider announced a reset. This does not confirm a personal quota reset.":"服务商已公告重置，个人额度是否重置尚未确认。"
+        let snapshot=await settings.snapshot()
+        guard isCurrent(event,composition),consumer.delivery(for:notice,snapshot:snapshot,now:Date()) != nil else { return }
         do {
-            try await center.add(UNNotificationRequest(identifier:"reset-"+event.id,content:content,trigger:nil))
-            try ledger.recordDelivered(event.id)
-        } catch { /* A failed delivery is not marked delivered. */ }
+            if let deliveryOverride { try await deliveryOverride(notice.episodeID) }
+            else {
+                let english=snapshot.preferences.language == .english
+                let content=UNMutableNotificationContent()
+                content.title=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
+                content.body=english ? "The public status does not confirm a personal quota reset.":"公开状态不代表个人额度已重置。"
+                try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier:"reset-"+event.rowID+"-"+notice.episodeID,content:content,trigger:nil))
+            }
+            // Record only accepted delivery; Settings owns pruning and the bounded ledger.
+            consumer.recordAccepted(notice,snapshot:snapshot,now:Date())
+            try FileManager.default.createDirectory(at:cacheURL.deletingLastPathComponent(),withIntermediateDirectories:true)
+            try JSONEncoder().encode(consumer.policy.ledger).write(to:cacheURL,options:.atomic)
+        } catch { /* A failed delivery does not create a ledger entry. */ }
     }
 }

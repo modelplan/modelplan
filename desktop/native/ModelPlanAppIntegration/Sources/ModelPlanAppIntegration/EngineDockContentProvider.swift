@@ -8,13 +8,8 @@ import ModelPlanSettings
 
 /// Shared host seam backed only by admitted app-server rows. Legacy context data is unused.
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
-    public struct ResetEventPresentation:Equatable,Sendable {
-        public let eventID:String
-        public let unacknowledged:Bool
-    }
     public var resetEventState:() -> EngineRowsEventState = { .absentFromSchema }
-    public var acknowledgedResetEventIDs:Set<String> = []
-    public private(set) var resetEventsByMember:[String:[ResetEventPresentation]] = [:]
+    public private(set) var signals:[DockSubscriptionSignal] = []
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
@@ -34,7 +29,7 @@ import ModelPlanSettings
         memberInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
         if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
-        resetEventsByMember = [:]
+        signals = []
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
@@ -57,9 +52,25 @@ import ModelPlanSettings
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
             }
-            resetEventsByMember[member.id]=memberEvents.map { .init(eventID:$0.id,unacknowledged:!acknowledgedResetEventIDs.contains($0.id)) }
-            for event in memberEvents {
-                reserve.append(.init(id:"reset-event:"+event.id,kind:.notice,label:english ? "Public reset announced":"已公告公开重置",value:"",detail:english ? "Announcement; personal quota is not confirmed reset":"公告不代表个人额度已重置"))
+            let confirmedIDs=Set(memberEvents.filter{$0.status == "confirmed"}.compactMap(\.confirms))
+            let preferred=memberEvents.filter { $0.status != "announced" || !confirmedIDs.contains($0.id) }
+                .max { $0.publishedAt < $1.publishedAt }
+            var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
+            if let event=preferred {
+                if event.status == "confirmed" {
+                    var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
+                    reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
+                        guard window.current else { return false }
+                        guard let observed=date(window.observedAt),let resets=date(window.resetsAt) else { return false }
+                        return observed > event.publishedAt && resets > event.publishedAt
+                    }
+                    signal.reset=reset
+                } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
+            }
+            signals.append(signal)
+            for event in preferred.map({[$0]}) ?? [] {
+                let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
+                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
             }
             if account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
