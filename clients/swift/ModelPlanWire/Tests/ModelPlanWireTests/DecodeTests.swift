@@ -54,7 +54,7 @@ final class DecodeTests: XCTestCase {
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 51)
+        XCTAssertEqual(catalog.cases.count, 52) // Adds the per-account activity DTO root.
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
@@ -79,7 +79,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 61)
+        XCTAssertEqual(fields, 62) // Adds Account.activity, coalesced and optional.
     }
 
     func testRequiredFieldsRemainRequired() throws {

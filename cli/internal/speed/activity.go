@@ -174,6 +174,7 @@ func (v *interrupted) UnmarshalJSON(b []byte) error {
 }
 
 type activityLine struct {
+	Interrupted bool `json:"-"`
 	Type      string `json:"type"`
 	Timestamp string `json:"timestamp"`
 	Event     string `json:"event"`
@@ -184,8 +185,7 @@ type activityLine struct {
 		Turn    string `json:"turnId"`
 	} `json:"context"`
 	Message struct {
-		Stop    *string     `json:"stop_reason"`
-		Content interrupted `json:"content"`
+		Stop *string `json:"stop_reason"`
 	} `json:"message"`
 	Payload struct {
 		Type string `json:"type"`
@@ -196,7 +196,7 @@ func activityPhase(l activityLine, source string) string {
 	switch source {
 	case "claude-code":
 		if l.Type == "user" {
-			if l.Message.Content {
+			if l.Interrupted {
 				return "finished"
 			}
 			return "model"
@@ -287,6 +287,17 @@ func readActivityTail(log LiveLog, fi os.FileInfo, now time.Time) ([]SessionActi
 		var l activityLine
 		if json.Unmarshal(lines[i], &l) != nil {
 			continue
+		}
+		if log.Source == "claude-code" && l.Type == "user" {
+			var user struct {
+				Message struct {
+					Content interrupted `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(lines[i], &user) != nil {
+				continue
+			}
+			l.Interrupted = bool(user.Message.Content)
 		}
 		if l.Session == "" {
 			l.Session = l.Context.Session
