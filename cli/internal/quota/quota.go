@@ -16,6 +16,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -211,14 +212,21 @@ func (a Account) MarshalJSON() ([]byte, error) {
 	return json.Marshal(accountJSON(a))
 }
 
-// SafeLimit protects Gemini labels at all presentation boundaries while leaving
-// other providers' independent label vocabularies unchanged.
+// SafeLimit permits only reviewed IDs or the bounded opaque labels generated for
+// fresh Gemini windows. ScopeKnown alone never makes provider text safe to emit.
 func (a Account) SafeLimit(label string) string {
 	if a.Source == "native:gemini" {
+		for _, w := range a.Windows {
+			if w.ScopeKnown && w.Limit == label && opaqueGeminiLimit.MatchString(label) {
+				return label
+			}
+		}
 		return safeGeminiLimit(label)
 	}
 	return label
 }
+
+var opaqueGeminiLimit = regexp.MustCompile(`^unknown-[0-9a-f]{16}( input tokens| output tokens| requests| tokens)?$`)
 
 // Gemini labels consist only of a reviewed model ID and a fixed token suffix.
 func safeGeminiLimit(label string) string {

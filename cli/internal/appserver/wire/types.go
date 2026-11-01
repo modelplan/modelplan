@@ -101,7 +101,7 @@ type RowsSnapshot struct {
 // RowsProjection excludes consent context, which belongs only in Envelope.
 // The standalone desktop projection retains its independent legacy contract.
 type RowsProjection struct {
-	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"coalesced"`
+	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"forbidden"`
 	RowsVersion int                `json:"rowsVersion"`
 	Rows        []rows.Row         `json:"rows"`
 	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
