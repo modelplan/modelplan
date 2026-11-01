@@ -478,7 +478,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 					fmt.Fprintf(b, "        try WireValidation.identity(%s)\n", value)
 				}
 			}
-		case "subscriptionRef", "accountLocator":
+		case "subscriptionRef", "accountLocator", "sessionRef":
 			if f.Optional {
 				fmt.Fprintf(b, "        if let value = %s { try WireValidation.reference(value) }\n", value)
 			} else {

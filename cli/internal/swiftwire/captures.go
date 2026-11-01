@@ -25,6 +25,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
+		reflect.TypeFor[rows.AccountActivity](),
 		reflect.TypeFor[rows.ResetEvent](), reflect.TypeFor[rows.ResetSource](), reflect.TypeFor[rows.ResetSchedule](), reflect.TypeFor[rows.ModelScope](), reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
 	}
 	out := []captureRoot{}
@@ -44,6 +45,7 @@ func captureRoots() []captureRoot {
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	if t==reflect.TypeFor[rows.AccountActivity](){return reflect.ValueOf(rows.AccountActivity{SessionRef:"aaaaaaaaaaaaaaaa",SubscriptionRef:"bbbbbbbbbbbbbbbb",BindingVerified:true,Phase:rows.ActivityPhaseTool,RecordAt:now,ExpiresAt:now.Add(5*time.Minute)}),nil}
 	if t == reflect.TypeFor[rows.ResetSource]() {
 		return reflect.ValueOf(rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}), nil
 	}

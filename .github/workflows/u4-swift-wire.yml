@@ -27,6 +27,33 @@ concurrency:
   group: u4-swift-wire-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
+  generated-artifacts:
+    # Read-only helper for lanes that deliberately run Go only in hosted CI.
+    # Existing drift checks below still validate the committed files unchanged.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Produce formatting and contract regeneration patch
+        run: |
+          git diff --name-only --diff-filter=ACMR HEAD^ HEAD -- '*.go' | while IFS= read -r file; do
+            gofmt -w "$file"
+          done
+          cd cli
+          go run ./internal/appserver/wire/cmd/schema
+          go run ./internal/swiftwire/cmd --write
+          cd ..
+          git add -N schema/app-cli/captures/ clients/swift/ModelPlanWire/
+          git diff --binary > "$RUNNER_TEMP/wire-regeneration.patch"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wire-regeneration-${{ github.sha }}
+          path: ${{ runner.temp }}/wire-regeneration.patch
+          retention-days: 3
   generated-contract:
     runs-on: ubuntu-latest
     steps:

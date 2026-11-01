@@ -101,6 +101,14 @@ func buildAccounts(in Input, c *candidate) []Account {
 			for i := range a.Windows {
 				a.Windows[i].Current = a.ValueState == ValueStateCurrent && a.Windows[i].RemainingPercent != nil && a.Windows[i].ValidUntil != nil && in.Now.Before(*a.Windows[i].ValidUntil)
 			}
+			if !discard && !in.ConsentChanged && !in.ReadersOff && !in.PrivacyBlocked && a.SubscriptionRef!=nil {
+				for _,v:=range in.Activities {
+					if CanonicalTool(v.ToolID)!=c.id || !v.BindingVerified || v.SubscriptionRef!=*a.SubscriptionRef || !refPattern.MatchString(v.SessionRef) || !validActivityWindow(v.Phase,v.RecordAt,v.ExpiresAt,in.Now) {continue}
+					a.Activity=append(a.Activity,AccountActivity{v.SessionRef,v.SubscriptionRef,true,v.Phase,v.RecordAt,v.ExpiresAt})
+					if len(a.Activity)>=64{break}
+				}
+				sort.Slice(a.Activity,func(i,j int)bool{return a.Activity[i].SessionRef<a.Activity[j].SessionRef})
+			}
 			result = append(result, a)
 		}
 	}
