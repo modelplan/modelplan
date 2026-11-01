@@ -310,7 +310,7 @@ do {
                     input.showUsedPercent = used
                     let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
                     let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
-                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold")
+                    try expect(reading.status == expected && reading.inner?.status == expected,"readout mode never changes inclusive remaining threshold on the five-hour inner ring")
                 }
             }
         }

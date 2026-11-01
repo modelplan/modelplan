@@ -28,17 +28,18 @@ import ModelPlanSettings
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
-            var details:[String:String]=[:]
-            for window in account.windows { details[window.id]=resetDetail(date(window.resetsAt),now:context.now) }
+            var resets:[String:Date]=[:]
+            for window in account.windows { if let reset=date(window.resetsAt) { resets[window.id]=reset } }
             var reserve:[DockCardRow]=[]
-            if let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
+            if account.valueState == .current || account.valueState == .retained,
+               let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
                 reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",
                     value:String(balance)+" "+(credits.unit == "credits" && !english ? "点":credits.unit)))
             }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"),
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),windowDetails:details,additionalRows:reserve)
+                sourceName:sourceName(account.route),resetTimes:resets,additionalRows:reserve)
         }
         let status: String
         switch value.status {
@@ -77,18 +78,6 @@ import ModelPlanSettings
         case .knownUnknown,.unknown:return english ? "Unknown source":"未知来源"
         }
     }
-    private func resetDetail(_ reset:Date?,now:Date) -> String {
-        guard let reset else { return "--" }
-        let seconds=reset.timeIntervalSince(now)
-        guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
-        guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
-        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
-        let value:String
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
-        else { value=english ? "\(rest)m":"\(rest)分" }
-        return english ? "Resets in "+value:value+"后重置"
-    }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
         if let expiry = date(row.expiresAt), now >= expiry, let after = row.stateAfterExpiry {
             return (after.reason, after.nextStep)
@@ -116,7 +105,11 @@ import ModelPlanSettings
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })
-                projected.isGeneral = period == .fiveHour || period == .week || period == .month
+                let generalRole = period == .fiveHour || period == .week || period == .month
+                // Unknown scope is not evidence of a general account limit. Keep it
+                // in the card, including when the producer retained a weekly role.
+                let extraKeys:Set<String>=["other","code_review","reserve"]
+                projected.isGeneral = generalRole && !extraKeys.contains(window.limitKey) && !extraKeys.contains(window.poolKey)
                 input.windows.append(projected)
             }
         input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable

@@ -11,13 +11,13 @@ public struct DockContentRow: Sendable {
     public let nextStep: String
     public let originalObservedAt: Date?
     public let plan:String, sourceName:String
-    public let windowDetails:[String:String]
+    public let resetTimes:[String:Date]
     public let additionalRows:[DockCardRow]
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[]) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],additionalRows:[DockCardRow]=[]) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.windowDetails=windowDetails;self.additionalRows=additionalRows
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.additionalRows=additionalRows
     }
     public func cardSourceAndAge(at now:Date,english:Bool) -> String {
         guard !sourceName.isEmpty else { return sourceAndAge(at:now) }
@@ -27,6 +27,23 @@ public struct DockContentRow: Sendable {
             age=english ? (minutes == 0 ? "Observed <1m ago":"Observed \(minutes)m ago"):(minutes == 0 ? "1分钟内观测":"\(minutes)分钟前观测")
         } else { age=english ? "Observation time unknown":"观测时间未知" }
         return sourceName+" · "+age
+    }
+    public func resetDetails(at now:Date,english:Bool) -> [String:String] {
+        input.windows.reduce(into:[:]) { result,window in
+            result[window.id]=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
+        }
+    }
+    private static func resetDetail(_ reset:Date?,now:Date,english:Bool) -> String {
+        guard let reset else { return "--" }
+        let seconds=reset.timeIntervalSince(now)
+        guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
+        guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
+        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
+        let value:String
+        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
+        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
+        else { value=english ? "\(rest)m":"\(rest)分" }
+        return english ? "Resets in "+value:value+"后重置"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)

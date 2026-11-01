@@ -31,7 +31,9 @@ public struct EngineAccountMemberCatalogue:Sendable {
                 duplicateTag:row.accounts.count > 1 ? index+1:nil,row:row,account:account)
         } }
         let grouped=Dictionary(grouping:candidates,by:\.id)
-        memberKeysByRow=Dictionary(grouping:candidates,by:\.rowID).mapValues{$0.map(\.id)}
+        memberKeysByRow=rows.reduce(into:[:]) { result,row in
+            result[row.id]=candidates.filter{$0.rowID == row.id}.map(\.id)
+        }
         ambiguousKeys=Set(grouped.filter{$0.value.count != 1}.keys)
         members=candidates.filter{grouped[$0.id]?.count == 1}
     }

@@ -50,12 +50,15 @@ private actor S4RowsClient: EngineClient {
             return w
         }
         // Array order, duration and low extra all disagree with the semantic role.
-        account["windows"]=[window("extra","other",1,60),window("weekly","weekly",24,604800),window("five","session",63,18000),window("month","monthly",80,2592000)]
+        var scopedWeekly=window("model","weekly",2,604800)
+        scopedWeekly["limitKey"]="other";scopedWeekly["poolKey"]="other"
+        account["windows"]=[scopedWeekly,window("extra","other",1,60),window("weekly","weekly",24,604800),window("five","session",63,18000),window("month","monthly",80,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
@@ -65,6 +68,27 @@ private actor S4RowsClient: EngineClient {
         try require(reading.inner?.windowID.hasSuffix("five") == true,"inner must use5h role")
         try require(reading.outer?.windowID.hasSuffix("weekly") == true,"outer must useweekly role")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
+        guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
+        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
+        try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
+        let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
+        let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
+        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "Reset time passed","relative reset text must use presentation time, not cached projection time")
+        var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Saved",percentagePin:.week)
+        old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
+        let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
+        try require(migrated.subscriptionSettings[input.id]?.alias == "Saved" && migrated.subscriptionSettings["codex"] == nil,"single member must inherit row preference exactly once")
+        try require(migrated.subscriptions.order == [input.id] && migrated.subscriptions.hiddenIDs == [input.id],"single-member order/hide migration must use its key")
+        var explicit=old;explicit.subscriptionSettings[input.id] = .init(alias:"Member")
+        try require(entry.composition.accountMembers.migratingRowPreferences(explicit).subscriptionSettings[input.id]?.alias == "Member","explicit member choice must win over row migration")
+        for (pin,expected) in [(PercentagePin.fiveHour,63.0),(.week,24.0)] {
+            try await store.update { $0.subscriptionSettings[input.id] = .init(percentagePin:pin) }
+            await entry.prepare()
+            guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
+            let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
+            try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
+            try require(pinned.inner?.windowID == "five" && pinned.outer?.windowID == "weekly","pin must not swap ring roles")
+        }
         await entry.composition.stop()
     }
     static func members(capture:URL) async throws {
@@ -94,6 +118,40 @@ private actor S4RowsClient: EngineClient {
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value.contains("42.5")},"first card needs only its own reported credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value.contains("7")},"second card needs its own reported credits")
         try require(!secondCard.rows.contains{$0.value.contains("42.5")},"source totals must not leak across members")
+        var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Wrong shared alias",percentagePin:.fiveHour)
+        old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
+        let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
+        try require(migrated.subscriptionSettings.isEmpty && migrated.subscriptions.order.isEmpty && migrated.subscriptions.hiddenIDs.isEmpty,"multi-member row preference must be dropped, never copied")
+        try require(entry.composition.accountMembers.members.map(\.id) == content.snapshot.inputs.map(\.id),"placement member list must match the Dock")
+        // Invalidation must withdraw member identity and card facts on the same delivery turn.
+        await entry.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        try require(entry.composition.accountMembers.members.isEmpty && entry.composition.presentedContent.snapshot.inputs.isEmpty,"clear must withdraw identity with readings")
+        try require(try entry.composition.dock.cardContent(for:"0123456789abcdef") == nil,"clear must withdraw the old card facts")
+        await entry.composition.stop()
+    }
+    static func unknownFacts(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var account=(row["accounts"] as! [[String:Any]])[0]
+        account["plan"]=["id":"unknown"];account["valueState"]="none"
+        account["credits"]=["balance":55,"unit":"credits"];account.removeValue(forKey:"observedAt")
+        var window=(account["windows"] as! [[String:Any]])[0]
+        window.removeValue(forKey:"remainingPercent");window.removeValue(forKey:"resetsAt");account["windows"]=[window]
+        row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-unknown-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard let input=entry.composition.presentedContent.snapshot.inputs.first,
+              let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"unknown-facts member/card missing") }
+        try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
+        try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
+        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
+        try require(card.sourceAndAge.contains("Observation time unknown"),"missing observation must not use rendering time")
         await entry.composition.stop()
     }
 }

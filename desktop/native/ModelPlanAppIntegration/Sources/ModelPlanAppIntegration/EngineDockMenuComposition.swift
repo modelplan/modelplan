@@ -45,6 +45,7 @@ public struct EngineMenuRefreshResult {
     public var accountMembers:EngineAccountMemberCatalogue {
         .init(rows:store.snapshot.rows?.projection.rows ?? [])
     }
+    public var rowEvents:EngineRowsEventState { EngineRowsEventDecoder.decode(store.snapshot.rows) }
     public var menuPresentation: CommunityMenuBarPresentation {
         let content = presentedContent
         return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
