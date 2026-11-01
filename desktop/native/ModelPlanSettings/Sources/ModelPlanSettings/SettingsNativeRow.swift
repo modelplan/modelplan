@@ -356,7 +356,7 @@ import AppKit
         case .detected: return SettingsWords.text("Detected", "已检测到", language)
         case .denied: return SettingsWords.text("Access denied", "访问被拒绝", language)
         case .unavailable: return SettingsWords.text("Unavailable", "不可用", language)
-        case .unknown: return SettingsWords.text("Not observed", "尚未观测", language)
+        case .unknown: return SettingsWords.text("Not checked", "尚未检查", language)
         }
     }
 }

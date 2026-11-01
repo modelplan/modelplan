@@ -118,7 +118,7 @@ import AppKit
         self.chord = chord; self.language = language
         if !recording { title = Self.label(chord) }
         setAccessibilityLabel(settingKey == .openShortcut
-            ? (language == .english ? "Open cockpit shortcut" : "开舱快捷键")
+            ? (language == .english ? "Open cockpit shortcut" : "打开驾驶舱快捷键")
             : (language == .english ? "Toggle dock shortcut" : "显示隐藏挂件快捷键"))
         setAccessibilityValueDescription(Self.label(chord))
         setAccessibilityHelp(language == .english ? "Press to record a shortcut. Escape cancels." : "按下以录制快捷键；Escape 取消。")

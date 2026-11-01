@@ -20,4 +20,21 @@ final class SettingsCatalogueCopyTests: XCTestCase {
         XCTAssertFalse(try row(.source).subtitle.chinese.contains("采集器"))
         XCTAssertFalse(try row(.diagnostics).subtitle.chinese.contains("读取器ID"))
     }
+    func testQuotaWindowChoicesUseGlossaryLabelsInBothLanguages() {
+        XCTAssertEqual(SettingsWords.option("5h", key: .percentagePin, language: .english), "5h")
+        XCTAssertEqual(SettingsWords.option("5h", key: .percentagePin, language: .chinese), "5小时")
+        XCTAssertEqual(SettingsWords.option("tightest", key: .menuDisplay, language: .chinese), "最紧的百分比")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.auto, language: .english), "Auto")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.fiveHour, language: .english), "5h")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.week, language: .english), "Weekly")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.auto, language: .chinese), "自动")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.fiveHour, language: .chinese), "5小时")
+        XCTAssertEqual(SettingsDiagramWords.quotaWindow(.week, language: .chinese), "每周")
+    }
+    @MainActor func testShortcutAccessibilityUsesCockpitGlossaryName() {
+        let control = SettingsShortcutControl(key: .openShortcut, chord: .init("O", modifiers: [.command, .shift]))
+        control.configure(chord: .init("O", modifiers: [.command, .shift]), language: .chinese)
+        XCTAssertEqual(control.accessibilityLabel(), "打开驾驶舱快捷键")
+    }
+
 }
