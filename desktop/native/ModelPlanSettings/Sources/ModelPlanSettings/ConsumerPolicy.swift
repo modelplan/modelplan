@@ -62,8 +62,8 @@ public extension SettingsPreferences {
         // A pin selects a general window, never a model/feature-specific extra quota.
         switch pin {
         case .auto: result.selectedWindowID = nil
-        case .fiveHour: result.selectedWindowID = input.windows.first { $0.period == .fiveHour }?.id
-        case .week: result.selectedWindowID = input.windows.first { $0.period == .week }?.id
+        case .fiveHour: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .fiveHour }?.id
+        case .week: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .week }?.id
         }
         return result
     }
