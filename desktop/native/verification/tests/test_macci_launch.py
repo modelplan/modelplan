@@ -44,6 +44,8 @@ while args:
     if a == '--args': rest = args; break
     bundle = a
 if MODE == 'fail': sys.exit(1)  # LaunchServices refused: the subject never starts
+if MODE == 'lserr':  # what open prints on MacCI for the ad-hoc app
+    sys.stderr.write('_LSOpenURLsWithCompletionHandler() failed for the application ' + bundle + ' with error -10810.\\n'); sys.exit(1)
 info = plistlib.loads(open(os.path.join(bundle, 'Contents', 'Info.plist'), 'rb').read())
 exe = os.path.join(bundle, 'Contents', 'MacOS', info['CFBundleExecutable'])
 open(out + '.env.json', 'w').write(__import__('json').dumps(env))  # what open was asked to pass
@@ -61,7 +63,8 @@ with zipfile.ZipFile(archive) as z:
         open(target, 'wb').write(z.read(info)); os.chmod(target, mode & 0o777 or 0o644)
 '''
 FAKE_CODESIGN = '''import sys
-if '-dv' in sys.argv: sys.stderr.write('Executable=x\\nSignature=adhoc\\n'); sys.exit(0)
+if '-dv' in sys.argv:
+    sys.stderr.write(globals().get('DV_TEXT', 'Executable=x\\nSignature=adhoc\\n')); sys.exit(globals().get('DV_RC', 0))
 sys.exit(0 if VALID else 1)
 '''
 
@@ -281,11 +284,38 @@ class LaunchModes(unittest.TestCase):
             self.assertEqual([x['launchMode'] for x in lines], ['direct', 'direct'])
             record = json.loads(pid_file.read_text())
             self.assertEqual((record['state'], record['launchMode']), ('running', 'direct'))
-            self.assertEqual(record['scan']['executable'], os.path.realpath(PY))
+            self.assertNotIn('executable', record['scan'])  # the pinned binary may run outside the run
+            self.assertEqual(record['scan']['prefix'], os.path.realpath(root / 'tmp'))
             self.assertNotIn('home', record['scan'])
             gate = record['scan']['helpers']  # the exec gate, recorded by PID plus start time at spawn
             self.assertEqual([h['pid'] for h in gate], [lines[0]['ownedPID']])
             self.assertEqual(set(gate[0]), {'pid', 'startSeconds', 'startMicroseconds'})
+
+    def test_direct_scope_never_matches_the_pinned_binary_running_outside_the_run(self):
+        # The launcher dies before registering; a same-user process of the same pinned binary outside
+        # this run must survive the guardian's never-started closure.
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d); pid_file = root / 'subject.pid'
+            binary = native_sleeper(self, root / 'build' / 'App')
+            outsider = subprocess.Popen([str(binary), '60'])
+            self.addCleanup(lambda: (outsider.kill(), outsider.wait()))
+            wait_until(lambda: guardian.identity(outsider.pid), 5, 'outsider not visible')
+            c = dict(syntheticHome=str(root / 'home'), syntheticTmp=str(root / 'tmp'), subjectPidPath=str(pid_file),
+                     argv=[str(binary), '60'], binarySHA256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                     lease=dict(runID='r', epoch='e'), stopPath=str(root / 'STOP'), leasePath=str(root / 'lease.json'))
+            cfg = root / 'run.json'; cfg.write_text(json.dumps(c))
+            with patch.object(sys, 'argv', ['launch', '--config', str(cfg), '--execute']), \
+                    patch.object(launch, 'load_and_admit', side_effect=lambda x: x), \
+                    patch.object(launch, 'register', side_effect=ValueError('launcher lost before registering')), \
+                    self.assertRaises(SystemExit):
+                launch.main()
+            record = json.loads(pid_file.read_text())
+            self.assertEqual(record['state'], 'launching')
+            self.assertEqual([p['pid'] for p in process_scan.scan(record['scan'], guardian.identity)], [])
+            dead = subprocess.Popen([PY, '-c', 'pass']); gone = guardian.identity(dead.pid) or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0); dead.wait()
+            pid_file.write_text(json.dumps(record | dict(launcher=gone)))
+            self.assertEqual(guardian.close(pid_file, settle=0), (True, 'never-started'))
+            self.assertIsNone(outsider.poll())  # never signalled
 
 
 @unittest.skipUnless(sys.platform.startswith('linux') and Path('/bin/sleep').exists(),
@@ -316,7 +346,7 @@ class MacCISequence(unittest.TestCase):
     def book(self, *args):
         return self.cli(BIN / 'book.py', '--ledger', self.ledger, *args)
 
-    def start(self, open_mode, subject='binary'):
+    def start(self, open_mode, subject='binary', mode='launchservices'):
         ident = json.loads(self.book('request', '--lane', 'V1', '--unit', 'U11a', '--scenario', 'cold', '--minutes', '2').stdout)['id']
         started = self.book('start', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci')
         self.assertEqual(started.returncode, 0, started.stderr)
@@ -337,7 +367,7 @@ class MacCISequence(unittest.TestCase):
         target = write_app_zip(self.root / 'ModelPlan.zip', executable=self.app) if subject == 'app-zip' else self.app
         config = self.root / 'run.json'
         config.write_text(json.dumps(dict(
-            profile='synthetic', host='macci', launchMode='launchservices', subjectKind=subject,
+            profile='synthetic', host='macci', launchMode=mode, subjectKind=subject,
             binarySHA256=hashlib.sha256(target.read_bytes()).hexdigest(), argv=[str(target), '600'],
             leasePath=str(self.paths['lease']), releasePath=str(self.paths['release']), stopPath=str(self.paths['stop']),
             syntheticHome=str(self.root / 'home'), syntheticTmp=str(self.root / 'tmp'),
@@ -410,6 +440,39 @@ class MacCISequence(unittest.TestCase):
         self.assertFalse(alive(record['pid']))
         self.assertEqual(self.finish(ident).returncode, 0)
 
+    def test_full_app_zip_in_direct_mode_execs_the_extracted_main_executable(self):
+        ident = self.start('unused', subject='app-zip', mode='direct')
+        def registered():
+            try:
+                record = json.loads(self.paths['pid'].read_text())
+            except (OSError, ValueError):
+                return None
+            return record if record.get('state') == 'running' else None
+        record = wait_until(registered, 15, 'direct app subject never registered')
+        app = self.root / 'tmp' / '.launchservices' / 'app' / 'FakeApp.app'
+        exe = app / 'Contents' / 'MacOS' / 'FakeApp'
+        wait_until(lambda: os.readlink(f'/proc/{record["pid"]}/exe') == str(exe), 5, 'gate did not exec the bundle executable')
+        self.assertEqual(record['pid'], json.loads(wait_until(lambda: self.out.read_text().splitlines(), 10, 'no report')[0])['ownedPID'])
+        self.assertEqual((record['launchMode'], record['scan']['executable'], record['scan']['prefix']), ('direct', str(exe), str(app)))
+        report = json.loads(self.out.read_text().splitlines()[0])
+        self.assertEqual((report['subjectKind'], report['codeSignature']), ('app-zip', 'adhoc'))
+        found = process_scan.scan(record['scan'], guardian.identity)
+        self.assertEqual([x['pid'] for x in found], [record['pid']])  # the subject itself, by exact path
+        self.paths['stop'].write_text('')
+        self.assertEqual(self.controller.wait(30), 3, self.err.read_text())
+        self.assertEqual(self.guardian.wait(30), 0)
+        self.assertFalse(alive(record['pid']))
+        self.assertEqual(self.finish(ident).returncode, 0)
+
+    def test_launch_services_error_is_recorded_and_the_run_closes_as_never_started(self):
+        ident = self.start('lserr', subject='app-zip')
+        self.assertEqual(self.controller.wait(60), 3)
+        failure = json.loads([x for x in self.err.read_text().splitlines() if x.startswith('{')][-1])
+        self.assertEqual((failure['registered'], failure['openExit'], failure['launchServicesError']), (False, 1, -10810))
+        self.assertEqual(self.guardian.wait(30), 0)
+        self.assertEqual(json.loads(self.guardian_out.read_text())['subject'], 'never-started')
+        self.assertEqual(self.finish(ident).returncode, 0)
+
     def test_subject_that_never_registers_is_scan_proven_and_finishes_cleaned(self):
         ident = self.start('fail')
         self.assertEqual(self.controller.wait(60), 3)
@@ -478,12 +541,22 @@ class FullAppSubject(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, 'code signature does not verify'):
             self.extract(write_app_zip(self.dir / 'sig.zip'), run='sig')
 
+    def test_signature_kind_needs_a_successful_explicit_codesign_report(self):
+        for rc, text, kind in ((0, 'Executable=x\nSignature=adhoc\n', 'adhoc'),
+                               (0, 'Executable=x\nAuthority=Developer ID Application: Example\n', 'identity'),
+                               (0, 'Executable=x\n', 'unknown'), (0, '', 'unknown'), (0, 'Authority=\n', 'unknown'),
+                               (1, 'Signature=adhoc\n', 'unknown'), (1, 'Authority=Example\n', 'unknown')):
+            script = self.dir / f'codesign-dv-{rc}-{abs(hash(text))}.py'
+            script.write_text(f'VALID = True\nDV_RC = {rc}\nDV_TEXT = {text!r}\n' + FAKE_CODESIGN)
+            with self.subTest(rc=rc, text=text), patch.object(launch, 'CODESIGN', [PY, str(script)]):
+                archive = write_app_zip(self.dir / f'{script.stem}.zip')
+                self.assertEqual(self.extract(archive, run=script.stem)['evidence']['codeSignature'], kind)
+
     def test_app_zip_requires_launchservices(self):
         lease = dict(runID='r', epoch='e', notBefore=1000, expiresAt=1900, guardianHeartbeatAt=1019.5, ownerPreempted=False, exclusive=True)
         c = dict(profile='synthetic', lease=lease, release=lease | dict(m1Released=True, approval=APPROVAL),
                  requiredSeconds=60, stop=False, argv=['ModelPlan.zip'], binarySHA256='a' * 64, subjectKind='app-zip')
-        with self.assertRaisesRegex(ValueError, 'only through launchservices'):
-            launch.validate(c, 1020)
+        self.assertTrue(launch.validate(c, 1020))  # direct: the extracted main executable is exec'd
         self.assertTrue(launch.validate(c | dict(launchMode='launchservices'), 1020))
         with self.assertRaisesRegex(ValueError, 'subjectKind'):
             launch.validate(c | dict(launchMode='launchservices', subjectKind='dmg'), 1020)
