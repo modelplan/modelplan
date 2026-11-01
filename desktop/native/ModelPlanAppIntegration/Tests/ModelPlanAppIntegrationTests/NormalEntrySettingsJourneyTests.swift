@@ -32,6 +32,13 @@ private actor SettingsJourneyClient: EngineClient {
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 
+@MainActor private final class JourneyFirstRunSurface: SettingsWindowSurface {
+    private(set) var shows = 0
+    func prepare() async {}
+    func show(paneID: String?) { shows += 1 }
+    func hide() {}
+}
+
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
@@ -56,9 +63,13 @@ private actor SettingsJourneyClient: EngineClient {
         }
 
         let first = try makeApp()
+        let firstRun = JourneyFirstRunSurface()
+        first.makeFirstRunSurface = { _ in firstRun }
         await first.prepare()
         first.composition.dock.setPresentationAllowed(true)
         await first.composition.start()
+        await first.restoreFirstRunIfNeeded()
+        XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
         XCTAssertTrue(editor.canPresentFirstRun, "The normal entry must route the first-run action")

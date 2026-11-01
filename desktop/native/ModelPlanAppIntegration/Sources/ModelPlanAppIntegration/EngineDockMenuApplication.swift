@@ -20,6 +20,10 @@ import ModelPlanSettings
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
+    private var firstRunFlow: CommunityConnectionFlow?
+    /// The default uses the native first-run window. Synthetic composition tests
+    /// may supply an in-memory surface before preparation; no system service runs.
+    public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
@@ -69,7 +73,17 @@ import ModelPlanSettings
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
         console?.show()
     }
-    public func prepare() async { await settings.reload() }
+    public func prepare() async {
+        if firstRunFlow == nil {
+            firstRunFlow = try? CommunityConnectionFlow(application: settings,
+                canPresent: { [weak self] in self?.terminating == false },
+                showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
+                activate: activateSettings, makeFirstRun: makeFirstRunSurface)
+        }
+        await settings.reload()
+    }
+    /// The same restore used by the real launch; it never grants access itself.
+    public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         #if MODELPLAN_U6_DRIVE
@@ -81,7 +95,10 @@ import ModelPlanSettings
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        Task { await prepare(); composition.dock.setPresentationAllowed(true); renderMenu(); await composition.start() }
+        Task {
+            await prepare(); composition.dock.setPresentationAllowed(true); renderMenu()
+            await composition.start(); await restoreFirstRunIfNeeded()
+        }
     }
     private func renderMenu() {
         let menu = liveStatusMenu ?? NSMenu()
@@ -111,7 +128,7 @@ import ModelPlanSettings
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true; settingsHost.suspend(); console?.hide()
+        terminating = true; firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
