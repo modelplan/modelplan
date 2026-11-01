@@ -252,6 +252,10 @@ import ModelPlanWire
         await app.composition.stop()
     }
     private func clickStatus(_ app:EngineDockMenuApplication,hold:TimeInterval) async throws {
+        // Posted in-process events do not carry WindowServer's inactive-app
+        // activation token. Establish actual host activity, never fake it.
+        NSApp.unhide(nil); NSApp.activate(ignoringOtherApps:true)
+        try await waitForCondition("owned status host is actually active") { NSApp.isActive }
         try await waitForCondition("owned status target is actually registered and visible") {
             guard let button=app.verificationStatusButton,let window=button.window else { return false }
             return window.windowNumber>0 && window.isVisible && !button.bounds.isEmpty && !button.isHiddenOrHasHiddenAncestor
@@ -262,6 +266,7 @@ import ModelPlanWire
         let host=try XCTUnwrap(button.superview)
         XCTAssertTrue(host.hitTest(button.convert(CGPoint(x:button.bounds.midX,y:button.bounds.midY),to:host)) === button)
         let down=try XCTUnwrap(NSEvent.mouseEvent(with:.leftMouseDown,location:centre,modifierFlags:[],timestamp:ProcessInfo.processInfo.systemUptime,windowNumber:window.windowNumber,context:nil,eventNumber:1,clickCount:1,pressure:1))
+        XCTAssertTrue(down.window === window,"Queued input must belong to the actual owned status window")
         let up=try XCTUnwrap(NSEvent.mouseEvent(with:.leftMouseUp,location:centre,modifierFlags:[],timestamp:ProcessInfo.processInfo.systemUptime+hold,windowNumber:window.windowNumber,context:nil,eventNumber:2,clickCount:1,pressure:0))
         let release=StatusRelease(up)
         let timer=Timer(timeInterval:max(0.01,hold),repeats:false) { _ in MainActor.assumeIsolated { release.post() } }
