@@ -6,6 +6,7 @@ on:
       - desktop/third-party/fonts/**
       - source-policy.json
       - scripts/check-visual-pack.mjs
+      - scripts/check-cockpit-visuals.mjs
       - scripts/check-porthole-pack.mjs
       - scripts/visual-pack-format.mjs
       - scripts/check-font-pack.mjs
@@ -21,6 +22,7 @@ on:
       - desktop/third-party/fonts/**
       - source-policy.json
       - scripts/check-visual-pack.mjs
+      - scripts/check-cockpit-visuals.mjs
       - scripts/check-porthole-pack.mjs
       - scripts/visual-pack-format.mjs
       - scripts/check-font-pack.mjs

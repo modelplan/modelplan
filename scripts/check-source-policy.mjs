@@ -6,12 +6,14 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { verifyFontPack } from "./check-font-pack.mjs";
+import { verifyCockpitVisuals } from "./check-cockpit-visuals.mjs";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const read = async (p) => readFile(resolve(root, p));
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const policy = JSON.parse(await read("source-policy.json"));
 verifyFontPack(root);
 verifyPortholePack(root);
+verifyCockpitVisuals(root);
 const tracked = execFileSync(
   "git",
   ["ls-files", "--cached", "--others", "--exclude-standard"],
@@ -105,12 +107,13 @@ for (const p of tracked) {
   assert.ok(spdxReserved.test(text), `reserved visual must carry SPDX-License-Identifier: ${reserved.license}: ${p}`);
   assert.ok(!/SPDX-License-Identifier"?:\s*"?MIT\b/.test(text), `reserved visual must not carry an MIT header: ${p}`);
 }
-// The community build never reads the reserved prefix: only build.mjs's --official branch names it.
+// Only the manifest-verified cockpit build may use reserved visuals in its community edition.
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
   if (!code.includes("official-visuals")) continue;
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
-  const end = p === "desktop/cockpit/build.mjs" ? "} else {" : "} else if (external) {";
+  if (p === "desktop/cockpit/build.mjs") continue; // Its reserved inputs are checked by verifyCockpitVisuals.
+  const end = "} else if (external) {";
   const branch = code.slice(code.indexOf("if (official) {"), code.indexOf(end));
   assert.ok(
     code.indexOf("if (official) {") >= 0 && code.split("official-visuals").length === branch.split("official-visuals").length,

@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 const project=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
-test('both editions have reproducible bounded manifests; community excludes reserved assets',()=>{
+test('both editions have reproducible bounded manifests and licensed visual assets',()=>{
   for(const edition of ['community','official']) {
     // A reused compilation directory must not ship a deleted source.
     mkdirSync(project+'.tmp/compiled/src',{recursive:true});
@@ -34,22 +34,18 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
-      if(name.endsWith('.svg'))assert.equal(edition==='official'&&['brand-mark.svg','study-strip/detach.svg','study-strip/put-back.svg'].includes(name),true);
+      if(name.endsWith('.svg'))assert.equal(['brand-mark.svg','study-strip/detach.svg','study-strip/put-back.svg','clients/official-visuals/study/strip-integration/study-strip/detach.svg','clients/official-visuals/study/strip-integration/study-strip/put-back.svg'].includes(name),true);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/'))assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);
-    if(edition==='community') {
-      assert.equal(existsSync(root+'runtime'),false);assert.equal(existsSync(root+'VISUAL-LICENSE.md'),false);
-      assert.equal(existsSync(root+'fonts'),false);
-    }else{
-      assert.match(readFileSync(root+'VISUAL-LICENSE.md','utf8'),/ModelPlan Official Visuals/);
-      assert.equal(existsSync(root+'fonts/manrope/OFL.txt'),true);
-      assert.equal(existsSync(root+'prototype/prototype-cockpit-r5.css'),true);
-      assert.equal(digest(readFileSync(root+'brand-mark.svg')),digest(readFileSync(project+'../official-visuals/logo.svg')));
-      for(const name of Object.keys(manifest.files).filter(name=>name.startsWith('prototype/')&&name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/url\s*\(|@import|data:image/i);
-    }
+    assert.match(readFileSync(root+'VISUAL-LICENSE.md','utf8'),/ModelPlan Official Visuals/);
+    assert.equal(existsSync(root+'fonts/manrope/OFL.txt'),true);
+    assert.equal(existsSync(root+'prototype/prototype-cockpit-r5.css'),true);
+    assert.equal(digest(readFileSync(root+'brand-mark.svg')),digest(readFileSync(project+'../official-visuals/logo.svg')));
+    for(const name of Object.keys(manifest.files).filter(name=>name.startsWith('prototype/')&&name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/url\s*\(|@import|data:image/i);
+
   }
 });
 

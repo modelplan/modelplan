@@ -1118,7 +1118,8 @@
       "desktop/official-visuals/logo.svg": "9b515a17995ac0f54b902d96e6d3cb00255e9e790d35df475ad16a9ded97e335",
       "desktop/official-visuals/theme.css": "2727f72a72bb89272be87ec2d1fd543863d5ed6156f19980a6a2d565c72b7860"
     },
-    "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256."
+    "notice": "Files under the prefix are reserved under the license unless listed in historicalMit: those exact bytes were previously released under MIT and keep that grant. Reserved text files carry the SPDX identifier; reserved binaries are listed in binaries with their SHA-256.",
+    "cockpitManifestSha256": "5b2fe10eaaf8b04cc4a148a0120992912bf9d7e0ecc47de20863735d2397797b"
   },
   "legacyVisualsNotice": "Frozen hashes record already-public assets, not a revocation of historical MIT rights. New official visuals belong under reservedVisuals.prefix.",
   "thirdPartyFonts": {

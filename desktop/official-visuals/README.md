@@ -15,7 +15,7 @@ npm run build              # community edition (the default; never reads this fo
 npm run build:official     # official edition from this folder
 ```
 
-The official build copies `LICENSE.md` into the app as `VISUAL-LICENSE.md`. Forks and redistributed builds use the community edition.
+The official build copies `LICENSE.md` into the app as `VISUAL-LICENSE.md`. Forks and redistributed builds use the community edition. The cockpit community build additionally ships the manifest-verified cockpit appearance under this reserved licence and includes the licence and notice.
 
 The [runtime artwork pack](runtime/README.md) supplies the approved A5 recessed
 ignition and c01 canopy PNGs and cap-image baselines. Its manifest binds the exact
