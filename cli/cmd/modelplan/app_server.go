@@ -10,6 +10,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/queries"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
@@ -71,7 +73,8 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
-		Detect: detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
+		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
+		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
 			return quota.EraseScope(quota.ProductionPaths(st.Dir, version), scope, forget)
 		},
@@ -99,7 +102,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["history/query"] = history
-		var cockpitSource queries.CockpitSource = sharedCockpit{backend: shared}
+		var cockpitSource queries.CockpitSource = sharedCockpit{backend: shared, cache: st.Dir}
 		cockpit, err := queries.CockpitHandler(queries.CockpitConfig{State: shared, Source: cockpitSource})
 		if err != nil {
 			return nil, func() {}, err

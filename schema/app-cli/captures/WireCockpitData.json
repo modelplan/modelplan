@@ -1,5 +1,88 @@
 {
+  "details": {
+    "version": 1,
+    "sources": [
+      "synthetic"
+    ],
+    "subscriptions": [
+      {
+        "subscriptionRef": "0123456789abcdef",
+        "resetCounts": [
+          {
+            "kind": "tokens",
+            "count": 1,
+            "expiresAt": "2026-10-29T12:00:00.123456789Z"
+          }
+        ],
+        "credits": {
+          "balance": 42.5,
+          "observedAt": "2026-10-29T12:00:00.123456789Z"
+        },
+        "today": [
+          {
+            "source": "synthetic",
+            "observedOutputTokens": 1,
+            "generationTps": 42.5,
+            "bindingBasis": "synthetic"
+          }
+        ]
+      }
+    ],
+    "sessions": [
+      {
+        "sessionRef": "0123456789abcdef",
+        "source": "synthetic",
+        "subscriptionRef": "0123456789abcdef",
+        "model": "synthetic",
+        "effort": "synthetic",
+        "projectLabel": "synthetic",
+        "lastObservedAt": "2026-10-29T12:00:00.123456789Z",
+        "state": "synthetic",
+        "rate": 42.5
+      }
+    ],
+    "sessionCoverage": "synthetic",
+    "resetEvents": [
+      {
+        "version": 1,
+        "id": "synthetic-reset",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-31T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      }
+    ],
+    "alerts": [
+      {
+        "source": "synthetic",
+        "subscriptionRef": "0123456789abcdef",
+        "windowId": "synthetic",
+        "severity": "synthetic",
+        "remainingPercent": 42.5
+      }
+    ]
+  },
   "projection": {
+    "resetEvents": [
+      {
+        "version": 1,
+        "id": "synthetic-reset",
+        "provider": "openai",
+        "rowId": "codex",
+        "status": "announced",
+        "publishedAt": "2026-10-29T12:00:00Z",
+        "expiresAt": "2026-10-31T12:00:00Z",
+        "source": {
+          "kind": "publication",
+          "publicationId": "0123456789abcdef01234567"
+        }
+      }
+    ],
     "rowsVersion": 1,
     "rows": [
       {

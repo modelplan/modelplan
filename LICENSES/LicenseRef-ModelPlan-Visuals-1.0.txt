@@ -37,7 +37,7 @@ ModelPlan claims these rights only to the extent they exist under applicable law
 You may:
 
 1. read and study the Official Visuals in this repository;
-2. build and run the official ModelPlan app from an unmodified copy of this repository, for your own use;
+2. include and display the Official Visuals in official and community builds of the ModelPlan App made from this repository;
 3. make the temporary copies that 1 and 2 need;
 4. show screenshots and short excerpts for review, reporting, teaching or documentation, as `TRADEMARKS.md` and the law allow.
 
@@ -46,19 +46,14 @@ You may:
 You may not:
 
 - copy, modify, adapt, translate, distribute, sublicense or sell the Official Visuals, a substantial part of them, or a work derived from them;
-- include them in any other product, fork, build, theme, service or website;
+- extract or redistribute them outside the ModelPlan App, or include them in any other product, theme, service or website;
 - use them to make software that imitates the appearance of the official ModelPlan app;
 - use them to train, fine-tune or prompt a model to reproduce them;
 - remove or change this notice or the copyright notices.
 
 ## 4. Forks and community builds
 
-A fork or redistributed build must use the community edition, which `node desktop/build.mjs` builds by default. That edition uses the MIT community appearance.
-
-A fork or redistributed build must not:
-
-- include the Official Visuals; or
-- present itself as the official ModelPlan app (see `TRADEMARKS.md`).
+Official and community builds of the ModelPlan App made from this repository may include and display the Official Visuals. This permission does not authorize extraction, modification or redistribution of the visuals outside the App, or their use in other products. A redistributed build must not present itself as the official ModelPlan app (see `TRADEMARKS.md`).
 
 ## 5. Contributions
 

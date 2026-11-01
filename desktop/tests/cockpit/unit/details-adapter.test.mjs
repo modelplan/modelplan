@@ -8,7 +8,7 @@ import {definitions} from '../../../cockpit/.tmp/compiled/generated/wire.js';
 import {conforms} from '../../../cockpit/.tmp/compiled/src/schema.js';
 import {cockpitDetails,prototypeEngineSupplement} from '../../../cockpit/.tmp/compiled/src/prototype-data-adapter.js';
 import {sample} from '../fixture.mjs';
-const producer=()=>JSON.parse(readFileSync(new URL('../fixtures/cockpit-details-v1.json',import.meta.url)));
+const producer=()=>JSON.parse(readFileSync(new URL('../../../../schema/app-cli/captures/WireCockpitDetails.json',import.meta.url)));
 const withDetails=()=>{const d=sample();d.details=producer();return d;};
 
 test('producer details fixture, absence, null and empty remain distinct',()=>{

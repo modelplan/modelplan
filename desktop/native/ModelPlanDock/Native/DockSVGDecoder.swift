@@ -3,14 +3,16 @@ import AppKit
 import Foundation
 import CoreGraphics
 
-/// A static, self-contained vector subset. No scripts, foreign objects, external images, CSS imports or entities.
+/// A static, self-contained vector subset. Styles are limited to one local solid-fill rule; scripts, foreign objects, external images, CSS imports and entities are rejected.
 final class DockSVGShapeValidator: NSObject,XMLParserDelegate {
     private(set) var size=CGSize.zero, valid=true
     private var depth=0,nodes=0
-    private let allowed:Set<String>=["svg","defs","g","path","circle","ellipse","rect","line","polyline","polygon","linearGradient","radialGradient","stop","clipPath","mask","filter","feGaussianBlur","feTurbulence","feColorMatrix","feComponentTransfer","feFuncA","feFuncR","feFuncG","feFuncB","feBlend","feComposite","feMorphology","feFlood","title","desc"]
+    private var styleDepth: Int?, styleText = ""
+    private let allowed:Set<String>=["svg","defs","style","g","path","circle","ellipse","rect","line","polyline","polygon","linearGradient","radialGradient","stop","clipPath","mask","filter","feGaussianBlur","feTurbulence","feColorMatrix","feComponentTransfer","feFuncA","feFuncR","feFuncG","feFuncB","feBlend","feComposite","feMorphology","feFlood","title","desc"]
     func parser(_ parser:XMLParser,didStartElement elementName:String,namespaceURI:String?,qualifiedName qName:String?,attributes:[String:String]) {
         depth+=1;nodes+=1
-        guard allowed.contains(elementName),depth<=32,nodes<=4096 else{valid=false;parser.abortParsing();return}
+        guard allowed.contains(elementName),depth<=32,nodes<=4096,styleDepth == nil else{valid=false;parser.abortParsing();return}
+        if elementName == "style" { styleDepth = depth; styleText = "" }
         for (name,value) in attributes {
             let v=value.lowercased().replacingOccurrences(of:" ",with:"").replacingOccurrences(of:"'",with:"").replacingOccurrences(of:"\"",with:"")
             if value.utf8.count>65536 || value.contains("\\") || value.contains("@") || name.lowercased().hasPrefix("on") || v.contains("javascript:") || v.contains("@import") || v.contains("var(") || v.components(separatedBy:"url(").dropFirst().contains(where:{!$0.hasPrefix("#")}) || name.lowercased().contains("href") && !value.hasPrefix("#") {
@@ -39,7 +41,19 @@ final class DockSVGShapeValidator: NSObject,XMLParserDelegate {
             guard elementName=="svg" else{valid=false;parser.abortParsing();return}
         }
     }
-    func parser(_ parser:XMLParser,didEndElement:String,namespaceURI:String?,qualifiedName:String?){depth-=1}
+    func parser(_ parser:XMLParser,foundCharacters string:String) {
+        guard styleDepth != nil else { return }
+        styleText += string
+        if styleText.utf8.count > 1024 { valid=false; parser.abortParsing() }
+    }
+    func parser(_ parser:XMLParser,didEndElement elementName:String,namespaceURI:String?,qualifiedName:String?){
+        if elementName == "style" && styleDepth == depth {
+            let pattern = #"^\s*\.[A-Za-z_][A-Za-z0-9_-]*\s*\{\s*fill\s*:\s*#[0-9a-fA-F]{3,8}\s*;?\s*\}\s*$"#
+            if styleText.range(of: pattern, options: .regularExpression) == nil { valid=false; parser.abortParsing() }
+            styleDepth = nil; styleText = ""
+        }
+        depth-=1
+    }
     func parser(_ parser:XMLParser,foundProcessingInstructionWithTarget:String,data:String?){valid=false;parser.abortParsing()}
     func parser(_ parser:XMLParser,foundExternalEntityDeclarationWithName:String,publicID:String?,systemID:String?){valid=false;parser.abortParsing()}
     func parser(_ parser:XMLParser,foundInternalEntityDeclarationWithName:String,value:String?){valid=false;parser.abortParsing()}

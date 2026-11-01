@@ -113,6 +113,18 @@ for (const p of tracked) {
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
   if (!code.includes("official-visuals")) continue;
+  // Owner-approved native App inclusion is restricted to the checked-in Dock
+  // package; web community bundles retain their existing official-only gate.
+  if (p === "desktop/native/ModelPlanAppIntegration/Package.swift") {
+    assert.equal(code.split("official-visuals").length, 2, "one native Dock package reference");
+    assert.ok(code.includes('.package(path: "../../official-visuals/dock")'), "exact native Dock package reference");
+    continue;
+  }
+  if (p === "desktop/native/tools/package-neutral.sh") {
+    assert.equal(code.split("official-visuals").length, 2, "one native visual license reference");
+    assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
+    continue;
+  }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
   if (p === "desktop/cockpit/build.mjs") continue; // Its reserved inputs are checked by verifyCockpitVisuals.
   const end = "} else if (external) {";

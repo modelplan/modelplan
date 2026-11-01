@@ -484,15 +484,17 @@ import ModelPlanSettings
                 host.dockView.onAction?(.subscription(id))
                 let labels = descendants(host.card).compactMap { $0 as? NSTextField }
                 let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
-                XCTAssertTrue(source.stringValue.contains(accountRow ? "<1m" : "unknown"))
+                XCTAssertEqual(source.stringValue, accountRow ? "读取于 1 分钟内" : "读数时间未知")
                 XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
                 if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
-                let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+                let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
+                XCTAssertEqual(button.title, "设置")
                 let target = try XCTUnwrap(button.target as? NSObject), action = try XCTUnwrap(button.action)
                 _ = target.perform(action, with: button)
                 XCTAssertEqual(settings, 1); XCTAssertEqual(console, 0)
                 host.dockView.onAction?(.subscription(id))
-                let retained = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.title == "Settings / 设置" })
+                let retained = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
+                XCTAssertEqual(retained.title, "设置")
                 let retainedTarget = try XCTUnwrap(retained.target as? NSObject), retainedAction = try XCTUnwrap(retained.action)
                 _ = try await coordinator.editor.commit(.showDock(false))
                 _ = retainedTarget.perform(retainedAction, with: retained)
@@ -538,7 +540,7 @@ import ModelPlanSettings
     }
 
     private func retainedConsoleButton(in view: NSView) throws -> NSButton {
-        if let button = view as? NSButton, button.title == "Console / 控制台" { return button }
+        if let button = view as? NSButton, button.accessibilityIdentifier() == "dock.card.enter" { return button }
         for child in view.subviews { if let value = try? retainedConsoleButton(in: child) { return value } }
         throw NSError(domain: "missing-card-console-button", code: 1)
     }
@@ -546,12 +548,14 @@ import ModelPlanSettings
         for hide in [true, false] {
             let joined = try snapshot(accounts: [account("a", windows: [window()])])
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dock-retained-action-" + UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: directory) }
             var context = SettingsPageContext(); context.subscriptions = adapt(joined).subscriptions
             let host = StaticDockPreviewHost(currentDate: { self.now }, createsNativePanels: false)
             var opens = 0; host.showConsole = { opens += 1 }
             let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { host.apply($0) }
             await coordinator.reload()
+            if !hide { _ = try await coordinator.editor.commit(.language(.english)) }
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
             host.dockView.onAction?(.subscription("a"))
@@ -559,6 +563,9 @@ import ModelPlanSettings
             enter("other", revision); enter("a", revision + 1)
             XCTAssertEqual(opens, 0, "identity/revision mismatches cannot enter")
             let live = try retainedConsoleButton(in: host.card)
+            XCTAssertEqual(live.title, hide ? "驾驶舱" : "Cockpit")
+            // MENU-11: the Dock context-menu action is 打开驾驶舱 / Open Cockpit.
+            XCTAssertTrue(host.menu().items.contains { $0.title == (hide ? "打开驾驶舱" : "Open Cockpit") })
             _ = (try XCTUnwrap(live.target as? NSObject)).perform(try XCTUnwrap(live.action), with: live)
             XCTAssertEqual(opens, 1, "a current selector still enters once")
             opens = 0

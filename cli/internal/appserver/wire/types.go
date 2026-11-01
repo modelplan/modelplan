@@ -101,9 +101,18 @@ type RowsSnapshot struct {
 // RowsProjection excludes consent context, which belongs only in Envelope.
 // The standalone desktop projection retains its independent legacy contract.
 type RowsProjection struct {
-	RowsVersion int              `json:"rowsVersion"`
-	Rows        []rows.Row       `json:"rows"`
-	RowsSummary rows.RowsSummary `json:"rowsSummary"`
+	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"forbidden"`
+	RowsVersion int                `json:"rowsVersion"`
+	Rows        []rows.Row         `json:"rows"`
+	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
+}
+
+func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool) RowsProjection {
+	result := Project(value)
+	if enabled {
+		result.ResetEvents = events
+	}
+	return result
 }
 
 func Project(value rows.Projection) RowsProjection {

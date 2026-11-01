@@ -189,8 +189,10 @@ private actor RowsEntryClient: EngineClient {
         let settingsSurface = EntrySettingsSurface()
         var consoleSurface: EntryConsoleSurface?
         var activationCount = 0
+        let settingsStore = try SettingsStore(url: profile.appendingPathComponent("settings.json"))
+        try await settingsStore.update { $0.language = .english }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings.json")), createsNativePanels: false,
+            settingsStore: settingsStore, createsNativePanels: false,
             makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) },
             makeSettingsSurface: { _ in settingsSurface },
             makeConsole: { let surface = EntryConsoleSurface($0); consoleSurface = surface; return surface },
@@ -219,6 +221,7 @@ private actor RowsEntryClient: EngineClient {
         retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")
         retainedReading.toolTip = "Engine-only reason"
         retainedReading.representedObject = "Engine-only reason"
+        retainedReading.identifier = NSUserInterfaceItemIdentifier("private-reason")
         XCTAssertTrue(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
         var clearObservedBeforeReturn = false
@@ -235,6 +238,7 @@ private actor RowsEntryClient: EngineClient {
                 XCTAssertNil(retainedReading.attributedTitle)
                 XCTAssertNil(retainedReading.toolTip)
                 XCTAssertNil(retainedReading.representedObject)
+                XCTAssertNil(retainedReading.identifier)
                 XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
                 XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
             }
@@ -270,10 +274,12 @@ private actor RowsEntryClient: EngineClient {
         let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
         XCTAssertEqual(content.snapshot.inputs.first?.windows.first?.remainingPercent, 73)
         XCTAssertEqual(content.snapshot.inputs.first?.dataState, .fresh)
-        XCTAssertTrue((content.menuStatusLines ?? []).joined().contains("73%"))
+        // macrev2-403-6: model-scoped windows are Other, not the general menu quota.
+        XCTAssertFalse((content.menuStatusLines ?? []).joined().contains("73%"))
         let expired = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: 1_830_297_600)))
         XCTAssertNil(expired.snapshot.inputs.first?.windows.first?.remainingPercent)
-        XCTAssertEqual(expired.snapshot.presentationRows["codex"]?.reason, "Engine expiry reason")
+        // Member identity rule: a verified subscription ref, not its tool row, keys the card.
+        XCTAssertEqual(expired.snapshot.presentationRows["0123456789abcdef"]?.reason, "Engine expiry reason")
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 

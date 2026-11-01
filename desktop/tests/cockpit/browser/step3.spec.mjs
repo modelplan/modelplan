@@ -2,7 +2,7 @@
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {readFileSync} from 'node:fs';
 import {commands,pageId,appearance,shell,sample} from '../fixture.mjs';
-const details=()=>JSON.parse(readFileSync(new URL('../fixtures/cockpit-details-v1.json',import.meta.url)));
+const details=()=>JSON.parse(readFileSync(new URL('../../../../schema/app-cli/captures/WireCockpitDetails.json',import.meta.url)));
 
 test('last-seen strip withholds unbound speed and clears private values',async({page})=>{
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);

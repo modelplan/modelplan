@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -85,6 +86,7 @@ func Generate(root string) ([]byte, error) {
 		"HistoryQueryParams":   reflect.TypeFor[wire.HistoryQueryParams](),
 		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
 		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
+		"CockpitQueryParams":   reflect.TypeFor[wire.CockpitQueryParams](),
 		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
 		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
 		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
@@ -93,10 +95,38 @@ func Generate(root string) ([]byte, error) {
 	for name, t := range roots {
 		b.defs[name] = b.schema(t, false)
 	}
+	// Promote the reviewed v1 shape to the real rows schema. The web generator
+	// does not support conditional keywords; confirmation linkage is checked by the producer.
+	overlayBytes, err := os.ReadFile(filepath.Join(root, "schema/app-cli/proposals/announced-reset-events.schema.json"))
+	if err != nil {
+		return nil, err
+	}
+	var overlay struct {
+		Properties map[string]any `json:"properties"`
+		Defs       map[string]any `json:"$defs"`
+	}
+	if err := json.Unmarshal(overlayBytes, &overlay); err != nil {
+		return nil, err
+	}
+	proposed := overlay.Defs["ProposedResetEvent"].(map[string]any)
+	delete(proposed, "allOf")
+	proposed["properties"].(map[string]any)["version"] = object{"type": "integer", "enum": []int{1}}
+	proposed["properties"].(map[string]any)["status"].(map[string]any)["type"] = "string"
+	schedule := overlay.Defs["ProposedResetSchedule"].(map[string]any)
+	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
+	source := overlay.Defs["ProposedResetSource"].(map[string]any)
+	source["properties"].(map[string]any)["kind"] = object{"type": "string", "enum": []string{"publication"}}
+	b.defs["ResetEvent"] = proposed
+	b.defs["ProposedResetSchedule"] = overlay.Defs["ProposedResetSchedule"]
+	b.defs["ProposedResetSource"] = overlay.Defs["ProposedResetSource"]
+	b.defs["RowsProjection"].(object)["properties"].(object)["resetEvents"] = object{"type": "array", "maxItems": 64, "uniqueItems": true, "items": object{"$ref": "#/$defs/ResetEvent"}}
 	// Model scope is present only for a non-empty set of reviewed public IDs.
 	b.defs["Window"].(object)["properties"].(object)["modelScope"] = object{"$ref": "#/$defs/ModelScope"}
 	scope := b.defs["ModelScope"].(object)
 	scope["properties"].(object)["models"] = object{"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": object{"type": "string", "enum": []string{"gemini-2.5-flash", "gemini-2.5-pro", "opus", "sonnet", "unknown"}}}
+	b.defs["CockpitQueryParams"].(object)["properties"].(object)["redBelow"] = object{"type": "integer", "enum": []int{10, 16, 20, 25}}
+	// The optional session reference is null or a validated opaque reference.
+	b.defs["CockpitSession"].(object)["properties"].(object)["subscriptionRef"] = object{"anyOf": []any{object{"type": "string", "pattern": "^[a-f0-9]{16}$", "maxLength": 16}, object{"type": "null"}}}
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)
@@ -112,7 +142,7 @@ func Generate(root string) ([]byte, error) {
 	errorProps["id"] = object{"anyOf": []any{object{"$ref": "#/$defs/RequestID"}, object{"type": "null"}}}
 
 	incoming := []any{}
-	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
+	requestMethods := map[string]string{"initialize": "InitializeParams", "shutdown": "", "rows/subscribe": "", "consent/get": "", "consent/grant": "ConsentGrantParams", "credentials/result": "CredentialResult", "diagnostics/get": "", "$/cancel": "CancelParams", "history/query": "HistoryQueryParams", "cockpit/query": "CockpitQueryParams", "publication/get": "", "refresh/request": "RefreshRequestParams", "plugin/install": "PluginInstallParams"}
 	for _, method := range sortedKeys(requestMethods) {
 		param := requestMethods[method]
 		props := object{"jsonrpc": object{"const": wire.JSONRPC}, "method": object{"const": method}, "id": object{"$ref": "#/$defs/RequestID"}}
@@ -122,7 +152,9 @@ func Generate(root string) ([]byte, error) {
 		}
 		if param != "" {
 			props["params"] = object{"$ref": "#/$defs/" + param}
-			required = append(required, "params")
+			if method != "cockpit/query" {
+				required = append(required, "params")
+			}
 		} else {
 			props["params"] = object{"type": "object", "maxProperties": 0}
 		}

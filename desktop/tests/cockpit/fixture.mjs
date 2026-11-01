@@ -12,6 +12,8 @@ export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTran
 export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'};
 export function sample() {
   const value=capture();
+  // Generic browser scenarios model an older client without negotiated details.
+  delete value.details;
   const seed=value.projection.rows[0];
   value.projection.rows=[["codex","Codex"],["claude","Claude Code"],["cursor","Cursor"],["gemini","Gemini CLI"]].map(([id,name],index)=>{const row=structuredClone(seed);row.id=id;row.name={en:name,zh:name};if(index)row.accounts.forEach(a=>{a.subscriptionRef=null;a.accountLocator=null;});return row;});
   // All structure comes from a real Go encoding; only synthetic display labels

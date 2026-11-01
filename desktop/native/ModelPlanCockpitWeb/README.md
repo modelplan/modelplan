@@ -152,8 +152,8 @@ are separate gates.
 ## Current v1 bundle pin
 
 Production pins the canonical community and official builds for the current app-cli schema.
-Official manifest: `1e83637e7414be19fa6e3bb6efac8f10f176d550c15e461c7c6b549996b6c2b7`
-(1069 files); community: `41bd9038cea780ed790f13fad0378cfb5be702a36aa8d9ea776d42c2cb780e27`
+Official manifest: `a8abde4881032dc2f4d05adf946fe5c2570b01bd7f7d642cc57e32482d798c22`
+(1069 files); community: `750509c8df47319fef826dfc5bcc4046c8991ad3b623f37d3a334e69deb23a11`
 (28 files). Session metadata remains plain tool/project/title/time text.
 
 Active page entry, bridge, text renderer and finite-animation CSS are unchanged
