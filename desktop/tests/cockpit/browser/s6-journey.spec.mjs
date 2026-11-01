@@ -135,3 +135,36 @@ test('native session scope is restored on load and shell updates without emittin
   await expect(page.getByRole('button',{name:'All',exact:true}).first()).toHaveAttribute('aria-pressed','true');
   expect(await receive(send('shell',{...shell,scope:'invalid/member'}))).toBe(false);
 });
+
+test('live language changes update empty-state and paging accessibility copy',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);
+  await expect(page.locator('.ck-eng')).toContainText('Waiting for display data');
+  expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
+  await expect(page.locator('.ck-eng')).toContainText('等待显示数据');
+  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  const data=sample(),seed=data.projection.rows[0];data.subscriptions=[];data.projection.rows=Array.from({length:7},(_,i)=>{const row=structuredClone(seed);row.id='tool'+i;row.accounts[0].subscriptionRef=null;return row;});
+  expect(await receive(send('display',{data}))).toBe(true);
+  await expect(page.getByRole('button',{name:'第 2 页'})).toBeVisible();
+  expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}))).toBe(true);
+  await expect(page.getByRole('button',{name:'Page 2'})).toBeVisible();
+  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
+  await expect(page.locator('.ck-eng')).toContainText('Display data cleared');
+  expect(await receive(send('appearance',{viewRevision:'4',theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
+  await expect(page.locator('.ck-eng')).toContainText('显示数据已清除');
+});
+
+test('v1 strip uses a brand mark and equal icon keys with localized accessible names',async({page})=>{
+  await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+  expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+  await expect(page.locator('.ck-brand .s6-brand-mark')).toBeVisible();
+  expect(await page.locator('.s6-brand-mark').evaluate(e=>getComputedStyle(e).backgroundImage)).toContain('brand-mark.png');
+  const settings=page.getByRole('button',{name:'Settings',exact:true}),detach=page.getByRole('button',{name:'Detach',exact:true}),close=page.getByRole('button',{name:'Close',exact:true});
+  await expect(close).toHaveText('✕');await expect(settings).not.toHaveText('Settings');await expect(detach).not.toHaveText('Detach');
+  const sizes=await Promise.all([settings,detach,close].map(b=>b.boundingBox()));expect(sizes.every(r=>r.width===sizes[0].width&&r.height===sizes[0].height)).toBe(true);
+  expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
+  await expect(page.getByRole('button',{name:'设置',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'分离',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'关闭',exact:true})).toHaveText('✕');
+  await expect(page.getByText('ALERT',{exact:true})).toHaveCount(0);
+});

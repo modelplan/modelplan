@@ -153,3 +153,9 @@ this draft becomes ready. No hidden prewarm, old-path deletion or U13/L3 accepta
 is claimed here.
 
 Vendor identity marks are locally bundled PNGs with their sources and third-party rights notice in `vendor-marks/SOURCES.md`; unknown vendor keys render text only.
+
+The v1 strip uses the existing official icon in the official edition and a
+neutral community mark in the community edition. Settings, detach/put back and
+close are icon keys with localized accessible names. No ALERT lamp is shown:
+the current cockpit wire does not supply alert state or acknowledgement. Session
+records, Option help and expanded shutter behavior remain post-v1.

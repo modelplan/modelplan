@@ -33,3 +33,10 @@
 .ck-eng .eng-led.lv-amber[aria-current=false]{background:var(--st-mid)}
 .ck-eng .eng-led.lv-red[aria-current=false]{background:var(--st-low)}
 .ck-eng .ek .vendor-mark{width:16px;height:16px;object-fit:contain;flex:none}
+
+/* V1 control strip: the host supplies attachment and close behavior. */
+#cockpit .ck-head{padding:0 6px;gap:6px;border-radius:6px;background:linear-gradient(180deg,var(--metal-1),var(--metal-2) 48%,var(--metal-3));box-shadow:var(--raised)}
+#cockpit .ck-brand{display:flex;align-items:center;gap:5px;min-width:0}
+#cockpit .s6-brand-mark{display:inline-grid;place-items:center;width:22px;height:22px;flex:none;background-position:center;background-size:contain;background-repeat:no-repeat}
+#cockpit .s6-brand-mark::before{content:"M";font:600 12px var(--f-silk);color:var(--silk)}
+#cockpit .ck-head .s6-strip-key{width:26px;min-width:26px;height:22px;padding:0;font-size:13px}
