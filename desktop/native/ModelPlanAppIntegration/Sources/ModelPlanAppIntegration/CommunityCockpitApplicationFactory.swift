@@ -20,16 +20,11 @@ import ModelPlanSettings
 }
 
 @MainActor public enum CommunityCockpitApplicationFactory {
-    public static let webSource = "7429d956b9efba8cc9c1952b37ba1cf02f7a9f80"
+    public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"df614e05392b746e40b0a0a2aab0214a5f5f2d3d5e1b84f0262aaf716453f9a6",
-        "official":"318d4d05e0ad0272ff60cff708f3c31c5c76d71e5dddd8f7490306a1c6b01663",
+        "community":"750509c8df47319fef826dfc5bcc4046c8991ad3b623f37d3a334e69deb23a11",
+        "official":"a8abde4881032dc2f4d05adf946fe5c2570b01bd7f7d642cc57e32482d798c22",
     ]
-    // Used by the normal console entry and its non-windowed admission test.
-    static func admitCockpitBundle(root: URL, edition: String) throws -> VerifiedCockpitBundle {
-        guard let pin = manifestPins[edition] else { throw CockpitBridgeError.unavailable }
-        return try VerifiedCockpitBundle(root: root, manifestSHA256: pin, allowOfficial: edition == "official")
-    }
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     #endif
@@ -82,8 +77,8 @@ import ModelPlanSettings
         var edition="community"
         if let data=try? Data(contentsOf:editionURL),data.count<=1024,
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
-        let verified=try CommunityCockpitApplicationFactory.admitCockpitBundle(
-            root:bundle.appendingPathComponent("Contents/Resources/Cockpit"), edition:edition)
+        let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
+            manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI

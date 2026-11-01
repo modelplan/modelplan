@@ -30,7 +30,7 @@ func paceEvents(a *quota.Account, state *State, now time.Time) []Event {
 		}
 		reset := w.ResetsAt.UTC()
 		out = append(out, Event{Type: WindowPace, Key: key, Severity: "warn", Source: a.Source,
-			Plan: a.Plan, Window: w.Kind, Limit: w.Limit, At: &reset,
+			Plan: a.Plan, Window: w.Kind, Limit: a.SafeLimit(w.Limit), At: &reset,
 			InMinutes: minutesUntil(reset, now), RemainingPercent: w.RemainingPercent, RunsOutInMinutes: runout})
 	}
 	return out

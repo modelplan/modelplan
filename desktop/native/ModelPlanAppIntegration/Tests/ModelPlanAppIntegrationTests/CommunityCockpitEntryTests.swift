@@ -67,7 +67,7 @@ private actor RouteClient: EngineClient {
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
-    @MainActor func testNormalEntryAdmitsCanonicalBundlesWithProductionPins() async throws {
+    @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
             if FileManager.default.fileExists(atPath: repo.appendingPathComponent("desktop/cockpit/build.mjs").path) { break }
@@ -78,12 +78,13 @@ final class CommunityCockpitEntryTests:XCTestCase {
               FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
         else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
         for edition in ["community", "official"] {
-            let bundle = try CommunityCockpitApplicationFactory.admitCockpitBundle(root: builds.appendingPathComponent(edition), edition: edition)
+            let pin = try XCTUnwrap(CommunityCockpitApplicationFactory.manifestPins[edition])
+            let bundle = try VerifiedCockpitBundle(root: builds.appendingPathComponent(edition), manifestSHA256: pin, allowOfficial: edition == "official")
             XCTAssertFalse(try bundle.resource(path: "index.html").isEmpty, edition)
         }
         do {
-            _ = try CommunityCockpitApplicationFactory.admitCockpitBundle(root: builds.appendingPathComponent("community"), edition: "unknown")
-            XCTFail("Unknown edition must not be admitted")
+            _ = try VerifiedCockpitBundle(root: builds.appendingPathComponent("community"), manifestSHA256: String(repeating: "0", count: 64), allowOfficial: false)
+            XCTFail("Incorrect pin must not be admitted")
         } catch {}
     }
 

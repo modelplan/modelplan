@@ -638,6 +638,29 @@ public enum RowsKind: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct RowsModelScope: Codable, Sendable {
+    public let `models`: [String]
+    private enum CodingKeys: String, CodingKey {
+        case `models`
+    }
+    public init(`models`: [String]) throws {
+        self.`models` = `models`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`models` = try c.decode([String].self, forKey: .`models`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`models`, forKey: .`models`)
+    }
+    private func validate() throws {
+    }
+}
+
 public struct RowsName: Codable, Sendable {
     public let `en`: String
     public let `zh`: String
@@ -1333,6 +1356,7 @@ public enum RowsValueState: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
 public struct RowsWindow: Codable, Sendable {
+    public let `modelScope`: RowsModelScope?
     public let `id`: String
     public let `role`: RowsRole
     public let `durationSeconds`: Int64?
@@ -1346,6 +1370,7 @@ public struct RowsWindow: Codable, Sendable {
     public let `current`: Bool
     public let `validUntil`: WireTimestamp?
     private enum CodingKeys: String, CodingKey {
+        case `modelScope`
         case `id`
         case `role`
         case `durationSeconds`
@@ -1359,7 +1384,8 @@ public struct RowsWindow: Codable, Sendable {
         case `current`
         case `validUntil`
     }
-    public init(`id`: String, `role`: RowsRole, `durationSeconds`: Int64? = nil, `label`: RowsText, `limitKey`: String, `poolKey`: String, `resetMode`: RowsResetMode, `remainingPercent`: Double? = nil, `resetsAt`: WireTimestamp? = nil, `observedAt`: WireTimestamp? = nil, `current`: Bool, `validUntil`: WireTimestamp? = nil) throws {
+    public init(`modelScope`: RowsModelScope? = nil, `id`: String, `role`: RowsRole, `durationSeconds`: Int64? = nil, `label`: RowsText, `limitKey`: String, `poolKey`: String, `resetMode`: RowsResetMode, `remainingPercent`: Double? = nil, `resetsAt`: WireTimestamp? = nil, `observedAt`: WireTimestamp? = nil, `current`: Bool, `validUntil`: WireTimestamp? = nil) throws {
+        self.`modelScope` = `modelScope`
         self.`id` = `id`
         self.`role` = `role`
         self.`durationSeconds` = `durationSeconds`
@@ -1376,6 +1402,7 @@ public struct RowsWindow: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`modelScope` = try? c.decodeIfPresent(RowsModelScope.self, forKey: .`modelScope`)
         self.`id` = try c.decode(String.self, forKey: .`id`)
         self.`role` = try c.decode(RowsRole.self, forKey: .`role`)
         self.`durationSeconds` = try? c.decodeIfPresent(Int64.self, forKey: .`durationSeconds`)
@@ -1393,6 +1420,7 @@ public struct RowsWindow: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`modelScope`, forKey: .`modelScope`)
         try c.encode(`id`, forKey: .`id`)
         try c.encode(`role`, forKey: .`role`)
         try c.encode(`durationSeconds`, forKey: .`durationSeconds`)

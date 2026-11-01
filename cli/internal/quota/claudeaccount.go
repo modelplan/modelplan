@@ -324,11 +324,12 @@ func parseClaudeUsage(raw map[string]json.RawMessage, now time.Time) ([]Window, 
 	}
 	types := []struct {
 		key, kind, label string
+		models           []string
 		minutes          int
 	}{
-		{"five_hour", "five_hour", "", 300}, {"seven_day", "weekly", "", 10080},
-		{"seven_day_opus", "weekly", "Opus", 10080}, {"seven_day_sonnet", "weekly", "Sonnet", 10080},
-		{"seven_day_oauth_apps", "weekly", "OAuth apps", 10080}, {"seven_day_cowork", "weekly", "Cowork", 10080},
+		{"five_hour", "five_hour", "", nil, 300}, {"seven_day", "weekly", "", nil, 10080},
+		{"seven_day_opus", "weekly", "Opus", []string{"opus"}, 10080}, {"seven_day_sonnet", "weekly", "Sonnet", []string{"sonnet"}, 10080},
+		{"seven_day_oauth_apps", "weekly", "OAuth apps", nil, 10080}, {"seven_day_cowork", "weekly", "Cowork", nil, 10080},
 	}
 	ws := []Window{}
 	known := false
@@ -355,7 +356,7 @@ func parseClaudeUsage(raw map[string]json.RawMessage, now time.Time) ([]Window, 
 		if reset != nil && !reset.After(now) {
 			continue
 		}
-		ws = append(ws, Window{Kind: spec.kind, Limit: spec.label, WindowMinutes: spec.minutes, UsedPercent: v.Utilization, ResetsAt: reset, ResetMode: "fixed", ObservedAt: now.UTC()})
+		ws = append(ws, Window{Kind: spec.kind, Limit: spec.label, ModelIDs: spec.models, WindowMinutes: spec.minutes, UsedPercent: v.Utilization, ResetsAt: reset, ResetMode: "fixed", ObservedAt: now.UTC()})
 	}
 	if b, present := raw["extra_usage"]; present && string(b) != "null" {
 		known = true
@@ -375,6 +376,9 @@ func parseClaudeUsage(raw map[string]json.RawMessage, now time.Time) ([]Window, 
 			pct := 100 * used / limit
 			ws = append(ws, Window{Kind: "spend", Limit: "Extra usage", WindowMinutes: 43200, UsedUSD: &used, LimitUSD: &limit, UsedPercent: &pct, ObservedAt: now.UTC(), ResetMode: "unknown"})
 		}
+	}
+	for i := range ws {
+		ws[i].ScopeKnown = true
 	}
 	return ws, known
 }

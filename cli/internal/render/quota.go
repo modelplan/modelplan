@@ -186,7 +186,7 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			}
 			kind := q.Kinds[x.Kind]
 			if x.Limit != "" {
-				kind += " " + LimitName(x.Limit)
+				kind += " " + LimitName(a.SafeLimit(x.Limit))
 			}
 			line := fmt.Sprintf("  %s %s %s  %s  %s  %s", pad(kind, 8), s.c(s.paceColour(x.Pace), bar(frac, 10)), s.c(hi, pad(used, 5)), s.c(dim, pad(left, 9)), s.c(tcyan, pad(reset, 10)), s.c(s.paceColour(x.Pace), q.Pace[x.Pace]))
 			if x.ProjectedPercent != nil && x.Pace != "surplus" {
@@ -233,7 +233,7 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			verdict = q.OnCredits
 		}
 		if a.Pool != "" {
-			verdict = LimitName(a.Pool) + " · " + verdict // the allowance the verdict is about
+			verdict = LimitName(a.SafeLimit(a.Pool)) + " · " + verdict // the allowance the verdict is about
 		}
 		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), verdict))
 	}
