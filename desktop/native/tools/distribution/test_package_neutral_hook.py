@@ -34,7 +34,7 @@ class PackageNeutralFixture:
         self.script.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'desktop/native/tools/package-neutral.sh', self.script)
         (self.repo / 'LICENSE').write_text('Synthetic MIT fixture; no product or helper bytes.')
-        visuals = self.repo / 'desktop/official-visuals'
+        visuals = self.repo / json.loads((ROOT / 'source-policy.json').read_text())['reservedVisuals']['prefix']
         visuals.mkdir(parents=True)
         (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
         (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')

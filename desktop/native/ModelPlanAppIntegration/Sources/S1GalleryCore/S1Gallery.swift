@@ -139,9 +139,17 @@ private struct S1Manifest: Decodable {
         for name in ["index.html", "metrics.json", "README.md"] where fm.fileExists(atPath: output.appendingPathComponent(name).path) {
             throw CocoaError(.fileWriteFileExists)
         }
-        let oracleURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../../official-visuals/dock/Tests/geometry-oracle.json").standardizedFileURL
-        guard let oracleRoot = try JSONSerialization.jsonObject(with: Data(contentsOf: oracleURL)) as? [String: Any],
+        guard let oraclePath = ProcessInfo.processInfo.environment["MODELPLAN_S1_ORACLE_FILE"], !oraclePath.isEmpty else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let oracleURL = URL(fileURLWithPath: oraclePath).standardizedFileURL
+        // The HTML uses this project-relative handoff link; verify it resolves
+        // to exactly the input whose bytes and hashes are checked below.
+        let linkedGolden = output.appendingPathComponent("../../handoffs/20261101-dock-golden", isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
+        guard linkedGolden == golden.standardizedFileURL.resolvingSymlinksInPath() else { throw CocoaError(.fileReadInvalidFileName) }
+        let oracleBytes = try Data(contentsOf: oracleURL)
+        guard SHA256.hash(data: oracleBytes).map({ String(format: "%02x", $0) }).joined() == "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb" else { throw CocoaError(.fileReadCorruptFile) }
+        guard let oracleRoot = try JSONSerialization.jsonObject(with: oracleBytes) as? [String: Any],
               let oracleCases = oracleRoot["cases"] as? [[String: Any]] else { throw CocoaError(.fileReadCorruptFile) }
         let now = ISO8601DateFormatter().date(from: "2026-10-20T14:05:00Z")!
         let display = DockDisplayArea(id: "s1-synthetic", frame: .init(x: 0, y: 0, width: 1470, height: 956), visibleFrame: .init(x: 0, y: 0, width: 1470, height: 930))
@@ -155,9 +163,8 @@ private struct S1Manifest: Decodable {
             let source = golden.appendingPathComponent(capture.file), bytes = try Data(contentsOf: source)
             let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
             guard hash == capture.sha256 else { throw CocoaError(.fileReadCorruptFile) }
-            let refName = String(format: "reference-%02d.png", index), nativeName = String(format: "native-%02d.png", index)
-            let referenceOutput = output.appendingPathComponent(refName)
-            try bytes.write(to: referenceOutput, options: .withoutOverwriting); written.append(referenceOutput)
+            let refName = "../../handoffs/20261101-dock-golden/" + capture.file
+            let nativeName = String(format: "native-%02d.png", index)
             var record: [String: Any] = ["reference": capture.file, "scenario": capture.scenario, "state": capture.state,
                 "edge": capture.edge, "size": capture.size, "count": capture.count, "theme": capture.theme]
             var status = "not-run: button state is not exposed by the production appearance", nativeCell = "not run"
@@ -235,7 +242,7 @@ private struct S1Manifest: Decodable {
         try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("metrics.json"), options: .withoutOverwriting)
         written.append(output.appendingPathComponent("index.html")); written.append(output.appendingPathComponent("metrics.json"))
         let files = written.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        var readme = "# S1 synthetic offscreen gallery\n\nReport only; null metrics, reset-event content and unsupported button states are not passes. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected reset-event state, and absent synthetic jet animation are platform or implementation differences. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
+        var readme = "# S1 synthetic offscreen gallery\n\nReport only; null metrics, reset-event content and unsupported button states are not passes. Reference PNGs are linked in place from the sibling handoff, not copied. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected reset-event state, and absent synthetic jet animation are platform or implementation differences. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
         for file in files {
             let data = try Data(contentsOf: file), digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             readme += "| \(file.lastPathComponent) | \(data.count) | \(digest) |\n"
