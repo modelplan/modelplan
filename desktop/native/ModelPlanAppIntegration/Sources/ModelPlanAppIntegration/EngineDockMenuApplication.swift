@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import ModelPlanEngineClient
+import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
 import ModelPlanShell
@@ -9,6 +10,7 @@ import ModelPlanShell
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
     private let settings: SettingsApplicationCoordinator
+    private var interactionBinding: EngineDockInteractionBinding?
     public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
     private let appBundleURL: URL
@@ -49,6 +51,12 @@ import ModelPlanShell
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.dock.apply($0) }
         super.init()
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
+        // M0's host opts in only when the native interaction port exists.
+        if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
+            let clock = { ProcessInfo.processInfo.systemUptime }
+            interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
+                scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
+        }
         composition.menuDidChange = { [weak self] in
             self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
             #if MODELPLAN_U6_DRIVE
@@ -115,6 +123,8 @@ import ModelPlanShell
                 activate: activateSettings, makeFirstRun: makeFirstRunSurface)
         }
         await settings.reload()
+        guard !terminating else { return }
+        interactionBinding?.start()
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
         guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
@@ -203,7 +213,7 @@ import ModelPlanShell
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
-        firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
+        interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
