@@ -14,7 +14,7 @@ import ModelPlanOfficialDock
                                  edgeScheduling: (any DockEdgeScheduling)? = nil,
                                  currentDate: @escaping @MainActor () -> Date = { Date() }) -> StaticDockPreviewHost {
         let host = StaticDockPreviewHost(appearance: T2ProductionAppearance.apply, currentDate: currentDate, createsNativePanels: createsNativePanels,
-            nativeEnvironment: nativeEnvironment, elapsedClock: elapsedClock, edgeScheduling: edgeScheduling,
+            prepareDetachedAlternateAppearances: true, nativeEnvironment: nativeEnvironment, elapsedClock: elapsedClock, edgeScheduling: edgeScheduling,
             purpose: .production)
         do { host.installWorkingEffects(pool: EffectResourcePool(), provider: try T2FlameFrameProvider.bundled()) }
         catch { host.recordWorkingEffectFailure(error) }

@@ -32,7 +32,7 @@ private actor CardDismissalClient: EngineClient {
 }
 
 @MainActor final class DockCardDismissalJourneyTests: XCTestCase {
-    func testNormalEntryStartsAfterPresentationAndCommunityCardCloses() async throws {
+    func testNormalEntryStartsAfterPresentationAndOfficialCardCloses() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("card-dismissal-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -52,11 +52,15 @@ private actor CardDismissalClient: EngineClient {
         let dock = app.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled)
         XCTAssertFalse(dock.interactionControllerRunning, "The interaction controller must not start before presentation is allowed")
+        // Exercise the real official controller with its parent surface expanded.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
         app.allowDockPresentation()
         XCTAssertTrue(dock.interactionControllerRunning)
         await app.composition.start()
         defer { dock.close() }
-        XCTAssertFalse(dock.interactionEnvironment().active, "Community fallback has no official interaction projection")
+        XCTAssertTrue(dock.interactionEnvironment().active, "The official appearance must activate the real interaction projection")
+        XCTAssertNotNil(dock.dockView.registeredHullPath)
+        XCTAssertTrue(dock.interactionEnvironment().parentExpanded)
         func button(_ view: NSView, id: String) -> NSButton? {
             if let value = view as? NSButton, value.accessibilityIdentifier() == id { return value }
             for child in view.subviews { if let found = button(child, id: id) { return found } }
@@ -66,13 +70,13 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertFalse(dock.card.isHidden)
         XCTAssertTrue(dock.cardPinsDock, "An actually visible pinned card must protect the Dock")
         try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
-        XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the fallback card")
+        XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the official Dock card")
         XCTAssertFalse(dock.cardPinsDock)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
         dock.dockView.onAction?(.subscription("codex"))
         try XCTUnwrap(button(dock.card, id: "dock.card.enter")).performClick(nil)
-        XCTAssertTrue(dock.card.isHidden, "Enter must close the fallback card before navigation")
+        XCTAssertTrue(dock.card.isHidden, "Enter must close the Dock card before navigation")
         XCTAssertEqual(navigations, 1)
         await app.composition.stop()
     }

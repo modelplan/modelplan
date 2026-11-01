@@ -588,7 +588,7 @@
     "T2Grain.swift": "1eac7ddb5d4d8daaab6a472005e30c734b27e2cec75f82a40cf37647f008940d",
     "Tests/T2FlameFrameProviderTests.swift": "a52e805c9fa76fd699645eeead4bb280e9d365e16094bfca3ffe384371889c2d",
     "Tests/T2GeometryTests.swift": "84b2d60bb9b7ca651afb20858b5c963998b39ef62f456a087a5222acaa0ccaaf",
-    "Tests/T2OracleTests.swift": "87312b89858a7340920285476a9e6a523210c9c17e56c39a227d9f913078980c",
+    "Tests/T2OracleTests.swift": "e1f8a8d58faa59224dffdd4472aabce9838a381163e335b5376ae1dcdcdf81ca",
     "Tests/T2ResetEventDotTests.swift": "7ac4cc29b558eb40d01daff55259380c470fed0b1f92730aae4076884485941a",
     "Tests/T2ResourceTests.swift": "8f45bdfe136500487da32c6dd221f964d9c0946df7d916e79fc35b99909e2037",
     "Tests/geometry-oracle.json": "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb"
