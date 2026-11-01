@@ -4,7 +4,8 @@
 `launchMode` in the run config selects how the subject starts (default `direct`):
 - direct: the subject is launch.py's own child behind an exec gate (same PID, registered before
   the subject code runs).
-- launchservices: the pinned binary is copied into a minimal .app in run scratch (syntheticTmp)
+- launchservices: the pinned binary is copied into a minimal .app in run scratch (syntheticTmp),
+  or, with `subjectKind: app-zip`, a pinned zip of a full signed .app is extracted there,
   and opened with `open -n -W --env ...`, so macOS launches it like a user-opened app (cooperative
   activation refuses key/active state to processes spawned directly from an agent shell). The
   subject PID is found by its exact bundle executable path, registered, then supervised by its
@@ -19,10 +20,13 @@ from pathlib import Path
 from admission import validate,load_and_admit
 from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup
 import process_scan
-OPEN=['/usr/bin/open'];CODESIGN='/usr/bin/codesign';DISCOVERY_SECONDS=20.0
+OPEN=['/usr/bin/open'];CODESIGN=['/usr/bin/codesign'];DISCOVERY_SECONDS=20.0
+UNZIP=['/usr/bin/ditto','-x','-k','--noqtn'] # --noqtn: no quarantine, so Gatekeeper does not prompt
 BUNDLE_ID=re.compile(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+')
 def sha256(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-def subject_env(home,tmp):return {'PATH':'/usr/bin:/bin','HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'}
+def subject_env(home,tmp):
+    # HOME alone does not move Foundation's Application Support/preferences: CFFIXED_USER_HOME does.
+    return {'PATH':'/usr/bin:/bin','HOME':str(home),'CFFIXED_USER_HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'}
 def main():
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
     c=json.loads(a.config.read_text())
@@ -34,7 +38,8 @@ def main():
     home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if sha256(binary)!=c['binarySHA256']:raise ValueError('binary identity changed')
-    bundle=make_bundle(c,binary,tmp) if mode=='launchservices' else None
+    kind=c.get('subjectKind','binary')
+    bundle=(extract_app if kind=='app-zip' else make_bundle)(c,binary,tmp) if mode=='launchservices' else None
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
     if bundle:return launch_services(c,bundle,pid_path,subject_env(home,tmp))
@@ -84,8 +89,34 @@ def make_bundle(c,binary,tmp):
               CFBundleInfoDictionaryVersion='6.0',CFBundleShortVersionString='0.0.0',CFBundleVersion='0',
               LSUIElement=ui,NSHighResolutionCapable=True)
     with (app/'Contents'/'Info.plist').open('xb') as f:plistlib.dump(info,f)
-    if sign=='adhoc':subprocess.run([CODESIGN,'--force','--sign','-',str(app)],check=True,capture_output=True)
+    if sign=='adhoc':subprocess.run([*CODESIGN,'--force','--sign','-',str(app)],check=True,capture_output=True)
     return dict(app=app,exe=exe,evidence=dict(bundle=str(app),bundleIdentifier=ident,bundleUIElement=ui,bundleSign=sign,bundledSHA256=sha256(exe)))
+def extract_app(c,archive,tmp):
+    """Full .app subject: a pinned zip is copied into run scratch, re-hashed, extracted with ditto,
+    and must hold exactly one top-level .app whose symlinks stay inside it and whose code signature
+    verifies (ad-hoc accepted; the kind is recorded). The main executable is CFBundleExecutable."""
+    root=tmp/'.launchservices';root.mkdir(parents=True,exist_ok=False)
+    local=root/'subject.zip';shutil.copyfile(archive,local)
+    if sha256(local)!=c['binarySHA256']:raise ValueError('app archive identity changed')
+    out=root/'app';out.mkdir()
+    subprocess.run([*UNZIP,str(local),str(out)],check=True,capture_output=True)
+    entries=[p for p in out.iterdir() if p.name!='__MACOSX']
+    if len(entries)!=1 or entries[0].suffix!='.app' or entries[0].is_symlink() or not entries[0].is_dir():
+        raise ValueError('app archive must contain exactly one top-level .app')
+    app=entries[0];inside=os.path.realpath(app)+'/'
+    for p in app.rglob('*'):
+        if p.is_symlink() and not os.path.realpath(p).startswith(inside):raise ValueError('app symlink leaves the bundle')
+    info=plistlib.loads((app/'Contents'/'Info.plist').read_bytes())
+    name=info.get('CFBundleExecutable')
+    if not isinstance(name,str) or not name or '/' in name or name in ('.','..'):raise ValueError('CFBundleExecutable invalid')
+    exe=app/'Contents'/'MacOS'/name
+    if exe.is_symlink() or not exe.is_file() or not os.access(exe,os.X_OK):raise ValueError('bundle main executable missing')
+    verify=subprocess.run([*CODESIGN,'--verify','--deep','--strict',str(app)],capture_output=True,text=True)
+    if verify.returncode!=0:raise ValueError('app code signature does not verify')
+    details=subprocess.run([*CODESIGN,'-dv',str(app)],capture_output=True,text=True)
+    signature='adhoc' if 'Signature=adhoc' in details.stderr else 'identity'
+    return dict(app=app,exe=exe,evidence=dict(subjectKind='app-zip',bundle=str(app),bundleIdentifier=info.get('CFBundleIdentifier'),
+        archiveSHA256=c['binarySHA256'],executableSHA256=sha256(exe),codeSignature=signature))
 class Owned:
     """A LaunchServices subject: not our child, so it is polled and signalled only by its start identity."""
     def __init__(self,ident,helper):self.ident=ident;self.pid=ident['pid'];self.helper=helper;self.returncode=None
