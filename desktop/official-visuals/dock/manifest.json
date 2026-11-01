@@ -2,8 +2,8 @@
   "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
   "schemaVersion": 1,
   "files": {
-    "Package.swift": "64a795f9cafd21e224c0ad8ef4904005daf598223d670fde54be54d437550841",
-    "README.md": "a3084f66f19f69d969fe4d33ab9cca1fdce4d6d82c34c0ef4f7c88840daee3c0",
+    "Package.swift": "1a32f3ee41bda1c8d90b1414b62788616467943becf25e7f321f47c504082bfd",
+    "README.md": "e796bda98d8473e3d49f56b76239c6c00c50f9e1d335fa20d1e9fba54ae99a31",
     "Resources/A5/a5-cap-night-idle-44x44@3x.png": "d62839aa24cf7d136204e6472185ff2cc9c4ef193642aec036fff338b30151ae",
     "Resources/A5/a5-cap-night-pressed-44x44@3x.png": "51e76c95cf6f752ced63aabb8d88f42cdc8206a409b15bcb5e903fb39309c165",
     "Resources/A5/a5-inner-contact-shadow-52x52@3x.png": "703ac253c6e4d1e1e7d6c0e3c2ff2f068935e1b130b62c63acd9a6b57d7185f2",
@@ -31,8 +31,10 @@
     "T2FaceMaterial.swift": "d17deb29f911abeb206f17908f425ac8f4d4df75232748df0d4cd6c87ad7322f",
     "T2Geometry.swift": "d7bb66ab09a1b9f4598fe09de0b2f95df2c84bbd09d76e6913844f9a63519bf8",
     "T2Grain.swift": "1eac7ddb5d4d8daaab6a472005e30c734b27e2cec75f82a40cf37647f008940d",
+    "T2ResetEventDots.swift": "5980cfce71e61fc535a282ca0f07f74564e7add4dabdb630dfdd1885409d96d5",
     "Tests/T2GeometryTests.swift": "84b2d60bb9b7ca651afb20858b5c963998b39ef62f456a087a5222acaa0ccaaf",
     "Tests/T2OracleTests.swift": "6fe1625c1d47b2fcfc257cc9df6437aefa3d48d4eb7fd6df1bee031dda904d71",
+    "Tests/T2ResetEventDotTests.swift": "649cd7c1c13130283fab1297ecc13dde857589939234e9e393e602f3e40ffb2b",
     "Tests/T2ResourceTests.swift": "e1fa3b3eda788cf6495d09b51bc457d0f44fa41ee5fa4930b85587ecedf5b095",
     "Tests/geometry-oracle.json": "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb"
   }

@@ -20,6 +20,7 @@ Current scope:
 | DOCK-3.1-22, DOCK-3.1-23, DOCK-3.1-29 | Button area search and opposite-end grip; bottom ignition defaults to the right end |
 | DOCK-3.1-10, DOCK-3.1-11 | Isolated native gradient/grain face layer; pixel agreement remains unverified |
 | DOCK-3.6-02 | Size-independent 20-point wake constant; runtime behavior remains separate |
+| DOCK-3.4-03/-04, DOCK-3.7-02 | Reset-dot layout and painting from explicit per-member provider presentation; synthetic unit coverage, production provider/factory binding remains pending |
 
 `Tests/geometry-oracle.json` contains synthetic outputs of the supplied study
 JavaScript. Its source SHA-256 is recorded in the file. Forty-five cases cover
@@ -37,3 +38,11 @@ approved visual baseline before this face layer can be accepted.
 Run `swift test --package-path desktop/official-visuals/dock` on the hosted macOS
 workflow. Native baseline images, content assertions, side-by-side comparisons
 and owner visual sign-off are still required. SSIM alone is insufficient.
+
+Reset-event rendering consumes only admitted presentation values. It does not
+decode wire fields or infer confirmation, expiry, deduplication or acknowledgements.
+Unknown member keys draw nothing. An acknowledged sliver dot disappears while
+the Dock dot follows the provider's state. Blue hollow/solid state is separate
+from quota colours. Paint dots after the static material snapshot so clear can
+withdraw them. The upcoming provider consumer supplies these values; until then
+synthetic values qualify only the renderer, not the production event journey.
