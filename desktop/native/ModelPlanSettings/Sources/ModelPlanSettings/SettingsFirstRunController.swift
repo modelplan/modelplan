@@ -113,6 +113,7 @@ import AppKit
         doneButton.bezelStyle = .rounded; doneButton.target = self; doneButton.action = #selector(done)
         doneButton.keyEquivalent = "\r"; doneButton.setAccessibilityIdentifier("firstRun.done")
         helpButton.isBordered = false; helpButton.target = self; helpButton.action = #selector(seeWhatsHere)
+        helpButton.isHidden = editor.context.v1NormalEntry
         helpButton.setAccessibilityIdentifier("firstRun.help")
         let focusOrder=OptionalReaderID.allCases.compactMap{readerButtons[$0]}+[loginButton,doneButton,helpButton]
         for (a,b) in zip(focusOrder,focusOrder.dropFirst()) {a.nextKeyView=b}
@@ -164,6 +165,7 @@ import AppKit
             loginSubtitle.stringValue = page.loginSubtitle.value(language)
             loginButton.setAccessibilityHelp(loginSubtitle.stringValue)
             doneButton.title = page.done.value(language); helpButton.title = page.seeWhatsHere.value(language)
+            helpButton.isHidden = !page.showsExploration
             if scopeUnavailable { errorMessage = SettingsWords.text("Reading permissions are busy. Close and try again.", "读取权限正在处理，请关闭后重试。", language) }
             status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
             let appearance: NSAppearance.Name? = p.theme == .system ? nil : p.theme == .night ? .darkAqua : .aqua
@@ -182,7 +184,7 @@ import AppKit
         loginButton.isEnabled = enabled
         for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         doneButton.isEnabled = enabled
-        helpButton.isEnabled = enabled && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
+        helpButton.isEnabled = enabled && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
     @objc private func loginChanged() {
         guard active, !busy, loginButton.isEnabled else { return }

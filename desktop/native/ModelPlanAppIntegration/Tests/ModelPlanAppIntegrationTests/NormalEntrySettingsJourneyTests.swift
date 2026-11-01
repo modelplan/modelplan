@@ -171,6 +171,8 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(first.composition.latestSettings?.effective.reduceMotion, true)
         XCTAssertEqual(first.composition.latestSettings?.effective.reduceTransparency, true)
         XCTAssertTrue(editor.context.v1NormalEntry)
+        let firstRunPage = try FirstRunPage(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+        XCTAssertFalse(firstRunPage.showsExploration, "The normal v1 entry must hide the post-v1 help-map action")
         XCTAssertTrue(try XCTUnwrap(editor.effective).darkAppearance)
         XCTAssertEqual(try XCTUnwrap(editor.effective).opening, .quick)
         let visible = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
