@@ -291,4 +291,39 @@ private actor SettingsJourneyClient: EngineClient {
                        "A migrated language choice takes precedence over the system default")
         XCTAssertEqual(try Data(contentsOf: legacyFile), legacyBytes)
     }
+    func testFreshChineseNormalEntryShowsChineseDockCardAge() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("chinese-card-age-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+        projection["rows"] = rows; root["projection"] = projection
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: configuration,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["zh-CN"]),
+            createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+        await app.prepare(); app.composition.dock.setPresentationAllowed(true); await app.composition.start()
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.language, .chinese)
+        dock.dockView.onAction?(.subscription("codex"))
+        XCTAssertFalse(dock.card.isHidden)
+        func field(_ view: NSView) -> NSTextField? {
+            if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }
+            return view.subviews.lazy.compactMap(field).first
+        }
+        let age = try XCTUnwrap(field(dock.card)?.stringValue)
+        XCTAssertTrue(age == "读数时间未知" || age.hasPrefix("读取于 "), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
+        dock.dockView.onAction?(.subscription("codex"))
+        let englishAge = try XCTUnwrap(field(dock.card)?.stringValue)
+        XCTAssertTrue(englishAge == "Reading time unknown" || englishAge.hasPrefix("Reading taken "), "The same card must follow an explicit English choice: \(englishAge)")
+        await app.composition.stop()
+    }
+
 }

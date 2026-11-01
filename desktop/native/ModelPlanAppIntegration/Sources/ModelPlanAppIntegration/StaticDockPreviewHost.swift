@@ -780,7 +780,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
               let input = model?.inputs.first(where: { $0.id == id }),
               let content = try? DockCardProjection.content(input: preferences.applying(to: input),
                 revision: application?.snapshot.revision ?? 0,
-                sourceAndAge: CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now),
+                sourceAndAge: CommunityDockObservation.text(input: preferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? "Local reading / 本地读数" : "Unavailable or stale / 不可用或已过期"),
                 additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
                 enterLabel: model?.presentationRows[id] == nil ? "Console / 控制台" : "Settings / 设置", dismissLabel: "Close / 关闭", at: now) else { dismissCard(); return }

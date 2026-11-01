@@ -61,7 +61,7 @@ import ModelPlanShell
             let id = try XCTUnwrap(CommunityDockSnapshot(snapshot:snapshot,diagnostics:ready,now:now).inputs.first?.id)
             host.dockView.onAction?(.subscription(id))
             let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-            XCTAssertFalse(field.isHidden); XCTAssertTrue(field.stringValue.contains("2h"),field.stringValue)
+            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "读取于 2 小时前")
             XCTAssertFalse(field.stringValue.contains("7200s")); XCTAssertEqual(field.accessibilityLabel(),field.stringValue)
             XCTAssertNil(host.nativePanel); XCTAssertNil(host.dockView.window)
         }}
@@ -72,7 +72,7 @@ import ModelPlanShell
         let snapshot = try joined([account("codex",ref:"sub-a",remaining:75,observed:nil,now:now)],now:now)
         host.render(snapshot:snapshot,diagnostics:ready);host.setPresentationAllowed(true);host.dockView.onAction?(.subscription("sub-a"))
         let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-        XCTAssertFalse(field.isHidden);XCTAssertTrue(field.stringValue.contains("unknown"),field.stringValue)
+        XCTAssertFalse(field.isHidden);XCTAssertEqual(field.stringValue, "读数时间未知")
     }
     func testActualFactoryMenuUsesSameHiddenAndUsedPreferencesAsDock() async throws {
         let now = Date(), host = dock();defer{host.close()}
