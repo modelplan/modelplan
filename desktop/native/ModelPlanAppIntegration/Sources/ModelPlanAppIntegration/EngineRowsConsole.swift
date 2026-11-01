@@ -27,7 +27,7 @@ import ModelPlanDock
         let value = composition.presentedContent
         if value.snapshot.inputs.isEmpty { content.addArrangedSubview(NSTextField(wrappingLabelWithString: value.emptyText ?? "Waiting for readings / 等待读数")) }
         for input in value.snapshot.inputs {
-            let number = (try? DockInstrumentProjection.evaluate(input, now: Date()))?.readout ?? "—"
+            let number = (try? DockInstrumentProjection.evaluate(input, now: Date()))?.readout ?? "--"
             let reason = value.snapshot.presentationRows[input.id]
             content.addArrangedSubview(NSTextField(wrappingLabelWithString: [input.name, number, reason?.reason, reason?.nextStep].compactMap { $0 }.joined(separator: " · ")))
         }
