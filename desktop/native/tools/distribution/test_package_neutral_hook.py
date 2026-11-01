@@ -34,6 +34,10 @@ class PackageNeutralFixture:
         self.script.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'desktop/native/tools/package-neutral.sh', self.script)
         (self.repo / 'LICENSE').write_text('Synthetic MIT fixture; no product or helper bytes.')
+        visuals = self.repo / json.loads((ROOT / 'source-policy.json').read_text())['reservedVisuals']['prefix']
+        visuals.mkdir(parents=True)
+        (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
+        (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')
         self.archives = root / 'archives'
         self.archives.mkdir()
         sums = []
@@ -70,6 +74,20 @@ elif name == 'swift':
     resources = build / 'ModelPlanAppIntegration_ModelPlanAppIntegration.bundle'
     resources.mkdir()
     (resources / 'fixture.txt').write_text('synthetic resource')
+    official = build / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle'
+    official.mkdir()
+    (official / 'fixture.txt').write_text('synthetic official resource')
+    dock = build / 'ModelPlanDockResources_ModelPlanDockResources.bundle'
+    relative_mark = ('Resources/Marks/zai-white.svg' if os.environ.get('PACKAGING_FLAT_BUNDLE') == '1'
+                     else 'Contents/Resources/Resources/Marks/zai-white.svg')
+    mark = dock / relative_mark
+    mark.parent.mkdir(parents=True)
+    if os.environ.get('PACKAGING_NO_BETA_MARK') != '1':
+        mark.write_text('synthetic beta-only mark')
+    if os.environ.get('PACKAGING_DUPLICATE_BETA_MARK') == '1':
+        duplicate = dock / 'other' / 'zai-white.svg'
+        duplicate.parent.mkdir(parents=True)
+        duplicate.write_text('synthetic duplicate')
 elif name == 'xcrun':
     if args[:2] != ['lipo', '-create']:
         raise SystemExit('unsupported fixture xcrun command')
@@ -154,6 +172,27 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue(all(not c['args'][0].endswith('/build_fixed_helper.py') for c in commands if c['command'] == 'python3'))
         self.assertTrue(all('credential-agent' not in target for _, target in seals))
         self.assertEqual(self.fixture.snapshot(inputs), before)
+        resources = self.fixture.output / 'ModelPlan Community.app' / 'Contents' / 'Resources'
+        self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
+        self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
+        self.assertTrue((resources / 'VISUAL-LICENSE.md').is_file())
+        self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
+
+    def test_flat_resource_bundle_excludes_beta_only_mark(self):
+        result = self.fixture.run(environment={'PACKAGING_FLAT_BUNDLE': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundle = self.fixture.output / 'ModelPlan Community.app' / 'Contents' / 'Resources' / 'ModelPlanDockResources_ModelPlanDockResources.bundle'
+        self.assertFalse(list(bundle.rglob('zai-white.svg')))
+
+    def test_absent_or_duplicate_beta_mark_fails_closed(self):
+        for env in ({'PACKAGING_NO_BETA_MARK': '1'}, {'PACKAGING_DUPLICATE_BETA_MARK': '1'}):
+            with self.subTest(environment=env):
+                with tempfile.TemporaryDirectory() as folder:
+                    fixture = PackageNeutralFixture(Path(folder))
+                    result = fixture.run(environment=env)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('Expected exactly one beta-only Z.ai mark', result.stderr)
+                    self.assertFalse(any(c['command'] == 'codesign' for c in fixture.commands()))
 
     def test_existing_output_fails_without_building_or_signing(self):
         self.fixture.output.mkdir()

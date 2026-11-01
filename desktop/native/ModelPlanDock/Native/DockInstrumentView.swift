@@ -17,11 +17,26 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     @_spi(DockResourceChecks) public var presentedNozzleDiameters: [CGFloat] { skin?.stations.map(\.diameter) ?? [] }
     /// The host resolves the destination screen even while this view is detached/collapsed.
     public var presentationBackingScale: Int?
+    /// Destination display facts are supplied by the host, never inferred from raster size.
+    public var appearanceDisplaySize: CGSize?
+    public var appearanceMenuBarExclusion: CGFloat = 0
+    /// Current admitted notices, kept out of the static material cache.
+    public var appearanceNotices: [String: DockNotice] = [:]
+    /// The signed package controls this single beta-only mark switch.
+    @_spi(DockResourceChecks) public var zaiMarkEnabled = (Bundle.main.object(forInfoDictionaryKey: "zaiMarkEnabled") as? Bool) ?? false
+    @_spi(DockResourceChecks) public var presentedNoticesForChecks: [String: DockNotice] { failed ? [:] : notices }
+    @_spi(DockResourceChecks) public var presentedReadingsForChecks: [String: DockInstrumentReading] { failed ? [:] : readings }
+    /// Read-only capture of the currently presented synthetic test surface.
+    @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
+    @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
+    /// Separate empty-state action; never routed through subscription/overflow interaction.
+    public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
+    public var permitsEmptyAction: ((DockActionSource) -> Bool)?
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
@@ -45,12 +60,70 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var onVisualReset:(()->Void)?
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
+    /// The effect driver only receives a currently successful official skin.
+    var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
+    private var noticePulseLayers = [CALayer]()
+    @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
         guard let path = registeredHullPath else { return nil }
         let rect = path.boundingBoxOfPath
         return rect.isNull || rect.isEmpty ? nil : rect
+    }
+    /// The existing instrument renderer supplies every pulse pixel; this only animates a transient crop.
+    public var visibleNoticesForPulse: [(String, DockNotice)] {
+        guard !failed, !community, let skin else { return [] }
+        return skin.stations.compactMap { station in
+            guard let key = station.subscriptionID ?? station.overflowNoticeKey, let notice = notices[key] else { return nil }
+            return (key, notice)
+        }
+    }
+    @discardableResult public func pulseNotice(_ key: String) -> Bool {
+        guard !failed, !community, let skin, let image, let notice = notices[key], let root = layer,
+              let station = skin.stations.first(where: { $0.subscriptionID == key || $0.overflowNoticeKey == key }) else { return false }
+        let local = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+        let pixels = CGRect(x: local.minX * CGFloat(scale), y: local.minY * CGFloat(scale),
+                            width: local.width * CGFloat(scale), height: local.height * CGFloat(scale)).integral
+        guard pixels.width > 0, pixels.height > 0, pixels.width <= 128, pixels.height <= 128,
+              let crop = image.cropping(to: pixels) else { return false }
+        let rim = station.showsReadout == false || station.overflowCount != nil
+        var contents = crop
+        if !rim {
+            guard let c = CGContext(data: nil, width: crop.width, height: crop.height, bitsPerComponent: 8,
+                                    bytesPerRow: crop.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                    bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            c.draw(crop, in: CGRect(x: 0, y: 0, width: crop.width, height: crop.height))
+            guard let memory = c.data else { return false }
+            let bytes = memory.assumingMemoryBound(to: UInt8.self)
+            for i in 0..<(crop.width * crop.height) {
+                let alpha = Int(bytes[i * 4 + 3])
+                for channel in 0..<3 { bytes[i * 4 + channel] = UInt8(min(alpha, Int((Double(bytes[i * 4 + channel]) * 2.2).rounded()))) }
+            }
+            guard let bright = c.makeImage() else { return false }; contents = bright
+        }
+        let overlay = CALayer(); overlay.contents = contents; overlay.contentsScale = CGFloat(scale)
+        overlay.frame = CGRect(x: pixels.minX / CGFloat(scale), y: pixels.minY / CGFloat(scale),
+                               width: pixels.width / CGFloat(scale), height: pixels.height / CGFloat(scale))
+        let mask = CAShapeLayer(); mask.frame = overlay.bounds
+        let diameter = (notice.shape == .solid ? station.eventSolidDiameter : station.eventHollowDiameter) ?? station.eventRect.width / 2
+        let dot = CGRect(x: overlay.bounds.midX-diameter/2, y: overlay.bounds.midY-diameter/2, width: diameter, height: diameter)
+        let path = CGMutablePath(); path.addEllipse(in: dot)
+        if notice.shape == .hollow {
+            let width = station.eventStrokeWidth ?? 1.2
+            if dot.width > 2 * width { path.addEllipse(in: dot.insetBy(dx: width, dy: width)) }
+            mask.fillRule = .evenOdd
+        }
+        mask.path = path; overlay.mask = mask; root.addSublayer(overlay); noticePulseLayers.append(overlay)
+        let pulse = CAKeyframeAnimation(keyPath: rim ? "transform.scale" : "opacity")
+        pulse.values = rim ? [1, 2.1, 1] : [0, 1, 0]; pulse.keyTimes = [0, 0.35, 1]
+        pulse.duration = rim ? 0.9 : 0.45; pulse.timingFunctions = [CAMediaTimingFunction(name: .easeOut), CAMediaTimingFunction(name: .easeOut)]
+        CATransaction.begin(); CATransaction.setCompletionBlock { [weak self, weak overlay] in
+            overlay?.removeFromSuperlayer()
+            self?.noticePulseLayers.removeAll { $0 === overlay }
+        }
+        overlay.add(pulse, forKey: "dock-notice-first-appearance"); CATransaction.commit()
+        return true
     }
     /// Existing material pixels for a destination ghost when the supplier has no vector hull.
     public var registeredMovePreviewImage: CGImage? {
@@ -113,7 +186,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil
+        resetVisuals();self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -160,8 +233,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onVisualReset=nil}
-    private func resetVisuals(){onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    private func resetVisuals(){noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}
     private func clearObservers(){
@@ -217,6 +290,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         guard let s=skin?.stations.first(where:{$0.subscriptionID==id}),let origin=skin?.bounds.origin else{return nil}
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }
+    private var emptyStationRect: CGRect? {
+        guard !community, !failed, let skin,
+              let station = skin.stations.first(where: { $0.placeholderStyle != nil && $0.placeholderLabel != nil && $0.subscriptionID == nil && $0.overflowCount == nil }) else { return nil }
+        return CGRect(x: station.centre.x-station.diameter/2-skin.bounds.minX,
+                      y: station.centre.y-station.diameter/2-skin.bounds.minY, width: station.diameter, height: station.diameter)
+    }
+    @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
     private func refreshNodes(){
         var children=[DockInstrumentAXNode](),used=Set<String>()
         func append(_ key:String,_ label:String,_ value:String?,_ help:String,_ rect:CGRect,_ action:DockInstrumentAction) {
@@ -240,10 +320,23 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
                 case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
                 case .cardsExpiring:label=zh ? "重置卡即将过期":"Reset card expiring"
-                case .credits:label=zh ? "正在使用余额":"Using credits"
+                case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
                 append("notice."+id,label,nil,label,station.eventRect.offsetBy(dx:-origin.x,dy:-origin.y),.notice(id))
             }
+        }
+        if let rect = emptyStationRect {
+            let key = "empty", node = nodes[key] ?? DockInstrumentAXNode(), zh = locale.hasPrefix("zh")
+            node.setAccessibilityRole(.button); node.setAccessibilityParent(self); node.setAccessibilityEnabled(onEmptyAction != nil)
+            node.setAccessibilityIdentifier("dock.empty"); node.setAccessibilityLabel(zh ? "未检测到订阅" : "No subscriptions found")
+            node.setAccessibilityHelp(zh ? "打开设置以连接订阅" : "Open Settings to connect a subscription")
+            node.setAccessibilityFrameInParentSpace(rect)
+            node.press = { [weak self, weak node] in
+                guard let self, let node, self.nodes[key] === node, self.emptyStationRect != nil,
+                      self.permitsEmptyAction?(.accessibility) ?? true, let action = self.onEmptyAction else { return false }
+                return action()
+            }
+            nodes[key] = node; children.append(node); used.insert(key)
         }
         if !community,let more=skin?.stations.first(where:{$0.overflowCount != nil}),let origin=skin?.bounds.origin {
             let label=locale.hasPrefix("zh") ? "更多订阅":"More subscriptions"
@@ -310,7 +403,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         return nil
     }
     @discardableResult private func dispatchPointer(currentPoint:()->NSPoint?,nozzleGlobal:CGPoint?=nil)->Bool{
-        guard let initial=currentPoint(),isPainted(atLocal:initial),let action=pointerAction(atLocal:initial),permitsAction?(action,.pointer) ?? true else{return false}
+        guard let initial=currentPoint(),isPainted(atLocal:initial) else{return false}
+        if emptyStationRect?.contains(initial) == true {
+            guard permitsEmptyAction?(.pointer) ?? true, let current = currentPoint(), isPainted(atLocal: current),
+                  emptyStationRect?.contains(current) == true, let action = onEmptyAction else { return false }
+            return action()
+        }
+        guard let action=pointerAction(atLocal:initial),permitsAction?(action,.pointer) ?? true else{return false}
         // A gate can replace/reorder stations without removing their readings. Re-hit-test the
         // original physical pointer against the current presentation, rather than validating only ID existence.
         guard let current=currentPoint(),isPainted(atLocal:current),pointerAction(atLocal:current)==action else{return false}
