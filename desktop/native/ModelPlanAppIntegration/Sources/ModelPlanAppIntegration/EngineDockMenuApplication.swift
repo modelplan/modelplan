@@ -143,7 +143,7 @@ import ModelPlanSettings
         refresh.target = self
         menu.addItem(.separator())
         menu.addItem(settingsHost.menuItem(title: EngineRowsText.settings.value(language)))
-        let consoleItem = menu.addItem(withTitle: EngineRowsText.readingsMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
+        let consoleItem = menu.addItem(withTitle: EngineRowsText.cockpitMenu.value(language), action: #selector(showConsoleMenu), keyEquivalent: "")
         consoleItem.target = self
         menu.addItem(withTitle: EngineRowsText.quit.value(language), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.delegate = self; liveStatusMenu = menu; status?.menu = menu

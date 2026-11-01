@@ -395,7 +395,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
-        consoleButton.setAccessibilityLabel(preferences.language == .english ? "Open console" : "打开控制台")
+        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         container.addSubview(dockView); container.addSubview(consoleButton)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -435,7 +435,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
-        consoleButton.setAccessibilityLabel(preferences.language == .english ? "Open console" : "打开控制台")
+        consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         if !preferences.showDock { dismissCard() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
@@ -917,7 +917,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 menu.addItem(item)
             }
         }
-        for (title, action) in [("Console… / 控制台…", #selector(openConsole)), ("Settings… / 设置…", #selector(openSettings))] {
+        for (title, action) in [(EngineRowsText.cockpitMenu.value(preferences.language), #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings))] {
             let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
         }
         menu.addItem(.separator())
@@ -945,7 +945,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                     : (input.dataState == .fresh ? "本地读数" : "不可用或已过期")),
                 additionalRows: model?.presentationRows[id].map { [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
                 enterLabel: model?.presentationRows[id] == nil
-                    ? (preferences.language == .english ? "Console" : "控制台")
+                    ? EngineRowsText.cockpitAction.value(preferences.language)
                     : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: "✕", at: now)
     }
     private func showCard(_ id: String, pinned: Bool = true, supplied: DockCardContent? = nil) {
