@@ -6,7 +6,7 @@ import {unavailablePrototypeDetailsFixture,type PrototypeDetailsFixture} from '.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
 import {prototypeEngineSupplement} from './prototype-data-adapter.js';
-import {scaleView,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
+import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
 import {setLanguage,t} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
 import {plans} from '../study/rocket-r1/mfd-pages/plans.js';
@@ -44,7 +44,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    const links=Array.isArray(f.accounts)?f.accounts.flatMap(v=>typeof v==='string'&&accountIds.has(v)?[accountIds.get(v)!]:[]):[];
    return [{id:'model'+i,sourceId:safeText(f.id),name:safeText(f.name)||safeText(f.short),short:safeText(f.short),rec,e:rows,pinned:f.pinned===true,live:sessions.length>0,current,currentFast:fast===true,others:otherEntries,tier:fast!==null&&speed!==null&&cost!==null?{speed,cost}:null,accounts:links,sessions}];});return {accounts,faders};
  }
- function paintScale(){setLanguage(locale);scale.innerHTML=scaleView();for(const [i,b] of [...scale.querySelectorAll<HTMLButtonElement>('.sc-l')].entries()){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(i/4));}}
+ function paintScale(){setLanguage(locale);scale.innerHTML=scaleView();for(const b of scale.querySelectorAll<HTMLButtonElement>('.sc-l')){b.disabled=true;b.classList.add('na');b.style.setProperty('--k',String(levelK(b.dataset.level??'')));}}
  function paintFaders(){
   const data=faderInput(),input=record(details.publication),requested=selectedModel??safeText(input?.selectedModel),target=data.faders.find(f=>f.id===requested||f.sourceId===requested)?.id??null,ui={bank:bankIndex,bankSize:3,selModel:target,previews,view:null,phase:'open',reduced:true},model=faderModel(data,ui);bankIndex=model.bank;
   const targetChannel=model.all.find((c:{id:string})=>c.id===model.target);
