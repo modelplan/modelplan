@@ -78,7 +78,11 @@ import ModelPlanSettings
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
         console?.show()
     }
-    public func prepare() async { await settings.reload(); interactionBinding?.start() }
+    public func prepare() async {
+        await settings.reload()
+        guard !terminating else { return }
+        interactionBinding?.start()
+    }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .darkAqua)
