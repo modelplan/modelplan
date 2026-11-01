@@ -36,6 +36,17 @@ import ModelPlanSettings
         XCTAssertGreaterThan(calls, 0, "the actual returned Host must use the supplied appearance")
         XCTAssertNil(dock.nativePanel, "construction and a settings transaction must not launch panels")
     }
+    func testOfficialAppearanceFailureIsRetainedForDiagnosis() async throws {
+        enum SyntheticAppearanceFailure: Error { case expected }
+        let host = try ProductionDockFactory.official { _, _, _ in throw SyntheticAppearanceFailure.expected }
+        defer { host.close() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("appearance-error-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: root.appendingPathComponent("settings.json"))) { host.apply($0) }
+        await app.reload()
+        XCTAssertTrue(host.lastAppearanceError is SyntheticAppearanceFailure)
+    }
+
     func testNeutralHostRegistersItsActualPaintedBodyWithoutAnOfficialSkin() async throws {
         let host = StaticDockPreviewHost(purpose: .production)
         defer { host.close() }

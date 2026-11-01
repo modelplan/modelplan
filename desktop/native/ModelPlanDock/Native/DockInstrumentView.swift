@@ -20,6 +20,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// Destination display facts are supplied by the host, never inferred from raster size.
     public var appearanceDisplaySize: CGSize?
     public var appearanceMenuBarExclusion: CGFloat = 0
+    /// Read-only capture of the currently presented synthetic test surface.
+    @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
+    @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }

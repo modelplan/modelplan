@@ -15,6 +15,7 @@ import ModelPlanSettings
             settingsStore: try SettingsStore(url: root.appendingPathComponent("settings.json")), createsNativePanels: false)
         await app.prepare()
         defer { app.composition.dock.close() }
+        XCTAssertNil(app.composition.dock.lastAppearanceError, "Official appearance failed: \(String(describing: app.composition.dock.lastAppearanceError))")
         XCTAssertNotNil(app.composition.dock.dockView.registeredHullPath,
                         "The normal engine-rows entry must present the official Dock hull")
         XCTAssertNotNil(app.composition.dock.dockView.registeredMovePreviewImage,

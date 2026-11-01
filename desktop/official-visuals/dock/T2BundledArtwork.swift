@@ -16,9 +16,12 @@ public enum T2BundledArtwork {
     private struct Manifest: Decodable { let schemaVersion: Int; let files: [String: T2ArtworkRecord] }
     public static func rootURL() throws -> URL {
         let packaged = (Bundle.main.resourceURL?.appendingPathComponent("ModelPlanOfficialDock_ModelPlanOfficialDock.bundle")).flatMap { Bundle(url: $0) }
-        if Bundle.main.bundleURL.pathExtension == "app", packaged == nil { throw Failure.missing }
-        let bundle = packaged ?? Bundle.module
-        guard let manifest = bundle.url(forResource: "artwork", withExtension: "json") else { throw Failure.missing }
+        return try rootURL(in: packaged ?? Bundle.module)
+    }
+    /// Resolve both supported SwiftPM resource layouts without changing the files.
+    public static func rootURL(in bundle: Bundle) throws -> URL {
+        guard let manifest = bundle.url(forResource: "artwork", withExtension: "json", subdirectory: "Resources")
+                ?? bundle.url(forResource: "artwork", withExtension: "json") else { throw Failure.missing }
         let root = manifest.deletingLastPathComponent()
         return root.standardizedFileURL.resolvingSymlinksInPath()
     }

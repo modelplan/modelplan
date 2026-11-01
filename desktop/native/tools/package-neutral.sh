@@ -63,7 +63,12 @@ cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppInt
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
 # The Z.ai mark is authorized for beta use only; neutral distribution excludes it.
-rm "$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle/Resources/Marks/zai-white.svg"
+mark_bundle="$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle"
+mark_path=$(find "$mark_bundle" -type f -name zai-white.svg -print)
+if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" != 1 ]; then
+    echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
+fi
+rm -- "$mark_path"
 xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
     "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
 xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"

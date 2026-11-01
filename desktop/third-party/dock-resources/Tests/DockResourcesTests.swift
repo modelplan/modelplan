@@ -8,6 +8,21 @@ import CoreText
     private func manifest(_ beta: Bool) throws -> DockResourceManifest {
         try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(allowBetaMarks: beta))
     }
+    func testResourceLookupSupportsFlatAndNestedBundleLayouts() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("resource-layout-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for nested in [false, true] {
+            let bundleURL = root.appendingPathComponent(nested ? "nested.bundle" : "flat.bundle")
+            let resourceBase = bundleURL.appendingPathComponent("Contents/Resources")
+            let resourceRoot = nested ? resourceBase.appendingPathComponent("Resources") : resourceBase
+            try FileManager.default.createDirectory(at: resourceRoot, withIntermediateDirectories: true)
+            let info = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>CFBundleIdentifier</key><string>test.synthetic.resource-layout</string><key>CFBundlePackageType</key><string>BNDL</string></dict></plist>"
+            try Data(info.utf8).write(to: bundleURL.appendingPathComponent("Contents/Info.plist"))
+            try Data("{}".utf8).write(to: resourceRoot.appendingPathComponent("manifest.json"))
+            let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+            XCTAssertEqual(try DockThirdPartyResources.rootURL(in: bundle).standardizedFileURL.resolvingSymlinksInPath(), resourceRoot.standardizedFileURL.resolvingSymlinksInPath())
+        }
+    }
     func testOriginalMarkAndFontBytesPassCanonicalValidation() async throws {
         let manifest = try manifest(true)
         let store = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: manifest)

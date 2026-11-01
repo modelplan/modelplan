@@ -7,9 +7,12 @@ public enum DockThirdPartyResources {
     public enum Failure: Error { case missingManifest, invalidManifest }
     public static func rootURL() throws -> URL {
         let packaged = (Bundle.main.resourceURL?.appendingPathComponent("ModelPlanDockResources_ModelPlanDockResources.bundle")).flatMap { Bundle(url: $0) }
-        if Bundle.main.bundleURL.pathExtension == "app", packaged == nil { throw Failure.missingManifest }
-        let bundle = packaged ?? Bundle.module
-        guard let manifest = bundle.url(forResource: "manifest", withExtension: "json") else { throw Failure.missingManifest }
+        return try rootURL(in: packaged ?? Bundle.module)
+    }
+    /// Resolve both supported SwiftPM resource layouts without changing the files.
+    public static func rootURL(in bundle: Bundle) throws -> URL {
+        guard let manifest = bundle.url(forResource: "manifest", withExtension: "json", subdirectory: "Resources")
+                ?? bundle.url(forResource: "manifest", withExtension: "json") else { throw Failure.missingManifest }
         return manifest.deletingLastPathComponent()
     }
     /// Beta-only marks are excluded unless the distribution consumer explicitly

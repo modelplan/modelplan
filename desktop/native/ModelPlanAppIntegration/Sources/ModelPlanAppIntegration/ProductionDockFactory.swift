@@ -9,8 +9,9 @@ import ModelPlanDock
     public static func community(createsNativePanels: Bool = true,
                                  nativeEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
                                  elapsedClock: (() -> TimeInterval)? = nil,
-                                 edgeScheduling: (any DockEdgeScheduling)? = nil) -> StaticDockPreviewHost {
-        StaticDockPreviewHost(appearance: T2ProductionAppearance.apply, currentDate: { Date() }, createsNativePanels: createsNativePanels,
+                                 edgeScheduling: (any DockEdgeScheduling)? = nil,
+                                 currentDate: @escaping @MainActor () -> Date = { Date() }) -> StaticDockPreviewHost {
+        StaticDockPreviewHost(appearance: T2ProductionAppearance.apply, currentDate: currentDate, createsNativePanels: createsNativePanels,
             nativeEnvironment: nativeEnvironment, elapsedClock: elapsedClock, edgeScheduling: edgeScheduling,
             purpose: .production)
     }

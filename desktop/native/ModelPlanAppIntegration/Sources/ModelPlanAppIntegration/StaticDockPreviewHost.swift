@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import CoreGraphics
 import ModelPlanCore
 import ModelPlanShell
@@ -61,6 +62,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public typealias Appearance = @MainActor (DockInstrumentView, [DockInstrumentReading], SettingsPreferences) throws -> StaticDockGeometry
     public let purpose: DockHostPurpose
     public private(set) var isVisible = false
+    public private(set) var lastAppearanceError: Error?
     public var visibilityChanged: (() -> Void)?
     private func reportVisibility(_ visible: Bool) {
         guard visible != isVisible else { return }
@@ -197,6 +199,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var preferences = SettingsPreferences()
     private var catalogueKey = ""
     private var geometry = StaticDockGeometry(hoverRects: [])
+    /// Internal-only registration read used by synthetic offscreen evidence.
+    var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
+    /// Synthetic offscreen captures may select a deterministic backing scale.
+    var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, rendering = false, menuOpen = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -395,7 +401,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
-        let backingScale = destinationBackingScale()
+        let backingScale = captureBackingScaleForChecks.flatMap { (1...2).contains($0) ? $0 : nil } ?? destinationBackingScale()
         dockView.presentationBackingScale = backingScale
         alternateViews.forEach { $0.presentationBackingScale = backingScale }
         let displayFacts = environment()
@@ -408,6 +414,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
         }
         var appearanceFallback = false
+        lastAppearanceError = nil
         do {
             if let appearance {
                 let candidate = try appearance(dockView, rows, passPreferences)
@@ -423,6 +430,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         } catch {
             guard passIsCurrent(generation) else { return }
             appearanceFallback = appearance != nil
+            if appearanceFallback {
+                lastAppearanceError = error
+                Logger(subsystem: "ai.modelplan.dock", category: "appearance").error("Official Dock appearance failed: \(String(describing: error), privacy: .private)")
+            }
             try? dockView.applyCommunity(rows, locale: passPreferences.language.rawValue)
             geometry = .init(hoverRects: [dockView.bounds])
         }
