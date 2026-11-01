@@ -89,9 +89,9 @@ UTF-16 units. These bridge limits do not change the Go transport's 8 MiB cap.
 
 | Type | Additional fields and effect |
 | --- | --- |
-| `load` | Version 2 only; `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier}` are required with no extra fields. Once per page, after an authoritative engine context exists. Clears first and applies both states before emitting `ready`. |
+| `load` | Version 2 only; `appearance: {theme, locale, reduceMotion, reduceTransparency}` and `shell: {profile, attached, forcedClosed, tier, scope}` are required with no extra fields. Once per page, after an authoritative engine context exists. Clears first and applies both states before emitting `ready`. |
 | `appearance` | Exact fields `theme`, `locale`, `reduceMotion`, `reduceTransparency`; applies live without clearing displayed data. Theme remains night in v1. |
-| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed` and `tier` (`tall` or `compact`). The native-selected tier maps to the 890 or 640 web layout; forced-closed disables reopening. |
+| `shell` | Exact fields `profile` (`open` or `closed`), `attached`, `forcedClosed`, `tier` (`tall` or `compact`) and `scope` (`all` or a member display key). The native-selected tier maps to the 890 or 640 web layout; forced-closed disables reopening. |
 | `display` | `data: WireCockpitData`. Context must match exactly; no context is adopted from data. Render is synchronous, with no retained DTO/pending-render cache. |
 | `visibility` | `visible`, `occluded`, `key`: booleans. Defaults are inactive. Active requires DOM readiness, visible, unoccluded, key and `!document.hidden`. |
 | `clear` | No additional fields. New `viewRevision` must be greater. Clears private DOM, derived history-action IDs and animations before adopting context/emitting `cleared` with this request ID. A new epoch may restart generation; the same epoch cannot decrease it. Retired epochs/sessions cannot return. |
@@ -108,7 +108,7 @@ session only through that explicit clear, or by unloading and making a fresh pag
 
 The `ready` receipt additionally has `appearanceVersion: 2` and `capabilities: ["appearanceUpdates", "shellState", "shellActions"]`. Page responses are `ready`, `rendered`, `cleared` and `action`, with the same
 context/header IDs and the independent output sequence. Fixed actions are
-`chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle` (no arguments), `scopeSelect` with `scope` equal to `all` or a currently displayed subscription-member identity, and `openHistory` with a `tool` from
+`chooseSetup`, `openSettings`, `close`, `detach`, `putBack`, `shutterToggle` (no arguments), `scopeSelect` with `key` equal to `all` or a currently displayed subscription-member identity, and `openHistory` with a `tool` from
 the current displayed rows. Clear invalidates that action membership too. Native
 maps these to typed UI intents, never to a command/URL interpreter. No credential,
 consent mutation or plugin-install message exists in this protocol.
@@ -142,7 +142,7 @@ The owner-released G/P6 prototype at
 `1d3f82429f1b853314ee120d4bd0007f84fc051d` supplies the plate/port/engine/deck/tape
 hierarchy, layout calculation and CSS. [Provenance and exclusions](../../docs/borrowed/cockpit-web.md)
 record the MIT release and source hashes. Resource imports, vendor logos, mock
-bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO populates subscription-member quota readings and the summary. Unbacked faders and setup controls are hidden. Scope selection emits a bounded `scopeSelect` action; the native host must validate and consume it against the current display. Version-2 appearance and shell messages require a compatible native host; M3 owns its integration and repin.
+bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO populates subscription-member quota readings and the summary. Unbacked faders and setup controls are hidden. Scope selection emits a bounded `scopeSelect` action with `key`; the native host validates it against the current display, retains it for the cockpit session and returns it as `shell.scope`. The Dock does not follow cockpit scope in v1. Version-2 appearance and shell messages require a compatible native host; M3 owns its integration and repin.
 The empty canopy awaits U12 media. Native owner review still confirms final fidelity.
 
 The target App + WebContent CPU is at most **6% of one core** in the U11a scenario.

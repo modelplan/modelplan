@@ -120,17 +120,17 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
   assert.equal(f.bridge.receive(f.send('appearance',appearance),source),true);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,unknown:true}),source),false);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,reduceMotion:'yes'}),source),false);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall'}),source),true);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',extra:1}),source),false);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'compact',attached:true,forcedClosed:false,tier:'tall'}),source),false);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all'}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:true,forcedClosed:true,tier:'tall',scope:'all',extra:1}),source),false);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'compact',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),false);
 });
 test('shell actions are gated by native state and visibility',()=>{
   const f=fixture();
   assert.equal(f.bridge.action('putBack'),false);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall'}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),true);assert.equal(f.bridge.action('putBack'),false);
   assert.equal(f.bridge.action('close'),true);assert.equal(f.bridge.action('shutterToggle'),true);
-  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact'}),source),true);
+  assert.equal(f.bridge.receive(f.send('shell',{profile:'closed',attached:false,forcedClosed:true,tier:'compact',scope:'all'}),source),true);
   assert.equal(f.bridge.action('detach'),false);assert.equal(f.bridge.action('putBack'),true);assert.equal(f.bridge.action('shutterToggle'),false);
   assert.equal(f.bridge.action('close','extra'),false);
   assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:true}),source),true);
@@ -145,31 +145,31 @@ test('ready capabilities are present when DOM readiness follows load',()=>{
   assert.equal(events[0].appearanceVersion,2);assert.deepEqual(events[0].capabilities,['appearanceUpdates','shellState','shellActions']);
   const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false});
   assert.equal(bridge.receive(m,{...source,isMainFrame:false}),false);assert.equal(bridge.receive(m,source),true);assert.equal(bridge.receive(m,source),false);
-  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',viewRevision:'4'}),source),false);
+  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all',viewRevision:'4'}),source),false);
   assert.equal(bridge.receive(send('unload'),source),true);
-  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall'}),source),false);
+  assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'}),source),false);
 });
 
 test('frozen v2 load requires exact initial appearance and tiered shell before ready',()=>{
   const calls=[],events=[],view={clear(){calls.push('clear');},render(){},configure(x){calls.push(['appearance',x]);},updateAppearance(){},shell(x){calls.push(['shell',x]);},active(){},dispose(){}};
   const b=new CockpitBridge(pageId,source.origin,s=>events.push(JSON.parse(s)),view,()=>pageId),send=commands();
   const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false};
-  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact'};
+  const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact',scope:'all'};
   const base=JSON.parse(send('load',{appearance:a,shell}));base.version=2;
-  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
+  for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
   assert.equal(b.receive(JSON.stringify(base),source),true);
   assert.deepEqual(calls.filter(Array.isArray),[['appearance',a],['shell',shell]]);
   b.ready();assert.equal(events[0].version,2);assert.equal(events[0].appearanceVersion,2);
-  const update=JSON.parse(send('shell',{profile:'open',attached:false,forcedClosed:false,tier:'tall'}));update.version=2;
+  const update=JSON.parse(send('shell',{profile:'open',attached:false,forcedClosed:false,tier:'tall',scope:'all'}));update.version=2;
   assert.equal(b.receive(JSON.stringify(update),source),true);
-  assert.deepEqual(calls.filter(Array.isArray).at(-1),['shell',{profile:'open',attached:false,forcedClosed:false,tier:'tall'}]);
+  assert.deepEqual(calls.filter(Array.isArray).at(-1),['shell',{profile:'open',attached:false,forcedClosed:false,tier:'tall',scope:'all'}]);
 });
 
 test('scope selection only emits an exact currently displayed member or All',()=>{
   const f=fixture(),data=capture(),row=data.projection.rows[0],ref=row.accounts[0].subscriptionRef;
   assert.equal(f.bridge.action('scopeSelect','all'),false);
   assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
-  assert.equal(f.bridge.action('scopeSelect',ref),true);assert.equal(f.events.at(-1).scope,ref);assert.equal('tool' in f.events.at(-1),false);
+  assert.equal(f.bridge.action('scopeSelect',ref),true);assert.equal(f.events.at(-1).key,ref);assert.equal('tool' in f.events.at(-1),false);assert.equal('scope' in f.events.at(-1),false);
   assert.equal(f.bridge.action('scopeSelect','all'),true);assert.equal(f.bridge.action('scopeSelect','/secret'),false);
   const fallback=structuredClone(data);fallback.subscriptions=[];fallback.projection.rows[0].accounts[0].subscriptionRef=null;
   assert.equal(f.bridge.receive(f.send('display',{data:fallback}),source),true);
