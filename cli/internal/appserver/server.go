@@ -442,7 +442,9 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 		s.sendError(r.ID, wire.CodeBusy)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithValue(s.ctx, sessionContextKey{}, s.session), timeout)
+	base := context.WithValue(s.ctx, sessionContextKey{}, s.session)
+	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
+	ctx, cancel := context.WithTimeout(base, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
 		s.controls++
@@ -510,7 +512,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.Project(s.view.Projection)}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents])}
 				}
 				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
@@ -669,6 +671,7 @@ func (s *Server) readView(ctx context.Context) error {
 		s.rowsPending = s.subscribed
 	}
 	session, seq, subscribed := s.session, s.sequence, s.subscribed
+	eventsEnabled := s.clientCapabilities[CapabilityResetEvents]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -690,7 +693,7 @@ func (s *Server) readView(ctx context.Context) error {
 				s.rowsPending = false
 			}
 			s.mu.Unlock()
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.Project(v.Projection)}), v.Stamp, func(error) {
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled)}), v.Stamp, func(error) {
 				s.mu.Lock()
 				if s.sequence == seq {
 					s.rowsPending = true
