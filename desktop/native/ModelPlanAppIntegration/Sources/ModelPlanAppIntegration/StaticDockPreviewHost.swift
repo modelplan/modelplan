@@ -335,7 +335,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
             guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(preferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
-            let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 Option 方向键调整此订阅的顺序。"
+            let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
         do { try overflowTray.apply(entries) } catch { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
