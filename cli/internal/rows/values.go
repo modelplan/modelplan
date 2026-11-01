@@ -154,6 +154,16 @@ func modelScope(ids []string) (*ModelScope, bool) {
 	}
 	return &ModelScope{Models: result}, true
 }
+
+// SanitizeModelIDs applies the same reviewed vocabulary at every output
+// boundary. A non-nil unknown scope remains explicitly model-scoped.
+func SanitizeModelIDs(ids []string) []string {
+	scope, _ := modelScope(ids)
+	if scope == nil {
+		return nil
+	}
+	return scope.Models
+}
 func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 	result := []Window{}
 	for _, v := range raw {

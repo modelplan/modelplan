@@ -41,3 +41,32 @@ func TestProviderModelScopeAndManagedCache(t *testing.T) {
 		t.Fatalf("Gemini scope: %+v", gem)
 	}
 }
+
+func TestGeminiModelScopeNeverExportsUnreviewedIDs(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	var q geminiQuota
+	if err := json.Unmarshal([]byte(`{"buckets":[{"modelId":"synthetic-token-shaped-secret","remainingFraction":0.5},{"modelId":"gemini-2.5-pro","remainingFraction":0.8}]}`), &q); err != nil {
+		t.Fatal(err)
+	}
+	windows, ok := parseGeminiQuota(q, now)
+	if !ok || len(windows) != 2 {
+		t.Fatal("synthetic quota rejected")
+	}
+	if !reflect.DeepEqual(windows[0].ModelIDs, []string{"unknown"}) || !reflect.DeepEqual(windows[1].ModelIDs, []string{"gemini-2.5-pro"}) {
+		t.Fatalf("scope normalization: %+v", windows)
+	}
+	// A cache from an older writer can still contain an unreviewed value.
+	legacy := windows[0]
+	legacy.ModelIDs = []string{"synthetic-token-shaped-secret"}
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err = json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if string(fields["modelIds"]) != `["unknown"]` {
+		t.Fatalf("unsafe scope output: %s", fields["modelIds"])
+	}
+}

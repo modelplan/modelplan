@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
 	"os"
 	"sort"
@@ -84,6 +85,14 @@ type Window struct {
 	observedUsedPercent *float64 // retained only in memory for clock-independent snapshot revisions
 	observedUsedUSD     *float64
 	recent              []Sample // earlier readings of this window in its current cycle, oldest first
+}
+
+// MarshalJSON protects all quota JSON and cache output, including legacy
+// cached values written before provider identifiers were normalized.
+func (w Window) MarshalJSON() ([]byte, error) {
+	type windowJSON Window
+	w.ModelIDs = rows.SanitizeModelIDs(w.ModelIDs)
+	return json.Marshal(windowJSON(w))
 }
 
 // Sample is one earlier reading of a window, kept to measure the recent rate of use.
