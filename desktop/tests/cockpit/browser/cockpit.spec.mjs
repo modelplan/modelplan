@@ -162,6 +162,8 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
 });
 for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
+    // Backlog: [post-v1 day theme](../../../cockpit/README.md#post-v1-day-theme).
+    test.skip(theme==='day','day theme not in v1; owner 2026-11-01');
     await page.setViewportSize({width:636,height:profile==='full'?890:640});await page.emulateMedia({reducedMotion:'reduce'});
     const {send}=await open(page,{...appearance,theme,locale},{...shell,tier:profile==='full'?'tall':'compact'});await display(page,send);
     await page.evaluate(()=>document.fonts.ready);

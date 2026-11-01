@@ -167,3 +167,9 @@ limits, named pools, model-scoped windows and unknown limits stay in Other. The
 wire schema enumerates roles but defines `limitKey` as a string; the producer
 allow-list is in `cli/internal/rows/catalogue.go`. The schema rejects an empty
 `models` array; missing `modelScope` denotes no model restriction.
+
+## Post-v1 day theme
+
+Restore the four full/compact English/Chinese day visual comparisons when the day
+theme returns to normal entry. Keep their existing baselines for owner review;
+the v1 WebKit gate explicitly skips them under the owner decision of 2026-11-01.
