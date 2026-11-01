@@ -14,8 +14,14 @@ private actor S4RowsClient: EngineClient {
     init(store:EngineStore,rows:WireRowsSnapshot) { self.store=store;self.rows=rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:rows),delivery:context),invalidRowCount:0))
         return context
+    }
+    func replaceRows(_ rows:WireRowsSnapshot) async throws {
+        let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:2)
+        await store.consume(.context(next))
+        await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:0))
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -154,6 +160,64 @@ private actor S4RowsClient: EngineClient {
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
         try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
         try require(card.sourceAndAge.contains("Observation time unknown"),"missing observation must not use rendering time")
+        await entry.composition.stop()
+    }
+    static func collisions(capture:URL) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        let base=(row["accounts"] as! [[String:Any]])[0]
+        let original=(base["windows"] as! [[String:Any]])[0]
+        let specs:[(String?,String,Double)]=[("0123456789abcdef","saved_login_api",70),(nil,"saved_login_api",20),(nil,"saved_login_api",30),(nil,"runtime_rpc",40)]
+        row["accounts"]=specs.enumerated().map { index,spec in
+            var account=base,window=original
+            account["subscriptionRef"]=spec.0.map{$0 as Any} ?? NSNull()
+            account["accountLocator"]=String(repeating:String(index+1),count:16)
+            account["route"]=spec.1;account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+            window["id"]="quota";window["role"]="session";window["durationSeconds"]=18000
+            window["current"]=true;window["remainingPercent"]=spec.2;window["resetsAt"]="2099-01-01T00:00:00Z";window["validUntil"]="2099-01-01T00:00:00Z"
+            window["limitKey"]="main";window["poolKey"]="main";account["windows"]=[window]
+            return account
+        }
+        row["state"]="fresh";row["surfaces"]=["dock","menu","settings"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        projection["rows"]=[row];root["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-collisions-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        let inputs=entry.composition.presentedContent.snapshot.inputs
+        try require(inputs.map(\.id) == ["0123456789abcdef","codex#saved_login_api#1","codex#saved_login_api#2","codex#runtime_rpc"],"colliding unbound members need separate CLI-order keys, counting only the colliding members")
+        try require(inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2","synthetic · Account 3","synthetic · Account 4"],"every nozzle must retain its duplicate-account tag")
+        try require(inputs.compactMap(\.duplicateAccountTag) == [1,2,3,4],"official appearance must receive structured duplicate tags without parsing names")
+        try require(inputs.compactMap{try? DockInstrumentProjection.evaluate($0,now:Date()).remainingPercent} == [70,20,30,40],"collision handling must not copy a source total into multiple members")
+        let catalogue=entry.composition.accountMembers
+        let temporary:Set<String>=["codex#saved_login_api#1","codex#saved_login_api#2"]
+        try require(catalogue.unstableKeys == temporary && catalogue.members.map(\.isStable) == [true,false,false,true],"only the colliding unbound keys are unstable")
+        try require(catalogue.members.filter{!$0.isStable}.allSatisfy {
+            $0.persistenceDisabledReason?.english == "can't be told apart until the account is verified" && $0.persistenceDisabledReason?.chinese == "账号验证前无法区分"
+        },"Settings must receive the exact localized persistence-disabled reason")
+        var candidate=SettingsPreferences()
+        candidate.subscriptionSettings["0123456789abcdef"] = .init(alias:"Stable")
+        candidate.subscriptionSettings["codex#saved_login_api#1"] = .init(alias:"Temporary one",percentagePin:.fiveHour)
+        candidate.subscriptionSettings["codex#saved_login_api#2"] = .init(alias:"Temporary two")
+        candidate.subscriptions = .init(order:["codex#saved_login_api#1","0123456789abcdef","codex#saved_login_api#2"],hiddenIDs:["codex#saved_login_api#1","0123456789abcdef"])
+        let durable=catalogue.persistentPreferences(candidate)
+        try require(Set(durable.subscriptionSettings.keys) == ["0123456789abcdef"] && durable.subscriptions.order == ["0123456789abcdef"] && durable.subscriptions.hiddenIDs == ["0123456789abcdef"],"the writer guard must exclude every unstable choice while retaining stable choices")
+        var accounts=row["accounts"] as! [[String:Any]]
+        accounts[1]["subscriptionRef"]="fedcba9876543210";row["accounts"]=accounts
+        projection["rows"]=[row];root["projection"]=projection;root["sequence"]=8
+        let verified=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        try await (entry.composition.client as! S4RowsClient).replaceRows(verified)
+        let updated=entry.composition.accountMembers
+        let promoted=updated.members.first{$0.id == "fedcba9876543210"}
+        try require(promoted?.isStable == true && promoted?.persistenceDisabledReason == nil,"a verified ref must immediately replace its unstable key")
+        let afterVerification=updated.migratingRowPreferences(candidate)
+        try require(afterVerification.subscriptionSettings["fedcba9876543210"] == nil && afterVerification.subscriptionSettings["codex#saved_login_api#1"] == nil && afterVerification.subscriptionSettings["codex#saved_login_api#2"] == nil,"verification must not migrate any old unstable choice")
+        await entry.composition.store.consume(.clearPrivateViews(.init(revision:3,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        try require(entry.composition.accountMembers.persistentPreferences(candidate).subscriptionSettings.count == 1,"the unstable namespace must remain non-persistent even after rows are cleared")
         await entry.composition.stop()
     }
 }

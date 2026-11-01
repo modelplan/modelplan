@@ -15,4 +15,8 @@ import XCTest
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.unknownFacts(capture:capture)
     }
+    func testNormalEntryRetainsCollidingUnboundMemberNozzles() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.collisions(capture:capture)
+    }
 }

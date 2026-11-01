@@ -88,6 +88,7 @@ import ModelPlanSettings
         let row=member.row
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
         input.vendorResourceKey = row.vendorKey
+        input.duplicateAccountTag=member.duplicateTag
         let rowCurrent = row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)

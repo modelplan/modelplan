@@ -29,6 +29,7 @@ public struct DockWorkingSignal: Sendable {
 }
 public struct DockInstrumentInput: Sendable {
     public var id: String, name: String, alias: String?, vendorResourceKey: String?
+    public var duplicateAccountTag:Int?
     public var windows: [DockQuotaWindowInput]
     public var selectedWindowID: String?
     public var showUsedPercent = false
@@ -43,6 +44,7 @@ public struct DockQuotaArc: Equatable, Sendable {
 }
 public struct DockInstrumentReading: Sendable {
     public let subscriptionID: String, name: String, alias: String?, vendorResourceKey: String?
+    public let duplicateAccountTag:Int?
     public let outer: DockQuotaArc?, inner: DockQuotaArc?
     public let selectedWindowID: String?, selectedWindowLabel: String?, selectedResetAt: Date?
     public let remainingPercent: Double?, readout: String, status: DockQuotaStatus
@@ -86,7 +88,7 @@ public enum DockInstrumentProjection {
         }
         let working=input.working.map{$0.bindingVerified && $0.fresh && $0.observedOutput && $0.subscriptionID==input.id} == true && input.dataState == .fresh
         func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
-        return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,
+        return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,selectedResetAt:selected?.resetsAt,
             remainingPercent:remaining,readout:text,status:selectedStatus,dataState:input.dataState,
             unavailableReason:remaining == nil ? input.unavailableReason : nil,timeLeftFraction:time,isWorking:working,jetEligible:working && remaining != nil)
