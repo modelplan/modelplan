@@ -42,6 +42,8 @@ import ModelPlanCommunityHost
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
         catch { /* Accepted client events own errors and current data, never the Task completion. */ }
+        do { _ = try await client.consent(timeout: nil) }
+        catch { /* The accepted event stream owns consent state and failures. */ }
     }
     public func refresh() async {
         do { _ = try await client.refresh(try .init(), timeout: nil) }
