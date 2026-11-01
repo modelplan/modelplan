@@ -40,6 +40,13 @@ private actor SettingsJourneyClient: EngineClient {
     func unregister() throws { state = .off }
 }
 
+@MainActor private final class JourneyNotificationService: SettingsNotificationAuthorizationServing {
+    var state: NotificationAuthorization = .notDetermined
+    private(set) var requests = 0
+    func authorization() async -> NotificationAuthorization { state }
+    func requestAuthorization() async -> NotificationAuthorization { requests += 1; state = .authorized; return state }
+}
+
 @MainActor private final class JourneyFirstRunSurface: SettingsWindowSurface {
     private(set) var shows = 0
     func prepare() async {}
@@ -72,6 +79,8 @@ private actor SettingsJourneyClient: EngineClient {
 
         let first = try makeApp()
         let login = JourneyLoginService()
+        let notifications = JourneyNotificationService()
+        first.notificationAuthorizationService = notifications
         first.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: login))
         let firstRun = JourneyFirstRunSurface()
         first.makeFirstRunSurface = { _ in firstRun }
@@ -84,6 +93,14 @@ private actor SettingsJourneyClient: EngineClient {
         let editor = first.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
+        XCTAssertEqual(notifications.requests, 0, "Restoration must not request notification authorization")
+        _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
+        for _ in 0..<40 {
+            if editor.context.notificationAuthorization == .authorized { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertEqual(notifications.requests, 1, "Only explicit opt-in requests notification authorization")
+        XCTAssertEqual(editor.context.notificationAuthorization, .authorized)
         _ = try await editor.commit(SettingsB21Edit.login(true))
         XCTAssertEqual(login.registrations, 1, "An explicit login choice reaches the system-service adapter")
         XCTAssertEqual(editor.context.capabilities.login, .enabled, "Settings reports the observed service result")

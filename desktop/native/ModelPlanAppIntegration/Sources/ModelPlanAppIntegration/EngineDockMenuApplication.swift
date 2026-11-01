@@ -25,6 +25,7 @@ import ModelPlanShell
     private var firstRunFlow: CommunityConnectionFlow?
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
+    public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
