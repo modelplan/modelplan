@@ -4,6 +4,7 @@ import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanShell
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -14,6 +15,7 @@ import ModelPlanSettings
     private var interactionBinding: EngineDockInteractionBinding?
     public let foundationStore: SettingsStore
     private let contextSource: EngineSettingsContext
+    private let appBundleURL: URL
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
@@ -25,6 +27,15 @@ import ModelPlanSettings
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
+    private var firstRunFlow: CommunityConnectionFlow?
+    /// Injection point for the OS login service; the normal entry supplies the live adapter.
+    public var loginServiceAdapter: CommunityLoginServiceAdapter?
+    public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    private let notificationConsumer = SettingsNotificationConsumer()
+    /// The default uses the native first-run window. Synthetic composition tests
+    /// may supply an in-memory surface before preparation; no system service runs.
+    public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
+    public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
@@ -37,6 +48,7 @@ import ModelPlanSettings
         self.composition = composition
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
+        self.appBundleURL = bundleURL
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
         self.contextSource = contextSource
@@ -99,6 +111,39 @@ import ModelPlanSettings
         settings.update(environment: current)
     }
     public func prepare() async {
+        if loginServiceAdapter == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
+            loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(bundle: bundle))
+        }
+        if notificationAuthorizationService == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == appBundleURL.standardizedFileURL,
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL,
+           bundle.bundleIdentifier != nil, bundle.bundleURL.pathExtension == "app" {
+            notificationAuthorizationService = SystemNotificationAuthorizationService()
+        }
+        let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
+        guard !terminating else { return }
+        notificationConsumer.observeAuthorization(observedAuthorization)
+        var context = settings.editor.context
+        context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
+        context.notificationAuthorization = observedAuthorization
+        if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
+        if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
+            context.unavailableControls.removeValue(forKey: .notificationConsent)
+        }
+        for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
+            context.unavailableControls.removeValue(forKey: key)
+        }
+        settings.update(context: context)
+        settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
+        if firstRunFlow == nil {
+            firstRunFlow = try? CommunityConnectionFlow(application: settings,
+                canPresent: { [weak self] in self?.terminating == false },
+                showSettings: { [weak self] pane in await self?.settingsHost.present(paneID: pane) },
+                activate: activateSettings, scopeConsentEntry: scopeConsentEntry,
+                makeFirstRun: makeFirstRunSurface, makeFirstRunWithConsent: makeFirstRunSurfaceWithConsent)
+        }
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
@@ -109,6 +154,47 @@ import ModelPlanSettings
         composition.dock.setPresentationAllowed(true)
         interactionBinding?.start()
     }
+    private func dispatchHostRequest(_ request: SettingsHostRequest) {
+        guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
+        if let adapter = loginServiceAdapter {
+            let result = adapter.handle(request, current: current, mayChangeLoginItem: true)
+            if result != .unhandled {
+                var context = settings.editor.context
+                context.capabilities.login = adapter.observedState
+                settings.update(context: context)
+            }
+        }
+        switch request.intent {
+        case .notificationConsentChanged:
+            let effect = notificationConsumer.committedConsent(request, snapshot: current)
+            if case .requestAuthorization(let token) = effect, let service = notificationAuthorizationService {
+                Task { [weak self] in
+                    let observed = await service.requestAuthorization()
+                    guard let self, !self.terminating else { return }
+                    self.notificationConsumer.receivedAuthorization(observed, request: token)
+                    var context = self.settings.editor.context
+                    context.notificationAuthorization = self.notificationConsumer.policy.authorization
+                    self.settings.update(context: context)
+                }
+            }
+        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .firstRunCompleted(let effects, _):
+            for effect in effects {
+                switch effect {
+                case .revealDock: composition.dock.setPresentationAllowed(true)
+                case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
+                case .openCockpit: showConsole()
+                case .closeFirstRunPopup, .latchOptionHelp: break
+                }
+            }
+        default:
+            // Shortcut, notification delivery and help actions remain explicitly deferred
+            // in this draft until their owners supply production consumers.
+            break
+        }
+    }
+    /// The same restore used by the real launch; it never grants access itself.
+    public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -130,7 +216,11 @@ import ModelPlanSettings
         }) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        Task { await prepare(); guard !terminating else { return }; allowDockPresentation(); renderMenu(); await composition.start() }
+        Task {
+            await prepare(); guard !terminating else { return }
+            allowDockPresentation(); renderMenu(); await composition.start()
+            guard !terminating else { return }; await restoreFirstRunIfNeeded()
+        }
     }
     private func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english
@@ -161,9 +251,9 @@ import ModelPlanSettings
     @objc private func refreshRows() { Task { await composition.refresh() } }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true
+        terminating = true; settings.editor.onHostRequest = nil
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
-        interactionBinding?.stop(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
+        interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         Task { await composition.stop(); sender.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
     }
