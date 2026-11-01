@@ -72,9 +72,11 @@ private actor SettingsJourneyClient: EngineClient {
         let dock = first.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
         XCTAssertFalse(dock.interactionEnvironment().active, "The community factory has no official appearance/projection yet")
+        let cockpitButton = try XCTUnwrap(dock.dockView.superview?.subviews.compactMap { $0 as? NSButton }.first)
+        XCTAssertEqual(cockpitButton.accessibilityLabel(), "Open cockpit")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
-        XCTAssertTrue(englishMenu.items.contains { $0.title == "Dock readings…" })
+        XCTAssertTrue(englishMenu.items.contains { $0.title == "Cockpit…" })
         XCTAssertFalse(englishMenu.items.contains { $0.title.contains(" / ") })
         let editor = first.settingsHost.application.editor
         first.showConsole()
@@ -121,9 +123,10 @@ private actor SettingsJourneyClient: EngineClient {
         }
         XCTAssertEqual(dock.currentMenuBarPreferences?.dockEdge, .left, "The dragged edge applies without a restart")
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
-        XCTAssertTrue(chineseMenu.items.contains { $0.title == "挂件读数…" })
+        XCTAssertTrue(chineseMenu.items.contains { $0.title == "驾驶舱…" })
         XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })
         await first.composition.stop()
 

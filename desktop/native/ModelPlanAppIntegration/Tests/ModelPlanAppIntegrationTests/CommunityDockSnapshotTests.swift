@@ -555,6 +555,7 @@ import ModelPlanSettings
             var opens = 0; host.showConsole = { opens += 1 }
             let coordinator = SettingsApplicationCoordinator(store: try SettingsStore(url: directory.appendingPathComponent("settings.json")), context: context) { host.apply($0) }
             await coordinator.reload()
+            if !hide { _ = try await coordinator.editor.commit(.language(.english)) }
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
             host.dockView.onAction?(.subscription("a"))
@@ -562,7 +563,8 @@ import ModelPlanSettings
             enter("other", revision); enter("a", revision + 1)
             XCTAssertEqual(opens, 0, "identity/revision mismatches cannot enter")
             let live = try retainedConsoleButton(in: host.card)
-            XCTAssertEqual(live.title, "控制台")
+            XCTAssertEqual(live.title, hide ? "驾驶舱" : "Cockpit")
+            XCTAssertTrue(host.menu().items.contains { $0.title == (hide ? "驾驶舱…" : "Cockpit…") })
             _ = (try XCTUnwrap(live.target as? NSObject)).perform(try XCTUnwrap(live.action), with: live)
             XCTAssertEqual(opens, 1, "a current selector still enters once")
             opens = 0
