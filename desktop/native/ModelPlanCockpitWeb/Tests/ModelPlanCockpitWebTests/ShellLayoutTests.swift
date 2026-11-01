@@ -47,6 +47,29 @@ final class ShellLayoutTests: XCTestCase {
         XCTAssertNil(session.origin(for: "0")); XCTAssertEqual(session.origin(for: "8"), .init(x: 8, y: 8))
         XCTAssertTrue(session.detached); XCTAssertTrue(session.shutterClosed)
     }
+    func testInvalidPlacementCannotAdmitAFrame() {
+        let anchor = CGRect(x:700,y:1000,width:20,height:22)
+        for usable in [CGRect.zero,CGRect.null,CGRect.infinite] {
+            XCTAssertNil(CockpitShellLayout.fit(usable:usable,anchor:anchor,shutterClosed:false),"Invalid usable area: null=\(usable.isNull), infinite=\(usable.isInfinite), empty=\(usable.isEmpty)")
+        }
+        XCTAssertNil(CockpitShellLayout.fit(usable:.init(x:0,y:0,width:1400,height:1000),anchor:.init(x:CGFloat.nan,y:1000,width:20,height:22),shutterClosed:false))
+    }
+    func testAttachedAnchorClampsBothEdgesOfAnOffOriginDisplay() throws {
+        let usable = CGRect(x:-1440,y:100,width:1440,height:1000)
+        let left = try XCTUnwrap(CockpitShellLayout.fit(usable:usable,anchor:.init(x:-3000,y:1100,width:20,height:22),shutterClosed:false))
+        let right = try XCTUnwrap(CockpitShellLayout.fit(usable:usable,anchor:.init(x:2000,y:1100,width:20,height:22),shutterClosed:false))
+        XCTAssertEqual(left.frame.minX,-1440)
+        XCTAssertEqual(right.frame.maxX,0)
+        XCTAssertEqual(left.frame.maxY,1094)
+        XCTAssertEqual(right.frame.size,left.frame.size)
+    }
+    @MainActor func testUpdatingOneArrangementDoesNotConsumeExtraMemorySlots() {
+        let session = CockpitShellSession()
+        for index in 0..<12 { session.remember(.init(x:index,y:index),arrangement:"same") }
+        for index in 0..<7 { session.remember(.init(x:index,y:index),arrangement:"other-\(index)") }
+        XCTAssertEqual(session.origin(for:"same"),.init(x:11,y:11))
+        XCTAssertEqual(session.origin(for:"other-0"),.zero)
+    }
     func testPinnedLegacyPageIsRejectedBeforeQueryAuthority() throws {
         let state = CockpitBridgeState(context: try .init(sessionID: UUID(), storeEpoch: "synthetic", generation: 1))
         let load = try state.load(.init(theme: .night, locale: .en, profile: .full, reduceMotion: true), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
