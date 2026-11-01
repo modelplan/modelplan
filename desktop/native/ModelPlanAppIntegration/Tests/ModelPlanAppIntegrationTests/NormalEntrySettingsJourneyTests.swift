@@ -62,7 +62,7 @@ private actor SettingsJourneyClient: EngineClient {
         let dock = first.composition.dock
         let editor = first.settingsHost.application.editor
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "codex" }, "The Settings catalogue must reflect the Dock's detected subscription")
+        XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
         let initialNozzle = dock.dockView.requestedNozzleDiameter
         _ = try await editor.commit(SettingsB20Edit.size(.large))
         XCTAssertEqual(dock.currentMenuBarPreferences?.size, .large)
