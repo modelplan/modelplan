@@ -1636,7 +1636,8 @@
       "desktop/official-visuals/dock/RegressionBaselines/native-working-critical-pose5.png": "e865c5d792c9497503006a21b0a328fbc83f8c8f9cf3a8f6a47a64e3349b57d9",
       "desktop/official-visuals/dock/RegressionBaselines/native-working-critical-pose6.png": "4e300b0b1a8381e6c8e870ed1a05af9826cfbad2d8726b7592091f432afc1a79",
       "desktop/official-visuals/dock/RegressionBaselines/native-working-critical-pose7.png": "c0553dced98d98873d4bcd3465e4ba1c13a302cd0e815ff90c0bce305a688647",
-      "desktop/official-visuals/dock/RegressionBaselines/native-working-critical-pose8.png": "dac8d2c9d865c76c1063c8957fa421285313a87224a247aaee17b07833c77700"
+      "desktop/official-visuals/dock/RegressionBaselines/native-working-critical-pose8.png": "dac8d2c9d865c76c1063c8957fa421285313a87224a247aaee17b07833c77700",
+      "desktop/official-visuals/dock/RegressionBaselines/native-empty-44-right.png": "7583303be7f88168f27abf43b47575fee97fb47eadb81282e57d41f7b9ed793b"
     },
     "historicalMit": {
       "desktop/official-visuals/HISTORICAL-MIT.txt": "6d98a3aa9160bbfd0ee9420a2cec649267ea4c3513436c32306b922666555abe",

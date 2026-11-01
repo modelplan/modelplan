@@ -18,8 +18,9 @@ import ModelPlanOfficialDock
             var galleryCapture: S1Manifest.Capture { .init(file: file, scenario: scenario, size: size, edge: edge, count: count, theme: theme, state: state, sha256: sha256, clip: clip) }
         }
         struct Flame: Decodable { let file, sha256: String }
+        struct Empty: Decodable { let file, sha256: String; let skinBounds: [Double] }
         let schemaVersion: Int; let sourceCommit, prototypeSourceCommit: String
-        let captures: [Capture]; let flamePoses: [Flame]
+        let captures: [Capture]; let flamePoses: [Flame]; let emptyCases: [Empty]
     }
     public enum Failure: Error, CustomStringConvertible {
         case fixture(String), appearance(String), geometry(String), pixels(String)
@@ -63,15 +64,47 @@ import ModelPlanOfficialDock
         guard mean <= 3, worst <= 32 else { throw Failure.pixels("\(name): mean \(mean), worst 16px tile \(worst)") }
         return (mean, worst)
     }
+    /// Captures only a synthetic detached default-size empty Dock; never opens a window.
+    private static func renderEmpty() async throws -> (Data, [Double]) {
+        let now = ISO8601DateFormatter().date(from: "2026-10-20T14:05:00Z")!
+        let display = DockDisplayArea(id: "s1-synthetic", frame: .init(x: 0, y: 0, width: 1470, height: 956), visibleFrame: .init(x: 0, y: 0, width: 1470, height: 930))
+        let environment = DockEdgeEnvironment(displays: [display], layouts: [], primaryDisplayID: "s1-synthetic")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("s1-empty-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.dockAlongFraction = 0.5; $0.language = .chinese; $0.autoHide = false }
+        let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+        defer { host.close() }; host.captureBackingScaleForChecks = 2; host.dockView.zaiMarkEnabled = true
+        host.setDockContentProvider(S1SyntheticProvider(count: 0, now: now))
+        let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }; await coordinator.reload(); host.setPresentationAllowed(true)
+        guard host.lastAppearanceError == nil, let image = host.dockView.presentedImageForChecks,
+              let skin = host.dockView.presentedSkinForChecks, skin.stations.count == 1,
+              skin.stations[0].placeholderLabel == "?", skin.stations[0].overflowCount == nil,
+              skin.stations[0].placeholderStyle != nil, host.dockView.emptyStationRectForChecks != nil,
+              let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw Failure.appearance("empty station") }
+        return (png, [skin.bounds.minX, skin.bounds.minY, skin.bounds.width, skin.bounds.height].map(Double.init))
+    }
+    /// Explicit, non-overwriting baseline capture; invoked only by the S1 evidence tool.
+    public static func captureEmpty(outputPath: String) async throws {
+        _ = NSApplication.shared
+        let output = URL(fileURLWithPath: outputPath, isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
+        let (image, bounds) = try await renderEmpty()
+        try image.write(to: output.appendingPathComponent("native-empty-44-right.png"), options: .withoutOverwriting)
+        let data = try JSONSerialization.data(withJSONObject: ["file":"native-empty-44-right.png", "sha256":hash(image), "skinBounds":bounds], options: [.prettyPrinted,.sortedKeys])
+        try data.write(to: output.appendingPathComponent("empty.json"), options: .withoutOverwriting)
+        print("PASS synthetic empty capture sha256=\(hash(image))")
+    }
     public static func run(baselinePath: String) async throws {
         _ = NSApplication.shared
         let root = URL(fileURLWithPath: baselinePath, isDirectory: true)
         let fixtureBytes = try Data(contentsOf: root.appendingPathComponent("fixtures.json"))
-        guard hash(fixtureBytes) == "0c4db840935e47e7767c231489e3bf99175d62c8b11bb943245c43fe9af7f1c3" else { throw Failure.fixture("manifest hash") }
+        guard hash(fixtureBytes) == "d95ac84ccfca2465cb3d7e635fbb290e59894b7c7106503cfa0ebdc0987da67d" else { throw Failure.fixture("manifest hash") }
         let fixture = try JSONDecoder().decode(Fixture.self, from: fixtureBytes)
         guard fixture.schemaVersion == 1, fixture.sourceCommit == "fc87088f2c3e67d9ab0aefc2f9f90d6c315b6657",
               fixture.prototypeSourceCommit == "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
-              fixture.captures.count == 36, fixture.flamePoses.count == 27,
+              fixture.captures.count == 36, fixture.flamePoses.count == 27, fixture.emptyCases.count == 1,
               Set(fixture.captures.map(\.file)).count == 36, Set(fixture.flamePoses.map(\.file)).count == 27 else { throw Failure.fixture("inventory") }
         let expectedScenes = Set(["right", "bottom"].flatMap { edge in [1, 4, 7].flatMap { count in [36, 44, 52].flatMap { size in ["dark", "light"].map { "\(edge)-\(count)-\(size)-\($0)" } } } })
         guard Set(fixture.captures.map { "\($0.edge)-\($0.count)-\($0.size)-\($0.theme)" }) == expectedScenes else { throw Failure.fixture("scene matrix") }
@@ -103,6 +136,13 @@ import ModelPlanOfficialDock
             worstMean = max(worstMean, mean); worstTile = max(worstTile, tile)
             print("PASS \(item.file) mean=\(mean) worstTile=\(tile)")
         }
+        let empty = fixture.emptyCases[0]
+        let emptyReference = try verified(empty.file, hash: empty.sha256, root: root)
+        let (emptyImage, emptyBounds) = try await renderEmpty()
+        guard empty.skinBounds.count == 4, zip(emptyBounds, empty.skinBounds).allSatisfy({ abs($0 - $1) <= 0.01 }) else { throw Failure.geometry("empty station bounds") }
+        let (emptyMean, emptyTile) = try compare(emptyReference, emptyImage, name: empty.file)
+        worstMean = max(worstMean, emptyMean); worstTile = max(worstTile, emptyTile)
+        print("PASS \(empty.file) mean=\(emptyMean) worstTile=\(emptyTile)")
         let poses = Dictionary(uniqueKeysWithValues: fixture.flamePoses.map { ($0.file, $0.sha256) })
         for (state, status) in [("normal", DockQuotaStatus.normal), ("warning", .warning), ("critical", .critical)] {
             let store = try SettingsStore(url: tmp.appendingPathComponent("flame-\(state).json"))
@@ -134,6 +174,6 @@ import ModelPlanOfficialDock
                 print("PASS \(name) mean=\(mean) worstTile=\(tile)")
             }
         }
-        print("PASS 36 accepted Dock captures and 27 flame poses; worst mean=\(worstMean)/255, worst tile=\(worstTile)/255")
+        print("PASS 36 accepted Dock captures, 1 empty station and 27 flame poses; worst mean=\(worstMean)/255, worst tile=\(worstTile)/255")
     }
 }
