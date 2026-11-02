@@ -44,7 +44,7 @@ public struct SettingsStructure: Equatable, Sendable {
     /// Confirmed task65 data table; this is not an artwork or native-window release.
     public static let task65 = SettingsStructure(provisional: [
         .init(id: "general", title: .init("General", "通用"), groups: [Settings65Homes.general]),
-        .init(id: "dock", title: .init("Dock", "挂件"), groups: Settings65Homes.dock),
+        .init(id: "dock", title: .init("Quota Widget", "额度挂件"), groups: Settings65Homes.dock),
         .init(id: "cockpit", title: .init("Cockpit", "驾驶舱"), groups: [Settings65Homes.cockpit]),
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [Settings65Homes.appearance]),
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),

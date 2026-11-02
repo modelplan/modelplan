@@ -19,7 +19,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.motion, .system); XCTAssertEqual(p.transparency, .system)
         XCTAssertEqual(p.percentageMode, .remaining); XCTAssertTrue(p.showPercentages)
         XCTAssertEqual(p.redBelow, 25); XCTAssertTrue(p.sliverAlert)
-        XCTAssertTrue(p.showDock); XCTAssertTrue(p.autoHide); XCTAssertEqual(p.revealMilliseconds, 150)
+        XCTAssertTrue(p.showDock); XCTAssertFalse(p.autoHide); XCTAssertEqual(p.revealMilliseconds, 150)
         XCTAssertFalse(p.showOverFullscreen); XCTAssertFalse(p.followActiveDisplay)
         XCTAssertEqual(p.menuDisplay, .icon); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
@@ -28,6 +28,14 @@ final class PreferencesTests: XCTestCase {
             XCTAssertThrowsError(try JSONDecoder().decode(SettingsPreferences.self, from: Data(bad.utf8)), bad)
         }
     }
+    func testExplicitAutoHideOptInSurvivesRestart() async throws {
+        let url = try file(), first = try SettingsStore(url: url)
+        _ = try await first.update { $0.autoHide = true }
+        let restarted = try SettingsStore(url: url)
+        let saved = await restarted.snapshot().preferences
+        XCTAssertTrue(saved.autoHide, "An explicit auto-hide opt-in must survive restart")
+    }
+
     func testRestartRoundTripsEveryChoiceAndOnboarding() async throws {
         let url = try file(), store = try SettingsStore(url: url)
         let snapshot = try await store.update { p in

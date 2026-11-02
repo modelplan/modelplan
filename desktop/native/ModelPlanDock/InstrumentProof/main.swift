@@ -506,7 +506,7 @@ struct NativeFailure:Error {let message:String}
     try require(interaction.presentation?.card == .hidden && interactionScheduler.deadline==0.25,"native card controller arms250ms once")
     let retiredCardTimer=interactionScheduler.saved[0]
     interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
-    interaction.click("a");interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
+    interaction.click("a");interaction.setCardPinned(true,id:"a");interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
     try require(interaction.presentation?.card == .pinned("a"),"native cockpit suppression retains pin model")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")
     interaction.stop();let stoppedCardPaints=interactionPaints;retiredCardTimer()

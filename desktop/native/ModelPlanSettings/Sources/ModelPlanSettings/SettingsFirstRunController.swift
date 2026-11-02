@@ -3,6 +3,21 @@ import AppKit
 
 @MainActor private final class FirstRunDocument: NSView { override var isFlipped: Bool { true } }
 
+/// Keep long localized checkbox labels visible after the scroll document narrows.
+@MainActor private final class FirstRunWrappingCheckbox: NSButton {
+    override var intrinsicContentSize: NSSize {
+        let baseline = super.intrinsicContentSize
+        guard bounds.width > 1, let cell else { return baseline }
+        let measured = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: bounds.width, height: 10_000))
+        return NSSize(width: NSView.noIntrinsicMetric, height: max(baseline.height, ceil(measured.height)))
+    }
+    override func setFrameSize(_ newSize: NSSize) {
+        let oldWidth = frame.width
+        super.setFrameSize(newSize)
+        if abs(oldWidth - newSize.width) > 0.5 { invalidateIntrinsicContentSize() }
+    }
+}
+
 /// One-page setup over the app's existing editor. Navigation/help effects go to its one host receiver.
 @MainActor public final class SettingsFirstRunController: NSWindowController, NSWindowDelegate {
     public let editor: SettingsEditor
@@ -13,9 +28,9 @@ import AppKit
     private var scopeUnavailable = false
     public private(set) var errorMessage: String?
     let doneButton = NSButton(), helpButton = NSButton()
-    let loginButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+    let loginButton: NSButton = FirstRunWrappingCheckbox(checkboxWithTitle: "", target: nil, action: nil)
     private(set) var readerButtons: [OptionalReaderID: NSButton] = [:]
-    private let titleLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSTextField(wrappingLabelWithString: "")
     private let privacy = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
@@ -37,7 +52,7 @@ import AppKit
         _ = NSApplication.shared
         let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
                               styleMask: [.titled,.closable,.resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: 900, height: 500)
+        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: FirstRunLayoutMetrics.minimumWindowWidth, height: FirstRunLayoutMetrics.minimumWindowHeight)
         super.init(window: window); window.delegate = self
         build(window); refreshEnabled()
     }
@@ -67,13 +82,22 @@ import AppKit
             do {
                 try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
                 scopeUnavailable = false; errorMessage = nil
-                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refreshEnabled() } }
+                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in
+                    self?.refreshEnabled()
+                    Task { @MainActor [weak self] in
+                        await Task.yield()
+                        guard let self, self.active else { return }
+                        self.scopePresentation?.refreshLayoutAndFocus(followedBy: self.loginButton)
+                    }
+                } }
             } catch { scopeUnavailable = true }
         }
         refresh()
         connectionsView.followingKeyView = loginButton
-        if scopeConsentEntry != nil { window?.initialFirstResponder = loginButton }
-        else if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
+        if scopeConsentEntry != nil {
+            scopePresentation?.refreshLayoutAndFocus(followedBy: loginButton)
+            window?.initialFirstResponder = scopePresentation?.firstEnabledControl ?? loginButton
+        } else if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
     }
     public func present() async { await prepare(); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
     public func suspend() {
@@ -90,24 +114,35 @@ import AppKit
     private func build(_ window: NSWindow) {
         let root = NSView(); window.contentView = root
         let scroll = NSScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.hasVerticalScroller = true; root.addSubview(scroll)
+        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = false; scroll.autohidesScrollers = true
+        scroll.setAccessibilityIdentifier("firstRun.scroll"); root.addSubview(scroll)
         let document = FirstRunDocument(); document.translatesAutoresizingMaskIntoConstraints = false; scroll.documentView = document
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
-        stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false; stack.setAccessibilityIdentifier("firstRun.content"); document.addSubview(stack)
         titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
         privacy.font = .systemFont(ofSize: 14); subscriptions.font = .systemFont(ofSize: 13)
         titleLabel.setAccessibilityIdentifier("firstRun.title");privacy.setAccessibilityIdentifier("firstRun.privacy")
         subscriptions.setAccessibilityIdentifier("firstRun.subscriptions")
         readerStack.orientation = .vertical; readerStack.alignment = .leading; readerStack.spacing = 10
         for id in OptionalReaderID.allCases {
-            let button = NSButton(checkboxWithTitle: "", target: self, action: #selector(readerChanged(_:)))
+            let button = FirstRunWrappingCheckbox(checkboxWithTitle: "", target: self, action: #selector(readerChanged(_:)))
             button.identifier = .init(id.rawValue); button.setAccessibilityIdentifier("firstRun.reader." + id.rawValue)
+            button.cell?.wraps = true; button.cell?.isScrollable = false
+            button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
             readerButtons[id] = button; readerStack.addArrangedSubview(button)
+            button.widthAnchor.constraint(lessThanOrEqualTo: readerStack.widthAnchor).isActive = true
         }
+        loginButton.cell?.wraps = true; loginButton.cell?.isScrollable = false
+        loginButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         loginButton.target = self; loginButton.action = #selector(loginChanged)
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
+        loginButton.widthAnchor.constraint(lessThanOrEqualTo: login.widthAnchor).isActive = true
+        loginSubtitle.widthAnchor.constraint(equalTo: login.widthAnchor).isActive = true
+        for label in [titleLabel, privacy, subscriptions, loginSubtitle, status] {
+            label.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("firstRun.status")
         doneButton.bezelStyle = .rounded; doneButton.target = self; doneButton.action = #selector(done)
@@ -124,11 +159,17 @@ import AppKit
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
+        let fillWidth = stack.widthAnchor.constraint(equalTo: document.widthAnchor, constant: -2 * FirstRunLayoutMetrics.horizontalInset)
+        fillWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
+            fillWidth,
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: root.topAnchor), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            stack.widthAnchor.constraint(equalToConstant: 570), stack.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: FirstRunLayoutMetrics.preferredWidth),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: document.leadingAnchor, constant: FirstRunLayoutMetrics.horizontalInset),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: document.trailingAnchor, constant: -FirstRunLayoutMetrics.horizontalInset),
+            stack.centerXAnchor.constraint(equalTo: document.centerXAnchor),
             stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 28), stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -28),
         ])
     }
@@ -150,6 +191,7 @@ import AppKit
             connectionsView.apply(language: language)
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
+            scopePresentation?.refreshLayoutAndFocus(followedBy: loginButton)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
             subscriptions.isHidden = editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
