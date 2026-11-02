@@ -452,7 +452,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        cockpitVeil.wantsLayer = true; cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
+        cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
+        cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
         cockpitVeil.isHidden = true
         container.addSubview(dockView); container.addSubview(cockpitVeil); container.addSubview(consoleButton)
         bindEmptyStation(to: dockView)
@@ -740,7 +741,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
-        if let rect = geometry.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect }
+        if let rect = geometry.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
         cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
@@ -978,7 +979,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             container.setFrameSize(view.frame.size)
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
-            if let rect = current.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect }
+            if let rect = current.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
             cockpitVeil.isHidden = cockpitEntryEnabled || current.consoleButton == nil
             content = container
         case .sliver:

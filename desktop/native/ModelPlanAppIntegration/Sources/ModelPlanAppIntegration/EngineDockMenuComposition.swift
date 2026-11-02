@@ -31,6 +31,7 @@ public struct EngineMenuRefreshResult {
         settingsDidChange?(value)
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
+                dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
         let store: EngineStore
         if let makeClient {
@@ -44,7 +45,7 @@ public struct EngineMenuRefreshResult {
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
         adapter.resetEventState = { [weak store] in EngineRowsEventDecoder.decode(store?.snapshot.rows) }
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels)
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment)
         adapter.bindDockMenuTracking(dock)
         dock.setDockContentProvider(adapter)
         provider.dockContentDidChange = { [weak self] in
