@@ -64,3 +64,11 @@ test('unknown, absent and retained stay distinct from a current zero',async({pag
  first.remainingPercent=75;first.current=false;a.valueState='retained';a.lastFailure={code:'network',at:start};a.windows.unshift(first);for(const w of a.windows)w.current=false;const row=data.projection.rows[0],stale=row.stateAfterExpiry;row.state=stale.state;row.reason=stale.reason;row.nextStep=stale.nextStep;row.expiresAt=null;row.stateAfterExpiry=null;
  expect(await receive(send('display',{data}))).toBe(true);await expect(cell().locator('.qvalue')).toHaveText('75');await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|red/);
 });
+for(const attached of [true,false])test(`visible non-key ${attached?'attached':'detached'} cockpit processes expiry without enabling actions`,async({page})=>{
+ const {send,receive,tick}=await open(page,dataFor());
+ expect(await receive(send('shell',{...shell,attached}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);
+ const initial=(await reports(page)).length;expect(await receive(send('display',{data:dataFor()}))).toBe(true);expect((await reports(page)).length).toBe(initial+1);
+ const before=(await reports(page)).length;expect(await tick(at)).toBe(true);await check(page,true);expect((await reports(page)).length).toBe(before+1);
+ await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeDisabled();
+});

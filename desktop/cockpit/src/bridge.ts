@@ -97,12 +97,13 @@ export class CockpitBridge {
     if(this.cleared) return 'cleared';
     return this.isActive()?'ready':'hidden';
   }
-  private isActive():boolean {return this.loaded&&this.domReady&&!this.ended&&!this.hidden&&this.visible&&!this.occluded&&this.key;}
+  private isVisible():boolean {return this.loaded&&this.domReady&&!this.ended&&!this.hidden&&this.visible&&!this.occluded;}
+  private isActive():boolean {return this.isVisible()&&this.key;}
   private emit(type:string,requestId:string,extra:Record<string,unknown>={}):void {
     if(this.context) this.post(JSON.stringify({version:2,pageId:this.pageId,...this.context,sequence:String(++this.outputSequence),type,requestId,...extra}));
   }
   private reportDeadline():void {
-    if(!this.isActive()||!this.hasDisplay||this.cleared||this.ended)return;
+    if(!this.isVisible()||!this.hasDisplay||this.cleared||this.ended)return;
     const deadline=this.view.nextDeadline();
     if(deadline!==null&&(!Number.isSafeInteger(deadline)||deadline<0||deadline>8640000000000000))throw Error('Invalid deadline');
     this.emit('nextDeadline',this.requestId(),{deadlineUnixMs:deadline===null?null:String(deadline)});
@@ -166,7 +167,7 @@ export class CockpitBridge {
         this.hasDisplay=true;this.cleared=false;
         this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(); return true;
       case 'tick':
-        if(!this.isActive()||!this.hasDisplay||this.cleared)return false;
+        if(!this.isVisible()||!this.hasDisplay||this.cleared)return false;
         try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return false;}
         this.sequence=BigInt(m.sequence);this.reportDeadline();return true;
       case 'visibility':

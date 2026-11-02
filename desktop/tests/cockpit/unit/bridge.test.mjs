@@ -203,3 +203,25 @@ test('native freshness tick requires active current context and canonical bounde
   assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);
   const n=f.events.length;assert.equal(f.bridge.receive(f.send('tick',payload),source),false);assert.equal(f.events.length,n);
 });
+
+test('queued ticks cannot cross newer visibility, replacement or generation messages',()=>{
+  const f=fixture(),data=capture(),tick={nowUnixMs:'1793620800000',reason:'deadline'};
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  const beforeHide=f.send('tick',tick);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);
+  const afterHide=f.events.length;assert.equal(f.bridge.receive(beforeHide,source),false);assert.equal(f.events.length,afterHide);
+  const hiddenTick=f.send('tick',tick);assert.equal(f.bridge.receive(hiddenTick,source),false);assert.equal(f.events.length,afterHide);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(f.bridge.receive(hiddenTick,source),false);
+  const beforeReplacement=f.send('tick',tick);
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  const afterReplacement=f.events.length;assert.equal(f.bridge.receive(beforeReplacement,source),false);assert.equal(f.events.length,afterReplacement);
+  const beforeClear=f.send('tick',tick);
+  assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);
+  assert.equal(f.bridge.receive(f.send('display',{generation:'42',viewRevision:'4',data}),source),true);
+  const afterClear=f.events.length;assert.equal(f.bridge.receive(beforeClear,source),false);
+  assert.equal(f.bridge.receive(f.send('tick',{...tick,generation:'41',viewRevision:'3'}),source),false);assert.equal(f.events.length,afterClear);
+  assert.equal(f.bridge.receive(f.send('tick',{...tick,generation:'42',viewRevision:'4'}),source),true);
+  assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);
+  const afterUnload=f.events.length;assert.equal(f.bridge.receive(f.send('tick',{...tick,generation:'42',viewRevision:'4'}),source),false);assert.equal(f.events.length,afterUnload);
+});

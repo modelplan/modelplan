@@ -164,7 +164,7 @@ test('live language changes update empty-state and paging accessibility copy',as
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   await expect(page.locator('.ck-eng')).toContainText('Waiting for readings');
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
-  await expect(page.locator('.ck-eng')).toContainText('等待显示数据');
+  await expect(page.locator('.ck-eng')).toContainText('等待读数');
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
   const data=sample(),seed=data.projection.rows[0];data.subscriptions=[];data.projection.rows=Array.from({length:7},(_,i)=>{const row=structuredClone(seed);row.id='tool'+i;row.accounts[0].subscriptionRef=null;return row;});
   expect(await receive(send('display',{data}))).toBe(true);
@@ -174,7 +174,7 @@ test('live language changes update empty-state and paging accessibility copy',as
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
   await expect(page.locator('.ck-eng')).toContainText('Readings cleared');
   expect(await receive(send('appearance',{viewRevision:'4',theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
-  await expect(page.locator('.ck-eng')).toContainText('显示数据已清除');
+  await expect(page.locator('.ck-eng')).toContainText('读数已清除');
 });
 
 test('v1 strip uses a brand mark and equal icon keys with localized accessible names',async({page})=>{
