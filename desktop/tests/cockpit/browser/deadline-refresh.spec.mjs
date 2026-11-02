@@ -72,3 +72,26 @@ for(const attached of [true,false])test(`visible non-key ${attached?'attached':'
  const before=(await reports(page)).length;expect(await tick(at)).toBe(true);await check(page,true);expect((await reports(page)).length).toBe(before+1);
  await expect(page.getByRole('button',{name:'Settings',exact:true})).toBeDisabled();
 });
+test('appearance at quota expiry reports its request and preserves live peer',async({page})=>{
+ const {send,receive}=await open(page,dataFor());await check(page,false);const previous=(await reports(page)).at(-1);
+ await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}));expect(await receive(JSON.stringify(appearance))).toBe(true);
+ const report=(await reports(page)).at(-1);expect(report.requestId).toBe(appearance.requestId);expect(BigInt(report.sequence)).toBeGreaterThan(BigInt(previous.sequence));expect(report.deadlineUnixMs).toBe(String(Date.parse(week)));await check(page,true);
+});
+test('appearance at reset expiry reports the next authoritative deadline',async({page})=>{
+ const data=dataFor(true),a=data.projection.rows[0].accounts[0];a.windows[0].remainingPercent=80;a.windows[0].validUntil=week;a.windows[0].resetsAt=week;data.projection.rows[0].expiresAt=week;data.details.alerts=[];data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:data.projection.rows[0].id,status:'announced',publishedAt:start,expiresAt:at,source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
+ const {send,receive}=await open(page,data);await expect(page.locator('.s6-alert')).toHaveClass(/amber/);await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}));expect(await receive(JSON.stringify(appearance))).toBe(true);
+ const report=(await reports(page)).at(-1);expect(report.requestId).toBe(appearance.requestId);expect(report.deadlineUnixMs).toBe(String(Date.parse(week)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);
+});
+test('appearance at expiry preserves engine page, scope and focused control',async({page})=>{
+ const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
+ const {send,receive}=await open(page,data);expect(await receive(send('shell',{...shell,scope:base.accounts[0].subscriptionRef}))).toBe(true);
+ const control=page.getByRole('button',{name:'Page 2'});await control.click();await control.focus();await page.clock.setSystemTime(new Date(at));
+ expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ await expect(page.getByRole('button',{name:'Page 2'})).toHaveAttribute('aria-current','true');await expect(page.getByRole('button',{name:'Page 2'})).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
+});
+test('appearance repaint preserves an active shutter drag',async({page})=>{
+ const {send,receive}=await open(page,dataFor()),shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
+ const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
+});

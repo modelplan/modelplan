@@ -225,3 +225,22 @@ test('queued ticks cannot cross newer visibility, replacement or generation mess
   assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);
   const afterUnload=f.events.length;assert.equal(f.bridge.receive(f.send('tick',{...tick,generation:'42',viewRevision:'4'}),source),false);assert.equal(f.events.length,afterUnload);
 });
+
+test('deadline reports echo the triggering display, appearance or tick request',()=>{
+ const f=fixture(),display=JSON.parse(f.send('display',{data:capture()}));
+ assert.equal(f.bridge.receive(JSON.stringify(display),source),true);
+ const tail=f.events.slice(-2);assert.deepEqual(tail.map(x=>x.type),['rendered','nextDeadline']);assert.equal(tail[0].requestId,display.requestId);assert.equal(tail[1].requestId,display.requestId);assert.equal(BigInt(tail[1].sequence),BigInt(tail[0].sequence)+1n);assert.equal(tail[1].deadlineUnixMs,null);
+ const appearance=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(appearance),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,appearance.requestId);assert.equal(f.events.at(-1).deadlineUnixMs,null);
+ const tick=JSON.parse(f.send('tick',{nowUnixMs:'1793620800000',reason:'wake'}));assert.equal(f.bridge.receive(JSON.stringify(tick),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,tick.requestId);
+});
+
+test('appearance and tick reports obey visibility, replay and generation fences',()=>{
+ const f=fixture(),data=capture(),readings=()=>f.events.filter(x=>x.type==='nextDeadline'),render=JSON.parse(f.send('display',{data}));
+ assert.equal(f.bridge.receive(JSON.stringify(render),source),true);const first=readings().at(-1);assert.equal(first.requestId,render.requestId);
+ const older=JSON.parse(f.send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false})),newer=JSON.parse(f.send('tick',{nowUnixMs:'1793275320000',reason:'wake'}));
+ assert.equal(f.bridge.receive(JSON.stringify(newer),source),true);const second=readings().at(-1);assert.equal(second.requestId,newer.requestId);assert.ok(BigInt(second.sequence)>BigInt(first.sequence));
+ const count=readings().length;assert.equal(f.bridge.receive(JSON.stringify(older),source),false);assert.equal(f.bridge.receive(JSON.stringify(newer),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);const hidden=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(hidden),source),true);assert.equal(readings().length,count);
+ assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
+});

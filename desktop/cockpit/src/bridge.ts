@@ -102,11 +102,11 @@ export class CockpitBridge {
   private emit(type:string,requestId:string,extra:Record<string,unknown>={}):void {
     if(this.context) this.post(JSON.stringify({version:2,pageId:this.pageId,...this.context,sequence:String(++this.outputSequence),type,requestId,...extra}));
   }
-  private reportDeadline():void {
+  private reportDeadline(requestId:string):void {
     if(!this.isVisible()||!this.hasDisplay||this.cleared||this.ended)return;
     const deadline=this.view.nextDeadline();
     if(deadline!==null&&(!Number.isSafeInteger(deadline)||deadline<0||deadline>8640000000000000))throw Error('Invalid deadline');
-    this.emit('nextDeadline',this.requestId(),{deadlineUnixMs:deadline===null?null:String(deadline)});
+    this.emit('nextDeadline',requestId,{deadlineUnixMs:deadline===null?null:String(deadline)});
   }
   ready():void {
     if(this.ended||this.domReady) return;
@@ -154,7 +154,7 @@ export class CockpitBridge {
     switch(m.type) {
       case 'appearance':
         try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency});} catch {this.unload();return false;}
-        this.sequence=BigInt(m.sequence);this.reportDeadline();return true;
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}
         this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
@@ -165,11 +165,11 @@ export class CockpitBridge {
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
         this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;
-        this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(); return true;
+        this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(m.requestId); return true;
       case 'tick':
         if(!this.isVisible()||!this.hasDisplay||this.cleared)return false;
         try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return false;}
-        this.sequence=BigInt(m.sequence);this.reportDeadline();return true;
+        this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'visibility':
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
         this.view.active(this.isActive());return true;

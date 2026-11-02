@@ -13,7 +13,7 @@ const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
- let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,lastData:WireCockpitData|null=null;
+ let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,lastData:WireCockpitData|null=null;
  let lastRenderedAt=0;
  const frame=prototypeFrame(root);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;});const tape=mountPrototypeTape(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
@@ -46,8 +46,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   root.dataset.shell=closed?'closed':'open';root.style.setProperty('--body-h',(closed?(tier==='tall'?691:609):(tier==='tall'?890:640))+'px');
   if(closed)stop();
  }
- function localise(){
-  document.documentElement.lang=locale;deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
+ function localise(now?:number){
+  document.documentElement.lang=locale;deck.locale(locale,now);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
   for(const e of root.querySelectorAll<HTMLElement>('[data-en][data-zh]')){e.textContent=locale==='en'?e.dataset.en!:e.dataset.zh!;if(e.tagName==='BUTTON')e.setAttribute('aria-label',e.textContent);else if(e.classList.contains('ek-name'))e.parentElement?.setAttribute('aria-label',e.textContent);}
   for(const e of root.querySelectorAll<HTMLElement>('[data-reset]'))e.textContent=relative(e.dataset.reset??null);
   for(const e of root.querySelectorAll<HTMLButtonElement>('.eng-led[data-page]')){const n=Number(e.dataset.page)+1;e.setAttribute('aria-label',locale==='en'?`Page ${n}`:`第 ${n} 页`);}
@@ -60,7 +60,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{refreshEngine=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{refreshEngine=null;localiseEngine=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
  function relative(raw:string|null):string {
   if(!raw)return '';const delta=Date.parse(raw)-Date.now();if(!Number.isFinite(delta))return '';
   const mins=Math.max(0,Math.ceil(delta/60000)),d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;
@@ -110,19 +110,19 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    lastData=data;lastRenderedAt=Date.now();
    if(disposed)throw Error('closed');const before=displayedState();const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const unstable=priorButton?.dataset.unstable==='true';const priorScope=unstable?'':priorButton?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');if(unstable&&nativeShell)nativeShell={...nativeShell,scope:'all'};applyScope=null;frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,cell,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;});
-   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;refreshEngine=engine.refresh;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
+   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
    if(before!==displayedState())pulse();
   }
  setEmpty('waiting');
  return {
   configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty('waiting');},
-  updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();if(lastData)renderData(lastData);},
+  updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();if(lastData){lastRenderedAt=Date.now();preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);});}else localise();},
   shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();applyScope?.(value.scope);deck.scope(value.scope);},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
   active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value)stop();},
-  dispose(){if(disposed)return;disposed=true;applyScope=null;lastData=null;nativeShell=null;deck.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  dispose(){if(disposed)return;disposed=true;applyScope=null;refreshEngine=null;localiseEngine=null;lastData=null;nativeShell=null;deck.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }
