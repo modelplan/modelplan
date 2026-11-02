@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Preserve the producer's nulls, empty lists and zero values; join only the
 // verified subscription references already admitted by the wire projection.
-import type {WireAccount,WireCockpitData,WireCockpitDetails} from '../generated/wire.js';
+import type {WireAccount,WireWindow,WireCockpitData,WireCockpitDetails} from '../generated/wire.js';
 export interface PrototypeEngineSupplement {
  readonly todayTokens:number|null; readonly todayAverageGenerationTps:number|null;
  readonly resetCards:WireCockpitDetails['subscriptions'][number]['resetCounts']|null;
@@ -20,3 +20,12 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
   reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
+
+// A producer-current observation ceases to be current at its deadline, even
+// when the containing account and other windows are still current.
+export function currentWindow(account:WireAccount,window:WireWindow,now:number):boolean {
+ return account.valueState==='current' && window.current && window.remainingPercent!==null && window.validUntil!==null && Date.parse(window.validUntil)>now;
+}
+export function displayWindow(account:WireAccount,window:WireWindow,now:number):boolean {
+ return account.valueState==='retained' || currentWindow(account,window,now);
+}

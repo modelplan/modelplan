@@ -2,6 +2,14 @@
 import { test, expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import { appearance, commands, pageId, sample, shell } from '../fixture.mjs';
 
+// These alert cases need a current producer-style window, not the expired
+// timestamp in the shared historical Go capture.
+function makeCurrent(account) {
+ const deadline=new Date(Date.now()+3600000).toISOString();
+ account.valueState='current';account.freshUntil=deadline;
+ for(const w of account.windows){w.current=true;w.validUntil=deadline;w.resetsAt=null;}
+}
+
 test('built cockpit entry displays subscription columns and pages from wire data', async ({page}) => {
   await page.setViewportSize({width:636,height:890});
   await page.goto('/?pageId='+pageId);
@@ -110,7 +118,7 @@ test('wordmark, vendor marks, off-page caution and scope actions follow the actu
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
   const data=sample(),seed=data.projection.rows[0];data.subscriptions=[];
-  data.projection.rows=Array.from({length:7},(_,i)=>{const row=structuredClone(seed);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.vendorKey=['openai','claude','cursor','copilot','kimi','glm','opencode'][i];row.accounts[0].subscriptionRef=null;row.accounts[0].windows[0].remainingPercent=i===6?15:70;return row;});
+  data.projection.rows=Array.from({length:7},(_,i)=>{const row=structuredClone(seed);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.vendorKey=['openai','claude','cursor','copilot','kimi','glm','opencode'][i];row.accounts[0].subscriptionRef=null;makeCurrent(row.accounts[0]);row.accounts[0].windows[0].remainingPercent=i===6?15:70;return row;});
   expect(await receive(send('display',{data}))).toBe(true);
   await expect(page.locator('.wordmark b')).toHaveCSS('color','rgb(223, 96, 76)');
   await expect(page.locator('.s6-page:visible img.vendor-mark')).toHaveCount(6);
@@ -298,7 +306,7 @@ test('clearing the display also clears its derived threshold alert',async({page}
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  const data=sample();data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
+  const data=sample();makeCurrent(data.projection.rows[0].accounts[0]);data.projection.rows[0].accounts[0].windows[0].remainingPercent=10;
   expect(await receive(send('display',{data}))).toBe(true);
   await expect(page.locator('.s6-alert')).toHaveClass(/lit/);
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);

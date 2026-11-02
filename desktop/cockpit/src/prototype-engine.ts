@@ -5,7 +5,7 @@
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
-import {prototypeEngineSupplement} from './prototype-data-adapter.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -22,14 +22,14 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const accounts=members.map(({key,row,account})=>{
   const brand=row.vendorKey&&Object.hasOwn(palette,row.vendorKey)?palette[row.vendorKey]:null;
   const name=locale==='en'?row.name.en:row.name.zh;
-  const convert=(w:WireWindow)=>({kind:role(w),remaining:finite(w.remainingPercent),resetIn:w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,trend:null,durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
+  const convert=(w:WireWindow)=>({kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,trend:null,durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
   const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)},runOutMin:null}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
   return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:null,event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
- const alerts=data.details?data.details.alerts.flatMap(a=>{const m=members.find(m=>m.key===a.subscriptionRef&&m.row.id===a.source);return m&&['critical','warning'].includes(a.severity)?[{level:a.severity==='critical'?'red':'amber',sub:esc(m.key)}]:[];}):members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=25?'red':'amber',sub:esc(key)})));
+ const alerts=data.details?data.details.alerts.flatMap(a=>{const m=members.find(m=>m.key===a.subscriptionRef&&m.row.id===a.source);return m&&m.account.windows.some(w=>w.id===a.windowId&&currentWindow(m.account,w,now))&&['critical','warning'].includes(a.severity)?[{level:a.severity==='critical'?'red':'amber',sub:esc(m.key)}]:[];}):members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>currentWindow(account,w,now)&&w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=25?'red':'amber',sub:esc(key)})));
  const hasReset=!!data.details?.resetEvents.some(e=>Date.parse(e.expiresAt)>now&&members.some(m=>m.row.id===e.rowId));
  const level=alerts.some(a=>a.level==='red')?'red':alerts.some(a=>a.level==='amber')||hasReset?'amber':null;
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
