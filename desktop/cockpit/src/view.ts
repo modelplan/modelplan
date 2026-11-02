@@ -13,7 +13,8 @@ const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(
 export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
- let applyScope:((scope:string)=>void)|null=null,lastData:WireCockpitData|null=null;
+ let applyScope:((scope:string)=>void)|null=null,refreshEngine:(()=>void)|null=null,lastData:WireCockpitData|null=null;
+ let deadlineTimer:ReturnType<typeof setTimeout>|null=null,deadlineGeneration=0,lastRenderedAt=0;
  const frame=prototypeFrame(root);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;});const tape=mountPrototypeTape(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
@@ -59,7 +60,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  frame.lamp.addEventListener('animationend',settled);frame.lamp.addEventListener('animationcancel',settled);
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
- const setEmpty=(key:'waiting'|'cleared'|'empty')=>{const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
+ const setEmpty=(key:'waiting'|'cleared'|'empty')=>{refreshEngine=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
  function relative(raw:string|null):string {
   if(!raw)return '';const delta=Date.parse(raw)-Date.now();if(!Number.isFinite(delta))return '';
   const mins=Math.max(0,Math.ceil(delta/60000)),d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;
@@ -81,12 +82,47 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   if(w.resetsAt&&w.durationSeconds&&w.durationSeconds>0){const fraction=Math.max(0,Math.min(1,(Date.parse(w.resetsAt)-Date.now())/(w.durationSeconds*1000)));const dots=element('span',undefined,'qtime');for(let i=0;i<10;i++)dots.append(element('i',undefined,i<(fraction>0?Math.max(1,Math.ceil(fraction*10)):0)?'on':''));meter.append(dots);}
   box.append(meter);return box;
  }
+ // Only one bounded timer is active. A generation fence makes even a queued
+ // callback harmless after replacement, visibility loss, clear, or disposal.
+ function cancelDeadline(){deadlineGeneration++;if(deadlineTimer!==null)clearTimeout(deadlineTimer);deadlineTimer=null;}
+ function nextDeadline(data:WireCockpitData,now:number):number|null {
+  let next=Infinity;
+  for(const row of data.projection.rows)for(const account of row.accounts)if(account.valueState==='current')for(const w of account.windows){
+   if(!w.current||w.remainingPercent===null||w.validUntil===null)continue;
+   const at=Date.parse(w.validUntil);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);
+  }
+  for(const event of data.details?.resetEvents??[]){const at=Date.parse(event.expiresAt);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
+  return Number.isFinite(next)?next:null;
+ }
+ function preserveFocus(update:()=>void){
+  const focused=document.activeElement instanceof HTMLElement?document.activeElement:null;
+  const area=focused&&(frame.engine.contains(focused)?frame.engine:frame.mfd.contains(focused)?frame.mfd:null);
+  let path:number[]|null=null;const keys=['data-scope','data-page','data-mfd','data-opt','data-row','data-col','data-bpage','aria-label'];
+  const key=focused&&area?keys.find(k=>focused.hasAttribute(k)):undefined;
+  const keyValue=key&&focused?focused.getAttribute(key):null;
+  if(focused&&area){path=[];for(let n:Element|null=focused;n&&n!==area;n=n.parentElement)path.unshift(Array.prototype.indexOf.call(n.parentElement?.children,n));}
+  update();
+  if(!focused||!area||focused.isConnected)return;
+  let target:HTMLElement|null=null;
+  if(key&&keyValue!==null){const matches=[...area.querySelectorAll<HTMLElement>(focused.tagName)].filter(e=>e.getAttribute(key)===keyValue);if(matches.length===1)target=matches[0];}
+  if(!target&&path){let e:Element|null=area;for(const i of path)e=e?.children.item(i)??null;if(e instanceof HTMLElement&&e.tagName===focused.tagName&&(key?e.getAttribute(key)===keyValue:e.className===focused.className))target=e;}
+  target?.focus({preventScroll:true});
+ }
+ function refreshDeadlines(){if(!lastData||disposed)return;lastRenderedAt=Date.now();preserveFocus(()=>{refreshEngine?.();deck.refresh();});}
+ function scheduleDeadline(){
+  cancelDeadline();if(!active||!lastData||disposed)return;
+  const now=Date.now(),deadline=nextDeadline(lastData,lastRenderedAt);if(deadline===null)return;
+  const generation=deadlineGeneration;
+  // Recheck long waits periodically to bound delays after a wall-clock jump.
+  const delay=Math.max(1,Math.min(deadline-now,60000,2147483647));
+  deadlineTimer=setTimeout(()=>{if(generation!==deadlineGeneration||!active||!lastData||disposed)return;deadlineTimer=null;if(Date.now()>=deadline)refreshDeadlines();scheduleDeadline();},delay);
+ }
  function renderData(data:WireCockpitData){
-   lastData=data;
+   cancelDeadline();lastData=data;lastRenderedAt=Date.now();
    if(disposed)throw Error('closed');const before=displayedState();const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const unstable=priorButton?.dataset.unstable==='true';const priorScope=unstable?'':priorButton?.dataset.scope??(nativeShell?.scope==='all'?'':nativeShell?.scope??'');if(unstable&&nativeShell)nativeShell={...nativeShell,scope:'all'};applyScope=null;frame.engine.replaceChildren();
    const engine=renderPrototypeEngine(data,locale,root,priorScope,cell,key=>{if(!active)return false;action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;});
-   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
-   if(before!==displayedState())pulse();
+   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;refreshEngine=engine.refresh;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
+   if(before!==displayedState())pulse();scheduleDeadline();
   }
  setEmpty('waiting');
  return {
@@ -94,8 +130,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();localise();if(lastData)renderData(lastData);},
   shell(value:ShellState){nativeShell=value;tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();applyScope?.(value.scope);deck.scope(value.scope);},
   render:renderData,
-  clear(){lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value)stop();},
-  dispose(){if(disposed)return;disposed=true;applyScope=null;lastData=null;nativeShell=null;deck.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  clear(){cancelDeadline();lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
+  active(value){const wasActive=active;active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){cancelDeadline();stop();}else if(!wasActive&&lastData){refreshDeadlines();scheduleDeadline();}},
+  dispose(){if(disposed)return;cancelDeadline();disposed=true;applyScope=null;lastData=null;nativeShell=null;deck.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

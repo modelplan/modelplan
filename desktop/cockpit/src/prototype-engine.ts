@@ -14,11 +14,11 @@ const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colo
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,_cell:(w:WireWindow|undefined,other?:boolean)=>HTMLElement,onSelect:(key:string)=>boolean,onAdd:()=>boolean):{table:HTMLElement;applyScope:(scope:string)=>void}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,_cell:(w:WireWindow|undefined,other?:boolean)=>HTMLElement,onSelect:(key:string)=>boolean,onAdd:()=>boolean):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:()=>void}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));let scope=seen.has(priorScope)?priorScope:'',page=0;
  const host=document.createElement('div');host.className='u11-engine-table s6-page';
- const now=Date.now();
+ function sourceAt(now:number){
  const accounts=members.map(({key,row,account})=>{
   const brand=row.vendorKey&&Object.hasOwn(palette,row.vendorKey)?palette[row.vendorKey]:null;
   const name=locale==='en'?row.name.en:row.name.zh;
@@ -33,9 +33,10 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
  const hasReset=!!data.details?.resetEvents.some(e=>Date.parse(e.expiresAt)>now&&members.some(m=>m.row.id===e.rowId));
  const level=alerts.some(a=>a.level==='red')?'red':alerts.some(a=>a.level==='amber')||hasReset?'amber':null;
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
- const source={now,accounts,alerts,caution:{level,key:''}};
+ return {now,accounts,alerts,caution:{level,key:''}};
+ }
  const paint=()=>{
-  setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:25,ack:null,lang:locale,now};
+  const now=Date.now(),source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:25,ack:null,lang:locale,now};
   const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
   // Inline style attributes from the study HTML are blocked by the host CSP.
   // Apply only validated model-derived layout and fixed palette values through
@@ -70,5 +71,5 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   if(b.hasAttribute('data-bpage')){const step=b.dataset.bpage==='1'?1:b.dataset.bpage==='-1'?-1:0;page=Math.max(0,Math.min(Math.ceil(members.length/6)-1,page+step));paint();}
  };
  const applyScope=(next:string)=>{scope=next!=='all'&&seen.has(next)?next:'';if(scope){const index=members.findIndex(m=>m.key===scope);page=Math.floor(index/6);}paint();};
- paint();return {table:host,applyScope};
+ paint();return {table:host,applyScope,refresh:paint};
 }
