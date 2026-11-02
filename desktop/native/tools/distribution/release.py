@@ -424,6 +424,88 @@ def appcast(app, output, tool):
     (output / 'SHA256SUMS').write_text(f'{sha256(archive)}  {archive.name}\n')
 
 
+def configure_beta_zai(app, *, source_root=None, zaiMarkEnabled=True):
+    """Install the checked-in mark only for an explicitly enabled beta package."""
+    if not isinstance(zaiMarkEnabled, bool):
+        raise ValueError('Invalid beta mark switch')
+    app = Path(app)
+    source_root = ROOT if source_root is None else Path(source_root)
+    resources = app / 'Contents/Resources'
+    bundle = resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle'
+    info_path = app / 'Contents/Info.plist'
+    notice = resources / 'THIRD-PARTY-TRADEMARKS.md'
+    for path in (app, app / 'Contents', resources, bundle):
+        if path.is_symlink() or not path.is_dir():
+            raise ValueError('Missing or linked beta resource directory')
+    for path in (info_path, notice):
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('Missing or linked beta metadata or trademark notice')
+    candidates = [bundle / 'Resources/manifest.json', bundle / 'Contents/Resources/Resources/manifest.json',
+                  bundle / 'Contents/Resources/manifest.json', bundle / 'manifest.json']
+    manifests = [p for p in candidates if p.is_file()]
+    if len(manifests) != 1:
+        raise ValueError('Expected one beta resource manifest')
+    manifest = manifests[0]
+    for parent in (manifest, *manifest.relative_to(bundle).parents):
+        path = parent if parent == manifest else bundle / parent
+        if path.is_symlink(): raise ValueError('Linked beta resource path')
+    root = manifest.parent
+    destination = root / 'Marks/zai-white.svg'
+    if (root / 'Marks').is_symlink() or not (root / 'Marks').is_dir() or destination.exists() or destination.is_symlink():
+        raise ValueError('Missing or nonempty beta mark destination')
+    source_resources = source_root / 'desktop/third-party/dock-resources/Resources'
+    source_manifest = source_resources / 'manifest.json'
+    source = source_resources / 'Marks/zai-white.svg'
+    if source.is_symlink() or source_manifest.is_symlink() or not source.is_file() or not source_manifest.is_file():
+        raise ValueError('Missing or linked beta source')
+    if manifest.stat().st_size > 65536 or source_manifest.stat().st_size > 65536:
+        raise ValueError('Beta resource manifest too large')
+    raw = manifest.read_bytes()
+    if source_manifest.read_bytes() != raw:
+        raise ValueError('Beta resource manifest mismatch')
+    value = json.loads(raw)
+    record = value.get('files', {}).get('logo-zai-white', {})
+    if (value.get('schemaVersion') != 1 or record.get('betaOnly') is not True or
+            record.get('path') != 'Marks/zai-white.svg' or
+            not re.fullmatch(r'[0-9a-f]{64}', str(record.get('sha256', ''))) or
+            not isinstance(record.get('bytes'), int) or isinstance(record.get('bytes'), bool) or
+            not 0 < record['bytes'] <= 1_048_576):
+        raise ValueError('Invalid beta mark manifest')
+    data = source.read_bytes()
+    if len(data) != record['bytes'] or hashlib.sha256(data).hexdigest() != record['sha256']:
+        raise ValueError('Beta mark hash mismatch')
+    attribution = value.get('files', {}).get('notice-vendors', {})
+    sources = root / 'Marks/SOURCES.md'
+    if (attribution.get('path') != 'Marks/SOURCES.md' or sources.is_symlink() or not sources.is_file() or
+            not isinstance(attribution.get('bytes'), int) or isinstance(attribution.get('bytes'), bool) or
+            not 0 < attribution['bytes'] <= 1_048_576 or
+            not re.fullmatch(r'[0-9a-f]{64}', str(attribution.get('sha256', '')))):
+        raise ValueError('Missing or invalid vendor attribution')
+    attribution_bytes = sources.read_bytes()
+    if len(attribution_bytes) != attribution['bytes'] or hashlib.sha256(attribution_bytes).hexdigest() != attribution['sha256']:
+        raise ValueError('Vendor attribution hash mismatch')
+    info = plistlib.loads(info_path.read_bytes())
+    if not isinstance(info, dict) or ('zaiMarkEnabled' in info and not isinstance(info['zaiMarkEnabled'], bool)):
+        raise ValueError('Invalid beta mark configuration')
+    if zaiMarkEnabled:
+        with destination.open('xb') as output: output.write(data)
+    info['zaiMarkEnabled'] = zaiMarkEnabled
+    info_path.write_bytes(plistlib.dumps(info, sort_keys=False))
+    return (destination, record['sha256'], sources, attribution['sha256']) if zaiMarkEnabled else None
+
+
+def verify_beta_zai(app, proof):
+    if proof is None:
+        raise ValueError('Missing beta mark proof')
+    mark, expected_mark, sources, expected_sources = proof
+    for path, expected in ((mark, expected_mark), (sources, expected_sources)):
+        if path.is_symlink() or not path.is_file() or sha256(path) != expected:
+            raise ValueError('Beta mark or attribution changed after signing')
+    info = plistlib.loads((Path(app) / 'Contents/Info.plist').read_bytes())
+    if info.get('zaiMarkEnabled') is not True:
+        raise ValueError('Beta mark switch changed after signing')
+
+
 def adhoc_appcast(app, output, tool, *, previous=None):
     env = os.environ
     require_beta_configuration(env)
@@ -433,12 +515,15 @@ def adhoc_appcast(app, output, tool, *, previous=None):
     info = validate_candidate(app, env['GITHUB_SHA'], env['MACOS_BUNDLE_ID'], None, feed=feed)
     app = Path(app)
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
+    beta_mark_proof = configure_beta_zai(app)
+    info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     sign_nested(app, lambda path: run('codesign', '--force', '--sign', '-', str(path)))
     # The CLI helper may be re-signed; update its own integrity record before the outer seal.
     refresh_helper_identity(app)
     run('codesign', '--force', '--sign', '-', str(app))
     run('codesign', '--verify', '--deep', '--strict', str(app))
     check_credential_pin(app)
+    verify_beta_zai(app, beta_mark_proof)
     archive = output / 'ModelPlan-beta-universal.zip'
     run('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(app), str(archive))
     signature = sign_archive(info, archive, tool)

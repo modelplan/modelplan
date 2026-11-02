@@ -1,0 +1,484 @@
+// SPDX-License-Identifier: MIT
+import AppKit
+import CoreGraphics
+import CoreText
+import CryptoKit
+import Foundation
+import ModelPlanSettings
+import ModelPlanPrimitives
+import ModelPlanOfficialDock
+@_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanDockResources
+@_spi(DockResourceChecks) import ModelPlanAppIntegration
+
+struct S1Manifest: Decodable {
+    struct Clip: Decodable { let x: Double, y: Double, width: Double, height: Double }
+    struct Capture: Decodable { let file, scenario: String; let size: Int; let edge: String; let count: Int; let theme, state, sha256: String; let clip: Clip }
+    let schemaVersion: Int
+    let prototypeSourceCommit: String
+    let captures: [Capture]
+}
+
+private struct S1FlameManifest: Decodable {
+    struct File: Decodable { let file, sha256: String; let bytes: Int }
+    struct Followup: Decodable { let prototypeSourceCommit, scriptSHA256, scriptUTF8: String }
+    let schemaVersion: Int; let prototypeSourceCommit: String; let files: [File]; let rotatingFollowup: Followup
+}
+
+@MainActor final class S1SyntheticProvider: DockContentProvider {
+    enum NoticeCase { case fixture, announced, confirmed }
+    let inputs: [DockInstrumentInput]
+    let noticeCase: NoticeCase
+    init(count: Int, now: Date, noticeCase: NoticeCase = .fixture) {
+        self.noticeCase = noticeCase
+        // Values are the fixed r7 synthetic scene, including the reported
+        // reset times and nominal fixture periods; no time is inferred for an
+        // unknown reset or an actual user account.
+        typealias Window = (DockQuotaPeriod, Double, Double?, Double)
+        let fixtures: [(String, String, String, [Window])] = [
+            ("codex", "ChatGPT", "openai", [(.fiveHour, 89, 198, 300), (.week, 76, 7410, 10080)]),
+            ("claude", "Claude", "claude", [(.fiveHour, 9, 120, 300), (.week, 42, 3490, 10080)]),
+            ("zhipu", "GLM", "zhipu", [(.fiveHour, 72, 48, 300)]),
+            ("cursor", "Cursor", "cursor", [(.month, 14, 19020, 43200)]),
+            ("ocgo", "OC Go", "opencode", [(.fiveHour, 54, nil, 300)]),
+            ("copilot", "Copilot", "copilot", [(.month, 61, 15930, 43200)]),
+            ("kimi", "Kimi", "kimi", [(.fiveHour, 81, 75, 300), (.week, 65, 6160, 10080)])
+        ]
+        inputs = fixtures.prefix(count).map { id, name, vendor, fixtureWindows in
+            let windows = fixtureWindows.enumerated().map { index, value in
+                DockQuotaWindowInput(id: "window-\(index)", period: value.0, label: value.0.rawValue,
+                    remainingPercent: value.1, resetsAt: value.2.map { now.addingTimeInterval($0 * 60) },
+                    durationSeconds: value.3 * 60)
+            }
+            var input = DockInstrumentInput(id: id, name: name, windows: windows)
+            input.vendorResourceKey = vendor; input.dataState = .fresh
+            if id == "codex" || id == "claude" {
+                input.working = .init(subscriptionID: id, bindingVerified: true, fresh: true, observedOutput: true)
+            }
+            return input
+        }
+    }
+    func makeContent(_ context: DockContentContext) -> DockContent {
+        var signals = [DockSubscriptionSignal]()
+        for item in inputs {
+            var signal = DockSubscriptionSignal(id: item.id); signal.dataState = .fresh
+            if item.id == "codex", noticeCase != .fixture {
+                switch noticeCase {
+                case .announced: signal.reset = .init(id: "synthetic-reset", status: .announced, announcedAt: context.now.addingTimeInterval(-60))
+                case .confirmed: signal.reset = .init(id: "synthetic-reset", status: .confirmed, confirmedAt: context.now.addingTimeInterval(-60))
+                case .fixture: break
+                }
+            } else if item.id == "codex" {
+                // r7 resetCards: the first of two cards expires after 30 h.
+                signal.cards = [.init(id: "rc-c1", expiresAt: context.now.addingTimeInterval(30 * 3600)),
+                                .init(id: "rc-c2", expiresAt: context.now.addingTimeInterval((12 * 24 + 5) * 3600))]
+            } else if item.id == "claude" {
+                // r7 fixture forecast has a 40-minute runway.
+                signal.forecast = .init(windowID: "window-0", validUntil: context.now.addingTimeInterval(40 * 60))
+            }
+            signals.append(signal)
+        }
+        return .init(snapshot: .init(inputs: inputs), signals: signals)
+    }
+}
+
+/// Mirrors the capture's Claude, single 75% ring and no reset-clock fixture.
+@MainActor final class S1FlameComparisonProvider: DockContentProvider {
+    func makeContent(_ context: DockContentContext) -> DockContent {
+        var input = DockInstrumentInput(id: "claude", name: "Claude", windows: [
+            .init(id: "synthetic-window", period: .fiveHour, label: "5h", remainingPercent: 75,
+                  resetsAt: nil, durationSeconds: nil)])
+        input.dataState = .fresh; input.vendorResourceKey = "claude"
+        return .init(snapshot: .init(inputs: [input]))
+    }
+}
+
+@MainActor enum S1PixelReport {
+    struct Result {
+        let native: Data
+        let diff: Data
+        let similarity: Double
+        let maskedPixels: Int
+        let ink: [String: Bool]
+        let noticeInk: [String: Bool]
+        let singleWindowRegions: [String: CGRect]
+        let singleWindowMetrics: [String: Double]
+    }
+    static func make(reference: Data, image: CGImage, skin: DockInstrumentSkin, capture: S1Manifest.Capture,
+                     singleWindowIDs: Set<String>) throws -> Result {
+        guard let golden = NSBitmapImageRep(data: reference),
+              image.width == Int(ceil(skin.bounds.width * 2)), image.height == Int(ceil(skin.bounds.height * 2)),
+              let actual = NSBitmapImageRep(cgImage: image).copy() as? NSBitmapImageRep else { throw CocoaError(.fileReadCorruptFile) }
+        let width = golden.pixelsWide, height = golden.pixelsHigh
+        guard width > 0, height > 0, width * height <= 8_000_000 else { throw CocoaError(.fileReadTooLarge) }
+        func bitmap() throws -> NSBitmapImageRep {
+            guard let value = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bitmapFormat: .alphaNonpremultiplied,
+                bytesPerRow: width * 4, bitsPerPixel: 32) else { throw CocoaError(.fileReadCorruptFile) }
+            return value
+        }
+        let composed = try bitmap(), difference = try bitmap()
+        guard let pixels = composed.bitmapData, let diffs = difference.bitmapData else { throw CocoaError(.fileReadCorruptFile) }
+        let resources = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: false)))
+        let font = try resources.font("font-jetbrains-mono", size: skin.text.size, weight: skin.text.weight)
+        var masks = [(String, CGRect)]()
+        for station in skin.stations {
+            guard let id = station.subscriptionID, let value = ["claude": "9%", "cursor": "14%"][id] else { continue }
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: value, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            let advance = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let glyph = CTLineGetImageBounds(line, nil)
+            let baseline = station.readout.midY + (ascent - descent) / 2
+            masks.append((id, CGRect(x: station.readout.midX - CGFloat(advance)/2 + glyph.minX,
+                                      y: baseline - glyph.maxY, width: glyph.width, height: glyph.height)))
+        }
+        func background(_ x: Double, _ y: Double) -> (Double, Double, Double) {
+            if capture.theme == "light" { return (237, 241, 245) }
+            let cx = 1470.0 * 0.22, cy = 956.0 * 1.08
+            let rx = max(cx, 1470-cx) * sqrt(2), ry = max(cy, abs(956-cy)) * sqrt(2)
+            let distance = hypot((x-cx)/rx, (y-cy)/ry)
+            let stops: [(Double, (Double, Double, Double))] = [(0,(77,90,94)),(0.26,(38,54,62)),(0.50,(24,38,58)),(0.78,(15,22,38))]
+            guard distance < 0.78 else { return stops.last!.1 }
+            let n = max(1, stops.firstIndex(where: { distance <= $0.0 }) ?? 3)
+            let a = stops[n-1], b = stops[n], t = max(0, min(1, (distance-a.0)/(b.0-a.0)))
+            return (a.1.0+(b.1.0-a.1.0)*t,a.1.1+(b.1.1-a.1.1)*t,a.1.2+(b.1.2-a.1.2)*t)
+        }
+        let singleRegions: [(String, CGRect)] = skin.stations.compactMap { station in
+            guard let id = station.subscriptionID, singleWindowIDs.contains(id) else { return nil }
+            let radius = max(station.diameter / 2, station.clock.radius + station.clock.dotRadius) + 2
+            let nozzle = CGRect(x: station.centre.x-radius, y: station.centre.y-radius, width: 2*radius, height: 2*radius)
+            return (id, nozzle.union(station.readout).union(station.eventRect))
+        }
+        var regionError = Dictionary(uniqueKeysWithValues: singleRegions.map { ($0.0, 0.0) })
+        var regionSamples = Dictionary(uniqueKeysWithValues: singleRegions.map { ($0.0, 0) })
+        let noticeRects = skin.stations.compactMap { station -> (String, CGRect)? in
+            guard let id = station.subscriptionID, id == "codex" || id == "claude",
+                  let diameter = station.eventSolidDiameter else { return nil }
+            return (id, CGRect(x: station.eventRect.midX - diameter/2, y: station.eventRect.midY - diameter/2, width: diameter, height: diameter))
+        }
+        var errorSum = 0.0, samples = 0, masked = 0, ink = ["claude":false, "cursor":false]
+        var noticeInk = Dictionary(uniqueKeysWithValues: noticeRects.map { ($0.0, false) })
+        for y in 0..<height { for x in 0..<width {
+            let gx = capture.clip.x + (Double(x)+0.5)/2, gy = capture.clip.y + (Double(y)+0.5)/2
+            let nx = Int(floor((gx-Double(skin.bounds.minX))*2)), ny = Int(floor((gy-Double(skin.bounds.minY))*2))
+            let bg = background(gx, gy)
+            var rgb = [bg.0, bg.1, bg.2]
+            if nx >= 0, ny >= 0, nx < image.width, ny < image.height, let color = actual.colorAt(x: nx, y: ny)?.usingColorSpace(.sRGB) {
+                let alpha = Double(color.alphaComponent)
+                rgb = [Double(color.redComponent)*255*alpha+bg.0*(1-alpha),Double(color.greenComponent)*255*alpha+bg.1*(1-alpha),Double(color.blueComponent)*255*alpha+bg.2*(1-alpha)]
+            }
+            guard let expected = golden.colorAt(x:x,y:y)?.usingColorSpace(.sRGB) else { throw CocoaError(.fileReadCorruptFile) }
+            let expectedRGB = [Double(expected.redComponent)*255, Double(expected.greenComponent)*255, Double(expected.blueComponent)*255]
+            for (id, rect) in noticeRects where rect.contains(CGPoint(x: gx, y: gy)) && rgb[0] >= 205 && rgb[1] >= 150 && rgb[1] <= 220 && rgb[2] <= 165 {
+                noticeInk[id] = true
+            }
+            let offset = y * composed.bytesPerRow + x * 4, point = CGPoint(x:gx,y:gy)
+            let matching = masks.filter { $0.1.contains(point) }
+            if !matching.isEmpty {
+                masked += 1
+                for (id, _) in matching where rgb[0] >= 200 && rgb[1] <= 100 && rgb[2] <= 100 { ink[id] = true }
+            }
+            for channel in 0..<3 {
+                let value = UInt8(max(0,min(255,Int(rgb[channel].rounded()))))
+                pixels[offset+channel] = value
+                let delta = abs(rgb[channel]-expectedRGB[channel])
+                diffs[offset+channel] = matching.isEmpty ? UInt8(max(0,min(255,Int(delta.rounded())))) : 0
+                if matching.isEmpty {
+                    errorSum += delta; samples += 1
+                    for (id, region) in singleRegions where region.contains(point) {
+                        regionError[id, default: 0] += delta; regionSamples[id, default: 0] += 1
+                    }
+                }
+            }
+            pixels[offset+3] = 255; diffs[offset+3] = 255
+        }}
+        guard samples > 0, let nativePNG = composed.representation(using: .png, properties: [:]),
+              let diffPNG = difference.representation(using: .png, properties: [:]) else { throw CocoaError(.fileReadCorruptFile) }
+        let clipRect = CGRect(x: capture.clip.x, y: capture.clip.y, width: capture.clip.width, height: capture.clip.height)
+        let metrics = Dictionary(uniqueKeysWithValues: singleRegions.compactMap { id, rect -> (String, Double)? in
+            guard clipRect.contains(rect), let n = regionSamples[id], n > 0, let value = regionError[id] else { return nil }
+            return (id, 1 - value / Double(n) / 255)
+        })
+        return Result(native: nativePNG, diff: diffPNG, similarity: 1 - errorSum / Double(samples) / 255,
+                      maskedPixels: masked, ink: ink.filter { key, _ in masks.contains { $0.0 == key } }, noticeInk: noticeInk,
+                      singleWindowRegions: Dictionary(uniqueKeysWithValues: singleRegions), singleWindowMetrics: metrics)
+    }
+}
+
+/// Report-only, opt-in synthetic evidence. It does not mark visual acceptance.
+@MainActor public enum S1Gallery {
+    public static func run(goldenPath: String, outputPath: String) async throws {
+        _ = NSApplication.shared
+        let fm = FileManager.default, golden = URL(fileURLWithPath: goldenPath, isDirectory: true)
+        let output = URL(fileURLWithPath: outputPath, isDirectory: true)
+        let manifest = try JSONDecoder().decode(S1Manifest.self, from: Data(contentsOf: golden.appendingPathComponent("manifest.json")))
+        guard manifest.schemaVersion == 1,
+              manifest.prototypeSourceCommit == "69f1b639201f0b9cedd1ad9f109d26423e67e75f",
+              manifest.captures.count == 52 else { throw CocoaError(.fileReadCorruptFile) }
+        try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        for name in ["index.html", "metrics.json", "README.md"] where fm.fileExists(atPath: output.appendingPathComponent(name).path) {
+            throw CocoaError(.fileWriteFileExists)
+        }
+        guard let oraclePath = ProcessInfo.processInfo.environment["MODELPLAN_S1_ORACLE_FILE"], !oraclePath.isEmpty else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let oracleURL = URL(fileURLWithPath: oraclePath).standardizedFileURL
+        guard let flamePath = ProcessInfo.processInfo.environment["MODELPLAN_S1_FLAME_DIR"], !flamePath.isEmpty else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let flame = URL(fileURLWithPath: flamePath, isDirectory: true)
+        let flameManifest = try JSONDecoder().decode(S1FlameManifest.self, from: Data(contentsOf: flame.appendingPathComponent("manifest.json")))
+        guard flameManifest.schemaVersion == 1, flameManifest.prototypeSourceCommit == manifest.prototypeSourceCommit,
+              flameManifest.rotatingFollowup.prototypeSourceCommit == manifest.prototypeSourceCommit,
+              SHA256.hash(data: Data(flameManifest.rotatingFollowup.scriptUTF8.utf8)).map({ String(format: "%02x", $0) }).joined() == flameManifest.rotatingFollowup.scriptSHA256 else { throw CocoaError(.fileReadCorruptFile) }
+        let refRoot = output.appendingPathComponent("ref", isDirectory: true)
+        try fm.createDirectory(at: refRoot, withIntermediateDirectories: false)
+        let oracleBytes = try Data(contentsOf: oracleURL)
+        guard SHA256.hash(data: oracleBytes).map({ String(format: "%02x", $0) }).joined() == "746709f8d11eab84e94896537696f35531e644e7be8d35a7eda055f15a4268bb" else { throw CocoaError(.fileReadCorruptFile) }
+        guard let oracleRoot = try JSONSerialization.jsonObject(with: oracleBytes) as? [String: Any],
+              let oracleCases = oracleRoot["cases"] as? [[String: Any]] else { throw CocoaError(.fileReadCorruptFile) }
+        let now = ISO8601DateFormatter().date(from: "2026-10-20T14:05:00Z")!
+        let display = DockDisplayArea(id: "s1-synthetic", frame: .init(x: 0, y: 0, width: 1470, height: 956), visibleFrame: .init(x: 0, y: 0, width: 1470, height: 930))
+        let environment = DockEdgeEnvironment(displays: [display], layouts: [], primaryDisplayID: "s1-synthetic")
+        let temp = fm.temporaryDirectory.appendingPathComponent("s1-gallery-settings-" + UUID().uuidString)
+        try fm.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: temp) }
+        var written = [URL](), records = [[String: Any]](), html = "<!doctype html><meta charset=\"utf-8\"><title>S1 Dock gallery</title><h1>S1 Dock report (not visual acceptance)</h1><table><tr><th>Scenario</th><th>Reference</th><th>Native</th><th>Metric / status</th></tr>"
+        for (index, capture) in manifest.captures.enumerated() {
+            guard capture.file.range(of: #"^[A-Za-z0-9._-]+\.png$"#, options: .regularExpression) != nil else { throw CocoaError(.fileReadInvalidFileName) }
+            let source = golden.appendingPathComponent(capture.file), bytes = try Data(contentsOf: source)
+            let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+            guard hash == capture.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+            let refName = "ref/handoffs__20261101-dock-golden__" + capture.file
+            let refURL = output.appendingPathComponent(refName)
+            try bytes.write(to: refURL, options: .withoutOverwriting); written.append(refURL)
+            let nativeName = String(format: "native-%02d.png", index)
+            var record: [String: Any] = ["reference": capture.file, "scenario": capture.scenario, "state": capture.state,
+                "edge": capture.edge, "size": capture.size, "count": capture.count, "theme": capture.theme]
+            var status = "not-run: button state is not exposed by the production appearance", nativeCell = "not run"
+            if capture.scenario == "dock" {
+                let store = try SettingsStore(url: temp.appendingPathComponent("settings-\(index).json"))
+                try await store.update {
+                    $0.dockEdge = capture.edge == "bottom" ? .bottom : .right
+                    $0.size = capture.size == 36 ? .small : capture.size == 52 ? .large : .medium
+                    $0.dockDisplayID = "s1-synthetic"; $0.dockAlongFraction = 0.5; $0.language = .chinese
+                }
+                let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+                host.captureBackingScaleForChecks = 2
+                host.dockView.zaiMarkEnabled = true
+                let provider = S1SyntheticProvider(count: capture.count, now: now)
+                host.setDockContentProvider(provider)
+                let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+                await coordinator.reload()
+                if let error = host.lastAppearanceError {
+                    status = "appearance-error: \(String(describing: error))"
+                } else if let image = host.dockView.presentedImageForChecks, let skin = host.dockView.presentedSkinForChecks,
+                          let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                    let ids = skin.stations.compactMap(\.subscriptionID)
+                    let expectedIDs = Array(["codex", "claude", "zhipu", "cursor", "ocgo", "copilot", "kimi"].prefix(capture.count))
+                    let countOK = ids == expectedIDs
+                    record["registeredStationCount"] = ids.count; record["membershipAssertion"] = countOK ? "pass" : "fail"
+                    let expectedNoticeIDs = Set(expectedIDs.filter { $0 == "codex" || $0 == "claude" })
+                    let actualNotices = host.dockView.presentedNoticesForChecks
+                    let noticeOK = Set(actualNotices.keys) == expectedNoticeIDs && actualNotices.values.allSatisfy { $0.tone == .amber && $0.shape == .solid }
+                    record["syntheticNoticeAssertion"] = noticeOK ? "pass" : "fail"
+                    record["syntheticNoticeKinds"] = actualNotices.mapValues { String(describing: $0.key.kind) }
+                    let zStation = skin.stations.first { $0.subscriptionID == "zhipu" }
+                    let zOK = !expectedIDs.contains("zhipu") || zStation?.glyphs["zhipu"] == "logo-zai-white"
+                    record["betaZMarkAssertion"] = zOK ? "pass" : "fail"
+                    let sourceSize = capture.size <= 44 ? 44 : 52
+                    let expectedLayers = ["a1-01-bell-wall", "a1-03-deep-centre", "a1-02-throat-lip", "a1-04-exit-lip"].map { "\($0)-\(sourceSize)px@3x.webp" }
+                    let p1OK = skin.stations.filter { $0.subscriptionID != nil }.allSatisfy { $0.layers == expectedLayers && $0.radialOverlay?.alphas.count == 65 }
+                    record["p1LayersAssertion"] = p1OK ? "pass" : "fail"
+                    record["contentAssertion"] = "partial: fixture cards/forecast provided; actual public reset-event provider pending"
+                    record["skinBounds"] = [skin.bounds.minX, skin.bounds.minY, skin.bounds.width, skin.bounds.height]
+                    let oracle = oracleCases.first { ($0["edge"] as? String) == capture.edge && ($0["D"] as? Int) == capture.size && ($0["count"] as? Int) == capture.count && !($0["aliases"] as? Bool ?? false) }
+                    var geometryError = Double.infinity
+                    if let outline = oracle?["outline"] as? [[Double]], outline.count == skin.bodyPolygon.count,
+                       let stations = oracle?["stations"] as? [[String: Any]], stations.count == skin.stations.count,
+                       let button = oracle?["button"] as? [Double], button.count == 2,
+                       let actualButton = host.registeredConsoleButtonForChecks {
+                        var delta = outline.allSatisfy { $0.count == 2 } ? 0.0 : Double.infinity
+                        for (actual, expected) in zip(skin.bodyPolygon, outline) where expected.count == 2 {
+                            delta = max(delta, abs(Double(actual.x)-expected[0]), abs(Double(actual.y)-expected[1]))
+                        }
+                        for (actual, expected) in zip(skin.stations, stations) {
+                            guard let x = expected["x"] as? Double, let y = expected["y"] as? Double else { delta = .infinity; break }
+                            delta = max(delta, abs(Double(actual.centre.x)-x), abs(Double(actual.centre.y)-y))
+                        }
+                        delta = max(delta, abs(Double(actualButton.midX + skin.bounds.minX)-button[0]), abs(Double(actualButton.midY + skin.bounds.minY)-button[1]))
+                        geometryError = delta
+                    }
+                    let geometryOK = geometryError.isFinite && geometryError <= 0.001
+                    record["geometryAssertion"] = geometryOK ? "pass" : "fail"
+                    record["geometryMaxErrorPoints"] = geometryError.isFinite ? geometryError : NSNull()
+                    do {
+                        let singleIDs = Set(provider.inputs.compactMap { input -> String? in
+                            guard let reading = try? DockInstrumentProjection.evaluate(input, now: now), reading.inner == nil else { return nil }
+                            return input.id
+                        })
+                        let result = try S1PixelReport.make(reference: bytes, image: image, skin: skin, capture: capture, singleWindowIDs: singleIDs)
+                        let diffName = String(format: "diff-%02d.png", index)
+                        try result.native.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)
+                        try result.diff.write(to: output.appendingPathComponent(diffName), options: .withoutOverwriting)
+                        written.append(output.appendingPathComponent(nativeName)); written.append(output.appendingPathComponent(diffName))
+                        nativeCell = "<img width=\"260\" src=\"\(nativeName)\"><br><img width=\"260\" src=\"\(diffName)\">"
+                        record["nativeFile"] = nativeName; record["diffFile"] = diffName
+                        record["metric"] = result.similarity; record["metricKind"] = "1 - mean absolute RGB error / 255"
+                        record["maskedPercentageGlyphPixels"] = result.maskedPixels; record["inkAssertions"] = result.ink
+                        record["syntheticNoticeInkAssertions"] = result.noticeInk
+                        var singleRows = [[String: Any]]()
+                        for id in singleIDs.sorted() {
+                            guard let region = result.singleWindowRegions[id] else { continue }
+                            let metric = result.singleWindowMetrics[id]
+                            singleRows.append(["id": id, "metric": metric as Any? ?? NSNull(), "status": metric == nil ? "not-run: crop outside reference" : "report-only"])
+                            let left = max(0, Int(floor((Double(region.minX) - capture.clip.x) * 2)))
+                            let top = max(0, Int(floor((Double(region.minY) - capture.clip.y) * 2)))
+                            let width = max(1, Int(ceil(Double(region.width) * 2)))
+                            let height = max(1, Int(ceil(Double(region.height) * 2)))
+                            func crop(_ name: String) -> String {
+                                "<div style=\"position:relative;overflow:hidden;width:\(width)px;height:\(height)px\"><img src=\"\(name)\" style=\"position:absolute;max-width:none;left:-\(left)px;top:-\(top)px\"></div>"
+                            }
+                            let value = metric.map { String(format: "%.6f", $0) } ?? "not run"
+                            html += "<tr><td>Single window: \(id) / \(capture.file)</td><td>\(crop(refName))</td><td>\(crop(nativeName))</td><td>ROI RGB similarity: \(value)</td></tr>"
+                        }
+                        record["singleWindowCases"] = singleRows
+                        let requiredInk = Set(expectedIDs.filter { $0 == "claude" || $0 == "cursor" })
+                        let inkOK = Set(result.ink.keys) == requiredInk && result.ink.values.allSatisfy { $0 } && (requiredInk.isEmpty || result.maskedPixels > 0)
+                        let noticeInkOK = Set(result.noticeInk.keys) == expectedNoticeIDs && result.noticeInk.values.allSatisfy { $0 }
+                        status = countOK && geometryOK && inkOK && noticeOK && noticeInkOK && zOK && p1OK && result.similarity >= 0.97 ? "partial: metric and fixture assertions pass; real reset-event provider and owner review pending" : "fail: metric, geometry, ink, notice, art or membership assertion"
+                    } catch {
+                        try png.write(to: output.appendingPathComponent(nativeName), options: .withoutOverwriting)
+                        written.append(output.appendingPathComponent(nativeName))
+                        nativeCell = "<img width=\"260\" src=\"\(nativeName)\">"
+                        status = "not-run: 2x composition failed: \(String(describing: error))"
+                    }
+                } else { status = "not-run: production host returned no official raster" }
+                host.close()
+            }
+            record["status"] = status; if record["metric"] == nil { record["metric"] = NSNull() }; records.append(record)
+            let metricText = (record["metric"] as? Double).map { String(format: "%.6f", $0) } ?? "not run"
+            html += "<tr><td>\(capture.file)</td><td><img width=\"260\" src=\"\(refName)\"></td><td>\(nativeCell)</td><td>\(status)<br>RGB similarity: \(metricText)</td></tr>"
+        }
+        // Additional synthetic reset states have no prototype golden; never assign a pixel score.
+        for (label, noticeCase, showPercentages) in [("blue-hollow", S1SyntheticProvider.NoticeCase.announced, true),
+                                                     ("blue-solid", .confirmed, true), ("blue-rim", .announced, false)] {
+            let store = try SettingsStore(url: temp.appendingPathComponent("settings-" + label + ".json"))
+            try await store.update { $0.dockEdge = .right; $0.size = .medium; $0.dockDisplayID = "s1-synthetic"; $0.dockAlongFraction = 0.5; $0.language = .chinese; $0.showPercentages = showPercentages }
+            let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+            host.captureBackingScaleForChecks = 2
+            host.setDockContentProvider(S1SyntheticProvider(count: 1, now: now, noticeCase: noticeCase))
+            let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+            await coordinator.reload()
+            var row: [String: Any] = ["scenario": label, "metric": NSNull()]
+            var cell = "not run", status = "not-run: production appearance failed"
+            if host.lastAppearanceError == nil, let image = host.dockView.presentedImageForChecks,
+               let skin = host.dockView.presentedSkinForChecks,
+               let station = skin.stations.first(where: { $0.subscriptionID == "codex" }),
+               let notice = host.dockView.presentedNoticesForChecks["codex"],
+               let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) {
+                let expectedShape: DockNotice.Shape = noticeCase == .confirmed ? .solid : .hollow
+                let expectedX = showPercentages ? station.readout.midX + 22 * 44 / 52 : station.centre.x + 44 * 0.25
+                let expectedY = showPercentages ? station.readout.midY : station.centre.y - 44 * 0.433013
+                let pass = notice.tone == .blue && notice.shape == expectedShape && abs(station.eventRect.midX - expectedX) < 0.001 && abs(station.eventRect.midY - expectedY) < 0.001
+                let file = "synthetic-" + label + ".png"
+                try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
+                written.append(output.appendingPathComponent(file)); row["nativeFile"] = file
+                row["noticeAssertion"] = pass ? "pass" : "fail"
+                status = pass ? "report-only: synthetic geometry and tone passed; owner review pending" : "fail: synthetic geometry or tone"
+                cell = "<img width=\"260\" src=\"\(file)\">"
+            }
+            host.close(); row["status"] = status; records.append(row)
+            html += "<tr><td>\(label)</td><td>no golden</td><td>\(cell)</td><td>\(status)</td></tr>"
+        }
+        let flameStates = ["normal", "warning", "critical"]
+        let frameNames = flameStates.flatMap { state in (0..<9).map { "flame-\(state)-52pt-2x-1mag-pose\($0).png" } }
+        let flameNames = frameNames + flameStates.flatMap { ["prototype-live-\($0)-rotating.webm", "prototype-rotating-\($0)-strip.png"] }
+        for name in flameNames {
+            guard let entry = flameManifest.files.first(where: { $0.file == name }),
+                  flameManifest.files.filter({ $0.file == name }).count == 1 else { throw CocoaError(.fileReadCorruptFile) }
+            let bytes = try Data(contentsOf: flame.appendingPathComponent(name))
+            guard bytes.count == entry.bytes,
+                  SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == entry.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+            let target = refRoot.appendingPathComponent("handoffs__shared__s1-flame-frames__" + name)
+            try bytes.write(to: target, options: .withoutOverwriting); written.append(target)
+        }
+        // The source fixture intentionally holds its arc at 75% while varying colour.
+        // The override is available only to detached synthetic hosts, never real panels.
+        for (state, status) in [("normal", DockQuotaStatus.normal), ("warning", .warning), ("critical", .critical)] {
+            var nativeFiles = [String](), scores = [Double]()
+            var rowStatus = "not-run: synthetic playback failed"
+            do {
+                let store = try SettingsStore(url: temp.appendingPathComponent("settings-flame-" + state + ".json"))
+                try await store.update { $0.dockEdge = .right; $0.size = .large; $0.dockDisplayID = "s1-synthetic"; $0.autoHide = false; $0.motion = .system; $0.showPercentages = false }
+                let host = ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: { environment }, currentDate: { now })
+                defer { host.close() }
+                host.captureBackingScaleForChecks = 2
+                host.setDockContentProvider(S1FlameComparisonProvider())
+                let coordinator = SettingsApplicationCoordinator(store: store) { host.apply($0) }
+                await coordinator.reload(); host.setPresentationAllowed(true)
+                let pool = EffectResourcePool()
+                host.installWorkingEffectsForChecks(pool: pool, provider: try T2FlameFrameProvider.bundled(), systemReduceMotion: { false })
+                host.setComparisonStatusForChecks(id: "claude", status: status)
+                try host.setWorkingSignals([.init(subscriptionID: "claude", bindingVerified: true, fresh: true, observedOutput: true)])
+                guard host.activeWorkingEffectIDs.contains("claude"), host.rotatingWorkingEffectIDs.contains("claude"),
+                      let reading = host.dockView.presentedReadingsForChecks["claude"], reading.status == status,
+                      reading.outer?.fraction == 0.75, reading.inner == nil, reading.vendorResourceKey == "claude", reading.jetEligible,
+                      let skin = host.dockView.presentedSkinForChecks,
+                      let station = skin.stations.first(where: { $0.subscriptionID == "claude" }), abs(station.diameter - 52) < 0.001,
+                      let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
+                let refName = "ref/handoffs__shared__s1-flame-frames__prototype-rotating-" + state + "-strip.png"
+                guard let reference = NSBitmapImageRep(data: try Data(contentsOf: output.appendingPathComponent(refName))),
+                      reference.pixelsWide == 936, reference.pixelsHigh == 104 else { throw CocoaError(.fileReadCorruptFile) }
+                html += "<tr><td>52pt Claude, 75% outer, \(state) (synthetic)</td><td><video controls width=\"104\" src=\"ref/handoffs__shared__s1-flame-frames__prototype-live-\(state)-rotating.webm\"></video></td><td><img width=\"468\" src=\"\(refName)\" alt=\"prototype strip\"><br>Captured poses:<br>" + (0..<9).map { "<img width=\"52\" src=\"ref/handoffs__shared__s1-flame-frames__flame-\(state)-52pt-2x-1mag-pose\($0).png\">" }.joined() + "</td><td>Native poses:</td></tr><tr><td colspan=\"4\">"
+                for pose in 0..<9 {
+                    host.seekWorkingEffectsForChecks(Double(pose) / 9 + 0.00001)
+                    let w = Int(ceil(host.dockView.bounds.width * 2)), h = Int(ceil(host.dockView.bounds.height * 2))
+                    guard let context = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
+                    context.translateBy(x: 0, y: CGFloat(h)); context.scaleBy(x: 2, y: -2)
+                    host.dockView.displayIfNeeded(); layer.render(in: context)
+                    let crop = CGRect(x: ((station.centre.x - 26 - skin.bounds.minX) * 2).rounded(),
+                                      y: ((station.centre.y - 26 - skin.bounds.minY) * 2).rounded(), width: 104, height: 104)
+                    guard let image = context.makeImage()?.cropping(to: crop), image.width == 104, image.height == 104,
+                          let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+                    let native = NSBitmapImageRep(cgImage: image); var error = 0.0
+                    for y in 0..<104 { for x in 0..<104 {
+                        guard let a = native.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                              let b = reference.colorAt(x: pose * 104 + x, y: y)?.usingColorSpace(.sRGB) else { throw CocoaError(.fileReadCorruptFile) }
+                        let bg: [Double] = [16.0/255, 24.0/255, 28.0/255]
+                        for (ac, bc, background) in zip(zip([a.redComponent, a.greenComponent, a.blueComponent], [b.redComponent, b.greenComponent, b.blueComponent]), bg).map({ ($0.0.0, $0.0.1, $0.1) }) {
+                            error += abs(Double(ac) * Double(a.alphaComponent) + background * (1 - Double(a.alphaComponent)) - Double(bc) * Double(b.alphaComponent) - background * (1 - Double(b.alphaComponent)))
+                        }
+                    }}
+                    scores.append(1 - error / Double(104 * 104 * 3))
+                    let file = "native-working-\(state)-pose\(pose).png"; try png.write(to: output.appendingPathComponent(file), options: .withoutOverwriting)
+                    written.append(output.appendingPathComponent(file)); nativeFiles.append(file)
+                    html += "<img width=\"104\" src=\"\(file)\" alt=\"\(state) native pose \(pose)\">"
+                }
+                let range = String(format: "%.6f–%.6f", scores.min() ?? 0, scores.max() ?? 0)
+                html += "</td></tr><tr><td colspan=\"4\">RGB similarity range: \(range) (not SSIM). Prototype fixture uses a white Claude glyph; native uses the unchanged official Claude Clay mark. Synthetic colours vary independently of the fixed 75% ring.</td></tr>"
+                rowStatus = "report-only: 52pt Claude, fixed 75% ring; prototype white glyph vs unchanged official Clay mark; owner visual review pending"
+            } catch {
+                html += "<tr><td>\(state) working</td><td colspan=\"3\">not-run: \(String(describing: error))</td></tr>"
+                rowStatus = "not-run: \(String(describing: error))"
+            }
+            records.append(["scenario": "synthetic-working-" + state, "fixture": "52pt Claude, 75% outer, independent synthetic state", "nativeFiles": nativeFiles, "frameMetrics": scores, "metricKind": "1 - mean absolute RGB error", "documentedDifference": "prototype fixture uses white Claude glyph; native retains unaltered official Claude Clay mark", "status": rowStatus])
+        }
+        html += "</table><p>Null metrics are not passes. Metrics exclude only percentage glyph ink, and require geometry and owner review. Button states remain unsupported.</p>"
+        try Data(html.utf8).write(to: output.appendingPathComponent("index.html"), options: .withoutOverwriting)
+        let result: [String: Any] = ["schemaVersion":1,"prototypeSourceCommit":manifest.prototypeSourceCommit,"results":records]
+        try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output.appendingPathComponent("metrics.json"), options: .withoutOverwriting)
+        written.append(output.appendingPathComponent("index.html")); written.append(output.appendingPathComponent("metrics.json"))
+        let files = written.sorted { $0.path < $1.path }
+        let sourceSHA = ProcessInfo.processInfo.environment["MODELPLAN_S1_SOURCE_SHA"] ?? "uncommitted source; no commit attribution"
+        var readme = "# S1 synthetic offscreen gallery\n\nNative source: `\(sourceSHA)`. Golden source: `\(manifest.prototypeSourceCommit)`. Report only; null metrics, synthetic reset signals and unsupported button states are not product acceptance. All reference images and the prototype video are copied into this batch. Pixel metrics are mean RGB similarity with only coloured percentage glyph boxes excluded. Chromium/CoreGraphics rasterization, synthetic CSS wallpaper, the unconnected real reset-event provider and beta-only Z mark in synthetic preview remain differences. The working strip uses synthetic signal and the shared frame pool; owner visual review remains required. README itself is excluded from this list.\n\n| File | Bytes | SHA-256 |\n|---|---:|---|\n"
+        for file in files {
+            let data = try Data(contentsOf: file), digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let relative = String(file.path.dropFirst(output.path.count + 1))
+            readme += "| \(relative) | \(data.count) | \(digest) |\n"
+        }
+        try Data(readme.utf8).write(to: output.appendingPathComponent("README.md"), options: .withoutOverwriting)
+    }
+}

@@ -1158,6 +1158,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		ledger := speed.Load(st.Dir)
 		perf, ok := speed.LoadPerf(st.Dir)
 		long, longOK := speed.LoadLong(st.Dir)
+		ledger, perf, long = speed.LegacyAdmitted(ledger, perf, long, admission)
 		pace, paceOK := history.LoadPace(st.Dir)
 		home, _ := os.UserHomeDir()
 		localUsageFor := func(tool string) localusage.Report {

@@ -69,7 +69,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics"}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", CapabilityCockpitDetailsV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents)
 	}
@@ -163,9 +163,11 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		in.Offline = b.config.Offline
 		in.IdentityOff = quota.IdentityOff()
 	}
+	var report quota.Report
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
-		appendReportRows(&in, quota.ReadPermitted(p, in.Now), false)
+		report = quota.ReadPermitted(p, in.Now)
+		appendReportRows(&in, report, false)
 	} else {
 		appendReportRows(&in, quota.ReadDeclared(p, in.Now), true)
 	}
@@ -189,9 +191,11 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	}
 	projection := rows.Build(in)
 	var resetEvents *[]rows.ResetEvent
+	var publicModels []digest.Model
 	droppedResetConfirmations := 0
 	if !changed && b.config.ResetPublication != nil {
 		if d, err := b.config.ResetPublication(); err == nil && d != nil {
+			publicModels = d.Models
 			events, dropped := resetevents.Project(d, projection, in.Now)
 			droppedResetConfirmations = dropped
 			resetEvents = &events
@@ -263,7 +267,10 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if changed {
 		health = wire.Health{State: wire.HealthDegraded, Code: "consent_changed"}
 	}
-	return View{Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	// Evaluation time is not a displayed fact; keeping it would make every
+	// otherwise identical backend view look changed to rows subscribers.
+	report.EvaluatedAt = time.Time{}
+	return View{QuotaReport: report, PublicModels: publicModels, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 7a8542df24a105bd3eccf6ea7701a26c35eaaf8f9e1689d32aee12358581d679
+// Schema SHA-256: 137af2794ba3c9410759ec5114c3f5162052143845a3829f215cf919a699d6db
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -32,14 +32,74 @@ export type WireCockpitAccount = {
   readonly "tool": string;
 };
 
+export type WireCockpitAlert = {
+  readonly "remainingPercent": number;
+  readonly "severity": string;
+  readonly "source": string;
+  readonly "subscriptionRef": string;
+  readonly "windowId": string;
+};
+
+export type WireCockpitCredits = {
+  readonly "balance": number | null;
+  readonly "observedAt": string;
+};
+
 export type WireCockpitData = {
+  readonly "details"?: WireCockpitDetails | null;
   readonly "projection": WireRowsProjection;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscription>;
+};
+
+export type WireCockpitDetails = {
+  readonly "alerts": ReadonlyArray<WireCockpitAlert>;
+  readonly "resetEvents": ReadonlyArray<WireResetEvent>;
+  readonly "sessionCoverage": string;
+  readonly "sessions": ReadonlyArray<WireCockpitSession>;
+  readonly "sources": ReadonlyArray<string>;
+  readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionDetails>;
+  readonly "version": number;
+};
+
+export type WireCockpitQueryParams = {
+  readonly "redBelow"?: 10 | 16 | 20 | 25;
+};
+
+export type WireCockpitResetCount = {
+  readonly "count": number | null;
+  readonly "expiresAt": string | null;
+  readonly "kind": string;
+};
+
+export type WireCockpitSession = {
+  readonly "effort": string | null;
+  readonly "lastObservedAt": string;
+  readonly "model": string;
+  readonly "projectLabel": string | null;
+  readonly "rate": number | null;
+  readonly "sessionRef": string;
+  readonly "source": string;
+  readonly "state": string;
+  readonly "subscriptionRef": string | null;
 };
 
 export type WireCockpitSubscription = {
   readonly "accounts": ReadonlyArray<WireCockpitAccount>;
   readonly "subscriptionRef": string;
+};
+
+export type WireCockpitSubscriptionDetails = {
+  readonly "credits": WireCockpitCredits | null;
+  readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
+  readonly "subscriptionRef": string;
+  readonly "today": ReadonlyArray<WireCockpitToday>;
+};
+
+export type WireCockpitToday = {
+  readonly "bindingBasis": string;
+  readonly "generationTps": number | null;
+  readonly "observedOutputTokens": number;
+  readonly "source": string;
 };
 
 export type WireCredits = {
@@ -340,9 +400,73 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "CockpitAlert": {
+    "additionalProperties": false,
+    "properties": {
+      "remainingPercent": {
+        "type": "number"
+      },
+      "severity": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "windowId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "subscriptionRef",
+      "windowId",
+      "severity",
+      "remainingPercent"
+    ],
+    "type": "object"
+  },
+  "CockpitCredits": {
+    "additionalProperties": false,
+    "properties": {
+      "balance": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "observedAt": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "required": [
+      "balance",
+      "observedAt"
+    ],
+    "type": "object"
+  },
   "CockpitData": {
     "additionalProperties": false,
     "properties": {
+      "details": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CockpitDetails"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "projection": {
         "$ref": "#/$defs/RowsProjection"
       },
@@ -356,6 +480,193 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "projection",
       "subscriptions"
+    ],
+    "type": "object"
+  },
+  "CockpitDetails": {
+    "additionalProperties": false,
+    "properties": {
+      "alerts": {
+        "items": {
+          "$ref": "#/$defs/CockpitAlert"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
+      "resetEvents": {
+        "items": {
+          "$ref": "#/$defs/ResetEvent"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "sessionCoverage": {
+        "type": "string"
+      },
+      "sessions": {
+        "items": {
+          "$ref": "#/$defs/CockpitSession"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "sources": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 4,
+        "type": "array",
+        "uniqueItems": true
+      },
+      "subscriptions": {
+        "items": {
+          "$ref": "#/$defs/CockpitSubscriptionDetails"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
+      "version": {
+        "maximum": 1,
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "version",
+      "sources",
+      "subscriptions",
+      "sessions",
+      "sessionCoverage",
+      "resetEvents",
+      "alerts"
+    ],
+    "type": "object"
+  },
+  "CockpitQueryParams": {
+    "additionalProperties": false,
+    "properties": {
+      "redBelow": {
+        "enum": [
+          10,
+          16,
+          20,
+          25
+        ],
+        "type": "integer"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "CockpitResetCount": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "expiresAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "kind": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "kind",
+      "count",
+      "expiresAt"
+    ],
+    "type": "object"
+  },
+  "CockpitSession": {
+    "additionalProperties": false,
+    "properties": {
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "lastObservedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "model": {
+        "type": "string"
+      },
+      "projectLabel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "rate": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "anyOf": [
+          {
+            "maxLength": 16,
+            "pattern": "^[a-f0-9]{16}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "sessionRef",
+      "source",
+      "subscriptionRef",
+      "model",
+      "effort",
+      "projectLabel",
+      "lastObservedAt",
+      "state",
+      "rate"
     ],
     "type": "object"
   },
@@ -377,6 +688,78 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "subscriptionRef",
       "accounts"
+    ],
+    "type": "object"
+  },
+  "CockpitSubscriptionDetails": {
+    "additionalProperties": false,
+    "properties": {
+      "credits": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CockpitCredits"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resetCounts": {
+        "items": {
+          "$ref": "#/$defs/CockpitResetCount"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "today": {
+        "items": {
+          "$ref": "#/$defs/CockpitToday"
+        },
+        "maxItems": 4,
+        "type": "array"
+      }
+    },
+    "required": [
+      "subscriptionRef",
+      "resetCounts",
+      "credits",
+      "today"
+    ],
+    "type": "object"
+  },
+  "CockpitToday": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingBasis": {
+        "type": "string"
+      },
+      "generationTps": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "observedOutputTokens": {
+        "type": "integer"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "observedOutputTokens",
+      "generationTps",
+      "bindingBasis"
     ],
     "type": "object"
   },

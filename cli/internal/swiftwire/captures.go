@@ -22,7 +22,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.Request](), reflect.TypeFor[wire.ErrorContext](), reflect.TypeFor[wire.RPCError](), reflect.TypeFor[wire.Failure](),
 		reflect.TypeFor[wire.InitializeParams](), reflect.TypeFor[wire.InitializeResult](), reflect.TypeFor[wire.Empty](), reflect.TypeFor[wire.CancelParams](),
 		reflect.TypeFor[wire.RowsSnapshot](), reflect.TypeFor[wire.ConsentScope](), reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](),
-		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](),
+		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](), reflect.TypeFor[wire.CockpitDetails](), reflect.TypeFor[wire.CockpitSubscriptionDetails](), reflect.TypeFor[wire.CockpitResetCount](), reflect.TypeFor[wire.CockpitCredits](), reflect.TypeFor[wire.CockpitToday](), reflect.TypeFor[wire.CockpitSession](), reflect.TypeFor[wire.CockpitAlert](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
 		reflect.TypeFor[rows.AccountActivity](),
@@ -111,7 +111,7 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 				s = "e-synthetic"
 			case "Scope":
 				s = "codex.runtime_usage"
-			case "SubscriptionRef", "AccountLocator":
+			case "SubscriptionRef", "AccountLocator", "SessionRef":
 				s = "0123456789abcdef"
 			case "AccessToken":
 				s = "TOKEN-CANARY-U4"
@@ -125,7 +125,11 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	case reflect.Bool:
 		v.SetBool(false)
 	case reflect.Int, reflect.Int64:
-		v.SetInt(1)
+		if name == "RedBelow" {
+			v.SetInt(25)
+		} else {
+			v.SetInt(1)
+		}
 	case reflect.Uint64:
 		v.SetUint(7)
 	case reflect.Float64:

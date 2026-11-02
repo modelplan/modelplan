@@ -8,6 +8,7 @@ import (
 
 // Hourly uses completed-request timestamps; offsets distinguish repeated DST hours.
 type Hourly struct {
+	GrantEpoch *GrantEpoch `json:"grantEpoch,omitempty"`
 	TokenKinds
 	Hour                 string `json:"hour"`
 	Source               string `json:"source"`
@@ -25,16 +26,17 @@ func (l *PerfLedger) addHourly(source string, q request, _ time.Time) {
 		return
 	}
 	h := localHour(q.end)
+	epoch := currentEpoch(l.admission, source)
 	for i := range l.Hourly {
 		r := &l.Hourly[i]
-		if r.Hour == h && r.Source == source && r.Model == q.cfg.model {
+		if r.Hour == h && r.Source == source && r.Model == q.cfg.model && sameEpoch(r.GrantEpoch, epoch) {
 			r.TokenKinds.add(q.TokenKinds, r.ObservedRequests == 0)
 			r.ObservedRequests++
 			r.ObservedOutputTokens += q.out
 			return
 		}
 	}
-	r := Hourly{Hour: h, Source: source, Model: q.cfg.model, ObservedRequests: 1, ObservedOutputTokens: q.out}
+	r := Hourly{GrantEpoch: epoch, Hour: h, Source: source, Model: q.cfg.model, ObservedRequests: 1, ObservedOutputTokens: q.out}
 	r.TokenKinds.add(q.TokenKinds, true)
 	l.Hourly = append(l.Hourly, r)
 }

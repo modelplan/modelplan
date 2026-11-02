@@ -103,7 +103,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["history/query"] = history
-		var cockpitSource queries.CockpitSource = sharedCockpit{backend: shared}
+		var cockpitSource queries.CockpitSource = sharedCockpit{backend: shared, cache: st.Dir}
 		cockpit, err := queries.CockpitHandler(queries.CockpitConfig{State: shared, Source: cockpitSource})
 		if err != nil {
 			return nil, func() {}, err

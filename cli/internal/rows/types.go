@@ -99,7 +99,7 @@ type ModelScope struct {
 }
 
 type Window struct {
-	ModelScope       *ModelScope `json:"modelScope,omitempty" null:"coalesced"`
+	ModelScope       *ModelScope `json:"modelScope,omitempty" null:"forbidden"`
 	ID               string      `json:"id"`
 	Role             Role        `json:"role"`
 	DurationSeconds  *int64      `json:"durationSeconds" null:"coalesced"`

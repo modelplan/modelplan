@@ -1,5 +1,17 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+
+public extension SettingsPreferences {
+    /// Order-derived identities may refer to a different account after any refresh.
+    func withoutUnstableMemberChoices(_ members: [SettingsSubscription]) -> SettingsPreferences {
+        let unstable = Set(members.filter(\.isUnstable).map(\.id))
+        var result = self
+        result.subscriptionSettings = result.subscriptionSettings.filter { !unstable.contains($0.key) }
+        result.subscriptions = .init(order: result.subscriptions.order.filter { !unstable.contains($0) },
+                                     hiddenIDs: result.subscriptions.hiddenIDs.subtracting(unstable))
+        return result
+    }
+}
 import ModelPlanDock
 
 public struct SettingsEnvironment: Sendable {
@@ -62,8 +74,8 @@ public extension SettingsPreferences {
         // A pin selects a general window, never a model/feature-specific extra quota.
         switch pin {
         case .auto: result.selectedWindowID = nil
-        case .fiveHour: result.selectedWindowID = input.windows.first { $0.period == .fiveHour }?.id
-        case .week: result.selectedWindowID = input.windows.first { $0.period == .week }?.id
+        case .fiveHour: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .fiveHour }?.id
+        case .week: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .week }?.id
         }
         return result
     }

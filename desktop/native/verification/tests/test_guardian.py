@@ -23,7 +23,7 @@ class Clock:
     def sleep(self, s): self.t += s
 
 
-def no_kill(pid_file): return True
+def no_kill(pid_file): return True, 'none'
 
 
 class GuardianTests(unittest.TestCase):
@@ -40,7 +40,7 @@ class GuardianTests(unittest.TestCase):
         def sleep(s):
             clock.sleep(s); seen.append(json.loads(self.lease.read_text())['guardianHeartbeatAt'])
             if clock.t >= 1010: self.stop.write_text('{}')
-        self.assertEqual(guardian.run(self.lease, self.stop, clock=clock, sleep=sleep, kill=no_kill), ('stopped', True))
+        self.assertEqual(guardian.run(self.lease, self.stop, clock=clock, sleep=sleep, kill=no_kill), ('stopped', True, 'none'))
         record = json.loads(self.lease.read_text())
         self.assertIs(record['guardian'], True)
         self.assertEqual({k: record[k] for k in guardian.IDENTITY}, {k: self.base[k] for k in guardian.IDENTITY})
@@ -160,7 +160,7 @@ class OwnedSubjectTests(unittest.TestCase):
         lease.write_text(json.dumps(dict(runID='r', epoch='e', notBefore=1.0, expiresAt=100.0, exclusive=True, ownerPreempted=False)))
         bad_stop = self.dir / 'missing-dir' / 'STOP'  # cannot be written
         outcome = guardian.run(lease, bad_stop, clock=Clock(1.0), sleep=lambda s: None, running=lambda: False,
-                               kill=lambda f: killed.append(f) or True)
+                               kill=lambda f: killed.append(f) or (True, 'none'))
         self.assertEqual(outcome[0], 'signalled'); self.assertEqual(len(killed), 1)
 
     def test_launch_kills_child_when_registration_fails(self):
@@ -212,7 +212,7 @@ class RoundThreeTests(unittest.TestCase):
         lost = launcher or dict(pid=dead.pid, startSeconds=-1, startMicroseconds=0)
         pid_file.write_text(json.dumps(dict(state='running', launcher=lost, **guardian.identity(child.pid))))
         outcome = guardian.run(lease, stop, pid_file=pid_file, sleep=lambda s: time.sleep(0.05))
-        self.assertEqual(outcome, ('launcher-lost', True))
+        self.assertEqual(outcome, ('launcher-lost', True, 'registered'))
         self.assertIsNotNone(child.wait(5))
 
     def test_reserve_must_cover_termination(self):

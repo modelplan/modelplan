@@ -4,6 +4,7 @@ import importlib.util
 import itertools
 import json
 import plistlib
+import shutil
 from pathlib import Path
 import stat
 import tempfile
@@ -137,6 +138,53 @@ class AdhocBetaGates(unittest.TestCase):
         self.assertEqual(release.beta_feed_url(env), env['MACOS_BETA_FEED_URL'])
 
 
+class BetaZaiPackaging(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.app = root / 'Synthetic.app'
+        resources = self.app / 'Contents/Resources'; resources.mkdir(parents=True)
+        (resources / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic notice')
+        self.source_root = root / 'source'; source = self.source_root / 'desktop/third-party/dock-resources/Resources/Marks/zai-white.svg'
+        source.parent.mkdir(parents=True); source.write_bytes(b'synthetic original beta mark')
+        self.source = source
+        bundle = resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle' / 'Contents/Resources/Resources'
+        (bundle / 'Marks').mkdir(parents=True)
+        self.destination = bundle / 'Marks/zai-white.svg'
+        self.manifest = bundle / 'manifest.json'
+        attribution = bundle / 'Marks/SOURCES.md'; attribution.write_text('synthetic vendor attribution')
+        self.manifest.write_text(json.dumps({'schemaVersion': 1, 'files': {
+            'logo-zai-white': {'path':'Marks/zai-white.svg','sha256':release.sha256(source),'bytes':source.stat().st_size,'betaOnly':True},
+            'notice-vendors': {'path':'Marks/SOURCES.md','sha256':release.sha256(attribution),'bytes':attribution.stat().st_size}}}))
+        source_manifest = self.source_root / 'desktop/third-party/dock-resources/Resources/manifest.json'
+        source_manifest.write_bytes(self.manifest.read_bytes())
+        (self.app / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.synthetic'}))
+
+    def test_beta_default_embeds_verified_original_and_enables_switch(self):
+        release.configure_beta_zai(self.app, source_root=self.source_root)
+        self.assertEqual(self.destination.read_bytes(), self.source.read_bytes())
+        self.assertIs(plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())['zaiMarkEnabled'], True)
+
+    def test_switch_off_keeps_mark_absent(self):
+        release.configure_beta_zai(self.app, source_root=self.source_root, zaiMarkEnabled=False)
+        self.assertFalse(self.destination.exists())
+        self.assertIs(plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())['zaiMarkEnabled'], False)
+
+    def test_missing_tampered_or_duplicate_mark_fails_closed(self):
+        for case in ('tampered', 'missing_notice', 'missing_attribution', 'duplicate_destination'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                app = Path(temp) / 'Synthetic.app'; shutil.copytree(self.app, app)
+                source_root = Path(temp) / 'source'; shutil.copytree(self.source_root, source_root)
+                if case == 'tampered': (source_root / self.source.relative_to(self.source_root)).write_bytes(b'tampered')
+                if case == 'missing_notice': (app / 'Contents/Resources/THIRD-PARTY-TRADEMARKS.md').unlink()
+                if case == 'missing_attribution': (app / self.manifest.relative_to(self.app)).parent.joinpath('Marks/SOURCES.md').unlink()
+                if case == 'duplicate_destination':
+                    path = app / self.destination.relative_to(self.app); path.write_bytes(b'preexisting')
+                with self.assertRaises(ValueError):
+                    release.configure_beta_zai(app, source_root=source_root)
+                self.assertNotIn('zaiMarkEnabled', plistlib.loads((app / 'Contents/Info.plist').read_bytes()))
+
+
 class AdhocBetaCandidate(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -144,6 +192,11 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.root = Path(temporary.name)
         self.app = self.root / 'ModelPlan.app'
         self.resources = self.app / 'Contents/Resources'; self.resources.mkdir(parents=True)
+        dock = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle' / 'Resources'
+        (dock / 'Marks').mkdir(parents=True)
+        shutil.copyfile(release.ROOT / 'desktop/third-party/dock-resources/Resources/manifest.json', dock / 'manifest.json')
+        shutil.copyfile(release.ROOT / 'desktop/third-party/dock-resources/Resources/Marks/SOURCES.md', dock / 'Marks/SOURCES.md')
+        (self.resources / 'THIRD-PARTY-TRADEMARKS.md').write_text('synthetic third-party trademark notice')
         self.helper = self.app / 'Contents/Helpers/modelplan'; self.helper.parent.mkdir()
         self.helper.write_bytes(b'synthetic universal helper')
         self.credential = self.app / release.CREDENTIAL_HELPER
@@ -184,6 +237,12 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.calls.append((args, input))
         if args[:3] == ('xcrun', 'lipo', '-archs'):
             return b'arm64 x86_64'
+        if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+            info = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
+            self.assertIs(info.get('zaiMarkEnabled'), True)
+            mark = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle/Resources/Marks/zai-white.svg'
+            source = release.ROOT / 'desktop/third-party/dock-resources/Resources/Marks/zai-white.svg'
+            self.assertEqual(mark.read_bytes(), source.read_bytes())
         if args[:5] == ('codesign', '--force', '--deep', '--sign', '-'):
             self.helper.write_bytes(b'synthetic helper changed by deep signing')
         if args[0] == 'ditto':
@@ -237,6 +296,17 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.assertIn('Gatekeeper', (self.output / 'RELEASE_NOTES.md').read_text())
         self.assertIn('re-granting', (self.output / 'RELEASE_NOTES.md').read_text())
         self.assertIn('0.1 &amp; beta', (self.output / 'release-notes.html').read_text())
+
+    def test_beta_mark_tamper_after_sign_fails_before_archive(self):
+        def corrupt(*args, **kwargs):
+            value = self.fake_run(*args, **kwargs)
+            if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+                mark = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle/Resources/Marks/zai-white.svg'
+                mark.write_bytes(b'tampered after signing')
+            return value
+        with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(ValueError, 'changed after signing'):
+            self.prepare()
+        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
 
     def test_adhoc_post_sign_mismatch_fails_before_archive(self):
         def corrupt(*args, **kwargs):

@@ -22,14 +22,15 @@ import ModelPlanSettings
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"a650d8e3627478c2bef62f036283a5e7d98d6378b6a898bbbc14352b8183c57c",
-        "official":"ba5be5676ac4ad33d5946677814cb09f8f1ceaa7531a85c4984f67917929a8ee",
+        "community":"058139d0b225e9dc49b3349e37d936a5ec414f4ddcba5a5a22c610bce5cda430",
+        "official":"4e559ba4af5a59695bc4af9165c80c28cdb3e64ae418ed69163526eff6f7e31a",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
+                            cockpitEntryEnabled: Bool? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
@@ -37,12 +38,12 @@ import ModelPlanSettings
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     guard let owner else { throw CockpitBridgeError.unavailable }
@@ -150,15 +151,16 @@ struct CockpitUnavailableNotice {
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
             if let requestNotice { requestNotice(notice); return }
-            let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
+            let english=await owner.settingsStore.snapshot().preferences.language == .english
+            let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
-                ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
-                : "Check tool access in Settings, or reinstall this candidate if bundled content is missing. / 请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。"
+                ? (english ? "History is unavailable in this candidate. Open Settings to check connected tools." : "当前候选版尚无历史窗口，请打开设置查看已连接工具。")
+                : (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
             for action in notice.actions {
                 switch action {
-                case .settings:alert.addButton(withTitle:"Open Settings / 打开设置")
-                case .dockReadings:alert.addButton(withTitle:"Dock readings / Dock 读数")
-                case .cancel:alert.addButton(withTitle:"Cancel / 取消")
+                case .settings:alert.addButton(withTitle:english ? "Open Settings" : "打开设置")
+                case .dockReadings:alert.addButton(withTitle:english ? "Cockpit" : "驾驶舱")
+                case .cancel:alert.addButton(withTitle:english ? "Cancel" : "取消")
                 }
             }
             switch alert.runModal() {

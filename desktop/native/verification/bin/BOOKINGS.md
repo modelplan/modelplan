@@ -96,7 +96,7 @@ is one attempt: if another reservation exists or races it, stop, release only
 this attempt's resources and report to the coordinator. No GUI busy-retry loop.
 
 Both tools require `releasePath` in the run config, pointing to the existing
-M1 release file, plus `leasePath` and `stopPath`. The shared `admission.py` loader
+M1 release file (on MacCI: V1's coordinator-GO receipt, with `"host": "macci"`), plus `leasePath` and `stopPath`. The shared `admission.py` loader
 reads both files, validates release approval, live heartbeat, timing, exclusivity
 and stop state, then calls the live booking gate. Launch uses it before setup
 and again after hashing; Drive uses it before any child (including its guardian)
@@ -125,6 +125,16 @@ supervised launch or Drive run, and record `finish --cleaned` only when the guar
 confirmed closure. It is not repeated here, so the two cannot drift apart.
 
 
+**MacCI (lane V1).** MacCI keeps its own ledger and runs the same sequence with `--lane V1`.
+M1 does not run there: V1 writes the release with `release.py --lane V1 --host macci
+--coordinator-go GO_URL` (the coordinator's GO comment on the handoff issue, a GitHub
+issue-comment URL) and `MODELPLAN_VERIFICATION_HOST=macci`; the run config sets `"host": "macci"`
+and `"launchMode": "direct"` (with `"subjectKind": "app-zip"` for a full signed `.app` zip;
+LaunchServices returned -10810 there, and direct children activate). Details, launch modes, synthetic-data limits and the never-started closure
+are in [`../SKILL.md`](../SKILL.md#macci-lane-v1). On the dev Mac only M1 releases, unchanged.
+The never-started scan matches only by executable path (exact subject or bundle prefix) and by
+helper PID plus start time recorded at spawn; it never reads other processes' environments.
+
 If work is abandoned **while still queued**, replace start/release/launch with:
 
 ```sh
@@ -134,12 +144,12 @@ python3 desktop/native/verification/bin/book.py withdraw \
 
 `start` emits a lease snapshot with the exact booked start/deadline and initial
 heartbeat; this is not an independent watchdog or release approval. The heartbeat
-must stay at most two seconds old. Only M1 runs `release.py`, with explicit
+must stay at most two seconds old. On the dev Mac only M1 runs `release.py` (V1 with a coordinator GO on MacCI), with explicit
 `--lane M1` and `--approval`; the writer checks the started head and exact issued
 lease identity/interval under the ledger lock, refuses expired leases and never
 overwrites a receipt. The receipt contains only that identity and M1's approval
 reference. The lane flag and approval reference attest the operator's authority;
-trusted writers must verify the linked comment is the coordinator's OK.
+`release.py` checks only the reference's syntax (https URL; GitHub issue-comment URL for the MacCI GO), so the releasing lane must itself confirm the linked comment is the coordinator's OK or GO.
 M1 may release a booked session owned by another requesting lane, but must use
 that lane for its booking start/finish operations. Withdrawal cannot cancel an
 already started session. A release never extends a lease or certifies cleanup.
@@ -153,7 +163,8 @@ python3 desktop/native/verification/bin/book.py finish \
 ```
 
 This records **`end + cleaned`** and advances the queue. `--cleaned` is the
-operator's cleanup attestation, not an automated process-closure probe. Existing
+operator's cleanup attestation, not an automated process-closure probe; give it only when the
+guardian exited 0 (closure verified, including a scan-proven `subject: never-started`). Existing
 Cleanup and independent closure evidence are still required. A different lane,
 run, epoch or booking cannot finish the holder.
 

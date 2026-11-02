@@ -210,6 +210,15 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
+	if strings.HasPrefix(name, "WireCockpit") {
+		return true
+	}
+	if name == "WireCockpitQueryParams" {
+		return true
+	}
+	if name == "RowsWindow" && field == "modelScope" || name == "WireRowsProjection" && field == "resetEvents" {
+		return true
+	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
 		return true
 	}
@@ -491,6 +500,19 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 				values = "(scopes ?? [])"
 			}
 			fmt.Fprintf(b, "        for scope in %s { try WireValidation.identity(scope) }\n", values)
+		}
+		// Optional integer choices are still input constraints; malformed or
+		// unsupported settings must not silently become the omitted default.
+		if choices, ok := f.Rule["enum"].([]any); ok && f.Optional && f.Swift == "Int" {
+			var values []string
+			for _, item := range choices {
+				n, ok := item.(float64)
+				if !ok {
+					panic("non-numeric integer enum")
+				}
+				values = append(values, strconv.FormatFloat(n, 'f', -1, 64))
+			}
+			fmt.Fprintf(b, "        if let value = %s, ![%s].contains(value) { throw WireDecodeError.invalidBound }\n", value, strings.Join(values, ", "))
 		}
 		// Bounds originate in the producer schema rather than a second hand-written limit.
 		if low, ok := f.Rule["minimum"].(float64); ok && !f.Optional {

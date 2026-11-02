@@ -8,8 +8,16 @@ Run it in the background right after `book.py start`, before `release.py` and `l
   Any other lease writer must take the same lock (use `update_lease`).
 - It stops on the stop file, the deadline minus the cleanup reserve, SIGTERM/SIGINT, or any error.
   On every exit path it writes the stop file and, if `--subject-pid-file` names a live subject,
-  terminates it (TERM, then KILL) and waits for it to be gone. Exit status 0 means the subject is
-  confirmed gone (or never started); anything else means closure is NOT verified.
+  terminates it (TERM, then KILL) and waits for it to be gone.
+- A subject that never registered (the reservation is still `launching`) is closed by a
+  project-scoped scan instead: the launcher records the run's exact executable path, its scratch
+  prefix and the PID plus start time of each helper it spawns in the reservation, and the guardian
+  (once that launcher is gone) stops any owned process inside that scope and rescans. An empty scan
+  reports `subject: never-started`. A reservation without a scope stays unconfirmed. Process names
+  and other processes' environments are never read.
+- Exit status 0 means closure is verified and the booking may be finished as cleaned: either the
+  run ended normally with the subject confirmed gone, or the scan proved the subject never started.
+  Anything else means closure is NOT verified.
 - `launch.py --execute` independently stops its child when the heartbeat goes stale, so a killed
   guardian still fails closed; admission refuses a launch until the guardian has taken over.
 """
@@ -23,6 +31,8 @@ from pathlib import Path
 import signal
 import sys
 import time
+
+import process_scan
 
 _spec = importlib.util.spec_from_file_location('cleanup', Path(__file__).with_name('cleanup-run.py'))
 cleanup = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(cleanup)
@@ -104,13 +114,16 @@ def registration(pid_file):
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
-def mark_launching(pid_file, lookup=None):
+def mark_launching(pid_file, lookup=None, scope=None, mode=None):
     """A controller (launch.py or Drive), before spawning: reserve the registration (exec gate).
 
     One controller per booking: under the registration lock, refuse while a registered subject is
-    still alive or another live controller holds the reservation.
+    still alive or another live controller holds the reservation. `scope` (process_scan.scope_for)
+    lets the guardian prove closure if the subject never registers; `mode` is the launch mode.
     """
     lookup = lookup or identity
+    if scope is not None and not process_scan.valid_scope(scope):
+        raise ValueError('invalid scan scope')
     with registration(pid_file):
         me = lookup(os.getpid())
         if me is None:
@@ -126,8 +139,28 @@ def mark_launching(pid_file, lookup=None):
             if (prior.get('state') == 'launching' and isinstance(launcher, dict)
                     and not cleanup.matches(me, launcher) and cleanup.matches(lookup(launcher.get('pid')), launcher)):
                 raise ValueError('another controller is launching; one controller per booking')
-        write_atomic(pid_file, dict(state='launching', launcher=me))
+        record = dict(state='launching', launcher=me)
+        if scope is not None:
+            record['scan'] = scope
+        if mode is not None:
+            record['launchMode'] = mode
+        write_atomic(pid_file, record)
         return me
+
+
+def add_helper(pid_file, launcher, helper):
+    """The reserving controller records a helper it just spawned (PID plus start time) in the scope."""
+    with registration(pid_file):
+        try:
+            current = json.loads(pid_file.read_text())
+        except (OSError, ValueError):
+            raise ValueError('reservation missing')
+        if (current.get('state') != 'launching' or not cleanup.matches(launcher, current.get('launcher') or {})
+                or not process_scan.valid_scope(current.get('scan'))):
+            raise ValueError('scoped reservation not held by this controller')
+        current['scan'] = process_scan.with_helper(current['scan'], helper)
+        write_atomic(pid_file, current)
+        return current['scan']
 
 
 def register(pid_file, pid, launcher=None, lookup=None):
@@ -143,19 +176,39 @@ def register(pid_file, pid, launcher=None, lookup=None):
         ident = lookup(pid)
         if ident is None:
             raise ValueError('subject identity unavailable')
-        write_atomic(pid_file, dict(state='running', launcher=launcher, **ident))
+        kept = {k: current[k] for k in ('scan', 'launchMode') if k in current}
+        write_atomic(pid_file, dict(state='running', launcher=launcher, **kept, **ident))
         return ident
 
 
 def launcher_lost(pid_file, lookup=identity):
-    """True when a registered subject's launcher (its supervisor) has disappeared."""
+    """True when a registered subject's launcher (its supervisor) has disappeared, or when the
+    launcher of a scoped reservation died before registering (a LaunchServices subject may already
+    be running unsupervised)."""
     try:
         record = json.loads(pid_file.read_text())
     except (OSError, ValueError, AttributeError, TypeError):
         return False
     launcher = record.get('launcher')
-    return (record.get('state') == 'running' and isinstance(launcher, dict)
+    pending = record.get('state') == 'launching' and process_scan.valid_scope(record.get('scan'))
+    return ((record.get('state') == 'running' or pending) and isinstance(launcher, dict)
             and not cleanup.matches(lookup(launcher.get('pid')), launcher))
+
+
+def stop_identities(records, grace, lookup, send, clock, sleep):
+    """TERM, then KILL, owned identities together; True when nothing matching any of them is alive."""
+    alive = lambda: [r for r in records if cleanup.matches(lookup(r['pid']), r)]
+    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
+        targets = alive()  # a reused PID no longer matches its start identity and is never signalled
+        if not targets:
+            return True
+        for record in targets:
+            with contextlib.suppress(ProcessLookupError):
+                send(record['pid'], sig)
+        end = clock() + wait
+        while clock() < end and alive():
+            sleep(0.1)
+    return not alive()
 
 
 def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.monotonic, sleep=time.sleep):
@@ -173,19 +226,65 @@ def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.mo
         return False
     if record.get('state') != 'running' or type(record.get('pid')) is not int or record['pid'] <= 0:
         return False
-    for sig, wait in ((signal.SIGTERM, grace), (signal.SIGKILL, 5.0)):
-        if not cleanup.matches(lookup(record['pid']), record):
-            return True  # the owned subject no longer exists (a reused PID is not ours)
-        with contextlib.suppress(ProcessLookupError):
-            send(record['pid'], sig)
-        end = clock() + wait
-        while clock() < end and cleanup.matches(lookup(record['pid']), record):
+    return stop_identities([record], grace, lookup, send, clock, sleep)
+
+
+def close(pid_file, lookup=identity, send=os.kill, scan=None, clock=time.monotonic, sleep=time.sleep,
+          launcher_wait=5.0, grace=5.0, settle=1.0):
+    """Closure of this booking's subject: returns (closed, subject).
+
+    subject: `none` (no reservation), `registered` (the owned PID was stopped/confirmed), or, for a
+    subject that never registered, `never-started` / `unregistered-stopped` when the scope scan is
+    empty, otherwise an unconfirmed `unregistered-*` / `unreadable` state.
+    Only after the reserving launcher is gone (it alone can still register or spawn) does the scan
+    count. Owned processes inside the scope are stopped by identity; after a settle delay (a
+    LaunchServices request may still be in flight) the scope must scan empty.
+    """
+    def read():
+        try:
+            return json.loads(pid_file.read_text())
+        except (OSError, ValueError):
+            return None
+    if pid_file is None or not pid_file.exists():
+        return True, 'none'
+    record = read()
+    if record is None:
+        return False, 'unreadable'
+    if record.get('state') == 'launching':
+        if not process_scan.valid_scope(record.get('scan')):
+            return False, 'unregistered-unscoped'
+        launcher = record.get('launcher') if isinstance(record.get('launcher'), dict) else {}
+        end = clock() + launcher_wait
+        while cleanup.matches(lookup(launcher.get('pid')), launcher):
+            if clock() >= end:
+                return False, 'unregistered-launcher-alive'
             sleep(0.1)
-    return not cleanup.matches(lookup(record['pid']), record)
+        record = read()  # the launcher may have registered before it went away
+        if record is None:
+            return False, 'unreadable'
+    if record.get('state') == 'running':
+        return terminate(pid_file, lookup=lookup, send=send, clock=clock, sleep=sleep), 'registered'
+    if record.get('state') != 'launching':
+        return False, 'unconfirmed'
+    scope = record.get('scan')
+    if not process_scan.valid_scope(scope):
+        return False, 'unregistered-unscoped'
+    scan = scan or (lambda s: process_scan.scan(s, lookup))
+    try:
+        found = scan(scope)
+        stopped = stop_identities(found, grace, lookup, send, clock, sleep)
+        sleep(settle)
+        left = scan(scope)
+    except (OSError, ValueError):
+        return False, 'unregistered-scan-failed'
+    if not stopped or left:
+        return False, 'unregistered-still-running'
+    return True, 'unregistered-stopped' if found else 'never-started'
 
 
 def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
-        clock=time.time, sleep=time.sleep, running=lambda: True, kill=terminate):
+        clock=time.time, sleep=time.sleep, running=lambda: True, kill=close):
+    """Returns (outcome, closed, subject); `kill(pid_file)` returns (closed, subject)."""
     outcome = 'error'
     try:
         lease = json.loads(lease_path.read_text())
@@ -215,8 +314,14 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
             stop(stop_path, 'guardian-' + outcome, clock())
         except OSError:
             pass  # still stop the subject; launch.py also stops on a stale heartbeat
-        closed = kill(pid_file)
-    return outcome, closed
+        closed, subject = kill(pid_file)
+    return outcome, closed, subject
+
+
+def finishable(outcome, closed, subject):
+    """Booking may be finished as cleaned: a normal end with verified closure, or a scan-proven
+    subject that never started (whatever ended the run)."""
+    return closed is True and (outcome in ('stopped', 'signalled', 'deadline') or subject == 'never-started')
 
 
 def main(argv=None):
@@ -231,13 +336,13 @@ def main(argv=None):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: flag.update(run=False))
     try:
-        outcome, closed = run(args.lease, args.stop, args.interval, args.reserve, args.subject_pid_file,
+        outcome, closed, subject = run(args.lease, args.stop, args.interval, args.reserve, args.subject_pid_file,
                               running=lambda: flag['run'])
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(json.dumps(dict(error=type(error).__name__ if isinstance(error, OSError) else str(error))), file=sys.stderr)
         return 2
-    print(json.dumps(dict(guardian=outcome, subjectClosed=closed)))
-    return 0 if closed and outcome in ('stopped', 'signalled', 'deadline') else 3
+    print(json.dumps(dict(guardian=outcome, subjectClosed=closed, subject=subject)))
+    return 0 if finishable(outcome, closed, subject) else 3
 
 
 if __name__ == '__main__':

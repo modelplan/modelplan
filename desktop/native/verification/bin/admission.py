@@ -6,7 +6,9 @@ from pathlib import Path
 import time
 
 import book
-from release import IDENTITY_FIELDS, validate_release
+from release import HOSTS, IDENTITY_FIELDS, host_role, validate_release
+
+LAUNCH_MODES = ('direct', 'launchservices')
 
 
 def validate(config, now):
@@ -15,8 +17,15 @@ def validate(config, now):
     pin = config.get('binarySHA256', '')
     if not isinstance(pin, str) or len(pin) != 64 or any(c not in '0123456789abcdef' for c in pin):
         raise ValueError('explicit binary SHA256 required')
+    host = config.get('host', 'dev-mac')
+    if host not in HOSTS:
+        raise ValueError(f'host must be one of {", ".join(HOSTS)}')
+    if config.get('launchMode', 'direct') not in LAUNCH_MODES:
+        raise ValueError(f'launchMode must be one of {", ".join(LAUNCH_MODES)}')
+    if config.get('subjectKind', 'binary') not in ('binary', 'app-zip'):
+        raise ValueError('subjectKind must be binary or app-zip')
     lease = config['lease']
-    validate_release(lease, config['release'])
+    validate_release(lease, config['release'], host)  # dev-mac: M1 receipt; macci: V1 + coordinator GO
     expected = config.get('expectedLease')
     if expected is not None and any(lease.get(k) != expected.get(k) for k in IDENTITY_FIELDS):
         raise ValueError('run/lease identity mismatch')
@@ -39,6 +48,7 @@ def validate(config, now):
 
 
 def load_and_admit(config):
+    host_role(config.get('host'))  # the run config's host role must be this machine's role
     current = dict(config)
     current['lease'] = json.loads(Path(config['leasePath']).read_text())
     current['release'] = json.loads(Path(config['releasePath']).read_text())
