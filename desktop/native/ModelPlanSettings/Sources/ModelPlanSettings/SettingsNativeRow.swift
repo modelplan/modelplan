@@ -4,7 +4,7 @@ import AppKit
 @MainActor final class SettingsNativeRow: NSStackView {
     let key: SettingKey
     let titleLabel = NSTextField(labelWithString: "")
-    let subtitle = NSTextField(labelWithString: "")
+    let subtitle = NSTextField(wrappingLabelWithString: "")
     let group = NSTextField(labelWithString: "")
     let controls = NSStackView()
     let illustration = NSView()
@@ -33,18 +33,23 @@ import AppKit
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
         subtitle.font = .systemFont(ofSize: 12); subtitle.textColor = .secondaryLabelColor
-        subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.lineBreakMode = .byWordWrapping
+        subtitle.maximumNumberOfLines = 0
+        subtitle.preferredMaxLayoutWidth = 160
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        subtitle.setContentCompressionResistancePriority(.required, for: .vertical)
         group.font = .systemFont(ofSize: 11, weight: .medium); group.textColor = .secondaryLabelColor
         let copy = NSStackView(views: [group, titleLabel, subtitle])
         copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 5
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
         controls.orientation = .vertical; controls.alignment = .trailing; controls.distribution = .fill; controls.spacing = 7
         readout.font = .systemFont(ofSize: 12); readout.textColor = .secondaryLabelColor
+        readout.preferredMaxLayoutWidth = 230
         addArrangedSubview(copy); addArrangedSubview(illustration); addArrangedSubview(controls)
         NSLayoutConstraint.activate([
             heightAnchor.constraint(greaterThanOrEqualToConstant: 74),
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
+            subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
             controls.widthAnchor.constraint(equalToConstant: 230),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
@@ -52,6 +57,15 @@ import AppKit
         setAccessibilityElement(false)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
+
+    override func layout() {
+        super.layout()
+        let width = subtitle.bounds.width
+        if width > 0, abs(subtitle.preferredMaxLayoutWidth - width) > 0.5 {
+            subtitle.preferredMaxLayoutWidth = width
+            subtitle.invalidateIntrinsicContentSize()
+        }
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -185,10 +199,13 @@ import AppKit
                     name.lineBreakMode = .byTruncatingTail; name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                     let line = NSStackView(views: [name, popup]); line.spacing = 6; line.distribution = .fill
                     if case .readers(let readers) = row.value, let reader = readers.first(where: { $0.id.rawValue == id }) {
-                        let description = NSTextField(labelWithString: reader.description.value(language))
+                        let description = NSTextField(wrappingLabelWithString: reader.description.value(language))
                         readerDescriptions[id] = description
                         description.font = .systemFont(ofSize: 11); description.textColor = .secondaryLabelColor
-                        description.lineBreakMode = .byTruncatingTail
+                        description.lineBreakMode = .byWordWrapping
+                        description.maximumNumberOfLines = 0
+                        description.preferredMaxLayoutWidth = 230
+                        description.setContentCompressionResistancePriority(.required, for: .vertical)
                         let block = NSStackView(views: [line,description]); block.orientation = .vertical; block.alignment = .leading
                         controls.addArrangedSubview(block)
                         line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
