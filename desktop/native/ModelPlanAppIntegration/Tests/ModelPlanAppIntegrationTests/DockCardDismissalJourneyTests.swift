@@ -47,7 +47,7 @@ private actor CardDismissalClient: EngineClient {
         let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: config,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
-            createsNativePanels: false, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
+            createsNativePanels: false, cockpitEntryEnabled: true, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare()
         let dock = app.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled)

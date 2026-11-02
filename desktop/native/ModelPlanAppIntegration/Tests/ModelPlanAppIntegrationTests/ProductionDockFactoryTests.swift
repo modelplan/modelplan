@@ -33,6 +33,7 @@ import ModelPlanSettings
             for (host, title) in [(production, expectedProduction), (preview, expectedPreview)] {
                 let item = try XCTUnwrap(host.menu().items.first { $0.title == title })
                 XCTAssertEqual(item.action, #selector(NSApplication.terminate(_:)))
+                XCTAssertTrue(item.target === NSApplication.shared, "Quit must reach the application termination route")
                 XCTAssertEqual(item.keyEquivalent, "q")
                 XCTAssertNil(host.nativePanel)
             }
