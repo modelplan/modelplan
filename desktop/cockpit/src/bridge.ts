@@ -16,6 +16,7 @@ export type HostMessage = Header & (
   ({readonly type:'shell'} & ShellState) |
   {readonly type:'display'; readonly data:WireCockpitData} |
   {readonly type:'visibility'; readonly visible:boolean; readonly occluded:boolean; readonly key:boolean} |
+  {readonly type:'tick'; readonly nowUnixMs:string; readonly reason:'deadline'|'show'|'wake'|'unlock'|'clockChange'} |
   {readonly type:'clear'} | {readonly type:'unload'});
 export interface CockpitView {
   configure(appearance:Appearance):void;
@@ -23,6 +24,8 @@ export interface CockpitView {
   shell(state:ShellState):void;
   render(data:WireCockpitData):void;
   clear():void;
+  nextDeadline():number|null;
+  tick(now:number):void;
   active(active:boolean):void;
   dispose():void;
 }
@@ -30,6 +33,7 @@ const header=['version','pageId','requestId','sequence','sessionId','storeEpoch'
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v);
 const identity=(v:unknown):v is string=>typeof v==='string'&&v.length>0&&v.length<=128&&!/[\u0000-\u001f\u007f]/.test(v);
 const uint=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9][0-9]{0,19})$/.test(v)&&BigInt(v)<=18446744073709551615n;
+const timestamp=(v:unknown):v is string=>typeof v==='string'&&/^(0|[1-9]\d*)$/.test(v)&&v.length<=16&&BigInt(v)<=8640000000000000n;
 const same=(a:Context,b:Context)=>a.sessionId===b.sessionId&&a.storeEpoch===b.storeEpoch&&a.generation===b.generation&&a.viewRevision===b.viewRevision;
 function validData(value:unknown):value is WireCockpitData {
   if(!conforms(value,{$ref:'#/$defs/CockpitData'},definitions)) return false;
@@ -57,6 +61,7 @@ function message(raw:string):HostMessage|null {
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return null; break;
     case 'display': if(!keys(['data'])||!validData(m.data)) return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
+    case 'tick': if(!keys(['nowUnixMs','reason'])||!timestamp(m.nowUnixMs)||!['deadline','show','wake','unlock','clockChange'].includes(m.reason as string)) return null; break;
     case 'clear': case 'unload': if(!keys()) return null; break;
     default:return null;
   }
@@ -95,6 +100,12 @@ export class CockpitBridge {
   private isActive():boolean {return this.loaded&&this.domReady&&!this.ended&&!this.hidden&&this.visible&&!this.occluded&&this.key;}
   private emit(type:string,requestId:string,extra:Record<string,unknown>={}):void {
     if(this.context) this.post(JSON.stringify({version:2,pageId:this.pageId,...this.context,sequence:String(++this.outputSequence),type,requestId,...extra}));
+  }
+  private reportDeadline():void {
+    if(!this.isActive()||!this.hasDisplay||this.cleared||this.ended)return;
+    const deadline=this.view.nextDeadline();
+    if(deadline!==null&&(!Number.isSafeInteger(deadline)||deadline<0||deadline>8640000000000000))throw Error('Invalid deadline');
+    this.emit('nextDeadline',this.requestId(),{deadlineUnixMs:deadline===null?null:String(deadline)});
   }
   ready():void {
     if(this.ended||this.domReady) return;
@@ -142,7 +153,7 @@ export class CockpitBridge {
     switch(m.type) {
       case 'appearance':
         try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency});} catch {this.unload();return false;}
-        this.sequence=BigInt(m.sequence);return true;
+        this.sequence=BigInt(m.sequence);this.reportDeadline();return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}
         this.shellState={profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope};this.sequence=BigInt(m.sequence);return true;
@@ -153,7 +164,11 @@ export class CockpitBridge {
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
         this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;
-        this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId); return true;
+        this.view.active(this.isActive()); this.sequence=BigInt(m.sequence); this.emit('rendered',m.requestId);this.reportDeadline(); return true;
+      case 'tick':
+        if(!this.isActive()||!this.hasDisplay||this.cleared)return false;
+        try {this.view.tick(Number(m.nowUnixMs));} catch {this.unload();return false;}
+        this.sequence=BigInt(m.sequence);this.reportDeadline();return true;
       case 'visibility':
         this.visible=m.visible;this.occluded=m.occluded;this.key=m.key;this.sequence=BigInt(m.sequence);
         this.view.active(this.isActive());return true;

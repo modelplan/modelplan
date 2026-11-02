@@ -36,7 +36,7 @@ test('browser rejects malformed/unknown input; private HTML is text and clear pr
   await expect(page.locator('.ck-eng')).toContainText('PRIVATE-CANARY');
   expect(await page.evaluate(()=>window.__xss)).toBeUndefined();
   expect(await page.locator('.private-content img').count()).toBe(0);
-  await page.getByRole('button',{name:'Plans',exact:true}).click();
+  await page.getByRole('button',{name:'Subscription',exact:true}).click();
   await expect(page.locator('.mfd-page')).toContainText('PRIVATE-CANARY');
   expect(await page.locator('.mfd-page img').count()).toBe(0);
   for(const raw of ['{','null',send('plugin/install'),send('display',{data:{...sample(),credentials:'forbidden'}})])expect(await receive(page,raw)).toBe(false);

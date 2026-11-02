@@ -162,7 +162,7 @@ test('live language changes update empty-state and paging accessibility copy',as
   await page.setViewportSize({width:636,height:890});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
-  await expect(page.locator('.ck-eng')).toContainText('Waiting for display data');
+  await expect(page.locator('.ck-eng')).toContainText('Waiting for readings');
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
   await expect(page.locator('.ck-eng')).toContainText('等待显示数据');
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
@@ -172,7 +172,7 @@ test('live language changes update empty-state and paging accessibility copy',as
   expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}))).toBe(true);
   await expect(page.getByRole('button',{name:'Page 2'})).toBeVisible();
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);
-  await expect(page.locator('.ck-eng')).toContainText('Display data cleared');
+  await expect(page.locator('.ck-eng')).toContainText('Readings cleared');
   expect(await receive(send('appearance',{viewRevision:'4',theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}))).toBe(true);
   await expect(page.locator('.ck-eng')).toContainText('显示数据已清除');
 });
@@ -218,8 +218,8 @@ test('study faders and MFD retain empty states without invented cockpit details'
   expect(await receive(send('display',{data:mfdData}))).toBe(true);
   await expect(page.locator('.dk-fad')).toBeVisible();await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
   await expect(page.locator('.fd-strip:disabled')).toHaveCount(3);await expect(page.locator('#cockpit')).toHaveAttribute('data-details-available','false');
-  await expect(page.locator('.mfd-page')).toHaveText('Quota only');await page.getByRole('button',{name:'Plans',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Plans',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.mfd-page')).toHaveText('Quota only');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Subscription',exact:true})).toHaveAttribute('aria-pressed','true');
   await expect(page.locator('.mfd-page .sa-list .sa')).toHaveCount(4);await expect(page.locator('.mfd-page')).toContainText('75%');await expect(page.locator('.mfd-page')).toContainText('Last known reading');
   const verified=sample().projection.rows[0].accounts[0].subscriptionRef;
   expect(await receive(send('shell',{...shell,scope:verified}))).toBe(true);await expect(page.locator('.mfd-page .sp-now')).toHaveCount(1);
@@ -234,10 +234,10 @@ test('record strip preserves unknown live-session coverage across tier and clear
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
   expect(await receive(send('display',{data:sample()}))).toBe(true);await expect(page.locator('.ck-tape .t-blank')).toHaveCount(5);
-  await expect(page.locator('.ck-tape')).toHaveAttribute('data-sessions-available','false');await expect(page.locator('.ck-tape')).toHaveAttribute('aria-label','Live session coverage unavailable');
+  await expect(page.locator('.ck-tape')).toHaveAttribute('data-sessions-available','false');await expect(page.locator('.ck-tape')).toHaveAttribute('aria-label','Session data unavailable');
   expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);await expect(page.locator('.ck-tape .t-blank')).toHaveCount(3);
   expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
-  await expect(page.locator('.ck-tape')).toHaveAttribute('aria-label','实时会话覆盖情况不可用');
+  await expect(page.locator('.ck-tape')).toHaveAttribute('aria-label','暂无会话数据');
   expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.ck-tape .t-blank')).toHaveCount(3);
   await expect(page.locator('.ck-tape .tl:not(.t-blank)')).toHaveCount(0);
 });

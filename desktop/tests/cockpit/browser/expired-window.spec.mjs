@@ -21,7 +21,7 @@ for(const withDetails of [false,true]){
   await expect(weekly.locator('.qvalue')).toHaveText('80');await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|red|amber/);
   await expect(page.locator('.mfd-page .al-red')).toHaveCount(0);
   expect(await receive(send('shell',{...shell,scope:account.subscriptionRef}))).toBe(true);
-  await page.getByRole('button',{name:'Plans',exact:true}).click();
+  await page.getByRole('button',{name:'Subscription',exact:true}).click();
   const windows=page.locator('.mfd-page .sp-w');await expect(windows.filter({hasText:'Weekly'})).toContainText('80%');
   await expect(windows.filter({hasText:'5h'})).not.toContainText('0%');
   // A genuine current zero remains critical; after its deadline the same

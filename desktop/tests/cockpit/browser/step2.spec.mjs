@@ -34,7 +34,7 @@ test('MFD scope selection emits only the current member through the bridge',asyn
  expect(await receive(send('load',{appearance,shell}))).toBe(true);
  expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  expect(await receive(send('display',{data}))).toBe(true);
- await page.getByRole('button',{name:'Plans',exact:true}).click();
+ await page.getByRole('button',{name:'Subscription',exact:true}).click();
  await page.locator('.mfd-page .sa-list .sa').first().click();
  const event=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
  expect(event.action).toBe('scopeSelect');expect(event.key).toBe(data.projection.rows[0].accounts[0].subscriptionRef);
@@ -49,6 +49,6 @@ test('fader effort uses only a matched observed session and says last observed',
   window.__step2Deck=mountPrototypeDeck(document.querySelector('#cockpit'),undefined,{publication:{accounts:[],faders:[model]},liveSessions:[{sessionRef:'fake-session',effort:'high',fast:false,lastObservedAt:'2026-10-20T14:04:50Z'}],resetEvents:null,history:null});
  });
  await expect(page.locator('.fd-strip').first().locator('.st-eff em')).toHaveText('High');
- await expect(page.locator('.fd-indicator').first()).toHaveAttribute('aria-label',/Last observed/);
+ await expect(page.locator('.fd-indicator').first()).toHaveAttribute('aria-label',/Last reading/);
  await expect(page.locator('.fd-indicator').first()).not.toHaveAttribute('aria-label',/running|ended|MUST-NOT-APPEAR/i);
 });

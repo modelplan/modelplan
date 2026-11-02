@@ -10,7 +10,7 @@ register('fad', {
   indicatorIdle: ['aria', '未选', 'not selected'],
   // One LCD state; cost/ability/speed text is retained for tooltip/accessibility facts.
   tryEffort: ['lcd', '试 {e}', 'Try {e}'],
-  tryCurrent: ['lcd', '试 = 当前', 'Try = Now'],
+  tryCurrent: ['lcd', '试 = 当前', 'Try = Current'],
   tryRec: ['lcd', '试 = ★', 'Try = ★'],
   tryFast: ['lcd', '快速', 'Fast'],
   tryStd: ['lcd', '标准', 'Std'],

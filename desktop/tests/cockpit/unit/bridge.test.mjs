@@ -5,7 +5,7 @@ import { CockpitBridge,MAX_MESSAGE_BYTES } from '../../../cockpit/.tmp/compiled/
 import { appearance,capture,commands,pageId,sessionId,source,shell } from '../fixture.mjs';
 function fixture() {
   const events=[],calls=[];let retained=null,id=100;
-  const view={clear(){retained=null;calls.push('clear');},render(data){retained=data;calls.push('render');},configure(){calls.push('configure');},updateAppearance(){calls.push('appearance');},shell(){calls.push('shell');},active(v){calls.push('active:'+v);},dispose(){calls.push('dispose');}};
+  const view={clear(){retained=null;calls.push('clear');},render(data){retained=data;calls.push('render');},nextDeadline(){return null;},tick(now){calls.push(['tick',now]);},configure(){calls.push('configure');},updateAppearance(){calls.push('appearance');},shell(){calls.push('shell');},active(v){calls.push('active:'+v);},dispose(){calls.push('dispose');}};
   const bridge=new CockpitBridge(pageId,source.origin,value=>{events.push(JSON.parse(value));calls.push(JSON.parse(value).type);},view,()=>`00000000-0000-4000-8000-${String(++id).padStart(12,'0')}`);
   const send=commands();bridge.documentHidden(false);bridge.ready();assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);
   assert.equal(bridge.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
@@ -189,4 +189,17 @@ test('macrev-403-2: indexed fallback scopes are current, canonical and session-o
   for(const key of ['codex#saved_login_api#0','codex#saved_login_api#01','codex#saved_login_api#1025'])assert.equal(f.bridge.receive(f.send('shell',{...shell,scope:key}),source),false);
   assert.equal(f.bridge.clear(f.send('clear',{viewRevision:'4'}),source),true);
   assert.equal(f.bridge.action('scopeSelect','codex#saved_login_api#1'),false);
+});
+
+test('native freshness tick requires active current context and canonical bounded host time',()=>{
+  const f=fixture(),data=capture();
+  assert.equal(f.bridge.receive(f.send('display',{data}),source),true);
+  assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).deadlineUnixMs,null);
+  const payload={nowUnixMs:'1793620800000',reason:'deadline'};
+  assert.equal(f.bridge.receive(f.send('tick',payload),source),true);
+  for(const bad of [{nowUnixMs:'01',reason:'deadline'},{nowUnixMs:'-1',reason:'deadline'},{nowUnixMs:'1e3',reason:'deadline'},{nowUnixMs:'1.0',reason:'deadline'},{nowUnixMs:'8640000000000001',reason:'deadline'},{nowUnixMs:1,reason:'deadline'},{...payload,extra:true},{...payload,reason:'other'},{...payload,generation:'42'}])assert.equal(f.bridge.receive(f.send('tick',bad),source),false);
+  const raw=f.send('tick',{nowUnixMs:'0',reason:'clockChange'});assert.equal(f.bridge.receive(raw,{...source,isMainFrame:false}),false);assert.equal(f.bridge.receive(raw,source),true);assert.equal(f.bridge.receive(raw,source),false);
+  assert.equal(f.bridge.receive(f.send('tick',{nowUnixMs:'8640000000000000',reason:'wake'}),source),true);
+  assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);
+  const n=f.events.length;assert.equal(f.bridge.receive(f.send('tick',payload),source),false);assert.equal(f.events.length,n);
 });
