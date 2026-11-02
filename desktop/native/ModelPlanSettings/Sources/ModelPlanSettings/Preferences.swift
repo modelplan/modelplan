@@ -94,7 +94,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
-    /// Nil means a pre-marker choice of unknown provenance; preserve it until migration policy is decided.
+    /// Nil is a pre-release value and follows the system under the v1 migration rule.
     public var followsSystemLanguage: Bool?
     public var opening: OpeningPreference = .hold
     public var beatMilliseconds = 250
@@ -198,7 +198,9 @@ public actor SettingsStore {
         let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage)
         self.url = location.target; self.onboardingDefinition = onboardingDefinition
         self.current = opened.document.settings; self.foundationBacking = opened
-        if current.followsSystemLanguage == true, let defaultLanguage { current.language = defaultLanguage }
+        if let defaultLanguage, current.followsSystemLanguage != false {
+            current.language = defaultLanguage; current.followsSystemLanguage = true
+        }
         current.onboarding.reconcile(in: onboardingDefinition)
     }
     public func foundationStatus() -> FoundationPreferenceStatus? {

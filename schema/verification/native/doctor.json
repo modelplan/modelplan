@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://modelplan.ai/schema/verification/native/doctor.json",
+  "$comment": "SPDX-License-Identifier: MIT. U6 verification receipt contract (C2.4 as amended by C2.6); see README.md.",
+  "title": "doctor",
+  "description": "Guard tick (every 0.2 s); not consumed by C2.4 steps.",
+  "type": "object",
+  "required": [
+    "runID",
+    "epoch",
+    "pid",
+    "seq",
+    "mono",
+    "at",
+    "event",
+    "timestamp",
+    "checks"
+  ],
+  "properties": {
+    "runID": {
+      "$ref": "../common.json#/$defs/runID"
+    },
+    "epoch": {
+      "$ref": "../common.json#/$defs/epoch"
+    },
+    "pid": {
+      "$ref": "../common.json#/$defs/pid"
+    },
+    "seq": {
+      "$ref": "../common.json#/$defs/seq"
+    },
+    "mono": {
+      "$ref": "../common.json#/$defs/mono"
+    },
+    "at": {
+      "$ref": "../common.json#/$defs/at"
+    },
+    "event": {
+      "const": "doctor"
+    },
+    "timestamp": {
+      "$ref": "../common.json#/$defs/timestamp"
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "visible",
+        "onScreen",
+        "nonActivating",
+        "ownerStopArmed"
+      ],
+      "properties": {
+        "visible": {
+          "type": "boolean"
+        },
+        "onScreen": {
+          "type": "boolean"
+        },
+        "nonActivating": {
+          "type": "boolean"
+        },
+        "ownerStopArmed": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

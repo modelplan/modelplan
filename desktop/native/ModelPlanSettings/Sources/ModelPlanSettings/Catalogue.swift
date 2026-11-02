@@ -24,10 +24,15 @@ public struct SettingsSubscription: Sendable {
     public let id: String, name: SettingsText, plan: String, vendor: String
     public let modelNames: [String], toolNames: [String]
     public let source: SubscriptionSourceState
+    public let isUnstable: Bool
+    public var persistenceDisabledReason: SettingsText? {
+        isUnstable ? .init("Unverified account — changes can't be saved yet", "未验证账号，暂不能保存设置") : nil
+    }
     public init(id: String, name: SettingsText, plan: String = "", vendor: String = "",
-                modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable) {
+                modelNames: [String] = [], toolNames: [String] = [], source: SubscriptionSourceState = .unavailable,
+                isUnstable: Bool = false) {
         self.id = id; self.name = name; self.plan = plan; self.vendor = vendor
-        self.modelNames = modelNames; self.toolNames = toolNames; self.source = source
+        self.modelNames = modelNames; self.toolNames = toolNames; self.source = source; self.isUnstable = isUnstable
     }
 }
 public enum CLIReadState: String, Sendable { case ready, unavailable, denied, stale }
@@ -287,6 +292,7 @@ public enum SettingsCatalogue {
         }
     }
     private static func value(_ k: SettingKey, _ p: SettingsPreferences, _ c: SettingsPageContext, _ subs: [SettingsSubscription]) -> SettingsRowValue {
+        let p = p.withoutUnstableMemberChoices(c.subscriptions)
         func choices<T: RawRepresentable & CaseIterable>(_ v: T) -> SettingsRowValue where T.RawValue == String {
             .choice(v.rawValue, options: T.allCases.map(\.rawValue))
         }

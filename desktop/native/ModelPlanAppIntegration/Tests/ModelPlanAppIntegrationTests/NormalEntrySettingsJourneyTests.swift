@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import XCTest
 import ModelPlanSettings
+import ModelPlanDock
 import ModelPlanShell
 import ModelPlanEngineStore
 import ModelPlanEngineClient
@@ -67,7 +68,8 @@ private actor SettingsJourneyClient: EngineClient {
 
 @MainActor private final class JourneyAppearanceConsumer: EngineRowsConsoleSurface {
     var applied: EffectiveSettings?
-    func show() {}
+    private(set) var shows = 0
+    func show() { shows += 1 }
     func render() {}
     func hide() {}
     func applySettings(_ value: SettingsApplication) { applied = value.effective }
@@ -90,12 +92,11 @@ private actor SettingsJourneyClient: EngineClient {
         let third = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["zh-CN"])
         let explicit = await third.snapshot().preferences
         XCTAssertEqual(explicit.language, .english); XCTAssertEqual(explicit.followsSystemLanguage, false)
-        // Old documents do not distinguish system defaults from an explicit choice.
-        // Preserve their value until an owner-approved migration rule exists.
+        // The owner ruled that pre-marker language values follow the system.
         _ = try await third.update { $0.followsSystemLanguage = nil }
         let unmarked = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["zh-CN"])
         let legacy = await unmarked.snapshot().preferences
-        XCTAssertEqual(legacy.language, .english); XCTAssertNil(legacy.followsSystemLanguage)
+        XCTAssertEqual(legacy.language, .chinese); XCTAssertEqual(legacy.followsSystemLanguage, true)
     }
 
     func testFirstRunWiringFailureIsReportedAndUnavailable() async throws {
@@ -133,7 +134,7 @@ private actor SettingsJourneyClient: EngineClient {
         func makeApp() throws -> EngineDockMenuApplication {
             EngineRowsEntry.make(configuration: configuration,
                 settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
-                createsNativePanels: false,
+                createsNativePanels: false, cockpitEntryEnabled: true,
                 makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) },
                 makeConsole: { _ in appearanceConsumer },
                 activateSettings: {})
@@ -176,12 +177,25 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
         let dock = first.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
-        XCTAssertFalse(dock.interactionEnvironment().active, "The community factory has no official appearance/projection yet")
+        XCTAssertTrue(dock.interactionEnvironment().active, "The normal entry must expose the official interaction projection")
+        XCTAssertNotNil(dock.dockView.registeredHullPath)
         let cockpitButton = try XCTUnwrap(dock.dockView.superview?.subviews.compactMap { $0 as? NSButton }.first)
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "Open cockpit")
         let englishMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(englishMenu.delegate is DockStatusMenu, "The normal status menu must use the shared component")
+        let englishDockMenu = dock.menu()
+        XCTAssertTrue(englishDockMenu.delegate is DockSliverMenu, "The Dock menu must use the shared component")
+        XCTAssertEqual(Array(englishMenu.items.filter { !$0.isSeparatorItem }.dropFirst()).map(\.title), ["Refresh", "Open Cockpit", "Website", "Methodology", "Privacy", "Check for updates", "Help…", "Settings…", "About", "Quit"])
+        let refreshItem = try XCTUnwrap(englishMenu.items.first { $0.title == "Refresh" })
+        XCTAssertEqual(refreshItem.action, NSSelectorFromString("refreshRows"), "The existing Refresh arrival observer must retain its native selector")
+        XCTAssertEqual(Array(englishDockMenu.items.filter { !$0.isSeparatorItem }.suffix(3)).map(\.title), ["Open Cockpit", "Settings…", "Hide Dock"])
+        let statusCockpit = try XCTUnwrap(englishMenu.items.first { $0.title == "Open Cockpit" })
+        _ = (try XCTUnwrap(statusCockpit.target as? NSObject)).perform(try XCTUnwrap(statusCockpit.action), with: statusCockpit)
+        let dockCockpit = try XCTUnwrap(englishDockMenu.items.first { $0.title == "Open Cockpit" })
+        _ = (try XCTUnwrap(dockCockpit.target as? NSObject)).perform(try XCTUnwrap(dockCockpit.action), with: dockCockpit)
+        XCTAssertEqual(appearanceConsumer.shows, 2, "Both shared menu components must dispatch the retained cockpit route")
         XCTAssertTrue(englishMenu.items.contains { $0.title == "Settings…" })
-        XCTAssertTrue(englishMenu.items.contains { $0.title == "Cockpit…" })
+        XCTAssertTrue(englishMenu.items.contains { $0.title == "Open Cockpit" })
         XCTAssertFalse(englishMenu.items.contains { $0.title.contains(" / ") })
         let editor = first.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
@@ -224,9 +238,8 @@ private actor SettingsJourneyClient: EngineClient {
         }
         XCTAssertEqual(visible.first { $0.key == .notificationConsent }?.availability, .serviceUnavailable)
         XCTAssertEqual(first.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        XCTExpectFailure("#697: member projection has not yet been integrated") {
-            XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
-        }
+        // Member identity rule: Settings now receives the verified subscription member ID.
+        XCTAssertTrue(editor.context.subscriptions.contains { $0.id == "0123456789abcdef" }, "The Settings catalogue must reflect the Dock's detected subscription")
         XCTAssertEqual(editor.snapshot?.preferences.language, .english, "A fresh install follows the macOS preferred language")
         XCTAssertEqual(editor.snapshot?.preferences.percentageMode, .remaining)
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
@@ -258,8 +271,13 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
+        XCTAssertTrue(chineseMenu.delegate is DockStatusMenu)
+        let chineseDockMenu = dock.menu()
+        XCTAssertTrue(chineseDockMenu.delegate is DockSliverMenu)
+        XCTAssertEqual(Array(chineseMenu.items.filter { !$0.isSeparatorItem }.dropFirst()).map(\.title), ["刷新", "打开驾驶舱", "网站", "方法论", "隐私", "检查更新", "说明…", "设置…", "关于", "退出"])
+        XCTAssertEqual(Array(chineseDockMenu.items.filter { !$0.isSeparatorItem }.suffix(3)).map(\.title), ["打开驾驶舱", "设置…", "隐藏挂件"])
         XCTAssertTrue(chineseMenu.items.contains { $0.title == "设置…" })
-        XCTAssertTrue(chineseMenu.items.contains { $0.title == "驾驶舱…" })
+        XCTAssertTrue(chineseMenu.items.contains { $0.title == "打开驾驶舱" })
         XCTAssertFalse(chineseMenu.items.contains { $0.title.contains(" / ") || $0.title.contains("Dock") })
         await first.composition.stop()
 
@@ -329,8 +347,8 @@ private actor SettingsJourneyClient: EngineClient {
         try legacyBytes.write(to: legacyFile)
         let migrated = try EngineRowsEntry.makeSettingsStore(applicationSupport: legacyProfile, preferredLanguages: ["en-US"])
         let migratedSnapshot = await migrated.snapshot()
-        XCTAssertEqual(migratedSnapshot.preferences.language, .chinese,
-                       "A migrated language choice takes precedence over the system default")
+        XCTAssertEqual(migratedSnapshot.preferences.language, .english,
+                       "An unmarked pre-release language follows the current system preference")
         XCTAssertEqual(try Data(contentsOf: legacyFile), legacyBytes)
     }
     func testFreshChineseNormalEntryShowsChineseDockCardAge() async throws {
@@ -349,11 +367,26 @@ private actor SettingsJourneyClient: EngineClient {
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["zh-CN"]),
             createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
-        await app.prepare(); app.composition.dock.setPresentationAllowed(true); await app.composition.start()
+        await app.prepare()
+        // Preserve the fresh Chinese language while opening the real interactive surface.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
+        // The normal entry also starts the interaction controller; bypassing it
+        // leaves the official nozzle unable to dispatch its card action.
+        app.allowDockPresentation(); await app.composition.start()
         defer { app.composition.dock.close() }
         let dock = app.composition.dock
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.language, .chinese)
-        dock.dockView.onAction?(.subscription("codex"))
+        XCTAssertTrue(dock.interactionEnvironment().active)
+        XCTAssertTrue(dock.interactionEnvironment().parentExpanded)
+        let interaction = dock.interactionEnvironment()
+        // Member identity rule: the verified subscription ref keys the normal-entry card.
+        XCTAssertTrue(interaction.catalogue.contains("0123456789abcdef"), "The synthetic member must reach the real controller")
+        // Member identity rule: card content uses the same member key.
+        XCTAssertNotNil(interaction.contents["0123456789abcdef"], "The real controller must receive card content")
+        XCTAssertTrue(dock.interactionControllerRunning)
+        XCTAssertNotNil(dock.dockView.nozzleEventDelegate)
+        // Member identity rule: interaction targets the member, not its tool row.
+        dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
         func field(_ view: NSView) -> NSTextField? {
             if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }
@@ -362,7 +395,8 @@ private actor SettingsJourneyClient: EngineClient {
         let age = try XCTUnwrap(field(dock.card)?.stringValue)
         XCTAssertTrue(age == "读数时间未知" || age.hasPrefix("读取于 "), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
-        dock.dockView.onAction?(.subscription("codex"))
+        // The real controller keeps the card pinned; clicking again would dismiss it.
+        XCTAssertFalse(dock.card.isHidden, "The pinned card must survive the language change")
         let englishAge = try XCTUnwrap(field(dock.card)?.stringValue)
         XCTAssertTrue(englishAge == "Reading time unknown" || englishAge.hasPrefix("Reading taken "), "The same card must follow an explicit English choice: \(englishAge)")
         await app.composition.stop()

@@ -202,8 +202,8 @@ enum FoundationPreferenceFile {
             guard case .create(let candidate) = decision else { preconditionFailure("absent target must create") }
             var document = try Document.decode(candidate.document)
             var initialBytes = candidate.document
-            // Only a brand-new default gets the OS language. A migrated or
-            // existing choice is never replaced by a later system preference.
+            // Seed new defaults; the store applies the OS language to legacy
+            // unmarked values when opened under the v1 migration rule.
             if candidate.selection.settings == .defaults, let defaultLanguage {
                 document.settings.language = defaultLanguage
                 document.settings.followsSystemLanguage = true

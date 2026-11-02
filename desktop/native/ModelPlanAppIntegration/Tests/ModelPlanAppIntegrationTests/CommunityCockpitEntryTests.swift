@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
+import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 @testable import ModelPlanCockpitWeb
@@ -93,7 +94,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         defer{try? FileManager.default.removeItem(at:root)}
         let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
         let client=RouteClient(),surface=ConsoleRouteProbe();var constructions=0,clients=0
-        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,
             makeClient:{_,_ in clients += 1;return client},makeConsole:{_ in constructions += 1;return surface},activateSettings:{})
         app.composition.dock.setPresentationAllowed(true)
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
@@ -103,6 +104,42 @@ final class CommunityCockpitEntryTests:XCTestCase {
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
         XCTAssertEqual(surface.shows,2)
         await app.composition.stop()
+    }
+    @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
+        for enabled in [false, true] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-switch-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:root) }
+            let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+            let surface=ConsoleRouteProbe(); var constructed=0
+            let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:enabled,
+                makeClient:{_,_ in RouteClient()},makeConsole:{_ in constructed += 1; return surface},activateSettings:{})
+            await app.prepare(); app.composition.dock.setPresentationAllowed(true)
+            app.renderMenu()
+            let status=try XCTUnwrap(app.liveStatusMenu)
+            let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
+            XCTAssertEqual(statusItem.isEnabled,enabled)
+            let menu=app.composition.dock.menu()
+            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
+            XCTAssertEqual(item.isEnabled,enabled)
+            app.composition.dock.perform(NSSelectorFromString("openConsole"))
+            app.perform(NSSelectorFromString("showConsoleMenu"))
+            XCTAssertEqual(constructed,enabled ? 1 : 0)
+            XCTAssertEqual(surface.shows,enabled ? 2 : 0)
+            if !enabled {
+                let editor = app.settingsHost.application.editor
+                _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+                app.renderMenu()
+                let chinese = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "即将推出" })
+                XCTAssertFalse(chinese.isEnabled)
+                let chineseDock = app.composition.dock.menu()
+                XCTAssertFalse(try XCTUnwrap(chineseDock.items.first { $0.title == "即将推出" }).isEnabled)
+                app.composition.dock.pauseForLifecycle()
+                let paused = app.composition.dock.menu()
+                XCTAssertTrue(paused.items.contains { $0.title == "退出 ModelPlan" })
+                XCTAssertTrue(paused.items.contains { $0.title == "即将推出" && !$0.isEnabled })
+            }
+            await app.composition.stop()
+        }
     }
     @MainActor func testSharedStoreClearsBeforeWebBarrierAndBorrowerCannotStopClient() async throws {
         let store=EngineStore(),sink=ClearSink();_ = store.attach(sink)

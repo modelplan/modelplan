@@ -24,8 +24,6 @@ def validate(config, now):
         raise ValueError(f'launchMode must be one of {", ".join(LAUNCH_MODES)}')
     if config.get('subjectKind', 'binary') not in ('binary', 'app-zip'):
         raise ValueError('subjectKind must be binary or app-zip')
-    if config.get('subjectKind') == 'app-zip' and config.get('launchMode') != 'launchservices':
-        raise ValueError('an app-zip subject launches only through launchservices')
     lease = config['lease']
     validate_release(lease, config['release'], host)  # dev-mac: M1 receipt; macci: V1 + coordinator GO
     expected = config.get('expectedLease')

@@ -18,9 +18,9 @@ public struct DockCardLink:Equatable,Sendable {
 public struct DockCardContent:Equatable,Sendable {
     public let subscriptionID:String,revision:UInt64,name:String,plan:String,sourceAndAge:String,stateLabel:String
     public let rows:[DockCardRow],links:[DockCardLink],enterLabel:String,dismissLabel:String,dismissAccessibilityLabel:String
-    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="Close",dismissAccessibilityLabel:String?=nil){
+    public init(subscriptionID:String,revision:UInt64=0,name:String,plan:String="",sourceAndAge:String="",stateLabel:String="",rows:[DockCardRow],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",dismissAccessibilityLabel:String?=nil){
         self.subscriptionID=subscriptionID;self.revision=revision;self.name=name;self.plan=plan;self.sourceAndAge=sourceAndAge;self.stateLabel=stateLabel
-        self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel;self.dismissAccessibilityLabel=dismissAccessibilityLabel ?? dismissLabel
+        self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel;self.dismissAccessibilityLabel=dismissAccessibilityLabel ?? (dismissLabel == "✕" ? "Close" : dismissLabel)
     }
     public func validate()throws{
         let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel,dismissAccessibilityLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail]}+links.map(\.label)
@@ -30,13 +30,14 @@ public struct DockCardContent:Equatable,Sendable {
 
 public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
-    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="Close",dismissAccessibilityLabel:String?=nil,at now:Date)throws->DockCardContent{
+    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",dismissAccessibilityLabel:String?=nil,at now:Date)throws->DockCardContent{
         _=try DockInstrumentProjection.evaluate(input,now:now)
         var rows=[DockCardRow]()
         for window in input.windows{
-            var scoped=input;scoped.windows=[window];scoped.selectedWindowID=window.id
+            var scoped=input,cardWindow=window;cardWindow.isGeneral=true
+            scoped.windows=[cardWindow];scoped.selectedWindowID=window.id
             let reading=try DockInstrumentProjection.evaluate(scoped,now:now)
-            rows.append(.init(id:"quota:"+window.id,kind:window.period == .fiveHour || window.period == .week ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
+            rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
         }
         let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel,dismissAccessibilityLabel:dismissAccessibilityLabel)
         try result.validate();return result

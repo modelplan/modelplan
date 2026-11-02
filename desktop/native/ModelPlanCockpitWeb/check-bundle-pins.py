@@ -8,6 +8,11 @@ from pathlib import Path
 import re
 
 
+def is_appledouble(path):
+    """Skip macOS transport metadata, never ordinary invalid bundle content."""
+    return any(part.startswith('._') for part in Path(path).parts)
+
+
 def validate(repo):
     source = (repo / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift').read_text()
     pins = dict(re.findall(r'"(community|official)"\s*:\s*"([a-f0-9]{64})"', source))
@@ -25,6 +30,8 @@ def validate(repo):
             raise ValueError('Unexpected canonical edition metadata')
         seen = set()
         for path in root.rglob('*'):
+            if is_appledouble(path):
+                continue
             if path.is_symlink():
                 raise ValueError('Linked build output')
             if not path.is_file() or path == manifest:

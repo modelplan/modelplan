@@ -5,6 +5,27 @@ import ModelPlanDock
 @testable import ModelPlanSettings
 
 @MainActor final class BehaviorEditorTests: XCTestCase {
+    func testStableMembersRemainEditableAndReorderableBesideUnstableMember() async throws {
+        var context = SettingsPageContext()
+        context.subscriptions = [
+            .init(id:"a",name:.init("Stable A","稳定 A")),
+            .init(id:"row#source#1",name:.init("Unverified","未验证"),isUnstable:true),
+            .init(id:"b",name:.init("Stable B","稳定 B"))
+        ]
+        let url = try file(), store = try SettingsStore(url:url)
+        let editor = SettingsEditor(store:store,context:context); await editor.reload()
+        var alias = AliasDraft(subscriptionID:"a",committed:"");alias.input("Saved",composing:false)
+        try await editor.commit(.alias(alias));try await editor.commit(.visible("a",false))
+        try await editor.commit(.moveSubscription("b",to:0,expectedOrder:["a","b"]))
+        let after = await (try SettingsStore(url:url)).snapshot().preferences
+        XCTAssertEqual(after.subscriptionSettings["a"]?.alias,"Saved")
+        XCTAssertTrue(after.subscriptions.hiddenIDs.contains("a"))
+        XCTAssertEqual(after.subscriptions.order,["b","a"])
+        XCTAssertNil(after.subscriptionSettings["row#source#1"])
+        XCTAssertFalse(after.subscriptions.order.contains("row#source#1"))
+        do { try await editor.commit(.visible("row#source#1",false)); XCTFail("unstable edit must be rejected") }
+        catch { XCTAssertEqual(error as? SettingsEditorError,.subscriptionUnavailable) }
+    }
     private func file() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("settings-behavior-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

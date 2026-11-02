@@ -15,10 +15,11 @@ public struct DockResetSignal: Sendable {
     public enum Status: Sendable { case announced, confirmed }
     public var id: String, status: Status
     public var announcedAt: Date?, confirmedAt: Date?, scheduledThrough: Date?
+    public var expiresAt: Date?
     public var restartedReading = false
-    public init(id: String, status: Status, announcedAt: Date? = nil, confirmedAt: Date? = nil, scheduledThrough: Date? = nil) {
+    public init(id: String, status: Status, announcedAt: Date? = nil, confirmedAt: Date? = nil, scheduledThrough: Date? = nil, expiresAt:Date? = nil) {
         self.id = id; self.status = status; self.announcedAt = announcedAt
-        self.confirmedAt = confirmedAt; self.scheduledThrough = scheduledThrough
+        self.confirmedAt = confirmedAt; self.scheduledThrough = scheduledThrough; self.expiresAt=expiresAt
     }
 }
 public struct DockResetCardSignal: Sendable {
@@ -51,7 +52,14 @@ public struct DockNotice: Equatable, Sendable {
     public let key: DockNoticeKey
     public let tone: Tone
     public let shape: Shape
-    public var rank: Int { key.kind.rawValue }
+    public var rank: Int {
+        switch key.kind {
+        case .forecast, .cardsExpiring: return 0
+        case .resetAnnounced: return 1
+        case .resetConfirmed: return 2
+        case .credits: return 3
+        }
+    }
 }
 public enum DockNoticeProjection {
     public static func candidates(for signal: DockSubscriptionSignal, at now: Date) -> [DockNotice] {
@@ -64,7 +72,7 @@ public enum DockNoticeProjection {
         if fresh, let forecast = signal.forecast, !forecast.windowID.isEmpty, forecast.validUntil > now {
             append(.forecast, [forecast.windowID], .amber)
         }
-        if let reset = signal.reset, !reset.id.isEmpty {
+        if let reset = signal.reset, !reset.id.isEmpty, reset.expiresAt.map({$0.timeIntervalSinceReferenceDate.isFinite && $0 > now}) ?? true {
             switch reset.status {
             case .announced:
                 let until = reset.scheduledThrough ?? reset.announcedAt?.addingTimeInterval(48*3600)
@@ -84,7 +92,7 @@ public enum DockNoticeProjection {
         }
         return notices
     }
-    public static func selected(for signal: DockSubscriptionSignal, at now: Date) -> DockNotice? { candidates(for: signal, at: now).first }
+    public static func selected(for signal: DockSubscriptionSignal, at now: Date) -> DockNotice? { candidates(for: signal, at: now).min { $0.rank < $1.rank } }
 }
 public struct DockSliverSegment: Equatable, Sendable {
     public let subscriptionID: String, stationID: String
