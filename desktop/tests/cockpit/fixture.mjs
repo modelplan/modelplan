@@ -30,3 +30,14 @@ export function sample() {
   value.projection.rowsSummary.text={en:'Your available readings',zh:'可用读数'};
   return value;
 }
+
+// For behavioral tests that exercise a live quota change, construct current
+// windows explicitly; leave the historical capture used by visual tests alone.
+export function currentSample() {
+  const value=sample(),deadline=new Date(Date.now()+3600000).toISOString();
+  for(const row of value.projection.rows)for(const account of row.accounts){
+    account.valueState='current';account.freshUntil=deadline;
+    for(const window of account.windows){window.current=true;window.validUntil=deadline;window.resetsAt=null;}
+  }
+  return value;
+}

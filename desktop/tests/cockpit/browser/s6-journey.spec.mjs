@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { test, expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import { appearance, commands, pageId, sample, shell } from '../fixture.mjs';
+import { appearance, commands, pageId, sample, currentSample, shell } from '../fixture.mjs';
 
 // These alert cases need a current producer-style window, not the expired
 // timestamp in the shared historical Go capture.
@@ -45,8 +45,8 @@ test('account members get separate c3 columns and monthly-only readings stay in 
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  const data=sample(),row=data.projection.rows[0];data.projection.rows=[row];data.subscriptions=[];
-  const monthly=row.accounts[0];monthly.subscriptionRef=null;monthly.route='saved_login_api';monthly.windows[0].role='monthly';monthly.windows[0].durationSeconds=2592000;monthly.windows[0].remainingPercent=18;monthly.windows[0].resetsAt='2026-11-01T05:00:00Z';
+  const data=currentSample(),row=data.projection.rows[0];data.projection.rows=[row];data.subscriptions=[];
+  const monthly=row.accounts[0];monthly.subscriptionRef=null;monthly.route='saved_login_api';monthly.windows[0].role='monthly';monthly.windows[0].durationSeconds=2592000;monthly.windows[0].remainingPercent=18;monthly.windows[0].resetsAt='2026-11-01T05:00:00Z';monthly.windows[0].validUntil=monthly.windows[0].resetsAt;
   const weekly=structuredClone(monthly);weekly.route='runtime_rpc';weekly.windows[0].role='weekly';weekly.windows[0].durationSeconds=604800;weekly.windows[0].remainingPercent=75;row.accounts.push(weekly);
   expect(await receive(send('display',{data}))).toBe(true);
   const cols=page.locator('.eng-cols .ec[data-col]:visible');await expect(cols).toHaveCount(2);
@@ -248,7 +248,7 @@ test('macrev-403-2: colliding unverified members remain distinct through paging 
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  const data=sample(),row=data.projection.rows[0];data.subscriptions=[];row.accounts[0].subscriptionRef=null;row.accounts[0].windows[0].remainingPercent=18;
+  const data=currentSample(),row=data.projection.rows[0];data.subscriptions=[];row.accounts[0].subscriptionRef=null;row.accounts[0].windows[0].remainingPercent=18;
   const second=structuredClone(row.accounts[0]);second.subscriptionRef='fedcba9876543210';second.windows[0].remainingPercent=75;row.accounts.push(second);
   const seed=structuredClone(row);seed.accounts=[structuredClone(row.accounts[0])];data.projection.rows=[row,...Array.from({length:5},(_,i)=>{const r=structuredClone(seed);r.id='other'+i;r.name={en:'Other '+i,zh:'其他 '+i};return r;})];
   expect(await receive(send('display',{data}))).toBe(true);
@@ -271,7 +271,7 @@ test('macrev2-403-6: only general known 5h and weekly windows occupy named rows'
   const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
   expect(await receive(send('load',{appearance,shell}))).toBe(true);
   expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
-  const data=sample();data.projection.rows=[data.projection.rows[0]];data.subscriptions=[];
+  const data=currentSample();data.projection.rows=[data.projection.rows[0]];data.subscriptions=[];
   const account=data.projection.rows[0].accounts[0],seed=account.windows[0];account.subscriptionRef=null;
   const show=async windows=>{account.windows=windows;expect(await receive(send('display',{data}))).toBe(true);return page.locator('.s6-page:visible .ec').first().locator('.qcell');};
   for(const [role,duration,index] of [['session',18000,0],['weekly',604800,1]]){
