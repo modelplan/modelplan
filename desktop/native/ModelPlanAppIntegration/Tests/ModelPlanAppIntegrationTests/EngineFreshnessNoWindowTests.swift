@@ -100,7 +100,7 @@ private actor FreshnessFakeEngine: EngineClient {
         XCTAssertEqual(try input(a, at: now.addingTimeInterval(61)).windows.first?.remainingPercent, 75)
 
         // An actual retained member cannot be made fresh by its peer or by time.
-        try await engine.publish(rows(sequence: 4, firstState: "retained", deadline: now.addingTimeInterval(180)))
+        try await engine.publish(rows(sequence: 4, rowState: "stale", firstState: "retained", deadline: now.addingTimeInterval(180)))
         XCTAssertNotEqual(try input(a, at: now.addingTimeInterval(61)).dataState, .fresh)
 
         await engine.stop()
