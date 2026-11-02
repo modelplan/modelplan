@@ -3,11 +3,14 @@ package speed
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 func TestActivityTransitionsAndRecordExpiry(t *testing.T) {
@@ -50,6 +53,37 @@ func TestActivityTransitionsAndRecordExpiry(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestActivityBindingCannotReviveAnEarlierGrantEpoch(t *testing.T) {
+	state := consent.Empty()
+	state.StoreEpoch = "0123456789abcdef0123456789abcdef"
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+	admission := consent.NewAdmission(state, consent.Automatic)
+	cache := t.TempDir()
+	ledger := PerfLedger{SchemaVersion: 1, Since: time.Now(), Sessions: []PerfSession{
+		{Source: "codex", Key: "current", SubscriptionRef: "aaaaaaaaaaaaaaaa", GrantEpoch: currentEpoch(admission, "codex")},
+		{Source: "codex", Key: "legacy", SubscriptionRef: "bbbbbbbbbbbbbbbb"},
+	}}
+	data, err := json.Marshal(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(PerfPath(cache)), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(PerfPath(cache), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := ExistingActivityBindings(cache, admission)
+	if len(got) != 1 || got[0].Key != "current" {
+		t.Fatalf("unadmitted binding: %+v", got)
+	}
+	state.Revoked[consent.ScopeCodexLocalHistory] = 2
+	state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion, At: time.Now()}
+	if got = ExistingActivityBindings(cache, consent.NewAdmission(state, consent.Automatic)); len(got) != 0 {
+		t.Fatal("old activity binding survived revoke/regrant")
 	}
 }
 
@@ -134,6 +168,17 @@ func TestActivityRequiresExactUnambiguousSessionBinding(t *testing.T) {
 	if len(got) != 2 || got[0].SubscriptionRef == got[1].SubscriptionRef {
 		t.Fatalf("accounts collapsed: %+v", got)
 	}
+	b[0].NotBefore = now.Add(time.Second)
+	got = o.Observe(context.Background(), logs, b, now)
+	for _, v := range got {
+		if v.SessionKey == fileKey(logs[0].Path) && v.SubscriptionRef != "" {
+			t.Fatal("a pre-grant record acquired the new binding")
+		}
+		if v.SessionKey == fileKey(logs[1].Path) && v.SubscriptionRef != "bbbbbbbbbbbbbbbb" {
+			t.Fatal("an unrelated current binding was lost")
+		}
+	}
+	b[0].NotBefore = time.Time{}
 	b = append(b, ActivityBinding{Source: "codex", Key: fileKey(logs[0].Path), SubscriptionRef: "cccccccccccccccc", Verified: true})
 	got = o.Observe(context.Background(), logs, b, now)
 	for _, v := range got {

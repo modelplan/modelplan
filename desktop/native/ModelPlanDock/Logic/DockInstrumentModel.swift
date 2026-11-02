@@ -22,8 +22,13 @@ public struct DockQuotaWindowInput: Sendable {
 public struct DockWorkingSignal: Sendable {
     public var subscriptionID: String?
     public var bindingVerified: Bool, fresh: Bool, observedOutput: Bool
-    public init(subscriptionID: String?, bindingVerified: Bool, fresh: Bool, observedOutput: Bool) {
+    /// Explicit admitted turn evidence is distinct from observed token output.
+    public var observedInFlight: Bool
+    public var expiresAt: Date?
+    public init(subscriptionID: String?, bindingVerified: Bool, fresh: Bool, observedOutput: Bool,
+                observedInFlight: Bool = false, expiresAt: Date? = nil) {
         self.subscriptionID=subscriptionID;self.bindingVerified=bindingVerified;self.fresh=fresh;self.observedOutput=observedOutput
+        self.observedInFlight=observedInFlight;self.expiresAt=expiresAt
     }
 }
 public struct DockInstrumentInput: Sendable {
@@ -100,7 +105,11 @@ public enum DockInstrumentProjection {
            let duration=selected.durationSeconds, duration.isFinite, duration>0 {
             time=max(0,min(1,reset.timeIntervalSince(now)/duration))
         }
-        let working=input.working.map{$0.bindingVerified && $0.fresh && $0.observedOutput && $0.subscriptionID==input.id} == true && input.dataState == .fresh
+        let working=input.working.map { signal in
+            signal.bindingVerified && signal.fresh && signal.subscriptionID == input.id &&
+            (signal.observedOutput || (signal.observedInFlight && signal.expiresAt != nil)) &&
+            (signal.expiresAt.map { now < $0 } ?? true)
+        } == true && input.dataState == .fresh
         func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
         return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,selectedResetAt:selected?.resetsAt,

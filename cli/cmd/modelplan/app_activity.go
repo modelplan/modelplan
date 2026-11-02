@@ -42,7 +42,7 @@ func appActivity(cache string, paths func(consent.Admission) quota.Paths) func(c
 		logs := speed.ActivityLogs(claude, codex, zcode, now)
 		bindings := []speed.ActivityBinding{}
 		if len(logs) > 0 {
-			bindings = speed.ExistingActivityBindings(cache)
+			bindings = speed.ExistingActivityBindings(cache, a)
 		}
 		values := observer.Observe(ctx, logs, bindings, now)
 		out := []rows.ActivityInput{}

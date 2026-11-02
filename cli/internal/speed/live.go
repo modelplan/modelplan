@@ -36,7 +36,7 @@ type liveSample struct {
 
 // LiveRecord is bounded local observation state, not a public session identifier.
 type LiveRecord struct {
-	GrantEpoch      *GrantEpoch  `json:"grantEpoch,omitempty"`
+	GrantEpoch      *GrantEpoch   `json:"grantEpoch,omitempty"`
 	Activity        *TurnActivity `json:"activity,omitempty"`
 	Key             string        `json:"key"`
 	Ref             string        `json:"ref"`
@@ -214,9 +214,9 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 			}
 			changed = l.setLive(fileKey(log.Path), log.Source, x, subscriptions[log.Source], now) || changed
 			// Reuse the decisive lifecycle parser without changing token/rate eligibility.
-			if verdicts, err := readActivityTail(log, fi, now); err == nil && len(verdicts) == 1 {
+			if verdicts, err := readActivityTail(log, fi, now); err == nil && len(verdicts) == 1 && !verdicts[0].RecordAt.Before(grantStart(l.admission, log.Source)) {
 				for j := range l.Live {
-					if l.Live[j].Key == fileKey(log.Path) && l.Live[j].Source == log.Source {
+					if l.Live[j].Key == fileKey(log.Path) && l.Live[j].Source == log.Source && sameEpoch(l.Live[j].GrantEpoch, currentEpoch(l.admission, log.Source)) {
 						v := verdicts[0].TurnActivity
 						l.Live[j].Activity = &v
 					}

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // TurnActivity is independent of token/rate eligibility. RecordAt is the original
@@ -28,6 +30,7 @@ type TurnActivity struct {
 type ActivityBinding struct {
 	Source, Key, SubscriptionRef string
 	Verified                     bool
+	NotBefore                    time.Time
 }
 type SessionActivity struct {
 	TurnActivity
@@ -56,6 +59,7 @@ func (o *ActivityObserver) Observe(ctx context.Context, logs []LiveLog, bindings
 	}
 	defer o.mu.Unlock()
 	owned := map[string]string{}
+	starts := map[string]time.Time{}
 	ambiguous := map[string]bool{}
 	for _, b := range bindings {
 		if !b.Verified || b.SubscriptionRef == "" {
@@ -66,6 +70,9 @@ func (o *ActivityObserver) Observe(ctx context.Context, logs []LiveLog, bindings
 			ambiguous[key] = true
 		}
 		owned[key] = b.SubscriptionRef
+		if b.NotBefore.After(starts[key]) {
+			starts[key] = b.NotBefore
+		}
 	}
 	seen := map[string]bool{}
 	out := []SessionActivity{}
@@ -97,7 +104,7 @@ func (o *ActivityObserver) Observe(ctx context.Context, logs []LiveLog, bindings
 				o.refs[key] = newRef()
 			}
 			v.SessionRef = o.refs[key]
-			if !ambiguous[key] {
+			if !ambiguous[key] && !v.RecordAt.Before(starts[key]) {
 				v.SubscriptionRef = owned[key]
 			}
 			if !now.Before(v.ExpiresAt) {
@@ -397,15 +404,16 @@ func ZCodeActivityHost(path string) bool {
 
 // ExistingActivityBindings deliberately excludes Live's historical source-level
 // fallback. Only the per-session observation ledger supplies provenance.
-func ExistingActivityBindings(cache string) []ActivityBinding {
+func ExistingActivityBindings(cache string, admission consent.Admission) []ActivityBinding {
 	l, ok := LoadPerf(cache)
 	if !ok {
 		return nil
 	}
+	l = (PerfView{Ledger: l, OK: true}).Admitted(admission).Ledger
 	out := []ActivityBinding{}
 	for _, s := range l.Sessions {
 		if s.SubscriptionRef != "" {
-			out = append(out, ActivityBinding{s.Source, s.Key, s.SubscriptionRef, true})
+			out = append(out, ActivityBinding{s.Source, s.Key, s.SubscriptionRef, true, grantStart(admission, s.Source)})
 		}
 	}
 	return out
