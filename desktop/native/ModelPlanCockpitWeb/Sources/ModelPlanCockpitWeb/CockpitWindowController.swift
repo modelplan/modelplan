@@ -10,6 +10,21 @@ public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejec
 // for a custom scheme. Only public, hash-pinned static files use this response;
 // private DTOs never have a scheme route. No credentialed CORS is enabled.
 enum CockpitSchemeResponse {
+  /// The production scheme and no-window checks share this verified asset path.
+  static func load(request: URLRequest, bundle: VerifiedCockpitBundle) throws
+    -> (response: HTTPURLResponse, data: Data)
+  {
+    guard let url = request.url, url.scheme == "modelplan-cockpit", url.host == "bundle",
+      url.user == nil, url.password == nil, url.port == nil, request.httpMethod == "GET"
+    else { throw CockpitBundleError.unsafePath }
+    let data = try bundle.resource(path: String(url.path.dropFirst()))
+    let mime = [
+      "html": "text/html", "js": "text/javascript", "css": "text/css",
+      "json": "application/json", "png": "image/png", "svg": "image/svg+xml",
+      "woff2": "font/woff2", "woff": "font/woff", "txt": "text/plain", "md": "text/plain",
+    ][url.pathExtension] ?? "application/octet-stream"
+    return (make(url: url, mime: mime, bytes: data.count), data)
+  }
   static func make(url: URL, mime: String, bytes: Int) -> HTTPURLResponse {
     HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: [
       "Content-Type": mime + (mime.hasPrefix("text/") ? "; charset=utf-8" : ""),
@@ -25,21 +40,10 @@ private final class BundleScheme: NSObject, WKURLSchemeHandler {
   init(_ bundle: VerifiedCockpitBundle, observed: ((String) -> Void)? = nil) { self.bundle = bundle; self.observed = observed }
   func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
     do {
-      guard let url = task.request.url, url.scheme == "modelplan-cockpit", url.host == "bundle",
-        url.user == nil, url.password == nil, url.port == nil,
-        task.request.httpMethod == "GET"
-      else { throw CockpitBundleError.unsafePath }
-      let path = String(url.path.dropFirst())
-      let data = try bundle.resource(path: path)
-      observed?(path)
-      let mime =
-        [
-          "html": "text/html", "js": "text/javascript", "css": "text/css",
-          "json": "application/json", "png": "image/png", "woff2": "font/woff2",
-          "woff": "font/woff", "txt": "text/plain", "md": "text/plain",
-        ][url.pathExtension] ?? "application/octet-stream"
-      task.didReceive(CockpitSchemeResponse.make(url: url, mime: mime, bytes: data.count))
-      task.didReceive(data)
+      let result = try CockpitSchemeResponse.load(request: task.request, bundle: bundle)
+      if let url = task.request.url { observed?(String(url.path.dropFirst())) }
+      task.didReceive(result.response)
+      task.didReceive(result.data)
       task.didFinish()
     } catch { task.didFailWithError(CockpitBundleError.integrity) }
   }

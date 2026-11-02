@@ -41,6 +41,31 @@ final class BundleTests: XCTestCase {
     try Data("changed".utf8).write(to: dir.appendingPathComponent("index.html"))
     XCTAssertThrowsError(try bundle.resource(path: "index.html"))
   }
+  func testVerifiedSVGResponseUsesSVGTypeAndNoSniff() throws {
+    let dir = try root()
+    let svg = Data("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".utf8)
+    try svg.write(to: dir.appendingPathComponent("mark.svg"))
+    let pin = try manifest(dir, files: [
+      "index.html": VerifiedCockpitBundle.digest(Data("<html>synthetic</html>".utf8)),
+      "mark.svg": VerifiedCockpitBundle.digest(svg),
+    ])
+    let bundle = try VerifiedCockpitBundle(root: dir, manifestSHA256: pin)
+    let url = try XCTUnwrap(URL(string: "modelplan-cockpit://bundle/mark.svg"))
+    let result = try CockpitSchemeResponse.load(request: URLRequest(url: url), bundle: bundle)
+    XCTAssertEqual(result.response.statusCode, 200)
+    XCTAssertEqual(result.response.mimeType, "image/svg+xml")
+    XCTAssertEqual(result.response.value(forHTTPHeaderField: "Content-Type"), "image/svg+xml")
+    XCTAssertEqual(result.response.value(forHTTPHeaderField: "X-Content-Type-Options"), "nosniff")
+    XCTAssertEqual(result.data, svg)
+    var post = URLRequest(url: url); post.httpMethod = "POST"
+    XCTAssertThrowsError(try CockpitSchemeResponse.load(request: post, bundle: bundle))
+    let other = try XCTUnwrap(URL(string: "modelplan-cockpit://other/mark.svg"))
+    XCTAssertThrowsError(try CockpitSchemeResponse.load(request: URLRequest(url: other), bundle: bundle))
+    let unlisted = try XCTUnwrap(URL(string: "modelplan-cockpit://bundle/unlisted.svg"))
+    XCTAssertThrowsError(try CockpitSchemeResponse.load(request: URLRequest(url: unlisted), bundle: bundle))
+    try Data("tampered".utf8).write(to: dir.appendingPathComponent("mark.svg"))
+    XCTAssertThrowsError(try CockpitSchemeResponse.load(request: URLRequest(url: url), bundle: bundle))
+  }
   func testWrongPinUnlistedFileAndOfficialAreRejected() throws {
     let dir = try root()
     let pin = try manifest(dir)
