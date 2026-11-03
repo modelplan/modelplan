@@ -27,6 +27,10 @@ func TestRefreshDeadlinePresentForFreshRowAndMember(t *testing.T) {
 	if old.Rows[0].RefreshNotBefore != nil || old.Rows[0].Accounts[0].RefreshNotBefore != nil { t.Fatal("legacy client saw deadline") }
 	current := wire.ProjectWithEvents(projection, nil, false, false, true)
 	if current.Rows[0].RefreshNotBefore == nil || current.Rows[0].Accounts[0].RefreshNotBefore == nil { t.Fatal("capable client lost deadline") }
+	// A suspended mode retains the property but does not invent a deadline.
+	off := consent.NewAdmission(admission.State(), consent.Off)
+	backend.populateRefreshDeadlines(&projection, paths(off), off, nil, time.Now())
+	if projection.Rows[0].RefreshNotBefore == nil || *projection.Rows[0].RefreshNotBefore != nil { t.Fatal("suspended grant did not retain unknown deadline") }
 	// A corrupt budget is present but unknown; never invent a time.
 	path := filepath.Join(cache, "observed", "reader-attempts", "codex.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { t.Fatal(err) }

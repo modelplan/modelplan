@@ -19,9 +19,11 @@ type memberDeadline struct {
 }
 
 func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p quota.Paths, admission consent.Admission, allowed []string, now time.Time) {
-	state, mode := admission.State(), admission.Mode()
+	state := admission.State()
 	byTool := map[string][]memberDeadline{}
-	for _, scope := range liveRefreshScopes(state, mode) {
+	// A stored grant remains visible even when the current mode suspends it.
+	// Such a scope has an unknown deadline until it is admitted again.
+	for _, scope := range liveRefreshScopes(state, consent.Automatic) {
 		definition, ok := consent.Definition(scope)
 		if !ok { continue }
 		candidate := memberDeadline{route: rows.Route(definition.Route)}
@@ -55,6 +57,10 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 			if locator == "" && subscription == "" { var unknown *time.Time; account.RefreshNotBefore = &unknown; continue }
 			if quota.MemberProfilesAreScoped(row.ID) {
 				if _, ok := quota.NarrowMemberPaths(p, row.ID, locator, subscription); !ok { var unknown *time.Time; account.RefreshNotBefore = &unknown }
+			} else {
+				count := 0
+				for _, other := range row.Accounts { if other.Route == account.Route { count++ } }
+				if count != 1 { var unknown *time.Time; account.RefreshNotBefore = &unknown }
 			}
 		}
 	}
