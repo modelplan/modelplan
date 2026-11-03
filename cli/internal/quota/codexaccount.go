@@ -26,6 +26,7 @@ type accountResetCredits struct {
 	Expiries         []*time.Time        `json:"expiries,omitempty"`
 	Items            []resetCardIdentity `json:"items,omitempty"`
 	IdentityComplete bool                `json:"identityComplete,omitempty"`
+	Truncated        bool                `json:"truncated,omitempty"`
 }
 
 // The Codex account reading comes from Codex itself: `codex app-server` answers
@@ -409,7 +410,12 @@ func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
 	}
 	seen := map[string]*time.Time{}
 	complete := true
-	for _, c := range r.RateLimitResetCredit.Credits {
+	for index, c := range r.RateLimitResetCredit.Credits {
+		if index >= 64 {
+			s.Credits.Truncated = true
+			complete = false
+			break
+		}
 		if c.Status != "available" {
 			continue
 		}
