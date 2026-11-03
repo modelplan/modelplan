@@ -361,8 +361,8 @@
           "field": "resetsAt",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         },
         {
