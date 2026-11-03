@@ -497,8 +497,9 @@ def admission(binary, home, plan):
         cli(binary, case, ['consent', 'init', '--json'])
         cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=plan['localScopes']))
         engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
-        engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
         # Establish separate grants without scheduling reads under an interim fence.
+        # Passive mode still permits explicitly keyed routes, so the synthetic
+        # key is provided only to the subsequent normal session.
         engine.environment['MODELPLAN_READERS'] = 'passive'
         engine.capabilities.append('refreshDecisionsV1')
         with engine:
