@@ -322,3 +322,21 @@ func TestProfilesClocksAndPrivacyCanaries(t *testing.T) {
 		}
 	}
 }
+
+func TestOlderWindowDoesNotInheritNewAccountFreshness(t *testing.T) {
+	in := sampleInput()
+	old := testNow.Add(-2 * time.Hour)
+	in.Accounts[0].Windows[0].ObservedAt = &old
+	projection := Build(in)
+	row := rowByID(t, projection, "codex")
+	window := row.Accounts[0].Windows[0]
+	if window.Current || window.ObservedAt == nil || !window.ObservedAt.Equal(old) {
+		t.Fatalf("old window became current or lost its own time: %+v", window)
+	}
+	if window.ValidUntil == nil || window.ValidUntil.After(testNow) {
+		t.Fatalf("old window received a new freshness deadline: %+v", window)
+	}
+	if err := Validate(in, projection); err != nil {
+		t.Fatal(err)
+	}
+}

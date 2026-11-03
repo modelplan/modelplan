@@ -14,6 +14,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "subscriptionRef",
           "omission": true,
           "null": true,
@@ -326,6 +334,14 @@
       "type": "RowsRow",
       "optional": [
         {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "vendorKey",
           "omission": true,
           "null": true,
@@ -402,6 +418,14 @@
       "file": "RowsWindow.json",
       "type": "RowsWindow",
       "optional": [
+        {
+          "field": "source",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "modelScope",
           "omission": true,
@@ -827,6 +851,14 @@
       "type": "WireDiagnostics",
       "optional": [
         {
+          "field": "refreshDecisions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "lastErrorClass",
           "omission": true,
           "null": true,
@@ -1027,6 +1059,31 @@
       ]
     },
     {
+      "file": "WireMemberRefreshResult.json",
+      "type": "WireMemberRefreshResult",
+      "optional": [
+        {
+          "field": "notBefore",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reason",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "outcome"
+      ]
+    },
+    {
       "file": "WireNotification.json",
       "type": "WireNotification\u003cWireRowsSnapshot\u003e",
       "optional": [],
@@ -1162,9 +1219,54 @@
       ]
     },
     {
+      "file": "WireRefreshDecision.json",
+      "type": "WireRefreshDecision",
+      "optional": [],
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
+      ]
+    },
+    {
+      "file": "WireRefreshMember.json",
+      "type": "WireRefreshMember",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "accountLocator",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "rowId",
+        "route"
+      ]
+    },
+    {
       "file": "WireRefreshRequestParams.json",
       "type": "WireRefreshRequestParams",
       "optional": [
+        {
+          "field": "member",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "scopes",
           "omission": true,

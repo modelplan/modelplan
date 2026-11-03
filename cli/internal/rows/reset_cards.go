@@ -23,7 +23,7 @@ func sanitizeResetCards(v *ResetCards, now time.Time) *ResetCards {
 		return unknownResetCards()
 	}
 	source := v.Sources[0]
-	if (source.Source != ResetCardCodexAccount && source.Source != ResetCardCodexBar) || source.ObservedAt.IsZero() || source.ObservedAt.After(now) {
+	if (source.Source != ResetCardCodexAccount && source.Source != ResetCardCodexBar) || source.ObservedAt.IsZero() || source.ObservedAt.After(now) || !now.Before(source.ObservedAt.Add(time.Hour)) {
 		return unknownResetCards()
 	}
 	count := *v.Count
@@ -63,7 +63,8 @@ func sanitizeResetCards(v *ResetCards, now time.Time) *ResetCards {
 }
 
 // mergeResetCards joins only already-admitted, verified subscription refs. An
-// incomplete or differently timed source cannot assert a complete union.
+// incomplete source cannot assert a complete union. The freshest observation
+// appears first, with the source ID breaking timestamp ties.
 func mergeResetCards(sets []*ResetCards) *ResetCards {
 	if len(sets) == 1 {
 		return sets[0]
@@ -72,7 +73,6 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 	items := map[string]ResetCardItem{}
 	sources := map[ResetCardSourceKind]ResetCardSource{}
 	known, complete := false, true
-	var stamp *time.Time
 	for _, set := range sets {
 		if set == nil || set.State == "unknown" {
 			complete = false
@@ -84,15 +84,9 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 		}
 		out.Truncated = out.Truncated || set.Truncated
 		for _, source := range set.Sources {
-			if old, ok := sources[source.Source]; ok && !old.ObservedAt.Equal(source.ObservedAt) {
-				complete = false
+			if old, ok := sources[source.Source]; !ok || source.ObservedAt.After(old.ObservedAt) {
+				sources[source.Source] = source
 			}
-			if stamp != nil && !stamp.Equal(source.ObservedAt) {
-				complete = false
-			}
-			t := source.ObservedAt
-			stamp = &t
-			sources[source.Source] = source
 		}
 		for _, item := range set.Items {
 			if old, ok := items[item.ID]; ok && ((old.ExpiresAt == nil) != (item.ExpiresAt == nil) || old.ExpiresAt != nil && !old.ExpiresAt.Equal(*item.ExpiresAt)) {
@@ -106,50 +100,50 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 		return out
 	}
 	out.State = "partial"
-	ids := make([]string, 0, len(items))
-	for id := range items {
-		ids = append(ids, id)
+	all := make([]ResetCardItem, 0, len(items))
+	for _, item := range items {
+		all = append(all, item)
 	}
-	sort.Strings(ids)
-	if len(ids) > 64 {
-		ids = ids[:64]
+	sort.Slice(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if a.ExpiresAt == nil || b.ExpiresAt == nil {
+			if (a.ExpiresAt == nil) != (b.ExpiresAt == nil) {
+				return a.ExpiresAt != nil
+			}
+		} else if !a.ExpiresAt.Equal(*b.ExpiresAt) {
+			return a.ExpiresAt.Before(*b.ExpiresAt)
+		}
+		return a.ID < b.ID
+	})
+	if complete {
+		count := len(all)
+		out.Count = &count
+		if len(all) > 0 && all[len(all)-1].ExpiresAt != nil {
+			t := *all[0].ExpiresAt
+			out.EarliestExpiresAt = &t
+		}
+	}
+	if len(all) > 64 {
+		all = all[:64]
 		out.Truncated = true
-		complete = false
 	}
-	for _, id := range ids {
-		out.Items = append(out.Items, items[id])
+	out.Items = all
+	for _, source := range sources {
+		out.Sources = append(out.Sources, source)
 	}
-	keys := make([]string, 0, len(sources))
-	for k := range sources {
-		keys = append(keys, string(k))
-	}
-	sort.Strings(keys)
-	if len(keys) > 16 {
-		keys = keys[:16]
+	sort.Slice(out.Sources, func(i, j int) bool {
+		a, b := out.Sources[i], out.Sources[j]
+		if !a.ObservedAt.Equal(b.ObservedAt) {
+			return a.ObservedAt.After(b.ObservedAt)
+		}
+		return a.Source < b.Source
+	})
+	if len(out.Sources) > 16 {
+		out.Sources = out.Sources[:16]
 		out.Truncated = true
-		complete = false
-	}
-	for _, k := range keys {
-		out.Sources = append(out.Sources, sources[ResetCardSourceKind(k)])
 	}
 	if complete && !out.Truncated {
-		count := len(out.Items)
-		out.Count = &count
 		out.State = "complete"
-		allExpiring := true
-		for _, item := range out.Items {
-			if item.ExpiresAt == nil {
-				allExpiring = false
-				break
-			}
-			if out.EarliestExpiresAt == nil || item.ExpiresAt.Before(*out.EarliestExpiresAt) {
-				t := *item.ExpiresAt
-				out.EarliestExpiresAt = &t
-			}
-		}
-		if !allExpiring {
-			out.EarliestExpiresAt = nil
-		}
 	}
 	return out
 }
@@ -188,9 +182,6 @@ func validResetCards(in Input, facts *ResetCards, ref *string) bool {
 		return false
 	}
 	if facts.State == ResetCardComplete && (facts.Count == nil || *facts.Count != len(facts.Items) || facts.Truncated) {
-		return false
-	}
-	if facts.State != ResetCardComplete && facts.EarliestExpiresAt != nil {
 		return false
 	}
 	allowedIDs := map[string][]ResetCardItem{}
@@ -242,7 +233,7 @@ func validResetCards(in Input, facts *ResetCards, ref *string) bool {
 			return false
 		}
 	}
-	if facts.State == ResetCardComplete {
+	if facts.State == ResetCardComplete || facts.EarliestExpiresAt != nil {
 		if !allExpiring {
 			earliest = nil
 		}

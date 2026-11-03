@@ -68,9 +68,15 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	for i := 0; i < 65; i++ {
 		view.QuotaReport.Accounts[0].Cards = append(view.QuotaReport.Accounts[0].Cards, quota.Card{Kind: "full", Count: &zero})
 	}
+	one := 1
+	facts.Count = &one
+	facts.EarliestExpiresAt = &until
 	capped, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
 	if err != nil || len(capped.Subscriptions) != 1 || len(capped.Subscriptions[0].ResetCounts) != 64 || !capped.Subscriptions[0].ResetCountsTruncated || capped.Subscriptions[0].ResetCards == nil || capped.Subscriptions[0].ResetCards.State != rows.ResetCardPartial || !capped.Subscriptions[0].ResetCards.Truncated {
 		t.Fatalf("truncation not reported: %+v, %v", capped, err)
+	}
+	if capped.Subscriptions[0].ResetCards.Count == nil || *capped.Subscriptions[0].ResetCards.Count != 1 || capped.Subscriptions[0].ResetCards.EarliestExpiresAt == nil || !capped.Subscriptions[0].ResetCards.EarliestExpiresAt.Equal(until) {
+		t.Fatal("legacy cap discarded distinct total or earliest expiry")
 	}
 	stamp.Generation++
 	if _, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, nil); err == nil {

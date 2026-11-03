@@ -53,6 +53,7 @@ func (w *Window) evalRequests(now time.Time) {
 }
 
 type Window struct {
+	Origin string `json:"-"`
 	// ModelIDs records explicit provider scope; nil means plan-wide.
 	ModelIDs []string `json:"modelIds,omitempty"`
 	// ScopeKnown distinguishes fresh plan-wide windows from older cached records.

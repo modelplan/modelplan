@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 051f38cc5ef040af3750c6d94710a9c192d2d6b06052948dc7a86f516b70b78a
+// Schema SHA-256: 841abac25c60af0a24102a81d3aa857461e69dc4c1c7e86cb7c225579cd534c8
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -11,6 +11,7 @@ export type WireAccount = {
   readonly "lastFailure": WireFailure | null;
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
+  readonly "refreshNotBefore"?: string | null | null;
   readonly "resetCards"?: WireResetCards | null;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
@@ -193,6 +194,7 @@ export type WireRow = {
   readonly "nextStep": WireNextStep | null;
   readonly "order": number;
   readonly "reason": WireReason;
+  readonly "refreshNotBefore"?: string | null | null;
   readonly "state": "off" | "needs_action" | "needs_consent" | "pending" | "unsupported" | "needs_keychain" | "failed" | "empty" | "stale" | "fresh";
   readonly "stateAfterExpiry": WireExpiryState | null;
   readonly "surfaces": ReadonlyArray<"dock" | "menu" | "settings">;
@@ -231,6 +233,7 @@ export type WireWindow = {
   readonly "resetMode": "fixed" | "rolling" | "unknown";
   readonly "resetsAt": string | null;
   readonly "role": "session" | "daily" | "weekly" | "monthly" | "other";
+  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other" | null;
   readonly "validUntil": string | null;
 };
 
@@ -295,6 +298,24 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "plan": {
         "$ref": "#/$defs/Plan"
+      },
+      "refreshNotBefore": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "resetCards": {
         "anyOf": [
@@ -1346,6 +1367,24 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "reason": {
         "$ref": "#/$defs/Reason"
       },
+      "refreshNotBefore": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "state": {
         "enum": [
           "off",
@@ -1575,6 +1614,23 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "other"
         ],
         "type": "string"
+      },
+      "source": {
+        "anyOf": [
+          {
+            "enum": [
+              "local_history",
+              "runtime",
+              "saved_login",
+              "api_key",
+              "other"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "validUntil": {
         "anyOf": [
