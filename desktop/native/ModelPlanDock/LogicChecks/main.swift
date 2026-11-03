@@ -112,7 +112,12 @@ do {
             _ = try state.step(input, at: 0, intent: .reveal); _ = try state.step(input, at: 1)
             try expect(try state.step(input, at: 10).state == .expanded, "genuine protection remains")
             input.mouseButtonDown=false;input.menuActuallyOpen=false;input.ignitionHeld=false;input.cardFocused=false
-            try expect(try state.step(input, at: 11).forcedHide, "release permits overdue stale recovery")
+            if protection == 3 {
+                try expect(try state.step(input, at: 11).state == .expanded, "focus release starts a new leave grace")
+                try expect(try state.step(input, at: 13.1).forcedHide, "stale locks recover after the post-focus grace")
+            } else {
+                try expect(try state.step(input, at: 11).forcedHide, "release permits overdue stale recovery")
+            }
         }
     }
     try test("visibility: suppression, lifecycle and invalid clock/config") {

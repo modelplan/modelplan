@@ -22,6 +22,7 @@ private actor S4RowsClient: EngineClient {
     func replaceRows(_ rows:WireRowsSnapshot) async throws {
         revision += 1
         let next=EngineDeliveryContext(sessionID:context.sessionID,floor:context.floor,revision:revision)
+        await store.consume(.connection(.ready(next)))
         await store.consume(.context(next))
         await store.consume(.rowsChanged(.init(envelope:try .init(sessionId:next.sessionID,storeEpoch:next.floor.storeEpoch,consentGeneration:next.floor.generation,data:rows),delivery:next),invalidRowCount:rows.projection.invalidRowCount))
     }
@@ -317,32 +318,34 @@ private actor S4RowsClient: EngineClient {
         let acknowledged=try attention.project(signals,stationBySubscription:stations,at:clock)
         try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge both indicators")
         try require(DockNoticeProjection.selected(for:matching,at:clock) != nil,"acknowledgement must not erase the Dock-face notice")
+        let confirmationClock=Date()
         events[0]["status"]="confirmed";events[0]["confirms"]=decoded[0].id
-        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(30))
+        events[0]["publishedAt"]=formatter.string(from:confirmationClock.addingTimeInterval(-1))
+        events[0]["expiresAt"]=formatter.string(from:confirmationClock.addingTimeInterval(30))
         var superseded=events[0];superseded["status"]="announced";superseded.removeValue(forKey:"confirms")
         superseded["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-10))
         projection["resetEvents"]=[superseded,events[0]];data["projection"]=projection
         let confirmed=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(confirmed)
-        guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:clock) else { throw Failure(description:"linked confirmation was not projected") }
+        guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:confirmationClock) else { throw Failure(description:"linked confirmation was not projected") }
         try require(notice.key.kind == .resetConfirmed && notice.shape == .solid,"linked confirmation must project the solid confirmed notice")
         for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
         try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
-        try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
+        try require(DockNoticeProjection.selected(for:confirmedSignal,at:confirmationClock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
         let captured=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         let originalProjection=captured["projection"] as! [String:Any]
         let originalRow=(originalProjection["rows"] as! [[String:Any]])[0]
         let originalAccount=(originalRow["accounts"] as! [[String:Any]])[0]
         var restartedWindow=(originalAccount["windows"] as! [[String:Any]])[0]
         restartedWindow.removeValue(forKey:"modelScope");restartedWindow["current"]=true
-        restartedWindow["observedAt"]=formatter.string(from:clock);restartedWindow["resetsAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        restartedWindow["observedAt"]=formatter.string(from:confirmationClock);restartedWindow["resetsAt"]=formatter.string(from:confirmationClock.addingTimeInterval(3600))
         var eventRows=projection["rows"] as! [[String:Any]], eventAccounts=eventRows[0]["accounts"] as! [[String:Any]]
         eventAccounts[0]["valueState"]="current";eventAccounts[0]["windows"]=[restartedWindow]
         eventRows[0]["accounts"]=eventAccounts;projection["rows"]=eventRows;data["projection"]=projection
         let restarted=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(restarted)
         guard let restartedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}) else { throw Failure(description:"restarted member missing") }
-        try require(restartedSignal.reset?.restartedReading == true && DockNoticeProjection.selected(for:restartedSignal,at:clock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
+        try require(restartedSignal.reset?.restartedReading == true && DockNoticeProjection.selected(for:restartedSignal,at:confirmationClock) == nil,"a current reading restarted after confirmation must clear the confirmed notice")
         events[0].removeValue(forKey:"confirms");projection["resetEvents"]=events;data["projection"]=projection
         let unlinked=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         try await synthetic.replaceRows(unlinked)
@@ -459,6 +462,8 @@ private actor S4RowsClient: EngineClient {
         var first=(row["accounts"] as! [[String:Any]])[0],second=first
         first["subscriptionRef"]="0123456789abcdef";second["subscriptionRef"]="fedcba9876543210"
         first["credits"]=["balance":42.5,"unit":"credits"];second["credits"]=["balance":7,"unit":"credits"]
+        row["state"]="fresh";row["expiresAt"]="2099-01-01T00:00:00Z"
+        first["freshUntil"]="2099-01-01T00:00:00Z";second["freshUntil"]="2099-01-01T00:00:00Z"
         row["surfaces"]=["dock","menu","settings"];row["accounts"]=[first,second]
         projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
@@ -477,7 +482,7 @@ private actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
-        try require(firstCard.rows.contains { $0.id == "source" && $0.value == "Saved sign-in" },"card must retain its localized reported source")
+        try require(firstCard.sourceAndAge.contains("Saved sign-in"),"card header must retain its localized reported source")
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
         try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")

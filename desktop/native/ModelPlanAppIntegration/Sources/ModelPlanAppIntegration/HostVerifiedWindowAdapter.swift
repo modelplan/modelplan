@@ -124,7 +124,9 @@ enum HostVerifiedWindowError: Error, Equatable {
                 plan: admitted ? row.plan : "", sourceName: admitted ? row.sourceName : "",
                 resetTimes: safeResetTimes,
                 windowDescriptions: row.windowDescriptions.filter { provenIDs.contains($0.key) },
-                additionalRows: admitted ? row.additionalRows : [],
+                // Public reset notices are independently admitted by the Provider;
+                // missing private quota proof must not erase that public status.
+                additionalRows: admitted ? row.additionalRows : row.additionalRows.filter { $0.kind == .notice && $0.id.hasPrefix("reset-event:") },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
