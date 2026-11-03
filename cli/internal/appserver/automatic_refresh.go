@@ -25,7 +25,7 @@ func (s *RefreshScheduler) automatic() {
 	first := true
 	var previous Stamp
 	for s.ctx.Err() == nil {
-		now := time.Now()
+		now := s.now()
 		admission := consent.Capture()
 		stamp := stampOfFence(admission.Fence())
 		if stamp != previous {
@@ -72,7 +72,7 @@ func (s *RefreshScheduler) automatic() {
 			}
 		}
 		first = false
-		wait := time.Until(next)
+		wait := next.Sub(s.now())
 		if wait < 0 { wait = 0 }
 		timer := time.NewTimer(wait)
 		select {

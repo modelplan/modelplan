@@ -3,6 +3,8 @@ package appserver
 
 import (
 	"context"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,5 +35,86 @@ func TestAutomaticRefreshStartsGrantedCodexOnce(t *testing.T) {
 	case scope := <-calls:
 		t.Fatalf("duplicate request before floor: %s", scope)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+type syntheticRefreshClock struct {
+	mu sync.Mutex
+	now time.Time
+}
+func (c *syntheticRefreshClock) read() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *syntheticRefreshClock) set(at time.Time) { c.mu.Lock(); c.now = at; c.mu.Unlock() }
+func signalAutomatic(s *RefreshScheduler) {
+	s.signal()
+	select { case s.autoWake <- struct{}{}: default: }
+}
+func waitAutomaticFloor(t *testing.T, s *RefreshScheduler, key string, after time.Time) {
+	t.Helper()
+	deadline := time.Now().Add(3*time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock(); until := s.autoNext[key]; s.mu.Unlock()
+		if until.After(after) { return }
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("automatic completion was not recorded")
+}
+
+func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
+	for _, scope := range []string{
+		consent.ScopeCodexRuntimeUsage, consent.ScopeClaudeAccountUsageSavedLogin,
+		consent.ScopeGeminiAccountUsageSavedLogin, consent.ScopeCursorAccountUsageSavedLogin,
+		consent.ScopeCopilotRuntimeUsage, consent.ScopeKimiAccountUsageSavedLogin,
+		consent.ScopeGrokAccountUsageSavedLogin, consent.ScopeKiroRuntimeUsage,
+		consent.ScopeAntigravityRuntimeUsage, consent.ScopeZaiAccountUsageAPIKey,
+		consent.ScopeMiniMaxAccountUsageAPIKey, consent.ScopeOpenCodeGoAccountUsageAPIKey,
+	} {
+		t.Run(scope, func(t *testing.T) {
+			backend, paths, _ := refreshFixture(t, scope)
+			if err := consent.Change(consent.Path(), func(state *consent.State) error {
+				state.Scopes[scope] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+				return nil
+			}); err != nil { t.Fatal(err) }
+			backend.view.Stamp = stampOfFence(consent.Capture().Fence())
+			backend.view.Scopes = []string{scope}
+			clock := &syntheticRefreshClock{now: time.Now().UTC()}
+			start := clock.read()
+			var mu sync.Mutex
+			next := start
+			attempts := 0
+			calls := make(chan int, 4)
+			release := make(chan struct{})
+			plan := func(_ quota.Paths, _ string, now time.Time) (quota.ScopeRefreshPlan, error) {
+				mu.Lock(); at := next; mu.Unlock()
+				if at.Before(now) { at = now }
+				return quota.ScopeRefreshPlan{At: at, Admitted: true, BudgetKnown: true}, nil
+			}
+			s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: clock.read, Plan: plan,
+				Run: func(ctx context.Context, _ quota.Paths, _ string, at time.Time) error {
+					mu.Lock(); attempts++; n := attempts
+					if n == 1 { next = at.Add(10*time.Minute) } else { next = at.Add(30*time.Minute) }
+					mu.Unlock()
+					calls <- n
+					if n == 2 { select { case <-release: case <-ctx.Done(): }; return errors.New("synthetic failure") }
+					return nil
+				},
+			})
+			defer s.Close()
+			s.StartAutomatic()
+			select { case <-calls: case <-time.After(3*time.Second): t.Fatal("startup did not read") }
+			definition, _ := consent.Definition(scope)
+			waitAutomaticFloor(t, s, definition.Tool, start)
+			clock.set(start.Add(4*time.Minute)); signalAutomatic(s)
+			select { case n := <-calls: t.Fatalf("read %d bypassed floor", n); case <-time.After(10*time.Millisecond): }
+			clock.set(start.Add(10*time.Minute)); signalAutomatic(s)
+			select { case n := <-calls: if n != 2 { t.Fatalf("unexpected attempt %d", n) }; case <-time.After(3*time.Second): t.Fatal("provider due time missed") }
+			signalAutomatic(s)
+			select { case n := <-calls: t.Fatalf("concurrent read %d", n); case <-time.After(10*time.Millisecond): }
+			close(release)
+			waitAutomaticFloor(t, s, definition.Tool, start.Add(10*time.Minute))
+			clock.set(start.Add(39*time.Minute)); signalAutomatic(s)
+			select { case n := <-calls: t.Fatalf("read %d bypassed failure budget", n); case <-time.After(10*time.Millisecond): }
+			clock.set(start.Add(40*time.Minute)); signalAutomatic(s)
+			select { case n := <-calls: if n != 3 { t.Fatalf("unexpected attempt %d", n) }; case <-time.After(3*time.Second): t.Fatal("failure budget did not expire") }
+		})
 	}
 }
