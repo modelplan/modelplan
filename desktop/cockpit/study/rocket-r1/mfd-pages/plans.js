@@ -5,8 +5,8 @@ import {secondaryLink} from './public-helpers.js';
 //   概况: header; windows (bar, %, absolute reset time, countdown); 重置卡; 点数; 高峰时段.
 //   记录: header; 重置记录 with sources (自然到期 / 官方 / 重置卡 / 修正); 周期历史 (10 cycles, stacked by model / effort / fast).
 // Pure view (spec 2.6).
-import {t} from '../i18n.js';
-import {esc, tok, dhm, grouped, hm, when, stamp, until, md, bar10, level, chip, clockIcon, tip, fill, relativeMoment, resetMoment} from './fmt.js';
+import {t,formatCredits} from '../i18n.js';
+import {esc, tok, dhm, hm, when, stamp, until, md, bar10, level, chip, clockIcon, tip, fill, relativeMoment, resetMoment} from './fmt.js';
 import {accountOf, modelOf} from './scope.js';
 import {fillColour} from '../colour-mode.js';
 
@@ -60,11 +60,11 @@ export function creditsBlock(a, ui) {
   // polish A: the 30 daily bars take the screen's width (label 40, the total about 64)
   const W = Math.max(120, Math.min(240, fill(ui, 'page', {w: 330, h: 170}).w - 16 - 40 - 64 - 12));
   const max = Math.max(...c.daily30, 1), bw = W / 30, sum = c.daily30.reduce((s, v) => s + v, 0);
-  const bars = c.daily30.map((v, i) => `<rect data-tip="${tip([t('mfd.credits'),grouped(v),relativeMoment(ui.now-(29-i)*864e5,ui)])}" x="${(i * bw + .5).toFixed(1)}" y="${(14 - v / max * 13).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${(v / max * 13 + .6).toFixed(1)}"/>`).join('');
+  const bars = c.daily30.map((v, i) => `<rect data-tip="${tip([t('mfd.credits'),formatCredits(v,ui.lang),relativeMoment(ui.now-(29-i)*864e5,ui)])}" x="${(i * bw + .5).toFixed(1)}" y="${(14 - v / max * 13).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${(v / max * 13 + .6).toFixed(1)}"/>`).join('');
   const left = c.limit ? Math.round((c.limit - c.used) / c.limit * 100) : null;
-  return `<div class="cr-l"><span class="lbl">${t('mfd.credits')}</span><b class="cr-bal">${grouped(c.balance)}</b><em>${t('mfd.creditsRead', {t: relativeMoment(c.readAt,ui)})}</em></div>
-    ${c.limit ? `<div class="cr-l sub"><span class="lbl"></span><span class="lv-${level(left, ui.redAt)}">${t('mfd.creditsLimit', {u: grouped(c.used), l: grouped(c.limit), r: left})}</span>${c.resetsAt ? `<em>${t('mfd.creditsReset', {t: dhm((c.resetsAt - ui.now) / 6e4)})}</em>` : ''}</div>` : ''}
-    <div class="cr-l sub"><span class="lbl"></span><svg class="cr-30" viewBox="0 0 ${W} 15" width="${W}" height="15" aria-hidden="true">${bars}</svg><em>${t('mfd.credits30', {n: tok(sum)})}</em></div>
+  return `<div class="cr-l"><span class="lbl">${t('mfd.credits')}</span><b class="cr-bal">${esc(formatCredits(c.balance,ui.lang))}</b><em>${t('mfd.creditsRead', {t: relativeMoment(c.readAt,ui)})}</em></div>
+    ${c.limit ? `<div class="cr-l sub"><span class="lbl"></span><span class="lv-${level(left, ui.redAt)}">${esc(t('mfd.creditsLimit', {u: formatCredits(c.used,ui.lang), l: formatCredits(c.limit,ui.lang), r: left}))}</span>${c.resetsAt ? `<em>${t('mfd.creditsReset', {t: dhm((c.resetsAt - ui.now) / 6e4)})}</em>` : ''}</div>` : ''}
+    <div class="cr-l sub"><span class="lbl"></span><svg class="cr-30" viewBox="0 0 ${W} 15" width="${W}" height="15" aria-hidden="true">${bars}</svg><em>${esc(t('mfd.credits30', {n: formatCredits(sum,ui.lang)}))}</em></div>
     ${c.drawing ? `<div class="cr-l sub draw"><span class="lbl"></span><b class="lv-low">${t('mfd.drawing')}</b>${c.drawingSince ? `<em>${t('mfd.drawingFor', {t: dhm((ui.now - c.drawingSince) / 6e4)})}</em>` : ''}</div>` : ''}`;
 }
 function peak(a, ui) {
@@ -117,7 +117,7 @@ function list(d, ui) {
   const n = d.accounts.length, nx = d.accounts.reduce((k, a) => k + a.extras.length, 0), h = fill(ui, 'page', {w: 330, h: 170}).h - 12, two = n * 30 + (n - 1) * 2 + nx * 15 <= h;
   return `<div class="sa-list ${two ? 'two' : ''}">${d.accounts.map(a => {
     const w = tightest(a), r = w?.remaining, lv = lvOf(r, ui), near = a.cards.some(c => (c.expiresAt - ui.now) / 3600e3 <= 48);
-    const reserve = [a.cards.length ? `<i class="${near ? 'amber' : ''}">↺${a.cards.length}</i>` : '', a.credits ? `<i class="${a.credits.drawing ? 'lv-low' : ''}">${tok(a.credits.balance)}</i>` : ''].join('');
+    const reserve = [a.cards.length ? `<i class="${near ? 'amber' : ''}">↺${a.cards.length}</i>` : '', a.credits ? `<i class="${a.credits.drawing ? 'lv-low' : ''}">${esc(formatCredits(a.credits.balance,ui.lang))}</i>` : ''].join('');
     const abs = w ? resetMoment(w,ui) : '';
     const sub = two ? `<span class="sa-d">${esc([a.plan, w?.label, abs].filter(Boolean).join(' · '))}</span>` : '';
     return `<button class="sa" data-mfd="scope:${a.id}" data-col="${a.id}" data-tip="${tip([a.name, `${w?.label || ''} · ${abs}`])}">${chip(a.colour)}<b>${esc(a.short)}</b>${qbar(r, lv, a.colour)}<span class="v lv-${lv}">${r == null ? '--' : r + '%'}</span><em>${w?.resetIn != null ? dhm(w.resetIn) : '--'}</em><span class="sa-r">${reserve}</span>${sub}</button>${a.extras.map(x => extraRow(x, ui, a.colour)).join('')}`;

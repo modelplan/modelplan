@@ -1,5 +1,5 @@
 // Round G, owner-approved task 09. Pure view; positional windows, one aligned number per cell.
-import {t} from './i18n.js';
+import {t,formatCredits} from './i18n.js';
 import {esc, dhm, tok, when, hm, relativeMoment} from './mfd-pages/engine-fmt.js';
 import {fillColour, numberColour} from './colour-mode.js';
 import {emptyKey, emptyColumn} from './empty-bays.js';
@@ -46,7 +46,7 @@ function reserve(col,m,ui){
   const r=col.reserve;if(!r)return '<div class="qrow qrow-r"></div>';
   const expiry=r.firstExpiry==null?'':` · ${until(r.firstExpiry,ui.now)}`;
   const full=t(r.cards===1?'eng.resetWordOne':'eng.resetsWords',{n:r.cards})+expiry, short=t(r.cards===1?'eng.resetCompactOne':'eng.resetsCompact',{n:r.cards})+expiry.replaceAll(' ','');
-  const points=r.credits==null?'':t('eng.creditWords',{n:tok(r.credits)});
+  const points=r.credits==null?'':formatCredits(r.credits,ui.lang).replace('<','&lt;');
   return `<div class="qrow qrow-r" aria-label="${esc([r.cards!=null?full:'',points].filter(Boolean).join(' · '))}">${r.cards!=null?`<span class="qrv-c${r.warn?' warn':''}" data-full="${esc(full)}" data-short="${esc(short)}">${esc(full)}</span>`:''}${points?`<span class="qrv-p">${esc(points)}</span>`:''}</div>`;
 }
 // Exactly two extra instruments in the wide-column prototype; missing history stays unplotted.
