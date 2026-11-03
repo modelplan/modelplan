@@ -84,7 +84,25 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
 		}
 		for _, window := range account.Windows {
-			raw := rows.WindowInput{Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}
+			source := rows.WindowSourceOther
+			switch window.Origin {
+			case "local_history":
+				source = rows.WindowSourceLocalHistory
+			case "runtime":
+				source = rows.WindowSourceRuntime
+			default:
+				switch route {
+				case rows.RouteLocalLog, rows.RouteStatusLine, rows.RouteLocalSQLite:
+					source = rows.WindowSourceLocalHistory
+				case rows.RouteRuntimeRPC:
+					source = rows.WindowSourceRuntime
+				case rows.RouteSavedLoginAPI:
+					source = rows.WindowSourceSavedLogin
+				case rows.RouteAPIKeyAPI:
+					source = rows.WindowSourceAPIKey
+				}
+			}
+			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}
 			if window.WindowMinutes > 0 {
 				duration := int64(window.WindowMinutes) * 60
 				raw.DurationSeconds = &duration

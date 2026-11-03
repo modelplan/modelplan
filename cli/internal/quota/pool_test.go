@@ -81,11 +81,14 @@ func TestAccountReadingKeepsReserveApart(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := t.TempDir()
-	if err := save(cache, snapFrom(&resp, acctNow)); err != nil {
+	const ref = "0123456789abcdef"
+	snapshot := snapFrom(&resp, acctNow)
+	snapshot.SubscriptionRef = ref
+	if err := save(cache, snapshot); err != nil {
 		t.Fatal(err)
 	}
 	old := acctNow.Add(-time.Hour)
-	r := Report{Accounts: []Account{{Source: "codex", Plan: "plus", ObservedAt: old,
+	r := Report{Accounts: []Account{{Source: "codex", Subscription: &Binding{Ref: ref, Status: "verified"}, Plan: "plus", ObservedAt: old,
 		Windows: []Window{{Kind: "weekly", UsedPercent: ptr(25.0), WindowMinutes: 10080, ObservedAt: old}}}}}
 	applyAccount(&r, cache, acctNow)
 	got := map[string]float64{}

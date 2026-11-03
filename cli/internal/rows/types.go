@@ -30,6 +30,7 @@ type NextStep struct {
 }
 
 type Row struct {
+	RefreshNotBefore **time.Time  `json:"refreshNotBefore,omitempty" null:"coalesced"`
 	ID               string       `json:"id"`
 	Kind             Kind         `json:"kind"`
 	Order            int          `json:"order"`
@@ -53,17 +54,18 @@ type ExpiryState struct {
 }
 
 type Account struct {
-	Route           Route      `json:"route"`
-	SubscriptionRef *string    `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator  *string    `json:"accountLocator" null:"coalesced"`
-	Plan            Plan       `json:"plan"`
-	Beta            bool       `json:"beta"`
-	Credits         *Credits   `json:"credits" null:"coalesced"`
-	ValueState      ValueState `json:"valueState"`
-	ObservedAt      *time.Time `json:"observedAt" null:"coalesced"`
-	FreshUntil      *time.Time `json:"freshUntil" null:"coalesced"`
-	LastFailure     *Failure   `json:"lastFailure" null:"coalesced"`
-	Windows         []Window   `json:"windows"`
+	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	Route            Route       `json:"route"`
+	SubscriptionRef  *string     `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string     `json:"accountLocator" null:"coalesced"`
+	Plan             Plan        `json:"plan"`
+	Beta             bool        `json:"beta"`
+	Credits          *Credits    `json:"credits" null:"coalesced"`
+	ValueState       ValueState  `json:"valueState"`
+	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time  `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure    `json:"lastFailure" null:"coalesced"`
+	Windows          []Window    `json:"windows"`
 }
 
 type Plan struct {
@@ -87,19 +89,20 @@ type ModelScope struct {
 }
 
 type Window struct {
-	ModelScope       *ModelScope `json:"modelScope,omitempty" null:"forbidden"`
-	ID               string      `json:"id"`
-	Role             Role        `json:"role"`
-	DurationSeconds  *int64      `json:"durationSeconds" null:"coalesced"`
-	Label            Text        `json:"label"`
-	LimitKey         string      `json:"limitKey"`
-	PoolKey          string      `json:"poolKey"`
-	ResetMode        ResetMode   `json:"resetMode"`
-	RemainingPercent *float64    `json:"remainingPercent" null:"coalesced"`
-	ResetsAt         *time.Time  `json:"resetsAt" null:"coalesced"`
-	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
-	Current          bool        `json:"current"`
-	ValidUntil       *time.Time  `json:"validUntil" null:"coalesced"`
+	Source           *WindowSource `json:"source,omitempty" null:"forbidden"`
+	ModelScope       *ModelScope   `json:"modelScope,omitempty" null:"forbidden"`
+	ID               string        `json:"id"`
+	Role             Role          `json:"role"`
+	DurationSeconds  *int64        `json:"durationSeconds" null:"coalesced"`
+	Label            Text          `json:"label"`
+	LimitKey         string        `json:"limitKey"`
+	PoolKey          string        `json:"poolKey"`
+	ResetMode        ResetMode     `json:"resetMode"`
+	RemainingPercent *float64      `json:"remainingPercent" null:"coalesced"`
+	ResetsAt         *time.Time    `json:"resetsAt" null:"coalesced"`
+	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
+	Current          bool          `json:"current"`
+	ValidUntil       *time.Time    `json:"validUntil" null:"coalesced"`
 }
 
 type RowsSummary struct {

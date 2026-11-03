@@ -71,6 +71,24 @@ func loadAccount(cache string) *accountSnap {
 	return &s
 }
 
+// CodexRuntimeAvailable reports only whether an admitted runtime snapshot was
+// successful. It exposes no provider values or identity.
+func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.Time) bool {
+	if off() || !admission.Allows("codex", consent.Runtime) {
+		return false
+	}
+	s := loadAccount(cache)
+	if s == nil || s.Status != "ok" || s.ObservedAt.After(now) || now.Sub(s.ObservedAt) > accountKeep || !admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
+		return false
+	}
+	for _, window := range s.Windows {
+		if window.ResetsAt == nil || now.Before(*window.ResetsAt) {
+			return true
+		}
+	}
+	return false
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {
@@ -394,8 +412,8 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 	return s
 }
 
-// applyAccount merges a recent account reading into the Codex account from the logs: newest
-// observation per window, the account's plan and its reset credits. Without logs it stands alone.
+// applyAccount merges only when an existing verified reference binds the local
+// and runtime readings. Otherwise the runtime reading stands alone.
 func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
 	admission := consent.Capture()
 	if len(admissions) > 0 {
@@ -415,17 +433,29 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		return
 	}
 	var a *Account
+	hadLocal := false
 	for i := range r.Accounts {
-		if r.Accounts[i].Source == "codex" {
-			a = &r.Accounts[i]
+		candidate := &r.Accounts[i]
+		if candidate.Source == "codex" {
+			hadLocal = true
+		}
+		// A provider name is not an account binding. Without matching verified
+		// references, keep the local and runtime readings separate.
+		if candidate.Source == "codex" && !IdentityOff() && s.SubscriptionRef != "" &&
+			candidate.Subscription != nil && candidate.Subscription.Status == "verified" &&
+			candidate.Subscription.Ref == s.SubscriptionRef {
+			a = candidate
+			break
 		}
 	}
 	if a == nil {
 		r.Accounts = append(r.Accounts, Account{Source: "codex", Plan: s.Plan, ObservedAt: s.ObservedAt, Windows: []Window{}})
 		a = &r.Accounts[len(r.Accounts)-1]
-		for i := range r.Sources {
-			if r.Sources[i].Source == "codex" {
-				r.Sources[i] = SourceStatus{Source: "codex", Status: "ok", Reason: "Codex account reading; no Codex log carries one"}
+		if !hadLocal {
+			for i := range r.Sources {
+				if r.Sources[i].Source == "codex" {
+					r.Sources[i] = SourceStatus{Source: "codex", Status: "ok", Reason: "Codex account reading; no Codex log carries one"}
+				}
 			}
 		}
 	}
@@ -436,6 +466,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		a.Plan = s.Plan
 	}
 	for _, w := range s.Windows {
+		w.Origin = "runtime"
 		found := false
 		for i := range a.Windows {
 			x := &a.Windows[i]

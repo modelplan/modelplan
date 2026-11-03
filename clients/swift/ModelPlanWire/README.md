@@ -113,9 +113,9 @@ validated by `rows.Validate` and the wire schema, and retains a retired account
 alongside a healthy tool. Semantic mutations of one row must preserve the other.
 The additional `production-rows.json` passes through `rows.Build`, `rows.Validate`,
 `wire.Project` and the real Go success/envelope encoding. `null-error.json` is
-a real Go error with a null request id; this id accepts null but remains required. `index.json` enumerates 39 DTO roots
-and 48 nullable/optional fields, with all omission/null/wrong-type expectations
-(47 pointer/omitempty fields plus the schema-declared required-nullable error id). The Go
+a real Go error with a null request id; this id accepts null but remains required. `index.json` enumerates the DTO roots and nullable/optional fields, with all
+omission/null/wrong-type expectations, including the schema-declared
+required-nullable error id. The Go
 test writes the captures only under the explicit update flag and otherwise
 rejects drift. Adding a reachable DTO without a capture root fails generation.
 The decoder dispatch harness is generated from the same root registry.
@@ -123,8 +123,8 @@ The decoder dispatch harness is generated from the same root registry.
 The hosted macOS `swift test` job drives those encodings and every mutation
 through the generated production decoder. Credential-success token removal is
 an explicit negative control, even though the token is structurally optional.
-The 17 strict nullable/optional fields fail on malformed identity/authorization types;
-31 display fields degrade locally. History query `ref` and `cursor` are strict
+Strict nullable/optional fields fail on malformed identity/authorization types;
+tolerant display fields degrade locally. History query `ref` and `cursor` are strict
 identity/query bindings: a present wrong type is an error, never a lost filter. Raw JSON params accept legal JSON extension
 values. Tests also cover required fields, future enums/fields, row ids, unknown
 history models, duplicate rows, exact integers above 2^53, explicit null encoding,

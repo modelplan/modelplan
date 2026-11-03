@@ -55,6 +55,7 @@ class EngineProcess:
         self.binary = Path(binary).absolute()
         self.home = Path(home).absolute()
         self.session = session
+        self.capabilities = ['rows', 'consent', 'diagnostics', 'history', 'refresh', 'publication', 'credentials', 'plugin_install']
         self.arguments = tuple(arguments)
         self.buffer = bytearray()
         self.pending = []
@@ -252,7 +253,7 @@ class EngineProcess:
     def initialize(self):
         self.send(1, 'initialize', {'sessionId': self.session, 'protocolVersion': '1.0',
                                    'appVersion': 'u14-synthetic',
-                                   'capabilities': ['rows', 'consent', 'diagnostics', 'history', 'refresh', 'publication', 'credentials', 'plugin_install']})
+                                   'capabilities': self.capabilities})
         result = self.response(1)
         if 'error' in result:
             raise EngineFailure('handshake-rejected')

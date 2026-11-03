@@ -194,6 +194,7 @@ public enum WireDecoder {
 }
 
 public struct RowsAccount: Codable, Sendable {
+    public let `refreshNotBefore`: WireTimestamp?
     public let `route`: RowsRoute
     public let `subscriptionRef`: String?
     public let `accountLocator`: String?
@@ -206,6 +207,7 @@ public struct RowsAccount: Codable, Sendable {
     public let `lastFailure`: RowsFailure?
     public let `windows`: [RowsWindow]
     private enum CodingKeys: String, CodingKey {
+        case `refreshNotBefore`
         case `route`
         case `subscriptionRef`
         case `accountLocator`
@@ -218,7 +220,8 @@ public struct RowsAccount: Codable, Sendable {
         case `lastFailure`
         case `windows`
     }
-    public init(`route`: RowsRoute, `subscriptionRef`: String? = nil, `accountLocator`: String? = nil, `plan`: RowsPlan, `beta`: Bool, `credits`: RowsCredits? = nil, `valueState`: RowsValueState, `observedAt`: WireTimestamp? = nil, `freshUntil`: WireTimestamp? = nil, `lastFailure`: RowsFailure? = nil, `windows`: [RowsWindow]) throws {
+    public init(`refreshNotBefore`: WireTimestamp? = nil, `route`: RowsRoute, `subscriptionRef`: String? = nil, `accountLocator`: String? = nil, `plan`: RowsPlan, `beta`: Bool, `credits`: RowsCredits? = nil, `valueState`: RowsValueState, `observedAt`: WireTimestamp? = nil, `freshUntil`: WireTimestamp? = nil, `lastFailure`: RowsFailure? = nil, `windows`: [RowsWindow]) throws {
+        self.`refreshNotBefore` = `refreshNotBefore`
         self.`route` = `route`
         self.`subscriptionRef` = `subscriptionRef`
         self.`accountLocator` = `accountLocator`
@@ -234,6 +237,7 @@ public struct RowsAccount: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`refreshNotBefore` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`refreshNotBefore`)
         self.`route` = try c.decode(RowsRoute.self, forKey: .`route`)
         self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
         self.`accountLocator` = try c.decodeIfPresent(String.self, forKey: .`accountLocator`)
@@ -250,6 +254,7 @@ public struct RowsAccount: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`refreshNotBefore`, forKey: .`refreshNotBefore`)
         try c.encode(`route`, forKey: .`route`)
         try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
         try c.encode(`accountLocator`, forKey: .`accountLocator`)
@@ -1053,6 +1058,7 @@ public enum RowsRoute: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
 public struct RowsRow: Codable, Sendable {
+    public let `refreshNotBefore`: WireTimestamp?
     public let `id`: String
     public let `kind`: RowsKind
     public let `order`: Int
@@ -1068,6 +1074,7 @@ public struct RowsRow: Codable, Sendable {
     public let `stateAfterExpiry`: RowsExpiryState?
     public let invalid: Bool
     private enum CodingKeys: String, CodingKey {
+        case `refreshNotBefore`
         case `id`
         case `kind`
         case `order`
@@ -1082,7 +1089,8 @@ public struct RowsRow: Codable, Sendable {
         case `expiresAt`
         case `stateAfterExpiry`
     }
-    public init(`id`: String, `kind`: RowsKind, `order`: Int, `name`: RowsName, `vendorKey`: String? = nil, `surfaces`: [RowsSurface], `consent`: RowsConsent, `state`: RowsState, `reason`: RowsReason, `nextStep`: RowsNextStep? = nil, `accounts`: [RowsAccount], `expiresAt`: WireTimestamp? = nil, `stateAfterExpiry`: RowsExpiryState? = nil) throws {
+    public init(`refreshNotBefore`: WireTimestamp? = nil, `id`: String, `kind`: RowsKind, `order`: Int, `name`: RowsName, `vendorKey`: String? = nil, `surfaces`: [RowsSurface], `consent`: RowsConsent, `state`: RowsState, `reason`: RowsReason, `nextStep`: RowsNextStep? = nil, `accounts`: [RowsAccount], `expiresAt`: WireTimestamp? = nil, `stateAfterExpiry`: RowsExpiryState? = nil) throws {
+        self.`refreshNotBefore` = `refreshNotBefore`
         self.`id` = `id`
         self.`kind` = `kind`
         self.`order` = `order`
@@ -1101,6 +1109,7 @@ public struct RowsRow: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`refreshNotBefore` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`refreshNotBefore`)
         self.`id` = try c.decode(String.self, forKey: .`id`)
         self.`kind` = try c.decode(RowsKind.self, forKey: .`kind`)
         self.`order` = try c.decode(Int.self, forKey: .`order`)
@@ -1120,6 +1129,7 @@ public struct RowsRow: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`refreshNotBefore`, forKey: .`refreshNotBefore`)
         try c.encode(`id`, forKey: .`id`)
         try c.encode(`kind`, forKey: .`kind`)
         try c.encode(`order`, forKey: .`order`)
@@ -1145,6 +1155,7 @@ public struct RowsRow: Codable, Sendable {
         if (["denied", "unset"].contains(consent.rawValue) || reason.code.rawValue == "cleanup_pending") && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }
     }
     fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.refreshNotBefore = nil
         self.id = invalidID
         self.kind = .unknown("invalid_row")
         self.order = invalidOrder
@@ -1356,6 +1367,7 @@ public enum RowsValueState: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
 public struct RowsWindow: Codable, Sendable {
+    public let `source`: RowsWindowSource?
     public let `modelScope`: RowsModelScope?
     public let `id`: String
     public let `role`: RowsRole
@@ -1370,6 +1382,7 @@ public struct RowsWindow: Codable, Sendable {
     public let `current`: Bool
     public let `validUntil`: WireTimestamp?
     private enum CodingKeys: String, CodingKey {
+        case `source`
         case `modelScope`
         case `id`
         case `role`
@@ -1384,7 +1397,8 @@ public struct RowsWindow: Codable, Sendable {
         case `current`
         case `validUntil`
     }
-    public init(`modelScope`: RowsModelScope? = nil, `id`: String, `role`: RowsRole, `durationSeconds`: Int64? = nil, `label`: RowsText, `limitKey`: String, `poolKey`: String, `resetMode`: RowsResetMode, `remainingPercent`: Double? = nil, `resetsAt`: WireTimestamp? = nil, `observedAt`: WireTimestamp? = nil, `current`: Bool, `validUntil`: WireTimestamp? = nil) throws {
+    public init(`source`: RowsWindowSource? = nil, `modelScope`: RowsModelScope? = nil, `id`: String, `role`: RowsRole, `durationSeconds`: Int64? = nil, `label`: RowsText, `limitKey`: String, `poolKey`: String, `resetMode`: RowsResetMode, `remainingPercent`: Double? = nil, `resetsAt`: WireTimestamp? = nil, `observedAt`: WireTimestamp? = nil, `current`: Bool, `validUntil`: WireTimestamp? = nil) throws {
+        self.`source` = `source`
         self.`modelScope` = `modelScope`
         self.`id` = `id`
         self.`role` = `role`
@@ -1402,6 +1416,8 @@ public struct RowsWindow: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`source`), try c.decodeNil(forKey: .`source`) { throw WireDecodeError.invalidIdentity }
+        self.`source` = try c.decodeIfPresent(RowsWindowSource.self, forKey: .`source`)
         if c.contains(.`modelScope`), try c.decodeNil(forKey: .`modelScope`) { throw WireDecodeError.invalidIdentity }
         self.`modelScope` = try c.decodeIfPresent(RowsModelScope.self, forKey: .`modelScope`)
         self.`id` = try c.decode(String.self, forKey: .`id`)
@@ -1422,6 +1438,7 @@ public struct RowsWindow: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`source`, forKey: .`source`)
         try c.encodeIfPresent(`modelScope`, forKey: .`modelScope`)
         try c.encode(`id`, forKey: .`id`)
         try c.encode(`role`, forKey: .`role`)
@@ -1441,6 +1458,37 @@ public struct RowsWindow: Codable, Sendable {
     }
 }
 
+public enum RowsWindowSource: Codable, Sendable, Equatable {
+    case `localHistory`
+    case `runtime`
+    case `savedLogin`
+    case `apiKey`
+    case `other`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "local_history": self = .`localHistory`
+        case "runtime": self = .`runtime`
+        case "saved_login": self = .`savedLogin`
+        case "api_key": self = .`apiKey`
+        case "other": self = .`other`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`localHistory`: return "local_history"
+        case .`runtime`: return "runtime"
+        case .`savedLogin`: return "saved_login"
+        case .`apiKey`: return "api_key"
+        case .`other`: return "other"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCancelParams: Codable, Sendable {
     public let `id`: WireRequestID
     private enum CodingKeys: String, CodingKey {
@@ -2247,19 +2295,22 @@ public struct WireCredentialResult: Codable, Sendable, CustomStringConvertible, 
 }
 
 public struct WireDiagnostics: Codable, Sendable {
+    public let `refreshDecisions`: [WireRefreshDecision]?
     public let `protocolVersion`: String
     public let `serverVersion`: String
     public let `uptimeSeconds`: Int64
     public let `scopes`: [WireScopeDiag]
     public let `lastErrorClass`: String?
     private enum CodingKeys: String, CodingKey {
+        case `refreshDecisions`
         case `protocolVersion`
         case `serverVersion`
         case `uptimeSeconds`
         case `scopes`
         case `lastErrorClass`
     }
-    public init(`protocolVersion`: String, `serverVersion`: String, `uptimeSeconds`: Int64, `scopes`: [WireScopeDiag], `lastErrorClass`: String? = nil) throws {
+    public init(`refreshDecisions`: [WireRefreshDecision]? = nil, `protocolVersion`: String, `serverVersion`: String, `uptimeSeconds`: Int64, `scopes`: [WireScopeDiag], `lastErrorClass`: String? = nil) throws {
+        self.`refreshDecisions` = `refreshDecisions`
         self.`protocolVersion` = `protocolVersion`
         self.`serverVersion` = `serverVersion`
         self.`uptimeSeconds` = `uptimeSeconds`
@@ -2269,6 +2320,8 @@ public struct WireDiagnostics: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`refreshDecisions`), try c.decodeNil(forKey: .`refreshDecisions`) { throw WireDecodeError.invalidIdentity }
+        self.`refreshDecisions` = try c.decodeIfPresent([WireRefreshDecision].self, forKey: .`refreshDecisions`)
         self.`protocolVersion` = try c.decode(String.self, forKey: .`protocolVersion`)
         self.`serverVersion` = try c.decode(String.self, forKey: .`serverVersion`)
         self.`uptimeSeconds` = try c.decode(Int64.self, forKey: .`uptimeSeconds`)
@@ -2279,6 +2332,7 @@ public struct WireDiagnostics: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`refreshDecisions`, forKey: .`refreshDecisions`)
         try c.encode(`protocolVersion`, forKey: .`protocolVersion`)
         try c.encode(`serverVersion`, forKey: .`serverVersion`)
         try c.encode(`uptimeSeconds`, forKey: .`uptimeSeconds`)
@@ -2719,6 +2773,94 @@ public enum WireKeychainChoice: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public enum WireMemberRefreshOutcome: Codable, Sendable, Equatable {
+    case `started`
+    case `deferred`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "started": self = .`started`
+        case "deferred": self = .`deferred`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`started`: return "started"
+        case .`deferred`: return "deferred"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum WireMemberRefreshReason: Codable, Sendable, Equatable {
+    case `floor`
+    case `backoff`
+    case `budget`
+    case `notGranted`
+    case `offline`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "floor": self = .`floor`
+        case "backoff": self = .`backoff`
+        case "budget": self = .`budget`
+        case "not_granted": self = .`notGranted`
+        case "offline": self = .`offline`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`floor`: return "floor"
+        case .`backoff`: return "backoff"
+        case .`budget`: return "budget"
+        case .`notGranted`: return "not_granted"
+        case .`offline`: return "offline"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct WireMemberRefreshResult: Codable, Sendable {
+    public let `outcome`: WireMemberRefreshOutcome
+    public let `notBefore`: WireTimestamp?
+    public let `reason`: WireMemberRefreshReason?
+    private enum CodingKeys: String, CodingKey {
+        case `outcome`
+        case `notBefore`
+        case `reason`
+    }
+    public init(`outcome`: WireMemberRefreshOutcome, `notBefore`: WireTimestamp? = nil, `reason`: WireMemberRefreshReason? = nil) throws {
+        self.`outcome` = `outcome`
+        self.`notBefore` = `notBefore`
+        self.`reason` = `reason`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`outcome` = try c.decode(WireMemberRefreshOutcome.self, forKey: .`outcome`)
+        if c.contains(.`notBefore`), try c.decodeNil(forKey: .`notBefore`) { throw WireDecodeError.invalidIdentity }
+        self.`notBefore` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`notBefore`)
+        if c.contains(.`reason`), try c.decodeNil(forKey: .`reason`) { throw WireDecodeError.invalidIdentity }
+        self.`reason` = try c.decodeIfPresent(WireMemberRefreshReason.self, forKey: .`reason`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`outcome`, forKey: .`outcome`)
+        try c.encodeIfPresent(`notBefore`, forKey: .`notBefore`)
+        try c.encodeIfPresent(`reason`, forKey: .`reason`)
+    }
+    private func validate() throws {
+    }
+}
+
 public struct WireNotification<T: Codable & Sendable>: Codable, Sendable {
     public let `jsonrpc`: String
     public let `method`: String
@@ -3118,6 +3260,174 @@ public enum WireReceiptCode: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct WireRefreshDecision: Codable, Sendable {
+    public let `agoSeconds`: Int64
+    public let `scope`: WireRefreshDecisionScope
+    public let `outcome`: WireRefreshDecisionOutcome
+    public let `reason`: WireRefreshDecisionReason
+    private enum CodingKeys: String, CodingKey {
+        case `agoSeconds`
+        case `scope`
+        case `outcome`
+        case `reason`
+    }
+    public init(`agoSeconds`: Int64, `scope`: WireRefreshDecisionScope, `outcome`: WireRefreshDecisionOutcome, `reason`: WireRefreshDecisionReason) throws {
+        self.`agoSeconds` = `agoSeconds`
+        self.`scope` = `scope`
+        self.`outcome` = `outcome`
+        self.`reason` = `reason`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`agoSeconds` = try c.decode(Int64.self, forKey: .`agoSeconds`)
+        self.`scope` = try c.decode(WireRefreshDecisionScope.self, forKey: .`scope`)
+        self.`outcome` = try c.decode(WireRefreshDecisionOutcome.self, forKey: .`outcome`)
+        self.`reason` = try c.decode(WireRefreshDecisionReason.self, forKey: .`reason`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`agoSeconds`, forKey: .`agoSeconds`)
+        try c.encode(`scope`, forKey: .`scope`)
+        try c.encode(`outcome`, forKey: .`outcome`)
+        try c.encode(`reason`, forKey: .`reason`)
+    }
+    private func validate() throws {
+        guard `agoSeconds` >= 0 else { throw WireDecodeError.invalidBound }
+    }
+}
+
+public enum WireRefreshDecisionOutcome: Codable, Sendable, Equatable {
+    case `notAttempted`
+    case `deferred`
+    case `failed`
+    case `succeeded`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "not_attempted": self = .`notAttempted`
+        case "deferred": self = .`deferred`
+        case "failed": self = .`failed`
+        case "succeeded": self = .`succeeded`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`notAttempted`: return "not_attempted"
+        case .`deferred`: return "deferred"
+        case .`failed`: return "failed"
+        case .`succeeded`: return "succeeded"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum WireRefreshDecisionReason: Codable, Sendable, Equatable {
+    case `startup`
+    case `wake`
+    case `due`
+    case `notGranted`
+    case `offline`
+    case `readOnly`
+    case `budget`
+    case `inFlight`
+    case `unavailable`
+    case `completed`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "startup": self = .`startup`
+        case "wake": self = .`wake`
+        case "due": self = .`due`
+        case "not_granted": self = .`notGranted`
+        case "offline": self = .`offline`
+        case "read_only": self = .`readOnly`
+        case "budget": self = .`budget`
+        case "in_flight": self = .`inFlight`
+        case "unavailable": self = .`unavailable`
+        case "completed": self = .`completed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`startup`: return "startup"
+        case .`wake`: return "wake"
+        case .`due`: return "due"
+        case .`notGranted`: return "not_granted"
+        case .`offline`: return "offline"
+        case .`readOnly`: return "read_only"
+        case .`budget`: return "budget"
+        case .`inFlight`: return "in_flight"
+        case .`unavailable`: return "unavailable"
+        case .`completed`: return "completed"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum WireRefreshDecisionScope: Codable, Sendable, Equatable {
+    case `codexRuntimeUsage`
+    case `codexLocalHistory`
+    case `claudeAccountUsageSavedLogin`
+    case `geminiAccountUsageSavedLogin`
+    case `cursorAccountUsageSavedLogin`
+    case `copilotRuntimeUsage`
+    case `kimiAccountUsageSavedLogin`
+    case `grokAccountUsageSavedLogin`
+    case `kiroRuntimeUsage`
+    case `antigravityRuntimeUsage`
+    case `zaiAccountUsageApiKey`
+    case `minimaxAccountUsageApiKey`
+    case `opencodegoAccountUsageApiKey`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "codex.runtime_usage": self = .`codexRuntimeUsage`
+        case "codex.local_history": self = .`codexLocalHistory`
+        case "claude.account_usage.saved_login": self = .`claudeAccountUsageSavedLogin`
+        case "gemini.account_usage.saved_login": self = .`geminiAccountUsageSavedLogin`
+        case "cursor.account_usage.saved_login": self = .`cursorAccountUsageSavedLogin`
+        case "copilot.runtime_usage": self = .`copilotRuntimeUsage`
+        case "kimi.account_usage.saved_login": self = .`kimiAccountUsageSavedLogin`
+        case "grok.account_usage.saved_login": self = .`grokAccountUsageSavedLogin`
+        case "kiro.runtime_usage": self = .`kiroRuntimeUsage`
+        case "antigravity.runtime_usage": self = .`antigravityRuntimeUsage`
+        case "zai.account_usage.api_key": self = .`zaiAccountUsageApiKey`
+        case "minimax.account_usage.api_key": self = .`minimaxAccountUsageApiKey`
+        case "opencodego.account_usage.api_key": self = .`opencodegoAccountUsageApiKey`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`codexRuntimeUsage`: return "codex.runtime_usage"
+        case .`codexLocalHistory`: return "codex.local_history"
+        case .`claudeAccountUsageSavedLogin`: return "claude.account_usage.saved_login"
+        case .`geminiAccountUsageSavedLogin`: return "gemini.account_usage.saved_login"
+        case .`cursorAccountUsageSavedLogin`: return "cursor.account_usage.saved_login"
+        case .`copilotRuntimeUsage`: return "copilot.runtime_usage"
+        case .`kimiAccountUsageSavedLogin`: return "kimi.account_usage.saved_login"
+        case .`grokAccountUsageSavedLogin`: return "grok.account_usage.saved_login"
+        case .`kiroRuntimeUsage`: return "kiro.runtime_usage"
+        case .`antigravityRuntimeUsage`: return "antigravity.runtime_usage"
+        case .`zaiAccountUsageApiKey`: return "zai.account_usage.api_key"
+        case .`minimaxAccountUsageApiKey`: return "minimax.account_usage.api_key"
+        case .`opencodegoAccountUsageApiKey`: return "opencodego.account_usage.api_key"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public enum WireRefreshDisabledReason: Codable, Sendable, Equatable {
     case `cooldown`
     case `readOnly`
@@ -3146,23 +3456,71 @@ public enum WireRefreshDisabledReason: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct WireRefreshMember: Codable, Sendable {
+    public let `rowId`: String
+    public let `route`: RowsRoute
+    public let `subscriptionRef`: String?
+    public let `accountLocator`: String?
+    private enum CodingKeys: String, CodingKey {
+        case `rowId`
+        case `route`
+        case `subscriptionRef`
+        case `accountLocator`
+    }
+    public init(`rowId`: String, `route`: RowsRoute, `subscriptionRef`: String? = nil, `accountLocator`: String? = nil) throws {
+        self.`rowId` = `rowId`
+        self.`route` = `route`
+        self.`subscriptionRef` = `subscriptionRef`
+        self.`accountLocator` = `accountLocator`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`rowId` = try c.decode(String.self, forKey: .`rowId`)
+        self.`route` = try c.decode(RowsRoute.self, forKey: .`route`)
+        if c.contains(.`subscriptionRef`), try c.decodeNil(forKey: .`subscriptionRef`) { throw WireDecodeError.invalidIdentity }
+        self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
+        if c.contains(.`accountLocator`), try c.decodeNil(forKey: .`accountLocator`) { throw WireDecodeError.invalidIdentity }
+        self.`accountLocator` = try c.decodeIfPresent(String.self, forKey: .`accountLocator`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`rowId`, forKey: .`rowId`)
+        try c.encode(`route`, forKey: .`route`)
+        try c.encodeIfPresent(`subscriptionRef`, forKey: .`subscriptionRef`)
+        try c.encodeIfPresent(`accountLocator`, forKey: .`accountLocator`)
+    }
+    private func validate() throws {
+        if let value = `subscriptionRef` { try WireValidation.reference(value) }
+        if let value = `accountLocator` { try WireValidation.reference(value) }
+    }
+}
+
 public struct WireRefreshRequestParams: Codable, Sendable {
+    public let `member`: WireRefreshMember?
     public let `scopes`: [String]?
     private enum CodingKeys: String, CodingKey {
+        case `member`
         case `scopes`
     }
-    public init(`scopes`: [String]? = nil) throws {
+    public init(`member`: WireRefreshMember? = nil, `scopes`: [String]? = nil) throws {
+        self.`member` = `member`
         self.`scopes` = `scopes`
         try validate()
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`member`), try c.decodeNil(forKey: .`member`) { throw WireDecodeError.invalidIdentity }
+        self.`member` = try c.decodeIfPresent(WireRefreshMember.self, forKey: .`member`)
         self.`scopes` = try c.decodeIfPresent([String].self, forKey: .`scopes`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`member`, forKey: .`member`)
         try c.encodeIfPresent(`scopes`, forKey: .`scopes`)
     }
     private func validate() throws {
