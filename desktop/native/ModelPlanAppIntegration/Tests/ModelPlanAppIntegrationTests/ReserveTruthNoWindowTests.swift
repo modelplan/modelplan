@@ -67,7 +67,11 @@ import ModelPlanWire
 
     func testZeroAndFiniteBalancesRemainReportedAndNegativeIsWithheld() async throws {
         let zero = try await reserve(balance: 0, unit: "credits", english: true)
-        XCTAssertEqual(zero?.value, "0.0 credits")
+        XCTAssertEqual(zero?.value, "0 credits")
+        let thousands = try await reserve(balance: 1_500, unit: "credits", english: true)
+        XCTAssertEqual(thousands?.value, "2k credits")
+        let fractional = try await reserve(balance: 12.5, unit: "credits", english: true)
+        XCTAssertEqual(fractional?.value, "12.5 credits")
         let amount = try await reserve(balance: 12.5, unit: "money", english: true)
         XCTAssertEqual(amount?.value, "12.5")
         XCTAssertEqual(amount?.detail, "Currency not reported")
@@ -76,7 +80,7 @@ import ModelPlanWire
         let negative = try await reserve(balance: -1, unit: "credits", english: true)
         XCTAssertNil(negative)
         let boundary = try await reserve(balance: 1_000_000_000_000_000.0, unit: "credits", english: true)
-        XCTAssertEqual(boundary?.value, String(1_000_000_000_000_000.0) + " credits")
+        XCTAssertEqual(boundary?.value, "1000000000.0M credits")
         let outsideBound = try await reserve(balance: 1_000_000_000_000_001.0, unit: "credits", english: true)
         XCTAssertNil(outsideBound)
     }
@@ -110,6 +114,10 @@ import ModelPlanWire
         XCTAssertEqual(other?.value, "12.5"); XCTAssertEqual(other?.detail, "Unit unavailable")
         let otherZH = try await reserve(balance: 12.5, unit: "other", english: false)
         XCTAssertEqual(otherZH?.detail, "单位不可用")
+        let rounded = try await reserve(balance: 247.538, unit: "other", english: true)
+        XCTAssertEqual(rounded?.value, "≈247.54"); XCTAssertEqual(rounded?.detail, "Unit unavailable")
+        let tiny = try await reserve(balance: 0.004, unit: "other", english: false)
+        XCTAssertEqual(tiny?.value, "≈0"); XCTAssertEqual(tiny?.detail, "单位不可用")
         let empty = try await reserve(balance: 12.5, unit: "", english: true)
         XCTAssertEqual(empty?.detail, "Unit not reported")
         let emptyZH = try await reserve(balance: 12.5, unit: "", english: false)

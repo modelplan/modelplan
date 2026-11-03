@@ -76,10 +76,25 @@ import ModelPlanSettings
             if account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,(0...1e15).contains(balance) {
                 switch credits.unit {
-                case "credits": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:String(balance)+(english ? " credits":" 点")))
+                case "credits":
+                    let number:String?
+                    switch M5CreditsDisplayFormat.text(balance,unit:.credits) {
+                    case .formatted(let text): number=text
+                    case .fallback(let value, _): number=String(value)
+                    case .missing,.invalid: number=nil
+                    }
+                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number+(english ? " credits":" 点"))) }
                 case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:english ? "Currency not reported":"未报告币种"))
                 case "": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not reported":"未报告单位"))
-                case "other": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit unavailable":"单位不可用"))
+                case "other":
+                    let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
+                    switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown) {
+                    case .rendered(_,_,let text,_):
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:text,detail:english ? "Unit unavailable":"单位不可用"))
+                    case .fallback(let value,_),.notApplicable(let value?,_):
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(value),detail:english ? "Unit unavailable; exact value shown":"单位不可用；显示原始数值"))
+                    case .missing,.invalid,.notApplicable(nil,_): break
+                    }
                 default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not recognized":"单位未识别"))
                 }
             }
