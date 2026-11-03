@@ -216,7 +216,7 @@ func strict(name, field string) bool {
 	if name == "WireCockpitQueryParams" {
 		return true
 	}
-	if name == "RowsWindow" && field == "modelScope" || name == "WireRowsProjection" && field == "resetEvents" {
+	if name == "RowsWindow" && (field == "modelScope" || field == "resetsAt") || name == "WireRowsProjection" && field == "resetEvents" {
 		return true
 	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
@@ -445,6 +445,10 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		}
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
+		}
+		if d.Swift == "RowsWindow" && f.JSON == "resetsAt" {
+			fmt.Fprintf(b, "        do { self.%s = try c.decodeIfPresent(WireTimestamp.self, forKey: .%s) }\n        catch { throw WireDecodeError.invalidBound }\n", ident(f.JSON), ident(f.JSON))
+			continue
 		}
 		call := "decode"
 		prefix := "try "
