@@ -211,7 +211,10 @@ public enum EngineDeadlineFacts {
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
         input.vendorResourceKey = row.vendorKey
         input.duplicateAccountTag=member.duplicateTag
-        let rowCurrent = row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
+        // For one member, row expiry may be an earlier window's deadline;
+        // keep each window's own deadline while the row reason stays latched.
+        // The multi-member policy remains unchanged pending adjudication.
+        let rowCurrent = row.state == .fresh && (row.accounts.count == 1 || (date(row.expiresAt).map { now < $0 } ?? true))
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             for window in account.windows {

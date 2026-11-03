@@ -110,15 +110,23 @@ import ModelPlanWire
             let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
             XCTAssertEqual(content.snapshot.inputs.count, 1)
             XCTAssertEqual(input?.windows.count, 2)
+            XCTAssertEqual(input?.windows.first { $0.period == .fiveHour }?.remainingPercent, 42.5)
+            XCTAssertEqual(input?.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
             let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
             XCTAssertEqual(held.snapshot.inputs.count, 1)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
-            // Characterize current row-latch behaviour. The wire's later weekly
-            // window remains time-valid; whether its card reading stays visible is unresolved.
+            // The row-level reason remains latched, while the later weekly
+            // window is still an independently current reading for this member.
             let heldInput = try XCTUnwrap(held.snapshot.inputs.first)
-            XCTAssertNil(heldInput.windows.first { $0.period == .week }?.remainingPercent)
+            XCTAssertNil(heldInput.windows.first { $0.period == .fiveHour }?.remainingPercent)
+            XCTAssertEqual(heldInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
+            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "75%")
+            XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
+            XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
             XCTAssertNil(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            let fullyExpired = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: secondDeadline))
+            XCTAssertNil(fullyExpired.snapshot.inputs.first?.windows.first { $0.period == .week }?.remainingPercent)
 
             var refreshedAccount = account
             refreshedAccount["observedAt"] = "2027-12-20T00:00:00Z"
@@ -139,6 +147,11 @@ import ModelPlanWire
             XCTAssertEqual(refreshedInput.dataState, .fresh)
             XCTAssertEqual(refreshedInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
+                nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
+            let withdrawn = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            XCTAssertTrue(withdrawn.snapshot.inputs.isEmpty)
+            XCTAssertNil(withdrawn.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
         }
         if mixedTransition {
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
