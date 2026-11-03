@@ -12,7 +12,7 @@ import ModelPlanWire
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, atExpiry, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, overrideNow: Date? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -45,6 +45,14 @@ import ModelPlanWire
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
+        if multiWindowTransition {
+            account["freshUntil"] = "2028-12-01T00:00:00Z"
+            var weekly = window
+            weekly["id"] = "weekly:604800:main:main"; weekly["role"] = "weekly"; weekly["durationSeconds"] = 604800
+            weekly["label"] = ["en": "Weekly", "zh": "每周"]; weekly["remainingPercent"] = 75.0
+            weekly["resetsAt"] = "2028-12-01T00:00:00Z"; weekly["validUntil"] = "2028-12-01T00:00:00Z"
+            account["windows"] = [window, weekly]
+        }
         if unknownDeadline {
             row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
             row["expiresAt"] = state == .malformedDeadline ? "invalid-deadline" as Any : NSNull()
@@ -97,6 +105,41 @@ import ModelPlanWire
         deadlineProbe?(rows.projection.rows, now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
+        if multiWindowTransition {
+            let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+            let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+            XCTAssertEqual(content.snapshot.inputs.count, 1)
+            XCTAssertEqual(input?.windows.count, 2)
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
+            let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            XCTAssertEqual(held.snapshot.inputs.count, 1)
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
+            // Characterize current row-latch behaviour. The wire's later weekly
+            // window remains time-valid; whether its card reading stays visible is unresolved.
+            let heldInput = try XCTUnwrap(held.snapshot.inputs.first)
+            XCTAssertNil(heldInput.windows.first { $0.period == .week }?.remainingPercent)
+            XCTAssertNil(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+
+            var refreshedAccount = account
+            refreshedAccount["observedAt"] = "2027-12-20T00:00:00Z"
+            var refreshedWindows = account["windows"] as! [[String: Any]]
+            refreshedWindows[0]["observedAt"] = "2027-12-20T00:00:00Z"
+            refreshedWindows[0]["resetsAt"] = "2028-02-01T00:00:00Z"; refreshedWindows[0]["validUntil"] = "2028-02-01T00:00:00Z"
+            refreshedWindows[1]["observedAt"] = "2027-12-20T00:00:00Z"
+            refreshedAccount["windows"] = refreshedWindows
+            row["accounts"] = [refreshedAccount]; row["expiresAt"] = "2028-02-01T00:00:00Z"
+            projection["rows"] = [row]; root["projection"] = projection
+            let refreshedRows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+            await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: 1, data: refreshedRows), delivery: context), invalidRowCount: 0))
+            let after = Date(timeIntervalSince1970: 1_830_000_000)
+            let refreshed = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            XCTAssertEqual(refreshed.snapshot.inputs.count, 1)
+            let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
+            XCTAssertEqual(refreshedInput.dataState, .fresh)
+            XCTAssertEqual(refreshedInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
+            XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        }
         if mixedTransition {
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
                 snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
@@ -196,6 +239,10 @@ import ModelPlanWire
 
     func testMixedAccountDeadlinesHeldRefreshAndClearInSameStore() async throws {
         _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true)
+    }
+
+    func testOneSubscriptionMultipleWindowsDeadlineAndRefresh() async throws {
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, multiWindowTransition: true)
     }
 
     func testRetainedNullAndMalformedDeadlinesCharacterizeCurrentExposure() async throws {
