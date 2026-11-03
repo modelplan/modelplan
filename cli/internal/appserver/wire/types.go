@@ -112,9 +112,25 @@ func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled
 	members := len(sourceEnabled) > 1 && sourceEnabled[1]
 	result := project(value, expose, members)
 	if enabled {
-		result.ResetEvents = events
+		if events != nil {
+			projected := ProjectResetEventLinks(*events, len(sourceEnabled) > 2 && sourceEnabled[2])
+			result.ResetEvents = &projected
+		}
 	}
 	return result
+}
+
+// ProjectResetEventLinks removes the additive link field for older clients
+// without mutating the shared snapshot.
+func ProjectResetEventLinks(events []rows.ResetEvent, enabled bool) []rows.ResetEvent {
+	if enabled {
+		return events
+	}
+	out := append([]rows.ResetEvent{}, events...)
+	for i := range out {
+		out[i].Source.Links = nil
+	}
+	return out
 }
 
 func Project(value rows.Projection) RowsProjection { return project(value, false, false) }
