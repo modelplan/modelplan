@@ -466,9 +466,9 @@ private actor S4RowsClient: EngineClient {
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
         try require(firstCard.rows.contains { $0.id == "source" && $0.value == "Saved sign-in" },"card must retain its localized reported source")
-        try require(firstCard.rows.contains{$0.kind == .reserve && $0.value.contains("42.5")},"first card needs only its own reported credits")
-        try require(secondCard.rows.contains{$0.kind == .reserve && $0.value.contains("7")},"second card needs its own reported credits")
-        try require(!secondCard.rows.contains{$0.value.contains("42.5")},"source totals must not leak across members")
+        try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
+        try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
+        try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Wrong shared alias",percentagePin:.fiveHour)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
