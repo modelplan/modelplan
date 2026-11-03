@@ -1,0 +1,18 @@
+name: Native legacy deletion preflight
+on:
+  push:
+    branches: [ci/legacy-selection-preflight]
+permissions:
+  contents: read
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test standalone selection package
+        run: swift test --package-path desktop/native/ModelPlanSelection --jobs 2
+      - name: Test root selection target
+        run: swift test --package-path desktop/native --filter ModelPlanSelectionTests --jobs 2
+      - name: Build production App
+        run: swift build --package-path desktop/native/ModelPlanAppIntegration --product ModelPlanCommunityApp --jobs 2
