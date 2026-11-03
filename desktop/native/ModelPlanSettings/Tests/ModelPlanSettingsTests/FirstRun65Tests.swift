@@ -8,13 +8,14 @@ final class FirstRun65Tests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }; return dir.appendingPathComponent("preferences.json")
     }
-    func testV1HidesPostV1ExplorationWhileLegacyKeepsIt() throws {
+    func testV1ExplorationRequiresARealHelpMap() throws {
         let preferences = SettingsPreferences()
         var context = SettingsPageContext()
         XCTAssertTrue(try FirstRunPage(preferences: preferences, context: context).showsExploration)
         context.v1NormalEntry = true
-        context.capabilities.helpMapAvailable = true
         XCTAssertFalse(try FirstRunPage(preferences: preferences, context: context).showsExploration)
+        context.capabilities.helpMapAvailable = true
+        XCTAssertTrue(try FirstRunPage(preferences: preferences, context: context).showsExploration)
     }
     func testCurrentFlowIsOnePageWithoutTourOrPracticeAndReaderLoginChoicesAreIndependent() throws {
         XCTAssertEqual(OnboardingDefinition.task65.steps.count, 1)

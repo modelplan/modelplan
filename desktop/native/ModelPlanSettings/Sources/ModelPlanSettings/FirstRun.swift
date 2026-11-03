@@ -22,7 +22,7 @@ public struct FirstRunPage: Sendable {
     public let subscriptions: [SettingsSubscription]
     public let readers: [ReaderSetting]
     public let login: LoginSetting
-    /// V1's web cockpit does not yet expose Option help; it is tracked for post-v1.
+    /// The normal entry offers exploration only when its actual Help map is available.
     public let showsExploration: Bool
     public init(preferences: SettingsPreferences, context: SettingsPageContext) throws {
         guard Set(context.subscriptions.map(\.id)).count == context.subscriptions.count,
@@ -30,7 +30,7 @@ public struct FirstRunPage: Sendable {
         subscriptions = context.subscriptions
         readers = ReaderSetting.project(consent: preferences.readerConsent, observations: context.readerObservations)
         login = .init(preferences: preferences, capabilities: context.capabilities)
-        showsExploration = !context.v1NormalEntry
+        showsExploration = !context.v1NormalEntry || context.capabilities.helpMapAvailable
     }
 }
 public enum LoginRequestReason: Equatable, Sendable { case explicitUserChoice, firstRunCompletion, restoration, systemObservation }
