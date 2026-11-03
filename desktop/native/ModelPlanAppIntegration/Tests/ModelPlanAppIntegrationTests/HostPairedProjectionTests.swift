@@ -243,6 +243,7 @@ private actor EntrySyntheticClient: EngineClient {
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
         app.composition.dock.dockView.onAction?(.subscription(id))
         XCTAssertFalse(app.composition.dock.card.isHidden)
         XCTAssertTrue(app.composition.dock.card.accessibilityPerformPress(), "Pinning must be explicit")
@@ -252,7 +253,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the pinned card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户")
-        XCTAssertTrue(card.stateLabel.hasPrefix("过期 · "), "The stale badge follows the Chinese prototype while preserving the original observation age")
+        XCTAssertEqual(card.stateLabel, "过期 · 4368小时前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
