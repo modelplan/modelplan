@@ -832,7 +832,7 @@ func TestManagedReaderWindowProvenanceThroughCacheAndWire(t *testing.T) {
 		Consents: []rows.ConsentRecord{{ToolID: "claude", Generation: 1, State: rows.ConsentAllowed}}}
 	AppendManagedRows(&in, p)
 	if len(in.Accounts) != 1 { t.Fatal("managed account missing") }
-	for i := range in.Accounts { in.Accounts[i].Route = rows.RouteSavedLoginAPI }
+	if in.Accounts[0].Route != rows.RouteSavedLoginAPI { t.Fatal("managed account route missing") }
 	projection := rows.Build(in)
 	exposed := wire.ProjectWithEvents(projection, nil, false, true)
 	legacy := wire.ProjectWithEvents(projection, nil, false)
@@ -852,7 +852,7 @@ func TestAllManagedReaderWindowSourcesAndObservationTimes(t *testing.T) {
 			used := 30.0
 			account := &Account{Source: "native:"+provider, ObservedAt: claudeTestNow, Windows: []Window{{Kind: "weekly", ScopeKnown: true, UsedPercent: &used, ObservedAt: observed}}}
 			converted := managedRowsAccount(provider, "synthetic", account, "", claudeTestNow, true)
-			if len(converted.Windows) != 1 || converted.Windows[0].Source != rows.WindowSourceSavedLogin || converted.Windows[0].ObservedAt == nil || !converted.Windows[0].ObservedAt.Equal(observed) { t.Fatalf("provider provenance changed: %+v", converted.Windows) }
+			if converted.Route != rows.RouteSavedLoginAPI || len(converted.Windows) != 1 || converted.Windows[0].Source != rows.WindowSourceSavedLogin || converted.Windows[0].ObservedAt == nil || !converted.Windows[0].ObservedAt.Equal(observed) { t.Fatalf("provider provenance changed: %+v", converted.Windows) }
 		})
 	}
 }

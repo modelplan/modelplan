@@ -6,6 +6,14 @@
       "type": "RowsAccount",
       "optional": [
         {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "subscriptionRef",
           "omission": true,
           "null": true,
@@ -256,6 +264,14 @@
       "file": "RowsRow.json",
       "type": "RowsRow",
       "optional": [
+        {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "vendorKey",
           "omission": true,
@@ -958,6 +974,31 @@
       ]
     },
     {
+      "file": "WireMemberRefreshResult.json",
+      "type": "WireMemberRefreshResult",
+      "optional": [
+        {
+          "field": "notBefore",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reason",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "outcome"
+      ]
+    },
+    {
       "file": "WireNotification.json",
       "type": "WireNotification\u003cWireRowsSnapshot\u003e",
       "optional": [],
@@ -1104,9 +1145,43 @@
       ]
     },
     {
+      "file": "WireRefreshMember.json",
+      "type": "WireRefreshMember",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "accountLocator",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "rowId",
+        "route"
+      ]
+    },
+    {
       "file": "WireRefreshRequestParams.json",
       "type": "WireRefreshRequestParams",
       "optional": [
+        {
+          "field": "member",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "scopes",
           "omission": true,
