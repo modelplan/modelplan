@@ -74,11 +74,13 @@ import ModelPlanSettings
                 reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
             }
             if account.valueState == .current || account.valueState == .retained,
-               let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
+               let credits=account.credits,let balance=credits.balance,balance.isFinite,(0...1e15).contains(balance) {
                 switch credits.unit {
                 case "credits": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:String(balance)+(english ? " credits":" 点")))
                 case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:english ? "Currency not reported":"未报告币种"))
-                default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not reported":"未报告单位"))
+                case "": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not reported":"未报告单位"))
+                case "other": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit unavailable":"单位不可用"))
+                default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not recognized":"单位未识别"))
                 }
             }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
