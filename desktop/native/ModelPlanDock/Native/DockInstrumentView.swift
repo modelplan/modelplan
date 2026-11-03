@@ -324,7 +324,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             if oldValue != value {NSAccessibility.post(element:node,notification:.valueChanged)}
         }
         for id in orderedIDs {guard let reading=readings[id],let rect=stationRect(id) else{continue}
-            append("subscription."+id,reading.alias ?? reading.name,reading.readout,[reading.selectedWindowLabel,reading.readout].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
+            let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
+            append("subscription."+id,reading.alias ?? reading.name,reading.readout,[reading.selectedWindowLabel,reading.readout,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
             if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}),let origin=skin?.bounds.origin {
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
