@@ -38,6 +38,7 @@ func ScopeRefreshOutcome(p Paths, scope string, at time.Time) string {
 	if snap := loadNative(p.Cache); snap != nil && snap.ObservedAt.Equal(at) {
 		for _, entry := range snap.Providers {
 			if entry.Provider == definition.Tool {
+				if !entry.ObservedAt.Equal(at) { return "not_attempted" }
 				if entry.Status == "ok" {
 					return "succeeded"
 				}

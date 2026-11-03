@@ -143,3 +143,22 @@ func TestAutomaticNeverSchedulesImplicitGrant(t *testing.T) {
 	s.StartAutomatic()
 	select { case <-calls: t.Fatal("implicit consent scheduled a live read"); case <-time.After(100*time.Millisecond): }
 }
+
+func TestAutomaticFallsBackToGrantedCodexHistory(t *testing.T) {
+	backend, paths, _ := refreshFixture(t, consent.ScopeCodexLocalHistory)
+	if err := consent.Change(consent.Path(), func(state *consent.State) error {
+		delete(state.Scopes, consent.ScopeCodexRuntimeUsage)
+		state.Scopes[consent.ScopeCodexLocalHistory] = consent.Record{Allowed: true, ConsentTextVersion: consent.TextVersion}
+		return nil
+	}); err != nil { t.Fatal(err) }
+	backend.view.Stamp = stampOfFence(consent.Capture().Fence())
+	backend.view.Scopes = []string{consent.ScopeCodexLocalHistory}
+	calls := make(chan string, 1)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		Plan: func(_ quota.Paths, _ string, now time.Time) (quota.ScopeRefreshPlan, error) { return quota.ScopeRefreshPlan{At: now, Admitted: true, BudgetKnown: true}, nil },
+		Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { calls <- scope; return nil },
+	})
+	defer s.Close()
+	s.StartAutomatic()
+	select { case scope := <-calls: if scope != consent.ScopeCodexLocalHistory { t.Fatalf("wrong fallback: %s", scope) }; case <-time.After(3*time.Second): t.Fatal("local fallback was not scheduled") }
+}

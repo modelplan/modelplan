@@ -329,6 +329,8 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	outcome, reason := refreshNotAttempted, refreshUnavailable
 	if err != nil {
 		outcome = refreshFailed
+	} else if job.scope == consent.ScopeCodexLocalHistory {
+		outcome, reason = refreshSucceeded, refreshCompleted
 	} else {
 		switch quota.ScopeRefreshOutcome(paths, job.scope, started) {
 		case "succeeded":

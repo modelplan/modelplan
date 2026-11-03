@@ -44,6 +44,11 @@ func (s *RefreshScheduler) automatic() {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
 		next := now.Add(time.Minute)
+		if first && (s.config.Offline || s.config.ReadOnly || s.config.Run == nil) {
+			reason := refreshReadOnly
+			if s.config.Offline { reason = refreshOffline }
+			for _, scope := range scopes { s.decisions.add(now, scope, refreshNotAttempted, reason) }
+		}
 		if !s.config.Offline && !s.config.ReadOnly && s.config.Run != nil {
 			for _, scope := range scopes {
 				definition, _ := consent.Definition(scope)
