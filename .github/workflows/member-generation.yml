@@ -1,0 +1,40 @@
+name: Member refresh generation preflight
+on:
+  push:
+    branches: [ci/member-refresh-generation]
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate and verify
+        shell: bash
+        run: |
+          git fetch origin main
+          git diff --name-only origin/main HEAD -- '*.go' | xargs -r gofmt -w
+          cd cli
+          go run ./internal/appserver/wire/cmd/schema
+          go run ./internal/swiftwire/cmd --write
+          UPDATE_SWIFT_CAPTURES=1 go test -count=1 ./internal/swiftwire/...
+          cd ..
+          npm ci --prefix desktop/cockpit
+          npm run generate --prefix desktop/cockpit
+          npm run check --prefix desktop/cockpit
+          cd cli
+          go test ./internal/appserver/... ./internal/quota/... ./internal/rows/... ./cmd/modelplan
+      - name: Capture patch
+        if: always()
+        run: git add -N . && git diff --binary > "$RUNNER_TEMP/member-generation.patch"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: member-generation
+          path: ${{ runner.temp }}/member-generation.patch
