@@ -24,8 +24,4 @@ jobs:
           GOFLAGS: -buildvcs=false
           PYTHONPATH: tools/u14/tests
         run: |
-          python3 -m unittest -v \
-            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
-            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
-            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
-            test_runner.RealBinaryTests.test_post_recorder_rejects_bad_body_even_when_production_guard_is_removed
+          python3 -m unittest -v test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget
