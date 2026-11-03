@@ -121,16 +121,24 @@ func Project(value rows.Projection) RowsProjection { return project(value, false
 
 func project(value rows.Projection, expose, members bool) RowsProjection {
 	result := RowsProjection{RowsVersion: value.RowsVersion, Rows: append([]rows.Row{}, value.Rows...), RowsSummary: value.RowsSummary}
-	if expose && members { return result }
+	if expose && members {
+		return result
+	}
 	for i := range result.Rows {
-		if !members { result.Rows[i].RefreshNotBefore = nil }
+		if !members {
+			result.Rows[i].RefreshNotBefore = nil
+		}
 		result.Rows[i].Accounts = append([]rows.Account{}, result.Rows[i].Accounts...)
 		for j := range result.Rows[i].Accounts {
 			account := &result.Rows[i].Accounts[j]
-			if !members { account.RefreshNotBefore = nil }
+			if !members {
+				account.RefreshNotBefore = nil
+			}
 			if !expose {
 				account.Windows = append([]rows.Window{}, account.Windows...)
-				for k := range account.Windows { account.Windows[k].Source = nil }
+				for k := range account.Windows {
+					account.Windows[k].Source = nil
+				}
 			}
 		}
 	}
@@ -194,21 +202,21 @@ type CredentialResult struct {
 }
 
 type RefreshMember struct {
-	RowID string `json:"rowId"`
-	Route rows.Route `json:"route"`
-	SubscriptionRef string `json:"subscriptionRef,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
-	AccountLocator string `json:"accountLocator,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
+	RowID           string     `json:"rowId"`
+	Route           rows.Route `json:"route"`
+	SubscriptionRef string     `json:"subscriptionRef,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
+	AccountLocator  string     `json:"accountLocator,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
 }
 
 type MemberRefreshResult struct {
-	Outcome MemberRefreshOutcome `json:"outcome"`
-	NotBefore *time.Time `json:"notBefore,omitempty" null:"forbidden"`
-	Reason *MemberRefreshReason `json:"reason,omitempty" null:"forbidden"`
+	Outcome   MemberRefreshOutcome `json:"outcome"`
+	NotBefore *time.Time           `json:"notBefore,omitempty" null:"forbidden"`
+	Reason    *MemberRefreshReason `json:"reason,omitempty" null:"forbidden"`
 }
 
 type RefreshRequestParams struct {
 	Member *RefreshMember `json:"member,omitempty" null:"forbidden"`
-	Scopes []string `json:"scopes,omitempty" schema:"maxItems=128,uniqueItems=true" null:"coalesced"`
+	Scopes []string       `json:"scopes,omitempty" schema:"maxItems=128,uniqueItems=true" null:"coalesced"`
 }
 
 type RefreshScheduled struct {

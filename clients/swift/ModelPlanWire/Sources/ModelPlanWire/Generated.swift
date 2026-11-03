@@ -1155,6 +1155,7 @@ public struct RowsRow: Codable, Sendable {
         if (["denied", "unset"].contains(consent.rawValue) || reason.code.rawValue == "cleanup_pending") && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }
     }
     fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.refreshNotBefore = nil
         self.id = invalidID
         self.kind = .unknown("invalid_row")
         self.order = invalidOrder

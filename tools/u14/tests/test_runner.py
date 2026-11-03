@@ -365,6 +365,18 @@ class RefreshRaceTests(unittest.TestCase):
         self.assertEqual(fresh_rows(engine), {'rows': []})
         self.assertEqual(engine.request.call_count, 3)
 
+    def test_capture_accepts_completed_startup_followed_by_deferred_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'capture.json').write_text('{"status":"ok"}')
+            engine = mock.Mock()
+            engine.request.return_value = {'result': {'data': {'refreshDecisions': [
+                {'scope': 'minimax.account_usage.api_key', 'outcome': 'succeeded', 'reason': 'completed'},
+                {'scope': 'minimax.account_usage.api_key', 'outcome': 'deferred', 'reason': 'budget'}]}}}
+            transitions = _wait_scheduler_capture(engine, directory, 'minimax.account_usage.api_key', 'capture.json',
+                lambda capture, outcome: capture['status'] == 'ok' and outcome == 'succeeded', 'capture-missing')
+            self.assertEqual([item['outcome'] for item in transitions], ['succeeded', 'deferred'])
+            self.assertEqual(engine.request.call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()
