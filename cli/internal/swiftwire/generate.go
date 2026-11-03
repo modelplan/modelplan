@@ -60,7 +60,7 @@ func enumCase(s string) string {
 	var b strings.Builder
 	upper := false
 	for _, r := range s {
-		if r == '_' || r == '-' {
+		if r == '_' || r == '-' || r == '.' {
 			upper = true
 			continue
 		}
