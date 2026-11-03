@@ -136,6 +136,11 @@ struct CockpitUnavailableNotice {
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
+                case .close:self.owner.coordinator?.requestClose()
+                case .detach,.putBack,.shutterToggle,.scopeSelect:
+                    // The page owns shell controls; the coordinator validates and
+                    // consumes scope selection. An unexpected escape fails closed.
+                    self.hide()
                 }
             }
             activate()
