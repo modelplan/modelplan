@@ -128,7 +128,7 @@ final class DecodeTests: XCTestCase {
             try check(type, value, accepted: true, context: type + " absent")
             value[field] = NSNull()
             try check(type, value, accepted: false, context: type + " null")
-            value[field] = "malformed"
+            value[field] = ["wrongType": true]
             try check(type, value, accepted: false, context: type + " wrong type")
         }
     }
