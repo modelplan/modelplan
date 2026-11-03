@@ -23,9 +23,17 @@ func (s *RefreshScheduler) StartAutomatic() {
 func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
 	first := true
+	var previous Stamp
 	for s.ctx.Err() == nil {
 		now := time.Now()
 		admission := consent.Capture()
+		stamp := stampOfFence(admission.Fence())
+		if stamp != previous {
+			s.mu.Lock()
+			s.autoNext = map[string]time.Time{}
+			s.mu.Unlock()
+			previous = stamp
+		}
 		state, mode := admission.State(), admission.Mode()
 		scopes := liveRefreshScopes(state, mode)
 		runtimeGranted := false

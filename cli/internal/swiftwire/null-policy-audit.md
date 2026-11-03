@@ -70,6 +70,7 @@ containers and failure ID retain their required-key checks.
 | ConsentScope.Disabled | coalesced | Same facts producer; generated `disabledReason` absent/null both yield no disabled reason. Unknown display reasons retain the existing tolerant behavior. |
 | ConsentReceipt.CommittedGeneration | coalesced | [shared_backend.go:248](../appserver/shared_backend.go#L248), `Grant`, emits the committed generation or null. `WireConsentReceipt`/Delivery require a generation for committed receipts; absent/null both fail that contextual check, and neither creates a fabricated generation. |
 | ConsentReceipt.CleanupPending | coalesced | Same grant producer; `WireConsentReceipt` returns nil for absent/null, with no pending cleanup entries. |
+| Diagnostics.RefreshDecisions | forbidden | Omission means capability not negotiated; null or malformed data is rejected. |
 | Diagnostics.LastErrorClass | coalesced | [server.go:368](../appserver/server.go#L368), diagnostics reply; `WireDiagnostics` absent/null both mean no last-error class. |
 | ScopeDiag.LastRead | coalesced | [shared_backend.go:191](../appserver/shared_backend.go#L191), diagnostics projection; `WireScopeDiag` absent/null both yield no timestamp. |
 | ScopeDiag.NextDueAt | coalesced | Same projection/decoder: absent/null both yield no scheduled timestamp. |
@@ -105,6 +106,7 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Window.Source | forbidden | Omission means provenance unavailable; null or malformed data is rejected. |
 | rows.Window.ModelScope | forbidden | Omission means plan-wide; explicit null or a malformed object is rejected rather than interpreted as plan-wide. |
 | rows.Window.DurationSeconds | coalesced | [values.go:160](../rows/values.go#L160), `buildWindows`; `RowsWindow` absent/null both have no duration. |
 | rows.Window.RemainingPercent | coalesced | Same projection/decoder: absent/null both are unavailable, not zero percent. |

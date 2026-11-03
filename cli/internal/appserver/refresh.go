@@ -248,9 +248,11 @@ func (s *RefreshScheduler) work() {
 }
 func (s *RefreshScheduler) run(job refreshJob) {
 	keepPending := false
+	attempted := false
 	defer func() {
 		if !keepPending {
 			s.mu.Lock()
+			if !attempted { s.autoNext[job.key] = time.Now().Add(10 * time.Minute) }
 			delete(s.pending, job.key)
 			delete(s.credentialWait, job.key)
 			s.mu.Unlock()
@@ -299,6 +301,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
 	started := time.Now()
+	attempted = true
 	err = s.config.Run(ctx, paths, job.scope, started)
 	outcome, reason := refreshNotAttempted, refreshUnavailable
 	if err != nil {
