@@ -133,7 +133,7 @@ import ModelPlanSettings
     func testAdmittedStaleReserveSurvivesButRevokedReserveIsScrubbed() throws {
         let base = fixture()
         let input = try XCTUnwrap(base.snapshot.inputs.first)
-        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: "Reserve", value: "≈1.23",
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: "Reserve", value: "1",
                                   detail: "Last known")
         let row = DockContentRow(input: input, reason: "Last known", nextStep: "Refresh",
                                  additionalRows: [reserve])
