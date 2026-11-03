@@ -256,3 +256,19 @@ test('display and appearance receive the bridge clock, while ticks use the host-
   assert.equal(bridge.receive(send('tick',{nowUnixMs:'234567',reason:'clockChange'}),source),true);
   assert.deepEqual(times,[['display',123456],['appearance',123456],['tick',234567]]);
 });
+
+test('redBelow is optional, validated and logged on load and appearance without weakening strict keys',()=>{
+ const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
+ try{
+  for(const [input,expected,warn] of [[10,10,false],[16,16,false],[20,20,false],[25,25,false],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
+   const seen=[],view={clear(){},configure(_a,n){seen.push(n);},updateAppearance(_a,_now,n){seen.push(n);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
+   const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
+   const extra=input===undefined?{}:{redBelow:input},before=logs.length;
+   assert.equal(b.receive(send('load',{appearance,shell,...extra}),source),true);
+   assert.equal(b.receive(send('appearance',{...appearance,...extra}),source),true);
+   assert.deepEqual(seen,[expected,expected]);assert.equal(logs.length-before,warn?2:0);
+   assert.equal(b.receive(send('appearance',{...appearance,...extra,unknown:true}),source),false);
+  }
+  assert.ok(logs.every(args=>args.length===1&&args[0]==='Cockpit redBelow missing or invalid; using default 25.'));
+ }finally{console.warn=original;}
+});
