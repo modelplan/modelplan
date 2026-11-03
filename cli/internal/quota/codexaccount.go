@@ -234,7 +234,7 @@ type rlResponse struct {
 	RateLimitsByLimitID  map[string]*rlSnapshot `json:"rateLimitsByLimitId"`
 	identity             string                 // from account/read; never cached
 	RateLimitResetCredit *struct {
-		AvailableCount int64 `json:"availableCount"`
+		AvailableCount *int64 `json:"availableCount"`
 		Credits        []struct {
 			Status    string `json:"status"`
 			ExpiresAt *int64 `json:"expiresAt"`
@@ -374,11 +374,11 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 			s.Windows = append(s.Windows, win)
 		}
 	}
-	if c := r.RateLimitResetCredit; c != nil && c.AvailableCount >= 0 && c.AvailableCount < 10000 {
+	if c := r.RateLimitResetCredit; c != nil && c.AvailableCount != nil && *c.AvailableCount >= 0 && *c.AvailableCount < 10000 {
 		s.Credits = &struct {
 			Count    int          `json:"count"`
 			Expiries []*time.Time `json:"expiries,omitempty"`
-		}{Count: int(c.AvailableCount)}
+		}{Count: int(*c.AvailableCount)}
 		for _, d := range c.Credits {
 			if d.Status != "available" {
 				continue

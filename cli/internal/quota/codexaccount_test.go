@@ -222,3 +222,29 @@ func TestCreditsWithoutDetailsAreCounted(t *testing.T) {
 }
 
 func ptr(v float64) *float64 { return &v }
+
+func TestResetCreditCountRequiresExplicitNumber(t *testing.T) {
+	for _, tc := range []struct {
+		name, payload string
+		wantPresent   bool
+	}{
+		{"absent object", `{}`, false},
+		{"missing count", `{"rateLimitResetCredits":{}}`, false},
+		{"null count", `{"rateLimitResetCredits":{"availableCount":null}}`, false},
+		{"explicit zero", `{"rateLimitResetCredits":{"availableCount":0}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var response rlResponse
+			if err := json.Unmarshal([]byte(tc.payload), &response); err != nil {
+				t.Fatal(err)
+			}
+			got := snapFrom(&response, acctNow).Credits
+			if (got != nil) != tc.wantPresent {
+				t.Fatalf("unexpected reset-credit availability: %+v", got)
+			}
+			if got != nil && got.Count != 0 {
+				t.Fatalf("expected zero, got %d", got.Count)
+			}
+		})
+	}
+}
