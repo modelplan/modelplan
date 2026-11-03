@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import { appearance,commands,pageId,sample,shell } from '../fixture.mjs';
+import { appearance,commands,pageId,sample,currentSample,shell } from '../fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -78,7 +78,7 @@ test('real WebKit callback counts stay zero; finite opacity motion stops on ever
     evidence.push({state,currentTimeBefore:before,...actual});
   }
   await count('loaded-awaiting-data',[]);
-  await display(page,send);
+  const initial=currentSample();await display(page,send,initial);
   const timing=await page.evaluate(()=>({...document.getAnimations()[0].effect.getTiming(),easing:getComputedStyle(document.querySelector('.activity')).animationTimingFunction}));
   expect(timing.iterations).toBe(2);expect(timing.duration).toBe(240);
   const frames=await page.evaluate(()=>document.getAnimations()[0].effect.getKeyframes());
@@ -93,7 +93,7 @@ test('real WebKit callback counts stay zero; finite opacity motion stops on ever
   await finishMotion(page);await count('visible-idle',[]);
   let reading=74;
   async function changed() {
-    const data=sample();data.projection.rows[0].accounts[0].windows[0].remainingPercent=reading--;
+    const data=structuredClone(initial);data.projection.rows[0].accounts[0].windows[0].remainingPercent=reading--;
     expect(await receive(page,send('display',{data}))).toBe(true);
     expect(await page.evaluate(()=>document.getAnimations().map(a=>a.playState))).toEqual(['running']);
   }
@@ -131,12 +131,12 @@ test('computed animation iteration counts reject infinity, including pseudo-elem
   expect(await infiniteAnimations(page)).toEqual([]);
 });
 test('identical and timestamp-only deliveries do not restart motion; hidden changes are not queued',async({page})=>{
-  const {send}=await open(page);await display(page,send);
+  const {send}=await open(page),initial=currentSample();await display(page,send,initial);
   await page.evaluate(()=>window.__firstPulse=document.getAnimations()[0]);
-  expect(await receive(page,send('display',{data:sample()}))).toBe(true);
+  expect(await receive(page,send('display',{data:structuredClone(initial)}))).toBe(true);
   expect(await page.evaluate(()=>document.getAnimations()[0]===window.__firstPulse)).toBe(true);
   await finishMotion(page);
-  const data=sample();data.projection.rows[0].accounts[0].observedAt='2026-10-29T12:01:00Z';
+  const data=structuredClone(initial);data.projection.rows[0].accounts[0].observedAt='2026-10-29T12:01:00Z';
   expect(await receive(page,send('display',{data}))).toBe(true);
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   data.projection.rows[0].accounts[0].windows[0].remainingPercent=74;
@@ -156,10 +156,12 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   const event=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
   expect(event.action).toBe('openSettings');expect(event.generation).toBe('41');
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
-  await expect(page.getByRole('button',{name:'Codex · History',exact:true})).toBeVisible();
+  const subscription=page.getByRole('button',{name:'Codex',exact:true});await expect(subscription).toBeVisible();await subscription.focus();await page.keyboard.press('Enter');
+  const scopeEvent=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
+  expect(scopeEvent.action).toBe('scopeSelect');expect(scopeEvent.key).toBe(sample().projection.rows[0].accounts[0].subscriptionRef);expect(scopeEvent.generation).toBe('41');
   expect(await page.locator('svg,canvas,img').count()).toBe(0);
   await page.evaluate(()=>window.postMessage({type:'plugin/install',url:'https://example.invalid'},'*'));
-  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(1);
+  expect(await page.evaluate(()=>window.__events.filter(e=>e.type==='action').length)).toBe(2);
 });
 for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
