@@ -13,8 +13,9 @@ public enum EngineRecomputeDeadline: Equatable, Sendable {
     case none
 }
 
-/// A single admitted window fact, scoped to the same member and projection.
-/// This does not change the row's aggregate stale state or authorize caching.
+/// An admitted window fact scoped to the same member key and projection. A
+/// fallback member key is not a verified subscription identity. This does not
+/// change the row's aggregate stale state or authorize cross-snapshot caching.
 public struct EngineVerifiedWindow: Equatable, Sendable {
     public let memberID: String
     public let windowID: String
@@ -270,15 +271,27 @@ public enum EngineDeadlineFacts {
         let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue)
     }
-    /// Preserve only facts with explicit, still-future row/account/window
-    /// evidence. Retained, unknown and multi-member semantics stay undecided.
+    /// Preserve only independently matched members with explicit, still-future
+    /// account/window evidence. Retained and unknown values are not promoted.
     private func verifiedWindowFacts(_ members: [EngineAccountMember], now: Date) -> [EngineVerifiedWindow] {
         guard now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         return members.flatMap { member -> [EngineVerifiedWindow] in
             let row = member.row, account = member.account
-            guard row.accounts.count == 1, let subscriptionRef = member.subscriptionRef, member.id == subscriptionRef,
+            let memberKey: String
+            if let subscriptionRef = member.subscriptionRef {
+                guard member.id == subscriptionRef else { return [] }
+                memberKey = subscriptionRef
+            } else {
+                // This is a snapshot-local display key, never a verified ref.
+                guard member.isStable, account.route.isKnown, account.route != .knownUnknown,
+                      member.id == row.id + "#" + account.route.rawValue else { return [] }
+                memberKey = member.id
+            }
+            let rowCanContainCurrent = row.state == .fresh ||
+                (row.state == .stale && (row.reason.code == .staleReading || row.reason.code == .observationTimeUnknown))
+            guard member.isStable,
                   row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired,
-                  row.state == .fresh, let rowDeadline = date(row.expiresAt),
+                  rowCanContainCurrent, let rowDeadline = date(row.expiresAt),
                   let accountDeadline = date(account.freshUntil), accountDeadline > now,
                   let observed = date(account.observedAt), observed <= now,
                   account.valueState == .current,
@@ -292,7 +305,7 @@ public enum EngineDeadlineFacts {
                           assurance: EngineResetTimestampContract.activeAssurance), windowUntil > now,
                       let percent = window.remainingPercent, percent.isFinite, (0...100).contains(percent) else { return nil }
                 let until = rowDeadline > now ? min(windowUntil, rowDeadline) : windowUntil
-                return .init(memberID: subscriptionRef, windowID: window.id, remainingPercent: percent, resetsAt: reset, issuedAt: now, until: until)
+                return .init(memberID: memberKey, windowID: window.id, remainingPercent: percent, resetsAt: reset, issuedAt: now, until: until)
             }
         }
     }
