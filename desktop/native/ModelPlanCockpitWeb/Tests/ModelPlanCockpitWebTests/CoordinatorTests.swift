@@ -59,7 +59,7 @@ private actor HeldClient: EngineClient {
   init(_ context: CockpitEngineContext) { state = CockpitBridgeState(context: context) }
   func ack(_ raw: String, _ type: String) {
     var value = try! JSONSerialization.jsonObject(with: Data(raw.utf8)) as! [String: Any]
-    value["shell"] = nil; value["appearance"] = nil
+    value["shell"] = nil; value["appearance"] = nil; value["redBelow"] = nil
     if type == "ready" {
       value["appearanceVersion"] = 2; value["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     }

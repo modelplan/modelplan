@@ -244,9 +244,8 @@ public final class CockpitBridgeState {
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
           "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-          "redBelow": appearance.redBelow,
         ],
-        "shell": shell.fields,
+        "shell": shell.fields, "redBelow": appearance.redBelow,
       ], receipt: "ready")
   }
   public func setAppearance(_ appearance: CockpitAppearance, deadlineEligible: Bool = false) throws -> String {
