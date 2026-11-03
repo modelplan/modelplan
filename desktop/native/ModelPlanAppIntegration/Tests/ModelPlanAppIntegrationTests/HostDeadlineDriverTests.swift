@@ -115,4 +115,28 @@ import ModelPlanDock
         XCTAssertNil(scheduler.due)
     }
 
+    func testValidatedUnknownIsOptInAndStillFenced() {
+        let wall = Date(timeIntervalSince1970: 1_000), scheduler = HostDeadlineTestScheduler()
+        var source: UInt64 = 1, installed: [String] = []
+        let driver = HostDeadlineDriver<String>(wallNow: { wall }, elapsed: { 0 }, scheduler: scheduler,
+            clear: {}, recompute: { _ in .init(value: "last known", sourceToken: source, deadline: .unknown) },
+            install: { installed.append($0) }, sourceIsCurrent: { $0 == source }, installValidatedUnknown: true)
+        driver.invalidate(); XCTAssertEqual(installed, ["last known"])
+        source = 2; driver.suspend(); XCTAssertEqual(driver.status, .suspended)
+    }
+
+    func testOldFailedRecomputeCannotWithdrawReentrantReplacement() {
+        let wall = Date(timeIntervalSince1970: 1_000), scheduler = HostDeadlineTestScheduler()
+        var source: UInt64 = 1, installed: [String] = []
+        var driver: HostDeadlineDriver<String>!
+        driver = HostDeadlineDriver<String>(wallNow: { wall }, elapsed: { 0 }, scheduler: scheduler,
+            clear: {}, recompute: { _ in
+                if source == 1 { source = 2; driver.invalidate(); return nil }
+                return .init(value: "new", sourceToken: source, deadline: .some(.none))
+            }, install: { installed.append($0) }, sourceIsCurrent: { $0 == source })
+        driver.invalidate()
+        XCTAssertEqual(installed, ["new"])
+        XCTAssertEqual(driver.status, .noFutureDeadline)
+    }
+
 }

@@ -19,6 +19,35 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    private let admittedCache = HostPairedContentCache()
+    private var deadlineLifecycleSuspended = false
+    private var pendingProjectionReplacement = false
+    private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
+    private let deadlineWall: @MainActor () -> Date = { Date() }
+    private let deadlineElapsed: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    private lazy var deadlineScheduler: any DockEdgeScheduling = DockCommonModeScheduler(clock: deadlineElapsed)
+    private lazy var deadlineDriver: HostDeadlineDriver<DockContent> = {
+        HostDeadlineDriver(wallNow: deadlineWall, elapsed: deadlineElapsed, scheduler: deadlineScheduler,
+            clear: { [weak self] in
+                guard let self else { return }
+                self.admittedCache.clear()
+                self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared)
+                self.menuDidChange?()
+            }, recompute: { [weak self] now in
+                guard let self else { return nil }
+                defer {
+                    if self.pendingProjectionReplacement && !self.deadlineLifecycleSuspended {
+                        self.pendingProjectionReplacement = false
+                        self.deadlineDriver.replace()
+                    }
+                }
+                return try? self.pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now))
+            }, install: { [weak self] content in
+                guard let self else { return }
+                self.admittedCache.install(content); self.dock.refreshDockContent(); self.menuDidChange?()
+            }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
+            installValidatedUnknown: true)
+    }()
     private var resetNotifier:EngineResetNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
@@ -44,16 +73,19 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        adapter.resetEventState = { [weak store] in EngineRowsEventDecoder.decode(store?.snapshot.rows) }
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment)
         adapter.bindDockMenuTracking(dock)
-        dock.setDockContentProvider(adapter)
+        _ = pairedProjection
+        dock.setDockContentProvider(admittedCache)
         provider.dockContentDidChange = { [weak self] in
-            self?.adapter.scrubInvalidatedMenus()
-            self?.dock.refreshDockContent(); self?.menuDidChange?()
+            guard let self else { return }
+            self.adapter.scrubInvalidatedMenus()
+            self.pairedProjection.invalidate()
+            if self.pairedProjection.isProjecting { self.pendingProjectionReplacement = true; return }
+            if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
-    public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date())) }
+    public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
     func setLanguage(_ language:String) { adapter.language=language }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
@@ -61,8 +93,10 @@ public struct EngineMenuRefreshResult {
         .init(rows:store.snapshot.rows?.projection.rows ?? [])
     }
     public var rowEvents:EngineRowsEventState { EngineRowsEventDecoder.decode(store.snapshot.rows) }
-    public var resetSignals:[DockSubscriptionSignal] { _ = presentedContent; return adapter.signals }
-    public var memberInstability:[String:Bool] { _ = presentedContent; return adapter.memberInstability }
+    public var resetSignals:[DockSubscriptionSignal] { presentedContent.signals }
+    public var memberInstability:[String:Bool] {
+        Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
+    }
     func installResetEvents(settings:SettingsStore,live:Bool) {
         let base:URL
         if live {
@@ -109,5 +143,7 @@ public struct EngineMenuRefreshResult {
         }
         catch { onResult?(.failure(error)) /* No automatic retry or optimistic value. */ }
     }
-    public func stop() async { dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    func suspendDeadlines() { deadlineLifecycleSuspended = true; pairedProjection.invalidate(); deadlineDriver.suspend() }
+    func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
+    public func stop() async { deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

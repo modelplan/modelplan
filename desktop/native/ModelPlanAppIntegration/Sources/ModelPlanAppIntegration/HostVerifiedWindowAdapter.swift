@@ -105,9 +105,15 @@ enum HostVerifiedWindowError: Error, Equatable {
                 return window.id
             })
             let safeResetTimes = row.resetTimes.filter { provenIDs.contains($0.key) && $0.value > now }
+            let admitted = subscriptions[input.id].map {
+                !$0.isUnstable && ($0.source == .fresh || $0.source == .stale)
+            } ?? false
             rows[input.id] = .init(input: input, reason: row.reason, nextStep: row.nextStep,
-                originalObservedAt: row.originalObservedAt, plan: row.plan, sourceName: row.sourceName,
-                resetTimes: safeResetTimes, windowDescriptions: row.windowDescriptions, additionalRows: row.additionalRows)
+                originalObservedAt: admitted ? row.originalObservedAt : nil,
+                plan: admitted ? row.plan : "", sourceName: admitted ? row.sourceName : "",
+                resetTimes: safeResetTimes,
+                windowDescriptions: row.windowDescriptions.filter { provenIDs.contains($0.key) },
+                additionalRows: admitted ? row.additionalRows : [])
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
             presentationRows: rows, unavailableReason: original.unavailableReason,
@@ -124,10 +130,14 @@ enum HostVerifiedWindowError: Error, Equatable {
             guard let state = states[original.id] else { return nil }
             var signal = original; signal.dataState = provenMembers.contains(original.id) ? state : .unavailable; return signal
         }
-        // Raw preformatted menu lines bypass the proof projection; suppress them until
-        // the composition presents the same checked candidate on that surface.
-        return .init(snapshot: snapshot, menuStatusLines: [], emptyText: content.emptyText,
-                     signals: signals, recomputeDeadline: content.recomputeDeadline)
+        // Rebuild menu text from the same proof-checked values, never the raw
+        // preformatted Provider lines that bypass this projection.
+        let lines = inputs.map { input -> String in
+            guard let reading = try? DockInstrumentProjection.evaluate(input, now: now) else { return input.name + " · --" }
+            return (reading.alias ?? reading.name) + " · " + reading.readout
+        }
+        return .init(snapshot: snapshot, menuStatusLines: lines.isEmpty ? content.emptyText.map { [$0] } : lines,
+                     emptyText: content.emptyText, signals: signals, recomputeDeadline: content.recomputeDeadline)
     }
     /// `content`, `deadline` and `proofs` must be mapped synchronously from the
     /// same accepted Provider pair; no later side-channel read is admissible.

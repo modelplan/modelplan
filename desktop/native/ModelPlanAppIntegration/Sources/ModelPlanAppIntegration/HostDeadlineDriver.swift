@@ -18,10 +18,11 @@ import ModelPlanDock
     private let elapsed: () -> TimeInterval
     private let scheduler: any DockEdgeScheduling
     private let clear: @MainActor () -> Void
-    private let recompute: @MainActor (Date) -> Candidate
+    private let recompute: @MainActor (Date) -> Candidate?
     private let install: @MainActor (Value) -> Void
     private let sourceIsCurrent: @MainActor (UInt64) -> Bool
     private let report: @MainActor (Status) -> Void
+    private let installValidatedUnknown: Bool
     private var fence = HostDeadlineFence()
     private var scheduledSourceToken: UInt64?
     private var crossingBoundary = false
@@ -29,15 +30,17 @@ import ModelPlanDock
 
     init(wallNow: @escaping @MainActor () -> Date, elapsed: @escaping () -> TimeInterval,
          scheduler: any DockEdgeScheduling, clear: @escaping @MainActor () -> Void,
-         recompute: @escaping @MainActor (Date) -> Candidate,
+         recompute: @escaping @MainActor (Date) -> Candidate?,
          install: @escaping @MainActor (Value) -> Void,
-         sourceIsCurrent: @escaping @MainActor (UInt64) -> Bool, report: @escaping @MainActor (Status) -> Void = { _ in }) {
+         sourceIsCurrent: @escaping @MainActor (UInt64) -> Bool, installValidatedUnknown: Bool = false,
+         report: @escaping @MainActor (Status) -> Void = { _ in }) {
         self.wallNow = wallNow; self.elapsed = elapsed; self.scheduler = scheduler
         self.clear = clear; self.recompute = recompute; self.install = install
-        self.sourceIsCurrent = sourceIsCurrent; self.report = report
+        self.sourceIsCurrent = sourceIsCurrent; self.report = report; self.installValidatedUnknown = installValidatedUnknown
     }
     /// Accepted replacement or significant clock change; never starts a reader.
     func invalidate() { handle(fence.invalidateAndRecompute()) }
+    func replace() { if fence.isSuspended { resume() } else { invalidate() } }
     func suspend() { handle(fence.withdraw()); if fence.isSuspended { setStatus(.suspended) } }
     func resume() { handle(fence.resume()) }
     func close() { handle(fence.close()); if fence.isClosed { setStatus(.closed) } }
@@ -49,8 +52,11 @@ import ModelPlanDock
             scheduledSourceToken = nil; scheduler.cancel(); clear()
             handle(fence.didClear(ticket))
         case .recompute(let ticket):
-            let now = wallNow(), candidate = recompute(now)
+            let now = wallNow(), result = recompute(now)
             guard fence.isCurrent(ticket) else { return }
+            guard let candidate = result else {
+                handle(fence.withdraw()); if fence.isSuspended { setStatus(.staleSource) }; return
+            }
             guard sourceIsCurrent(candidate.sourceToken) else {
                 handle(fence.withdraw()); if fence.isSuspended { setStatus(.staleSource) }; return
             }
@@ -93,14 +99,16 @@ import ModelPlanDock
                 self.handle(self.fence.timerFired(ticket, now: now))
             }
             // Unknown/mixed policy is intentionally unresolved: never reinstall here.
-            if !unknown, let candidate, fence.isCurrent(ticket) {
+            if (!unknown || installValidatedUnknown), let candidate, fence.isCurrent(ticket) {
                 guard sourceIsCurrent(source) else {
                     handle(fence.withdraw()); if fence.isSuspended { setStatus(.staleSource) }; return
                 }
                 install(candidate.value)
             }
-        case .authorityRequired:
+        case .authorityRequired(let ticket):
             setStatus(missing ? .missingContract : .unknown)
+            if !missing, installValidatedUnknown, let candidate, fence.isCurrent(ticket),
+               sourceIsCurrent(candidate.sourceToken) { install(candidate.value) }
         case .noFutureDeadline(let ticket):
             setStatus(.noFutureDeadline)
             // This is an evaluated projection, not an assertion of infinite lifetime.

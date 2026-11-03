@@ -556,6 +556,22 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         workingDriver?.stop(); workingDriver = nil; workingFrameProvider = nil; lastWorkingEffectError = nil
     }
 
+    /// Synchronously retire cached values and accessibility nodes before replacement.
+    /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
+    func withdrawAdmittedContent(privacy: Bool) {
+        guard !retired else { return }
+        inputGeneration &+= 1
+        model = nil; contentMenuStatusLines = []; contentEmptyText = nil
+        workingSignals = [:]; attentionSignals = []
+        if privacy { attention = DockAttentionState() }
+        menuNotice = nil; menuNoticeDidChange?(nil, false)
+        catalogueKey = ""; catalogueChanged?([])
+        dismissCard(); try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
+        for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
+        sliver.noticeMarks = []
+        try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
+    }
+
     /// Installs the content consumer without replacing window/input ownership.
     public func setDockContentProvider(_ provider: any DockContentProvider) {
         guard !retired else { return }

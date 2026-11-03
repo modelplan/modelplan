@@ -96,7 +96,7 @@ import ModelPlanSettings
         let checked = try HostVerifiedWindowAdapter.apply(raw, proofs: [], now: now, sourceToken: 1, sourceIsCurrent: { $0 == 1 })
         let result = try XCTUnwrap(checked.snapshot.inputs.first)
         XCTAssertNil(try DockInstrumentProjection.evaluate(result, now: now).remainingPercent)
-        XCTAssertEqual(checked.menuStatusLines, [])
+        XCTAssertEqual(checked.menuStatusLines, ["Synthetic · --"])
         XCTAssertEqual(checked.signals.first?.dataState, .unavailable)
         XCTAssertTrue(try XCTUnwrap(checked.snapshot.presentationRows["member"]).resetTimes.isEmpty)
     }
@@ -126,6 +126,25 @@ import ModelPlanSettings
         let unstable = SettingsSubscription(id: "member", name: .init("Synthetic", "合成"), source: .stale, isUnstable: true)
         let content = DockContent(snapshot: .init(inputs: base.snapshot.inputs, subscriptions: [unstable], presentationRows: base.snapshot.presentationRows))
         XCTAssertThrowsError(try HostVerifiedWindowAdapter.apply(content, proofs: [proof()], now: now, sourceToken: 1, sourceIsCurrent: { $0 == 1 }))
+    }
+
+    func testAdmittedStaleReserveSurvivesButRevokedReserveIsScrubbed() throws {
+        let base = fixture()
+        let input = try XCTUnwrap(base.snapshot.inputs.first)
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: "Reserve", value: "≈1.23",
+                                  detail: "Last known")
+        let row = DockContentRow(input: input, reason: "Last known", nextStep: "Refresh",
+                                 additionalRows: [reserve])
+        for source: SubscriptionSourceState in [.stale, .denied] {
+            let sub = SettingsSubscription(id: input.id, name: .init("Synthetic", "合成"), source: source)
+            let content = DockContent(snapshot: .init(inputs: [input], subscriptions: [sub],
+                                                       presentationRows: [input.id: row]))
+            let result = try HostVerifiedWindowAdapter.apply(content, proofs: [], now: now,
+                                                               sourceToken: 1, sourceIsCurrent: { $0 == 1 })
+            let rendered = try XCTUnwrap(result.snapshot.presentationRows[input.id])
+            XCTAssertEqual(rendered.additionalRows, source == .stale ? [reserve] : [])
+            XCTAssertEqual(rendered.input.dataState, source == .stale ? .stale : .unavailable)
+        }
     }
 
 }
