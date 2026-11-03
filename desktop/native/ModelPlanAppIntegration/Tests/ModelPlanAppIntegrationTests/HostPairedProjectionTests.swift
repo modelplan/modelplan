@@ -57,10 +57,11 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z") throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
+        root["sequence"] = sequence
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         var row = rows[0], accounts = try XCTUnwrap(row["accounts"] as? [[String: Any]])
@@ -72,7 +73,7 @@ private actor EntrySyntheticClient: EngineClient {
             "reason": ["code": "stale_reading", "text": ["en": "Last known", "zh": "旧读数"]],
             "nextStep": NSNull()]
         account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
-        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"
+        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
         session["id"] = "session:18000:main:main"; session["role"] = "session"
         session["durationSeconds"] = 18000; session["limitKey"] = "main"; session["poolKey"] = "main"
@@ -81,8 +82,8 @@ private actor EntrySyntheticClient: EngineClient {
         session["validUntil"] = "2027-01-01T00:00:00Z"; session["resetsAt"] = "2027-01-01T00:00:00Z"
         var week = session
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
-        week["remainingPercent"] = weekly; week["validUntil"] = "2028-12-01T00:00:00Z"
-        week["resetsAt"] = "2028-12-01T00:00:00Z"
+        week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
+        week["resetsAt"] = weeklyDeadline
         windows = [session, week]; account["windows"] = windows; accounts = [account]
         if let secondWeekly {
             var other = account, otherWeek = week
@@ -153,12 +154,12 @@ private actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-multi-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
         let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 33)
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             activateSettings: {})
         await app.prepare(); await app.composition.start()
@@ -168,6 +169,28 @@ private actor EntrySyntheticClient: EngineClient {
         }
         let store = try XCTUnwrap(acceptedStore)
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        func replace(_ snapshot: WireRowsSnapshot) async throws {
+            let reply = try EngineReply(envelope: .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: 1, data: snapshot), delivery: context)
+            await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
+        }
+        try await replace(rows(weekly: 66, secondWeekly: 22, sequence: 8))
+        for (id, value) in [("aaaaaaaaaaaaaaaa", "66%"), ("bbbbbbbbbbbbbbbb", "22%")] {
+            let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+            XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, value)
+        }
+        XCTAssertNotNil(timer.action)
+        wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+        elapsed = 50_000_000; timer.fire()
+        for id in ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"] {
+            let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+            XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, "--")
+        }
+        try await replace(rows(weekly: 55, secondWeekly: 11, sequence: 9, weeklyDeadline: "2029-12-01T00:00:00Z"))
+        for (id, value) in [("aaaaaaaaaaaaaaaa", "55%"), ("bbbbbbbbbbbbbbbb", "11%")] {
+            let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+            XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, value)
+        }
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertNil(try app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa", at: wall))
         XCTAssertNil(try app.composition.dock.cardContent(for: "bbbbbbbbbbbbbbbb", at: wall))
