@@ -500,6 +500,12 @@ def admission(binary, home, plan):
         with engine:
             hello = engine.initialize()
             require(hello['storeEpoch'] not in ('unavailable', 'u14-fixture-epoch'), 'admission-used-fake-consent-backend')
+            # Finish the startup read before changing the consent fence below.
+            # A successful completed capture remains authorized across later
+            # grants, but an in-flight operation must not cross that fence.
+            scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
+            native_transitions = _wait_native_capture(engine, case, status)
             external = cli(binary, case, ['consent', '--json'])
             require(external['storeEpoch'] == hello['storeEpoch'], 'independent-cli-not-sharing-store')
             facts = engine.request('consent/get')['result']['data']['scopes']
@@ -509,6 +515,7 @@ def admission(binary, home, plan):
                     'post-scope-admitted-before-consent')
             require(not any(item['provider'] in ('gemini', 'cursor') for item in _http_events(case)),
                     'post-request-before-consent')
+            post_transitions = {}
             for tool in ('gemini', 'cursor'):
                 fact = next(item for item in facts if item['scope'] == tool + '.account_usage.saved_login')
                 require(fact['state'] == 'unset' and fact['defaultCheck'] is False and
@@ -522,6 +529,9 @@ def admission(binary, home, plan):
                     cursor = next(item for item in engine.request('consent/get')['result']['data']['scopes']
                                   if item['scope'] == 'cursor.account_usage.saved_login')
                     require(cursor['state'] == 'unset', 'one-post-grant-enabled-other-scope')
+                scheduled = engine.request('refresh/request', {'scopes': [fact['scope']]})
+                require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'approved-post-refresh-deferred')
+                post_transitions[tool] = _wait_post_capture(engine, case, tool)
             local = engine.request('refresh/request', {'scopes': plan['localScopes']})
             require('error' not in local and len(local['result']['data']) == 2 and
                     all('disabledReason' not in item for item in local['result']['data']),
@@ -533,12 +543,8 @@ def admission(binary, home, plan):
                         tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
             require('error' not in remote and all(item.get('disabledReason') in (None, 'cooldown') for item in remote['result']['data']), 'approved-post-refresh-deferred')
-            post_transitions = {}
-            for tool in ('gemini', 'cursor'):
-                post_transitions[tool] = _wait_post_capture(engine, case, tool)
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
-            native_transitions = _wait_native_capture(engine, case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))
             requests_before = len([item for item in _http_events(case) if item['provider'] == 'minimax'])
