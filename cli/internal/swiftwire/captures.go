@@ -54,6 +54,16 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567"}}), nil
 	}
 
+	if t == reflect.TypeFor[wire.RefreshMember]() {
+		return reflect.ValueOf(wire.RefreshMember{RowID: "codex", Route: rows.RouteRuntimeRPC, SubscriptionRef: "0123456789abcdef"}), nil
+	}
+	if t == reflect.TypeFor[wire.RefreshRequestParams]() {
+		return reflect.ValueOf(wire.RefreshRequestParams{Member: &wire.RefreshMember{RowID: "codex", Route: rows.RouteRuntimeRPC, SubscriptionRef: "0123456789abcdef"}}), nil
+	}
+	if t == reflect.TypeFor[wire.MemberRefreshResult]() {
+		at, reason := now.Add(time.Minute), wire.MemberRefreshFloor
+		return reflect.ValueOf(wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred, NotBefore: &at, Reason: &reason}), nil
+	}
 	if t == reflect.TypeFor[rows.ModelScope]() {
 		return reflect.ValueOf(rows.ModelScope{Models: []string{"opus"}}), nil
 	}

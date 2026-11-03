@@ -260,3 +260,13 @@ read outcome codes with relative ages and scope names. It contains no quota
 values, account identifiers, paths, credentials, or raw error text, and is
 cleared with the app-server process. Omission means the capability was not
 negotiated; an empty array means no decisions have been recorded.
+
+`memberRefreshV1` adds the member form of `refresh/request` and the optional
+`refreshNotBefore` row and account properties. A member names the existing
+row, route, and account locator and/or verified subscription reference. The
+server resolves it under current consent and returns `started` or a bounded
+`deferred` reason; it never treats a client-supplied reference as a grant.
+An absent deadline means the member-refresh capability or live grant is absent;
+`null` means the grant exists but the deadline or account binding is unknown.
+A timestamp in the past means the reader is already due. Every request still
+rechecks the provider-wide floor, backoff, budget, and current consent.

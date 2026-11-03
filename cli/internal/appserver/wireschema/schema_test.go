@@ -328,3 +328,16 @@ func TestMemberRefreshRequestAndResultContract(t *testing.T) {
 	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred}); err == nil { t.Fatal("deferred result without reason accepted") }
 	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshStarted, Reason: &reason}); err == nil { t.Fatal("started result with reason accepted") }
 }
+
+func TestMemberRefreshGeneratedCapturesValidate(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok { t.Fatal("source path unavailable") }
+	root := filepath.Join(filepath.Dir(file), "../../../../schema/app-cli/captures")
+	for _, name := range []string{"RefreshMember", "RefreshRequestParams", "MemberRefreshResult"} {
+		raw, err := os.ReadFile(filepath.Join(root, "Wire"+name+".json"))
+		if err != nil { t.Fatal(err) }
+		var doc any
+		if err := json.Unmarshal(raw, &doc); err != nil { t.Fatal(err) }
+		if err := validate(t, schema(t, name), doc); err != nil { t.Fatalf("%s capture: %v", name, err) }
+	}
+}
