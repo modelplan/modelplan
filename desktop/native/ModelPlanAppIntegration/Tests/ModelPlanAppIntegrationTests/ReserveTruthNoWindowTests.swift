@@ -37,8 +37,8 @@ private actor ReserveJourneyClient: EngineClient {
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
-    private enum ProofMutation { case fallbackMember, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum ProofMutation { case fallbackMember, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -107,6 +107,7 @@ private actor ReserveJourneyClient: EngineClient {
             var altered = account["windows"] as! [[String: Any]]
             switch proofMutation {
             case .fallbackMember: account["subscriptionRef"] = NSNull()
+            case .duplicateFallback, .duplicateRef: break
             case .missingLatch: row["stateAfterExpiry"] = NSNull()
             case .nonStaleLatch: row["stateAfterExpiry"] = ["state": "needs_action", "reason": staleReason, "nextStep": refresh]
             case .missingReset: altered[0]["resetsAt"] = NSNull()
@@ -128,13 +129,23 @@ private actor ReserveJourneyClient: EngineClient {
             account["windows"] = altered
         }
         row["accounts"] = state == .revoked ? [] : [account]
-        if mixedTransition || deadlineOnlyMixed {
+        if mixedTransition || deadlineOnlyMixed || mixedOneRetained {
             var second = account
             second["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; second["freshUntil"] = "2028-12-01T00:00:00Z"
             var secondWindow = window
+            secondWindow["remainingPercent"] = 75.0
             secondWindow["validUntil"] = "2028-12-01T00:00:00Z"; secondWindow["resetsAt"] = "2028-12-01T00:00:00Z"
+            if mixedOneRetained {
+                second["valueState"] = "retained"; secondWindow["current"] = false
+                row["state"] = "stale"; row["reason"] = staleReason; row["nextStep"] = refresh
+            }
             second["windows"] = [secondWindow]
             row["accounts"] = [account, second]
+        }
+        if proofMutation == .duplicateFallback || proofMutation == .duplicateRef {
+            var first = account
+            if proofMutation == .duplicateFallback { first["subscriptionRef"] = NSNull() }
+            row["accounts"] = [first, first]
         }
         if isRevoked {
             row["consent"] = "denied"
@@ -311,20 +322,32 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(refreshedPair.deadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
         }
         if mixedTransition {
-            XCTAssertTrue(paired.verifiedWindows.isEmpty)
+            let firstProof = try XCTUnwrap(paired.verifiedWindows.first { $0.memberID == "aaaaaaaaaaaaaaaa" })
+            let secondProof = try XCTUnwrap(paired.verifiedWindows.first { $0.memberID == "bbbbbbbbbbbbbbbb" })
+            XCTAssertEqual(paired.verifiedWindows.count, 2)
+            XCTAssertEqual(firstProof.remainingPercent, 42.5); XCTAssertEqual(secondProof.remainingPercent, 75.0)
+            XCTAssertEqual(firstProof.windowID, "session:18000:main:main"); XCTAssertEqual(secondProof.windowID, firstProof.windowID)
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
                 snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
             }
             XCTAssertNotNil(reserveRow(content.snapshot, "aaaaaaaaaaaaaaaa"))
             XCTAssertNotNil(reserveRow(content.snapshot, "bbbbbbbbbbbbbbbb"))
             let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline))
-            let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            XCTAssertEqual(firstProof.until, firstDeadline); XCTAssertEqual(secondProof.until, firstDeadline)
+            XCTAssertFalse(firstProof.isValid(memberID: "bbbbbbbbbbbbbbbb", windowID: firstProof.windowID, at: now))
+            XCTAssertFalse(secondProof.isValid(memberID: "bbbbbbbbbbbbbbbb", windowID: secondProof.windowID, at: firstDeadline))
+            let heldPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            let held = heldPair.content
+            XCTAssertEqual(heldPair.verifiedWindows.count, 1)
+            XCTAssertEqual(heldPair.verifiedWindows.first?.memberID, "bbbbbbbbbbbbbbbb")
+            XCTAssertEqual(heldPair.verifiedWindows.first?.remainingPercent, 75.0)
             // Both remain admitted last-known readings; this does not classify
             // the freshness of each member's separate quota windows.
             XCTAssertEqual(reserveRow(held.snapshot, "aaaaaaaaaaaaaaaa")?.detail, "Last known reading")
             XCTAssertEqual(reserveRow(held.snapshot, "bbbbbbbbbbbbbbbb")?.detail, "Last known reading")
             let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
             XCTAssertLessThan(firstDeadline, secondDeadline)
+            XCTAssertEqual(heldPair.verifiedWindows.first?.until, secondDeadline)
 
             var refreshedAccount = account
             refreshedAccount["observedAt"] = "2027-12-20T00:00:00Z"; refreshedAccount["freshUntil"] = "2028-12-01T00:00:00Z"
@@ -333,18 +356,26 @@ private actor ReserveJourneyClient: EngineClient {
             refreshedWindow["resetsAt"] = "2028-12-01T00:00:00Z"
             refreshedAccount["windows"] = [refreshedWindow]
             var second = refreshedAccount; second["subscriptionRef"] = "bbbbbbbbbbbbbbbb"
+            var refreshedSecondWindow = refreshedWindow; refreshedSecondWindow["remainingPercent"] = 75.0
+            second["windows"] = [refreshedSecondWindow]
             row["accounts"] = [refreshedAccount, second]; row["expiresAt"] = "2028-12-01T00:00:00Z"
             projection["rows"] = [row]; root["projection"] = projection
             let refreshedRows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
             await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
                 consentGeneration: 1, data: refreshedRows), delivery: context), invalidRowCount: 0))
             let after = Date(timeIntervalSince1970: 1_830_000_000)
-            let refreshed = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let refreshedPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let refreshed = refreshedPair.content
+            XCTAssertEqual(refreshedPair.verifiedWindows.count, 2)
+            XCTAssertEqual(refreshedPair.verifiedWindows.first { $0.memberID == "aaaaaaaaaaaaaaaa" }?.remainingPercent, 42.5)
+            XCTAssertEqual(refreshedPair.verifiedWindows.first { $0.memberID == "bbbbbbbbbbbbbbbb" }?.remainingPercent, 75.0)
             XCTAssertNotNil(reserveRow(refreshed.snapshot, "aaaaaaaaaaaaaaaa"))
             XCTAssertNotNil(reserveRow(refreshed.snapshot, "bbbbbbbbbbbbbbbb"))
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
-            let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let clearedPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let cleared = clearedPair.content
+            XCTAssertTrue(clearedPair.verifiedWindows.isEmpty)
             XCTAssertNil(reserveRow(cleared.snapshot, "aaaaaaaaaaaaaaaa"))
             XCTAssertNil(reserveRow(cleared.snapshot, "bbbbbbbbbbbbbbbb"))
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
@@ -479,16 +510,37 @@ private actor ReserveJourneyClient: EngineClient {
         _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true)
     }
 
+    func testCurrentMemberProofDoesNotPromoteRetainedPeer() async throws {
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedOneRetained: true,
+            providerProbe: { provider, content, _ in
+                XCTAssertEqual(provider.verifiedWindows.count, 1)
+                XCTAssertEqual(provider.verifiedWindows.first?.memberID, "aaaaaaaaaaaaaaaa")
+                XCTAssertEqual(provider.verifiedWindows.first?.remainingPercent, 42.5)
+                XCTAssertFalse(provider.verifiedWindows.contains { $0.memberID == "bbbbbbbbbbbbbbbb" })
+                XCTAssertTrue(content.snapshot.subscriptions.allSatisfy { $0.source == .stale })
+            })
+    }
+
+    func testUnboundSingleMemberUsesOnlySnapshotScopedDisplayKey() async throws {
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: .fallbackMember,
+            providerProbe: { provider, content, _ in
+                XCTAssertNil(provider.source.dockContent.dockRows.first?.accounts.first?.subscriptionRef)
+                XCTAssertEqual(provider.verifiedWindows.count, 1)
+                XCTAssertEqual(provider.verifiedWindows.first?.memberID, "codex#saved_login_api")
+                XCTAssertEqual(content.snapshot.inputs.first?.id, "codex#saved_login_api")
+            })
+    }
+
     func testOneSubscriptionMultipleWindowsDeadlineAndRefresh() async throws {
         _ = try await projection(balance: 12.5, unit: "credits", english: true, multiWindowTransition: true)
     }
 
     func testWindowProofRejectsAmbiguousIdentityAndNoncanonicalFacts() async throws {
         // These mutations are defensive noncanonical wire inputs, not claims
-        // about an observed user account or a producer output. A null reset is
-        // separately covered because it is legal, although currently withheld.
+        // about an observed user account or a producer output. A legal null
+        // reset is separately covered under the strict decoder contract.
         let earlierReset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        for mutation in [ProofMutation.fallbackMember, .malformedReset, .mismatchReset,
+        for mutation in [ProofMutation.duplicateFallback, .duplicateRef, .malformedReset, .mismatchReset,
                          .missingValidUntil, .malformedValidUntil, .futureAccountObservation,
                          .malformedAccountObservation, .futureWindowObservation, .malformedWindowObservation,
                          .duplicateWindowID] {
