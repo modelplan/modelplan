@@ -415,12 +415,14 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
     path = Path(home) / path
     deadline = time.monotonic() + 45
     transitions = []
+    all_fixed = []
     while time.monotonic() < deadline:
         reply = engine.request('diagnostics/get')
         if 'error' not in reply:
             decisions = reply['result']['data'].get('refreshDecisions')
             require(isinstance(decisions, list), 'scheduler-decisions-unavailable')
             relevant = [item for item in decisions if item.get('scope') == scope]
+            all_fixed = [item['scope'] + '/' + item['outcome'] + '/' + item['reason'] for item in decisions]
             transitions = [{'outcome': item['outcome'], 'reason': item['reason']} for item in relevant]
             terminal = [item for item in relevant if item['outcome'] in ('succeeded', 'failed')]
             if terminal and path.exists():
@@ -432,7 +434,7 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
                 # agree, or the bounded operation deadline expires.
         time.sleep(.5)
     fixed = ','.join(item['outcome'] + '/' + item['reason'] for item in transitions[-10:])
-    require(False, error_code + (':' + fixed if fixed else ':no_scheduler_outcome'))
+    require(False, error_code + (':' + fixed if fixed else ':no_scheduler_outcome:' + ','.join(all_fixed[-20:])))
 
 
 def _wait_native_capture(engine, home, status):
@@ -495,7 +497,10 @@ def admission(binary, home, plan):
         cli(binary, case, ['consent', 'init', '--json'])
         cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=plan['localScopes']))
         engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
-        engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
+        # Establish separate grants without scheduling reads under an interim fence.
+        # Passive mode still permits explicitly keyed routes, so the synthetic
+        # key is provided only to the subsequent normal session.
+        engine.environment['MODELPLAN_READERS'] = 'passive'
         engine.capabilities.append('refreshDecisionsV1')
         with engine:
             hello = engine.initialize()
@@ -509,6 +514,7 @@ def admission(binary, home, plan):
                     'post-scope-admitted-before-consent')
             require(not any(item['provider'] in ('gemini', 'cursor') for item in _http_events(case)),
                     'post-request-before-consent')
+            post_transitions = {}
             for tool in ('gemini', 'cursor'):
                 fact = next(item for item in facts if item['scope'] == tool + '.account_usage.saved_login')
                 require(fact['state'] == 'unset' and fact['defaultCheck'] is False and
@@ -522,6 +528,23 @@ def admission(binary, home, plan):
                     cursor = next(item for item in engine.request('consent/get')['result']['data']['scopes']
                                   if item['scope'] == 'cursor.account_usage.saved_login')
                     require(cursor['state'] == 'unset', 'one-post-grant-enabled-other-scope')
+            engine.shutdown()
+            require(all(canary not in str(engine.messages) for canary in (*canaries, 'U14-SYNTHETIC-MINIMAX-KEY')), 'synthetic-credential-reflected')
+            messages.extend(engine.messages)
+        # A new normal client session triggers startup scheduling against the
+        # final consent fence, just as the App's wake/restart path does.
+        engine = EngineProcess(binary, case, 'u14-admission-live-' + str(status))
+        engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
+        engine.capabilities.append('refreshDecisionsV1')
+        with engine:
+            live_hello = engine.initialize()
+            require(live_hello['storeEpoch'] == hello['storeEpoch'], 'session-consent-store-changed')
+            scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
+            require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
+            native_transitions = _wait_native_capture(engine, case, status)
+            remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
+            require('error' not in remote and all(item.get('disabledReason') in (None, 'cooldown') for item in remote['result']['data']), 'approved-post-refresh-deferred')
+            post_transitions = {tool: _wait_post_capture(engine, case, tool) for tool in ('gemini', 'cursor')}
             local = engine.request('refresh/request', {'scopes': plan['localScopes']})
             require('error' not in local and len(local['result']['data']) == 2 and
                     all('disabledReason' not in item for item in local['result']['data']),
@@ -533,12 +556,8 @@ def admission(binary, home, plan):
                         tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
             require('error' not in remote and all(item.get('disabledReason') in (None, 'cooldown') for item in remote['result']['data']), 'approved-post-refresh-deferred')
-            post_transitions = {}
-            for tool in ('gemini', 'cursor'):
-                post_transitions[tool] = _wait_post_capture(engine, case, tool)
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
-            native_transitions = _wait_native_capture(engine, case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))
             requests_before = len([item for item in _http_events(case) if item['provider'] == 'minimax'])

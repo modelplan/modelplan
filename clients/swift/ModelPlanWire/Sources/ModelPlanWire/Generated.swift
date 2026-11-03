@@ -1428,7 +1428,8 @@ public struct RowsWindow: Codable, Sendable {
         self.`poolKey` = try c.decode(String.self, forKey: .`poolKey`)
         self.`resetMode` = try c.decode(RowsResetMode.self, forKey: .`resetMode`)
         self.`remainingPercent` = try? c.decodeIfPresent(Double.self, forKey: .`remainingPercent`)
-        self.`resetsAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`resetsAt`)
+        do { self.`resetsAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`resetsAt`) }
+        catch { throw WireDecodeError.invalidBound }
         self.`observedAt` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`observedAt`)
         self.`current` = try c.decode(Bool.self, forKey: .`current`)
         self.`validUntil` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`validUntil`)
