@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+import OSLog
 import ModelPlanWire
 
 public enum CockpitBridgeError: Error {
@@ -32,8 +33,13 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int = 25) {
-    self.redBelow = [10, 16, 20, 25].contains(redBelow) ? redBelow : 25
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil) {
+    if let redBelow, [10, 16, 20, 25].contains(redBelow) {
+      self.redBelow = redBelow
+    } else {
+      self.redBelow = 25
+      Logger(subsystem: "org.modelplan.community", category: "cockpit").warning("Missing or invalid cockpit alert threshold; using default")
+    }
     self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency; self.shutterClosed = shutterClosed; self.detached = detached
     self.theme = theme
     self.locale = locale
