@@ -111,6 +111,30 @@ final class HelpCatalogTests: XCTestCase {
         XCTAssertFalse(en.explanation(.nativeSetting).body.contains("browser"))
     }
 
+    func testQuotaWidgetHelpUsesTheDecidedSurfaceNameInEachLanguage() {
+        for language in [InstrumentLanguage.chinese, .english] {
+            let name = language == .chinese ? "额度挂件" : "Quota Widget"
+            let catalog = HelpCatalog(language)
+            let map = HelpMapCatalog(language)
+            for topic in [HelpTopic.sliver, .dockMove, .nozzle] {
+                let explanation = catalog.explanation(topic)
+                let copy = explanation.title + " " + explanation.body
+                XCTAssertTrue(copy.contains(name))
+                XCTAssertFalse(copy.contains(language == .chinese ? "Quota Widget" : "额度挂件"))
+            }
+            for region in [HelpMapRegion.dockMove, .sliver] {
+                XCTAssertTrue(map.sentence(region).contains(name))
+            }
+            let explanations = HelpTopic.allCases.map { catalog.explanation($0) }
+            let allCopy = explanations.flatMap { [$0.title, $0.body] }
+                + (map.entries(for: .cockpit) + map.entries(for: .dock)).map(\.sentence)
+            for copy in allCopy {
+                XCTAssertNil(copy.range(of: #"\bDock\b"#, options: [.regularExpression, .caseInsensitive]))
+                XCTAssertNil(copy.range(of: #"(?<!额度)挂件"#, options: .regularExpression))
+            }
+        }
+    }
+
     func testMapDirectoryHasEveryReferenceRegionInStableSurfaceOrder() {
         let map = HelpMapCatalog(.chinese)
         let cockpit = map.entries(for: .cockpit), dock = map.entries(for: .dock)
