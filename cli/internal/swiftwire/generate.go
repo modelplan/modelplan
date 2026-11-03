@@ -562,6 +562,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	fmt.Fprintln(b, "    }")
 	if d.Swift == "RowsRow" {
 		fmt.Fprintln(b, `    fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.refreshNotBefore = nil
         self.id = invalidID
         self.kind = .unknown("invalid_row")
         self.order = invalidOrder

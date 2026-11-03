@@ -35,7 +35,7 @@ type SharedBackend struct {
 	once    sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
-	CredentialSink CredentialReceiver
+	CredentialSink  CredentialReceiver
 	RefreshDeadline func(string) (time.Time, bool, bool)
 }
 
@@ -245,7 +245,9 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		diagnostics = append(diagnostics, diag)
 	}
-	if !changed { b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now) }
+	if !changed {
+		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
+	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
 		if fact.CleanupPending {

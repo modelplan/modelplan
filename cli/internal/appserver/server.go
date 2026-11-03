@@ -22,12 +22,12 @@ import (
 // The core reserves query result space before calling a handler. Private output
 // must carry the admission stamp/scopes; a stale result becomes consent_changed.
 type Handler struct {
-	Timeout    time.Duration
-	Capability string
+	Timeout           time.Duration
+	Capability        string
 	ExtraCapabilities []string
-	Query      bool
-	Private    bool
-	Handle     func(context.Context, json.RawMessage, Stamp) (Reply, error)
+	Query             bool
+	Private           bool
+	Handle            func(context.Context, json.RawMessage, Stamp) (Reply, error)
 }
 
 type Reply struct {

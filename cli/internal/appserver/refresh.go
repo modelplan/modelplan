@@ -90,15 +90,21 @@ func (s *RefreshScheduler) Close() {
 // operation without a future bound is unknown and must not be presented as due.
 func (s *RefreshScheduler) PendingDeadline(scope string) (time.Time, bool, bool) {
 	definition, ok := consent.Definition(scope)
-	if !ok { return time.Time{}, false, false }
+	if !ok {
+		return time.Time{}, false, false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
 	if until, pending := s.pending[definition.Tool]; pending {
-		if !until.After(now) { return time.Time{}, true, false }
+		if !until.After(now) {
+			return time.Time{}, true, false
+		}
 		return until.UTC(), true, true
 	}
-	if until := s.autoNext[definition.Tool]; until.After(now) { return until.UTC(), true, true }
+	if until := s.autoNext[definition.Tool]; until.After(now) {
+		return until.UTC(), true, true
+	}
 	return time.Time{}, false, false
 }
 
@@ -118,11 +124,19 @@ func (s *RefreshScheduler) Handler() Handler {
 			return Reply{}, ProtocolError{wire.CodeInvalidParams}
 		}
 		var fields map[string]json.RawMessage
-		if len(raw) > 0 { if err := json.Unmarshal(raw, &fields); err != nil { return Reply{}, ProtocolError{wire.CodeInvalidParams} } }
-		if member, present := fields["member"]; present && bytes.Equal(bytes.TrimSpace(member), []byte("null")) { return Reply{}, ProtocolError{wire.CodeInvalidParams} }
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &fields); err != nil {
+				return Reply{}, ProtocolError{wire.CodeInvalidParams}
+			}
+		}
+		if member, present := fields["member"]; present && bytes.Equal(bytes.TrimSpace(member), []byte("null")) {
+			return Reply{}, ProtocolError{wire.CodeInvalidParams}
+		}
 		if p.Member != nil {
 			_, hasScopes := fields["scopes"]
-			if !MemberRefreshEnabled(ctx) || hasScopes { return Reply{}, ProtocolError{wire.CodeInvalidParams} }
+			if !MemberRefreshEnabled(ctx) || hasScopes {
+				return Reply{}, ProtocolError{wire.CodeInvalidParams}
+			}
 			result, stamp, err := s.RequestMember(ctx, *p.Member)
 			return Reply{Stamp: stamp, Data: result, Receipt: true}, err
 		}
@@ -228,7 +242,9 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 		}
 		result = append(result, scheduled)
 	}
-	if enqueued && s.config.Changed != nil { s.config.Changed() }
+	if enqueued && s.config.Changed != nil {
+		s.config.Changed()
+	}
 	return result, stamp, nil
 }
 func stampOfFence(f consent.Fence) Stamp { return Stamp{Epoch: f.StoreEpoch, Generation: f.Generation} }
@@ -334,13 +350,21 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	paths := s.safePaths(rawPaths)
 	if job.member != nil {
 		definition, ok := consent.Definition(job.scope)
-		if !ok { return }
+		if !ok {
+			return
+		}
 		view, err := s.config.Backend.Get(s.ctx)
-		if err != nil || view.Stamp != job.stamp { return }
+		if err != nil || view.Stamp != job.stamp {
+			return
+		}
 		matches, routeMembers := matchingMemberCount(view, *job.member)
-		if matches != 1 || (!quota.MemberProfilesAreScoped(definition.Tool) && routeMembers != 1) || liveMemberScope(job.member.RowID, job.member.Route, admission.State(), admission.Mode(), view.Scopes) != job.scope { return }
+		if matches != 1 || (!quota.MemberProfilesAreScoped(definition.Tool) && routeMembers != 1) || liveMemberScope(job.member.RowID, job.member.Route, admission.State(), admission.Mode(), view.Scopes) != job.scope {
+			return
+		}
 		paths, ok = quota.NarrowMemberPaths(paths, definition.Tool, job.member.AccountLocator, job.member.SubscriptionRef)
-		if !ok { return }
+		if !ok {
+			return
+		}
 	}
 	plan, err := s.plan(paths, job.scope, s.now())
 	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending {
@@ -397,7 +421,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		s.mu.Lock()
 		s.autoNext[job.key] = started.Add(wait)
 		s.autoReason[job.key] = wire.MemberRefreshFloor
-		if err != nil || outcome == refreshFailed { s.autoReason[job.key] = wire.MemberRefreshBackoff }
+		if err != nil || outcome == refreshFailed {
+			s.autoReason[job.key] = wire.MemberRefreshBackoff
+		}
 		s.mu.Unlock()
 	}
 }

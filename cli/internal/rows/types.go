@@ -30,7 +30,7 @@ type NextStep struct {
 }
 
 type Row struct {
-	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	RefreshNotBefore **time.Time  `json:"refreshNotBefore,omitempty" null:"coalesced"`
 	ID               string       `json:"id"`
 	Kind             Kind         `json:"kind"`
 	Order            int          `json:"order"`
@@ -55,17 +55,17 @@ type ExpiryState struct {
 
 type Account struct {
 	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
-	Route           Route      `json:"route"`
-	SubscriptionRef *string    `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator  *string    `json:"accountLocator" null:"coalesced"`
-	Plan            Plan       `json:"plan"`
-	Beta            bool       `json:"beta"`
-	Credits         *Credits   `json:"credits" null:"coalesced"`
-	ValueState      ValueState `json:"valueState"`
-	ObservedAt      *time.Time `json:"observedAt" null:"coalesced"`
-	FreshUntil      *time.Time `json:"freshUntil" null:"coalesced"`
-	LastFailure     *Failure   `json:"lastFailure" null:"coalesced"`
-	Windows         []Window   `json:"windows"`
+	Route            Route       `json:"route"`
+	SubscriptionRef  *string     `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string     `json:"accountLocator" null:"coalesced"`
+	Plan             Plan        `json:"plan"`
+	Beta             bool        `json:"beta"`
+	Credits          *Credits    `json:"credits" null:"coalesced"`
+	ValueState       ValueState  `json:"valueState"`
+	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time  `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure    `json:"lastFailure" null:"coalesced"`
+	Windows          []Window    `json:"windows"`
 }
 
 type Plan struct {

@@ -788,15 +788,27 @@ func TestNarrowMemberPathsUsesExistingProfileLocator(t *testing.T) {
 	p := claudeTestPaths(t)
 	status, paths := http.StatusOK, []string{}
 	claudeTestServer(t, &status, &paths)
-	if err := refreshManaged(context.Background(), p, "claude", claudeTestNow); err != nil { t.Fatal(err) }
+	if err := refreshManaged(context.Background(), p, "claude", claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
 	state, err := loadReaderState(p.Cache, "claude")
-	if err != nil || len(state.Entries) != 1 { t.Fatal("missing profile") }
+	if err != nil || len(state.Entries) != 1 {
+		t.Fatal("missing profile")
+	}
 	locator := readerProfileLocator(p.Cache, "claude", state.Entries[0].ProfileKey)
-	if locator == "" { t.Fatal("missing locator") }
+	if locator == "" {
+		t.Fatal("missing locator")
+	}
 	narrowed, ok := NarrowMemberPaths(p, "claude", locator, "")
-	if !ok || len(narrowed.ReaderAccess.Grants["claude"].Profiles) != 1 { t.Fatal("matching profile not selected") }
-	if _, ok := NarrowMemberPaths(p, "claude", "0123456789abcdef", ""); ok { t.Fatal("unknown profile selected") }
-	if _, ok := NarrowMemberPaths(p, "claude", "", ""); ok { t.Fatal("unbound profile selected") }
+	if !ok || len(narrowed.ReaderAccess.Grants["claude"].Profiles) != 1 {
+		t.Fatal("matching profile not selected")
+	}
+	if _, ok := NarrowMemberPaths(p, "claude", "0123456789abcdef", ""); ok {
+		t.Fatal("unknown profile selected")
+	}
+	if _, ok := NarrowMemberPaths(p, "claude", "", ""); ok {
+		t.Fatal("unbound profile selected")
+	}
 }
 
 func TestNarrowMemberPathsSelectsExactlyOneOfMultipleProfiles(t *testing.T) {
@@ -809,50 +821,75 @@ func TestNarrowMemberPathsSelectsExactlyOneOfMultipleProfiles(t *testing.T) {
 	for _, profile := range grant.Profiles {
 		key := readerHash(p.Cache, "claude:profile", profile.Root+"\x00"+profile.AccountFile)
 		ref := assignSubscription(p.Cache, readerProfileBasis("claude"), key, claudeTestNow)
-		if key == "" || ref == "" { t.Fatal("failed to seed bound profile") }
+		if key == "" || ref == "" {
+			t.Fatal("failed to seed bound profile")
+		}
 		locators = append(locators, ref)
 		state.Entries = append(state.Entries, readerEntry{ProfileKey: key})
 	}
-	if err := saveReaderState(p.Cache, state); err != nil { t.Fatal(err) }
+	if err := saveReaderState(p.Cache, state); err != nil {
+		t.Fatal(err)
+	}
 	for i, ref := range locators {
 		selected, ok := NarrowMemberPaths(p, "claude", ref, "")
-		if !ok || len(selected.ReaderAccess.Grants["claude"].Profiles) != 1 || selected.ReaderAccess.Grants["claude"].Profiles[0].Root != grant.Profiles[i].Root { t.Fatalf("wrong profile for member %d", i) }
+		if !ok || len(selected.ReaderAccess.Grants["claude"].Profiles) != 1 || selected.ReaderAccess.Grants["claude"].Profiles[0].Root != grant.Profiles[i].Root {
+			t.Fatalf("wrong profile for member %d", i)
+		}
 	}
-	if len(p.ReaderAccess.Grants["claude"].Profiles) != 2 { t.Fatal("narrowing mutated the shared grant") }
+	if len(p.ReaderAccess.Grants["claude"].Profiles) != 2 {
+		t.Fatal("narrowing mutated the shared grant")
+	}
 }
-
 
 func TestManagedReaderWindowProvenanceThroughCacheAndWire(t *testing.T) {
 	p := claudeTestPaths(t)
 	status, paths := http.StatusOK, []string{}
 	claudeTestServer(t, &status, &paths)
-	if err := refreshManaged(context.Background(), p, "claude", claudeTestNow); err != nil { t.Fatal(err) }
+	if err := refreshManaged(context.Background(), p, "claude", claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
 	in := rows.Input{Now: claudeTestNow, ConsentGeneration: 1,
 		Catalogue: []rows.CatalogueEntry{{ToolID: "claude", Detected: true, ReaderExists: true}},
-		Consents: []rows.ConsentRecord{{ToolID: "claude", Generation: 1, State: rows.ConsentAllowed}}}
+		Consents:  []rows.ConsentRecord{{ToolID: "claude", Generation: 1, State: rows.ConsentAllowed}}}
 	AppendManagedRows(&in, p)
-	if len(in.Accounts) != 1 { t.Fatal("managed account missing") }
-	if in.Accounts[0].Route != rows.RouteSavedLoginAPI { t.Fatal("managed account route missing") }
+	if len(in.Accounts) != 1 {
+		t.Fatal("managed account missing")
+	}
+	if in.Accounts[0].Route != rows.RouteSavedLoginAPI {
+		t.Fatal("managed account route missing")
+	}
 	projection := rows.Build(in)
 	exposed := wire.ProjectWithEvents(projection, nil, false, true)
 	legacy := wire.ProjectWithEvents(projection, nil, false)
 	count := 0
-	for i, row := range exposed.Rows { for j, account := range row.Accounts { for k, window := range account.Windows {
-		count++
-		if window.Source == nil || *window.Source != rows.WindowSourceSavedLogin || window.ObservedAt == nil || !window.ObservedAt.Equal(claudeTestNow) { t.Fatalf("managed window provenance lost: %+v", window) }
-		if legacy.Rows[i].Accounts[j].Windows[k].Source != nil { t.Fatal("legacy client received source") }
-	} } }
-	if count == 0 { t.Fatal("no managed windows") }
+	for i, row := range exposed.Rows {
+		for j, account := range row.Accounts {
+			for k, window := range account.Windows {
+				count++
+				if window.Source == nil || *window.Source != rows.WindowSourceSavedLogin || window.ObservedAt == nil || !window.ObservedAt.Equal(claudeTestNow) {
+					t.Fatalf("managed window provenance lost: %+v", window)
+				}
+				if legacy.Rows[i].Accounts[j].Windows[k].Source != nil {
+					t.Fatal("legacy client received source")
+				}
+			}
+		}
+	}
+	if count == 0 {
+		t.Fatal("no managed windows")
+	}
 }
 
 func TestAllManagedReaderWindowSourcesAndObservationTimes(t *testing.T) {
 	for _, provider := range []string{"claude", "cursor", "gemini", "grok", "kimi"} {
 		t.Run(provider, func(t *testing.T) {
-			observed := claudeTestNow.Add(-7*time.Minute)
+			observed := claudeTestNow.Add(-7 * time.Minute)
 			used := 30.0
-			account := &Account{Source: "native:"+provider, ObservedAt: claudeTestNow, Windows: []Window{{Kind: "weekly", ScopeKnown: true, UsedPercent: &used, ObservedAt: observed}}}
+			account := &Account{Source: "native:" + provider, ObservedAt: claudeTestNow, Windows: []Window{{Kind: "weekly", ScopeKnown: true, UsedPercent: &used, ObservedAt: observed}}}
 			converted := managedRowsAccount(provider, "synthetic", account, "", claudeTestNow, true)
-			if converted.Route != rows.RouteSavedLoginAPI || len(converted.Windows) != 1 || converted.Windows[0].Source != rows.WindowSourceSavedLogin || converted.Windows[0].ObservedAt == nil || !converted.Windows[0].ObservedAt.Equal(observed) { t.Fatalf("provider provenance changed: %+v", converted.Windows) }
+			if converted.Route != rows.RouteSavedLoginAPI || len(converted.Windows) != 1 || converted.Windows[0].Source != rows.WindowSourceSavedLogin || converted.Windows[0].ObservedAt == nil || !converted.Windows[0].ObservedAt.Equal(observed) {
+				t.Fatalf("provider provenance changed: %+v", converted.Windows)
+			}
 		})
 	}
 }
