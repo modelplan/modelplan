@@ -4,6 +4,12 @@
 // An entry is [budgetClass, zh-CN, en]; {name} in a string is replaced from vars. Synthetic study.
 
 export const LANGS = ['zh-CN', 'en'];
+const creditFormats = Object.fromEntries(LANGS.map(locale => [locale, new Intl.NumberFormat(locale, {maximumFractionDigits: 0})]));
+export function formatCredits(value, locale) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--';
+  if (value > 0 && value < 1) return '<1';
+  return (creditFormats[locale] || creditFormats.en).format(value);
+}
 const pluralRules = Object.fromEntries(LANGS.map(locale => [locale, new Intl.PluralRules(locale)]));
 export const tables = {'zh-CN': {}, en: {}};
 export const classOf = {}; // key -> budget class
