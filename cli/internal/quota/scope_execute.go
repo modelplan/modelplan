@@ -36,8 +36,12 @@ func ExecuteScopeRefresh(ctx context.Context, p Paths, scope string, now time.Ti
 				return errors.New("reader consent changed")
 			}
 			_, status := readCodex(p.CodexHome, p.CodexThread)
-			if err := ctx.Err(); err != nil { return err }
-			if status.Status != "ok" { return errors.New("local history unavailable") }
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if status.Status != "ok" {
+				return errors.New("local history unavailable")
+			}
 			return nil
 		}
 		home, _ := os.UserHomeDir()
