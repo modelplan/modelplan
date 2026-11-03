@@ -3,11 +3,13 @@ import AppKit
 import CryptoKit
 
 @MainActor private final class DockCardButton:NSButton {
-    var invoke:(()->Void)?
+    var invoke:(()->Void)?,focusChanged:(()->Void)?
+    override func becomeFirstResponder()->Bool { let accepted=super.becomeFirstResponder();if accepted{focusChanged?()};return accepted }
+    override func resignFirstResponder()->Bool { let accepted=super.resignFirstResponder();if accepted{focusChanged?()};return accepted }
     init(_ title:String,_ invoke:@escaping ()->Void){super.init(frame:.zero);self.title=title;self.invoke=invoke;bezelStyle = .rounded;target=self;action=#selector(pressed)}
     required init?(coder:NSCoder){fatalError()}
     @objc private func pressed(){invoke?()}
-    func retire(){invoke=nil;isEnabled=false;target=nil;action=nil}
+    func retire(){invoke=nil;focusChanged=nil;isEnabled=false;target=nil;action=nil}
 }
 /// Neutral complete card; official geometry/material/font/brand image is an injected appearance input.
 @MainActor public struct DockCardStyle {
@@ -35,10 +37,11 @@ import CryptoKit
     }
 }
 @MainActor public final class DockCardView:NSView {
-    public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
+    public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?,onPin:(()->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
+    public var onFocusChange:(()->Void)?
     private let stack=NSStackView();private var edges=[NSLayoutConstraint]()
-    private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle()
+    private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle(),lastPinned:Bool?
     private var labels=[String:NSTextField](),buttons=[String:DockCardButton]()
     private var groups=[String:NSStackView](),bars=[String:DockCardBar]()
     public override init(frame:NSRect){
@@ -60,10 +63,14 @@ import CryptoKit
             }else{parent.insertArrangedSubview(child,at:index)}
         }
     }
-    public func apply(_ value:DockCardContent,pinned:Bool,style:DockCardStyle? = nil,brandImage:NSImage?=nil)throws{
+    public func apply(_ value:DockCardContent,pinned:Bool,style:DockCardStyle? = nil,brandImage:NSImage?=nil,pinAccessibilityHelp:String?=nil,enterDisabledReason:String?=nil)throws{
         let replacing=content?.subscriptionID != value.subscriptionID
         generation &+= 1;content=nil
-        if replacing{clear()}
+        if replacing { clear() }
+        else if let lastPinned, lastPinned != pinned {
+            for key in ["enter", "close", "pin"] { buttons.removeValue(forKey:key)?.retire() }
+        }
+        lastPinned = pinned
         let style=style ?? DockCardStyle()
         do{
             try value.validate()
@@ -84,7 +91,7 @@ import CryptoKit
         }
         func button(_ id:String,_ title:String,_ invoke:@escaping ()->Void)->DockCardButton{
             usedButtons.insert(id);let b=buttons[id] ?? DockCardButton(title,invoke);buttons[id]=b
-            b.title=title;b.invoke=invoke;b.setAccessibilityIdentifier("dock.card."+id);return b
+            b.title=title;b.invoke=invoke;b.focusChanged={ [weak self] in self?.onFocusChange?() };b.setAccessibilityIdentifier("dock.card."+id);return b
         }
         let head=group("head");var heading=[NSView]()
         if let brandImage{
@@ -116,17 +123,17 @@ import CryptoKit
                 guard let self,self.current(value,token:token) else{return};self.onOpenURL?(link.url)
             })
         }
-        if pinned{
-            let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
-            let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
-            let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
-        }
+        let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
+        enter.isEnabled = enterDisabledReason == nil;enter.setAccessibilityHelp(enterDisabledReason)
+        let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
+        let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
+        setAccessibilityRole(.group);setAccessibilityLabel(value.name);setAccessibilityHelp(pinAccessibilityHelp)
         arrange(stack,children)
         for id in Array(buttons.keys) where !usedButtons.contains(id){buttons.removeValue(forKey:id)?.retire()}
         for id in Array(bars.keys) where !usedBars.contains(id){bars.removeValue(forKey:id)?.setAccessibilityElement(false)}
         labels=labels.filter{usedLabels.contains($0.key)};groups=groups.filter{usedGroups.contains($0.key)}
         frame.size=CGSize(width:style.width,height:max(40,stack.fittingSize.height+2*style.padding))
-        setAccessibilityElement(false);needsDisplay=true
+        setAccessibilityElement(true);needsDisplay=true
     }
     private func current(_ value:DockCardContent,token:UInt64)->Bool{
         guard !isHiddenOrHasHiddenAncestor,generation==token,content==value,permitsAction?(value.subscriptionID,value.revision) ?? true else{return false}
@@ -136,6 +143,17 @@ import CryptoKit
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         arrange(stack,[]);buttons.removeAll();bars.removeAll();labels.removeAll();groups.removeAll()
     }
+    /// Preserve button/link handling; clicking the card body explicitly pins it.
+    public override func hitTest(_ point:NSPoint)->NSView? {
+        guard let hit=super.hitTest(point) else{return nil}
+        return hit is NSButton ? hit:self
+    }
+    private func pinFromCard()->Bool {
+        guard lastPinned == false,let content,current(content,token:generation),let onPin else{return false}
+        onPin();return true
+    }
+    public override func mouseDown(with event:NSEvent){_ = pinFromCard()}
+    public override func accessibilityPerformPress()->Bool{pinFromCard()}
     public override func draw(_ dirtyRect:NSRect){style.background.setFill();bounds.fill()}
-    public func dispose(){generation &+= 1;clear();onEnter=nil;onDismiss=nil;onOpenURL=nil;permitsAction=nil}
+    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);lastPinned=nil;onEnter=nil;onDismiss=nil;onOpenURL=nil;onPin=nil;onFocusChange=nil;permitsAction=nil}
 }

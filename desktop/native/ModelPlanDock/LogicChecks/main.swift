@@ -455,8 +455,8 @@ do {
         try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.25)
         try expect(card.visibility == .hover("a"),"entry deadline shows scoped card")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:1)
-        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"auto-hide Dock owns500ms corridor decision, no competing card leave timer")
-        try card.click("a",at:1);try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
+        try expect(card.visibility == .hover("a") && card.nextDeadline==1.25,"card owns its bounded leave grace even with an expanded widget")
+        try card.click("a",at:1);try card.setPinned(true,id:"a",at:1.01);try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
         try expect(card.visibility == .pinned("a"),"cockpit suppression does not unpin")
         try card.step(catalogue:["b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:21)
         try expect(card.visibility == .hidden,"removed subscription cannot retain a card")
@@ -471,8 +471,9 @@ do {
         try expect(card.nextDeadline==6.25,"standalone retains existing250ms leave grace")
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.25)
         try expect(card.visibility == .hidden,"standalone leave hides")
-        try card.click("a",at:7);try card.click("a",at:8)
-        try expect(card.visibility == .hidden,"same pinned click toggles closed")
+        try card.click("a",at:7);try card.setPinned(true,id:"a",at:8)
+        try expect(card.visibility == .pinned("a"),"only an explicit pin fixes the card")
+        card.dismiss();try expect(card.visibility == .hidden,"dismiss closes a pinned card")
         try rejects(.invalidTime){try card.click("a",at:7)}
     }
     try test("B08 nozzle:along threshold,canonical preview,RM and single host order request"){

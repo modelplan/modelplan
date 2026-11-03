@@ -31,6 +31,9 @@ import ModelPlanMenuVerification
     private var activityPaused = false
     private(set) var lifecyclePaused = false
     private var accessibilityObserver: NSObjectProtocol?
+    private var showSettingsObserver: UUID?
+    private var showRequestInFlight = false
+    private var showFeedback: ShowQuotaWidgetOutcome?
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
     #endif
@@ -68,6 +71,10 @@ import ModelPlanMenuVerification
         var environment = SettingsEnvironment(); environment.v1NormalEntry = true
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.applySettings($0) }
         super.init()
+        showSettingsObserver = settings.editor.observeChanges { [weak self] in
+            guard let self, !self.terminating, self.liveStatusMenu != nil else { return }
+            self.renderMenu()
+        }
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
         // M0's host opts in only when the native interaction port exists.
         if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
@@ -306,14 +313,23 @@ import ModelPlanMenuVerification
         }
         let menu = component.menu
         let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
-        let detail = lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail
+        let detail = showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
+        let showAvailability = ShowQuotaWidgetRequest.availability(paused: lifecyclePaused || terminating,
+            loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
+        let showTitle: String
+        switch showAvailability {
+        case .loading: showTitle = label("Show Quota Widget — Loading Settings", "显示额度挂件 — 正在载入设置")
+        case .saving: showTitle = label("Show Quota Widget — Saving Settings", "显示额度挂件 — 正在保存设置")
+        case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
+        }
         component.replace(with: [
             .init(title: detail),
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
+            .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
@@ -334,8 +350,9 @@ import ModelPlanMenuVerification
             noticeIndicator.autoresizingMask = [.minXMargin, .minYMargin]
             if noticeIndicator.superview !== button { button.addSubview(noticeIndicator) }
         }
-        status?.button?.title = composition.menuPresentation.title
+        status?.button?.title = composition.menuPresentation.title + (showFeedback == nil ? "" : " !")
         status?.button?.toolTip = detail
+        status?.button?.setAccessibilityHelp(detail)
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif
@@ -354,7 +371,30 @@ import ModelPlanMenuVerification
     public func menuWillOpen(_ menu: NSMenu) {
         let language = composition.latestSettings?.effective.language ?? .english
         let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
-        menu.items.first?.title = lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail
+        menu.items.first?.title = showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
+    }
+    private func showFeedbackText(_ language: SettingsLanguage) -> String? {
+        switch showFeedback {
+        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择显示额度挂件。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not show Quota Widget. Check Settings and try again.", "无法显示额度挂件，请检查设置后重试。").value(language)
+        case .ready, nil: return nil
+        }
+    }
+    private func showDock() {
+        guard ShowQuotaWidgetRequest.availability(paused: terminating || lifecyclePaused,
+                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready,
+              let revision = settings.editor.snapshot?.revision else { return }
+        showRequestInFlight = true; showFeedback = nil; renderMenu()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor, expectedRevision: revision)
+            self.showRequestInFlight = false
+            guard !self.terminating else { return }
+            let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
+            self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
+            if currentOutcome == .ready && !self.lifecyclePaused { self.composition.dock.revealForUser() }
+            self.renderMenu()
+        }
     }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
@@ -385,6 +425,7 @@ import ModelPlanMenuVerification
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
+        if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil

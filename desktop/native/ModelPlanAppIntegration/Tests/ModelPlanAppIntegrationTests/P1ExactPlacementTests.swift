@@ -197,4 +197,137 @@ private actor P1SyntheticEngine: EngineClient {
         await app.stopLifecycle(); app.composition.dock.close()
     }
 
+    func testFreshQuotaWidgetShowAndSavedChoicesOnNormalEntry() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("right-placement-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let fresh = await store.snapshot().preferences
+        XCTAssertTrue(fresh.showDock); XCTAssertFalse(fresh.autoHide, "Fresh Dock must stay visible until the user opts into hiding")
+        XCTAssertEqual(fresh.dockEdge, .right); XCTAssertNil(fresh.dockDisplayID)
+        _ = try await store.update { p in for _ in 0..<16 { p.onboarding.next() } }
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+            makeClient: { _, store in P1SyntheticEngine(store: store, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(entry)
+        await entry.prepare()
+        entry.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !entry.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(entry.lifecyclePaused)
+        let observed = try XCTUnwrap(entry.currentSettingsContext.dockPlacementObservation)
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
+        let placement = try XCTUnwrap(entry.composition.dock.edgePresentation?.placement)
+        XCTAssertEqual(entry.composition.dock.currentMenuBarPreferences?.dockEdge, .right)
+        XCTAssertEqual(observed.edge, .right, "A usable preferred edge must not be silently replaced")
+        XCTAssertFalse(observed.recovering)
+        XCTAssertEqual(placement.edge, .right)
+        XCTAssertEqual(placement.frame.maxX, screen.usableFrame.maxX, accuracy: 0.01)
+        let showDock = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }, "The status menu must offer the locating action")
+        XCTAssertTrue(showDock.isEnabled)
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" })
+        let editor = entry.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        for _ in 0..<300 { if entry.composition.dock.edgePresentation?.state == .sliver { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "Auto-hide is an explicit saved option")
+        var accessibility = SettingsEnvironment(); accessibility.reduceMotion = false
+        entry.updateSystemAccessibility(accessibility)
+        XCTAssertFalse(try XCTUnwrap(entry.composition.latestSettings).effective.reduceMotion)
+        let reveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
+        _ = (try XCTUnwrap(reveal.target as? NSObject)).perform(try XCTUnwrap(reveal.action), with: reveal)
+        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
+        let animated = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
+        XCTAssertTrue(animated.animationKeys()?.contains("locate-pulse") == true)
+        accessibility.reduceMotion = true; entry.updateSystemAccessibility(accessibility)
+        XCTAssertFalse(animated.animationKeys()?.contains("locate-pulse") == true)
+        let staticReveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
+        _ = (try XCTUnwrap(staticReveal.target as? NSObject)).perform(try XCTUnwrap(staticReveal.action), with: staticReveal)
+        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.first(where: { $0.name == "dock.locate-highlight" }) !== animated { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let still = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
+        XCTAssertTrue(still.animationKeys()?.isEmpty ?? true, "Reduce Motion uses a static highlight")
+        for _ in 0..<400 {
+            if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) != true { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true, "Locating highlight must expire")
+        let afterReveal = await store.snapshot().preferences
+        XCTAssertTrue(afterReveal.autoHide); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
+        _ = try await editor.commit(SettingsB21Edit.showDock(false))
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
+        let enable = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
+        _ = (try XCTUnwrap(enable.target as? NSObject)).perform(try XCTUnwrap(enable.action), with: enable)
+        for _ in 0..<300 { if entry.composition.dock.currentMenuBarPreferences?.showDock == true && entry.composition.dock.edgePresentation?.state == .expanded { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(try XCTUnwrap(entry.composition.dock.currentMenuBarPreferences).showDock)
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertNotNil(entry.liveStatusMenu?.items.first { $0.title == "显示额度挂件" && $0.isEnabled })
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "隐藏额度挂件" })
+        _ = try await editor.commit(SettingsB21Edit.language(.english))
+        _ = try await editor.commit(SettingsB21Edit.autoHide(false))
+        _ = try await editor.commit(SettingsB21Edit.dockEdge(.left))
+        XCTAssertEqual(entry.currentSettingsContext.dockPlacementObservation?.edge, .left)
+        _ = try await editor.commit(SettingsB21Edit.dockEdge(.right))
+        XCTAssertEqual(entry.currentSettingsContext.dockPlacementObservation?.edge, .right)
+        XCTAssertFalse(try XCTUnwrap(entry.currentSettingsContext.dockPlacementObservation).recovering)
+        await entry.stopLifecycle(); entry.composition.dock.close()
+        let restartedStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let restarted = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: restartedStore, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+            makeClient: { _, store in P1SyntheticEngine(store: store, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(restarted)
+        await restarted.prepare()
+        restarted.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !restarted.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(restarted.currentSettingsContext.dockPlacementObservation?.edge, .right)
+        XCTAssertFalse(try XCTUnwrap(restarted.currentSettingsContext.dockPlacementObservation).recovering)
+        XCTAssertEqual(restarted.composition.dock.edgePresentation?.placement?.edge, .right)
+        _ = try await restarted.settingsHost.application.editor.commit(SettingsB21Edit.dockDisplay("missing"))
+        XCTAssertTrue(try XCTUnwrap(restarted.currentSettingsContext.dockPlacementObservation).recovering)
+        let saved = await restartedStore.snapshot().preferences
+        XCTAssertEqual(saved.dockDisplayID, "missing"); XCTAssertEqual(saved.dockEdge, .right)
+        await restarted.stopLifecycle(); restarted.composition.dock.close()
+    }
+
+
+    // Hosted-only: normal entry with detached views, synthetic rows and synthetic pointer facts.
+    func testNormalEntryCardLeavesAndCardBodyExplicitlyPins() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("card-journey-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { p in p.autoHide = false; for _ in 0..<16 { p.onboarding.next() } }
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 1400, y: 450), cardFrame: CGRect?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer, cardFrame: cardFrame) },
+            makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(app); await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let host = app.composition.dock
+        let placement = try XCTUnwrap(host.edgePresentation?.placement)
+        let id = try XCTUnwrap(host.interactionEnvironment().catalogue.first)
+        pointer = CGPoint(x: placement.frame.midX, y: placement.frame.midY)
+        host.dockView.onAction?(.subscription(id))
+        XCTAssertNotNil(host.detachedCardForChecks); XCTAssertFalse(host.cardPinsDock)
+        cardFrame = CGRect(x: placement.frame.minX - 320, y: placement.frame.midY - 90, width: 300, height: 180)
+        pointer = CGPoint(x: try XCTUnwrap(cardFrame).midX, y: try XCTUnwrap(cardFrame).midY)
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertNotNil(host.detachedCardForChecks, "Card remains open while pointer is over it")
+        pointer = CGPoint(x: 50, y: 200)
+        for _ in 0..<200 { if host.detachedCardForChecks == nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(host.detachedCardForChecks, "Ordinary card closes after the shared-region leave grace")
+        pointer = CGPoint(x: placement.frame.midX, y: placement.frame.midY)
+        host.dockView.onAction?(.subscription(id))
+        let card = try XCTUnwrap(host.detachedCardForChecks)
+        XCTAssertTrue(card.accessibilityPerformPress()); XCTAssertTrue(host.cardPinsDock)
+        pointer = CGPoint(x: 50, y: 200); try await Task.sleep(for: .milliseconds(600))
+        XCTAssertNotNil(host.detachedCardForChecks, "An explicitly pinned card remains open")
+        card.onDismiss?(); XCTAssertNil(host.detachedCardForChecks)
+        await app.stopLifecycle(); host.close()
+    }
+
 }

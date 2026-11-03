@@ -74,7 +74,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var redBelow = 25
     public var sliverAlert = true
     public var showDock = true
-    public var autoHide = true
+    public var autoHide = false
     public var revealMilliseconds = 150
     public var magnification: HoverMagnification = .subtle
     public var showOverFullscreen = false

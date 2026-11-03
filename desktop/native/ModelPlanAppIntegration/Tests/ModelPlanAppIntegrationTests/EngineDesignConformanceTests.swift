@@ -54,7 +54,7 @@ import ModelPlanEngineClient
                 let en=language == .english
                 let cockpit = enabled ? (en ? "Open Cockpit" : "打开驾驶舱") : (en ? "Coming soon" : "即将推出")
                 let dock=entry.composition.dock.menu().items
-                XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Dock" : "隐藏挂件"])
+                XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Quota Widget" : "隐藏额度挂件"])
                 XCTAssertEqual(dock.first { $0.title == cockpit }?.isEnabled, enabled)
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
                 XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Check for updates","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","检查更新","说明…","设置…","关于","退出"])

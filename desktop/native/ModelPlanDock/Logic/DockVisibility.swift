@@ -27,9 +27,9 @@ public struct DockPresence: Sendable {
     public var enabled = true, autoHide = true, cockpitClosed = true, allowedOverFullscreen = true, outerEdge = true, lifecycleActive = true
     public var pointer: DockPointerRegion = .unknown
     public var recordedLocks: DockRecordedLocks = []
-    public var mouseButtonDown = false, menuActuallyOpen = false, ignitionHeld = false, cardPinned = false
+    public var mouseButtonDown = false, menuActuallyOpen = false, ignitionHeld = false, cardPinned = false, cardFocused = false, locating = false
     public init() {}
-    fileprivate var protected: Bool { mouseButtonDown || menuActuallyOpen || ignitionHeld || cardPinned }
+    fileprivate var protected: Bool { mouseButtonDown || menuActuallyOpen || ignitionHeld || cardPinned || cardFocused || locating }
 }
 public enum DockSurfaceState: Equatable, Sendable {
     public enum Suppression: Equatable, Sendable { case userHidden, cockpit, fullscreen, sharedEdge, lifecycle }
@@ -93,7 +93,8 @@ public struct DockVisibilityState: Sendable {
                     if now >= dwellSince! + policy.revealDwell { surface = .expanded; revealedAt = now; dwellSince = nil }
                     else { deadline = dwellSince! + policy.revealDwell }
                 } else { dwellSince = nil }
-            } else if input.pointer == .inside || input.pointer == .wake || input.pointer == .unknown {
+            } else if input.pointer == .inside || input.pointer == .wake || input.pointer == .unknown || input.cardFocused {
+                // A focused card starts a fresh leave grace only after focus is lost.
                 outsideSince = nil; dwellSince = nil
             } else {
                 if outsideSince == nil { outsideSince = now }

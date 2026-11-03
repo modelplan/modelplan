@@ -49,12 +49,18 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             if let content{guard content.subscriptionID==id else{throw DockLogicError.invalidCatalogue};try content.validate()}
             publish(.init(card:cards.visibility,content:content,reorder:gesture.preview,overflowIDs:overflowOpen ? try env.preferences.orderedIDs(in:env.catalogue).filter{env.overflowIDs.contains($0)}:[]))
             guard running,generation==token else{return}
-            if let due=cards.nextDeadline{scheduler.arm(at:due){[weak self] in guard let self,self.running,self.generation==token else{return};self.refresh()}}
+            let due = cards.nextDeadline ?? (cards.visibility.subscriptionID != nil && !cards.visibility.isPinned ? clock() + 0.15 : nil)
+            if let due{scheduler.arm(at:due){[weak self] in guard let self,self.running,self.generation==token else{return};self.refresh()}}
         }catch{stop();onFailure?(error)}
     }
     public func click(_ id:String){
         guard running else{return}
         do{let token=generation,env=read();guard running,generation==token,env.active,env.parentExpanded,env.catalogue.contains(id) else{return};try cards.step(catalogue:env.catalogue,hoveredID:env.hoveredID,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock());try cards.click(id,at:clock());refresh()}catch{stop();onFailure?(error)}
+    }
+    public func setCardPinned(_ pinned:Bool,id:String){
+        guard running else{return}
+        do { let env=read();guard env.active,env.parentExpanded,env.catalogue.contains(id) else{return};try cards.setPinned(pinned,id:id,at:clock());refresh() }
+        catch { onFailure?(error) }
     }
     public func dismissCard(){cards.dismiss();refresh()}
     public func toggleOverflow(){guard running else{return};overflowOpen.toggle();refresh()}
