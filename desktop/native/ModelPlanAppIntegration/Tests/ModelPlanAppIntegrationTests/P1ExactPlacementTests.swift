@@ -234,6 +234,7 @@ private actor P1SyntheticEngine: EngineClient {
         var accessibility = SettingsEnvironment(); accessibility.reduceMotion = false
         entry.updateSystemAccessibility(accessibility)
         XCTAssertFalse(try XCTUnwrap(entry.composition.latestSettings).effective.reduceMotion)
+        let beforeShow = await store.snapshot()
         let reveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
         _ = (try XCTUnwrap(reveal.target as? NSObject)).perform(try XCTUnwrap(reveal.action), with: reveal)
         for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
@@ -254,6 +255,13 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertFalse(entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true, "Locating highlight must expire")
         let afterReveal = await store.snapshot().preferences
         XCTAssertTrue(afterReveal.autoHide); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
+        let afterShow = await store.snapshot()
+        XCTAssertEqual(afterShow.revision, beforeShow.revision, "Showing a visible widget must not change saved preferences")
+        for _ in 0..<400 {
+            if entry.composition.dock.edgePresentation?.state == .sliver { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "The temporary reveal returns to the normal auto-hide rule")
         _ = try await editor.commit(SettingsB21Edit.showDock(false))
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
         let enable = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
