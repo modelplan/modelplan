@@ -69,9 +69,10 @@ func TestVerifiedResetNormalization(t *testing.T) {
 	}
 }
 
-// V1 has no official-host interface: links are omitted for every source while
-// otherwise eligible announcements remain visible.
-func TestSourceLinksAreOmittedInV1(t *testing.T) {
+// The identity URL is not a published link: only typed candidates admitted by
+// the host policy become source links, so an unlisted identity host publishes
+// no link while the otherwise eligible event stays visible.
+func TestUnreviewedIdentityURLIsNotPublishedAsLink(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
 	for _, rawURL := range []string{"https://vendor.example/reset", "https://unlisted.example/reset"} {
@@ -79,8 +80,8 @@ func TestSourceLinksAreOmittedInV1(t *testing.T) {
 		b, _ := json.Marshal(r)
 		d := &digest.Digest{PublicationID: "0123456789abcdef01234567", Resets: []json.RawMessage{b}}
 		events, _ := Project(d, projection, now)
-		if len(events) != 1 || events[0].Source.URL != "" {
-			t.Fatal("v1 exposed a source link or dropped an eligible event")
+		if len(events) != 1 || events[0].Source.URL != "" || len(events[0].Source.Links) != 0 {
+			t.Fatal("unreviewed identity URL leaked into source links or dropped an eligible event")
 		}
 	}
 }

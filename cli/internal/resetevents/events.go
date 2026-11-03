@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
@@ -17,26 +18,108 @@ import (
 )
 
 type Source = rows.ResetSource
+type Link = rows.ResetLink
 type Schedule = rows.ResetSchedule
 type Event = rows.ResetEvent
 type record struct {
-	ID          string     `json:"id"`
-	Provider    string     `json:"provider"`
-	EventType   string     `json:"eventType"`
-	Status      string     `json:"status"`
-	At          *time.Time `json:"at"`
-	URL         string     `json:"url"`
-	PublishedAt time.Time  `json:"publishedAt"`
-	Schedule    *Schedule  `json:"schedule"`
-	PlanIDs     *[]string  `json:"planIds"`
-	Scope       *string    `json:"scope"`
-	Confirms    string     `json:"confirms"`
+	ID          string       `json:"id"`
+	Provider    string       `json:"provider"`
+	EventType   string       `json:"eventType"`
+	Status      string       `json:"status"`
+	At          *time.Time   `json:"at"`
+	URL         string       `json:"url"`
+	Links       []recordLink `json:"links"`
+	PublishedAt time.Time    `json:"publishedAt"`
+	Schedule    *Schedule    `json:"schedule"`
+	PlanIDs     *[]string    `json:"planIds"`
+	Scope       *string      `json:"scope"`
+	Confirms    string       `json:"confirms"`
+}
+
+type recordLink struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 var publicID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 var publicationID = regexp.MustCompile(`^[a-f0-9]{24}$`)
 var safePlan = map[string]bool{"free": true, "plus": true, "pro": true, "team": true, "teams": true, "business": true, "enterprise": true}
 var planID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
+
+// Typed source-link admission: the AIhot event page, the original X post and an
+// optional official vendor page. Exact hosts only; a failing candidate link is
+// omitted without dropping the event or changing its times or identity.
+var originalLinkHosts = map[string]bool{"x.com": true, "twitter.com": true}
+var originalStatusPath = regexp.MustCompile(`^/[A-Za-z0-9_]{1,15}/status/[0-9]{1,19}$`)
+var officialLinkHosts = map[string]bool{
+	"openai.com": true, "help.openai.com": true, "status.openai.com": true,
+	"platform.openai.com": true, "developers.openai.com": true,
+	"anthropic.com": true, "www.anthropic.com": true, "support.anthropic.com": true,
+	"status.anthropic.com": true, "docs.anthropic.com": true,
+}
+var tokenLikeNameParts = []string{"token", "secret", "passwd", "password", "credential", "auth", "signature", "session", "api", "key", "sig", "jwt", "nonce", "bearer", "access"}
+
+func admittedLink(kind, raw string) (Link, bool) {
+	if raw == "" || len(raw) > 2048 {
+		return Link{}, false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Opaque != "" {
+		return Link{}, false
+	}
+	if port := u.Port(); port != "" && port != "443" {
+		return Link{}, false
+	}
+	if u.Fragment != "" || u.RawFragment != "" {
+		return Link{}, false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch kind {
+	case "aihot":
+		if host != "aihot.news" {
+			return Link{}, false
+		}
+	case "original":
+		if !originalLinkHosts[host] || u.RawQuery != "" || !originalStatusPath.MatchString(u.EscapedPath()) {
+			return Link{}, false
+		}
+	case "official":
+		if !officialLinkHosts[host] {
+			return Link{}, false
+		}
+	default:
+		return Link{}, false
+	}
+	for name := range u.Query() {
+		lower := strings.ToLower(name)
+		for _, part := range tokenLikeNameParts {
+			if strings.Contains(lower, part) {
+				return Link{}, false
+			}
+		}
+	}
+	return Link{Type: kind, URL: raw}, true
+}
+
+// sourceLinks admits at most one link per type (first valid candidate) and
+// publishes them in stable type order; display order stays the client's job.
+func sourceLinks(candidates []recordLink) []Link {
+	var out []Link
+	taken := map[string]bool{}
+	for _, c := range candidates {
+		if taken[c.Type] {
+			continue
+		}
+		link, ok := admittedLink(c.Type, c.URL)
+		if !ok {
+			continue
+		}
+		taken[link.Type] = true
+		out = append(out, link)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Type < out[j].Type })
+	return out
+}
 
 func eventID(r record) (string, bool) {
 	if r.At == nil || r.URL == "" {
@@ -144,7 +227,7 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 			blocked[id] = true
 			continue
 		}
-		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID}}
+		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID, Links: sourceLinks(r.Links)}}
 	}
 	dropped := 0
 	for _, r := range confirmations {
@@ -162,6 +245,11 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 		e.PublishedAt = r.PublishedAt
 		e.Schedule = nil
 		e.ExpiresAt = r.PublishedAt.Add(24 * time.Hour)
+		// A confirmation's own admitted links supersede the announcement's;
+		// a confirmation without links keeps the original citations.
+		if links := sourceLinks(r.Links); len(links) > 0 {
+			e.Source.Links = links
+		}
 		known[e.ID] = e
 	}
 	out := make([]Event, 0, len(known))

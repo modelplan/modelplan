@@ -4,9 +4,16 @@ package rows
 import "time"
 
 type ResetSource struct {
-	Kind          string `json:"kind"`
-	PublicationID string `json:"publicationId"`
-	URL           string `json:"url,omitempty" null:"coalesced"`
+	Kind          string      `json:"kind"`
+	PublicationID string      `json:"publicationId"`
+	URL           string      `json:"url,omitempty" null:"coalesced"`
+	Links         []ResetLink `json:"links,omitempty" null:"coalesced"`
+}
+// ResetLink is one typed citation. Display order is the client's choice; the
+// producer publishes links in a stable type order.
+type ResetLink struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 type ResetSchedule struct {
 	Precision string    `json:"precision"`

@@ -117,6 +117,7 @@ func Generate(root string) ([]byte, error) {
 	source := overlay.Defs["ProposedResetSource"].(map[string]any)
 	source["properties"].(map[string]any)["kind"] = object{"type": "string", "enum": []string{"publication"}}
 	b.defs["ResetEvent"] = proposed
+	b.defs["ProposedResetLink"] = overlay.Defs["ProposedResetLink"]
 	b.defs["ProposedResetSchedule"] = overlay.Defs["ProposedResetSchedule"]
 	b.defs["ProposedResetSource"] = overlay.Defs["ProposedResetSource"]
 	b.defs["RowsProjection"].(object)["properties"].(object)["resetEvents"] = object{"type": "array", "maxItems": 64, "uniqueItems": true, "items": object{"$ref": "#/$defs/ResetEvent"}}

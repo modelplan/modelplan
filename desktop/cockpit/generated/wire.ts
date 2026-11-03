@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 5b0542dd04388a59464ce0edaca0df01e4adb732e651e3b1c4a3f55e93ecdab7
+// Schema SHA-256: 0631db3eaeeffe931a50145b5bef347d56146618ac06ec9cf359c2a1091ee3a2
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -130,6 +130,11 @@ export type WirePlan = {
   readonly "name"?: WireName | null;
 };
 
+export type WireProposedResetLink = {
+  readonly "type": "aihot" | "original" | "official";
+  readonly "url": string;
+};
+
 export type WireProposedResetSchedule = {
   readonly "from": string;
   readonly "precision": "window" | "date" | "approximate" | "deadline";
@@ -138,6 +143,7 @@ export type WireProposedResetSchedule = {
 
 export type WireProposedResetSource = {
   readonly "kind": "publication";
+  readonly "links"?: ReadonlyArray<WireProposedResetLink>;
   readonly "publicationId": string;
   readonly "url"?: string;
 };
@@ -954,6 +960,28 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "ProposedResetLink": {
+    "additionalProperties": false,
+    "properties": {
+      "type": {
+        "enum": [
+          "aihot",
+          "original",
+          "official"
+        ]
+      },
+      "url": {
+        "maxLength": 2048,
+        "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?(\\?[A-Za-z0-9._~/%+=:&-]*)?$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "url"
+    ],
+    "type": "object"
+  },
   "ProposedResetSchedule": {
     "additionalProperties": false,
     "properties": {
@@ -990,6 +1018,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "publication"
         ],
         "type": "string"
+      },
+      "links": {
+        "items": {
+          "$ref": "#/$defs/ProposedResetLink"
+        },
+        "maxItems": 3,
+        "type": "array",
+        "uniqueItems": true
       },
       "publicationId": {
         "pattern": "^[a-f0-9]{24}$",

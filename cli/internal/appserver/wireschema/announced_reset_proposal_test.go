@@ -23,10 +23,15 @@ import (
 )
 
 // These types are test-only examples of the draft, not a production producer.
+type proposedResetLink struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
 type proposedResetSource struct {
-	Kind          string `json:"kind"`
-	PublicationID string `json:"publicationId"`
-	URL           string `json:"url,omitempty"`
+	Kind          string              `json:"kind"`
+	PublicationID string              `json:"publicationId"`
+	URL           string              `json:"url,omitempty"`
+	Links         []proposedResetLink `json:"links,omitempty"`
 }
 type proposedResetSchedule struct {
 	Precision string    `json:"precision"`
@@ -123,7 +128,8 @@ func proposalFixtures(t *testing.T) map[string][]byte {
 	if len(projection.Rows) != 1 || projection.Rows[0].ID != "codex" {
 		t.Fatal("fixture must contain the affected tool row")
 	}
-	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", URL: "https://example.test/reset"}
+	source := proposedResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", URL: "https://example.test/reset",
+		Links: []proposedResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset-2026-11"}, {Type: "original", URL: "https://x.com/OpenAI/status/1791234567890123456"}}}
 	id, err := proposalID("openai", published.Add(3*time.Hour), source.URL, "r-scheduled")
 	if err != nil {
 		t.Fatal(err)
@@ -208,6 +214,10 @@ func TestAnnouncedResetProposalRejectsMalformedOrPrivateFields(t *testing.T) {
 		{"source not publication", func(e map[string]any) { e["source"].(map[string]any)["kind"] = "local" }},
 		{"bad publication id", func(e map[string]any) { e["source"].(map[string]any)["publicationId"] = "unknown" }},
 		{"credential url", func(e map[string]any) { e["source"].(map[string]any)["url"] = "https://user:pass@example.test/reset" }},
+		{"unknown link type", func(e map[string]any) { e["source"].(map[string]any)["links"].([]any)[0].(map[string]any)["type"] = "press" }},
+		{"non-https link", func(e map[string]any) { e["source"].(map[string]any)["links"].([]any)[0].(map[string]any)["url"] = "http://aihot.news/reset" }},
+		{"link fragment", func(e map[string]any) { e["source"].(map[string]any)["links"].([]any)[0].(map[string]any)["url"] = "https://aihot.news/reset#m" }},
+		{"link extra property", func(e map[string]any) { e["source"].(map[string]any)["links"].([]any)[0].(map[string]any)["note"] = "x" }},
 		{"invalid time", func(e map[string]any) { e["expiresAt"] = "soon" }},
 		{"unknown precision", func(e map[string]any) { e["schedule"].(map[string]any)["precision"] = "exact" }},
 	}

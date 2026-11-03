@@ -225,6 +225,15 @@
       ]
     },
     {
+      "file": "RowsResetLink.json",
+      "type": "RowsResetLink",
+      "optional": [],
+      "required": [
+        "type",
+        "url"
+      ]
+    },
+    {
       "file": "RowsResetSchedule.json",
       "type": "RowsResetSchedule",
       "optional": [],
@@ -240,6 +249,14 @@
       "optional": [
         {
           "field": "url",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "links",
           "omission": true,
           "null": true,
           "wrongType": true,
