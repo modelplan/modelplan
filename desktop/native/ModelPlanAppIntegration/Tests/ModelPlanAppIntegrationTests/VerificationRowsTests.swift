@@ -13,7 +13,7 @@ import ModelPlanWire
     func testEverySnapshotReachesTheNormalDockEntry() async throws {
         _ = NSApplication.shared
         let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../verification/fixtures/dock-scenarios").standardizedFileURL
-        let cases = [("mixed-overflow.json", 64), ("single-window.json", 3), ("reset-announced.json", 1), ("reset-confirmed.json", 1), ("stale.json", 3)]
+        let cases = [("mixed-overflow.json", 64), ("single-window.json", 3), ("reset-announced.json", 1), ("reset-confirmed.json", 1), ("stale.json", 3), ("credits-grouped.json", 3), ("credits-under-one.json", 3), ("reserve-unknown-unit.json", 3)]
         for (name, count) in cases {
             let home = FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-verification-test-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -41,6 +41,13 @@ import ModelPlanWire
             }
             if name == "reset-announced.json" { XCTAssertEqual(content.signals.first?.reset?.id, "reset-announced") }
             if name == "reset-confirmed.json" { XCTAssertEqual(content.signals.first?.reset?.id, "reset-confirmed") }
+            if name.hasPrefix("credits-") || name == "reserve-unknown-unit.json" {
+                let reserves = content.snapshot.presentationRows.values.flatMap(\.additionalRows).filter { $0.kind == .reserve }
+                XCTAssertEqual(reserves.count, 1, name)
+                if name == "credits-grouped.json" { XCTAssertEqual(reserves.first?.value, "19,614") }
+                if name == "credits-under-one.json" { XCTAssertEqual(reserves.first?.value, "<1") }
+                if name == "reserve-unknown-unit.json" { XCTAssertEqual(reserves.first?.label, "Reserve") }
+            }
             XCTAssertNil(app.composition.dock.nativePanel)
             await app.composition.stop()
         }
@@ -51,6 +58,30 @@ import ModelPlanWire
         defer { try? FileManager.default.removeItem(at: home) }
         let client = VerificationRowsClient(store: EngineStore(), home: home)
         do { _ = try await client.start(); XCTFail("unmarked home was accepted") } catch { }
+    }
+    func testChangedSyntheticSnapshotIsPublishedWhileClientRuns() async throws {
+        let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../verification/fixtures/dock-scenarios").standardizedFileURL
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("verification-transition-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try Data("MODELPLAN VERIFICATION HOME\n".utf8).write(to: home.appendingPathComponent(".modelplan-verification-home"))
+        let target = home.appendingPathComponent(".modelplan-verification-rows.json")
+        try Data(contentsOf: fixtures.appendingPathComponent("stale.json")).write(to: target, options: .atomic)
+        let store = EngineStore()
+        let client = VerificationRowsClient(store: store, home: home)
+        let context = try await client.start()
+        XCTAssertTrue(client.isCurrent(context))
+        XCTAssertEqual(store.snapshot.rows?.sequence, 7)
+        var fresh = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixtures.appendingPathComponent("single-window.json"))) as? [String: Any])
+        fresh["sequence"] = 8
+        try JSONSerialization.data(withJSONObject: fresh).write(to: target, options: .atomic)
+        for _ in 0..<50 {
+            if store.snapshot.rows?.sequence == 8 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(store.snapshot.rows?.sequence, 8, "a new synthetic reading must arrive without restarting the app")
+        await client.stop()
+        XCTAssertFalse(client.isCurrent(context))
     }
 }
 #endif

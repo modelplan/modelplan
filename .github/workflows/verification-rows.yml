@@ -8,6 +8,7 @@ on:
       - '.github/workflows/verification-rows.yml'
 permissions:
   contents: read
+  actions: read
 jobs:
   verification:
     runs-on: macos-15
@@ -20,3 +21,23 @@ jobs:
           if strings "$binary" | grep -E 'VERIFICATION BUILD|modelplan-verification-rows\.json|VerificationRowsClient'; then exit 1; fi
       - name: Verification snapshot journeys
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --jobs 2 -Xswiftc -DMODELPLAN_VERIFICATION_ROWS --filter VerificationRowsTests
+      - name: Fetch approved credential helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/verification-helper" --github-env "$GITHUB_ENV"
+      - name: Fetch pinned CLI archives
+        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/verification-cli"
+      - name: Build separate verification application
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/verification-cli" "$RUNNER_TEMP/verification-build" --verification-rows
+      - name: Archive verification application
+        run: |
+          mkdir -p "$RUNNER_TEMP/verification-artifact"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/verification-build/ModelPlan-verification.app" "$RUNNER_TEMP/verification-artifact/ModelPlan-verification.zip"
+          cp -R desktop/native/verification/fixtures/dock-scenarios "$RUNNER_TEMP/verification-artifact/fixtures"
+          (cd "$RUNNER_TEMP/verification-artifact" && shasum -a 256 ModelPlan-verification.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modelplan-verification-rows
+          path: ${{ runner.temp }}/verification-artifact/
+          if-no-files-found: error
+          retention-days: 7
