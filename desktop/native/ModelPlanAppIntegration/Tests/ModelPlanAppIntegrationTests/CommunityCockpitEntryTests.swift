@@ -68,6 +68,46 @@ private actor RouteClient: EngineClient {
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    @MainActor func testNormalEntryReceivesCockpitDetailsFromRealAppServer() async throws {
+        var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<8 {
+            if FileManager.default.fileExists(atPath: repo.appendingPathComponent("cli/go.mod").path) { break }
+            repo.deleteLastPathComponent()
+        }
+        let binary = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"]
+            .map { URL(fileURLWithPath: $0) } ?? repo.appendingPathComponent(".tmp/u11-cli")
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else {
+            throw XCTSkip("The real synthetic-test CLI is not available")
+        }
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-details-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".codex"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let environment = ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+        let initialize = Process()
+        initialize.executableURL = binary; initialize.arguments = ["consent", "init", "--json"]
+        initialize.environment = environment
+        initialize.standardInput = FileHandle.nullDevice; initialize.standardOutput = FileHandle.nullDevice; initialize.standardError = FileHandle.nullDevice
+        try initialize.run()
+        for _ in 0..<300 where initialize.isRunning { try await Task.sleep(for: .milliseconds(10)) }
+        if initialize.isRunning { initialize.terminate(); XCTFail("Synthetic consent initialization timed out"); return }
+        XCTAssertEqual(initialize.terminationStatus, 0)
+        let settings = try SettingsStore(url: home.appendingPathComponent("settings.json"))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: binary, applicationVersion: "synthetic-details-test",
+            allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings, createsNativePanels: false)
+        await app.prepare(); await app.composition.start()
+        do {
+            _ = try await app.composition.client.cockpit(timeout: .seconds(10))
+            let details = try XCTUnwrap(app.composition.store.snapshot.cockpit?.details,
+                "The production initialize must negotiate cockpitDetailsV1")
+            XCTAssertEqual(details.version, 1)
+            XCTAssertTrue(details.sources.contains("quota-reserve"))
+            XCTAssertNil(app.composition.dock.nativePanel)
+            await app.composition.stop()
+        } catch {
+            await app.composition.stop()
+            throw error
+        }
+    }
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
