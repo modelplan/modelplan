@@ -23,13 +23,28 @@ final class V2BridgeContractTests: XCTestCase {
         let load = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
         XCTAssertEqual(load["version"] as? Int, 2)
         let appearance = try XCTUnwrap(load["appearance"] as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency"])
+        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency","redBelow"])
         let shell = try XCTUnwrap(load["shell"] as? [String: Any])
         XCTAssertEqual(Set(shell.keys), ["profile", "attached", "forcedClosed", "tier", "scope"])
         XCTAssertEqual(shell["profile"] as? String, "closed")
         XCTAssertEqual(shell["tier"] as? String, "compact")
         XCTAssertEqual(shell["forcedClosed"] as? Bool, true)
         XCTAssertEqual(shell["attached"] as? Bool, false)
+    }
+    func testCommittedThresholdIsEncodedOnLoadAndEachAppearanceUpdate() throws {
+        for threshold in [10, 16, 20, 25] {
+            let value = try state()
+            let load = try value.load(.init(theme: .night, locale: .en, profile: .full, redBelow: threshold), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
+            let appearance = try XCTUnwrap(body["appearance"] as? [String: Any])
+            XCTAssertEqual(appearance["redBelow"] as? Int, threshold)
+            _ = try value.accept(encode(receipt(load)), source: source)
+            let next = threshold == 10 ? 16 : 10
+            let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, redBelow: next))
+            let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+            XCTAssertEqual(message["redBelow"] as? Int, next)
+        }
+        XCTAssertEqual(CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: 17).redBelow, 25)
     }
     func testRequiresVersionTwoAndAllThreeCapabilitiesBeforeAnyQuery() throws {
         let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
@@ -75,7 +90,7 @@ final class V2BridgeContractTests: XCTestCase {
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
         let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency"]))
+        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","redBelow"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
         let shellRaw = try value.setShell(.init(closed: false, attached: true, forcedClosed: true, tier: .compact))

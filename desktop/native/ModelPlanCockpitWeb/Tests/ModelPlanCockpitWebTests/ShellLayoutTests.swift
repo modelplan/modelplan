@@ -85,7 +85,7 @@ final class ShellLayoutTests: XCTestCase {
         let load = try state.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
         var ack = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
         let initialAppearance = try XCTUnwrap(ack["appearance"] as? [String: Any])
-        XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "reduceMotion", "reduceTransparency"], "v2 load appearance excludes shell/profile state")
+        XCTAssertEqual(Set(initialAppearance.keys), ["theme", "locale", "reduceMotion", "reduceTransparency", "redBelow"], "v2 load appearance excludes shell/profile state")
         ack["shell"] = nil; ack["appearance"] = nil; ack["type"] = "ready"; ack["sequence"] = "1"; ack["appearanceVersion"] = 2; ack["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
         let raw = String(decoding: try JSONSerialization.data(withJSONObject: ack), as: UTF8.self)
         _ = try state.accept(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))

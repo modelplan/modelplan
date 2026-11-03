@@ -31,7 +31,9 @@ public struct CockpitAppearance: Equatable, Sendable {
   public enum Profile: String, Sendable { case full, compact }
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false) {
+  public let redBelow: Int
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int = 25) {
+    self.redBelow = [10, 16, 20, 25].contains(redBelow) ? redBelow : 25
     self.reduceMotion = reduceMotion; self.reduceTransparency = reduceTransparency; self.shutterClosed = shutterClosed; self.detached = detached
     self.theme = theme
     self.locale = locale
@@ -236,6 +238,7 @@ public final class CockpitBridgeState {
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
           "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+          "redBelow": appearance.redBelow,
         ],
         "shell": shell.fields,
       ], receipt: "ready")
@@ -246,6 +249,7 @@ public final class CockpitBridgeState {
     return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+      "redBelow": appearance.redBelow,
     ], appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
