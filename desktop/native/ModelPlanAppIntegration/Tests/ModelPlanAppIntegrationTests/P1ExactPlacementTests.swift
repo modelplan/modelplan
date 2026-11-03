@@ -300,7 +300,7 @@ private actor P1SyntheticEngine: EngineClient {
 
 
     // Hosted-only: normal entry with detached views, synthetic rows and synthetic pointer facts.
-    func testNormalEntryCardLeavesAndCardBodyExplicitlyPins() async throws {
+    func testNormalEntryCardLeavesAndCardBodyDoesNotPin() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("card-journey-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -331,10 +331,16 @@ private actor P1SyntheticEngine: EngineClient {
         for _ in 0..<200 { if host.detachedCardForChecks == nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNil(host.detachedCardForChecks, "Ordinary card closes after the shared-region leave grace")
         pointer = CGPoint(x: placement.frame.midX, y: placement.frame.midY)
-        nozzle.hoverNozzle(nil); nozzle.hoverNozzle(id)
+        // No synthetic nil event: the sampled exit must retire the stale hover itself.
+        nozzle.hoverNozzle(id)
         for _ in 0..<100 { if host.detachedCardForChecks != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         let card = try XCTUnwrap(host.detachedCardForChecks)
-        card.onDismiss?(); XCTAssertNil(host.detachedCardForChecks)
+        pointer = CGPoint(x: try XCTUnwrap(cardFrame).midX, y: try XCTUnwrap(cardFrame).midY)
+        let click = try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseDown, location: .init(x: 10, y: 10), modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        card.mouseDown(with: click)
+        pointer = CGPoint(x: 50, y: 200)
+        for _ in 0..<200 { if host.detachedCardForChecks == nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(host.detachedCardForChecks, "Clicking the card body must not pin it")
         await app.stopLifecycle(); host.close()
     }
 

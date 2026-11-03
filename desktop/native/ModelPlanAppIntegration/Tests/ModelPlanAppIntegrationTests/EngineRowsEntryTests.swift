@@ -126,7 +126,7 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
         await window.prepare();window.selectPane("subscriptions")
         let shown=await window.acceptanceCheckpoint()
-        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue,SettingKey.source.rawValue]
+        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue]
         let replaced:Set<String>=[SettingKey.detectedReaders.rawValue,SettingKey.optionalReaders.rawValue]
         XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription controls must remain")
         XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:replaced),"U8 replaces only the legacy consent rows")
@@ -145,6 +145,10 @@ private actor RowsEntryClient: EngineClient {
         let searched=await window.acceptanceCheckpoint()
         XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 controls must remain searchable by subscription")
         XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isDisjoint(with:replaced))
+        search.stringValue=""; window.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:search))
+        window.selectPane("diagnostics")
+        let diagnostics=await window.acceptanceCheckpoint()
+        XCTAssertTrue(Set(diagnostics.settings?.visibleKeys ?? []).contains(SettingKey.source.rawValue), "Source information moved to Diagnostics")
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
         XCTAssertFalse(entry.controller.canMutate)

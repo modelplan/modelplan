@@ -439,7 +439,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
-        } else { dismissCard() }
+        } else {
+            // A sampled real exit can outlive the last AppKit hover callback.
+            // Retire that stale input when its card completes the leave grace.
+            if cardID != nil, interactionEnvironment().insideShared == false { interactionHoveredID = nil }
+            dismissCard()
+        }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in

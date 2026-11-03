@@ -76,17 +76,20 @@ final class CardLeaveLogicTests: XCTestCase {
         controller.stop()
     }
 
-    func testHoveredRingKeepsCardOpenWhenPointerSampleTemporarilyDisagrees() throws {
+    func testOutsideSamplesExpireStaleHoverAfterLeaveGrace() throws {
         var state = DockCardInteraction()
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.3)
         XCTAssertEqual(state.visibility, .hover("synthetic"))
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1)
+        XCTAssertEqual(state.visibility, .hover("synthetic"), "One disagreeing sample starts the grace")
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.1)
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.4)
-        XCTAssertEqual(state.visibility, .hover("synthetic"), "An active ring hover owns the card despite an inconsistent pointer sample")
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.5)
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.76)
-        XCTAssertEqual(state.visibility, .hidden, "Leaving both ring and card still closes after the grace")
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.66)
+        XCTAssertEqual(state.visibility, .hidden, "A stale hover cannot outlive a confirmed exit")
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 2)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 2.26)
+        XCTAssertEqual(state.visibility, .hover("synthetic"), "A fresh re-entry opens the card again")
     }
 
     func testOnlyKeyWindowFocusedDescendantControlProtectsCard() {

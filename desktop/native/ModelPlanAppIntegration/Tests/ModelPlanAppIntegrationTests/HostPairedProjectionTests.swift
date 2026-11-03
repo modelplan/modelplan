@@ -241,9 +241,12 @@ private actor EntrySyntheticClient: EngineClient {
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 55)
         let surface = DiagnosticSettingsSurface()
+        let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: pointer) },
             deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             makeSettingsSurface: { _ in surface },
@@ -258,6 +261,8 @@ private actor EntrySyntheticClient: EngineClient {
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
+        let hoverRect = try XCTUnwrap(app.composition.dock.edgePresentation?.placement?.globalHoverRects.first)
+        pointer = CGPoint(x: hoverRect.midX, y: hoverRect.midY)
         try XCTUnwrap(app.composition.dock.dockView.nozzleEventDelegate).hoverNozzle(id)
         for _ in 0..<100 { if !app.composition.dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.composition.dock.card.isHidden)

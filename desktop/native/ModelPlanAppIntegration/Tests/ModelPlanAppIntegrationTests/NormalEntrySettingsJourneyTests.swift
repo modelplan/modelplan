@@ -398,9 +398,11 @@ private actor SettingsJourneyClient: EngineClient {
         projection["rows"] = rows; root["projection"] = projection
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["zh-CN"]),
-            createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+            createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: pointer) }, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare()
         // Preserve the fresh Chinese language while opening the real interactive surface.
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
@@ -421,6 +423,8 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertNotNil(dock.dockView.nozzleEventDelegate)
         // Member identity rule: interaction targets the member, not its tool row.
         let nozzle = try XCTUnwrap(dock.dockView.nozzleEventDelegate)
+        let hoverRect = try XCTUnwrap(dock.edgePresentation?.placement?.globalHoverRects.first)
+        pointer = CGPoint(x: hoverRect.midX, y: hoverRect.midY)
         nozzle.hoverNozzle("0123456789abcdef")
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden)
