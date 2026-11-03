@@ -11,7 +11,7 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues }
+    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues }
     private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
@@ -27,7 +27,7 @@ import ModelPlanWire
         let malformed = state == .malformedDeadline || state == .currentMalformedDeadline
         let unknownDeadline = state == .unknownDeadline || state == .malformedDeadline || currentUnknown
         let isRetained = state == .retained || state == .retainedExpired || (unknownDeadline && !currentUnknown)
-        let isRevoked = state == .revoked || state == .revokedWithValues
+        let isRevoked = state == .revoked || state == .revokedWithValues || state == .revokedFreshWithValues
         row["state"] = isRetained ? "stale" : "fresh"
         row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
         if isRetained {
@@ -84,9 +84,12 @@ import ModelPlanWire
             row["accounts"] = [account, second]
         }
         if isRevoked {
-            row["consent"] = "denied"; row["state"] = "needs_consent"
-            row["reason"] = ["code": "consent_denied", "text": ["en": "Reader consent is denied", "zh": "读取授权已拒绝"]]
-            row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Review reader consent in Settings", "zh": "在设置中检查读取授权"], "availableAt": NSNull(), "disabledReason": NSNull()]
+            row["consent"] = "denied"
+            if state != .revokedFreshWithValues {
+                row["state"] = "needs_consent"
+                row["reason"] = ["code": "consent_denied", "text": ["en": "Reader consent is denied", "zh": "读取授权已拒绝"]]
+                row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Review reader consent in Settings", "zh": "在设置中检查读取授权"], "availableAt": NSNull(), "disabledReason": NSNull()]
+            }
             row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         }
         projection["rows"] = [row]
@@ -94,7 +97,8 @@ import ModelPlanWire
         projection["rowsSummary"] = ["state": "ok", "reason": ["code": "ok", "text": summaryText], "text": summaryText, "nextStep": NSNull()]
         if isRevoked {
             let noConsent = ["en": "Choose tools to allow in Settings", "zh": "在设置中选择允许读取的工具"]
-            projection["rowsSummary"] = ["state": "no_consent", "reason": ["code": "no_consent", "text": noConsent], "text": noConsent, "nextStep": row["nextStep"]!]
+            let consentStep: [String: Any] = ["action": "open_settings_consent", "text": ["en": "Review reader consent in Settings", "zh": "在设置中检查读取授权"], "availableAt": NSNull(), "disabledReason": NSNull()]
+            projection["rowsSummary"] = ["state": "no_consent", "reason": ["code": "no_consent", "text": noConsent], "text": noConsent, "nextStep": consentStep]
         }
         projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
@@ -117,7 +121,9 @@ import ModelPlanWire
         if state == .atExpiry { now = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline)) }
         else { now = overrideNow ?? Date(timeIntervalSince1970: seconds) }
         deadlineProbe?(rows.projection.rows, now)
-        let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        let paired = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: now))
+        let content = paired.content
+        XCTAssertEqual(paired.deadline, provider.recomputeDeadline)
         providerProbe?(provider, content, now)
         if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
         if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none) }
@@ -131,9 +137,12 @@ import ModelPlanWire
             XCTAssertEqual(input?.windows.first { $0.period == .fiveHour }?.remainingPercent, 42.5)
             XCTAssertEqual(input?.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
-            let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            let heldPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            let held = heldPair.content
             XCTAssertEqual(held.snapshot.inputs.count, 1)
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(heldPair.deadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(paired.deadline, .scheduled(firstDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
             // The row-level reason and overall input remain non-fresh. The
             // later weekly window is still time-valid on the wire, but the
@@ -175,9 +184,12 @@ import ModelPlanWire
             await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
                 consentGeneration: 1, data: refreshedRows), delivery: context), invalidRowCount: 0))
             let after = Date(timeIntervalSince1970: 1_830_000_000)
-            let refreshed = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let refreshedPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let refreshed = refreshedPair.content
             let refreshedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-02-01T00:00:00Z"))
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(refreshedPair.deadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(heldPair.deadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(refreshed.snapshot.inputs.count, 1)
             let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
             XCTAssertEqual(refreshedInput.dataState, .fresh)
@@ -185,10 +197,13 @@ import ModelPlanWire
             XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
-            let withdrawn = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let withdrawnPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let withdrawn = withdrawnPair.content
             XCTAssertTrue(withdrawn.snapshot.inputs.isEmpty)
             XCTAssertNil(withdrawn.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
             XCTAssertEqual(provider.recomputeDeadline, .none)
+            XCTAssertEqual(withdrawnPair.deadline, .none)
+            XCTAssertEqual(refreshedPair.deadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
         }
         if mixedTransition {
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
@@ -280,6 +295,20 @@ import ModelPlanWire
         }
         let money = try await reserve(balance: 12.5, unit: "money", english: true)
         XCTAssertEqual(money?.value, "12.5"); XCTAssertEqual(money?.detail, "Currency not reported")
+    }
+
+    func testDeniedConsentWithContradictoryFreshQuotaCannotProjectValues() async throws {
+        // Malformed/contradictory wire only: normal producer removes denied accounts.
+        let result = try await projection(balance: 12.5, unit: "credits", english: true, state: .revokedFreshWithValues)
+        let input = try XCTUnwrap(result.0)
+        XCTAssertEqual(input.dataState, .unavailable)
+        XCTAssertTrue(input.windows.allSatisfy { $0.remainingPercent == nil })
+        XCTAssertNil(result.1)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(try DockInstrumentProjection.evaluate(input, now: now).readout, "--")
+        let card = try DockCardProjection.content(input: input, at: now)
+        XCTAssertTrue(card.rows.filter { $0.kind == .quota }.allSatisfy { $0.value == "--" && $0.remainingFraction == nil })
+        XCTAssertFalse(card.rows.filter { $0.kind == .quota }.isEmpty)
     }
 
     func testConsentGenerationClearWithdrawsReserveFromSameStoreAndProvider() async throws {

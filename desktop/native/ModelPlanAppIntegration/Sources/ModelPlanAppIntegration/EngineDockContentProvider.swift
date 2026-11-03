@@ -13,6 +13,13 @@ public enum EngineRecomputeDeadline: Equatable, Sendable {
     case none
 }
 
+/// The content and scheduling facts from one synchronous Provider pass.
+/// Host-owned snapshot tokens are still required to fence later callbacks.
+public struct EngineContentAndDeadline: Sendable {
+    public let content: DockContent
+    public let deadline: EngineRecomputeDeadline
+}
+
 /// Reads only already-admitted rows. The consumer must recompute after each
 /// replacement or invalidation and use its own snapshot token to cancel timers.
 public enum EngineDeadlineFacts {
@@ -75,6 +82,10 @@ public enum EngineDeadlineFacts {
     func scrubInvalidatedMenus() { if source.dockContent.status == .cleared { liveMenus.scrubAll() } }
     public let source: EngineDockMenuProvider
     public init(source: EngineDockMenuProvider) { self.source = source }
+    public func makeContentAndDeadline(_ context: DockContentContext) -> EngineContentAndDeadline {
+        let content = makeContent(context)
+        return .init(content: content, deadline: recomputeDeadline)
+    }
     public func makeContent(_ context: DockContentContext) -> DockContent {
         let value = source.dockContent
         var inputs: [DockInstrumentInput] = []
@@ -231,7 +242,8 @@ public enum EngineDeadlineFacts {
         input.duplicateAccountTag=member.duplicateTag
         // A non-fresh row remains non-fresh. The Dock model currently cannot
         // display a current weekly window while its overall input is non-fresh.
-        let rowCurrent = row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
+        let authorized = row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired
+        let rowCurrent = authorized && row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             for window in account.windows {
