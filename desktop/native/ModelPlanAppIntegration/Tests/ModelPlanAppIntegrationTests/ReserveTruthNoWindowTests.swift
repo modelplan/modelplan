@@ -11,8 +11,8 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum FixtureState { case fresh, retained, retainedExpired, atExpiry, expired, refreshed, revoked, revokedWithValues }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -68,9 +68,22 @@ import ModelPlanWire
             consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         // The expired case holds the same valid fresh snapshot past its deadline;
         // it does not pretend the producer emitted current=true after expiry.
-        let now: TimeInterval = (state == .expired || state == .refreshed) ? 1_830_000_000 : 1_800_000_000
-        let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: now)))
+        let seconds: TimeInterval = (state == .expired || state == .refreshed) ? 1_830_000_000 : 1_800_000_000
+        let now: Date
+        if state == .atExpiry { now = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline)) }
+        else { now = Date(timeIntervalSince1970: seconds) }
+        let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
+        if clearAfter {
+            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
+                nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
+            let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+            XCTAssertTrue(source.dockContent.dockRows.isEmpty)
+            XCTAssertNil(cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
+            return (cleared.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" },
+                    cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        }
         return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
     }
 
@@ -116,11 +129,20 @@ import ModelPlanWire
         XCTAssertEqual(money?.value, "12.5"); XCTAssertEqual(money?.detail, "Currency not reported")
     }
 
+    func testConsentGenerationClearWithdrawsReserveFromSameStoreAndProvider() async throws {
+        let cleared = try await projection(balance: 12.5, unit: "credits", english: true, clearAfter: true)
+        XCTAssertNil(cleared.0); XCTAssertNil(cleared.1)
+    }
+
     func testFreshRetainedAndExpiredProjectionStatesAndReserve() async throws {
         let fresh = try await projection(balance: 12.5, unit: "credits", english: true, state: .fresh)
         XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "12.5 credits")
         let retained = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained)
         XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "12.5 credits")
+        let retainedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        XCTAssertLessThan(Date(timeIntervalSince1970: 1_800_000_000), retainedDeadline)
+        let atExpiry = try await projection(balance: 12.5, unit: "credits", english: true, state: .atExpiry)
+        XCTAssertEqual(atExpiry.0?.dataState, .unavailable); XCTAssertNil(atExpiry.1)
         let retainedExpired = try await projection(balance: 12.5, unit: "credits", english: true, state: .retainedExpired)
         XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertNil(retainedExpired.1)
         let expired = try await projection(balance: 12.5, unit: "credits", english: true, state: .expired)
