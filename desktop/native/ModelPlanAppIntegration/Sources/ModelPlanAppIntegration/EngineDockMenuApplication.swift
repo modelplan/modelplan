@@ -122,6 +122,7 @@ import ModelPlanMenuVerification
         composition.menuDidChange = { [weak self] in
             guard let self else { return }
             if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
+            self.updateMemberRefreshCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             #if MODELPLAN_U6_DRIVE
             if self.composition.provider.dockContent.status == .cleared { self.driveGuard?.recordClear() }
@@ -131,6 +132,19 @@ import ModelPlanMenuVerification
         composition.dock.menuNoticeDidChange = { [weak self] notice, first in self?.applyMenuNotice(notice, first: first) }
         composition.dock.showSettings = settingsHost.action
         composition.dock.showConsole = { [weak self] in self?.showConsole() }
+    }
+    private func updateMemberRefreshCapability() {
+        guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else {
+            if memberRefreshAdapter is AppServerMemberRefreshAdapter { memberRefreshAdapter = nil }
+            return
+        }
+        guard memberRefreshAdapter == nil else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let supported = await self.composition.client.supportsCapability("memberRefreshV1")
+            guard !self.terminating, self.composition.client.isCurrent(delivery), self.memberRefreshAdapter == nil else { return }
+            if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
+        }
     }
     private func updateSettingsContext() {
         let ready: Bool

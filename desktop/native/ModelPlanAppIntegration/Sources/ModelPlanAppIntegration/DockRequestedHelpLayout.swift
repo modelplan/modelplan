@@ -14,7 +14,7 @@ struct DockRequestedHelpAnchor: Equatable {
 @MainActor enum DockRequestedHelpLayout {
     static func make(session: UUID, viewport: CGSize, language: InstrumentLanguage,
                      anchors: [DockRequestedHelpAnchor], blocked: [CGRect],
-                     recipe: any HelpUIRecipeProvider) -> HelpUIRenderInput? {
+                     recipe: any HelpUIRecipeProvider, refreshAvailable: Bool = false) -> HelpUIRenderInput? {
         var selectedRegions = Set<HelpMapRegion>()
         let visible = anchors.filter { anchor in
             guard anchor.visible else { return false }
@@ -40,9 +40,11 @@ struct DockRequestedHelpAnchor: Equatable {
         var frames: [String: CGRect] = [:]
         for anchor in visible {
             guard let entry = catalogEntries[anchor.region] else { return nil }
-            let text = anchor.caption ?? entry.sentence
+            let fallback = language == .chinese ? "喷口：悬停查看卡片，拖动可排序，⌥ 加方向键移动一位。" : "Nozzle: hover for its card, drag to reorder or use Option arrows to move one place."
+            let caption = anchor.caption ?? (anchor.region == .nozzle && !refreshAvailable ? fallback : nil)
+            let text = caption ?? entry.sentence
             let labelID: String
-            if anchor.caption == nil && map.regionAnchors[anchor.region] == nil {
+            if caption == nil && map.regionAnchors[anchor.region] == nil {
                 map.regionAnchors[anchor.region] = anchor.id; labelID = entry.id
             } else {
                 guard map.supplements.count < 16 else { return nil }

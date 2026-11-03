@@ -156,7 +156,8 @@ struct DockStatusHelpAnchor {
         let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)
         let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
         guard var input = DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
-                language: language, anchors: anchors, blocked: blockers, recipe: composition.layer.recipeProvider) else {
+                language: language, anchors: anchors, blocked: blockers, recipe: composition.layer.recipeProvider,
+                refreshAvailable: dock?.ringRefreshAvailable == true) else {
             finishMap(); return false
         }
         input.reduceMotion = application.latest?.effective.reduceMotion ?? true

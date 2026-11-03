@@ -7,6 +7,17 @@ import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class DockRequestedHelpLayoutTests: XCTestCase {
+    func testNozzleHelpOnlyPromisesRefreshWhenNegotiated() throws {
+        let anchor = DockRequestedHelpAnchor(id: "nozzle", region: .nozzle,
+            rect: CGRect(x: 400, y: 300, width: 40, height: 40), visible: true)
+        for available in [false, true] {
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1000, height: 800), language: .english, anchors: [anchor], blocked: [], recipe: NeutralHelpUIRecipeProvider(), refreshAvailable: available))
+            let result = NeutralHelpUIRecipeProvider().presentation(for: input)
+            let label = try XCTUnwrap(result.mapLabels.first { $0.anchorID == "nozzle" })
+            XCTAssertEqual(label.text.contains("click to refresh"), available)
+        }
+    }
+
     func testLabelsEveryVisibleAnchorAndOmitsHiddenAnchors() throws {
         let recipe = NeutralHelpUIRecipeProvider()
         let anchors: [DockRequestedHelpAnchor] = [
