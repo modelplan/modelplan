@@ -60,7 +60,7 @@ func enumCase(s string) string {
 	var b strings.Builder
 	upper := false
 	for _, r := range s {
-		if r == '_' || r == '-' {
+		if r == '_' || r == '-' || r == '.' {
 			upper = true
 			continue
 		}
@@ -210,13 +210,16 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
+	if strings.HasPrefix(name, "RowsResetCard") || name == "RowsAccount" && field == "resetCards" {
+		return true
+	}
 	if strings.HasPrefix(name, "WireCockpit") {
 		return true
 	}
 	if name == "WireCockpitQueryParams" {
 		return true
 	}
-	if name == "RowsWindow" && field == "modelScope" || name == "WireRowsProjection" && field == "resetEvents" {
+	if name == "RowsWindow" && (field == "modelScope" || field == "source" || field == "resetsAt") || name == "WireRowsProjection" && field == "resetEvents" || name == "WireDiagnostics" && field == "refreshDecisions" || name == "WireRefreshRequestParams" && field == "member" || name == "WireMemberRefreshResult" && (field == "reason" || field == "notBefore") {
 		return true
 	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
@@ -286,7 +289,7 @@ func (m *model) fields(d *declaration) error {
 			m.Used[key] = true
 			s = key
 		}
-		requiredNullable := pointer && !omit && d.Swift == "WirePublicationResult"
+		requiredNullable := pointer && !omit && (d.Swift == "WirePublicationResult" || d.Swift == "RowsResetCards" && parts[0] == "count" || d.Swift == "RowsResetCardItem" && parts[0] == "expiresAt")
 		if choices, ok := rule["anyOf"].([]any); ok && !pointer && !omit {
 			for _, choice := range choices {
 				if option, ok := choice.(map[string]any); ok && option["type"] == "null" {
@@ -446,6 +449,10 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		if f.RequiredNullable {
 			fmt.Fprintf(b, "        guard c.contains(.%s) else { throw WireDecodeError.invalidIdentity }\n", ident(f.JSON))
 		}
+		if d.Swift == "RowsWindow" && f.JSON == "resetsAt" {
+			fmt.Fprintf(b, "        do { self.%s = try c.decodeIfPresent(WireTimestamp.self, forKey: .%s) }\n        catch { throw WireDecodeError.invalidBound }\n", ident(f.JSON), ident(f.JSON))
+			continue
+		}
 		call := "decode"
 		prefix := "try "
 		if f.Optional {
@@ -522,7 +529,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 			fmt.Fprintf(b, "        guard %s <= %v else { throw WireDecodeError.invalidBound }\n", value, high)
 		}
 		switch f.Swift {
-		case "RowsConsent", "WireConsentState", "WireCredentialOutcome", "RowsKind":
+		case "RowsConsent", "WireConsentState", "WireCredentialOutcome", "RowsKind", "RowsResetCardState", "RowsResetCardSourceKind":
 			fmt.Fprintf(b, "        guard %s.isKnown else { throw WireDecodeError.invalidAuthorization }\n", value)
 		case "WireKeychainChoice":
 			if f.Optional {
@@ -540,6 +547,11 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 		fmt.Fprintln(b, "        try WireValidation.protocolVersion(protocolVersion)")
 	case "RowsProjection", "WireRowsProjection":
 		fmt.Fprintln(b, "        guard rowsVersion == WireProtocol.rowsVersion else { throw WireDecodeError.invalidVersion }\n        guard Set(rows.map { $0.id }).count == rows.count else { throw WireDecodeError.invalidIdentity }")
+	case "RowsResetCards":
+		fmt.Fprintln(b, `        guard (items?.count ?? 0) <= 64, sources.count <= 16 else { throw WireDecodeError.invalidBound }
+        if let count = count, !(0...10000).contains(count) { throw WireDecodeError.invalidBound }`)
+	case "RowsResetCardItem":
+		fmt.Fprintln(b, `        guard id.utf8.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw WireDecodeError.invalidIdentity }`)
 	case "RowsRow":
 		fmt.Fprintln(b, "        try WireValidation.identity(id)\n        if kind.rawValue == \"tool\" { try WireValidation.toolID(id) }\n        if kind.rawValue == \"declared\" && (!id.hasPrefix(\"declared:\") || id.count <= 9) { throw WireDecodeError.invalidIdentity }\n        if ([\"denied\", \"unset\"].contains(consent.rawValue) || reason.code.rawValue == \"cleanup_pending\") && !accounts.isEmpty { throw WireDecodeError.invalidAuthorization }")
 	case "WireConsentGrantParams":
@@ -562,6 +574,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	fmt.Fprintln(b, "    }")
 	if d.Swift == "RowsRow" {
 		fmt.Fprintln(b, `    fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.refreshNotBefore = nil
         self.id = invalidID
         self.kind = .unknown("invalid_row")
         self.order = invalidOrder

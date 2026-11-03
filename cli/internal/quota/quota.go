@@ -53,6 +53,7 @@ func (w *Window) evalRequests(now time.Time) {
 }
 
 type Window struct {
+	Origin string `json:"-"`
 	// ModelIDs records explicit provider scope; nil means plan-wide.
 	ModelIDs []string `json:"modelIds,omitempty"`
 	// ScopeKnown distinguishes fresh plan-wide windows from older cached records.
@@ -174,16 +175,17 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	Beta       bool      `json:"beta,omitempty"` // reader has not completed real-account verification
-	Source     string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
-	Plan       string    `json:"plan,omitempty"`
-	Region     string    `json:"region,omitempty"`
-	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
-	ObservedAt time.Time `json:"observedAt"`
-	Stale      bool      `json:"stale"`
-	Harness    *Harness  `json:"harness,omitempty"`
-	Windows    []Window  `json:"windows"`
-	Cards      []Card    `json:"cards,omitempty"`
+	ResetCards *rows.ResetCards `json:"-"`
+	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
+	Plan       string           `json:"plan,omitempty"`
+	Region     string           `json:"region,omitempty"`
+	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
+	ObservedAt time.Time        `json:"observedAt"`
+	Stale      bool             `json:"stale"`
+	Harness    *Harness         `json:"harness,omitempty"`
+	Windows    []Window         `json:"windows"`
+	Cards      []Card           `json:"cards,omitempty"`
 	// Subscription: the account the windows belong to, when a reader saw it (identity.go).
 	Subscription *Binding `json:"subscription,omitempty"`
 	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on

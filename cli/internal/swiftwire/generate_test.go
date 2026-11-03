@@ -56,6 +56,20 @@ func TestEveryTolerantOptionalFieldHasAnAuditEntry(t *testing.T) {
 	}
 }
 
+func TestRowsWindowResetTimestampUsesBoundedStrictDecode(t *testing.T) {
+	if !strict("RowsWindow", "resetsAt") {
+		t.Fatal("RowsWindow.resetsAt must reject a non-null invalid value")
+	}
+	generated, err := Generate(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "do { self.`resetsAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`resetsAt`) }\n        catch { throw WireDecodeError.invalidBound }"
+	if !bytes.Contains(generated, []byte(want)) {
+		t.Fatal("missing strict, coalescing reset timestamp decoder")
+	}
+}
+
 func TestGeneratedSwiftMatchesProductionContract(t *testing.T) {
 	root := repoRoot(t)
 	a, err := Generate(root)
@@ -223,5 +237,11 @@ func TestModelScopeAndResetEventsAreStrictNonNull(t *testing.T) {
 	}
 	if len(want) != 0 {
 		t.Fatalf("missing strict optional captures: %v", want)
+	}
+}
+
+func TestEnumCaseAcceptsDottedScopeIDs(t *testing.T) {
+	if got := enumCase("claude.account_usage.saved_login"); got != "claudeAccountUsageSavedLogin" {
+		t.Fatalf("dotted scope generated invalid Swift case %q", got)
 	}
 }

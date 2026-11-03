@@ -155,6 +155,7 @@ func Build(in Input) Projection {
 			out.Rows[i].Order = 1000 + i
 		}
 	}
+	mergeProjectionResetCards(&out)
 	out.RowsSummary = summary(in, out.Rows, allowed, declaredCount)
 	return out
 }
