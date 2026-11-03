@@ -20,9 +20,9 @@ export type HostMessage = Header & (
   {readonly type:'clear'} | {readonly type:'unload'});
 export interface CockpitView {
   configure(appearance:Appearance):void;
-  updateAppearance(appearance:LiveAppearance):void;
+  updateAppearance(appearance:LiveAppearance,now:number):void;
   shell(state:ShellState):void;
-  render(data:WireCockpitData):void;
+  render(data:WireCockpitData,now:number):void;
   clear():void;
   nextDeadline():number|null;
   tick(now:number):void;
@@ -86,7 +86,7 @@ export class CockpitBridge {
   private historyTools=new Set<string>();
   private retiredSessions=new Set<string>();
   private retiredEpochs=new Set<string>();
-  constructor(private readonly pageId:string,private readonly origin:string,private readonly post:(message:string)=>void,private readonly view:CockpitView,private readonly requestId:()=>string) {
+  constructor(private readonly pageId:string,private readonly origin:string,private readonly post:(message:string)=>void,private readonly view:CockpitView,private readonly requestId:()=>string,private readonly clock:()=>number=Date.now) {
     if(!uuid(pageId)||!(origin==='modelplan-cockpit://bundle'||/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(origin))) throw TypeError('Invalid cockpit configuration');
     view.clear(); view.active(false);
   }
@@ -153,7 +153,7 @@ export class CockpitBridge {
     if(!same(m,this.context)) return false;
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency});} catch {this.unload();return false;}
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency},this.clock());} catch {this.unload();return false;}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}
@@ -161,7 +161,7 @@ export class CockpitBridge {
       case 'display':
         if(!this.domReady) return false;
         // Render is synchronous, with no queued/private snapshot cache to revive.
-        try {this.view.render(m.data);} catch {this.unload();return false;}
+        try {this.view.render(m.data,this.clock());} catch {this.unload();return false;}
         this.historyTools=new Set(m.data.projection.rows.filter(row=>row.kind==='tool').map(row=>row.id));
         this.scopeMembers=new Set(cockpitMembers(m.data).map(member=>member.key));
         this.hasDisplay=true;this.cleared=false;

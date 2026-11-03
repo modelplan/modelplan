@@ -28,7 +28,7 @@ await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
 // Renderer code only. Visual resources are managed separately by their owner.
 const studyModules=[
-  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','i18n.js',
+  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
   'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
   'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/where.js',
   'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
