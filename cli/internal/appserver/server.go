@@ -454,6 +454,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 	base = context.WithValue(base, memberRefreshContextKey{}, s.clientCapabilities[CapabilityMemberRefresh])
 	base = context.WithValue(base, windowSourcesContextKey{}, s.clientCapabilities[CapabilityWindowSources])
 	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
+	base = context.WithValue(base, resetEventLinksContextKey{}, s.clientCapabilities[CapabilityResetEventLinksV1])
 	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
 	ctx, cancel := context.WithTimeout(base, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
@@ -523,7 +524,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh])}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1])}
 				}
 				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
@@ -689,6 +690,7 @@ func (s *Server) readView(ctx context.Context) error {
 	eventsEnabled := s.clientCapabilities[CapabilityResetEvents]
 	sourcesEnabled := s.clientCapabilities[CapabilityWindowSources]
 	membersEnabled := s.clientCapabilities[CapabilityMemberRefresh]
+	linksEnabled := s.clientCapabilities[CapabilityResetEventLinksV1]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -710,7 +712,7 @@ func (s *Server) readView(ctx context.Context) error {
 				s.rowsPending = false
 			}
 			s.mu.Unlock()
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled)}), v.Stamp, func(error) {
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled)}), v.Stamp, func(error) {
 				s.mu.Lock()
 				if s.sequence == seq {
 					s.rowsPending = true

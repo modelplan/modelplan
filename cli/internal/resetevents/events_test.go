@@ -69,9 +69,10 @@ func TestVerifiedResetNormalization(t *testing.T) {
 	}
 }
 
-// V1 has no official-host interface: links are omitted for every source while
-// otherwise eligible announcements remain visible.
-func TestSourceLinksAreOmittedInV1(t *testing.T) {
+// The identity URL is not a published link: only typed candidates admitted by
+// the host policy become source links, so an unlisted identity host publishes
+// no link while the otherwise eligible event stays visible.
+func TestUnreviewedIdentityURLIsNotPublishedAsLink(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
 	for _, rawURL := range []string{"https://vendor.example/reset", "https://unlisted.example/reset"} {
@@ -79,8 +80,8 @@ func TestSourceLinksAreOmittedInV1(t *testing.T) {
 		b, _ := json.Marshal(r)
 		d := &digest.Digest{PublicationID: "0123456789abcdef01234567", Resets: []json.RawMessage{b}}
 		events, _ := Project(d, projection, now)
-		if len(events) != 1 || events[0].Source.URL != "" {
-			t.Fatal("v1 exposed a source link or dropped an eligible event")
+		if len(events) != 1 || events[0].Source.URL != "" || len(events[0].Source.Links) != 0 {
+			t.Fatal("unreviewed identity URL leaked into source links or dropped an eligible event")
 		}
 	}
 }
@@ -157,4 +158,52 @@ func TestPointDeadlineAndWindowBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPublishedTimingAndConfirmationFacts(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	published := now.Add(-time.Hour)
+	end := now.Add(2 * time.Hour)
+	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool}}}
+	announcement := record{ID: "event", Provider: "openai", EventType: "direct_reset_announced", Status: "upstream-announced", PublishedAt: published}
+	encode := func(r record) json.RawMessage {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	project := func(t *testing.T, records ...record) Event {
+		t.Helper()
+		d := &digest.Digest{PublicationID: "0123456789abcdef01234567"}
+		for _, r := range records {
+			d.Resets = append(d.Resets, encode(r))
+		}
+		events, _ := Project(d, projection, now)
+		if len(events) != 1 {
+			t.Fatalf("got %d events, want one", len(events))
+		}
+		return events[0]
+	}
+	t.Run("unscheduled and missing URL", func(t *testing.T) {
+		e := project(t, announcement)
+		if e.Status != "announced" || !e.PublishedAt.Equal(published) || e.Schedule != nil || e.Source.URL != "" {
+			t.Fatalf("unexpected unscheduled facts: %+v", e)
+		}
+	})
+	t.Run("explicit window", func(t *testing.T) {
+		r := announcement
+		r.Schedule = &Schedule{Precision: "window", From: now, Through: end}
+		e := project(t, r)
+		if e.Schedule == nil || !e.Schedule.From.Equal(now) || !e.Schedule.Through.Equal(end) {
+			t.Fatalf("explicit window lost: %+v", e.Schedule)
+		}
+	})
+	t.Run("confirmation uses explicit publication time", func(t *testing.T) {
+		confirmation := record{Provider: "openai", EventType: "direct_reset_reported_complete", Status: "upstream-confirmed", PublishedAt: now, Confirms: "event"}
+		e := project(t, announcement, confirmation)
+		if e.Status != "confirmed" || e.Confirms != "event" || !e.PublishedAt.Equal(now) || e.Schedule != nil || e.Source.URL != "" {
+			t.Fatalf("unexpected confirmation facts: %+v", e)
+		}
+	})
 }

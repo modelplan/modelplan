@@ -137,7 +137,17 @@
             "source": {
               "kind": "publication",
               "publicationId": "0123456789abcdef01234567",
-              "url": "https://example.test/reset"
+              "url": "https://example.test/reset",
+              "links": [
+                {
+                  "type": "aihot",
+                  "url": "https://aihot.news/codex-reset-2026-11"
+                },
+                {
+                  "type": "original",
+                  "url": "https://x.com/OpenAI/status/1791234567890123456"
+                }
+              ]
             }
           }
         ]
