@@ -62,6 +62,16 @@
         "plan": {
           "$ref": "#/$defs/Plan"
         },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "route": {
           "enum": [
             "saved_login_api",
@@ -2570,6 +2580,102 @@
           "type": "integer"
         }
       ]
+    },
+    "ResetCardItem": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "ResetCardSource": {
+      "additionalProperties": false,
+      "properties": {
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "ResetCards": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "earliestExpiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResetCardItem"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/ResetCardSource"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "state": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "count",
+        "truncated",
+        "sources"
+      ],
+      "type": "object"
     },
     "ResetEvent": {
       "additionalProperties": false,

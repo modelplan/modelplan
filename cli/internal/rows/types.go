@@ -52,11 +52,23 @@ type ExpiryState struct {
 	NextStep *NextStep `json:"nextStep" null:"coalesced"`
 }
 
+type ResetCardState string
+
+const (
+	ResetCardUnknown  ResetCardState = "unknown"
+	ResetCardPartial  ResetCardState = "partial"
+	ResetCardComplete ResetCardState = "complete"
+)
+
+type ResetCardSourceKind string
+
+const ResetCardCodexAccount ResetCardSourceKind = "codex-account"
+
 // ResetCards is a consent-fenced observation; count is nil when unknown.
 type ResetCards struct {
-	State             string            `json:"state"`
+	State             ResetCardState    `json:"state"`
 	Count             *int              `json:"count" null:"coalesced"`
-	EarliestExpiresAt *time.Time        `json:"earliestExpiresAt,omitempty" null:"coalesced"`
+	EarliestExpiresAt *time.Time        `json:"earliestExpiresAt,omitempty" null:"forbidden"`
 	Items             []ResetCardItem   `json:"items,omitempty" schema:"maxItems=64" null:"forbidden"`
 	Truncated         bool              `json:"truncated"`
 	Sources           []ResetCardSource `json:"sources" schema:"maxItems=16"`
@@ -66,8 +78,8 @@ type ResetCardItem struct {
 	ExpiresAt *time.Time `json:"expiresAt" null:"coalesced"`
 }
 type ResetCardSource struct {
-	Source     string    `json:"source"`
-	ObservedAt time.Time `json:"observedAt"`
+	Source     ResetCardSourceKind `json:"source"`
+	ObservedAt time.Time           `json:"observedAt"`
 }
 
 type Account struct {

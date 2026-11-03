@@ -210,6 +210,9 @@ func (m *model) swiftType(pkg string, e ast.Expr) (string, error) {
 	}
 }
 func strict(name, field string) bool {
+	if strings.HasPrefix(name, "RowsResetCard") || name == "RowsAccount" && field == "resetCards" {
+		return true
+	}
 	if strings.HasPrefix(name, "WireCockpit") {
 		return true
 	}

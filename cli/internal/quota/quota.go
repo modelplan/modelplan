@@ -174,7 +174,7 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	ResetCards *rows.ResetCards `json:"resetCards,omitempty"`
+	ResetCards *rows.ResetCards `json:"-"`
 	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
 	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
 	Plan       string           `json:"plan,omitempty"`

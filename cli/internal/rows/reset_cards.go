@@ -67,7 +67,7 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 	}
 	out := unknownResetCards()
 	items := map[string]ResetCardItem{}
-	sources := map[string]ResetCardSource{}
+	sources := map[ResetCardSourceKind]ResetCardSource{}
 	known, complete := false, true
 	var stamp *time.Time
 	for _, set := range sets {
@@ -118,7 +118,7 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 	}
 	keys := make([]string, 0, len(sources))
 	for k := range sources {
-		keys = append(keys, k)
+		keys = append(keys, string(k))
 	}
 	sort.Strings(keys)
 	if len(keys) > 16 {
@@ -127,7 +127,7 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 		complete = false
 	}
 	for _, k := range keys {
-		out.Sources = append(out.Sources, sources[k])
+		out.Sources = append(out.Sources, sources[ResetCardSourceKind(k)])
 	}
 	if complete && !out.Truncated {
 		count := len(out.Items)

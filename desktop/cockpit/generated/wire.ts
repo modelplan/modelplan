@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 5b0542dd04388a59464ce0edaca0df01e4adb732e651e3b1c4a3f55e93ecdab7
+// Schema SHA-256: 9b91564d287c148a40926ef43808449a9cce63f7ea9cb5a6ce5de51252af76eb
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -11,6 +11,7 @@ export type WireAccount = {
   readonly "lastFailure": WireFailure | null;
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
+  readonly "resetCards"?: WireResetCards | null;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
   readonly "valueState": "current" | "retained" | "none";
@@ -147,6 +148,25 @@ export type WireReason = {
   readonly "text": WireText;
 };
 
+export type WireResetCardItem = {
+  readonly "expiresAt": string | null;
+  readonly "id": string;
+};
+
+export type WireResetCardSource = {
+  readonly "observedAt": string;
+  readonly "source": string;
+};
+
+export type WireResetCards = {
+  readonly "count": number | null;
+  readonly "earliestExpiresAt"?: string | null;
+  readonly "items"?: ReadonlyArray<WireResetCardItem>;
+  readonly "sources": ReadonlyArray<WireResetCardSource>;
+  readonly "state": string;
+  readonly "truncated": boolean;
+};
+
 export type WireResetEvent = {
   readonly "confirms"?: string;
   readonly "expiresAt": string;
@@ -273,6 +293,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "plan": {
         "$ref": "#/$defs/Plan"
+      },
+      "resetCards": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ResetCards"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "route": {
         "enum": [
@@ -1071,6 +1101,102 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "text"
+    ],
+    "type": "object"
+  },
+  "ResetCardItem": {
+    "additionalProperties": false,
+    "properties": {
+      "expiresAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "maxLength": 64,
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "expiresAt"
+    ],
+    "type": "object"
+  },
+  "ResetCardSource": {
+    "additionalProperties": false,
+    "properties": {
+      "observedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "observedAt"
+    ],
+    "type": "object"
+  },
+  "ResetCards": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "earliestExpiresAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/ResetCardItem"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/ResetCardSource"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "state": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "state",
+      "count",
+      "truncated",
+      "sources"
     ],
     "type": "object"
   },

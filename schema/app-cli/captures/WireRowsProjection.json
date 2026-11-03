@@ -48,6 +48,24 @@
       },
       "accounts": [
         {
+          "resetCards": {
+            "state": "complete",
+            "count": 1,
+            "earliestExpiresAt": "2026-10-29T12:00:00Z",
+            "items": [
+              {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "expiresAt": "2026-10-29T12:00:00Z"
+              }
+            ],
+            "truncated": false,
+            "sources": [
+              {
+                "source": "codex-account",
+                "observedAt": "2026-10-29T12:00:00Z"
+              }
+            ]
+          },
           "route": "saved_login_api",
           "subscriptionRef": "0123456789abcdef",
           "accountLocator": "0123456789abcdef",

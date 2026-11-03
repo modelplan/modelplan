@@ -6,6 +6,14 @@
       "type": "RowsAccount",
       "optional": [
         {
+          "field": "resetCards",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "subscriptionRef",
           "omission": true,
           "null": true,
@@ -182,6 +190,67 @@
       "required": [
         "code",
         "text"
+      ]
+    },
+    {
+      "file": "RowsResetCardItem.json",
+      "type": "RowsResetCardItem",
+      "optional": [
+        {
+          "field": "expiresAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "file": "RowsResetCardSource.json",
+      "type": "RowsResetCardSource",
+      "optional": [],
+      "required": [
+        "source",
+        "observedAt"
+      ]
+    },
+    {
+      "file": "RowsResetCards.json",
+      "type": "RowsResetCards",
+      "optional": [
+        {
+          "field": "count",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "earliestExpiresAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "items",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "state",
+        "truncated",
+        "sources"
       ]
     },
     {
