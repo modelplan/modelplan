@@ -467,6 +467,45 @@ extension DecodeTests {
 
 
 extension DecodeTests {
+    func testResetTimestampDistinguishesAbsentNullAndInvalidValues() throws {
+        for mode in ["valid", "null", "missing", "invalid-string", "invalid-type"] {
+            var message = try object("retired-with-account.json")
+            var envelope = try XCTUnwrap(message["result"] as? [String: Any])
+            var snapshot = try XCTUnwrap(envelope["data"] as? [String: Any])
+            var projection = try XCTUnwrap(snapshot["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            let index = try XCTUnwrap(rows.firstIndex { $0["id"] as? String == "claude" })
+            var accounts = try XCTUnwrap(rows[index]["accounts"] as? [[String: Any]])
+            var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+            switch mode {
+            case "valid": windows[0]["resetsAt"] = "2026-10-29T12:00:00Z"
+            case "null": windows[0]["resetsAt"] = NSNull()
+            case "missing": windows[0].removeValue(forKey: "resetsAt")
+            case "invalid-string": windows[0]["resetsAt"] = "not-a-timestamp"
+            default: windows[0]["resetsAt"] = 42
+            }
+            accounts[0]["windows"] = windows; rows[index]["accounts"] = accounts
+            projection["rows"] = rows; snapshot["projection"] = projection
+            envelope["data"] = snapshot; message["result"] = envelope
+
+            let decoded = try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: encoded(message))
+            let output = decoded.value.result.data.projection.rows
+            let selected = try XCTUnwrap(output.first { $0.id == "claude" })
+            let healthy = try XCTUnwrap(output.first { $0.id == "codex" })
+            let invalid = mode == "invalid-string" || mode == "invalid-type"
+            XCTAssertEqual(decoded.invalidRowCount, invalid ? 1 : 0, mode)
+            XCTAssertEqual(selected.invalid, invalid, mode)
+            XCTAssertFalse(healthy.invalid, mode)
+            XCTAssertEqual(healthy.accounts.first?.windows.first?.remainingPercent, 75, mode)
+            if invalid {
+                XCTAssertTrue(selected.accounts.isEmpty, mode)
+            } else {
+                let reset = try XCTUnwrap(selected.accounts.first?.windows.first).resetsAt
+                XCTAssertEqual(reset?.rawValue, mode == "valid" ? "2026-10-29T12:00:00Z" : nil, mode)
+            }
+        }
+    }
+
     func testCredentialOptionalNullsRespectOutcomePresence() throws {
         for outcome in ["canceled", "denied", "not_found", "interaction_required", "timeout", "error"] {
             var omitted = try object("WireCredentialResult.json")
