@@ -245,3 +245,18 @@ durable result. A failure before the first save is an ordinary non-commit error.
 Capture provenance and per-scope revoke watermarks are internal storage metadata,
 not additional private data in account wire DTOs. They prevent retained quota
 from returning after a pending revoke/regrant or epoch reset.
+
+### Live refresh provenance
+
+Clients can declare `windowSourcesV1` at initialization to receive the optional
+`source` on each quota window in rows and cockpit projections. The source is a
+fixed classification (`local_history`, `runtime`, `saved_login`, `api_key`, or
+`other`); the window's own `observedAt` remains its capture time. Omission means
+source is unavailable. Without the capability the field is omitted.
+
+Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
+`diagnostics/get`. The array holds at most 20 recent in-memory scheduling and
+read outcome codes with relative ages and scope names. It contains no quota
+values, account identifiers, paths, credentials, or raw error text, and is
+cleared with the app-server process. Omission means the capability was not
+negotiated; an empty array means no decisions have been recorded.
