@@ -291,6 +291,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var interactionBindingInstalled: Bool { interactionController != nil }
     var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
     private var interactionEvents: [DockNozzleEvents] = []
+    private var interactionHoverRevision: UInt64 = 0
     private var interactionHoveredID: String?
     private var interactionPreviewOrder: [String]?
     private var interactionOriginalActions: [(DockInstrumentView, ((DockInstrumentAction) -> Void)?, Bool)] = []
@@ -323,6 +324,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
     }
 
+    /// Row tracking geometry is authoritative when painted hover regions drift during a rebuild.
+    static func cardPointerEvidence(sampled: Bool?, pointer: CGPoint?, trackedRow: CGRect?) -> Bool? {
+        guard let pointer, pointer.x.isFinite, pointer.y.isFinite else { return nil }
+        if let trackedRow, !trackedRow.isEmpty, trackedRow.contains(pointer) { return true }
+        return sampled
+    }
+
     /// Catalogue keys and preferences come from the accepted content transaction.
     /// bindingRevision is the host's input generation; card revisions remain the
     /// canonical Settings revision used by their action-validation boundary.
@@ -344,6 +352,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 outerEdge: DockEdgeGeometry.canWake(at: pointer, placement: place, displays: env.displays))
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
+            var trackedFrame: CGRect?
+            if let id = interactionHoveredID, let anchor = view.interactionAnchor(id) {
+                if let window = view.window {
+                    trackedFrame = window.convertToScreen(view.convert(anchor, to: nil))
+                } else if expanded, view.bounds.size == place.frame.size {
+                    // Detached synthetic hosts use the same registered local geometry.
+                    trackedFrame = CGRect(x: place.frame.minX + anchor.minX - view.bounds.minX,
+                        y: place.frame.maxY - anchor.maxY + view.bounds.minY, width: anchor.width, height: anchor.height)
+                }
+            }
+            inside = Self.cardPointerEvidence(sampled: inside, pointer: pointer, trackedRow: trackedFrame)
         }
         let focusedID = view.keyboardTargetID.flatMap { catalogue.contains($0) ? $0 : nil }
         if cardHasKeyboardFocus || focusedID != nil { inside = true }
@@ -353,7 +372,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
         return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
-            bindingRevision: inputGeneration, hoveredID: focusedID ?? interactionHoveredID, insideShared: inside,
+            bindingRevision: inputGeneration, hoverEventRevision: interactionHoverRevision, hoveredID: focusedID ?? interactionHoveredID, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
     }
@@ -380,6 +399,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             })
             events.onHover = { [weak self, weak view] id in
                 guard let self, let view, self.interactionView === view else { return }
+                self.interactionHoverRevision &+= 1
                 self.interactionHoveredID = id
             }
             events.insideMainDrop = { [weak self, weak view] point in
@@ -391,6 +411,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         overflowTray.onClick = { [weak controller] id in controller?.click(id) }
         overflowTray.onHover = { [weak self, weak controller] id in
+            self?.interactionHoverRevision &+= 1
             self?.interactionHoveredID = id; controller?.refresh()
         }
         overflowTray.onOptionMove = { [weak controller] id, delta in controller?.moveByKeyboard(id: id, delta: delta) }
@@ -440,9 +461,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
         } else {
-            // A sampled real exit can outlive the last AppKit hover callback.
-            // Retire that stale input when its card completes the leave grace.
-            if cardID != nil, interactionEnvironment().insideShared == false { interactionHoveredID = nil }
             dismissCard()
         }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }

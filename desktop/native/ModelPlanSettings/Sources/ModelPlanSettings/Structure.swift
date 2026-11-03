@@ -61,8 +61,9 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "position", title: .init("Position and behavior", "位置和行为"), groups: [.init(id: "main", keys: [.showDock,.autoHide,.reveal,.magnification,.fullscreen,.captureHiding,.activeDisplay,.dockDisplay,.dockEdge,.dockPosition,.order])]),
         .init(id: "general", title: .init("General", "通用"), groups: [.init(id: "main", keys: [.login,.automaticUpdates,.menuDisplay,.openShortcut,.dockShortcut,.language,.opening,.countdown,.resetHints])]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
-        .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])]),
+        .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.readerDetails,.refreshHistory,.diagnostics,.feedback,.licenses])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
 }

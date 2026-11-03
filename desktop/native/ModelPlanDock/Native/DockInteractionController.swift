@@ -2,11 +2,11 @@
 import AppKit
 
 public struct DockInteractionEnvironment:Sendable {
-    public var catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>,bindingRevision:UInt64
+    public var catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>,bindingRevision:UInt64,hoverEventRevision:UInt64
     public var hoveredID:String?,insideShared:Bool?,parentOwnsHide:Bool,parentExpanded:Bool,menuActuallyOpen:Bool,active:Bool,reducedMotion:Bool
     public var edge:DockEdge,contents:[String:DockCardContent]
-    public init(catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>=[],bindingRevision:UInt64=0,hoveredID:String?=nil,insideShared:Bool?=nil,parentOwnsHide:Bool=true,parentExpanded:Bool=true,menuActuallyOpen:Bool=false,active:Bool=true,reducedMotion:Bool=false,edge:DockEdge = .right,contents:[String:DockCardContent]=[:]){
-        self.catalogue=catalogue;self.preferences=preferences;self.targets=targets;self.overflowIDs=overflowIDs;self.bindingRevision=bindingRevision
+    public init(catalogue:[String],preferences:DockSubscriptionPreferences,targets:[DockReorderTarget],overflowIDs:Set<String>=[],bindingRevision:UInt64=0,hoverEventRevision:UInt64=0,hoveredID:String?=nil,insideShared:Bool?=nil,parentOwnsHide:Bool=true,parentExpanded:Bool=true,menuActuallyOpen:Bool=false,active:Bool=true,reducedMotion:Bool=false,edge:DockEdge = .right,contents:[String:DockCardContent]=[:]){
+        self.catalogue=catalogue;self.preferences=preferences;self.targets=targets;self.overflowIDs=overflowIDs;self.bindingRevision=bindingRevision;self.hoverEventRevision=hoverEventRevision
         self.hoveredID=hoveredID;self.insideShared=insideShared;self.parentOwnsHide=parentOwnsHide;self.parentExpanded=parentExpanded;self.menuActuallyOpen=menuActuallyOpen;self.active=active;self.reducedMotion=reducedMotion;self.edge=edge;self.contents=contents
     }
 }
@@ -19,6 +19,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     public var onActivate:((String)->Void)?
     public var onOverflowDragHelp:((String)->Void)?,onFailure:((Error)->Void)?
     public var canPreviewOrder:([String])->Bool={_ in true}
+    private var retiredHover: (id: String, event: UInt64)?
     private var cards=DockCardInteraction(),gesture=DockNozzleInteraction(),overflowOpen=false,gestureRevision:UInt64?
     private let clock:()->TimeInterval,read:()->DockInteractionEnvironment,scheduler:any DockEdgeScheduling
     private var running=false,refreshing=false,generation:UInt64=0
@@ -29,7 +30,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     public var hasCapture:Bool{gesture.source != nil}
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(){
-        running=false;isActive=false;generation &+= 1;scheduler.cancel();gesture.cancel();gestureRevision=nil;cards.suspend();overflowOpen=false;pendingOrders=[:]
+        running=false;isActive=false;generation &+= 1;scheduler.cancel();gesture.cancel();gestureRevision=nil;cards.suspend();retiredHover=nil;overflowOpen=false;pendingOrders=[:]
         publish(.init(card:.hidden,content:nil,reorder:nil,overflowIDs:[]))
     }
     public func refresh(){
@@ -38,12 +39,18 @@ public struct DockInteractionPresentation:Equatable,Sendable {
         do{
             let env=read();guard running,generation==token else{return}
             guard env.active else {
-                isActive=false;gesture.cancel();gestureRevision=nil;cards.suspend();overflowOpen=false;pendingOrders=[:]
+                isActive=false;gesture.cancel();gestureRevision=nil;cards.suspend();retiredHover=nil;overflowOpen=false;pendingOrders=[:]
                 publish(.init(card:.hidden,content:nil,reorder:nil,overflowIDs:[]));return
             }
             isActive=true
             if let revision=gestureRevision,revision != env.bindingRevision || !gesture.matches(catalogue:env.catalogue,preferences:env.preferences){gesture.cancel();gestureRevision=nil}
-            try cards.step(catalogue:env.catalogue,hoveredID:gesture.preview == nil ? env.hoveredID:nil,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock())
+            if let retiredHover, env.hoveredID != retiredHover.id || env.hoverEventRevision != retiredHover.event { self.retiredHover = nil }
+            let hover = retiredHover == nil && gesture.preview == nil ? env.hoveredID : nil
+            let previousCard = cards.visibility.subscriptionID
+            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock())
+            if previousCard != nil, cards.visibility.subscriptionID == nil, env.insideShared == false, let id = env.hoveredID {
+                retiredHover = (id, env.hoverEventRevision)
+            }
             if !env.parentExpanded{gesture.cancel();gestureRevision=nil;overflowOpen=false}
             let id=cards.visibility.subscriptionID,content=id.flatMap{env.contents[$0]}
             if let content{guard content.subscriptionID==id else{throw DockLogicError.invalidCatalogue};try content.validate()}

@@ -261,8 +261,11 @@ private actor EntrySyntheticClient: EngineClient {
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
-        let hoverRect = try XCTUnwrap(app.composition.dock.edgePresentation?.placement?.globalHoverRects.first)
-        pointer = CGPoint(x: hoverRect.midX, y: hoverRect.midY)
+        let dockView = app.composition.dock.dockView
+        let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(dockView.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - dockView.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + dockView.bounds.minY)
         try XCTUnwrap(app.composition.dock.dockView.nozzleEventDelegate).hoverNozzle(id)
         for _ in 0..<100 { if !app.composition.dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.composition.dock.card.isHidden)

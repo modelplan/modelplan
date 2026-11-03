@@ -3,6 +3,15 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Settings65DataTests: XCTestCase {
+    func testSourceDetailsHaveOneDiagnosticsHomeInBothStructures() throws {
+        for structure in [SettingsStructure.task65, .provisional] {
+            let rows = try SettingsCatalogue.rows(preferences: .init(), context: .init(), structure: structure)
+            XCTAssertEqual(rows.filter { $0.key == .source }.map(\.paneID), ["diagnostics"])
+            let subscriptions = rows.filter { $0.paneID == "subscriptions" }.map(\.key)
+            XCTAssertTrue(subscriptions.contains(.visible)); XCTAssertTrue(subscriptions.contains(.alias))
+            XCTAssertFalse(subscriptions.contains(.source))
+        }
+    }
     func testDiagnosticsPaneAndKnownHomesStayDataDriven() {
         XCTAssertFalse(Settings65Homes.paneCountPending)
         XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","diagnostics","about"])

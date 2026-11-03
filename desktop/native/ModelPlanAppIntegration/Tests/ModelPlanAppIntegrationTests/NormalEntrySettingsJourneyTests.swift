@@ -423,8 +423,10 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertNotNil(dock.dockView.nozzleEventDelegate)
         // Member identity rule: interaction targets the member, not its tool row.
         let nozzle = try XCTUnwrap(dock.dockView.nozzleEventDelegate)
-        let hoverRect = try XCTUnwrap(dock.edgePresentation?.placement?.globalHoverRects.first)
-        pointer = CGPoint(x: hoverRect.midX, y: hoverRect.midY)
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(dock.dockView.interactionAnchor("0123456789abcdef"))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - dock.dockView.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + dock.dockView.bounds.minY)
         nozzle.hoverNozzle("0123456789abcdef")
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden)
