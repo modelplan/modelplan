@@ -246,7 +246,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
         app.composition.dock.dockView.onAction?(.subscription(id))
         XCTAssertFalse(app.composition.dock.card.isHidden)
-        XCTAssertTrue(app.composition.dock.card.accessibilityPerformPress(), "Pinning must be explicit")
+        XCTAssertTrue(app.composition.dock.cardPinsDock, "Clicking the nozzle pins the card")
         let store = try XCTUnwrap(acceptedStore), before = store.snapshot.rows?.sequence
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(store.snapshot.rows?.sequence, before, "no new engine delivery")

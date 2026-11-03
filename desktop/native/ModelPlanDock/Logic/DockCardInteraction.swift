@@ -47,10 +47,10 @@ public struct DockCardInteraction:Sendable {
     }
     public mutating func click(_ id:String,at now:TimeInterval)throws{
         try time(now);guard catalogue.contains(id) else{throw DockLogicError.missingSubscription}
-        if visibility != .pinned(id) { visibility = .hover(id) }
+        visibility = .pinned(id)
         pending=nil;enterAt=nil;leaveAt=nil;nextDeadline=nil
     }
-    /// Pinning is a distinct user action, never a side effect of opening a card.
+    /// A hovered preview may also be pinned or released explicitly.
     public mutating func setPinned(_ pinned:Bool, id:String, at now:TimeInterval)throws {
         try time(now);guard catalogue.contains(id),visibility.subscriptionID == id else{throw DockLogicError.missingSubscription}
         visibility = pinned ? .pinned(id):.hover(id)

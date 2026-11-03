@@ -503,7 +503,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
-            case .subscription(let id), .notice(let id): self.showCard(id)
+            case .subscription(let id), .notice(let id): self.showCard(id, pinned: true)
             case .overflow: self.openConsole()
             }
         }

@@ -70,11 +70,21 @@ private actor CardDismissalClient: EngineClient {
             for child in view.subviews { if let found = button(child, id: id) { return found } }
             return nil
         }
-        // Member identity rule: cards use the verified subscription member ID.
-        dock.dockView.onAction?(.subscription("0123456789abcdef"))
+        // A drag release must not become a click or pin a card.
+        let memberID = "0123456789abcdef"
+        let nozzle = try XCTUnwrap(dock.dockView.nozzleEventDelegate)
+        let target = try XCTUnwrap(dock.interactionEnvironment().targets.first { $0.id == memberID })
+        let start = CGPoint(x: target.along, y: target.along)
+        XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
+        nozzle.moveNozzle(local: CGPoint(x: target.along + 10, y: target.along + 10))
+        nozzle.endNozzle(global: .zero, currentID: memberID)
+        XCTAssertTrue(dock.card.isHidden, "Dragging must not open a card")
+        XCTAssertFalse(dock.cardPinsDock, "Dragging must not pin a card")
+        // A press and release without movement opens and pins the same member.
+        XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
+        nozzle.endNozzle(global: .zero, currentID: memberID)
         XCTAssertFalse(dock.card.isHidden)
-        XCTAssertTrue(dock.card.accessibilityPerformPress(), "Pinning is an explicit card action")
-        XCTAssertTrue(dock.cardPinsDock, "An actually visible pinned card must protect the Dock")
+        XCTAssertTrue(dock.cardPinsDock, "Clicking the nozzle opens and pins the card")
         try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the official Dock card")
         XCTAssertFalse(dock.cardPinsDock)

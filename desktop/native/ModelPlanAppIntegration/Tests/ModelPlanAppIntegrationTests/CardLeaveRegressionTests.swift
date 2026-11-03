@@ -4,16 +4,16 @@ import XCTest
 import ModelPlanDock
 
 @MainActor final class CardLeaveRegressionTests: XCTestCase {
-    func testOrdinaryClickLeavesAfterPointerLeavesWidgetAndCard() throws {
+    func testHoverPreviewLeavesAfterPointerLeavesWidgetAndCard() throws {
         var state = DockCardInteraction()
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
-        try state.click("synthetic", at: 0.01)
-        XCTAssertEqual(state.visibility, .hover("synthetic"), "An ordinary click must not silently pin the card")
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.10)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.25)
+        XCTAssertEqual(state.visibility, .hover("synthetic"), "Dwell opens an unpinned preview")
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.30)
         XCTAssertEqual(state.visibility, .hover("synthetic"), "Moving into the card keeps it open")
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.20)
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.40)
         XCTAssertEqual(state.visibility, .hover("synthetic"))
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.46)
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.66)
         XCTAssertEqual(state.visibility, .hidden, "A non-pinned card closes after its own leave grace even when the widget remains open")
     }
     func testOrdinaryCardShowsLocalizedActionsWithoutWindow() throws {

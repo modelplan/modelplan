@@ -419,7 +419,7 @@ private actor SettingsJourneyClient: EngineClient {
         // Member identity rule: interaction targets the member, not its tool row.
         dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
-        XCTAssertTrue(dock.card.accessibilityPerformPress(), "Pinning must be explicit")
+        XCTAssertTrue(dock.cardPinsDock, "Clicking the nozzle pins the card")
         func field(_ view: NSView) -> NSTextField? {
             if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }
             return view.subviews.lazy.compactMap(field).first

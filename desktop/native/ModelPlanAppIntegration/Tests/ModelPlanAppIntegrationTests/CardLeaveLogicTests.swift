@@ -11,22 +11,22 @@ import ModelPlanDock
 }
 
 final class CardLeaveLogicTests: XCTestCase {
-    func testOrdinaryClickClosesAfterLeavingSharedRegion() throws {
+    func testClickPinsAcrossLeavingSharedRegion() throws {
         var state = DockCardInteraction()
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
         try state.click("synthetic", at: 0.01)
-        XCTAssertEqual(state.visibility, .hover("synthetic"), "A click must not silently pin")
+        XCTAssertEqual(state.visibility, .pinned("synthetic"), "A click opens and pins")
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.10)
-        XCTAssertEqual(state.visibility, .hover("synthetic"), "A pointer inside the card keeps it open")
+        XCTAssertEqual(state.visibility, .pinned("synthetic"))
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.20)
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.46)
-        XCTAssertEqual(state.visibility, .hidden, "An ordinary card must close after leave grace")
+        XCTAssertEqual(state.visibility, .pinned("synthetic"), "A click-pinned card remains after leave")
     }
     func testExplicitPinSurvivesPointerLeaveAndCanBeReleased() throws {
         var state = DockCardInteraction()
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
-        try state.click("synthetic", at: 0.01)
-        try state.setPinned(true, id: "synthetic", at: 0.02)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.25)
+        try state.setPinned(true, id: "synthetic", at: 0.26)
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1)
         XCTAssertEqual(state.visibility, .pinned("synthetic"))
         try state.setPinned(false, id: "synthetic", at: 1.01)
@@ -38,16 +38,16 @@ final class CardLeaveLogicTests: XCTestCase {
 
     @MainActor func testOpenCardPollsSharedRegionWithoutPointerEvents() throws {
         var now = 0.0
-        var env = DockInteractionEnvironment(catalogue: ["synthetic"], preferences: .init(), targets: [], insideShared: true,
+        var env = DockInteractionEnvironment(catalogue: ["synthetic"], preferences: .init(), targets: [], hoveredID: "synthetic", insideShared: true,
             contents: ["synthetic": .init(subscriptionID: "synthetic", name: "Synthetic", rows: [])])
         let scheduler = CardLogicScheduler()
         let controller = DockInteractionController(clock: { now }, scheduler: scheduler, read: { env })
-        controller.start(); controller.click("synthetic")
+        controller.start(); now = 0.25; scheduler.fire()
         XCTAssertEqual(controller.presentation?.card, .hover("synthetic"))
-        XCTAssertEqual(scheduler.deadline ?? -1, 0.15, accuracy: 0.001)
-        env.insideShared = false; now = 0.15; scheduler.fire()
+        XCTAssertEqual(scheduler.deadline ?? -1, 0.40, accuracy: 0.001)
+        env.hoveredID = nil; env.insideShared = false; now = 0.40; scheduler.fire()
         XCTAssertEqual(controller.presentation?.card, .hover("synthetic"))
-        now = 0.41; scheduler.fire()
+        now = 0.66; scheduler.fire()
         XCTAssertEqual(controller.presentation?.card, .hidden)
         controller.stop(preservingPin: false)
     }
