@@ -52,18 +52,37 @@ type ExpiryState struct {
 	NextStep *NextStep `json:"nextStep" null:"coalesced"`
 }
 
+// ResetCards is a consent-fenced observation; count is nil when unknown.
+type ResetCards struct {
+	State             string            `json:"state"`
+	Count             *int              `json:"count" null:"coalesced"`
+	EarliestExpiresAt *time.Time        `json:"earliestExpiresAt,omitempty" null:"coalesced"`
+	Items             []ResetCardItem   `json:"items,omitempty" schema:"maxItems=64" null:"forbidden"`
+	Truncated         bool              `json:"truncated"`
+	Sources           []ResetCardSource `json:"sources" schema:"maxItems=16"`
+}
+type ResetCardItem struct {
+	ID        string     `json:"id" schema:"pattern=^[a-f0-9]{64}$,maxLength=64"`
+	ExpiresAt *time.Time `json:"expiresAt" null:"coalesced"`
+}
+type ResetCardSource struct {
+	Source     string    `json:"source"`
+	ObservedAt time.Time `json:"observedAt"`
+}
+
 type Account struct {
-	Route           Route      `json:"route"`
-	SubscriptionRef *string    `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator  *string    `json:"accountLocator" null:"coalesced"`
-	Plan            Plan       `json:"plan"`
-	Beta            bool       `json:"beta"`
-	Credits         *Credits   `json:"credits" null:"coalesced"`
-	ValueState      ValueState `json:"valueState"`
-	ObservedAt      *time.Time `json:"observedAt" null:"coalesced"`
-	FreshUntil      *time.Time `json:"freshUntil" null:"coalesced"`
-	LastFailure     *Failure   `json:"lastFailure" null:"coalesced"`
-	Windows         []Window   `json:"windows"`
+	ResetCards      *ResetCards `json:"resetCards,omitempty" null:"forbidden"`
+	Route           Route       `json:"route"`
+	SubscriptionRef *string     `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator  *string     `json:"accountLocator" null:"coalesced"`
+	Plan            Plan        `json:"plan"`
+	Beta            bool        `json:"beta"`
+	Credits         *Credits    `json:"credits" null:"coalesced"`
+	ValueState      ValueState  `json:"valueState"`
+	ObservedAt      *time.Time  `json:"observedAt" null:"coalesced"`
+	FreshUntil      *time.Time  `json:"freshUntil" null:"coalesced"`
+	LastFailure     *Failure    `json:"lastFailure" null:"coalesced"`
+	Windows         []Window    `json:"windows"`
 }
 
 type Plan struct {

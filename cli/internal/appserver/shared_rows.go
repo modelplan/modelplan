@@ -80,6 +80,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 			ref := account.Subscription.Ref
 			value.SubscriptionRef = &ref
 		}
+		value.ResetCards = account.ResetCards
 		if account.Credits != nil {
 			value.Credits = &rows.CreditsInput{Balance: account.Credits.Balance, Unit: account.Credits.Unit}
 		}

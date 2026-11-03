@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"os"
@@ -405,7 +406,11 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 
 // Duplicate IDs with conflicting expiries make the set incomplete.
 func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
-	if s.Credits == nil || r.RateLimitResetCredit == nil || IdentityOff() {
+	if s.Credits == nil || r.RateLimitResetCredit == nil {
+		return
+	}
+	if IdentityOff() {
+		s.Credits.IdentityComplete = s.Credits.Count == 0 && len(r.RateLimitResetCredit.Credits) == 0
 		return
 	}
 	seen := map[string]*time.Time{}
@@ -520,8 +525,35 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	if s.UsageRead && (a.Credits == nil || !s.ObservedAt.Before(a.Credits.ObservedAt)) {
 		a.Credits = s.Usage // the newer say wins, "none" included
 	}
-	if c := s.Credits; c != nil && c.Count > 0 {
-		a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
+	if c := s.Credits; c != nil {
+		if c.Count > 0 {
+			a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
+		}
+		count := c.Count
+		facts := &rows.ResetCards{State: "partial", Count: &count, Truncated: c.Truncated,
+			Sources: []rows.ResetCardSource{{Source: "codex-account", ObservedAt: s.ObservedAt.UTC()}}}
+		if c.IdentityComplete {
+			facts.State = "complete"
+		}
+		for _, item := range c.Items {
+			facts.Items = append(facts.Items, rows.ResetCardItem{ID: item.ID, ExpiresAt: item.ExpiresAt})
+		}
+		if c.IdentityComplete && len(c.Items) > 0 {
+			allExpiring := true
+			for _, item := range c.Items {
+				if item.ExpiresAt == nil || !item.ExpiresAt.After(now) {
+					allExpiring = false
+					break
+				}
+				if facts.EarliestExpiresAt == nil || item.ExpiresAt.Before(*facts.EarliestExpiresAt) {
+					facts.EarliestExpiresAt = item.ExpiresAt
+				}
+			}
+			if !allExpiring {
+				facts.EarliestExpiresAt = nil
+			}
+		}
+		a.ResetCards = facts
 	}
 }
 

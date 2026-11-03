@@ -599,6 +599,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 	if !identityOff {
 		out.SubscriptionRef = readerString(existingReaderSubscription(cache, provider, a.Subscription))
 	}
+	out.ResetCards = a.ResetCards
 	if c := a.Credits; c != nil {
 		out.Credits = &rows.CreditsInput{Balance: c.Balance, Unit: c.Unit}
 	}
