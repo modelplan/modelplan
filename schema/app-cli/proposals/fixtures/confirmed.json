@@ -42,6 +42,12 @@
             },
             "accounts": [
               {
+                "resetCards": {
+                  "state": "unknown",
+                  "count": null,
+                  "truncated": false,
+                  "sources": []
+                },
                 "route": "runtime_rpc",
                 "subscriptionRef": "0123456789abcdef",
                 "accountLocator": null,
@@ -61,6 +67,12 @@
                 "windows": []
               },
               {
+                "resetCards": {
+                  "state": "unknown",
+                  "count": null,
+                  "truncated": false,
+                  "sources": []
+                },
                 "route": "runtime_rpc",
                 "subscriptionRef": "fedcba9876543210",
                 "accountLocator": null,

@@ -40,6 +40,12 @@
             "nextStep": null,
             "accounts": [
               {
+                "resetCards": {
+                  "state": "unknown",
+                  "count": null,
+                  "truncated": false,
+                  "sources": []
+                },
                 "route": "saved_login_api",
                 "subscriptionRef": null,
                 "accountLocator": null,
@@ -128,6 +134,12 @@
             },
             "accounts": [
               {
+                "resetCards": {
+                  "state": "unknown",
+                  "count": null,
+                  "truncated": false,
+                  "sources": []
+                },
                 "route": "runtime_rpc",
                 "subscriptionRef": null,
                 "accountLocator": null,

@@ -35,9 +35,14 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	until := now.Add(time.Hour)
 	expired := now.Add(-time.Hour)
 	view := appserver.View{QuotaReport: quota.Report{Accounts: []quota.Account{{Source: "codex", Subscription: &quota.Binding{Ref: ref, Status: "verified"}, Cards: []quota.Card{{Kind: "full", Count: &zero}, {Kind: "full", Count: &zero, ExpiresAt: &expired}}, Credits: &quota.Credits{Balance: &balance, ObservedAt: now}}}}, Projection: rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{{ID: "weekly", Current: true, ValidUntil: &until, RemainingPercent: &remaining}}}}}}}}
+	facts := &rows.ResetCards{State: rows.ResetCardComplete, Count: &zero, Sources: []rows.ResetCardSource{{Source: rows.ResetCardCodexAccount, ObservedAt: now}}}
+	view.Projection.Rows[0].Accounts[0].ResetCards = facts
 	data, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(data.Subscriptions) != 1 || data.Subscriptions[0].ResetCards != facts {
+		t.Fatal("row reset facts were not delivered with cockpit details")
 	}
 	if len(data.Subscriptions) != 1 || len(data.Subscriptions[0].ResetCounts) != 1 || data.Subscriptions[0].ResetCounts[0].Count == nil || *data.Subscriptions[0].ResetCounts[0].Count != 0 || data.Subscriptions[0].Credits == nil || *data.Subscriptions[0].Credits.Balance != 0 {
 		t.Fatalf("known zero lost: %#v", data)
@@ -57,6 +62,21 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	data, err = (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
 	if err != nil || !slices.Contains(data.Sources, "reset-events") || len(data.ResetEvents) != 0 {
 		t.Fatalf("empty verified reset source lost: %#v, %v", data, err)
+	}
+	// Legacy grouped cards can exceed the wire bound; the new facts and legacy
+	// indicator must both expose truncation rather than silently implying zero.
+	for i := 0; i < 65; i++ {
+		view.QuotaReport.Accounts[0].Cards = append(view.QuotaReport.Accounts[0].Cards, quota.Card{Kind: "full", Count: &zero})
+	}
+	one := 1
+	facts.Count = &one
+	facts.EarliestExpiresAt = &until
+	capped, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, map[string][]wire.CockpitAccount{ref: {}})
+	if err != nil || len(capped.Subscriptions) != 1 || len(capped.Subscriptions[0].ResetCounts) != 64 || !capped.Subscriptions[0].ResetCountsTruncated || capped.Subscriptions[0].ResetCards == nil || capped.Subscriptions[0].ResetCards.State != rows.ResetCardPartial || !capped.Subscriptions[0].ResetCards.Truncated {
+		t.Fatalf("truncation not reported: %+v, %v", capped, err)
+	}
+	if capped.Subscriptions[0].ResetCards.Count == nil || *capped.Subscriptions[0].ResetCards.Count != 1 || capped.Subscriptions[0].ResetCards.EarliestExpiresAt == nil || !capped.Subscriptions[0].ResetCards.EarliestExpiresAt.Equal(until) {
+		t.Fatal("legacy cap discarded distinct total or earliest expiry")
 	}
 	stamp.Generation++
 	if _, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp}, nil); err == nil {

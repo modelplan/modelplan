@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 var acctNow = time.Date(2026, 10, 16, 8, 0, 0, 0, time.UTC)
@@ -109,13 +111,18 @@ func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := t.TempDir()
-	const ref = "0123456789abcdef"
-	bound := func(s *accountSnap) *accountSnap { s.SubscriptionRef = ref; return s }
-	if err := save(cache, bound(snapFrom(&resp, acctNow))); err != nil {
+	boundSnap := func(r *rlResponse) *accountSnap {
+		s := snapFrom(r, acctNow)
+		s.SubscriptionRef = "0123456789abcdef"
+		return s
+	}
+	binding := func() *Binding { return &Binding{Ref: "0123456789abcdef", Status: "verified"} }
+	if err := save(cache, boundSnap(&resp)); err != nil {
 		t.Fatal(err)
 	}
 	old := acctNow.Add(-2 * time.Hour)
-	r := Report{Accounts: []Account{{Source: "codex", Subscription: &Binding{Ref: ref, Status: "verified"}, Plan: "pro", ObservedAt: old, Harness: &Harness{Model: "gpt-6-astra"},
+	r := Report{Accounts: []Account{{Source: "codex", Subscription: binding(), Plan: "pro", ObservedAt: old, Harness: &Harness{Model: "gpt-6-astra"},
+
 		Windows: []Window{{Kind: "five_hour", UsedPercent: ptr(70.0), WindowMinutes: 300, ObservedAt: old}}}},
 		Sources: []SourceStatus{{Source: "codex", Status: "ok"}}}
 	applyAccount(&r, cache, acctNow)
@@ -149,14 +156,20 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	cache := t.TempDir()
-	const ref = "0123456789abcdef"
-	bound := func(s *accountSnap) *accountSnap { s.SubscriptionRef = ref; return s }
-	if err := save(cache, bound(snapFrom(&resp, acctNow))); err != nil {
+	boundSnap := func(r *rlResponse) *accountSnap {
+		s := snapFrom(r, acctNow)
+		s.SubscriptionRef = "0123456789abcdef"
+		return s
+	}
+	binding := func() *Binding { return &Binding{Ref: "0123456789abcdef", Status: "verified"} }
+	if err := save(cache, boundSnap(&resp)); err != nil {
+
 		t.Fatal(err)
 	}
 	// The logs' older balance gives way to the newer account reading.
 	old := acctNow.Add(-time.Hour)
-	r := Report{Accounts: []Account{{Source: "codex", Subscription: &Binding{Ref: ref, Status: "verified"}, Plan: "pro", ObservedAt: old, Credits: &Credits{Balance: ptr(80000), ObservedAt: old}}}}
+	r := Report{Accounts: []Account{{Source: "codex", Subscription: binding(), Plan: "pro", ObservedAt: old, Credits: &Credits{Balance: ptr(80000), ObservedAt: old}}}}
+
 	applyAccount(&r, cache, acctNow)
 	c := r.Accounts[0].Credits
 	if c == nil || c.Balance == nil || *c.Balance != 73172.5 || !c.ObservedAt.Equal(acctNow) {
@@ -172,15 +185,17 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 	none := strings.Replace(acctResponse, `"planType":"pro",`, `"planType":"pro","credits":{"hasCredits":false,"unlimited":false,"balance":null},`, 1)
 	var older rlResponse
 	_ = json.Unmarshal([]byte(acctResponse), &older)
-	_ = save(cache, bound(snapFrom(&older, acctNow)))
-	r = Report{Accounts: []Account{{Source: "codex", Subscription: &Binding{Ref: ref, Status: "verified"}, ObservedAt: old, Credits: &Credits{Balance: ptr(5), ObservedAt: old}}}}
+	_ = save(cache, boundSnap(&older))
+	r = Report{Accounts: []Account{{Source: "codex", Subscription: binding(), ObservedAt: old, Credits: &Credits{Balance: ptr(5), ObservedAt: old}}}}
+
 	applyAccount(&r, cache, acctNow)
 	if r.Accounts[0].Credits == nil {
 		t.Fatal("a reading without the field keeps the logs' balance")
 	}
 	var empty rlResponse
 	_ = json.Unmarshal([]byte(none), &empty)
-	_ = save(cache, bound(snapFrom(&empty, acctNow)))
+	_ = save(cache, boundSnap(&empty))
+
 	applyAccount(&r, cache, acctNow)
 	if r.Accounts[0].Credits != nil {
 		t.Fatal("no credits now: cleared")
@@ -227,6 +242,201 @@ func TestCreditsWithoutDetailsAreCounted(t *testing.T) {
 
 func ptr(v float64) *float64 { return &v }
 
+func TestResetCreditCountRequiresExplicitNumber(t *testing.T) {
+	for _, tc := range []struct {
+		name, payload string
+		wantPresent   bool
+	}{
+		{"absent object", `{}`, false},
+		{"missing count", `{"rateLimitResetCredits":{}}`, false},
+		{"null count", `{"rateLimitResetCredits":{"availableCount":null}}`, false},
+		{"explicit zero", `{"rateLimitResetCredits":{"availableCount":0}}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var response rlResponse
+			if err := json.Unmarshal([]byte(tc.payload), &response); err != nil {
+				t.Fatal(err)
+			}
+			got := snapFrom(&response, acctNow).Credits
+			if (got != nil) != tc.wantPresent {
+				t.Fatalf("unexpected reset-credit availability: %+v", got)
+			}
+			if got != nil && got.Count != 0 {
+				t.Fatalf("expected zero, got %d", got.Count)
+			}
+		})
+	}
+}
+
+func TestResetCardsUseOpaqueDeduplicatedIDsAndReportCap(t *testing.T) {
+	isolateHome(t)
+	var response rlResponse
+	if err := json.Unmarshal([]byte(acctResponse), &response); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	snap := snapFrom(&response, acctNow)
+	attachResetCardIdentities(snap, &response, cache)
+	if snap.Credits == nil || !snap.Credits.IdentityComplete || len(snap.Credits.Items) != 2 {
+		t.Fatalf("missing identities: %+v", snap.Credits)
+	}
+	encoded, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "cr-secret") {
+		t.Fatal("provider ID leaked into cache")
+	}
+	again := snapFrom(&response, acctNow)
+	attachResetCardIdentities(again, &response, cache)
+	if again.Credits.Items[0].ID != snap.Credits.Items[0].ID {
+		t.Fatal("identity was not stable")
+	}
+	response.RateLimitResetCredit.Credits = append(response.RateLimitResetCredit.Credits, response.RateLimitResetCredit.Credits[0])
+	duplicate := snapFrom(&response, acctNow)
+	attachResetCardIdentities(duplicate, &response, cache)
+	if len(duplicate.Credits.Items) != 2 {
+		t.Fatal("duplicate ID was not removed")
+	}
+	for len(response.RateLimitResetCredit.Credits) < 65 {
+		response.RateLimitResetCredit.Credits = append(response.RateLimitResetCredit.Credits, response.RateLimitResetCredit.Credits[0])
+	}
+	capped := snapFrom(&response, acctNow)
+	attachResetCardIdentities(capped, &response, cache)
+	if !capped.Credits.Truncated || capped.Credits.IdentityComplete {
+		t.Fatal("truncated input asserted completeness")
+	}
+}
+
+func TestResetCardsForgetRemovesCapturedFacts(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	bin, _ := fakeCodex(t, acctResponse)
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatal(err)
+	}
+	before := Report{}
+	applyAccount(&before, cache, acctNow)
+	if len(before.Accounts) != 1 || before.Accounts[0].ResetCards == nil || len(before.Accounts[0].ResetCards.Items) != 2 {
+		t.Fatalf("missing admitted facts: %+v", before.Accounts)
+	}
+	if err := ForgetTool(Paths{Cache: cache}, "codex"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(accountPath(cache)); !os.IsNotExist(err) {
+		t.Fatalf("cache survived forget: %v", err)
+	}
+	after := Report{}
+	applyAccount(&after, cache, acctNow)
+	if len(after.Accounts) != 0 {
+		t.Fatal("forgotten cards resurrected")
+	}
+}
+
+func TestCachedResetCountPresence(t *testing.T) {
+	isolateHome(t)
+	for _, tc := range []struct {
+		name, value string
+		known       bool
+		count       int
+	}{
+		{"missing", "", false, 0}, {"null", `"count":null,`, false, 0},
+		{"malformed", `"count":"zero",`, false, 0}, {"zero", `"count":0,`, true, 0},
+		{"positive", `"count":1,`, true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := t.TempDir()
+			if err := os.MkdirAll(filepath.Dir(accountPath(cache)), 0700); err != nil {
+				t.Fatal(err)
+			}
+			raw := `{"schemaVersion":1,"status":"ok","observedAt":"2026-10-16T08:00:00Z","credits":{` + tc.value + `"identityObserved":true,"identityComplete":true}}`
+			if err := writeAtomic(accountPath(cache), []byte(raw)); err != nil {
+				t.Fatal(err)
+			}
+			report := Report{}
+			applyAccount(&report, cache, acctNow)
+			if len(report.Accounts) != 1 || report.Accounts[0].ResetCards == nil {
+				t.Fatalf("missing account/facts: %+v", report)
+			}
+			facts := report.Accounts[0].ResetCards
+			if !tc.known && facts.State != rows.ResetCardUnknown {
+				t.Fatalf("invalid count accepted: %+v", facts)
+			}
+			if tc.known && (facts.Count == nil || *facts.Count != tc.count) {
+				t.Fatalf("valid count lost: %+v", facts)
+			}
+		})
+	}
+}
+
+func TestAccountMergeRequiresVerifiedMatchingBinding(t *testing.T) {
+	isolateHome(t)
+	for _, tc := range []struct {
+		name, ref, status string
+		want              int
+	}{
+		{"matching", "0123456789abcdef", "verified", 1},
+		{"different", "fedcba9876543210", "verified", 2},
+		{"unverified", "0123456789abcdef", "unverified", 2},
+		{"missing", "", "", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := t.TempDir()
+			snap := &accountSnap{SchemaVersion: 1, Status: "ok", ObservedAt: acctNow, SubscriptionRef: "0123456789abcdef"}
+			if err := save(cache, snap); err != nil {
+				t.Fatal(err)
+			}
+			a := Account{Source: "codex", ObservedAt: acctNow}
+			if tc.ref != "" {
+				a.Subscription = &Binding{Ref: tc.ref, Status: tc.status}
+			}
+			report := Report{Accounts: []Account{a}}
+			applyAccount(&report, cache, acctNow)
+			if len(report.Accounts) != tc.want {
+				t.Fatalf("got %d accounts, want %d", len(report.Accounts), tc.want)
+			}
+		})
+	}
+}
+
+func TestOldResetReadingDoesNotBorrowAccountFreshness(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	old, expiry := acctNow.Add(-2*time.Hour), acctNow.Add(time.Hour)
+	snap := &accountSnap{SchemaVersion: 1, Status: "ok", ObservedAt: old, SubscriptionRef: "0123456789abcdef", Credits: &accountResetCredits{Count: 1, IdentityObserved: true, IdentityComplete: true, Items: []resetCardIdentity{{ID: strings.Repeat("a", 64), ExpiresAt: &expiry}}}}
+	if err := save(cache, snap); err != nil {
+		t.Fatal(err)
+	}
+	report := Report{Accounts: []Account{{Source: "codex", ObservedAt: acctNow, Subscription: &Binding{Ref: snap.SubscriptionRef, Status: "verified"}, Windows: []Window{{Kind: "weekly", ObservedAt: acctNow}}}}}
+	applyAccount(&report, cache, acctNow)
+	if len(report.Accounts) != 1 {
+		t.Fatalf("matching binding failed: %+v", report.Accounts)
+	}
+	a := report.Accounts[0]
+	if a.ResetCards == nil || len(a.ResetCards.Sources) != 1 || !a.ResetCards.Sources[0].ObservedAt.Equal(old) {
+		t.Fatalf("lost reader observation: %+v", a.ResetCards)
+	}
+	until := acctNow.Add(time.Hour)
+	ref := snap.SubscriptionRef
+	in := rows.Input{Now: acctNow, ConsentGeneration: 1,
+		Catalogue: []rows.CatalogueEntry{{ToolID: "codex", Detected: true, ReaderExists: true}},
+		Consents:  []rows.ConsentRecord{{ToolID: "codex", Generation: 1, State: rows.ConsentAllowed}},
+		Profiles:  []rows.ProfileState{{ToolID: "codex", ProfileKey: "synthetic", LatestAttempt: rows.AttemptResultSucceeded, ObservedAt: &a.ObservedAt, WithinFreshness: true, FreshUntil: &until}},
+		Accounts:  []rows.AccountInput{{ToolID: "codex", ProfileKey: "synthetic", Route: rows.RouteRuntimeRPC, SubscriptionRef: &ref, ResetCards: a.ResetCards}},
+	}
+	p := rows.Build(in)
+	if err := rows.Validate(in, p); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range p.Rows {
+		for _, a := range r.Accounts {
+			if a.ResetCards != nil && a.ResetCards.State != rows.ResetCardUnknown {
+				t.Fatalf("old cards admitted: %+v", a.ResetCards)
+			}
+		}
+	}
+}
+
 func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
@@ -244,6 +454,7 @@ func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
 		applyAccount(&r, cache, acctNow)
 		if len(r.Accounts) != 2 || r.Accounts[0].Via == "codex-account" || r.Accounts[1].Via != "codex-account" {
 			t.Fatalf("unbound readings were combined: %+v", r.Accounts)
+
 		}
 	}
 }
