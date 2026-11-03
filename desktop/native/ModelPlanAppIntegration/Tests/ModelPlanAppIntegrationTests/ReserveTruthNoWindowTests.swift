@@ -12,7 +12,8 @@ import ModelPlanWire
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum ProofMutation { case fallbackMember, missingLatch, nonStaleLatch, missingReset, malformedReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -47,7 +48,7 @@ import ModelPlanWire
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
-        if multiWindowTransition {
+        if multiWindowTransition || proofTwoWindows {
             account["freshUntil"] = "2028-12-01T00:00:00Z"
             var weekly = window
             weekly["id"] = "weekly:604800:main:main"; weekly["role"] = "weekly"; weekly["durationSeconds"] = 604800
@@ -76,6 +77,26 @@ import ModelPlanWire
         }
         if state == .currentWindowMissingObservation {
             window["observedAt"] = NSNull(); account["windows"] = [window]
+        }
+        if let proofMutation {
+            var altered = account["windows"] as! [[String: Any]]
+            switch proofMutation {
+            case .fallbackMember: account["subscriptionRef"] = NSNull()
+            case .missingLatch: row["stateAfterExpiry"] = NSNull()
+            case .nonStaleLatch: row["stateAfterExpiry"] = ["state": "needs_action", "reason": staleReason, "nextStep": refresh]
+            case .missingReset: altered[0]["resetsAt"] = NSNull()
+            case .malformedReset: altered[0]["resetsAt"] = "invalid-deadline"
+            case .mismatchReset: altered[0]["resetsAt"] = "2027-06-01T00:00:00Z"
+            case .laterReset: altered[0]["resetsAt"] = "2028-12-01T00:00:00Z"
+            case .missingValidUntil: altered[0]["validUntil"] = NSNull()
+            case .malformedValidUntil: altered[0]["validUntil"] = "invalid-deadline"
+            case .futureAccountObservation: account["observedAt"] = "2028-01-01T00:00:00Z"
+            case .malformedAccountObservation: account["observedAt"] = "invalid-observation"
+            case .futureWindowObservation: altered[0]["observedAt"] = "2028-01-01T00:00:00Z"
+            case .malformedWindowObservation: altered[0]["observedAt"] = "invalid-observation"
+            case .duplicateWindowID: altered.append(altered[0])
+            }
+            account["windows"] = altered
         }
         row["accounts"] = state == .revoked ? [] : [account]
         if mixedTransition || deadlineOnlyMixed {
@@ -139,7 +160,10 @@ import ModelPlanWire
         let content = paired.content
         XCTAssertEqual(paired.deadline, provider.recomputeDeadline)
         providerProbe?(provider, content, now)
-        if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown); XCTAssertTrue(paired.verifiedWindows.isEmpty) }
+        if unknownDeadline {
+            if isRetained { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
+            XCTAssertTrue(paired.verifiedWindows.isEmpty)
+        }
         if isRetained { XCTAssertTrue(paired.verifiedWindows.isEmpty) }
         if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none); XCTAssertTrue(paired.verifiedWindows.isEmpty) }
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
@@ -169,6 +193,14 @@ import ModelPlanWire
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(firstDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(Set(paired.verifiedWindows.map(\.windowID)), Set(["session:18000:main:main", "weekly:604800:main:main"]))
             XCTAssertTrue(paired.verifiedWindows.allSatisfy { $0.memberID == "aaaaaaaaaaaaaaaa" })
+            XCTAssertTrue(paired.verifiedWindows.allSatisfy { $0.until == firstDeadline && $0.issuedAt == now })
+            let initialWeekly = try XCTUnwrap(paired.verifiedWindows.first { $0.windowID == "weekly:604800:main:main" })
+            XCTAssertTrue(initialWeekly.isValid(memberID: "aaaaaaaaaaaaaaaa", windowID: initialWeekly.windowID, at: now))
+            XCTAssertFalse(initialWeekly.isValid(memberID: "bbbbbbbbbbbbbbbb", windowID: initialWeekly.windowID, at: now))
+            XCTAssertFalse(initialWeekly.isValid(memberID: "aaaaaaaaaaaaaaaa", windowID: "another-window", at: now))
+            XCTAssertFalse(initialWeekly.isValid(memberID: "aaaaaaaaaaaaaaaa", windowID: initialWeekly.windowID, at: now.addingTimeInterval(-1)))
+            XCTAssertFalse(initialWeekly.isValid(memberID: "aaaaaaaaaaaaaaaa", windowID: initialWeekly.windowID, at: firstDeadline))
+            XCTAssertFalse(initialWeekly.isValid(memberID: "aaaaaaaaaaaaaaaa", windowID: initialWeekly.windowID, at: Date(timeIntervalSinceReferenceDate: .nan)))
             XCTAssertEqual(input?.windows.first { $0.period == .fiveHour }?.remainingPercent, 42.5)
             XCTAssertEqual(input?.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
@@ -370,6 +402,44 @@ import ModelPlanWire
         _ = try await projection(balance: 12.5, unit: "credits", english: true, multiWindowTransition: true)
     }
 
+    func testWindowProofRejectsAmbiguousIdentityAndNoncanonicalFacts() async throws {
+        // These mutations are defensive noncanonical wire inputs, not claims
+        // about an observed user account or a producer output.
+        let earlierReset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        for mutation in [ProofMutation.fallbackMember, .missingReset, .malformedReset, .mismatchReset,
+                         .missingValidUntil, .malformedValidUntil, .futureAccountObservation,
+                         .malformedAccountObservation, .futureWindowObservation, .malformedWindowObservation,
+                         .duplicateWindowID] {
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: mutation,
+                providerProbe: { provider, _, _ in
+                    XCTAssertTrue(provider.verifiedWindows.isEmpty)
+                    if mutation == .mismatchReset {
+                        XCTAssertEqual(provider.recomputeDeadline, .scheduled(earlierReset, hasUnknownDeadline: false))
+                    }
+                })
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: .laterReset,
+            providerProbe: { provider, _, _ in
+                XCTAssertEqual(provider.verifiedWindows.count, 1)
+                XCTAssertEqual(provider.verifiedWindows.first?.until, ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+            })
+    }
+
+    func testWindowProofStopsAtRowLatchWhenLatchIsMissingOrNonStale() async throws {
+        let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        for mutation in [ProofMutation.missingLatch, .nonStaleLatch] {
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, proofTwoWindows: true,
+                proofMutation: mutation, overrideNow: deadline.addingTimeInterval(-1), providerProbe: { provider, _, _ in
+                    XCTAssertEqual(provider.verifiedWindows.count, 2)
+                    XCTAssertTrue(provider.verifiedWindows.allSatisfy { $0.until == deadline })
+                })
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, proofTwoWindows: true,
+                proofMutation: mutation, overrideNow: deadline, providerProbe: { provider, _, _ in
+                    XCTAssertTrue(provider.verifiedWindows.isEmpty)
+                })
+        }
+    }
+
     func testRetainedNullAndMalformedDeadlinesCharacterizeCurrentExposure() async throws {
         // Negative/ambiguous inputs: null is permitted for retained; malformed is
         // intentionally noncanonical and currently decodes as nil. Neither proves freshness.
@@ -389,9 +459,9 @@ import ModelPlanWire
         let knownDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         for state in [FixtureState.currentUnknownDeadline, .currentMalformedDeadline, .currentAccountMissing, .currentAccountMalformed, .currentWindowMissing, .currentWindowMalformed] {
             let projected = try await projection(balance: 12.5, unit: "credits", english: true, state: state, providerProbe: { provider, _, _ in
-                let expected: EngineRecomputeDeadline = (state == .currentUnknownDeadline || state == .currentMalformedDeadline)
-                    ? .unknown : .scheduled(knownDeadline, hasUnknownDeadline: true)
+                let expected: EngineRecomputeDeadline = .scheduled(knownDeadline, hasUnknownDeadline: true)
                 XCTAssertEqual(provider.recomputeDeadline, expected)
+                XCTAssertTrue(provider.verifiedWindows.isEmpty)
             })
             XCTAssertEqual(projected.0?.dataState, .fresh)
             XCTAssertEqual(projected.0?.windows.first?.remainingPercent, 42.5)

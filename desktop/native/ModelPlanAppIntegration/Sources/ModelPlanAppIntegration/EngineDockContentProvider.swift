@@ -20,7 +20,12 @@ public struct EngineVerifiedWindow: Equatable, Sendable {
     public let windowID: String
     public let remainingPercent: Double
     public let resetsAt: Date?
+    public let issuedAt: Date
     public let until: Date
+    /// A snapshot/generation token must additionally be checked by the host.
+    public func isValid(memberID: String, windowID: String, at now: Date) -> Bool {
+        now.timeIntervalSinceReferenceDate.isFinite && memberID == self.memberID && windowID == self.windowID && now >= issuedAt && now < until
+    }
 }
 
 /// The content and scheduling facts from one synchronous Provider pass.
@@ -58,7 +63,9 @@ public enum EngineDeadlineFacts {
             include(row.expiresAt)
             for account in accounts {
                 include(account.freshUntil)
-                for window in account.windows where window.current { include(window.validUntil) }
+                for window in account.windows where window.current {
+                    include(window.validUntil); include(window.resetsAt)
+                }
             }
         }
         // Use the same admitted member catalogue as reset presentation. In
@@ -98,20 +105,22 @@ public enum EngineDeadlineFacts {
     public let source: EngineDockMenuProvider
     public init(source: EngineDockMenuProvider) { self.source = source }
     public func makeContentAndDeadline(_ context: DockContentContext) -> EngineContentAndDeadline {
-        let content = makeContent(context)
-        return .init(content: content, deadline: recomputeDeadline, verifiedWindows: verifiedWindows)
+        project(context)
     }
     public func makeContent(_ context: DockContentContext) -> DockContent {
+        project(context).content
+    }
+    private func project(_ context: DockContentContext) -> EngineContentAndDeadline {
         let value = source.dockContent
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
-        verifiedWindows = value.status == .ready ? verifiedWindowFacts(members, now: context.now) : []
-        memberInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
+        let passWindows = value.status == .ready ? verifiedWindowFacts(members, now: context.now) : []
+        let passInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
         if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
-        recomputeDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, events: events, eventRows: value.dockRows, now: context.now)
-        signals = []
+        let passDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, events: events, eventRows: value.dockRows, now: context.now)
+        var passSignals:[DockSubscriptionSignal] = []
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
@@ -150,7 +159,7 @@ public enum EngineDeadlineFacts {
                     signal.reset=reset
                 } else { signal.reset=DockResetSignal(id:event.id,status:.announced,announcedAt:event.publishedAt,scheduledThrough:event.expiresAt,expiresAt:event.expiresAt) }
             }
-            signals.append(signal)
+            passSignals.append(signal)
             for event in preferred.map({[$0]}) ?? [] {
                 let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
                 reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
@@ -206,8 +215,11 @@ public enum EngineDeadlineFacts {
             name:.init(member.name(english:true),member.name(english:false)),
             plan:member.account.plan.name.map{text($0)} ?? "",vendor:member.row.vendorKey ?? "",
             source:sourceState(member,now:context.now),isUnstable:!member.isStable) }
-        return .init(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
-                     menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:signals)
+        let content = DockContent(snapshot: .init(inputs: inputs, subscriptions:subscriptions,presentationRows: reasons),
+                     menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
+        verifiedWindows = passWindows; recomputeDeadline = passDeadline
+        memberInstability = passInstability; signals = passSignals
+        return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows)
     }
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account
@@ -232,7 +244,7 @@ public enum EngineDeadlineFacts {
         guard now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         return members.flatMap { member -> [EngineVerifiedWindow] in
             let row = member.row, account = member.account
-            guard row.accounts.count == 1,
+            guard row.accounts.count == 1, let subscriptionRef = member.subscriptionRef, member.id == subscriptionRef,
                   row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired,
                   row.state == .fresh, let rowDeadline = date(row.expiresAt),
                   let accountDeadline = date(account.freshUntil), accountDeadline > now,
@@ -243,11 +255,12 @@ public enum EngineDeadlineFacts {
             return account.windows.compactMap { window -> EngineVerifiedWindow? in
                 guard window.current, let windowObserved = date(window.observedAt), windowObserved <= now,
                       let deadline = date(window.validUntil), deadline > now,
+                      let reset = date(window.resetsAt), reset > now,
+                      deadline == min(accountDeadline, reset),
                       let percent = window.remainingPercent, percent.isFinite, (0...100).contains(percent) else { return nil }
-                let reset = date(window.resetsAt)
-                if let reset, reset <= now { return nil }
-                let until = min(accountDeadline, deadline, reset ?? deadline)
-                return .init(memberID: member.id, windowID: window.id, remainingPercent: percent, resetsAt: reset, until: until)
+                let windowUntil = min(accountDeadline, min(deadline, reset))
+                let until = rowDeadline > now ? min(windowUntil, rowDeadline) : windowUntil
+                return .init(memberID: subscriptionRef, windowID: window.id, remainingPercent: percent, resetsAt: reset, issuedAt: now, until: until)
             }
         }
     }
