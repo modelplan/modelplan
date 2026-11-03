@@ -16,6 +16,18 @@ import (
 	"time"
 )
 
+// resetCardIdentity holds a keyed representation; raw provider IDs are never cached.
+type resetCardIdentity struct {
+	ID        string     `json:"id"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+}
+type accountResetCredits struct {
+	Count            int                 `json:"count"`
+	Expiries         []*time.Time        `json:"expiries,omitempty"`
+	Items            []resetCardIdentity `json:"items,omitempty"`
+	IdentityComplete bool                `json:"identityComplete,omitempty"`
+}
+
 // The Codex account reading comes from Codex itself: `codex app-server` answers
 // account/rateLimits/read with the account's windows, its reset credits and its usage-credit
 // balance, using the login Codex already holds. This client never sees a credential, starts no
@@ -42,10 +54,7 @@ type accountSnap struct {
 	Windows       []Window              `json:"windows,omitempty"`
 	// Credits: available reset credits; Expiries has one entry per credit whose details were
 	// returned (nil time = never expires). Count may exceed len(Expiries).
-	Credits *struct {
-		Count    int          `json:"count"`
-		Expiries []*time.Time `json:"expiries,omitempty"`
-	} `json:"credits,omitempty"`
+	Credits *accountResetCredits `json:"credits,omitempty"`
 	// Usage: the account's usage credits (not reset credits), nil when it has none. UsageRead:
 	// the answer carried the field at all (older Codex versions leave it out).
 	Usage     *Credits `json:"usageCredits,omitempty"`
@@ -171,6 +180,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.Join(safeErr, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
 	}
 	s := snapFrom(resp, now)
+	attachResetCardIdentities(s, resp, cache)
 	if resp.identity != "" {
 		s.SubscriptionRef = assignSubscription(cache, "codex-account", resp.identity, now)
 	}
@@ -236,6 +246,7 @@ type rlResponse struct {
 	RateLimitResetCredit *struct {
 		AvailableCount *int64 `json:"availableCount"`
 		Credits        []struct {
+			ID        string `json:"id"`
 			Status    string `json:"status"`
 			ExpiresAt *int64 `json:"expiresAt"`
 		} `json:"credits"`
@@ -375,10 +386,7 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 		}
 	}
 	if c := r.RateLimitResetCredit; c != nil && c.AvailableCount != nil && *c.AvailableCount >= 0 && *c.AvailableCount < 10000 {
-		s.Credits = &struct {
-			Count    int          `json:"count"`
-			Expiries []*time.Time `json:"expiries,omitempty"`
-		}{Count: int(*c.AvailableCount)}
+		s.Credits = &accountResetCredits{Count: int(*c.AvailableCount)}
 		for _, d := range c.Credits {
 			if d.Status != "available" {
 				continue
@@ -392,6 +400,50 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 		}
 	}
 	return s
+}
+
+// Duplicate IDs with conflicting expiries make the set incomplete.
+func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
+	if s.Credits == nil || r.RateLimitResetCredit == nil || IdentityOff() {
+		return
+	}
+	seen := map[string]*time.Time{}
+	complete := true
+	for _, c := range r.RateLimitResetCredit.Credits {
+		if c.Status != "available" {
+			continue
+		}
+		if c.ID == "" || len(c.ID) > 512 {
+			complete = false
+			continue
+		}
+		id := readerHash(cache, "codex-reset-card", c.ID)
+		if len(id) != 64 {
+			complete = false
+			continue
+		}
+		var expiry *time.Time
+		if c.ExpiresAt != nil {
+			t := time.Unix(*c.ExpiresAt, 0).UTC()
+			expiry = &t
+		}
+		if previous, ok := seen[id]; ok {
+			if (previous == nil) != (expiry == nil) || previous != nil && !previous.Equal(*expiry) {
+				complete = false
+			}
+			continue
+		}
+		seen[id] = expiry
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		s.Credits.Items = append(s.Credits.Items, resetCardIdentity{ID: id, ExpiresAt: seen[id]})
+	}
+	s.Credits.IdentityComplete = complete && len(ids) == s.Credits.Count
 }
 
 // applyAccount merges a recent account reading into the Codex account from the logs: newest
