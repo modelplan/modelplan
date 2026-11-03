@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyVisualPack } from '../../scripts/check-visual-pack.mjs';
+import { selectBuildEdition } from './internal-visual-boundary.mjs';
 const here=fileURLToPath(new URL('.',import.meta.url)),repo=resolve(here,'../..');
-const args=process.argv.slice(2),official=args.length===1&&args[0]==='--official';
-if(args.length&&!official)throw Error('Usage: node build.mjs [--official]');
+// Internal integration is deliberately unavailable until its independently
+// reviewed helper, trust anchors and exact resource mapping are integrated.
+const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
@@ -24,6 +26,18 @@ for(const file of emitted){
 }
 await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
+// Renderer code only. Visual resources are managed separately by their owner.
+const studyModules=[
+  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','i18n.js',
+  'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
+  'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/where.js',
+  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','window-time.js',
+];
+for(const name of studyModules){
+  const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
+  await cp(resolve(here,'study/rocket-r1',name),target);
+}
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+'\n'+await readFile(resolve(here,'web/cockpit.css'),'utf8');
 const notices=['MIT: cockpit bridge, schema adapter and community layout.'];

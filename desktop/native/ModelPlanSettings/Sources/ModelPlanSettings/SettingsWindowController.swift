@@ -52,6 +52,25 @@ enum SettingsWords {
     }
 }
 
+/// A table cell fills the 36-point selection row; its native label keeps its
+/// intrinsic height and is centered independently of the row height.
+@MainActor enum SettingsSidebarCell {
+    static func make(title: String, identifier: String) -> NSView {
+        let cell = NSView()
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13)
+        label.setAccessibilityIdentifier(identifier)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+}
+
 @MainActor final class SettingsChoiceControl: NSPopUpButton, SettingsOwnedControl {
     let settingKey: SettingKey
     let subscriptionID: String?
@@ -177,9 +196,8 @@ enum SettingsWords {
     public func controlTextDidChange(_ obj: Notification) { if obj.object as? NSSearchField === searchField { refresh() } }
     public func numberOfRows(in tableView: NSTableView) -> Int { SettingsStructure.task65.panes.count }
     public func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let label = NSTextField(labelWithString: SettingsStructure.task65.panes[row].title.value(language))
-        label.font = .systemFont(ofSize: 13); label.setAccessibilityIdentifier("settings.pane." + SettingsStructure.task65.panes[row].id)
-        return label
+        return SettingsSidebarCell.make(title: SettingsStructure.task65.panes[row].title.value(language),
+                                        identifier: "settings.pane." + SettingsStructure.task65.panes[row].id)
     }
     public func tableViewSelectionDidChange(_ notification: Notification) {
         guard !refreshing, SettingsStructure.task65.panes.indices.contains(sidebar.selectedRow) else { return }
