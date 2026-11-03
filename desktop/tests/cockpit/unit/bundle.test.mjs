@@ -32,7 +32,8 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
     assert.equal(provenance.fixtureAudit.copied,false);
     for(const name of Object.keys(manifest.files)){
-      assert.doesNotMatch(name,/workbench-data|three[.]|\.svg$/i);
+      assert.doesNotMatch(name,/workbench-data|three[.]/i);
+      if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg'].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
       if(name.startsWith('runtime/'))assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }
@@ -45,7 +46,6 @@ test('both editions have reproducible bounded manifests; community excludes rese
       assert.match(readFileSync(root+'VISUAL-LICENSE.md','utf8'),/ModelPlan Official Visuals/);
       assert.equal(existsSync(root+'fonts/manrope/OFL.txt'),true);
       assert.equal(existsSync(root+'prototype/prototype-cockpit-r5.css'),true);
-      for(const name of Object.keys(manifest.files))assert.ok(!name.endsWith('.svg'));
       for(const name of Object.keys(manifest.files).filter(name=>name.startsWith('prototype/')&&name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/url\s*\(|@import|data:image/i);
     }
   }

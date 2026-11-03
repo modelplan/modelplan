@@ -47,6 +47,18 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
+  const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
+  if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');
+  const stripFiles=['close-hover@3x.png','close-normal@3x.png','close-pressed@3x.png','detach-hover@3x.png','detach-normal@3x.png','detach-pressed@3x.png','detach.svg','gear-hover@3x.png','gear-normal@3x.png','gear-pressed@3x.png','lamp-amber-body@3x.png','lamp-amber-glow@3x.png','lamp-amber-pressed-body@3x.png','lamp-amber-pressed-glow@3x.png','lamp-off-body@3x.png','lamp-off-glow@3x.png','lamp-off-pressed-body@3x.png','lamp-off-pressed-glow@3x.png','lamp-red-body@3x.png','lamp-red-glow@3x.png','lamp-red-pressed-body@3x.png','lamp-red-pressed-glow@3x.png','put-back.svg','shutter-material@3x.png','slider-track@3x.png','strip-panel@3x.png','thumb-closed@3x.png','thumb-open@3x.png','wordmark@3x.png'];
+  const policy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
+  await mkdir(resolve(output,'assets'),{recursive:true});
+  for(const name of stripFiles){
+    const bytes=await readFile(resolve(strip,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/strip/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit strip resource: '+name);
+    await writeFile(resolve(output,'assets',name),bytes);
+  }
+  await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
+  css+='\n'+stripCss.toString('utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});

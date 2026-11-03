@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import { appearance,commands,pageId,sample,currentSample,shell } from '../fixture.mjs';
+import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -166,7 +167,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
 for(const profile of ['full','compact'])for(const theme of ['day','night'])for(const locale of ['en','zh-CN']){
   test(`visual ${profile} ${theme} ${locale}`,async({page})=>{
     await page.setViewportSize({width:636,height:profile==='full'?890:640});await page.emulateMedia({reducedMotion:'reduce'});
-    const {send}=await open(page,{theme,locale,profile});await display(page,send);
+    const {send}=await open(page,{theme,locale,profile}),fixture=visualFixture();await display(page,send,fixture.data);await renderVisualDeck(page,fixture,locale);
     await page.evaluate(()=>document.fonts.ready);
     expect(await infiniteAnimations(page)).toEqual([]);
     await expect(page).toHaveScreenshot(`${profile}-${theme}-${locale}.png`,{animations:'disabled',maxDiffPixels:0});
