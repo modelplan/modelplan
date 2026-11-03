@@ -112,7 +112,7 @@ func (s *RefreshScheduler) Decisions() []wire.RefreshDecision {
 	return out
 }
 func (s *RefreshScheduler) Handler() Handler {
-	return Handler{Capability: "refresh", Handle: func(ctx context.Context, raw json.RawMessage, _ Stamp) (Reply, error) {
+	return Handler{Capability: "refresh", ExtraCapabilities: []string{CapabilityMemberRefresh}, Handle: func(ctx context.Context, raw json.RawMessage, _ Stamp) (Reply, error) {
 		p, err := params[wire.RefreshRequestParams](raw)
 		if err != nil {
 			return Reply{}, ProtocolError{wire.CodeInvalidParams}

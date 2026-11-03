@@ -24,6 +24,7 @@ import (
 type Handler struct {
 	Timeout    time.Duration
 	Capability string
+	ExtraCapabilities []string
 	Query      bool
 	Private    bool
 	Handle     func(context.Context, json.RawMessage, Stamp) (Reply, error)
@@ -625,6 +626,7 @@ func (s *Server) capabilities() []string {
 		if handler.Capability != "" {
 			supported = append(supported, handler.Capability)
 		}
+		supported = append(supported, handler.ExtraCapabilities...)
 	}
 	allowed := map[string]bool{}
 	for _, cap := range supported {

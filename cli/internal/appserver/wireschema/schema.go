@@ -137,6 +137,10 @@ func Generate(root string) ([]byte, error) {
 	memberResult := b.defs["MemberRefreshResult"].(object)
 	memberResult["properties"].(object)["notBefore"] = object{"type": "string", "format": "date-time"}
 	memberResult["properties"].(object)["reason"] = b.schema(reflect.TypeFor[wire.MemberRefreshReason](), true)
+	memberResult["allOf"] = []any{
+		object{"if": object{"properties": object{"outcome": object{"const": "started"}}}, "then": object{"not": object{"anyOf": []any{object{"required": []string{"reason"}}, object{"required": []string{"notBefore"}}}}}},
+		object{"if": object{"properties": object{"outcome": object{"const": "deferred"}}}, "then": object{"required": []string{"reason"}}},
+	}
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)
