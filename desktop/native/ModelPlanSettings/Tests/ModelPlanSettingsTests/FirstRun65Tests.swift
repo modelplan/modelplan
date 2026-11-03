@@ -113,7 +113,7 @@ final class FirstRun65Tests: XCTestCase {
             p.helpHints = .init(seen: Set(FirstUseHintKind.allCases), opens: 2, reveals: 2)
         }
         let restart = try SettingsStore(url: url), loaded = await restart.snapshot()
-        XCTAssertEqual(loaded.preferences.helpHints.seen.count, 9)
+        XCTAssertEqual(loaded.preferences.helpHints.seen, Set(FirstUseHintKind.allCases))
         let reset = try await restart.resetFirstUseHints(expectedRevision: loaded.revision)
         XCTAssertEqual(reset.preferences.helpHints, .init()); XCTAssertFalse(reset.preferences.openAtLogin)
         XCTAssertTrue(reset.preferences.readerConsent.cursor); XCTAssertTrue(reset.preferences.onboarding.completed)

@@ -15,7 +15,8 @@ final class Settings65DataTests: XCTestCase {
     }
     func testCurrentTableHasEachKeyOnceAndDefaultCatalogueUsesConfirmedHomes() throws {
         XCTAssertNoThrow(try SettingsStructure(panes: SettingsStructure.task65.panes))
-        let p = SettingsPreferences(), rows = try SettingsCatalogue.rows(preferences: p, context: .init())
+        var context = SettingsPageContext(); context.refreshHistory = []
+        let p = SettingsPreferences(), rows = try SettingsCatalogue.rows(preferences: p, context: context)
         XCTAssertEqual(Set(rows.map(\.key)), Set(SettingKey.allCases))
         XCTAssertEqual(rows.count, SettingKey.allCases.count)
         let size = try XCTUnwrap(rows.first { $0.key == .size }); XCTAssertEqual(size.paneID, "dock"); XCTAssertEqual(size.groupID, "display")
@@ -33,7 +34,9 @@ final class Settings65DataTests: XCTestCase {
         var preferences = SettingsPreferences(); preferences.language = .english
         let english = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
         XCTAssertEqual(english.first { $0.key == .readerDetails }?.value, .text("Codex · Source: Local history · Last read: -- · Next refresh: --"))
-        XCTAssertEqual(english.first { $0.key == .refreshHistory }?.value, .text("--"))
+        XCTAssertNil(english.first { $0.key == .refreshHistory }, "Absent producer must not surface a permanently empty row")
+        context.refreshHistory = []
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics").first { $0.key == .refreshHistory }?.value, .text("--"))
         preferences.language = .chinese
         let chinese = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
         XCTAssertEqual(chinese.first { $0.key == .readerDetails }?.value, .text("Codex · 来源：本地历史 · 上次读取：-- · 下次刷新：--"))

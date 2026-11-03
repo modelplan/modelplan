@@ -263,6 +263,8 @@ public enum SettingsCatalogue {
         return structure.panes.filter { paneID == nil || $0.id == paneID }.flatMap { pane in
             pane.groups.flatMap { group in
                 group.keys.compactMap { key -> SettingsRow? in
+                    // nil means that no history producer is connected; do not show a dead row.
+                    if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
                     guard let d = byKey[key] else { return nil }
