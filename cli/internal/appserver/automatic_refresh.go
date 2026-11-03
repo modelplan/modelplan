@@ -22,6 +22,7 @@ func (s *RefreshScheduler) StartAutomatic() {
 
 func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
+	first := true
 	for s.ctx.Err() == nil {
 		now := time.Now()
 		admission := consent.Capture()
@@ -31,7 +32,7 @@ func (s *RefreshScheduler) automatic() {
 		for _, scope := range scopes { if scope == consent.ScopeCodexRuntimeUsage { runtimeGranted = true } }
 		local, decided := state.Scopes[consent.ScopeCodexLocalHistory]
 		if decided && local.Allowed && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
-			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission)) {
+			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission, now)) {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
 		next := now.Add(time.Minute)
@@ -54,6 +55,7 @@ func (s *RefreshScheduler) automatic() {
 				if err == nil && len(result) == 1 {
 					if result[0].DisabledReason == nil {
 						outcome, reason = refreshDeferred, refreshDue
+						if first { reason = refreshStartup }
 					} else if *result[0].DisabledReason == wire.RefreshCooldown {
 						outcome, reason = refreshDeferred, refreshBudget
 					}
@@ -61,6 +63,7 @@ func (s *RefreshScheduler) automatic() {
 				s.decisions.add(now, scope, outcome, reason)
 			}
 		}
+		first = false
 		wait := time.Until(next)
 		if wait < 0 { wait = 0 }
 		timer := time.NewTimer(wait)

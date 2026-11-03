@@ -940,6 +940,20 @@
         "protocolVersion": {
           "type": "string"
         },
+        "refreshDecisions": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RefreshDecision"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxItems": 20
+        },
         "scopes": {
           "items": {
             "$ref": "#/$defs/ScopeDiag"
@@ -2165,6 +2179,64 @@
       ],
       "type": "object"
     },
+    "RefreshDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "agoSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "not_attempted",
+            "deferred",
+            "failed",
+            "succeeded"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "startup",
+            "wake",
+            "due",
+            "not_granted",
+            "offline",
+            "read_only",
+            "budget",
+            "in_flight",
+            "unavailable",
+            "completed"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "codex.runtime_usage",
+            "codex.local_history",
+            "claude.account_usage.saved_login",
+            "gemini.account_usage.saved_login",
+            "cursor.account_usage.saved_login",
+            "copilot.runtime_usage",
+            "kimi.account_usage.saved_login",
+            "grok.account_usage.saved_login",
+            "kiro.runtime_usage",
+            "antigravity.runtime_usage",
+            "zai.account_usage.api_key",
+            "minimax.account_usage.api_key",
+            "opencodego.account_usage.api_key"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
+      ],
+      "type": "object"
+    },
     "RefreshRequestParams": {
       "additionalProperties": false,
       "properties": {
@@ -3217,6 +3289,23 @@
             "other"
           ],
           "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_history",
+                "runtime",
+                "saved_login",
+                "api_key",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "validUntil": {
           "anyOf": [
