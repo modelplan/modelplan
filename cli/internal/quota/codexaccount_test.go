@@ -248,3 +248,68 @@ func TestResetCreditCountRequiresExplicitNumber(t *testing.T) {
 		})
 	}
 }
+
+func TestResetCardsUseOpaqueDeduplicatedIDsAndReportCap(t *testing.T) {
+	isolateHome(t)
+	var response rlResponse
+	if err := json.Unmarshal([]byte(acctResponse), &response); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	snap := snapFrom(&response, acctNow)
+	attachResetCardIdentities(snap, &response, cache)
+	if snap.Credits == nil || !snap.Credits.IdentityComplete || len(snap.Credits.Items) != 2 {
+		t.Fatalf("missing identities: %+v", snap.Credits)
+	}
+	encoded, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "cr-secret") {
+		t.Fatal("provider ID leaked into cache")
+	}
+	again := snapFrom(&response, acctNow)
+	attachResetCardIdentities(again, &response, cache)
+	if again.Credits.Items[0].ID != snap.Credits.Items[0].ID {
+		t.Fatal("identity was not stable")
+	}
+	response.RateLimitResetCredit.Credits = append(response.RateLimitResetCredit.Credits, response.RateLimitResetCredit.Credits[0])
+	duplicate := snapFrom(&response, acctNow)
+	attachResetCardIdentities(duplicate, &response, cache)
+	if len(duplicate.Credits.Items) != 2 {
+		t.Fatal("duplicate ID was not removed")
+	}
+	for len(response.RateLimitResetCredit.Credits) < 65 {
+		response.RateLimitResetCredit.Credits = append(response.RateLimitResetCredit.Credits, response.RateLimitResetCredit.Credits[0])
+	}
+	capped := snapFrom(&response, acctNow)
+	attachResetCardIdentities(capped, &response, cache)
+	if !capped.Credits.Truncated || capped.Credits.IdentityComplete {
+		t.Fatal("truncated input asserted completeness")
+	}
+}
+
+func TestResetCardsForgetRemovesCapturedFacts(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	bin, _ := fakeCodex(t, acctResponse)
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatal(err)
+	}
+	before := Report{}
+	applyAccount(&before, cache, acctNow)
+	if len(before.Accounts) != 1 || before.Accounts[0].ResetCards == nil || len(before.Accounts[0].ResetCards.Items) != 2 {
+		t.Fatalf("missing admitted facts: %+v", before.Accounts)
+	}
+	if err := ForgetTool(Paths{Cache: cache}, "codex"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(accountPath(cache)); !os.IsNotExist(err) {
+		t.Fatalf("cache survived forget: %v", err)
+	}
+	after := Report{}
+	applyAccount(&after, cache, acctNow)
+	if len(after.Accounts) != 0 {
+		t.Fatal("forgotten cards resurrected")
+	}
+}

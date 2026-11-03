@@ -19,8 +19,11 @@ func sanitizeResetCards(v *ResetCards, now time.Time) *ResetCards {
 	if v == nil || (v.State != "complete" && v.State != "partial") || v.Count == nil || *v.Count < 0 || *v.Count > 10000 || len(v.Items) > 64 || len(v.Sources) != 1 {
 		return unknownResetCards()
 	}
+	if len(v.Items) > *v.Count {
+		return unknownResetCards()
+	}
 	source := v.Sources[0]
-	if source.Source != "codex-account" || source.ObservedAt.IsZero() || source.ObservedAt.After(now) {
+	if (source.Source != ResetCardCodexAccount && source.Source != ResetCardCodexBar) || source.ObservedAt.IsZero() || source.ObservedAt.After(now) {
 		return unknownResetCards()
 	}
 	count := *v.Count
@@ -169,4 +172,83 @@ func mergeProjectionResetCards(p *Projection) {
 			}
 		}
 	}
+}
+
+func validResetCards(in Input, facts *ResetCards, ref *string) bool {
+	if facts == nil {
+		return true
+	} // old snapshots omit the additive field
+	if facts.State == ResetCardUnknown {
+		return facts.Count == nil && !facts.Truncated && len(facts.Items) == 0 && facts.EarliestExpiresAt == nil && len(facts.Sources) == 0
+	}
+	if facts.State != ResetCardComplete && facts.State != ResetCardPartial || len(facts.Items) > 64 || len(facts.Sources) == 0 || len(facts.Sources) > 16 {
+		return false
+	}
+	if facts.Count != nil && (*facts.Count < 0 || *facts.Count > 10000 || *facts.Count < len(facts.Items)) {
+		return false
+	}
+	if facts.State == ResetCardComplete && (facts.Count == nil || *facts.Count != len(facts.Items) || facts.Truncated) {
+		return false
+	}
+	if facts.State != ResetCardComplete && facts.EarliestExpiresAt != nil {
+		return false
+	}
+	allowedIDs := map[string][]ResetCardItem{}
+	allowedSources := map[ResetCardSource]bool{}
+	for _, raw := range in.Accounts {
+		if ref != nil && (raw.SubscriptionRef == nil || *raw.SubscriptionRef != *ref) {
+			continue
+		}
+		v := sanitizeResetCards(raw.ResetCards, in.Now)
+		for _, item := range v.Items {
+			allowedIDs[item.ID] = append(allowedIDs[item.ID], item)
+		}
+		for _, source := range v.Sources {
+			allowedSources[source] = true
+		}
+	}
+	seen := map[string]bool{}
+	allExpiring := true
+	var earliest *time.Time
+	for _, item := range facts.Items {
+		if !resetCardID.MatchString(item.ID) || seen[item.ID] {
+			return false
+		}
+		matched := false
+		for _, original := range allowedIDs[item.ID] {
+			if (original.ExpiresAt == nil && item.ExpiresAt == nil) || (original.ExpiresAt != nil && item.ExpiresAt != nil && original.ExpiresAt.Equal(*item.ExpiresAt)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+		seen[item.ID] = true
+		if item.ExpiresAt == nil {
+			allExpiring = false
+		} else {
+			if !validTime(item.ExpiresAt) || !item.ExpiresAt.After(in.Now) {
+				return false
+			}
+			if earliest == nil || item.ExpiresAt.Before(*earliest) {
+				t := *item.ExpiresAt
+				earliest = &t
+			}
+		}
+	}
+	for _, source := range facts.Sources {
+		if !allowedSources[source] {
+			return false
+		}
+	}
+	if facts.State == ResetCardComplete {
+		if !allExpiring {
+			earliest = nil
+		}
+		if (earliest == nil) != (facts.EarliestExpiresAt == nil) || earliest != nil && !earliest.Equal(*facts.EarliestExpiresAt) {
+			return false
+		}
+	}
+	return true
 }

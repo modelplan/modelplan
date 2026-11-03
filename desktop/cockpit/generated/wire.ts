@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 9b91564d287c148a40926ef43808449a9cce63f7ea9cb5a6ce5de51252af76eb
+// Schema SHA-256: 051f38cc5ef040af3750c6d94710a9c192d2d6b06052948dc7a86f516b70b78a
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -81,7 +81,9 @@ export type WireCockpitSubscription = {
 
 export type WireCockpitSubscriptionDetails = {
   readonly "credits": WireCockpitCredits | null;
+  readonly "resetCards"?: WireResetCards | null;
   readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
+  readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
   readonly "today": ReadonlyArray<WireCockpitToday>;
 };
@@ -678,12 +680,25 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "resetCards": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ResetCards"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "resetCounts": {
         "items": {
           "$ref": "#/$defs/CockpitResetCount"
         },
         "maxItems": 64,
         "type": "array"
+      },
+      "resetCountsTruncated": {
+        "type": "boolean"
       },
       "subscriptionRef": {
         "maxLength": 16,
@@ -1158,7 +1173,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
           {
             "type": "null"
           }
-        ]
+        ],
+        "maximum": 10000,
+        "minimum": 0
       },
       "earliestExpiresAt": {
         "anyOf": [

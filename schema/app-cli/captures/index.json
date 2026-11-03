@@ -198,7 +198,7 @@
       "optional": [
         {
           "field": "expiresAt",
-          "omission": true,
+          "omission": false,
           "null": true,
           "wrongType": false,
           "strict": true,
@@ -224,7 +224,7 @@
       "optional": [
         {
           "field": "count",
-          "omission": true,
+          "omission": false,
           "null": true,
           "wrongType": false,
           "strict": true,
@@ -637,6 +637,22 @@
       "file": "WireCockpitSubscriptionDetails.json",
       "type": "WireCockpitSubscriptionDetails",
       "optional": [
+        {
+          "field": "resetCountsTruncated",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "resetCards",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "credits",
           "omission": true,

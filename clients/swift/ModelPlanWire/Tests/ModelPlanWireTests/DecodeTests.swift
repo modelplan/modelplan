@@ -143,6 +143,18 @@ final class DecodeTests: XCTestCase {
         XCTAssertThrowsError(try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection)))
     }
 
+    func testResetCardFactsRejectMalformedNestedData() throws {
+        var account = try object("RowsAccount.json")
+        var facts = try XCTUnwrap(account["resetCards"] as? [String: Any])
+        facts["state"] = "fabricated"
+        account["resetCards"] = facts
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = "malformed"
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = NSNull()
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+    }
+
     func testRequiredFieldsRemainRequired() throws {
         for entry in try index().cases {
             for field in entry.required {

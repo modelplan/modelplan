@@ -83,7 +83,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 					}
 				}
 				a.Windows = buildWindows(raw.Windows, a, in.Now)
-				has := a.Credits != nil
+				has := a.Credits != nil || a.ResetCards != nil && a.ResetCards.State != ResetCardUnknown
 				for _, w := range a.Windows {
 					has = has || w.RemainingPercent != nil
 				}

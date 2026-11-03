@@ -27,6 +27,7 @@ type accountResetCredits struct {
 	Expiries         []*time.Time        `json:"expiries,omitempty"`
 	Items            []resetCardIdentity `json:"items,omitempty"`
 	IdentityComplete bool                `json:"identityComplete,omitempty"`
+	IdentityObserved bool                `json:"identityObserved,omitempty"`
 	Truncated        bool                `json:"truncated,omitempty"`
 }
 
@@ -409,6 +410,7 @@ func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
 	if s.Credits == nil || r.RateLimitResetCredit == nil {
 		return
 	}
+	s.Credits.IdentityObserved = true
 	if IdentityOff() {
 		s.Credits.IdentityComplete = s.Credits.Count == 0 && len(r.RateLimitResetCredit.Credits) == 0
 		return
@@ -528,6 +530,10 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	if c := s.Credits; c != nil {
 		if c.Count > 0 {
 			a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
+		}
+		if !c.IdentityObserved {
+			a.ResetCards = &rows.ResetCards{State: rows.ResetCardUnknown, Sources: []rows.ResetCardSource{}}
+			return
 		}
 		count := c.Count
 		facts := &rows.ResetCards{State: "partial", Count: &count, Truncated: c.Truncated,

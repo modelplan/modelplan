@@ -489,12 +489,25 @@
             }
           ]
         },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resetCounts": {
           "items": {
             "$ref": "#/$defs/CockpitResetCount"
           },
           "maxItems": 64,
           "type": "array"
+        },
+        "resetCountsTruncated": {
+          "type": "boolean"
         },
         "subscriptionRef": {
           "maxLength": 16,
@@ -2635,7 +2648,9 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "maximum": 10000,
+          "minimum": 0
         },
         "earliestExpiresAt": {
           "anyOf": [

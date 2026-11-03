@@ -62,12 +62,15 @@ const (
 
 type ResetCardSourceKind string
 
-const ResetCardCodexAccount ResetCardSourceKind = "codex-account"
+const (
+	ResetCardCodexAccount ResetCardSourceKind = "codex-account"
+	ResetCardCodexBar     ResetCardSourceKind = "codexbar"
+)
 
 // ResetCards is a consent-fenced observation; count is nil when unknown.
 type ResetCards struct {
 	State             ResetCardState    `json:"state"`
-	Count             *int              `json:"count" null:"coalesced"`
+	Count             *int              `json:"count" schema:"minimum=0,maximum=10000" null:"coalesced"`
 	EarliestExpiresAt *time.Time        `json:"earliestExpiresAt,omitempty" null:"forbidden"`
 	Items             []ResetCardItem   `json:"items,omitempty" schema:"maxItems=64" null:"forbidden"`
 	Truncated         bool              `json:"truncated"`
