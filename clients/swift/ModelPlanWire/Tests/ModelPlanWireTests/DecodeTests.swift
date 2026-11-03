@@ -90,7 +90,7 @@ final class DecodeTests: XCTestCase {
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 62)
+        XCTAssertEqual(catalog.cases.count, 65)
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
@@ -115,7 +115,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 81)
+        XCTAssertEqual(fields, 88)
     }
 
     func testModelScopeAndResetEventsRejectMalformedValues() throws {
@@ -146,6 +146,18 @@ final class DecodeTests: XCTestCase {
         rows[0]["accounts"] = accounts
         projection["rows"] = rows
         XCTAssertThrowsError(try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection)))
+    }
+
+    func testResetCardFactsRejectMalformedNestedData() throws {
+        var account = try object("RowsAccount.json")
+        var facts = try XCTUnwrap(account["resetCards"] as? [String: Any])
+        facts["state"] = "fabricated"
+        account["resetCards"] = facts
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = "malformed"
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = NSNull()
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
     }
 
     func testRequiredFieldsRemainRequired() throws {

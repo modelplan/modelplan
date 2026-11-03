@@ -232,6 +232,9 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 			return fail("plan allow-list")
 		}
 	}
+	if !validResetCards(in, a.ResetCards, a.SubscriptionRef) {
+		return fail("reset cards")
+	}
 	if a.Credits != nil {
 		if finite(a.Credits.Balance, 0, 1e15) == nil {
 			return fail("credits balance")

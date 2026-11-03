@@ -60,6 +60,10 @@ func buildAccounts(in Input, c *candidate) []Account {
 			}
 			discard := p.LoginChanged || p.GenerationChanged
 			if !discard {
+				a.ResetCards = unknownResetCards()
+				if p.LatestAttempt == AttemptResultSucceeded && p.WithinFreshness && p.FreshUntil != nil && in.Now.Before(*p.FreshUntil) {
+					a.ResetCards = sanitizeResetCards(raw.ResetCards, in.Now)
+				}
 				a.ObservedAt = observed(p.ObservedAt, in.Now)
 				a.FreshUntil = knownTime(p.FreshUntil)
 				if p.LatestAttempt == AttemptResultFailed && p.LastFailure != nil {
@@ -79,7 +83,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 					}
 				}
 				a.Windows = buildWindows(raw.Windows, a, in.Now)
-				has := a.Credits != nil
+				has := a.Credits != nil || a.ResetCards != nil && a.ResetCards.State != ResetCardUnknown
 				for _, w := range a.Windows {
 					has = has || w.RemainingPercent != nil
 				}

@@ -95,6 +95,7 @@ type FailureInput struct {
 // attempts, freshness, discards and locators. SubscriptionRef is an already
 // allocated, verified random local reference; no hash or positional substitute.
 type AccountInput struct {
+	ResetCards *ResetCards
 	// Route is the reviewed read path; never infer it from provider text.
 	Route           Route
 	ToolID          string

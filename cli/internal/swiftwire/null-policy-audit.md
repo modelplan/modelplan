@@ -131,3 +131,6 @@ rows become safe placeholders and cannot retain accounts or private optional dat
 No additional null/absence state mismatch was found in the remaining output
 consumers. This inventory is a source-backed audit, not a claim that a type-only
 encoder probe can prove handler semantics for future fields.
+
+| ResetCards.Count | coalesced | Null represents an unknown count; the key remains required. |
+| ResetCardItem.ExpiresAt | coalesced | Null represents no known expiry; it does not invent a deadline. |

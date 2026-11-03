@@ -194,6 +194,7 @@ public enum WireDecoder {
 }
 
 public struct RowsAccount: Codable, Sendable {
+    public let `resetCards`: RowsResetCards?
     public let `refreshNotBefore`: WireTimestamp?
     public let `route`: RowsRoute
     public let `subscriptionRef`: String?
@@ -207,6 +208,7 @@ public struct RowsAccount: Codable, Sendable {
     public let `lastFailure`: RowsFailure?
     public let `windows`: [RowsWindow]
     private enum CodingKeys: String, CodingKey {
+        case `resetCards`
         case `refreshNotBefore`
         case `route`
         case `subscriptionRef`
@@ -220,7 +222,8 @@ public struct RowsAccount: Codable, Sendable {
         case `lastFailure`
         case `windows`
     }
-    public init(`refreshNotBefore`: WireTimestamp? = nil, `route`: RowsRoute, `subscriptionRef`: String? = nil, `accountLocator`: String? = nil, `plan`: RowsPlan, `beta`: Bool, `credits`: RowsCredits? = nil, `valueState`: RowsValueState, `observedAt`: WireTimestamp? = nil, `freshUntil`: WireTimestamp? = nil, `lastFailure`: RowsFailure? = nil, `windows`: [RowsWindow]) throws {
+    public init(`resetCards`: RowsResetCards? = nil, `refreshNotBefore`: WireTimestamp? = nil, `route`: RowsRoute, `subscriptionRef`: String? = nil, `accountLocator`: String? = nil, `plan`: RowsPlan, `beta`: Bool, `credits`: RowsCredits? = nil, `valueState`: RowsValueState, `observedAt`: WireTimestamp? = nil, `freshUntil`: WireTimestamp? = nil, `lastFailure`: RowsFailure? = nil, `windows`: [RowsWindow]) throws {
+        self.`resetCards` = `resetCards`
         self.`refreshNotBefore` = `refreshNotBefore`
         self.`route` = `route`
         self.`subscriptionRef` = `subscriptionRef`
@@ -237,6 +240,8 @@ public struct RowsAccount: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`resetCards`), try c.decodeNil(forKey: .`resetCards`) { throw WireDecodeError.invalidIdentity }
+        self.`resetCards` = try c.decodeIfPresent(RowsResetCards.self, forKey: .`resetCards`)
         self.`refreshNotBefore` = try? c.decodeIfPresent(WireTimestamp.self, forKey: .`refreshNotBefore`)
         self.`route` = try c.decode(RowsRoute.self, forKey: .`route`)
         self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
@@ -254,6 +259,7 @@ public struct RowsAccount: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`resetCards`, forKey: .`resetCards`)
         try c.encodeIfPresent(`refreshNotBefore`, forKey: .`refreshNotBefore`)
         try c.encode(`route`, forKey: .`route`)
         try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
@@ -791,6 +797,167 @@ public struct RowsReason: Codable, Sendable {
         try c.encode(`text`, forKey: .`text`)
     }
     private func validate() throws {
+    }
+}
+
+public struct RowsResetCardItem: Codable, Sendable {
+    public let `id`: String
+    public let `expiresAt`: WireTimestamp?
+    private enum CodingKeys: String, CodingKey {
+        case `id`
+        case `expiresAt`
+    }
+    public init(`id`: String, `expiresAt`: WireTimestamp?) throws {
+        self.`id` = `id`
+        self.`expiresAt` = `expiresAt`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`id` = try c.decode(String.self, forKey: .`id`)
+        guard c.contains(.`expiresAt`) else { throw WireDecodeError.invalidIdentity }
+        self.`expiresAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`expiresAt`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`id`, forKey: .`id`)
+        try c.encode(`expiresAt`, forKey: .`expiresAt`)
+    }
+    private func validate() throws {
+        try WireValidation.identity(`id`)
+        guard id.utf8.count == 64, id.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else { throw WireDecodeError.invalidIdentity }
+    }
+}
+
+public struct RowsResetCardSource: Codable, Sendable {
+    public let `source`: RowsResetCardSourceKind
+    public let `observedAt`: WireTimestamp
+    private enum CodingKeys: String, CodingKey {
+        case `source`
+        case `observedAt`
+    }
+    public init(`source`: RowsResetCardSourceKind, `observedAt`: WireTimestamp) throws {
+        self.`source` = `source`
+        self.`observedAt` = `observedAt`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`source` = try c.decode(RowsResetCardSourceKind.self, forKey: .`source`)
+        self.`observedAt` = try c.decode(WireTimestamp.self, forKey: .`observedAt`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`source`, forKey: .`source`)
+        try c.encode(`observedAt`, forKey: .`observedAt`)
+    }
+    private func validate() throws {
+        guard `source`.isKnown else { throw WireDecodeError.invalidAuthorization }
+    }
+}
+
+public enum RowsResetCardSourceKind: Codable, Sendable, Equatable {
+    case `codexAccount`
+    case `codexbar`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "codex-account": self = .`codexAccount`
+        case "codexbar": self = .`codexbar`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`codexAccount`: return "codex-account"
+        case .`codexbar`: return "codexbar"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public enum RowsResetCardState: Codable, Sendable, Equatable {
+    case `knownUnknown`
+    case `partial`
+    case `complete`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "unknown": self = .`knownUnknown`
+        case "partial": self = .`partial`
+        case "complete": self = .`complete`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`knownUnknown`: return "unknown"
+        case .`partial`: return "partial"
+        case .`complete`: return "complete"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
+public struct RowsResetCards: Codable, Sendable {
+    public let `state`: RowsResetCardState
+    public let `count`: Int?
+    public let `earliestExpiresAt`: WireTimestamp?
+    public let `items`: [RowsResetCardItem]?
+    public let `truncated`: Bool
+    public let `sources`: [RowsResetCardSource]
+    private enum CodingKeys: String, CodingKey {
+        case `state`
+        case `count`
+        case `earliestExpiresAt`
+        case `items`
+        case `truncated`
+        case `sources`
+    }
+    public init(`state`: RowsResetCardState, `count`: Int?, `earliestExpiresAt`: WireTimestamp? = nil, `items`: [RowsResetCardItem]? = nil, `truncated`: Bool, `sources`: [RowsResetCardSource]) throws {
+        self.`state` = `state`
+        self.`count` = `count`
+        self.`earliestExpiresAt` = `earliestExpiresAt`
+        self.`items` = `items`
+        self.`truncated` = `truncated`
+        self.`sources` = `sources`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`state` = try c.decode(RowsResetCardState.self, forKey: .`state`)
+        guard c.contains(.`count`) else { throw WireDecodeError.invalidIdentity }
+        self.`count` = try c.decodeIfPresent(Int.self, forKey: .`count`)
+        if c.contains(.`earliestExpiresAt`), try c.decodeNil(forKey: .`earliestExpiresAt`) { throw WireDecodeError.invalidIdentity }
+        self.`earliestExpiresAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`earliestExpiresAt`)
+        if c.contains(.`items`), try c.decodeNil(forKey: .`items`) { throw WireDecodeError.invalidIdentity }
+        self.`items` = try c.decodeIfPresent([RowsResetCardItem].self, forKey: .`items`)
+        self.`truncated` = try c.decode(Bool.self, forKey: .`truncated`)
+        self.`sources` = try c.decode([RowsResetCardSource].self, forKey: .`sources`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`state`, forKey: .`state`)
+        try c.encode(`count`, forKey: .`count`)
+        try c.encodeIfPresent(`earliestExpiresAt`, forKey: .`earliestExpiresAt`)
+        try c.encodeIfPresent(`items`, forKey: .`items`)
+        try c.encode(`truncated`, forKey: .`truncated`)
+        try c.encode(`sources`, forKey: .`sources`)
+    }
+    private func validate() throws {
+        guard `state`.isKnown else { throw WireDecodeError.invalidAuthorization }
+        guard (items?.count ?? 0) <= 64, sources.count <= 16 else { throw WireDecodeError.invalidBound }
+        if let count = count, !(0...10000).contains(count) { throw WireDecodeError.invalidBound }
     }
 }
 
@@ -1854,17 +2021,23 @@ public struct WireCockpitSubscription: Codable, Sendable {
 }
 
 public struct WireCockpitSubscriptionDetails: Codable, Sendable {
+    public let `resetCountsTruncated`: Bool?
+    public let `resetCards`: RowsResetCards?
     public let `subscriptionRef`: String
     public let `resetCounts`: [WireCockpitResetCount]
     public let `credits`: WireCockpitCredits?
     public let `today`: [WireCockpitToday]
     private enum CodingKeys: String, CodingKey {
+        case `resetCountsTruncated`
+        case `resetCards`
         case `subscriptionRef`
         case `resetCounts`
         case `credits`
         case `today`
     }
-    public init(`subscriptionRef`: String, `resetCounts`: [WireCockpitResetCount], `credits`: WireCockpitCredits? = nil, `today`: [WireCockpitToday]) throws {
+    public init(`resetCountsTruncated`: Bool? = nil, `resetCards`: RowsResetCards? = nil, `subscriptionRef`: String, `resetCounts`: [WireCockpitResetCount], `credits`: WireCockpitCredits? = nil, `today`: [WireCockpitToday]) throws {
+        self.`resetCountsTruncated` = `resetCountsTruncated`
+        self.`resetCards` = `resetCards`
         self.`subscriptionRef` = `subscriptionRef`
         self.`resetCounts` = `resetCounts`
         self.`credits` = `credits`
@@ -1873,6 +2046,10 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`resetCountsTruncated`), try c.decodeNil(forKey: .`resetCountsTruncated`) { throw WireDecodeError.invalidIdentity }
+        self.`resetCountsTruncated` = try c.decodeIfPresent(Bool.self, forKey: .`resetCountsTruncated`)
+        if c.contains(.`resetCards`), try c.decodeNil(forKey: .`resetCards`) { throw WireDecodeError.invalidIdentity }
+        self.`resetCards` = try c.decodeIfPresent(RowsResetCards.self, forKey: .`resetCards`)
         self.`subscriptionRef` = try c.decode(String.self, forKey: .`subscriptionRef`)
         self.`resetCounts` = try c.decode([WireCockpitResetCount].self, forKey: .`resetCounts`)
         self.`credits` = try c.decodeIfPresent(WireCockpitCredits.self, forKey: .`credits`)
@@ -1882,6 +2059,8 @@ public struct WireCockpitSubscriptionDetails: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`resetCountsTruncated`, forKey: .`resetCountsTruncated`)
+        try c.encodeIfPresent(`resetCards`, forKey: .`resetCards`)
         try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
         try c.encode(`resetCounts`, forKey: .`resetCounts`)
         try c.encode(`credits`, forKey: .`credits`)

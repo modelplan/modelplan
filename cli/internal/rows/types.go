@@ -53,7 +53,41 @@ type ExpiryState struct {
 	NextStep *NextStep `json:"nextStep" null:"coalesced"`
 }
 
+type ResetCardState string
+
+const (
+	ResetCardUnknown  ResetCardState = "unknown"
+	ResetCardPartial  ResetCardState = "partial"
+	ResetCardComplete ResetCardState = "complete"
+)
+
+type ResetCardSourceKind string
+
+const (
+	ResetCardCodexAccount ResetCardSourceKind = "codex-account"
+	ResetCardCodexBar     ResetCardSourceKind = "codexbar"
+)
+
+// ResetCards is a consent-fenced observation; count is nil when unknown.
+type ResetCards struct {
+	State             ResetCardState    `json:"state"`
+	Count             *int              `json:"count" schema:"minimum=0,maximum=10000" null:"coalesced"`
+	EarliestExpiresAt *time.Time        `json:"earliestExpiresAt,omitempty" null:"forbidden"`
+	Items             []ResetCardItem   `json:"items,omitempty" schema:"maxItems=64" null:"forbidden"`
+	Truncated         bool              `json:"truncated"`
+	Sources           []ResetCardSource `json:"sources" schema:"maxItems=16"`
+}
+type ResetCardItem struct {
+	ID        string     `json:"id" schema:"pattern=^[a-f0-9]{64}$,maxLength=64"`
+	ExpiresAt *time.Time `json:"expiresAt" null:"coalesced"`
+}
+type ResetCardSource struct {
+	Source     ResetCardSourceKind `json:"source"`
+	ObservedAt time.Time           `json:"observedAt"`
+}
+
 type Account struct {
+	ResetCards       *ResetCards `json:"resetCards,omitempty" null:"forbidden"`
 	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
 	Route            Route       `json:"route"`
 	SubscriptionRef  *string     `json:"subscriptionRef" null:"coalesced"`

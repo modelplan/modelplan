@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -34,15 +35,15 @@ func TestCodexHistoryAndRuntimeScopesAreIndependentWithPendingCleanup(t *testing
 				t.Fatal(err)
 			}
 			percent := 25.0
-			raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "windows": []Window{{Kind: "five_hour", ObservedAt: now, UsedPercent: &percent}}, "admission": map[string]any{"storeEpoch": s.StoreEpoch, "generation": uint64(1), "scope": consent.ScopeCodexRuntimeUsage}})
+			raw, _ := json.Marshal(map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "windows": []Window{{Kind: "five_hour", ObservedAt: now, UsedPercent: &percent}}, "credits": accountResetCredits{Count: 1, IdentityComplete: true, IdentityObserved: true, Items: []resetCardIdentity{{ID: strings.Repeat("a", 64)}}}, "admission": map[string]any{"storeEpoch": s.StoreEpoch, "generation": uint64(1), "scope": consent.ScopeCodexRuntimeUsage}})
 			if err := os.MkdirAll(filepath.Dir(accountPath(cache)), 0700); err != nil {
 				t.Fatal(err)
 			}
 			if err := writeAtomic(accountPath(cache), raw); err != nil {
 				t.Fatal(err)
 			}
-			if r := ReadPermitted(ProductionPaths(cache, "1.0.0"), now); len(r.Accounts) != 1 {
-				t.Fatal("initial runtime capture missing", r.Accounts)
+			if r := ReadPermitted(ProductionPaths(cache, "1.0.0"), now); len(r.Accounts) != 1 || r.Accounts[0].ResetCards == nil || r.Accounts[0].ResetCards.State != rows.ResetCardComplete {
+				t.Fatal("initial runtime card capture missing", r.Accounts)
 			}
 			unlock, err := consent.ReaderLock()
 			if err != nil {

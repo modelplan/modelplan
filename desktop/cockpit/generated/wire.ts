@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 88161eb45ae00241b778a430a0453fb5b7fae239c78a599ca0826c820ba2400d
+// Schema SHA-256: 841abac25c60af0a24102a81d3aa857461e69dc4c1c7e86cb7c225579cd534c8
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -12,6 +12,7 @@ export type WireAccount = {
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
   readonly "refreshNotBefore"?: string | null | null;
+  readonly "resetCards"?: WireResetCards | null;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
   readonly "valueState": "current" | "retained" | "none";
@@ -81,7 +82,9 @@ export type WireCockpitSubscription = {
 
 export type WireCockpitSubscriptionDetails = {
   readonly "credits": WireCockpitCredits | null;
+  readonly "resetCards"?: WireResetCards | null;
   readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
+  readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
   readonly "today": ReadonlyArray<WireCockpitToday>;
 };
@@ -146,6 +149,25 @@ export type WireProposedResetSource = {
 export type WireReason = {
   readonly "code": "ok" | "estimated" | "stale_reading" | "observation_time_unknown" | "not_read_yet" | "reader_busy" | "consent_changed" | "no_manual_reading" | "no_usage_windows" | "consent_required" | "consent_denied" | "consent_outdated" | "keychain_unset" | "keychain_denied" | "keychain_canceled" | "keychain_not_found" | "keychain_unavailable" | "keychain_confirmation_needed" | "login_expired" | "runtime_missing" | "update_required" | "key_missing" | "tool_not_found" | "catalogue_retired" | "http_401" | "unsupported_login" | "privacy_blocked" | "catalogue_off" | "not_admitted" | "policy_pending" | "codexbar_not_audited" | "codexbar_not_read" | "codexbar_access_unknown" | "browser_session_consent_required" | "no_reader" | "cleanup_pending" | "file_missing" | "file_unreadable" | "parse_error" | "schema_changed" | "http_403" | "http_429" | "http_5xx" | "network" | "timeout" | "other" | "readers_off" | "no_consent" | "no_dock_rows";
   readonly "text": WireText;
+};
+
+export type WireResetCardItem = {
+  readonly "expiresAt": string | null;
+  readonly "id": string;
+};
+
+export type WireResetCardSource = {
+  readonly "observedAt": string;
+  readonly "source": string;
+};
+
+export type WireResetCards = {
+  readonly "count": number | null;
+  readonly "earliestExpiresAt"?: string | null;
+  readonly "items"?: ReadonlyArray<WireResetCardItem>;
+  readonly "sources": ReadonlyArray<WireResetCardSource>;
+  readonly "state": string;
+  readonly "truncated": boolean;
 };
 
 export type WireResetEvent = {
@@ -289,6 +311,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
                 "type": "null"
               }
             ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "resetCards": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ResetCards"
           },
           {
             "type": "null"
@@ -669,12 +701,25 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "resetCards": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ResetCards"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "resetCounts": {
         "items": {
           "$ref": "#/$defs/CockpitResetCount"
         },
         "maxItems": 64,
         "type": "array"
+      },
+      "resetCountsTruncated": {
+        "type": "boolean"
       },
       "subscriptionRef": {
         "maxLength": 16,
@@ -1092,6 +1137,104 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "code",
       "text"
+    ],
+    "type": "object"
+  },
+  "ResetCardItem": {
+    "additionalProperties": false,
+    "properties": {
+      "expiresAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "maxLength": 64,
+        "pattern": "^[a-f0-9]{64}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "expiresAt"
+    ],
+    "type": "object"
+  },
+  "ResetCardSource": {
+    "additionalProperties": false,
+    "properties": {
+      "observedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "observedAt"
+    ],
+    "type": "object"
+  },
+  "ResetCards": {
+    "additionalProperties": false,
+    "properties": {
+      "count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "maximum": 10000,
+        "minimum": 0
+      },
+      "earliestExpiresAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "items": {
+        "items": {
+          "$ref": "#/$defs/ResetCardItem"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/ResetCardSource"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "state": {
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "state",
+      "count",
+      "truncated",
+      "sources"
     ],
     "type": "object"
   },

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
 	"io"
 	"os"
@@ -15,6 +16,39 @@ import (
 	"strings"
 	"time"
 )
+
+// resetCardIdentity holds a keyed representation; raw provider IDs are never cached.
+type resetCardIdentity struct {
+	ID        string     `json:"id"`
+	ExpiresAt *time.Time `json:"expiresAt"`
+}
+type accountResetCredits struct {
+	Count            int                 `json:"count"`
+	Expiries         []*time.Time        `json:"expiries,omitempty"`
+	Items            []resetCardIdentity `json:"items,omitempty"`
+	IdentityComplete bool                `json:"identityComplete,omitempty"`
+	IdentityObserved bool                `json:"identityObserved,omitempty"`
+	Truncated        bool                `json:"truncated,omitempty"`
+	countPresent     bool
+}
+
+// A malformed cache must not turn an absent count into a known zero.
+func (c *accountResetCredits) UnmarshalJSON(data []byte) error {
+	type fields accountResetCredits
+	var raw struct {
+		*fields
+		Count json.RawMessage `json:"count"`
+	}
+	raw.fields = (*fields)(c)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var count int
+	if len(raw.Count) != 0 && string(raw.Count) != "null" && json.Unmarshal(raw.Count, &count) == nil && count >= 0 && count < 10000 {
+		c.Count, c.countPresent = count, true
+	}
+	return nil
+}
 
 // The Codex account reading comes from Codex itself: `codex app-server` answers
 // account/rateLimits/read with the account's windows, its reset credits and its usage-credit
@@ -42,10 +76,7 @@ type accountSnap struct {
 	Windows       []Window              `json:"windows,omitempty"`
 	// Credits: available reset credits; Expiries has one entry per credit whose details were
 	// returned (nil time = never expires). Count may exceed len(Expiries).
-	Credits *struct {
-		Count    int          `json:"count"`
-		Expiries []*time.Time `json:"expiries,omitempty"`
-	} `json:"credits,omitempty"`
+	Credits *accountResetCredits `json:"credits,omitempty"`
 	// Usage: the account's usage credits (not reset credits), nil when it has none. UsageRead:
 	// the answer carried the field at all (older Codex versions leave it out).
 	Usage     *Credits `json:"usageCredits,omitempty"`
@@ -189,6 +220,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		return errors.Join(safeErr, commit(&accountSnap{SchemaVersion: 1, ObservedAt: now.UTC(), Status: status, Error: reason}))
 	}
 	s := snapFrom(resp, now)
+	attachResetCardIdentities(s, resp, cache)
 	if resp.identity != "" {
 		s.SubscriptionRef = assignSubscription(cache, "codex-account", resp.identity, now)
 	}
@@ -252,8 +284,9 @@ type rlResponse struct {
 	RateLimitsByLimitID  map[string]*rlSnapshot `json:"rateLimitsByLimitId"`
 	identity             string                 // from account/read; never cached
 	RateLimitResetCredit *struct {
-		AvailableCount int64 `json:"availableCount"`
+		AvailableCount *int64 `json:"availableCount"`
 		Credits        []struct {
+			ID        string `json:"id"`
 			Status    string `json:"status"`
 			ExpiresAt *int64 `json:"expiresAt"`
 		} `json:"credits"`
@@ -392,11 +425,8 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 			s.Windows = append(s.Windows, win)
 		}
 	}
-	if c := r.RateLimitResetCredit; c != nil && c.AvailableCount >= 0 && c.AvailableCount < 10000 {
-		s.Credits = &struct {
-			Count    int          `json:"count"`
-			Expiries []*time.Time `json:"expiries,omitempty"`
-		}{Count: int(c.AvailableCount)}
+	if c := r.RateLimitResetCredit; c != nil && c.AvailableCount != nil && *c.AvailableCount >= 0 && *c.AvailableCount < 10000 {
+		s.Credits = &accountResetCredits{Count: int(*c.AvailableCount)}
 		for _, d := range c.Credits {
 			if d.Status != "available" {
 				continue
@@ -412,8 +442,63 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 	return s
 }
 
+// Duplicate IDs with conflicting expiries make the set incomplete.
+func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
+	if s.Credits == nil || r.RateLimitResetCredit == nil {
+		return
+	}
+	s.Credits.IdentityObserved = true
+	if IdentityOff() {
+		s.Credits.IdentityComplete = s.Credits.Count == 0 && len(r.RateLimitResetCredit.Credits) == 0
+		return
+	}
+	seen := map[string]*time.Time{}
+	complete := true
+	for index, c := range r.RateLimitResetCredit.Credits {
+		if index >= 64 {
+			s.Credits.Truncated = true
+			complete = false
+			break
+		}
+		if c.Status != "available" {
+			continue
+		}
+		if c.ID == "" || len(c.ID) > 512 {
+			complete = false
+			continue
+		}
+		id := readerHash(cache, "codex-reset-card", c.ID)
+		if len(id) != 64 {
+			complete = false
+			continue
+		}
+		var expiry *time.Time
+		if c.ExpiresAt != nil {
+			t := time.Unix(*c.ExpiresAt, 0).UTC()
+			expiry = &t
+		}
+		if previous, ok := seen[id]; ok {
+			if (previous == nil) != (expiry == nil) || previous != nil && !previous.Equal(*expiry) {
+				complete = false
+			}
+			continue
+		}
+		seen[id] = expiry
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		s.Credits.Items = append(s.Credits.Items, resetCardIdentity{ID: id, ExpiresAt: seen[id]})
+	}
+	s.Credits.IdentityComplete = complete && len(ids) == s.Credits.Count
+}
+
 // applyAccount merges only when an existing verified reference binds the local
 // and runtime readings. Otherwise the runtime reading stands alone.
+
 func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
 	admission := consent.Capture()
 	if len(admissions) > 0 {
@@ -445,6 +530,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 			candidate.Subscription != nil && candidate.Subscription.Status == "verified" &&
 			candidate.Subscription.Ref == s.SubscriptionRef {
 			a = candidate
+
 			break
 		}
 	}
@@ -493,8 +579,43 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	if s.UsageRead && (a.Credits == nil || !s.ObservedAt.Before(a.Credits.ObservedAt)) {
 		a.Credits = s.Usage // the newer say wins, "none" included
 	}
-	if c := s.Credits; c != nil && c.Count > 0 {
-		a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
+	if c := s.Credits; c != nil {
+		if !c.countPresent {
+			a.ResetCards = &rows.ResetCards{State: rows.ResetCardUnknown, Sources: []rows.ResetCardSource{}}
+			return
+		}
+		if c.Count > 0 {
+			a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
+		}
+		if !c.IdentityObserved {
+			a.ResetCards = &rows.ResetCards{State: rows.ResetCardUnknown, Sources: []rows.ResetCardSource{}}
+			return
+		}
+		count := c.Count
+		facts := &rows.ResetCards{State: "partial", Count: &count, Truncated: c.Truncated,
+			Sources: []rows.ResetCardSource{{Source: "codex-account", ObservedAt: s.ObservedAt.UTC()}}}
+		if c.IdentityComplete {
+			facts.State = "complete"
+		}
+		for _, item := range c.Items {
+			facts.Items = append(facts.Items, rows.ResetCardItem{ID: item.ID, ExpiresAt: item.ExpiresAt})
+		}
+		if c.IdentityComplete && len(c.Items) > 0 {
+			allExpiring := true
+			for _, item := range c.Items {
+				if item.ExpiresAt == nil || !item.ExpiresAt.After(now) {
+					allExpiring = false
+					break
+				}
+				if facts.EarliestExpiresAt == nil || item.ExpiresAt.Before(*facts.EarliestExpiresAt) {
+					facts.EarliestExpiresAt = item.ExpiresAt
+				}
+			}
+			if !allExpiring {
+				facts.EarliestExpiresAt = nil
+			}
+		}
+		a.ResetCards = facts
 	}
 }
 
