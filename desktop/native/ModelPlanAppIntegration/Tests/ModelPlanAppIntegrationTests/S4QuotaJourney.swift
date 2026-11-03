@@ -554,7 +554,19 @@ private actor S4RowsClient: EngineClient {
         try require(inputs.map(\.id) == ["0123456789abcdef","codex#saved_login_api#1","codex#saved_login_api#2","codex#runtime_rpc"],"colliding unbound members need separate CLI-order keys, counting only the colliding members")
         try require(inputs.map(\.name) == ["synthetic · Account 1","synthetic · Account 2","synthetic · Account 3","synthetic · Account 4"],"every nozzle must retain its duplicate-account tag")
         try require(inputs.compactMap(\.duplicateAccountTag) == [1,2,3,4],"official appearance must receive structured duplicate tags without parsing names")
-        try require(inputs.compactMap{try? DockInstrumentProjection.evaluate($0,now:Date()).remainingPercent} == [70,20,30,40],"collision handling must not copy a source total into multiple members")
+        let readings=try inputs.map { try DockInstrumentProjection.evaluate($0,now:Date()) }
+        try require(readings.map(\.remainingPercent) == [70,nil,nil,40],"colliding unbound nozzles must remain visible with values withheld; independently proved members keep their own values")
+        func requireWithheld(_ values:[DockInstrumentInput]) throws {
+            for input in values where ["codex#saved_login_api#1","codex#saved_login_api#2"].contains(input.id) {
+                let reading=try DockInstrumentProjection.evaluate(input,now:Date())
+                try require(reading.remainingPercent == nil && reading.readout == "--" && reading.status == .unknown,"unverified nozzle must use the existing unknown treatment")
+                try require(input.windows.allSatisfy{$0.remainingPercent == nil},"no window may borrow another member's numeric value")
+                guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"withheld member must still expose its card") }
+                try require(card.rows.filter{$0.kind == .quota || $0.kind == .extraQuota}.allSatisfy{$0.value == "--" && $0.remainingFraction == nil},"unverified card must not disclose numeric quota")
+                try require(!card.rows.contains{$0.kind == .reserve || $0.kind == .statistic},"unverified card must not borrow other numeric facts")
+            }
+        }
+        try requireWithheld(inputs)
         let catalogue=entry.composition.accountMembers
         let temporary:Set<String>=["codex#saved_login_api#1","codex#saved_login_api#2"]
         try require(catalogue.unstableKeys == temporary && catalogue.members.map(\.isStable) == [true,false,false,true],"only the colliding unbound keys are unstable")
@@ -574,7 +586,10 @@ private actor S4RowsClient: EngineClient {
         let reordered=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         try await (entry.composition.client as! S4RowsClient).replaceRows(reordered)
         let refreshed=entry.composition.presentedContent.snapshot.inputs
-        try require(refreshed.compactMap{try? DockInstrumentProjection.evaluate($0,now:Date()).remainingPercent} == [70,30,20,40],"refresh must expose the reordered members without carrying their old identity")
+        try require(refreshed.map(\.id) == inputs.map(\.id),"reordering must retain one nozzle per emitted member")
+        let refreshedReadings=try refreshed.map { try DockInstrumentProjection.evaluate($0,now:Date()) }
+        try require(refreshedReadings.map(\.remainingPercent) == [70,nil,nil,40],"reused temporary identities must not carry values from either delivery")
+        try requireWithheld(refreshed)
         try require(entry.composition.memberInstability["codex#saved_login_api#2"] == true,"the reused ordinal must remain marked unstable after refresh")
         let afterRefresh=entry.composition.accountMembers.persistentPreferences(candidate)
         try require(afterRefresh.subscriptionSettings["codex#saved_login_api#1"] == nil && afterRefresh.subscriptionSettings["codex#saved_login_api#2"] == nil,"old unstable choices must never become durable after refresh")
