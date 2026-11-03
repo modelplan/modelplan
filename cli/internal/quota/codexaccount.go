@@ -29,6 +29,25 @@ type accountResetCredits struct {
 	IdentityComplete bool                `json:"identityComplete,omitempty"`
 	IdentityObserved bool                `json:"identityObserved,omitempty"`
 	Truncated        bool                `json:"truncated,omitempty"`
+	countPresent     bool
+}
+
+// A malformed cache must not turn an absent count into a known zero.
+func (c *accountResetCredits) UnmarshalJSON(data []byte) error {
+	type fields accountResetCredits
+	var raw struct {
+		*fields
+		Count json.RawMessage `json:"count"`
+	}
+	raw.fields = (*fields)(c)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	var count int
+	if len(raw.Count) != 0 && string(raw.Count) != "null" && json.Unmarshal(raw.Count, &count) == nil && count >= 0 && count < 10000 {
+		c.Count, c.countPresent = count, true
+	}
+	return nil
 }
 
 // The Codex account reading comes from Codex itself: `codex app-server` answers
@@ -481,8 +500,10 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	}
 	var a *Account
 	for i := range r.Accounts {
-		if r.Accounts[i].Source == "codex" {
+		binding := r.Accounts[i].Subscription
+		if r.Accounts[i].Source == "codex" && s.SubscriptionRef != "" && !IdentityOff() && binding != nil && binding.Status == "verified" && binding.Ref == s.SubscriptionRef {
 			a = &r.Accounts[i]
+			break
 		}
 	}
 	if a == nil {
@@ -528,6 +549,10 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		a.Credits = s.Usage // the newer say wins, "none" included
 	}
 	if c := s.Credits; c != nil {
+		if !c.countPresent {
+			a.ResetCards = &rows.ResetCards{State: rows.ResetCardUnknown, Sources: []rows.ResetCardSource{}}
+			return
+		}
 		if c.Count > 0 {
 			a.Cards = append(a.Cards, creditCards(c.Count, c.Expiries)...)
 		}

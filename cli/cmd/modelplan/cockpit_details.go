@@ -116,7 +116,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			if out.ResetCards != nil {
 				facts = *out.ResetCards
 			}
-			facts.State, facts.Truncated, facts.Count, facts.EarliestExpiresAt = rows.ResetCardPartial, true, nil, nil
+			facts.State, facts.Truncated = rows.ResetCardPartial, true
 			out.ResetCards = &facts
 		}
 	}
