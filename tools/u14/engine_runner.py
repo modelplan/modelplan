@@ -415,12 +415,14 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
     path = Path(home) / path
     deadline = time.monotonic() + 45
     transitions = []
+    all_fixed = []
     while time.monotonic() < deadline:
         reply = engine.request('diagnostics/get')
         if 'error' not in reply:
             decisions = reply['result']['data'].get('refreshDecisions')
             require(isinstance(decisions, list), 'scheduler-decisions-unavailable')
             relevant = [item for item in decisions if item.get('scope') == scope]
+            all_fixed = [item['scope'] + '/' + item['outcome'] + '/' + item['reason'] for item in decisions]
             transitions = [{'outcome': item['outcome'], 'reason': item['reason']} for item in relevant]
             terminal = [item for item in relevant if item['outcome'] in ('succeeded', 'failed')]
             if terminal and path.exists():
@@ -432,7 +434,7 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
                 # agree, or the bounded operation deadline expires.
         time.sleep(.5)
     fixed = ','.join(item['outcome'] + '/' + item['reason'] for item in transitions[-10:])
-    require(False, error_code + (':' + fixed if fixed else ':no_scheduler_outcome'))
+    require(False, error_code + (':' + fixed if fixed else ':no_scheduler_outcome:' + ','.join(all_fixed[-20:])))
 
 
 def _wait_native_capture(engine, home, status):
@@ -495,8 +497,9 @@ def admission(binary, home, plan):
         cli(binary, case, ['consent', 'init', '--json'])
         cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=plan['localScopes']))
         engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
-        engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
         # Establish separate grants without scheduling reads under an interim fence.
+        # Passive mode still permits explicitly keyed routes, so the synthetic
+        # key is provided only to the subsequent normal session.
         engine.environment['MODELPLAN_READERS'] = 'passive'
         engine.capabilities.append('refreshDecisionsV1')
         with engine:
