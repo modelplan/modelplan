@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync,existsSync,rmSync,mkdirSync,writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { verifyRuntimeGraph } from '../runtime-graph.mjs';
 const project=fileURLToPath(new URL('../../../cockpit/',import.meta.url));
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 test('both editions have reproducible bounded manifests; community excludes reserved assets',()=>{
@@ -16,6 +17,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     const root=project+'.tmp/'+edition+'/',manifest=JSON.parse(readFileSync(root+'bundle-manifest.json'));
     assert.equal(manifest.edition,edition);assert.equal(manifest.interfaceOnly,true);
+    if(edition==='community')verifyRuntimeGraph(root,manifest);
     for(const suffix of ['js','d.ts'])assert.equal(existsSync(root+'src/removed-module.'+suffix),false,'stale compiled files must not ship');
     assert.ok(!Object.keys(manifest.files).some(name=>name.includes('session-state')));
     assert.doesNotMatch(readFileSync(root+'cockpit.css','utf8'),/--session-|session-transition-flash|[.]session-state/);
