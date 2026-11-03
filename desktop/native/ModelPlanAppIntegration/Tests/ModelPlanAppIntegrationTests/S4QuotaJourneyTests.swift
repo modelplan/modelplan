@@ -3,6 +3,31 @@ import Foundation
 import XCTest
 
 @MainActor final class S4QuotaJourneyTests:XCTestCase {
+    override func setUp() async throws {
+        try await super.setUp()
+        await MainActor.run { S4QuotaJourney.onFailure = { XCTFail($0) } }
+    }
+    override func tearDown() async throws {
+        await MainActor.run { S4QuotaJourney.onFailure = nil }
+        try await super.tearDown()
+    }
+    func testFailureIsReportedBeforeThrowingScratchTeardown() {
+        struct SyntheticCleanupError:Error {}
+        let existingFixture=URL(fileURLWithPath:#filePath)
+        let oldHook=S4QuotaJourney.onFailure
+        defer { S4QuotaJourney.onFailure=oldHook }
+        var reported:[String]=[]
+        S4QuotaJourney.onFailure={ reported.append($0) }
+        func journey() throws {
+            defer { S4QuotaJourney.removeScratch(existingFixture,remove:{ _ in throw SyntheticCleanupError() }) }
+            throw S4QuotaJourney.Failure(description:"original synthetic journey failure")
+        }
+        XCTAssertThrowsError(try journey()) { error in
+            guard let failure=error as? S4QuotaJourney.Failure else { return XCTFail("Unexpected error: \(error)") }
+            XCTAssertEqual(failure.description,"original synthetic journey failure")
+        }
+        XCTAssertEqual(reported,["original synthetic journey failure"])
+    }
     func testNormalEntryStrictScopeAndResetEvents() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.strictScopeAndEvents(capture:capture)
