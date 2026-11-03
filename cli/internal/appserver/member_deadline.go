@@ -64,6 +64,9 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 		for j := range row.Accounts {
 			account := &row.Accounts[j]
 			account.RefreshNotBefore = combineMemberDeadlines(candidates, account.Route)
+			if account.RefreshNotBefore == nil {
+				continue
+			}
 			locator, subscription := "", ""
 			if account.AccountLocator != nil {
 				locator = *account.AccountLocator
@@ -98,7 +101,7 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 }
 
 // The outer pointer distinguishes an ungranted row from a granted but unknown
-// deadline. A route with no matching live reader is present but unknown.
+// deadline. A route with no matching live grant omits the field.
 func combineMemberDeadlines(candidates []memberDeadline, route rows.Route) **time.Time {
 	var earliest *time.Time
 	matched := false
@@ -117,8 +120,7 @@ func combineMemberDeadlines(candidates []memberDeadline, route rows.Route) **tim
 		}
 	}
 	if !matched {
-		var unknown *time.Time
-		return &unknown
+		return nil
 	}
 	return &earliest
 }
