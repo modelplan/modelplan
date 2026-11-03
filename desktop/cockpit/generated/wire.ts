@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 35fe06ddcfed541ef4f980137404f8962ffaf29ab5fa5a8715a30cb6bd4c0253
+// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -1034,11 +1034,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "aihot",
           "original",
           "official"
-        ]
+        ],
+        "type": "string"
       },
       "url": {
         "maxLength": 2048,
-        "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?(\\?[A-Za-z0-9._~/%+=:&-]*)?$",
+        "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
         "type": "string"
       }
     },
@@ -1086,6 +1087,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "links": {
+        "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
         "items": {
           "$ref": "#/$defs/ProposedResetLink"
         },

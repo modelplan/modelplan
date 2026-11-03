@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appcontract"
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/store"
@@ -41,7 +42,13 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	published := now.Add(-time.Minute).Format(time.RFC3339)
 	deadline := now.Add(2 * time.Hour).Truncate(time.Second)
 	dummy := strings.Repeat("a", 64)
-	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "publishedAt": published, "schedule": map[string]any{"precision": "deadline", "from": deadline, "through": deadline, "label": "before the deadline"}}}, "windows": []any{}}}
+	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "url": "https://aihot.news/openai-reset", "observationUrl": "https://x.com/OpenAI/status/123", "publishedAt": published, "schedule": map[string]any{"precision": "deadline", "from": deadline, "through": deadline, "label": "before the deadline"}}}, "windows": []any{}}}
+	data := component["data"].(map[string]any)
+	data["resets"] = append(data["resets"].([]any),
+		map[string]any{"id": "synthetic-missing", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published},
+		map[string]any{"id": "synthetic-unsafe", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://aihot.news/users/alice", "observationUrl": "https://status.openai.com/incidents/abc?tracking=123"},
+		map[string]any{"id": "synthetic-confirmed", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://aihot.news/reset-announced"},
+		map[string]any{"provider": "openai", "eventType": "direct_reset_reported_complete", "status": "upstream-confirmed", "publishedAt": published, "confirms": "synthetic-confirmed", "url": "https://aihot.news/reset-confirmed", "observationUrl": "https://x.com/OpenAI/status/456"})
 	blob, _ := json.Marshal(component)
 	hash := syntheticHash(blob)
 	refs := map[string]any{}
@@ -83,7 +90,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err := json.Unmarshal(p.initialize["result"], &handshake); err != nil {
 		t.Fatal(err)
 	}
-	if !containsCapability(handshake.Data.Capabilities, "resetEvents") || containsCapability(handshake.Data.Capabilities, "reset_events_v1") {
+	if !containsCapability(handshake.Data.Capabilities, "resetEvents") || !containsCapability(handshake.Data.Capabilities, "resetEventLinksV1") || containsCapability(handshake.Data.Capabilities, "reset_events_v1") {
 		t.Fatalf("unexpected server capabilities: %v", handshake.Data.Capabilities)
 	}
 	response := p.call("rows/subscribe", map[string]any{})
@@ -107,12 +114,107 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err := json.Unmarshal(response["result"], &env); err != nil {
 		t.Fatalf("rows result: %v %s", err, response["error"])
 	}
-	if len(env.Data.Projection.ResetEvents) != 1 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
+	if len(env.Data.Projection.ResetEvents) != 4 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
 	}
 	event := env.Data.Projection.ResetEvents[0]
 	if event.Status != "announced" || event.Schedule == nil || event.Schedule.Precision != "deadline" || !event.Schedule.From.Equal(deadline) || !event.Schedule.Through.Equal(deadline) || !event.ExpiresAt.Equal(deadline) {
 		t.Fatalf("point deadline changed: %+v", event)
+	}
+	if strings.Contains(string(response["result"]), `"links"`) {
+		t.Fatal("old events client received links")
+	}
+	linked := startQueryBinaryCaps(t, binary, []string{"rows", "resetEvents", "resetEventLinksV1", "cockpitDetailsV1"})
+	linkedRows := linked.call("rows/subscribe", map[string]any{})
+	linkedCockpit := linked.call("cockpit/query", map[string]any{})
+	for name, response := range map[string]map[string]json.RawMessage{"rows": linkedRows, "cockpit": linkedCockpit} {
+		if !strings.Contains(string(response["result"]), `"https://aihot.news/openai-reset"`) || !strings.Contains(string(response["result"]), `"https://x.com/OpenAI/status/123"`) {
+			t.Fatalf("%s missing published links: %s %s", name, response["result"], response["error"])
+		}
+	}
+	// Missing and unsafe sources remain visible without links; confirmations
+	// carry the confirmation's own reviewed publication fields.
+	var findEvent func(any, string) map[string]any
+	findEvent = func(v any, id string) map[string]any {
+		switch x := v.(type) {
+		case map[string]any:
+			if x["id"] == id {
+				return x
+			}
+			for _, child := range x {
+				if found := findEvent(child, id); found != nil {
+					return found
+				}
+			}
+		case []any:
+			for _, child := range x {
+				if found := findEvent(child, id); found != nil {
+					return found
+				}
+			}
+		}
+		return nil
+	}
+	for name, response := range map[string]map[string]json.RawMessage{"rows": linkedRows, "cockpit": linkedCockpit} {
+		var payload any
+		if err := json.Unmarshal(response["result"], &payload); err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{"synthetic-missing", "synthetic-unsafe"} {
+			event := findEvent(payload, id)
+			if event == nil {
+				t.Fatalf("%s lost %s", name, id)
+			}
+			source, ok := event["source"].(map[string]any)
+			if !ok || source["links"] != nil {
+				t.Fatalf("%s exposed unsafe links: %v", name, event)
+			}
+		}
+		event := findEvent(payload, "synthetic-confirmed")
+		if event == nil || event["status"] != "confirmed" {
+			t.Fatalf("%s missing confirmation: %v", name, event)
+		}
+		b, _ := json.Marshal(event)
+		if !strings.Contains(string(b), "reset-confirmed") || !strings.Contains(string(b), "/status/456") {
+			t.Fatalf("%s confirmation links: %s", name, b)
+		}
+	}
+	assertChanged := func(client *queryBinary, scope, requestID string, wantLinks bool) {
+		t.Helper()
+		var facts wire.Envelope[wire.ConsentFacts]
+		current := client.call("consent/get", map[string]any{})
+		if err := json.Unmarshal(current["result"], &facts); err != nil {
+			t.Fatal(err)
+		}
+		grant := client.call("consent/grant", wire.ConsentGrantParams{RequestID: requestID, ExpectStoreEpoch: facts.StoreEpoch, ExpectGeneration: facts.ConsentGeneration, TextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{scope}})
+		if grant["error"] != nil {
+			t.Fatalf("grant: %s", grant["error"])
+		}
+		deadline := time.After(5 * time.Second)
+		for {
+			var raw []byte
+			if len(client.notifications) > 0 {
+				raw = client.notifications[0]
+				client.notifications = client.notifications[1:]
+			} else {
+				select {
+				case raw = <-client.frames:
+				case <-deadline:
+					t.Fatal("rows/changed timed out")
+				}
+			}
+			var msg map[string]json.RawMessage
+			if json.Unmarshal(raw, &msg) != nil || string(msg["method"]) != `"rows/changed"` {
+				continue
+			}
+			if !strings.Contains(string(msg["params"]), `"synthetic-announcement"`) {
+				continue
+			}
+			if strings.Contains(string(msg["params"]), `"links"`) != wantLinks {
+				t.Fatalf("changed links mismatch: %s", raw)
+			}
+			return
+		}
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
@@ -126,12 +228,12 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 		t.Fatalf("deadline response violates production schema: %v", err)
 	}
 	cockpit := p.call("cockpit/query", map[string]any{})
-	if cockpit["result"] == nil || !strings.Contains(string(cockpit["result"]), `"resetEvents"`) {
+	if cockpit["result"] == nil || !strings.Contains(string(cockpit["result"]), `"resetEvents"`) || strings.Contains(string(cockpit["result"]), `"links"`) {
 		t.Fatalf("negotiated cockpit missing reset events: %s", cockpit["error"])
 	}
 	detailsClient := startQueryBinaryCaps(t, binary, []string{"rows", "cockpit", "cockpitDetailsV1"})
 	details := detailsClient.call("cockpit/query", map[string]any{})
-	if details["result"] == nil || !strings.Contains(string(details["result"]), `"details"`) || !strings.Contains(string(details["result"]), `"synthetic-announcement"`) {
+	if details["result"] == nil || !strings.Contains(string(details["result"]), `"details"`) || !strings.Contains(string(details["result"]), `"synthetic-announcement"`) || strings.Contains(string(details["result"]), `"links"`) {
 		t.Fatalf("negotiated cockpit details missing: %s", details["error"])
 	}
 	encodedDetails, err := json.Marshal(details)
@@ -157,6 +259,8 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if strings.Contains(string(old["result"]), "resetEvents") {
 		t.Fatal("unnegotiated client received reset events")
 	}
+	assertChanged(p, consent.ScopeCursorLocalHistory, "old-link-capability", false)
+	assertChanged(linked, consent.ScopeCodexLocalHistory, "new-link-capability", true)
 }
 
 func containsCapability(caps []string, want string) bool {

@@ -2021,11 +2021,12 @@
             "aihot",
             "original",
             "official"
-          ]
+          ],
+          "type": "string"
         },
         "url": {
           "maxLength": 2048,
-          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?(\\?[A-Za-z0-9._~/%+=:\u0026-]*)?$",
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
           "type": "string"
         }
       },
@@ -2073,6 +2074,7 @@
           "type": "string"
         },
         "links": {
+          "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
           "items": {
             "$ref": "#/$defs/ProposedResetLink"
           },
