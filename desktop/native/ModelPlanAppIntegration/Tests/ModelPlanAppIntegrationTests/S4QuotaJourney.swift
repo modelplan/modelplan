@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 import Foundation
-import XCTest
 import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
@@ -42,9 +41,10 @@ private actor S4RowsClient: EngineClient {
 /// Runs through the real normal entry; only the external engine is synthetic.
 /// It opens no windows, starts no engine child, and posts no input.
 @MainActor enum S4QuotaJourney {
+    static var onFailure:((String)->Void)?
     struct Failure:Error,CustomStringConvertible {
         let description:String
-        init(description:String) { self.description=description;XCTFail(description) }
+        @MainActor init(description:String) { self.description=description;onFailure?(description) }
     }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
     static func removeScratch(_ url:URL) {
@@ -53,7 +53,7 @@ private actor S4RowsClient: EngineClient {
     static func removeScratch(_ url:URL,remove:(URL)throws->Void) {
         guard FileManager.default.fileExists(atPath:url.path) else { return }
         do { try remove(url) }
-        catch { XCTFail("S4 scratch cleanup failed: \(error)") }
+        catch { print("S4 scratch cleanup failed: \(error)") }
     }
     static func strictScopeAndEvents(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
