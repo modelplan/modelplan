@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import { appearance,commands,pageId,sample } from '../fixture.mjs';
+import { appearance,commands,pageId,sample,shell } from '../fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -21,7 +21,8 @@ async function open(page,options=appearance) {
   await page.goto('/?pageId='+pageId);
   await page.waitForFunction(()=>!!window.modelPlanCockpit);
   const send=commands();
-  expect(await receive(page,send('load',{appearance:options}))).toBe(true);
+  const {profile,...liveAppearance}=options;
+  expect(await receive(page,send('load',{appearance:{...appearance,...liveAppearance},shell:{...shell,tier:profile==='compact'?'compact':'tall'}}))).toBe(true);
   return {send};
 }
 function receive(page,raw,method='receive') {return page.evaluate(({raw,method})=>window.modelPlanCockpit[method](raw),{raw,method});}
