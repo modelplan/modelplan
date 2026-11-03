@@ -277,14 +277,14 @@ public enum EngineDeadlineFacts {
         guard now.timeIntervalSinceReferenceDate.isFinite else { return [] }
         return members.flatMap { member -> [EngineVerifiedWindow] in
             let row = member.row, account = member.account
+            guard account.route.isKnown, account.route != .knownUnknown else { return [] }
             let memberKey: String
             if let subscriptionRef = member.subscriptionRef {
                 guard member.id == subscriptionRef else { return [] }
                 memberKey = subscriptionRef
             } else {
                 // This is a snapshot-local display key, never a verified ref.
-                guard member.isStable, account.route.isKnown, account.route != .knownUnknown,
-                      member.id == row.id + "#" + account.route.rawValue else { return [] }
+                guard member.isStable, member.id == row.id + "#" + account.route.rawValue else { return [] }
                 memberKey = member.id
             }
             let rowCanContainCurrent = row.state == .fresh ||
