@@ -306,7 +306,7 @@ private actor EntrySyntheticClient: EngineClient {
         await app.composition.stop()
     }
 
-    func testNormalEntryMenuShowsActionableLoadingAndFailureWithoutAdmittedRows() async throws {
+    func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -319,14 +319,15 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
         app.renderMenu()
         XCTAssertFalse(app.liveStatusMenu?.items.first?.title.isEmpty ?? true)
+        XCTAssertFalse(app.liveStatusMenu?.items.contains { $0.title.contains("Loading") && $0.title.contains("Settings") } ?? true)
         let initialDockMenu = app.composition.dock.menu()
-        XCTAssertTrue(initialDockMenu.items.contains { $0.title.contains("Loading") && $0.title.contains("Settings") })
+        XCTAssertFalse(initialDockMenu.items.contains { $0.title.contains("Loading") && $0.title.contains("Settings") })
         let store = try XCTUnwrap(acceptedStore)
         await store.consume(.connection(.stopped(.requested)))
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("unavailable"))
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
         let failedDockMenu = app.composition.dock.menu()
-        XCTAssertTrue(failedDockMenu.items.contains { $0.title.contains("unavailable") && $0.title.contains("Settings") })
+        XCTAssertFalse(failedDockMenu.items.contains { $0.title.contains("unavailable") && $0.title.contains("Settings") })
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("不可用"))
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("设置"))

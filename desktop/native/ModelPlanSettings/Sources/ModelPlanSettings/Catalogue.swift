@@ -243,6 +243,7 @@ public enum SettingsCatalogue {
             pane.groups.flatMap { group in
                 group.keys.compactMap { key -> SettingsRow? in
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
+                    if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && !c.capabilities.updateServiceAvailable { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
                         d.subtitle.english, d.subtitle.chinese, pane.title.english, pane.title.chinese,

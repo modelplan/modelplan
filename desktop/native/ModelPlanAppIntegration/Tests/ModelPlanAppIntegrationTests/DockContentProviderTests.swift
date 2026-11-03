@@ -105,8 +105,8 @@ import ModelPlanSettings
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try legacy(), diagnostics: diagnostics)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertTrue(menu.contains("Engine-only summary"))
-        XCTAssertTrue(menu.contains("Engine-only reason"))
+        XCTAssertFalse(menu.contains("Engine-only summary"), "Reader diagnostics belong in Settings, not the Dock menu")
+        XCTAssertFalse(menu.contains("Engine-only reason"), "The Dock menu must contain only prototype actions")
         XCTAssertFalse(provider.contexts.isEmpty)
         XCTAssertEqual(provider.contexts.last?.now, now)
         XCTAssertEqual(provider.contexts.last?.snapshot?.personal.accounts?.count, 1)

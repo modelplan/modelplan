@@ -79,7 +79,7 @@ import ModelPlanSettings
         let value = try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]])
         host.render(snapshot: value, diagnostics: diagnostics)
         host.updateDockConsent(try consent(["codex"]))
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         func rowCount() -> Int {
             (host.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
                 .filter { $0.accessibilityIdentifier()?.hasPrefix("dock.subscription.") == true }.count
@@ -116,10 +116,10 @@ import ModelPlanSettings
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]]), diagnostics: diagnostics)
         _ = try await backend.detect()
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         port.fail = true
         do { _ = try await backend.detect(); XCTFail("Expected readback failure") } catch {}
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") }, "Failed inspection retains the last canonical presentation")
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") }, "Reader status is not a menu item")
         XCTAssertNil(host.nativePanel)
     }
     func testNativeFailurePrecedesLegacyMissingOnActualHost() async throws {
@@ -142,7 +142,7 @@ import ModelPlanSettings
                 host.updateDockConsent(try consent(["claude"]))
                 host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
                 let menu = host.menu().items.map(\.title).joined(separator: " ")
-                XCTAssertTrue(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
+                XCTAssertFalse(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
                 XCTAssertFalse(menu.contains(failure))
                 host.dockView.onAction?(.subscription(row.input.id))
                 func labels(_ view: NSView) -> [NSTextField] { (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(labels) }
@@ -280,7 +280,7 @@ import ModelPlanSettings
         let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).inputs.first)
         XCTAssertEqual(row.name, "Grok"); XCTAssertTrue(row.alias?.contains("Grok") == true)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertTrue(menu.contains("Grok")); XCTAssertTrue(menu.contains("Settings"))
+        XCTAssertFalse(menu.contains("Grok")); XCTAssertTrue(menu.contains("Settings"))
         host.dockView.onAction?(.subscription(row.id))
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
@@ -312,7 +312,7 @@ import ModelPlanSettings
             await app.reload()
             var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
             host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
-            XCTAssertTrue(host.menu().items.contains { $0.title.contains(expected) })
+            XCTAssertFalse(host.menu().items.contains { $0.title.contains(expected) })
             host.dockView.onAction?(.subscription(row.input.id))
             func text(_ v: NSView) -> [String] { (v as? NSTextField).map { [$0.stringValue] } ?? v.subviews.flatMap(text) }
             XCTAssertTrue(text(host.card).contains { $0.contains(expected) })

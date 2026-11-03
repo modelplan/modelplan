@@ -341,8 +341,10 @@ import ModelPlanMenuVerification
         case .saving: showTitle = label("Show Quota Widget — Saving Settings", "显示额度挂件 — 正在保存设置")
         case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
         }
-        component.replace(with: [
-            .init(title: detail),
+        var menuItems: [DockMenuPresentationItem] = []
+        if let feedback = showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
+        else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
+        menuItems += [
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
             .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
             .init(title: nil),
@@ -350,13 +352,18 @@ import ModelPlanMenuVerification
             .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
             .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
             .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
-            .init(title: label("Check for updates", "检查更新"), action: settings.editor.context.capabilities.updateServiceAvailable && settings.editor.onHostRequest != nil ? { [weak self] in self?.checkForUpdates() } : nil),
+        ]
+        if settings.editor.context.capabilities.updateServiceAvailable, settings.editor.onHostRequest != nil {
+            menuItems.append(.init(title: label("Check for updates", "检查更新"), action: { [weak self] in self?.checkForUpdates() }))
+        }
+        menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…")),
             .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
-        ])
+        ]
+        component.replace(with: menuItems)
         liveStatusMenu = menu
         if let status { component.attach(to: status) }
         if let button = status?.button {
@@ -384,9 +391,7 @@ import ModelPlanMenuVerification
         button.image=sized;button.imageScaling = .scaleProportionallyDown;button.imagePosition = .imageLeading
     }
     public func menuWillOpen(_ menu: NSMenu) {
-        let language = composition.latestSettings?.effective.language ?? .english
-        let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
-        menu.items.first?.title = showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
+        // renderMenu keeps this menu current; never overwrite its first action with a reader diagnostic.
     }
     private func showFeedbackText(_ language: SettingsLanguage) -> String? {
         switch showFeedback {

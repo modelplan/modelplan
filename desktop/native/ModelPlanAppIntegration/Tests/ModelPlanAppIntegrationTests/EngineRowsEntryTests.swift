@@ -211,8 +211,15 @@ private actor RowsEntryClient: EngineClient {
         app.composition.dock.showConsole?(); XCTAssertEqual(consoleSurface?.shown, 1)
         XCTAssertEqual(consoleSurface?.lastRows, ["codex"])
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Engine-only reason"))
+        let settingsSnapshot = try XCTUnwrap(app.settingsHost.application.editor.snapshot)
+        let settingsRows = try SettingsCatalogue.rows(preferences: settingsSnapshot.preferences,
+            context: app.settingsHost.application.editor.context, paneID: nil)
+        guard case .subscriptions(let sources) = try XCTUnwrap(settingsRows.first { $0.key == .source }).value else {
+            return XCTFail("Settings must expose subscription source status")
+        }
+        XCTAssertTrue(sources.contains { $0.id == "0123456789abcdef" })
         XCTAssertNil(app.composition.dock.nativePanel)
         // Simulate tracking while retaining the actual instances that were already displayed.
         let trackedStatus = try XCTUnwrap(app.liveStatusMenu)
@@ -223,6 +230,12 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertFalse(trackedDock === retainedButUntrackedDock, "A retained old menu must remain independently scrubbed")
         let unrelated = NSMenu()
         unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
+        XCTAssertFalse(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
+        XCTAssertFalse(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
+        // Defense in depth: retained owned menu items must still be scrubbed if a stale item exists.
+        for menu in [trackedStatus, trackedDock, retainedButUntrackedDock] {
+            menu.addItem(withTitle: "Engine-only reason", action: nil, keyEquivalent: "")
+        }
         let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items
         let retainedReading = try XCTUnwrap(retainedItems.first { $0.title.contains("Engine-only reason") })
         retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")

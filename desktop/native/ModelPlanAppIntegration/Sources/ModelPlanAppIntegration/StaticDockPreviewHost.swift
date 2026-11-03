@@ -1227,25 +1227,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             component.replace(with: items)
             return menu
         }
-        if let lines = contentMenuStatusLines {
-            for (index, text) in lines.enumerated() {
-                items.append(.init(title: text, accessibilityID: "dock.provider-status.\(index)"))
-            }
-            if !lines.isEmpty { items.append(.init(title: nil)) }
-        } else if let model {
-            let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
-            if let emptyStatus { items.append(.init(title: emptyStatus, accessibilityID: "dock.empty-reader-status-menu")) }
-            for (index, text) in CommunityReaderStatusPresentation.menuLines(model, english: preferences.language == .english).enumerated() {
-                items.append(.init(title: text, accessibilityID: "dock.reader-status.\(index)"))
-            }
-            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { items.append(.init(title: nil)) }
-        }
-        if let model {
-            for row in model.presentationRows.values.sorted(by: { $0.input.id < $1.input.id }) {
-                items.append(.init(title: row.input.name + ": " + row.reason + " — " + row.nextStep,
-                                   action: { [weak self] in self?.openSettings() }))
-            }
-        }
         let english = application == nil || preferences.language == .english
         let quit: String
         switch (purpose, english) {

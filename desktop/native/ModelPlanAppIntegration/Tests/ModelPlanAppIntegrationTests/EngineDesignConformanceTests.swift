@@ -57,7 +57,7 @@ import ModelPlanEngineClient
                 XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Quota Widget" : "隐藏额度挂件"])
                 XCTAssertEqual(dock.first { $0.title == cockpit }?.isEnabled, enabled)
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
-                XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Check for updates","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","检查更新","说明…","设置…","关于","退出"])
+                XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","说明…","设置…","关于","退出"])
                 XCTAssertFalse(titles.contains { $0.contains(" / ") })
             }
             entry.composition.dock.close()
