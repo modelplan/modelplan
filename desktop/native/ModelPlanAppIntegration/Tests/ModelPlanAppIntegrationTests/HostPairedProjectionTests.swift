@@ -57,12 +57,18 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z") throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
         root["sequence"] = sequence
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        if let resetID {
+            projection["resetEvents"] = [["version": 1, "id": resetID, "provider": "synthetic",
+                "rowId": "codex", "status": "announced",
+                "publishedAt": "2027-05-01T00:00:00Z", "expiresAt": "2027-07-01T00:00:00Z",
+                "source": ["kind": "public", "publicationId": "synthetic"]]]
+        } else { projection.removeValue(forKey: "resetEvents") }
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         var row = rows[0], accounts = try XCTUnwrap(row["accounts"] as? [[String: Any]])
         var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
@@ -195,6 +201,28 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertNil(try app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa", at: wall))
         XCTAssertNil(try app.composition.dock.cardContent(for: "bbbbbbbbbbbbbbbb", at: wall))
         await app.composition.stop()
+    }
+
+    func testResetOnlyReplacementWithSameSequenceFencesPriorPair() async throws {
+        let store = EngineStore(), source = EngineDockMenuProvider(store: store)
+        let provider = EngineDockContentProvider(source: source), client = PairedSyntheticClient()
+        let paired = HostPairedProjection(store: store, source: source, provider: provider, client: client)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        func deliver(_ snapshot: WireRowsSnapshot) async throws {
+            let reply = try EngineReply(envelope: .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: 1, data: snapshot), delivery: context)
+            await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
+        }
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        try await deliver(rows(weekly: 75, resetID: "reset-one"))
+        let first = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
+        XCTAssertEqual(first.value.signals.first?.reset?.id, "reset-one")
+        try await deliver(rows(weekly: 75, resetID: "reset-two"))
+        XCTAssertFalse(paired.isCurrent(first.sourceToken), "reset event bytes belong to the same delivery as rows")
+        paired.invalidate()
+        let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
+        XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
     }
 
 }
