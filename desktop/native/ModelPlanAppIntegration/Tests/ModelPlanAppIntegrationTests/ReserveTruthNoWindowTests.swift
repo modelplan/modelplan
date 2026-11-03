@@ -11,40 +11,53 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, expired, refreshed }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh) async throws -> (DockInstrumentInput, DockCardRow?) {
+    private enum FixtureState { case fresh, retained, retainedExpired, expired, refreshed, revoked, revokedWithValues }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
         var account = (row["accounts"] as! [[String: Any]])[0]
         row["id"] = "codex"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
         row["name"] = ["en": "Codex", "zh": "Codex"]; row["vendorKey"] = "openai"
-        let deadline = state == .retained ? "2027-01-01T00:00:00Z" : (state == .refreshed ? "2028-12-01T00:00:00Z" : "2027-12-01T00:00:00Z")
+        let deadline = state == .retainedExpired ? "2027-01-01T00:00:00Z" : (state == .refreshed ? "2028-12-01T00:00:00Z" : "2027-12-01T00:00:00Z")
         let observed = state == .refreshed ? "2027-12-20T00:00:00Z" : "2026-12-01T00:00:00Z"
         let staleReason: [String: Any] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
         let refresh: [String: Any] = ["action": "refresh", "text": ["en": "Refresh when permitted", "zh": "在允许时刷新"], "availableAt": NSNull(), "disabledReason": NSNull()]
-        row["state"] = state == .retained ? "stale" : "fresh"
-        row["reason"] = state == .retained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
-        if state == .retained {
+        let isRetained = state == .retained || state == .retainedExpired
+        let isRevoked = state == .revoked || state == .revokedWithValues
+        row["state"] = isRetained ? "stale" : "fresh"
+        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        if isRetained {
             row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         } else {
             row["nextStep"] = NSNull(); row["expiresAt"] = deadline
             row["stateAfterExpiry"] = ["state": "stale", "reason": staleReason, "nextStep": refresh]
         }
-        account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = state == .retained ? "retained" : "current"
+        account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = isRetained ? "retained" : "current"
         account["observedAt"] = observed; account["freshUntil"] = deadline
         account["lastFailure"] = NSNull(); account["plan"] = ["id": "unknown", "name": NSNull()]
         var window = (account["windows"] as! [[String: Any]])[0]
         window["id"] = "session:18000:main:main"; window["role"] = "session"; window["durationSeconds"] = 18000
         window["label"] = ["en": "Session", "zh": "会话"]; window["limitKey"] = "main"; window["poolKey"] = "main"
         window.removeValue(forKey: "modelScope")
-        window["current"] = state != .retained; window["observedAt"] = observed; window["validUntil"] = deadline
+        window["current"] = !isRetained; window["observedAt"] = observed; window["validUntil"] = deadline
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
-        row["accounts"] = [account]; projection["rows"] = [row]
+        row["accounts"] = state == .revoked ? [] : [account]
+        if isRevoked {
+            row["consent"] = "denied"; row["state"] = "needs_consent"
+            row["reason"] = ["code": "consent_denied", "text": ["en": "Reader consent is denied", "zh": "读取授权已拒绝"]]
+            row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Review reader consent in Settings", "zh": "在设置中检查读取授权"], "availableAt": NSNull(), "disabledReason": NSNull()]
+            row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
+        }
+        projection["rows"] = [row]
         let summaryText = ["en": "Readings and actions are available", "zh": "读数或操作可用"]
         projection["rowsSummary"] = ["state": "ok", "reason": ["code": "ok", "text": summaryText], "text": summaryText, "nextStep": NSNull()]
+        if isRevoked {
+            let noConsent = ["en": "Choose tools to allow in Settings", "zh": "在设置中选择允许读取的工具"]
+            projection["rowsSummary"] = ["state": "no_consent", "reason": ["code": "no_consent", "text": noConsent], "text": noConsent, "nextStep": row["nextStep"]!]
+        }
         projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let store = EngineStore(), source = EngineDockMenuProvider(store: store), provider = EngineDockContentProvider(source: source)
@@ -57,7 +70,7 @@ import ModelPlanWire
         // it does not pretend the producer emitted current=true after expiry.
         let now: TimeInterval = (state == .expired || state == .refreshed) ? 1_830_000_000 : 1_800_000_000
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: now)))
-        let input = try XCTUnwrap(content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" })
+        let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
         return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
     }
 
@@ -82,24 +95,44 @@ import ModelPlanWire
         let boundary = try await reserve(balance: 1_000_000_000_000_000.0, unit: "credits", english: true)
         XCTAssertEqual(boundary?.value, "1000000000.0M credits")
         let outsideBound = try await reserve(balance: 1_000_000_000_000_001.0, unit: "credits", english: true)
-        XCTAssertNil(outsideBound)
+        XCTAssertNotNil(outsideBound)
+        let fallback = try await reserve(balance: 1e21, unit: "credits", english: true)
+        XCTAssertEqual(fallback?.value, String(1e21) + " credits")
+        let largeOther = try await reserve(balance: 1_000_000_000_000_001.0, unit: "other", english: true)
+        XCTAssertEqual(largeOther?.value, "1000000000000001")
+    }
+
+    func testExpiredAndRevokedDoNotExposeReserveForAnyUnit() async throws {
+        for unit in ["credits", "other", "money"] {
+            let expired = try await projection(balance: 12.5, unit: unit, english: true, state: .expired)
+            XCTAssertNil(expired.1)
+            let revoked = try await projection(balance: 12.5, unit: unit, english: true, state: .revoked)
+            XCTAssertNil(revoked.1)
+            // Deliberately contradictory wire: denied consent must not expose retained values.
+            let forged = try await projection(balance: 12.5, unit: unit, english: true, state: .revokedWithValues)
+            XCTAssertNil(forged.1)
+        }
+        let money = try await reserve(balance: 12.5, unit: "money", english: true)
+        XCTAssertEqual(money?.value, "12.5"); XCTAssertEqual(money?.detail, "Currency not reported")
     }
 
     func testFreshRetainedAndExpiredProjectionStatesAndReserve() async throws {
         let fresh = try await projection(balance: 12.5, unit: "credits", english: true, state: .fresh)
-        XCTAssertEqual(fresh.0.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "12.5 credits")
+        XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "12.5 credits")
         let retained = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained)
-        XCTAssertEqual(retained.0.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "12.5 credits")
+        XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "12.5 credits")
+        let retainedExpired = try await projection(balance: 12.5, unit: "credits", english: true, state: .retainedExpired)
+        XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertNil(retainedExpired.1)
         let expired = try await projection(balance: 12.5, unit: "credits", english: true, state: .expired)
-        XCTAssertEqual(expired.0.dataState, .unavailable); XCTAssertEqual(expired.1?.value, "12.5 credits")
+        XCTAssertEqual(expired.0?.dataState, .unavailable); XCTAssertNil(expired.1)
         let refreshed = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed)
-        XCTAssertEqual(refreshed.0.dataState, .fresh); XCTAssertEqual(refreshed.1?.value, "12.5 credits")
+        XCTAssertEqual(refreshed.0?.dataState, .fresh); XCTAssertEqual(refreshed.1?.value, "12.5 credits")
         let beforeExpiry = Date(timeIntervalSince1970: 1_800_000_000)
         let afterExpiry = Date(timeIntervalSince1970: 1_830_000_000)
-        let freshReading = try DockInstrumentProjection.evaluate(fresh.0, now: beforeExpiry)
-        let retainedReading = try DockInstrumentProjection.evaluate(retained.0, now: beforeExpiry)
-        let expiredReading = try DockInstrumentProjection.evaluate(expired.0, now: afterExpiry)
-        let refreshedReading = try DockInstrumentProjection.evaluate(refreshed.0, now: afterExpiry)
+        let freshReading = try DockInstrumentProjection.evaluate(XCTUnwrap(fresh.0), now: beforeExpiry)
+        let retainedReading = try DockInstrumentProjection.evaluate(XCTUnwrap(retained.0), now: beforeExpiry)
+        let expiredReading = try DockInstrumentProjection.evaluate(XCTUnwrap(expired.0), now: afterExpiry)
+        let refreshedReading = try DockInstrumentProjection.evaluate(XCTUnwrap(refreshed.0), now: afterExpiry)
         XCTAssertEqual(freshReading.readout, "42.5%")
         XCTAssertEqual(retainedReading.readout, "--"); XCTAssertEqual(expiredReading.readout, "--")
         // Pure projection sequence, not a claim about a live store update or GUI rendering.

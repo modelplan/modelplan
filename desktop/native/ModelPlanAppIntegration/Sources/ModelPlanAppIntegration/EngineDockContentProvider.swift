@@ -73,8 +73,11 @@ import ModelPlanSettings
                 let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
                 reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
             }
-            if account.valueState == .current || account.valueState == .retained,
-               let credits=account.credits,let balance=credits.balance,balance.isFinite,(0...1e15).contains(balance) {
+            if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
+               (date(row.expiresAt).map { context.now < $0 } ?? true),
+               (date(account.freshUntil).map { context.now < $0 } ?? true),
+               account.valueState == .current || account.valueState == .retained,
+               let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
                 switch credits.unit {
                 case "credits":
                     let number:String?
