@@ -41,8 +41,20 @@ private actor S4RowsClient: EngineClient {
 /// Runs through the real normal entry; only the external engine is synthetic.
 /// It opens no windows, starts no engine child, and posts no input.
 @MainActor enum S4QuotaJourney {
-    struct Failure:Error,CustomStringConvertible { let description:String }
+    static var onFailure:((String)->Void)?
+    struct Failure:Error,CustomStringConvertible {
+        let description:String
+        @MainActor init(description:String) { self.description=description;onFailure?(description) }
+    }
     static func require(_ condition:Bool,_ message:String) throws { if !condition { throw Failure(description:message) } }
+    static func removeScratch(_ url:URL) {
+        removeScratch(url,remove:{ try FileManager.default.removeItem(at:$0) })
+    }
+    static func removeScratch(_ url:URL,remove:(URL)throws->Void) {
+        guard FileManager.default.fileExists(atPath:url.path) else { return }
+        do { try remove(url) }
+        catch { print("S4 scratch cleanup failed: \(error)") }
+    }
     static func strictScopeAndEvents(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
@@ -62,7 +74,7 @@ private actor S4RowsClient: EngineClient {
             try require(!accepted,description)
         }
         let initial=try decode().value,directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-strict-wire-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:initial)},activateSettings:{})
         await entry.prepare();await entry.composition.start()
@@ -126,7 +138,7 @@ private actor S4RowsClient: EngineClient {
         projection["rows"]=[row];root["projection"]=projection
         func snapshot() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root)) }
         let initial=try snapshot(), directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-unstable-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let url=directory.appendingPathComponent("settings.json"),store=try SettingsStore(url:url)
         let configuration=EngineClientConfiguration(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true)
         func makeEntry(_ store:SettingsStore,_ rows:WireRowsSnapshot) -> EngineDockMenuApplication {
@@ -169,7 +181,7 @@ private actor S4RowsClient: EngineClient {
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         func snapshot() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root)) }
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-sources-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store:SettingsStore
         do { store=try SettingsStore(url:directory.appendingPathComponent("settings.json")) } catch { throw Failure(description:"settings initialization: \(error)") }
         do { try await store.update { $0.language = .english } } catch { throw Failure(description:"settings fixture: \(error)") }
@@ -206,7 +218,7 @@ private actor S4RowsClient: EngineClient {
         projection["resetEvents"]=events;data["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-menu-notice-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
         await entry.prepare();await entry.composition.start()
@@ -241,7 +253,7 @@ private actor S4RowsClient: EngineClient {
         projection["resetEvents"]=events;data["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-events-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english; $0.notifications.optedIn = true }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
@@ -384,7 +396,7 @@ private actor S4RowsClient: EngineClient {
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
@@ -451,7 +463,7 @@ private actor S4RowsClient: EngineClient {
         projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-members-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
@@ -492,7 +504,7 @@ private actor S4RowsClient: EngineClient {
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-unknown-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
@@ -527,7 +539,7 @@ private actor S4RowsClient: EngineClient {
         projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-collisions-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
@@ -600,7 +612,7 @@ private actor S4RowsClient: EngineClient {
         projection["rows"]=[row];projection["rowsSummary"]=summary;root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-language-"+UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:directory) }
+        defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
         await entry.prepare();await entry.composition.start()
