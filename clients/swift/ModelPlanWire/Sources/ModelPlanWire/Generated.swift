@@ -3274,53 +3274,53 @@ public enum WireRefreshDecisionReason: Codable, Sendable, Equatable {
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
 public enum WireRefreshDecisionScope: Codable, Sendable, Equatable {
-    case `codex.runtimeUsage`
-    case `codex.localHistory`
-    case `claude.accountUsage.savedLogin`
-    case `gemini.accountUsage.savedLogin`
-    case `cursor.accountUsage.savedLogin`
-    case `copilot.runtimeUsage`
-    case `kimi.accountUsage.savedLogin`
-    case `grok.accountUsage.savedLogin`
-    case `kiro.runtimeUsage`
-    case `antigravity.runtimeUsage`
-    case `zai.accountUsage.apiKey`
-    case `minimax.accountUsage.apiKey`
-    case `opencodego.accountUsage.apiKey`
+    case `codexRuntimeUsage`
+    case `codexLocalHistory`
+    case `claudeAccountUsageSavedLogin`
+    case `geminiAccountUsageSavedLogin`
+    case `cursorAccountUsageSavedLogin`
+    case `copilotRuntimeUsage`
+    case `kimiAccountUsageSavedLogin`
+    case `grokAccountUsageSavedLogin`
+    case `kiroRuntimeUsage`
+    case `antigravityRuntimeUsage`
+    case `zaiAccountUsageApiKey`
+    case `minimaxAccountUsageApiKey`
+    case `opencodegoAccountUsageApiKey`
     case unknown(String)
     public init(rawValue: String) {
         switch rawValue {
-        case "codex.runtime_usage": self = .`codex.runtimeUsage`
-        case "codex.local_history": self = .`codex.localHistory`
-        case "claude.account_usage.saved_login": self = .`claude.accountUsage.savedLogin`
-        case "gemini.account_usage.saved_login": self = .`gemini.accountUsage.savedLogin`
-        case "cursor.account_usage.saved_login": self = .`cursor.accountUsage.savedLogin`
-        case "copilot.runtime_usage": self = .`copilot.runtimeUsage`
-        case "kimi.account_usage.saved_login": self = .`kimi.accountUsage.savedLogin`
-        case "grok.account_usage.saved_login": self = .`grok.accountUsage.savedLogin`
-        case "kiro.runtime_usage": self = .`kiro.runtimeUsage`
-        case "antigravity.runtime_usage": self = .`antigravity.runtimeUsage`
-        case "zai.account_usage.api_key": self = .`zai.accountUsage.apiKey`
-        case "minimax.account_usage.api_key": self = .`minimax.accountUsage.apiKey`
-        case "opencodego.account_usage.api_key": self = .`opencodego.accountUsage.apiKey`
+        case "codex.runtime_usage": self = .`codexRuntimeUsage`
+        case "codex.local_history": self = .`codexLocalHistory`
+        case "claude.account_usage.saved_login": self = .`claudeAccountUsageSavedLogin`
+        case "gemini.account_usage.saved_login": self = .`geminiAccountUsageSavedLogin`
+        case "cursor.account_usage.saved_login": self = .`cursorAccountUsageSavedLogin`
+        case "copilot.runtime_usage": self = .`copilotRuntimeUsage`
+        case "kimi.account_usage.saved_login": self = .`kimiAccountUsageSavedLogin`
+        case "grok.account_usage.saved_login": self = .`grokAccountUsageSavedLogin`
+        case "kiro.runtime_usage": self = .`kiroRuntimeUsage`
+        case "antigravity.runtime_usage": self = .`antigravityRuntimeUsage`
+        case "zai.account_usage.api_key": self = .`zaiAccountUsageApiKey`
+        case "minimax.account_usage.api_key": self = .`minimaxAccountUsageApiKey`
+        case "opencodego.account_usage.api_key": self = .`opencodegoAccountUsageApiKey`
         default: self = .unknown(rawValue)
         }
     }
     public var rawValue: String {
         switch self {
-        case .`codex.runtimeUsage`: return "codex.runtime_usage"
-        case .`codex.localHistory`: return "codex.local_history"
-        case .`claude.accountUsage.savedLogin`: return "claude.account_usage.saved_login"
-        case .`gemini.accountUsage.savedLogin`: return "gemini.account_usage.saved_login"
-        case .`cursor.accountUsage.savedLogin`: return "cursor.account_usage.saved_login"
-        case .`copilot.runtimeUsage`: return "copilot.runtime_usage"
-        case .`kimi.accountUsage.savedLogin`: return "kimi.account_usage.saved_login"
-        case .`grok.accountUsage.savedLogin`: return "grok.account_usage.saved_login"
-        case .`kiro.runtimeUsage`: return "kiro.runtime_usage"
-        case .`antigravity.runtimeUsage`: return "antigravity.runtime_usage"
-        case .`zai.accountUsage.apiKey`: return "zai.account_usage.api_key"
-        case .`minimax.accountUsage.apiKey`: return "minimax.account_usage.api_key"
-        case .`opencodego.accountUsage.apiKey`: return "opencodego.account_usage.api_key"
+        case .`codexRuntimeUsage`: return "codex.runtime_usage"
+        case .`codexLocalHistory`: return "codex.local_history"
+        case .`claudeAccountUsageSavedLogin`: return "claude.account_usage.saved_login"
+        case .`geminiAccountUsageSavedLogin`: return "gemini.account_usage.saved_login"
+        case .`cursorAccountUsageSavedLogin`: return "cursor.account_usage.saved_login"
+        case .`copilotRuntimeUsage`: return "copilot.runtime_usage"
+        case .`kimiAccountUsageSavedLogin`: return "kimi.account_usage.saved_login"
+        case .`grokAccountUsageSavedLogin`: return "grok.account_usage.saved_login"
+        case .`kiroRuntimeUsage`: return "kiro.runtime_usage"
+        case .`antigravityRuntimeUsage`: return "antigravity.runtime_usage"
+        case .`zaiAccountUsageApiKey`: return "zai.account_usage.api_key"
+        case .`minimaxAccountUsageApiKey`: return "minimax.account_usage.api_key"
+        case .`opencodegoAccountUsageApiKey`: return "opencodego.account_usage.api_key"
         case .unknown(let value): return value
         }
     }
