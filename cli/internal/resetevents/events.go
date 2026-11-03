@@ -105,22 +105,6 @@ func sourceLinks(r record) []Link {
 			}
 		}
 	}
-	// Without an original post, the reviewed policy permits the AIhot page only.
-	hasOriginal := false
-	for _, link := range out {
-		if link.Type == "original" {
-			hasOriginal = true
-		}
-	}
-	if !hasOriginal {
-		filtered := out[:0]
-		for _, link := range out {
-			if link.Type == "aihot" {
-				filtered = append(filtered, link)
-			}
-		}
-		out = filtered
-	}
 	return out
 }
 

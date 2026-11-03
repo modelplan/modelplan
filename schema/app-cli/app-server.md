@@ -380,8 +380,8 @@ an X or Twitter status post, or a page on an exact approved official host.
 All queries (including empty queries), fragments, userinfo, encoded paths and
 personal or account-like paths are rejected. AIhot paths are single reset article
 slugs; official paths must be public incident, documentation, article, news,
-research, blog, update or release paths. Without an original post, only the
-AIhot citation is emitted. A rejected link does not remove the
+research, blog, update or release paths. An official citation is admitted
+independently of the original-post slot; a missing original is never substituted. A rejected link does not remove the
 event. Free-form scope remains row-wide; unsupported confirmation references
 are dropped, and the drop count remains internal.
 

@@ -45,6 +45,8 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	component := map[string]any{"schemaVersion": 1, "kind": "client", "dependencies": map[string]string{"models": dummy, "registry": dummy, "rules": dummy, "calendar": dummy}, "data": map[string]any{"units": map[string]string{"ability": "websiteAbility", "cost": "usdPerReferenceTask", "time": "taskTimeCrossModel"}, "models": []any{}, "lineups": []any{}, "resets": []any{map[string]any{"id": "synthetic-announcement", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "scope": "unmapped synthetic scope", "url": "https://aihot.news/openai-reset", "observationUrl": "https://x.com/OpenAI/status/123", "publishedAt": published, "schedule": map[string]any{"precision": "deadline", "from": deadline, "through": deadline, "label": "before the deadline"}}}, "windows": []any{}}}
 	data := component["data"].(map[string]any)
 	data["resets"] = append(data["resets"].([]any),
+		map[string]any{"id": "synthetic-official-only", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://status.openai.com/incidents/only"},
+		map[string]any{"id": "synthetic-official-pair", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://aihot.news/openai-reset", "observationUrl": "https://status.openai.com/incidents/pair"},
 		map[string]any{"id": "synthetic-missing", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published},
 		map[string]any{"id": "synthetic-unsafe", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://aihot.news/users/alice", "observationUrl": "https://status.openai.com/incidents/abc?tracking=123"},
 		map[string]any{"id": "synthetic-confirmed", "provider": "openai", "eventType": "direct_reset_announced", "status": "upstream-announced", "publishedAt": published, "url": "https://aihot.news/reset-announced"},
@@ -114,7 +116,7 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if err := json.Unmarshal(response["result"], &env); err != nil {
 		t.Fatalf("rows result: %v %s", err, response["error"])
 	}
-	if len(env.Data.Projection.ResetEvents) != 4 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
+	if len(env.Data.Projection.ResetEvents) != 6 || env.Data.Projection.ResetEvents[0].ID != "synthetic-announcement" || env.Data.Projection.ResetEvents[0].RowID != "codex" {
 		t.Fatalf("events: %+v", env.Data.Projection.ResetEvents)
 	}
 	event := env.Data.Projection.ResetEvents[0]
@@ -170,6 +172,13 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 				t.Fatalf("%s exposed unsafe links: %v", name, event)
 			}
 		}
+		for id, url := range map[string]string{"synthetic-official-only": "https://status.openai.com/incidents/only", "synthetic-official-pair": "https://status.openai.com/incidents/pair"} {
+			event := findEvent(payload, id)
+			encoded, _ := json.Marshal(event)
+			if event == nil || !strings.Contains(string(encoded), url) || strings.Contains(string(encoded), `"original"`) {
+				t.Fatalf("%s missing independent official citation: %s", name, encoded)
+			}
+		}
 		event := findEvent(payload, "synthetic-confirmed")
 		if event == nil || event["status"] != "confirmed" {
 			t.Fatalf("%s missing confirmation: %v", name, event)
@@ -209,6 +218,9 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 			}
 			if !strings.Contains(string(msg["params"]), `"synthetic-announcement"`) {
 				continue
+			}
+			if wantLinks && (!strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/only") || !strings.Contains(string(msg["params"]), "https://status.openai.com/incidents/pair")) {
+				t.Fatalf("changed notification omitted official citations: %s", raw)
 			}
 			if strings.Contains(string(msg["params"]), `"links"`) != wantLinks {
 				t.Fatalf("changed links mismatch: %s", raw)

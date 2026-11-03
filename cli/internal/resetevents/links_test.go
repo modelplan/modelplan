@@ -41,7 +41,8 @@ func TestPublicationFieldsProduceLinks(t *testing.T) {
 	}{
 		{"article and original", "https://aihot.news/openai-reset", "https://x.com/OpenAI/status/123", []Link{{Type: "aihot", URL: "https://aihot.news/openai-reset"}, {Type: "original", URL: "https://x.com/OpenAI/status/123"}}},
 		{"fields reversed", "https://twitter.com/OpenAI/status/123", "https://aihot.news/openai-reset", []Link{{Type: "aihot", URL: "https://aihot.news/openai-reset"}, {Type: "original", URL: "https://twitter.com/OpenAI/status/123"}}},
-		{"no original omits official", "https://aihot.news/openai-reset", "https://status.openai.com/incidents/abc", []Link{{Type: "aihot", URL: "https://aihot.news/openai-reset"}}},
+		{"no original keeps official", "https://aihot.news/openai-reset", "https://status.openai.com/incidents/abc", []Link{{Type: "aihot", URL: "https://aihot.news/openai-reset"}, {Type: "official", URL: "https://status.openai.com/incidents/abc"}}},
+		{"official only", "https://status.openai.com/incidents/abc", "", []Link{{Type: "official", URL: "https://status.openai.com/incidents/abc"}}},
 		{"official with original", "https://x.com/OpenAI/status/123", "https://status.openai.com/incidents/abc", []Link{{Type: "official", URL: "https://status.openai.com/incidents/abc"}, {Type: "original", URL: "https://x.com/OpenAI/status/123"}}},
 		{"invalid alongside valid", "https://aihot.news/openai-reset?x=123", "https://x.com/OpenAI/status/123", []Link{{Type: "original", URL: "https://x.com/OpenAI/status/123"}}},
 		{"no original", "https://aihot.news/openai-reset", "", []Link{{Type: "aihot", URL: "https://aihot.news/openai-reset"}}},
@@ -84,7 +85,7 @@ func TestConfirmationUsesPublishedFieldsAndPreservesFacts(t *testing.T) {
 		return events[0]
 	}
 	event := project()
-	want := []Link{{Type: "aihot", URL: "https://aihot.news/reset-confirmed"}}
+	want := []Link{{Type: "aihot", URL: "https://aihot.news/reset-confirmed"}, {Type: "official", URL: "https://status.openai.com/incidents/abc"}}
 	if event.ID != "event" || event.Status != "confirmed" || event.Confirms != "event" || !event.PublishedAt.Equal(now) || !event.ExpiresAt.Equal(now.Add(24*time.Hour)) || !reflect.DeepEqual(event.Source.Links, want) {
 		t.Fatalf("confirmation: %+v", event)
 	}
