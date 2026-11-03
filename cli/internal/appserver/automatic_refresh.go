@@ -31,6 +31,13 @@ func (s *RefreshScheduler) automatic() {
 		if stamp != previous {
 			s.mu.Lock()
 			s.autoNext = map[string]time.Time{}
+			for key, job := range s.scheduled {
+				if job.stamp != stamp {
+					delete(s.scheduled, key)
+					delete(s.pending, key)
+				}
+			}
+			s.signal()
 			s.mu.Unlock()
 			previous = stamp
 		}

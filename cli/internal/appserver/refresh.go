@@ -269,8 +269,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	attempted := false
 	defer func() {
 		if !keepPending {
+			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
 			s.mu.Lock()
-			if !attempted {
+			if !attempted && currentFence {
 				s.autoNext[job.key] = s.now().Add(10 * time.Minute)
 			}
 			delete(s.pending, job.key)
@@ -347,9 +348,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 			wait = 30 * time.Minute
 		}
 	}
-	s.mu.Lock()
-	s.autoNext[job.key] = started.Add(wait)
-	s.mu.Unlock()
+	if stampOfFence(consent.Capture().Fence()) == job.stamp {
+		s.mu.Lock()
+		s.autoNext[job.key] = started.Add(wait)
+		s.mu.Unlock()
+	}
 }
 func (s *RefreshScheduler) needsCredential(paths quota.Paths, scope string) bool {
 	if scope != consent.ScopeClaudeAccountUsageSavedLogin || os.Getenv("CLAUDE_CONFIG_DIR") != "" {
