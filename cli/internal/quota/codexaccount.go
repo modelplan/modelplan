@@ -394,8 +394,8 @@ func snapFrom(r *rlResponse, now time.Time) *accountSnap {
 	return s
 }
 
-// applyAccount merges a recent account reading into the Codex account from the logs: newest
-// observation per window, the account's plan and its reset credits. Without logs it stands alone.
+// applyAccount merges only when an existing verified reference binds the local
+// and runtime readings. Otherwise the runtime reading stands alone.
 func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
 	admission := consent.Capture()
 	if len(admissions) > 0 {
@@ -415,17 +415,29 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		return
 	}
 	var a *Account
+	hadLocal := false
 	for i := range r.Accounts {
-		if r.Accounts[i].Source == "codex" {
-			a = &r.Accounts[i]
+		candidate := &r.Accounts[i]
+		if candidate.Source == "codex" {
+			hadLocal = true
+		}
+		// A provider name is not an account binding. Without matching verified
+		// references, keep the local and runtime readings separate.
+		if candidate.Source == "codex" && !IdentityOff() && s.SubscriptionRef != "" &&
+			candidate.Subscription != nil && candidate.Subscription.Status == "verified" &&
+			candidate.Subscription.Ref == s.SubscriptionRef {
+			a = candidate
+			break
 		}
 	}
 	if a == nil {
 		r.Accounts = append(r.Accounts, Account{Source: "codex", Plan: s.Plan, ObservedAt: s.ObservedAt, Windows: []Window{}})
 		a = &r.Accounts[len(r.Accounts)-1]
-		for i := range r.Sources {
-			if r.Sources[i].Source == "codex" {
-				r.Sources[i] = SourceStatus{Source: "codex", Status: "ok", Reason: "Codex account reading; no Codex log carries one"}
+		if !hadLocal {
+			for i := range r.Sources {
+				if r.Sources[i].Source == "codex" {
+					r.Sources[i] = SourceStatus{Source: "codex", Status: "ok", Reason: "Codex account reading; no Codex log carries one"}
+				}
 			}
 		}
 	}
