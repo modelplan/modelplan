@@ -11,8 +11,8 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, atExpiry, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, atExpiry, expired, refreshed, revoked, revokedWithValues }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, overrideNow: Date? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -23,7 +23,8 @@ import ModelPlanWire
         let observed = state == .refreshed ? "2027-12-20T00:00:00Z" : "2026-12-01T00:00:00Z"
         let staleReason: [String: Any] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
         let refresh: [String: Any] = ["action": "refresh", "text": ["en": "Refresh when permitted", "zh": "在允许时刷新"], "availableAt": NSNull(), "disabledReason": NSNull()]
-        let isRetained = state == .retained || state == .retainedExpired
+        let unknownDeadline = state == .unknownDeadline || state == .malformedDeadline
+        let isRetained = state == .retained || state == .retainedExpired || unknownDeadline
         let isRevoked = state == .revoked || state == .revokedWithValues
         row["state"] = isRetained ? "stale" : "fresh"
         row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
@@ -44,6 +45,14 @@ import ModelPlanWire
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
+        if unknownDeadline {
+            row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
+            row["expiresAt"] = state == .malformedDeadline ? "invalid-deadline" as Any : NSNull()
+            account["observedAt"] = NSNull()
+            account["freshUntil"] = state == .malformedDeadline ? "invalid-deadline" as Any : NSNull()
+            window["observedAt"] = NSNull(); window["validUntil"] = NSNull(); window["current"] = false
+            account["windows"] = [window]
+        }
         row["accounts"] = state == .revoked ? [] : [account]
         if mixedTransition {
             var second = account
@@ -68,6 +77,11 @@ import ModelPlanWire
         }
         projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        if unknownDeadline {
+            // Generated optional timestamp decoding currently turns malformed strings into nil.
+            XCTAssertNil(rows.projection.rows.first?.expiresAt)
+            XCTAssertNil(rows.projection.rows.first?.accounts.first?.freshUntil)
+        }
         let store = EngineStore(), source = EngineDockMenuProvider(store: store), provider = EngineDockContentProvider(source: source)
         provider.language = english ? "en" : "zh-CN"
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
@@ -79,7 +93,7 @@ import ModelPlanWire
         let seconds: TimeInterval = (state == .expired || state == .refreshed) ? 1_830_000_000 : 1_800_000_000
         let now: Date
         if state == .atExpiry { now = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline)) }
-        else { now = Date(timeIntervalSince1970: seconds) }
+        else { now = overrideNow ?? Date(timeIntervalSince1970: seconds) }
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
         if mixedTransition {
@@ -181,6 +195,19 @@ import ModelPlanWire
 
     func testMixedAccountDeadlinesHeldRefreshAndClearInSameStore() async throws {
         _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true)
+    }
+
+    func testRetainedNullAndMalformedDeadlinesCharacterizeCurrentExposure() async throws {
+        // Negative/ambiguous inputs: null is permitted for retained; malformed is
+        // intentionally noncanonical and currently decodes as nil. Neither proves freshness.
+        for state in [FixtureState.unknownDeadline, .malformedDeadline] {
+            let early = try await projection(balance: 12.5, unit: "credits", english: true, state: state)
+            let later = try await projection(balance: 12.5, unit: "credits", english: true, state: state,
+                overrideNow: Date(timeIntervalSince1970: 1_900_000_000))
+            XCTAssertEqual(early.0?.dataState, .unavailable); XCTAssertEqual(later.0?.dataState, .unavailable)
+            // Characterizes the existing gap; it does not approve indefinite retention.
+            XCTAssertEqual(early.1?.value, "12.5 credits"); XCTAssertEqual(later.1?.value, "12.5 credits")
+        }
     }
 
     func testFreshRetainedAndExpiredProjectionStatesAndReserve() async throws {
