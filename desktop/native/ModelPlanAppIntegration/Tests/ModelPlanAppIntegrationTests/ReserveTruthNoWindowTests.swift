@@ -37,7 +37,7 @@ private actor ReserveJourneyClient: EngineClient {
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
-    private enum ProofMutation { case fallbackMember, missingLatch, nonStaleLatch, missingReset, malformedReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
+    private enum ProofMutation { case fallbackMember, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
     private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
@@ -110,7 +110,11 @@ private actor ReserveJourneyClient: EngineClient {
             case .missingLatch: row["stateAfterExpiry"] = NSNull()
             case .nonStaleLatch: row["stateAfterExpiry"] = ["state": "needs_action", "reason": staleReason, "nextStep": refresh]
             case .missingReset: altered[0]["resetsAt"] = NSNull()
+            case .absentReset: altered[0].removeValue(forKey: "resetsAt")
             case .malformedReset: altered[0]["resetsAt"] = "invalid-deadline"
+            case .missingWeeklyReset: altered[1]["resetsAt"] = NSNull()
+            case .absentWeeklyReset: altered[1].removeValue(forKey: "resetsAt")
+            case .malformedWeeklyReset: altered[1]["resetsAt"] = "invalid-deadline"
             case .mismatchReset: altered[0]["resetsAt"] = "2027-06-01T00:00:00Z"
             case .laterReset: altered[0]["resetsAt"] = "2028-12-01T00:00:00Z"
             case .missingValidUntil: altered[0]["validUntil"] = NSNull()
@@ -503,39 +507,65 @@ private actor ReserveJourneyClient: EngineClient {
             })
     }
 
-    func testNullAndMalformedResetCollapseToSameDecodedFacts() async throws {
-        // Null is producer-permitted; the malformed string is noncanonical.
-        // Both currently decode as nil, so the Provider cannot distinguish
-        // them when deciding whether a no-reset window is safe to prove.
-        var decodedFacts: [String] = []
-        for mutation in [ProofMutation.missingReset, .malformedReset] {
+    func testNullAndAbsentResetAreProvenButMalformedResetIsIsolated() async throws {
+        let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        for mutation in [ProofMutation.missingReset, .absentReset] {
             _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: mutation,
-                providerProbe: { provider, _, _ in XCTAssertTrue(provider.verifiedWindows.isEmpty) },
-                deadlineProbe: { rows, _ in
+                providerProbe: { provider, _, _ in
+                    XCTAssertEqual(provider.recomputeDeadline, .scheduled(deadline, hasUnknownDeadline: false))
+                    XCTAssertEqual(provider.verifiedWindows.count, 1)
+                    XCTAssertEqual(provider.verifiedWindows.first?.until, deadline)
+                    XCTAssertNil(provider.verifiedWindows.first?.resetsAt)
+                }, deadlineProbe: { rows, _ in
                     guard let account = rows.first?.accounts.first, let window = account.windows.first else {
                         XCTFail("missing synthetic account or window"); return
                     }
                     XCTAssertNil(window.resetsAt)
                     XCTAssertEqual(window.validUntil?.rawValue, account.freshUntil?.rawValue)
-                    decodedFacts.append([account.freshUntil?.rawValue ?? "nil", window.validUntil?.rawValue ?? "nil",
-                                         window.resetsAt?.rawValue ?? "nil", String(window.current)].joined(separator: "|"))
                 })
         }
-        XCTAssertEqual(decodedFacts.count, 2)
-        XCTAssertEqual(decodedFacts.first, decodedFacts.last)
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: .malformedReset,
+            providerProbe: { provider, _, _ in XCTAssertTrue(provider.verifiedWindows.isEmpty) },
+            deadlineProbe: { rows, _ in
+                XCTAssertEqual(rows.first?.invalid, true)
+                XCTAssertTrue(rows.first?.accounts.isEmpty == true)
+            })
     }
 
-    func testPreparedNullResetContractRemainsDisabledUntilStrictDecoder() throws {
+    func testStrictNullResetContractRequiresMatchingDeadlines() throws {
         let account = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
         let reset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         let mismatch = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-06-01T00:00:00Z"))
-        XCTAssertEqual(EngineResetTimestampContract.activeAssurance, .unverified)
+        XCTAssertEqual(EngineResetTimestampContract.activeAssurance, .malformedNonNullRejected)
         XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: account, reset: nil, assurance: .unverified))
-        // This tests the prepared rule only. The actual decoder is not yet strict.
         XCTAssertEqual(EngineResetTimestampContract.bound(account: account, window: account, reset: nil, assurance: .malformedNonNullRejected), account)
         XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: mismatch, reset: nil, assurance: .malformedNonNullRejected))
         XCTAssertEqual(EngineResetTimestampContract.bound(account: account, window: reset, reset: reset, assurance: .unverified), reset)
         XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: account, reset: reset, assurance: .malformedNonNullRejected))
+    }
+
+    func testWeeklyWithoutResetAfterSessionExpiryHasBoundedProof() async throws {
+        let first = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        let second = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+        for mutation in [ProofMutation.missingWeeklyReset, .absentWeeklyReset] {
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, proofTwoWindows: true,
+                proofMutation: mutation, overrideNow: first, providerProbe: { provider, content, _ in
+                    XCTAssertEqual(content.snapshot.subscriptions.first?.source, .stale)
+                    XCTAssertEqual(provider.recomputeDeadline, .scheduled(second, hasUnknownDeadline: false))
+                    XCTAssertEqual(provider.verifiedWindows.count, 1)
+                    XCTAssertEqual(provider.verifiedWindows.first?.windowID, "weekly:604800:main:main")
+                    XCTAssertEqual(provider.verifiedWindows.first?.remainingPercent, 75.0)
+                    XCTAssertEqual(provider.verifiedWindows.first?.until, second)
+                    XCTAssertNil(provider.verifiedWindows.first?.resetsAt)
+                })
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, proofTwoWindows: true,
+            proofMutation: .malformedWeeklyReset, overrideNow: first, providerProbe: { provider, _, _ in
+                XCTAssertTrue(provider.verifiedWindows.isEmpty)
+            }, deadlineProbe: { rows, _ in
+                XCTAssertEqual(rows.first?.invalid, true)
+                XCTAssertTrue(rows.first?.accounts.isEmpty == true)
+            })
     }
 
     func testWindowProofStopsAtRowLatchWhenLatchIsMissingOrNonStale() async throws {

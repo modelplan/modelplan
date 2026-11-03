@@ -36,12 +36,11 @@ public struct EngineContentAndDeadline: Sendable {
     public let verifiedWindows: [EngineVerifiedWindow]
 }
 
-/// This local assumption must remain unverified until the authoritative row
-/// decoder rejects every malformed non-null reset timestamp. It has no runtime
-/// override: the decoder owner must land and review the dependency first.
+/// The merged generated row decoder rejects malformed non-null reset timestamps
+/// as an invalid row. There is no runtime override for this decoder contract.
 enum EngineResetTimestampContract {
     enum Assurance: Equatable { case unverified, malformedNonNullRejected }
-    static let activeAssurance: Assurance = .unverified
+    static let activeAssurance: Assurance = .malformedNonNullRejected
 
     static func date(_ stamp: WireTimestamp?) -> Date? {
         guard let stamp else { return nil }
@@ -50,8 +49,8 @@ enum EngineResetTimestampContract {
         return fractional.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue)
     }
 
-    /// The trusted branch is a prepared contract, not evidence that the
-    /// current decoder distinguishes null from malformed input.
+    /// Null is admissible only under the strict decoder and when the remaining
+    /// independent window and account deadlines agree.
     static func bound(account: Date, window: Date, reset: Date?, assurance: Assurance) -> Date? {
         guard account.timeIntervalSinceReferenceDate.isFinite, window.timeIntervalSinceReferenceDate.isFinite else { return nil }
         if let reset {
@@ -92,7 +91,7 @@ public enum EngineDeadlineFacts {
                             let windowDate = EngineResetTimestampContract.date(window.validUntil),
                             EngineResetTimestampContract.bound(account: accountDate, window: windowDate, reset: nil,
                                 assurance: EngineResetTimestampContract.activeAssurance) != nil {
-                        // The reviewed strict-decoder contract would prove null is a real absence.
+                        // The strict decoder distinguishes admitted null from malformed input.
                     } else { unknown = true }
                 }
             }
