@@ -104,17 +104,21 @@ import ModelPlanWire
         else { now = overrideNow ?? Date(timeIntervalSince1970: seconds) }
         deadlineProbe?(rows.projection.rows, now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
+        if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none) }
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
         if multiWindowTransition {
             let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
             let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
             XCTAssertEqual(content.snapshot.inputs.count, 1)
             XCTAssertEqual(input?.windows.count, 2)
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(firstDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(input?.windows.first { $0.period == .fiveHour }?.remainingPercent, 42.5)
             XCTAssertEqual(input?.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
             let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
             XCTAssertEqual(held.snapshot.inputs.count, 1)
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
             // The row-level reason remains latched, while the later weekly
             // window is still an independently current reading for this member.
@@ -142,6 +146,8 @@ import ModelPlanWire
                 consentGeneration: 1, data: refreshedRows), delivery: context), invalidRowCount: 0))
             let after = Date(timeIntervalSince1970: 1_830_000_000)
             let refreshed = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            let refreshedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-02-01T00:00:00Z"))
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(refreshed.snapshot.inputs.count, 1)
             let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
             XCTAssertEqual(refreshedInput.dataState, .fresh)
@@ -152,6 +158,7 @@ import ModelPlanWire
             let withdrawn = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
             XCTAssertTrue(withdrawn.snapshot.inputs.isEmpty)
             XCTAssertNil(withdrawn.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
+            XCTAssertEqual(provider.recomputeDeadline, .none)
         }
         if mixedTransition {
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {

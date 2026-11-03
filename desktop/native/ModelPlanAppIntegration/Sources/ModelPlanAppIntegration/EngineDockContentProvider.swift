@@ -47,6 +47,10 @@ public enum EngineDeadlineFacts {
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
     public var resetEventState:() -> EngineRowsEventState = { .absentFromSchema }
     public private(set) var signals:[DockSubscriptionSignal] = []
+    /// Facts from the latest makeContent pass, not a timer or a freshness claim.
+    /// A consumer must discard its prior schedule on replacement/clear and
+    /// invoke makeContent again before reading this value.
+    public private(set) var recomputeDeadline: EngineRecomputeDeadline = .unknown
     /// Consumers must discard session placement and scope for these members on every refresh.
     public private(set) var memberInstability:[String:Bool] = [:]
     public var language="en"
@@ -60,6 +64,7 @@ public enum EngineDeadlineFacts {
     public init(source: EngineDockMenuProvider) { self.source = source }
     public func makeContent(_ context: DockContentContext) -> DockContent {
         let value = source.dockContent
+        recomputeDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, now: context.now)
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
