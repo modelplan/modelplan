@@ -2,8 +2,8 @@
 package quota
 
 import (
-	"time"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"time"
 )
 
 // NarrowMemberPaths binds a managed live reader to the exact existing account
@@ -43,13 +43,19 @@ func NarrowMemberPaths(p Paths, provider, locator, subscription string) (Paths, 
 					matched = true
 				}
 			}
-			if !matched { continue }
+			if !matched {
+				continue
+			}
 		}
 		matches = append(matches, profile)
 	}
-	if len(matches) != 1 { return Paths{}, false }
+	if len(matches) != 1 {
+		return Paths{}, false
+	}
 	grants := make(map[string]ReaderGrant, len(p.ReaderAccess.Grants))
-	for key, value := range p.ReaderAccess.Grants { grants[key] = value }
+	for key, value := range p.ReaderAccess.Grants {
+		grants[key] = value
+	}
 	grant.Profiles = matches
 	grants[provider] = grant
 	p.ReaderAccess = &ReaderAccess{Grants: grants}
@@ -67,23 +73,35 @@ func MemberProfilesAreScoped(provider string) bool {
 // provider data. Unknown/adaptive gates remain the conservative budget code.
 func MemberBudgetReason(p Paths, scope string, at time.Time) string {
 	definition, known := consent.Definition(scope)
-	if !known { return "budget" }
+	if !known {
+		return "budget"
+	}
 	if scope == consent.ScopeCodexRuntimeUsage {
 		if snapshot := loadAccount(p.Cache); snapshot != nil {
-			if snapshot.Status != "ok" { return "backoff" }
-			if !at.After(snapshot.ObservedAt.Add(AccountEvery)) { return "floor" }
+			if snapshot.Status != "ok" {
+				return "backoff"
+			}
+			if !at.After(snapshot.ObservedAt.Add(AccountEvery)) {
+				return "floor"
+			}
 		}
 		return "budget"
 	}
 	if reader := nativeReaders[definition.Tool]; reader != nil && reader.Managed != nil {
 		if state, err := loadReaderState(p.Cache, definition.Tool); err == nil && !state.AttemptedAt.IsZero() {
-			if state.Failures > 0 { return "backoff" }
-			if !at.After(state.AttemptedAt.Add(5*time.Minute)) { return "floor" }
+			if state.Failures > 0 {
+				return "backoff"
+			}
+			if !at.After(state.AttemptedAt.Add(5 * time.Minute)) {
+				return "floor"
+			}
 		}
 	}
 	if snapshot := loadNative(p.Cache); snapshot != nil {
 		for _, entry := range snapshot.Providers {
-			if entry.Provider == definition.Tool && entry.Status != "ok" { return "backoff" }
+			if entry.Provider == definition.Tool && entry.Status != "ok" {
+				return "backoff"
+			}
 		}
 	}
 	return "budget"

@@ -15,7 +15,7 @@ var alreadyDue = time.Unix(0, 0).UTC()
 
 type memberDeadline struct {
 	route rows.Route
-	at *time.Time
+	at    *time.Time
 }
 
 func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p quota.Paths, admission consent.Admission, allowed []string, now time.Time) {
@@ -25,10 +25,16 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 	// Such a scope has an unknown deadline until it is admitted again.
 	for _, scope := range liveRefreshScopes(state, consent.Automatic) {
 		definition, ok := consent.Definition(scope)
-		if !ok { continue }
+		if !ok {
+			continue
+		}
 		candidate := memberDeadline{route: rows.Route(definition.Route)}
 		permitted := false
-		for _, value := range allowed { if value == scope { permitted = true } }
+		for _, value := range allowed {
+			if value == scope {
+				permitted = true
+			}
+		}
 		if permitted && !admission.CleanupPending(definition.Tool) && !b.config.Offline && !b.config.ReadOnly {
 			plan, err := quota.PlanScopeRefresh(p, scope, alreadyDue)
 			if err == nil && plan.BudgetKnown && plan.Admitted && !plan.PolicyPending {
@@ -36,7 +42,12 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 				candidate.at = &at
 				if b.RefreshDeadline != nil {
 					if bound, exists, known := b.RefreshDeadline(scope); exists {
-						if !known { candidate.at = nil } else if bound.After(at) { bound = bound.UTC(); candidate.at = &bound }
+						if !known {
+							candidate.at = nil
+						} else if bound.After(at) {
+							bound = bound.UTC()
+							candidate.at = &bound
+						}
 					}
 				}
 			}
@@ -46,21 +57,41 @@ func (b *SharedBackend) populateRefreshDeadlines(projection *rows.Projection, p 
 	for i := range projection.Rows {
 		row := &projection.Rows[i]
 		candidates := byTool[row.ID]
-		if len(candidates) == 0 { continue }
+		if len(candidates) == 0 {
+			continue
+		}
 		row.RefreshNotBefore = combineMemberDeadlines(candidates, "")
 		for j := range row.Accounts {
 			account := &row.Accounts[j]
 			account.RefreshNotBefore = combineMemberDeadlines(candidates, account.Route)
 			locator, subscription := "", ""
-			if account.AccountLocator != nil { locator = *account.AccountLocator }
-			if account.SubscriptionRef != nil { subscription = *account.SubscriptionRef }
-			if locator == "" && subscription == "" { var unknown *time.Time; account.RefreshNotBefore = &unknown; continue }
+			if account.AccountLocator != nil {
+				locator = *account.AccountLocator
+			}
+			if account.SubscriptionRef != nil {
+				subscription = *account.SubscriptionRef
+			}
+			if locator == "" && subscription == "" {
+				var unknown *time.Time
+				account.RefreshNotBefore = &unknown
+				continue
+			}
 			if quota.MemberProfilesAreScoped(row.ID) {
-				if _, ok := quota.NarrowMemberPaths(p, row.ID, locator, subscription); !ok { var unknown *time.Time; account.RefreshNotBefore = &unknown }
+				if _, ok := quota.NarrowMemberPaths(p, row.ID, locator, subscription); !ok {
+					var unknown *time.Time
+					account.RefreshNotBefore = &unknown
+				}
 			} else {
 				count := 0
-				for _, other := range row.Accounts { if other.Route == account.Route { count++ } }
-				if count != 1 { var unknown *time.Time; account.RefreshNotBefore = &unknown }
+				for _, other := range row.Accounts {
+					if other.Route == account.Route {
+						count++
+					}
+				}
+				if count != 1 {
+					var unknown *time.Time
+					account.RefreshNotBefore = &unknown
+				}
 			}
 		}
 	}
@@ -72,11 +103,22 @@ func combineMemberDeadlines(candidates []memberDeadline, route rows.Route) **tim
 	var earliest *time.Time
 	matched := false
 	for _, item := range candidates {
-		if route != "" && item.route != route { continue }
+		if route != "" && item.route != route {
+			continue
+		}
 		matched = true
-		if item.at == nil { var unknown *time.Time; return &unknown }
-		if earliest == nil || item.at.Before(*earliest) { value := *item.at; earliest = &value }
+		if item.at == nil {
+			var unknown *time.Time
+			return &unknown
+		}
+		if earliest == nil || item.at.Before(*earliest) {
+			value := *item.at
+			earliest = &value
+		}
 	}
-	if !matched { var unknown *time.Time; return &unknown }
+	if !matched {
+		var unknown *time.Time
+		return &unknown
+	}
 	return &earliest
 }

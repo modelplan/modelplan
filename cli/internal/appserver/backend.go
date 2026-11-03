@@ -163,7 +163,9 @@ func WindowSourcesEnabled(ctx context.Context) bool {
 
 // MemberRefreshEnabled reports the negotiated member refresh contract.
 const CapabilityMemberRefresh = "memberRefreshV1"
+
 type memberRefreshContextKey struct{}
+
 func MemberRefreshEnabled(ctx context.Context) bool {
 	enabled, _ := ctx.Value(memberRefreshContextKey{}).(bool)
 	return enabled

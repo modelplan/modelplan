@@ -422,9 +422,10 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
             require(isinstance(decisions, list), 'scheduler-decisions-unavailable')
             relevant = [item for item in decisions if item.get('scope') == scope]
             transitions = [{'outcome': item['outcome'], 'reason': item['reason']} for item in relevant]
-            if relevant and relevant[-1]['outcome'] in ('succeeded', 'failed') and path.exists():
+            terminal = [item for item in relevant if item['outcome'] in ('succeeded', 'failed')]
+            if terminal and path.exists():
                 capture = json.loads(regular_bytes(path))
-                if capture_ready(capture, relevant[-1]['outcome']):
+                if capture_ready(capture, terminal[-1]['outcome']):
                     return transitions
                 # An older fenced-out attempt can precede a newly granted job.
                 # Keep observing until the required terminal outcome and capture

@@ -314,30 +314,52 @@ func TestModelScopeContract(t *testing.T) {
 func TestMemberRefreshRequestAndResultContract(t *testing.T) {
 	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "refresh/request", "params": map[string]any{"member": map[string]any{"rowId": "codex", "route": "runtime_rpc", "subscriptionRef": "0123456789abcdef"}}}
 	s := schema(t, "Request")
-	if err := validate(t, s, request); err != nil { t.Fatal(err) }
+	if err := validate(t, s, request); err != nil {
+		t.Fatal(err)
+	}
 	params := request["params"].(map[string]any)
 	params["scopes"] = []string{}
-	if err := validate(t, s, request); err == nil { t.Fatal("mixed refresh variants accepted") }
+	if err := validate(t, s, request); err == nil {
+		t.Fatal("mixed refresh variants accepted")
+	}
 	delete(params, "scopes")
 	params["member"] = nil
-	if err := validate(t, s, request); err == nil { t.Fatal("null member accepted") }
+	if err := validate(t, s, request); err == nil {
+		t.Fatal("null member accepted")
+	}
 	response := schema(t, "MemberRefreshResult")
-	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshStarted}); err != nil { t.Fatal(err) }
+	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshStarted}); err != nil {
+		t.Fatal(err)
+	}
 	reason := wire.MemberRefreshFloor
-	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred, Reason: &reason}); err != nil { t.Fatal(err) }
-	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred}); err == nil { t.Fatal("deferred result without reason accepted") }
-	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshStarted, Reason: &reason}); err == nil { t.Fatal("started result with reason accepted") }
+	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred, Reason: &reason}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred}); err == nil {
+		t.Fatal("deferred result without reason accepted")
+	}
+	if err := validate(t, response, wire.MemberRefreshResult{Outcome: wire.MemberRefreshStarted, Reason: &reason}); err == nil {
+		t.Fatal("started result with reason accepted")
+	}
 }
 
 func TestMemberRefreshGeneratedCapturesValidate(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
-	if !ok { t.Fatal("source path unavailable") }
+	if !ok {
+		t.Fatal("source path unavailable")
+	}
 	root := filepath.Join(filepath.Dir(file), "../../../../schema/app-cli/captures")
 	for _, name := range []string{"RefreshMember", "RefreshRequestParams", "MemberRefreshResult"} {
 		raw, err := os.ReadFile(filepath.Join(root, "Wire"+name+".json"))
-		if err != nil { t.Fatal(err) }
+		if err != nil {
+			t.Fatal(err)
+		}
 		var doc any
-		if err := json.Unmarshal(raw, &doc); err != nil { t.Fatal(err) }
-		if err := validate(t, schema(t, name), doc); err != nil { t.Fatalf("%s capture: %v", name, err) }
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		if err := validate(t, schema(t, name), doc); err != nil {
+			t.Fatalf("%s capture: %v", name, err)
+		}
 	}
 }
