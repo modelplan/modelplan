@@ -36,6 +36,33 @@ public struct EngineContentAndDeadline: Sendable {
     public let verifiedWindows: [EngineVerifiedWindow]
 }
 
+/// This local assumption must remain unverified until the authoritative row
+/// decoder rejects every malformed non-null reset timestamp. It has no runtime
+/// override: the decoder owner must land and review the dependency first.
+enum EngineResetTimestampContract {
+    enum Assurance: Equatable { case unverified, malformedNonNullRejected }
+    static let activeAssurance: Assurance = .unverified
+
+    static func date(_ stamp: WireTimestamp?) -> Date? {
+        guard let stamp else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue)
+    }
+
+    /// The trusted branch is a prepared contract, not evidence that the
+    /// current decoder distinguishes null from malformed input.
+    static func bound(account: Date, window: Date, reset: Date?, assurance: Assurance) -> Date? {
+        guard account.timeIntervalSinceReferenceDate.isFinite, window.timeIntervalSinceReferenceDate.isFinite else { return nil }
+        if let reset {
+            guard reset.timeIntervalSinceReferenceDate.isFinite, window == min(account, reset) else { return nil }
+            return window
+        }
+        guard assurance == .malformedNonNullRejected, window == account else { return nil }
+        return window
+    }
+}
+
 /// Reads only already-admitted rows. The consumer must recompute after each
 /// replacement or invalidation and use its own snapshot token to cancel timers.
 public enum EngineDeadlineFacts {
@@ -49,12 +76,7 @@ public enum EngineDeadlineFacts {
             if next.map({ date < $0 }) ?? true { next = date }
         }
         func include(_ stamp: WireTimestamp?) {
-            guard let stamp else { unknown = true; return }
-            let fractional = ISO8601DateFormatter()
-            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            guard let date = fractional.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue) else {
-                unknown = true; return
-            }
+            guard let date = EngineResetTimestampContract.date(stamp) else { unknown = true; return }
             includeDate(date)
         }
         for row in rows where row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired {
@@ -64,7 +86,14 @@ public enum EngineDeadlineFacts {
             for account in accounts {
                 include(account.freshUntil)
                 for window in account.windows where window.current {
-                    include(window.validUntil); include(window.resetsAt)
+                    include(window.validUntil)
+                    if window.resetsAt != nil { include(window.resetsAt) }
+                    else if let accountDate = EngineResetTimestampContract.date(account.freshUntil),
+                            let windowDate = EngineResetTimestampContract.date(window.validUntil),
+                            EngineResetTimestampContract.bound(account: accountDate, window: windowDate, reset: nil,
+                                assurance: EngineResetTimestampContract.activeAssurance) != nil {
+                        // The reviewed strict-decoder contract would prove null is a real absence.
+                    } else { unknown = true }
                 }
             }
         }
@@ -253,12 +282,12 @@ public enum EngineDeadlineFacts {
                   Set(account.windows.map(\.id)).count == account.windows.count else { return [] }
             if now >= rowDeadline && row.stateAfterExpiry?.state != .stale { return [] }
             return account.windows.compactMap { window -> EngineVerifiedWindow? in
+                let reset = date(window.resetsAt)
                 guard window.current, let windowObserved = date(window.observedAt), windowObserved <= now,
                       let deadline = date(window.validUntil), deadline > now,
-                      let reset = date(window.resetsAt), reset > now,
-                      deadline == min(accountDeadline, reset),
+                      let windowUntil = EngineResetTimestampContract.bound(account: accountDeadline, window: deadline, reset: reset,
+                          assurance: EngineResetTimestampContract.activeAssurance), windowUntil > now,
                       let percent = window.remainingPercent, percent.isFinite, (0...100).contains(percent) else { return nil }
-                let windowUntil = min(accountDeadline, min(deadline, reset))
                 let until = rowDeadline > now ? min(windowUntil, rowDeadline) : windowUntil
                 return .init(memberID: subscriptionRef, windowID: window.id, remainingPercent: percent, resetsAt: reset, issuedAt: now, until: until)
             }

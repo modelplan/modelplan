@@ -448,6 +448,19 @@ import ModelPlanWire
         XCTAssertEqual(decodedFacts.first, decodedFacts.last)
     }
 
+    func testPreparedNullResetContractRemainsDisabledUntilStrictDecoder() throws {
+        let account = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+        let reset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        let mismatch = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-06-01T00:00:00Z"))
+        XCTAssertEqual(EngineResetTimestampContract.activeAssurance, .unverified)
+        XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: account, reset: nil, assurance: .unverified))
+        // This tests the prepared rule only. The actual decoder is not yet strict.
+        XCTAssertEqual(EngineResetTimestampContract.bound(account: account, window: account, reset: nil, assurance: .malformedNonNullRejected), account)
+        XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: mismatch, reset: nil, assurance: .malformedNonNullRejected))
+        XCTAssertEqual(EngineResetTimestampContract.bound(account: account, window: reset, reset: reset, assurance: .unverified), reset)
+        XCTAssertNil(EngineResetTimestampContract.bound(account: account, window: account, reset: reset, assurance: .malformedNonNullRejected))
+    }
+
     func testWindowProofStopsAtRowLatchWhenLatchIsMissingOrNonStale() async throws {
         let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         for mutation in [ProofMutation.missingLatch, .nonStaleLatch] {
