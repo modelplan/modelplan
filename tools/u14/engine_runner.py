@@ -405,31 +405,50 @@ def _seed_post_logins(home):
             'cursor': {'path': cursor, 'sha256': digest(regular_bytes(cursor))}}, (canary, token)
 
 
-def _wait_native_capture(home, status):
+def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code):
+    """Wait for a terminal scheduler outcome, then verify its committed capture.
+
+    Only fixed scope/outcome/reason codes are retained. The deadline bounds a
+    broken or absent operation; it is not a sleep used as completion evidence.
+    """
     import json, time
-    path = Path(home) / '.cache/modelplan/observed/native.json'
-    deadline = time.monotonic() + 5
-    while True:
-        if path.exists():
-            capture = json.loads(regular_bytes(path))
-            for provider in capture.get('providers', []):
-                if provider.get('provider') == 'minimax' and provider.get('status') == ('ok' if status == 404 else 'error'):
-                    return
-        require(time.monotonic() < deadline, 'minimax-capture-not-committed')
-        time.sleep(.01)
+    path = Path(home) / path
+    deadline = time.monotonic() + 45
+    transitions = []
+    while time.monotonic() < deadline:
+        reply = engine.request('diagnostics/get')
+        if 'error' not in reply:
+            decisions = reply['result']['data'].get('refreshDecisions')
+            require(isinstance(decisions, list), 'scheduler-decisions-unavailable')
+            relevant = [item for item in decisions if item.get('scope') == scope]
+            transitions = [{'outcome': item['outcome'], 'reason': item['reason']} for item in relevant]
+            if relevant and relevant[-1]['outcome'] in ('succeeded', 'failed') and path.exists():
+                capture = json.loads(regular_bytes(path))
+                if capture_ready(capture, relevant[-1]['outcome']):
+                    return transitions
+                # An older fenced-out attempt can precede a newly granted job.
+                # Keep observing until the required terminal outcome and capture
+                # agree, or the bounded operation deadline expires.
+        time.sleep(.05)
+    require(False, error_code)
 
 
-def _wait_post_capture(home, provider):
-    import json, time
-    path = Path(home) / '.cache/modelplan/observed/readers' / (provider + '.json')
-    deadline = time.monotonic() + 5
-    while True:
-        if path.exists():
-            capture = json.loads(regular_bytes(path))
-            if any(item.get('status') == 'ok' and item.get('account') for item in capture.get('entries', [])):
-                return
-        require(time.monotonic() < deadline, provider + '-post-capture-not-committed')
-        time.sleep(.01)
+def _wait_native_capture(engine, home, status):
+    expected = 'ok' if status == 404 else 'error'
+    def ready(capture, outcome):
+        wanted_outcome = 'succeeded' if expected == 'ok' else 'failed'
+        return outcome == wanted_outcome and any(item.get('provider') == 'minimax' and item.get('status') == expected
+                                                  for item in capture.get('providers', []))
+    return _wait_scheduler_capture(engine, home, 'minimax.account_usage.api_key',
+        '.cache/modelplan/observed/native.json', ready, 'minimax-capture-not-committed')
+
+
+def _wait_post_capture(engine, home, provider):
+    def ready(capture, outcome):
+        return outcome == 'succeeded' and any(item.get('status') == 'ok' and item.get('account')
+                                               for item in capture.get('entries', []))
+    return _wait_scheduler_capture(engine, home, provider + '.account_usage.saved_login',
+        '.cache/modelplan/observed/readers/' + provider + '.json', ready, provider + '-post-capture-not-committed')
 
 
 def admission(binary, home, plan):
@@ -475,6 +494,7 @@ def admission(binary, home, plan):
         cli(binary, case, ['consent', 'grant', '--json'], decision(case, allow=plan['localScopes']))
         engine = EngineProcess(binary, case, 'u14-admission-' + str(status))
         engine.environment['MINIMAX_CODING_API_KEY'] = 'U14-SYNTHETIC-MINIMAX-KEY'
+        engine.capabilities.append('refreshDecisionsV1')
         with engine:
             hello = engine.initialize()
             require(hello['storeEpoch'] not in ('unavailable', 'u14-fixture-epoch'), 'admission-used-fake-consent-backend')
@@ -511,11 +531,12 @@ def admission(binary, home, plan):
                         tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
             require('error' not in remote and all(item.get('disabledReason') in (None, 'cooldown') for item in remote['result']['data']), 'approved-post-refresh-deferred')
+            post_transitions = {}
             for tool in ('gemini', 'cursor'):
-                _wait_post_capture(case, tool)
+                post_transitions[tool] = _wait_post_capture(engine, case, tool)
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
             require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
-            _wait_native_capture(case, status)
+            native_transitions = _wait_native_capture(engine, case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))
             requests_before = len([item for item in _http_events(case) if item['provider'] == 'minimax'])
@@ -537,7 +558,7 @@ def admission(binary, home, plan):
                 'beforeCli': deferred_before['result']['data'][0], 'afterCli': deferred_after['result']['data'][0],
                 'nextAttemptAt': load_json(budget)['nextAttemptAt'],
                 'budgetBeforeSha256': budget_before, 'budgetAfterSha256': digest(regular_bytes(budget)),
-                'requestsBefore': requests_before, 'requestsAfter': len(mini)}
+                'requestsBefore': requests_before, 'requestsAfter': len(mini), 'schedulerTransitions': native_transitions}
             require(all(item['method'] == 'GET' and item['host'] == 'api.minimax.io' and item['credentialMatched'] for item in mini), 'unexpected-minimax-request')
             observations['unexpectedCalls'] += sum(item['event'] == 'unlisted-provider-request' for item in trace)
             for tool in ('gemini', 'cursor'):
@@ -549,6 +570,7 @@ def admission(binary, home, plan):
                               for row in rows['rows'])
                 observations['postScopes'][tool]['cases'][str(status)] = {
                     'calls': len(requests), 'requests': requests, 'readingAvailable': reading,
+                    'schedulerTransitions': post_transitions[tool],
                     'beforeCli': next(item for item in post_before if item['scope'] == scope),
                     'afterCli': next(item for item in post_after if item['scope'] == scope),
                     'nextAttemptAt': load_json(post_budgets[tool])['nextAttemptAt'],

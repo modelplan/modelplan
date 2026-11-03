@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent.parent
 sys.path.insert(0, str(ROOT))
 from engine_process import EngineProcess, EngineFailure, build_binary
-from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows
+from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows, _wait_scheduler_capture
 from engine_build import build_tools
 from shape_home import build_home
 from contracts import load_json, encoded, write_private
@@ -338,6 +338,23 @@ class EpochFloorTests(unittest.TestCase):
 
 
 class RefreshRaceTests(unittest.TestCase):
+    def test_wait_uses_terminal_scheduler_outcome_before_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'capture.json').write_text('{"status":"ok"}')
+            engine = mock.Mock()
+            engine.request.side_effect = [
+                {'result': {'data': {'refreshDecisions': [
+                    {'scope': 'codex.runtime_usage', 'outcome': 'deferred', 'reason': 'budget'}]}}},
+                {'result': {'data': {'refreshDecisions': [
+                    {'scope': 'codex.runtime_usage', 'outcome': 'deferred', 'reason': 'budget'},
+                    {'scope': 'codex.runtime_usage', 'outcome': 'succeeded', 'reason': 'completed', 'canary': 'must-not-retain'}]}}},
+            ]
+            transitions = _wait_scheduler_capture(engine, directory, 'codex.runtime_usage', 'capture.json',
+                lambda capture, outcome: capture['status'] == 'ok' and outcome == 'succeeded', 'capture-missing')
+            self.assertEqual(engine.request.call_count, 2)
+            self.assertEqual(transitions, [{'outcome': 'deferred', 'reason': 'budget'},
+                                           {'outcome': 'succeeded', 'reason': 'completed'}])
+
     def test_rows_retry_transient_busy_and_consent_change(self):
         engine = mock.Mock()
         engine.request.side_effect = [

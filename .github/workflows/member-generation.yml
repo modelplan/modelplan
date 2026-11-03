@@ -30,6 +30,7 @@ jobs:
           npm run check --prefix desktop/cockpit
           cd cli
           go test ./internal/appserver/... ./internal/quota/... ./internal/rows/... ./cmd/modelplan
+          go test -race -count=1 ./internal/appserver -run 'TestAutomatic|TestMember|TestRefreshDecision|TestRefreshDeferral|TestDeferredRefresh' 
       - name: Capture patch
         if: always()
         run: git add -N . && git diff --binary > "$RUNNER_TEMP/member-generation.patch"

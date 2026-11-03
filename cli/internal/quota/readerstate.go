@@ -606,7 +606,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 		if (provider == "claude" || provider == "gemini") && !w.ScopeKnown {
 			continue
 		}
-		v := rows.WindowInput{Kind: w.Kind, Limit: w.Limit, ModelIDs: w.ModelIDs, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
+		v := rows.WindowInput{Source: rows.WindowSourceSavedLogin, Kind: w.Kind, Limit: w.Limit, ModelIDs: w.ModelIDs, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
 		if w.WindowMinutes > 0 {
 			seconds := int64(w.WindowMinutes) * 60
 			v.DurationSeconds = &seconds
