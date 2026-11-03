@@ -26,8 +26,8 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
-	Now func() time.Time
-	Plan func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
+	Now               func() time.Time
+	Plan              func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }
 type refreshJob struct {
 	at         time.Time
@@ -53,11 +53,15 @@ type RefreshScheduler struct {
 }
 
 func (s *RefreshScheduler) now() time.Time {
-	if s.config.Now != nil { return s.config.Now() }
+	if s.config.Now != nil {
+		return s.config.Now()
+	}
 	return time.Now()
 }
 func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) (quota.ScopeRefreshPlan, error) {
-	if s.config.Plan != nil { return s.config.Plan(paths, scope, now) }
+	if s.config.Plan != nil {
+		return s.config.Plan(paths, scope, now)
+	}
 	return quota.PlanScopeRefresh(paths, scope, now)
 }
 
@@ -73,9 +77,12 @@ func (s *RefreshScheduler) Close() {
 	s.mu.Lock()
 	started := s.autoStarted
 	s.mu.Unlock()
-	if started { <-s.autoDone }
+	if started {
+		<-s.autoDone
+	}
 	s.decisions.clear()
 }
+
 // Decisions exposes only the bounded code-only history for this process.
 func (s *RefreshScheduler) Decisions() []wire.RefreshDecision {
 	items := s.decisions.snapshot(s.now())
@@ -263,7 +270,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	defer func() {
 		if !keepPending {
 			s.mu.Lock()
-			if !attempted { s.autoNext[job.key] = s.now().Add(10 * time.Minute) }
+			if !attempted {
+				s.autoNext[job.key] = s.now().Add(10 * time.Minute)
+			}
 			delete(s.pending, job.key)
 			delete(s.credentialWait, job.key)
 			s.mu.Unlock()
@@ -271,7 +280,10 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()
 		}
-		select { case s.autoWake <- struct{}{}: default: }
+		select {
+		case s.autoWake <- struct{}{}:
+		default:
+		}
 	}()
 	if s.ctx.Err() != nil {
 		return
@@ -319,15 +331,19 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		outcome = refreshFailed
 	} else {
 		switch quota.ScopeRefreshOutcome(paths, job.scope, started) {
-		case "succeeded": outcome, reason = refreshSucceeded, refreshCompleted
-		case "failed": outcome = refreshFailed
+		case "succeeded":
+			outcome, reason = refreshSucceeded, refreshCompleted
+		case "failed":
+			outcome = refreshFailed
 		}
 	}
 	s.decisions.add(started, job.scope, outcome, reason)
 	wait := 5 * time.Minute
 	if err != nil {
 		wait = 10 * time.Minute
-		if job.scope == consent.ScopeCodexRuntimeUsage { wait = 30 * time.Minute }
+		if job.scope == consent.ScopeCodexRuntimeUsage {
+			wait = 30 * time.Minute
+		}
 	}
 	s.mu.Lock()
 	s.autoNext[job.key] = started.Add(wait)
