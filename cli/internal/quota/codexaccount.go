@@ -71,6 +71,14 @@ func loadAccount(cache string) *accountSnap {
 	return &s
 }
 
+// CodexRuntimeAvailable reports only whether an admitted runtime snapshot was
+// successful. It exposes no provider values or identity.
+func CodexRuntimeAvailable(cache string, admission consent.Admission) bool {
+	if !admission.Allows("codex", consent.Runtime) { return false }
+	s := loadAccount(cache)
+	return s != nil && s.Status == "ok" && admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage)
+}
+
 // AccountDue: the cached reading is old enough to ask Codex again.
 func AccountDue(cache string, now time.Time) bool {
 	if off() || cache == "" {

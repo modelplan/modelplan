@@ -42,15 +42,27 @@ type RefreshScheduler struct {
 	wake           chan struct{}
 	mu             sync.Mutex
 	pending        map[string]time.Time
+	autoOnce       sync.Once
+	autoDone       chan struct{}
+	autoWake       chan struct{}
+	autoNext       map[string]time.Time
+	autoStarted    bool
 }
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}}
+	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}}
 	go s.work()
 	return s
 }
-func (s *RefreshScheduler) Close() { s.cancel(); <-s.done }
+func (s *RefreshScheduler) Close() {
+	s.cancel()
+	<-s.done
+	s.mu.Lock()
+	started := s.autoStarted
+	s.mu.Unlock()
+	if started { <-s.autoDone }
+}
 func (s *RefreshScheduler) Handler() Handler {
 	return Handler{Capability: "refresh", Handle: func(ctx context.Context, raw json.RawMessage, _ Stamp) (Reply, error) {
 		p, err := params[wire.RefreshRequestParams](raw)
@@ -235,6 +247,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()
 		}
+		select { case s.autoWake <- struct{}{}: default: }
 	}()
 	if s.ctx.Err() != nil {
 		return
@@ -274,7 +287,16 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 	defer cancel()
-	_ = s.config.Run(ctx, paths, job.scope, time.Now())
+	started := time.Now()
+	err = s.config.Run(ctx, paths, job.scope, started)
+	wait := 5 * time.Minute
+	if err != nil {
+		wait = 10 * time.Minute
+		if job.scope == consent.ScopeCodexRuntimeUsage { wait = 30 * time.Minute }
+	}
+	s.mu.Lock()
+	s.autoNext[job.key] = started.Add(wait)
+	s.mu.Unlock()
 }
 func (s *RefreshScheduler) needsCredential(paths quota.Paths, scope string) bool {
 	if scope != consent.ScopeClaudeAccountUsageSavedLogin || os.Getenv("CLAUDE_CONFIG_DIR") != "" {

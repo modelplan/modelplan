@@ -114,7 +114,9 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		broker.Changed = shared.Notify
 		closeBackend = scheduler.Close
 	}
-	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers})
+	var sessionStarted func()
+	if scheduler != nil { sessionStarted = scheduler.StartAutomatic }
+	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted})
 	broker.Request = server.ReadCredential
 	return server, closeBackend, nil
 }
