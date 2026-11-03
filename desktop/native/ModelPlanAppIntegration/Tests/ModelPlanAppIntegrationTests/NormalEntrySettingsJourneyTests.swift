@@ -76,6 +76,60 @@ private actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testHiddenWidgetCanBeRestoredFromMenuAndSettingsAcrossRelaunch() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("widget-recovery-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        func makeApp() throws -> EngineDockMenuApplication {
+            EngineRowsEntry.make(configuration: config,
+                settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+                createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
+        }
+        func select(_ title: String, in menu: NSMenu) throws {
+            let item = try XCTUnwrap(menu.items.first { $0.title == title })
+            XCTAssertTrue(item.isEnabled, "\(title) must be actionable")
+            _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
+        }
+        func waitFor(_ app: EngineDockMenuApplication, shown: Bool) async throws {
+            for _ in 0..<100 {
+                if app.settingsHost.application.editor.snapshot?.preferences.showDock == shown { return }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTFail("showDock did not become \(shown)")
+        }
+        let first = try makeApp(); await first.prepare(); first.allowDockPresentation()
+        await first.composition.start()
+        try select("Hide Quota Widget", in: first.composition.dock.menu())
+        try await waitFor(first, shown: false)
+        XCTAssertFalse(first.composition.dock.interactionEnvironment().active)
+        try select("Show Quota Widget", in: try XCTUnwrap(first.liveStatusMenu))
+        try await waitFor(first, shown: true)
+        XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
+
+        try select("Hide Quota Widget", in: first.composition.dock.menu())
+        try await waitFor(first, shown: false)
+        let editor = first.settingsHost.application.editor
+        let snapshot = try XCTUnwrap(editor.snapshot)
+        let settingsRows = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: nil)
+        XCTAssertEqual(settingsRows.first { $0.key == .showDock }?.availability, .available)
+        _ = try await editor.commit(SettingsB21Edit.showDock(true))
+        XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
+
+        try select("Hide Quota Widget", in: first.composition.dock.menu())
+        try await waitFor(first, shown: false)
+        await first.composition.stop()
+        first.composition.dock.close()
+        let reopened = try makeApp(); await reopened.prepare(); reopened.allowDockPresentation()
+        defer { reopened.composition.dock.close() }
+        XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.showDock, false)
+        try select("Show Quota Widget", in: try XCTUnwrap(reopened.liveStatusMenu))
+        try await waitFor(reopened, shown: true)
+        XCTAssertTrue(reopened.composition.dock.interactionEnvironment().active)
+    }
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
