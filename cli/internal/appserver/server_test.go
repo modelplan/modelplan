@@ -743,19 +743,31 @@ func TestResetEventsCapabilityControlsSnapshotsAndChanges(t *testing.T) {
 func TestRefreshDecisionDiagnosticsCapability(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
-			decisions := func() []wire.RefreshDecision { return []wire.RefreshDecision{{AgoSeconds: 2, Scope: wire.DecisionCodexRuntime, Outcome: wire.DecisionSucceeded, Reason: wire.DecisionCompleted}} }
+			decisions := func() []wire.RefreshDecision {
+				return []wire.RefreshDecision{{AgoSeconds: 2, Scope: wire.DecisionCodexRuntime, Outcome: wire.DecisionSucceeded, Reason: wire.DecisionCompleted}}
+			}
 			c := startClient(t, Config{Backend: newMemoryBackend(), RefreshDecisions: decisions})
 			c.readMessages()
 			caps := []string{"diagnostics"}
-			if enabled { caps = append(caps, "refreshDecisionsV1") }
+			if enabled {
+				caps = append(caps, "refreshDecisionsV1")
+			}
 			c.send(t, 1, "initialize", wire.InitializeParams{SessionID: "diag", ProtocolVersion: wire.ProtocolVersion, AppVersion: "test", Capabilities: caps})
-			if m := c.response(t, 1); m["error"] != nil { t.Fatal(string(m["error"])) }
+			if m := c.response(t, 1); m["error"] != nil {
+				t.Fatal(string(m["error"]))
+			}
 			c.send(t, 2, "diagnostics/get", wire.Empty{})
 			m := c.response(t, 2)
-			var envelope struct { Data map[string]json.RawMessage `json:"data"` }
-			if err := json.Unmarshal(m["result"], &envelope); err != nil { t.Fatal(err) }
+			var envelope struct {
+				Data map[string]json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(m["result"], &envelope); err != nil {
+				t.Fatal(err)
+			}
 			_, present := envelope.Data["refreshDecisions"]
-			if present != enabled { t.Fatalf("capability=%v, payload=%s", enabled, m["result"]) }
+			if present != enabled {
+				t.Fatalf("capability=%v, payload=%s", enabled, m["result"])
+			}
 		})
 	}
 }

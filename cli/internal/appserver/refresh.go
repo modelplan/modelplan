@@ -270,6 +270,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	defer func() {
 		if !keepPending {
 			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
+			if !attempted { s.decisions.add(s.now(), job.scope, refreshNotAttempted, refreshUnavailable) }
 			s.mu.Lock()
 			if !attempted && currentFence {
 				s.autoNext[job.key] = s.now().Add(10 * time.Minute)
