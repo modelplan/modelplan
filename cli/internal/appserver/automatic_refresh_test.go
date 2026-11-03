@@ -88,7 +88,7 @@ func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
 				if at.Before(now) { at = now }
 				return quota.ScopeRefreshPlan{At: at, Admitted: true, BudgetKnown: true}, nil
 			}
-			s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: clock.read, Plan: plan,
+			config := RefreshConfig{Backend: backend, Paths: paths, Now: clock.read, Plan: plan,
 				Run: func(ctx context.Context, _ quota.Paths, _ string, at time.Time) error {
 					mu.Lock(); attempts++; n := attempts
 					if n == 1 { next = at.Add(10*time.Minute) } else { next = at.Add(30*time.Minute) }
@@ -97,7 +97,8 @@ func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
 					if n == 2 { select { case <-release: case <-ctx.Done(): }; return errors.New("synthetic failure") }
 					return nil
 				},
-			})
+			}
+			s := NewRefreshScheduler(context.Background(), config)
 			defer s.Close()
 			s.StartAutomatic()
 			select { case <-calls: case <-time.After(3*time.Second): t.Fatal("startup did not read") }
@@ -105,6 +106,12 @@ func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
 			waitAutomaticFloor(t, s, definition.Tool, start)
 			clock.set(start.Add(4*time.Minute)); signalAutomatic(s)
 			select { case n := <-calls: t.Fatalf("read %d bypassed floor", n); case <-time.After(10*time.Millisecond): }
+			// A new app-server session represents wake; the provider budget survives it.
+			s.Close()
+			s = NewRefreshScheduler(context.Background(), config)
+			defer s.Close()
+			s.StartAutomatic()
+			select { case n := <-calls: t.Fatalf("wake read %d bypassed budget", n); case <-time.After(10*time.Millisecond): }
 			clock.set(start.Add(10*time.Minute)); signalAutomatic(s)
 			select { case n := <-calls: if n != 2 { t.Fatalf("unexpected attempt %d", n) }; case <-time.After(3*time.Second): t.Fatal("provider due time missed") }
 			signalAutomatic(s)
@@ -117,4 +124,22 @@ func TestAutomaticRefreshSyntheticClockProviders(t *testing.T) {
 			select { case n := <-calls: if n != 3 { t.Fatalf("unexpected attempt %d", n) }; case <-time.After(3*time.Second): t.Fatal("failure budget did not expire") }
 		})
 	}
+}
+
+func TestAutomaticNeverSchedulesImplicitGrant(t *testing.T) {
+	backend, paths, _ := refreshFixture(t, consent.ScopeCodexRuntimeUsage)
+	if err := consent.Change(consent.Path(), func(state *consent.State) error {
+		state.Scopes = map[string]consent.Record{}
+		state.Tools = map[string]consent.Record{}
+		return nil
+	}); err != nil { t.Fatal(err) }
+	backend.view.Stamp = stampOfFence(consent.Capture().Fence())
+	backend.view.Scopes = []string{consent.ScopeCodexRuntimeUsage}
+	calls := make(chan struct{}, 1)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		Run: func(context.Context, quota.Paths, string, time.Time) error { calls <- struct{}{}; return nil },
+	})
+	defer s.Close()
+	s.StartAutomatic()
+	select { case <-calls: t.Fatal("implicit consent scheduled a live read"); case <-time.After(100*time.Millisecond): }
 }

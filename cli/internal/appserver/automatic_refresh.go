@@ -39,7 +39,7 @@ func (s *RefreshScheduler) automatic() {
 		runtimeGranted := false
 		for _, scope := range scopes { if scope == consent.ScopeCodexRuntimeUsage { runtimeGranted = true } }
 		local, decided := state.Scopes[consent.ScopeCodexLocalHistory]
-		if decided && local.Allowed && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
+		if !s.config.Offline && !s.config.ReadOnly && decided && local.Allowed && state.AllowsScope(consent.ScopeCodexLocalHistory, mode) &&
 			(!runtimeGranted || !quota.CodexRuntimeAvailable(s.paths(admission).Cache, admission, now)) {
 			scopes = append(scopes, consent.ScopeCodexLocalHistory)
 		}
