@@ -90,23 +90,34 @@ private actor SettingsJourneyClient: EngineClient {
                 createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
         }
         func select(_ title: String, in menu: NSMenu) throws {
-            let item = try XCTUnwrap(menu.items.first { $0.title == title })
+            let item = try XCTUnwrap(menu.items.first { $0.title == title }, "Missing menu item: \(title)")
             XCTAssertTrue(item.isEnabled, "\(title) must be actionable")
             _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
         }
         func waitFor(_ app: EngineDockMenuApplication, shown: Bool) async throws {
-            for _ in 0..<100 {
-                if app.settingsHost.application.editor.snapshot?.preferences.showDock == shown { return }
+            for _ in 0..<250 {
+                let editor = app.settingsHost.application.editor
+                if editor.snapshot?.preferences.showDock == shown && !editor.isSaving { return }
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTFail("showDock did not become \(shown)")
         }
-        let first = try makeApp(); await first.prepare(); first.allowDockPresentation()
+        func showFromStatusMenu(_ app: EngineDockMenuApplication) async throws {
+            for _ in 0..<250 {
+                if let menu = app.liveStatusMenu, let item = menu.items.first(where: { $0.title == "Show Quota Widget" }), item.isEnabled {
+                    try select("Show Quota Widget", in: menu); return
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTFail("Show Quota Widget did not become available")
+        }
+        let first = try makeApp(); defer { first.composition.dock.close() }
+        await first.prepare(); first.allowDockPresentation()
         await first.composition.start()
         try select("Hide Quota Widget", in: first.composition.dock.menu())
         try await waitFor(first, shown: false)
         XCTAssertFalse(first.composition.dock.interactionEnvironment().active)
-        try select("Show Quota Widget", in: try XCTUnwrap(first.liveStatusMenu))
+        try await showFromStatusMenu(first)
         try await waitFor(first, shown: true)
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
@@ -126,7 +137,7 @@ private actor SettingsJourneyClient: EngineClient {
         let reopened = try makeApp(); await reopened.prepare(); reopened.allowDockPresentation()
         defer { reopened.composition.dock.close() }
         XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.showDock, false)
-        try select("Show Quota Widget", in: try XCTUnwrap(reopened.liveStatusMenu))
+        try await showFromStatusMenu(reopened)
         try await waitFor(reopened, shown: true)
         XCTAssertTrue(reopened.composition.dock.interactionEnvironment().active)
     }

@@ -252,7 +252,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the pinned card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户")
-        XCTAssertEqual(card.stateLabel, "旧读数")
+        XCTAssertTrue(card.stateLabel.hasPrefix("过期 · "), "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))

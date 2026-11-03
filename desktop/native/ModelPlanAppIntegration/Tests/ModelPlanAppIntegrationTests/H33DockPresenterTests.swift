@@ -285,7 +285,7 @@ import ModelPlanSettings
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
-        XCTAssertTrue(labels.contains { $0.stringValue.contains("Check reader status in Settings") })
+        XCTAssertFalse(labels.contains { $0.stringValue.contains("Check reader status in Settings") }, "The card uses one error badge; its Settings action remains available")
         let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
         XCTAssertEqual(button.title, "设置")
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)

@@ -26,14 +26,7 @@ public struct DockContentRow: Sendable {
         }()
     }
     private func cardAge(at now:Date,english:Bool) -> String {
-        guard let observedAt=originalObservedAt else { return english ? "Reading time unknown" : "读数时间未知" }
-        let seconds=now.timeIntervalSince(observedAt)
-        guard seconds.isFinite,seconds >= 0,seconds < Double(Int.max) else { return english ? "Reading time unknown" : "读数时间未知" }
-        if seconds < 60 { return english ? "just now" : "刚刚" }
-        let minutes=Int(seconds / 60)
-        if minutes < 60 { return english ? "\(minutes)m ago" : "\(minutes)分钟前" }
-        let hours=minutes / 60
-        return english ? "\(hours)h ago" : "\(hours)小时前"
+        CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
     public func cardSourceAndAge(at now:Date,english:Bool) -> String {
         let age = cardAge(at: now, english: english)
