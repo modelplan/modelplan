@@ -595,7 +595,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 	// Evaluate only the freshly decoded cache copy, never the legacy Report or
 	// a persisted file. This reuses the quota window arithmetic/reset handling.
 	Evaluate(a, now)
-	out := rows.AccountInput{ToolID: provider, ProfileKey: key, Source: a.Source, PlanID: a.Plan, Beta: true}
+	out := rows.AccountInput{ToolID: provider, ProfileKey: key, Source: a.Source, Route: rows.RouteSavedLoginAPI, PlanID: a.Plan, Beta: true}
 	if !identityOff {
 		out.SubscriptionRef = readerString(existingReaderSubscription(cache, provider, a.Subscription))
 	}
@@ -606,7 +606,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 		if (provider == "claude" || provider == "gemini") && !w.ScopeKnown {
 			continue
 		}
-		v := rows.WindowInput{Kind: w.Kind, Limit: w.Limit, ModelIDs: w.ModelIDs, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
+		v := rows.WindowInput{Source: rows.WindowSourceSavedLogin, Kind: w.Kind, Limit: w.Limit, ModelIDs: w.ModelIDs, Pool: a.Pool, ResetMode: w.ResetMode, RemainingPercent: w.RemainingPercent, ResetsAt: w.ResetsAt, ObservedAt: readerTime(w.ObservedAt)}
 		if w.WindowMinutes > 0 {
 			seconds := int64(w.WindowMinutes) * 60
 			v.DurationSeconds = &seconds

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent.parent
 sys.path.insert(0, str(ROOT))
 from engine_process import EngineProcess, EngineFailure, build_binary
-from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors
+from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows, _wait_scheduler_capture
 from engine_build import build_tools
 from shape_home import build_home
 from contracts import load_json, encoded, write_private
@@ -335,6 +335,47 @@ class EpochFloorTests(unittest.TestCase):
         self.assertEqual(self.engine.floor, 7)
         with self.assertRaises(EngineFailure):
             self.engine._validate(self.frame('current', 6, {'items': []}))
+
+
+class RefreshRaceTests(unittest.TestCase):
+    def test_wait_uses_terminal_scheduler_outcome_before_capture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'capture.json').write_text('{"status":"ok"}')
+            engine = mock.Mock()
+            engine.request.side_effect = [
+                {'result': {'data': {'refreshDecisions': [
+                    {'scope': 'codex.runtime_usage', 'outcome': 'deferred', 'reason': 'budget'}]}}},
+                {'result': {'data': {'refreshDecisions': [
+                    {'scope': 'codex.runtime_usage', 'outcome': 'deferred', 'reason': 'budget'},
+                    {'scope': 'codex.runtime_usage', 'outcome': 'succeeded', 'reason': 'completed', 'canary': 'must-not-retain'}]}}},
+            ]
+            transitions = _wait_scheduler_capture(engine, directory, 'codex.runtime_usage', 'capture.json',
+                lambda capture, outcome: capture['status'] == 'ok' and outcome == 'succeeded', 'capture-missing')
+            self.assertEqual(engine.request.call_count, 2)
+            self.assertEqual(transitions, [{'outcome': 'deferred', 'reason': 'budget'},
+                                           {'outcome': 'succeeded', 'reason': 'completed'}])
+
+    def test_rows_retry_transient_busy_and_consent_change(self):
+        engine = mock.Mock()
+        engine.request.side_effect = [
+            {'error': {'code': -32013}},
+            {'error': {'code': -32023}},
+            {'result': {'data': {'projection': {'rows': []}}}},
+        ]
+        self.assertEqual(fresh_rows(engine), {'rows': []})
+        self.assertEqual(engine.request.call_count, 3)
+
+    def test_capture_accepts_completed_startup_followed_by_deferred_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'capture.json').write_text('{"status":"ok"}')
+            engine = mock.Mock()
+            engine.request.return_value = {'result': {'data': {'refreshDecisions': [
+                {'scope': 'minimax.account_usage.api_key', 'outcome': 'succeeded', 'reason': 'completed'},
+                {'scope': 'minimax.account_usage.api_key', 'outcome': 'deferred', 'reason': 'budget'}]}}}
+            transitions = _wait_scheduler_capture(engine, directory, 'minimax.account_usage.api_key', 'capture.json',
+                lambda capture, outcome: capture['status'] == 'ok' and outcome == 'succeeded', 'capture-missing')
+            self.assertEqual([item['outcome'] for item in transitions], ['succeeded', 'deferred'])
+            self.assertEqual(engine.request.call_count, 1)
 
 
 if __name__ == '__main__':

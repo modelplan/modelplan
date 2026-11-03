@@ -235,7 +235,21 @@ type CredentialResult struct { // app -> server; the only message that may carry
 }
 
 type RefreshRequestParams struct {
-	Scopes []string `json:"scopes,omitempty"` // empty = all allowed scopes
+	Scopes []string       `json:"scopes,omitempty"` // legacy form: empty = all allowed scopes
+	Member *RefreshMember `json:"member,omitempty"` // requires memberRefreshV1, mutually exclusive with scopes
+}
+
+type RefreshMember struct {
+	RowID string `json:"rowId"`
+	Route string `json:"route"`
+	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	AccountLocator string `json:"accountLocator,omitempty"`
+}
+
+type MemberRefreshResult struct {
+	Outcome string `json:"outcome"` // started | deferred
+	NotBefore *time.Time `json:"notBefore,omitempty"`
+	Reason *string `json:"reason,omitempty"` // floor | backoff | budget | not_granted | offline
 }
 
 type RefreshScheduled struct { // result; deferral is a normal result, not an error
@@ -369,3 +383,19 @@ and `through` timestamps. It represents a point deadline, not an interval or
 a personal quota reset; the event expires at that timestamp. Other schedule
 precisions require `through` strictly after `from`, and reversed ranges are
 invalid for every precision.
+
+
+A client declares `memberRefreshV1` before using the member form. It supplies
+an existing row ID, route and account locator and/or verified subscription
+reference from the current rows. The server matches exactly one member, checks
+the current consent fence, narrows managed readers to the verified profile and
+rechecks the provider-wide budget at execution. Unbound or ambiguous members
+are deferred with `not_granted`. A deferred `budget` without `notBefore`
+means the deadline cannot be established safely. Legacy scope refresh remains
+unchanged. The member result is an object rather than the legacy result array.
+
+With this capability, each row and account with a granted live scope has a
+`refreshNotBefore` property even when its data is fresh. A timestamp is a
+lower bound, including a stable past timestamp when the reader is already due;
+`null` means the deadline or member binding is unknown. The timestamp is not
+permission to bypass the server's admission, in-flight or budget checks.
