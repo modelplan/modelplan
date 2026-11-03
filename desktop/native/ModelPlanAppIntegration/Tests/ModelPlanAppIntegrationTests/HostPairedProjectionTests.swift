@@ -5,6 +5,7 @@ import ModelPlanCore
 import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
+import ModelPlanSettings
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
@@ -24,8 +25,39 @@ private actor PairedSyntheticClient: EngineClient {
     func diagnostics(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 
+@MainActor private final class EntryDeadlineTimer: DockEdgeScheduling {
+    private(set) var action: (@MainActor () -> Void)?
+    func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) { self.action = action }
+    func cancel() { action = nil }
+    func fire() { let saved = action; action = nil; saved?() }
+}
+private actor EntrySyntheticClient: EngineClient {
+    let store: EngineStore, rows: WireRowsSnapshot
+    let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
+    func start() async throws -> EngineDeliveryContext {
+        await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        let reply = try EngineReply(envelope: .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+            consentGeneration: 1, data: rows), delivery: context)
+        await store.consume(.rowsChanged(reply, invalidRowCount: rows.projection.invalidRowCount))
+        return context
+    }
+    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func stop() {}
+    func subscribeRows(timeout: Duration?) -> EngineRequestCompletion { .init(requestID: .string("synthetic")) }
+    func consent(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func history(_ request: WireHistoryQueryParams, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func publication(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
+
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -52,6 +84,12 @@ private actor PairedSyntheticClient: EngineClient {
         week["remainingPercent"] = weekly; week["validUntil"] = "2028-12-01T00:00:00Z"
         week["resetsAt"] = "2028-12-01T00:00:00Z"
         windows = [session, week]; account["windows"] = windows; accounts = [account]
+        if let secondWeekly {
+            var other = account, otherWeek = week
+            other["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; other["accountLocator"] = "bbbbbbbbbbbbbbbb"
+            otherWeek["remainingPercent"] = secondWeekly
+            other["windows"] = [session, otherWeek]; accounts.append(other)
+        }
         row["accounts"] = accounts; rows = [row]; projection["rows"] = rows; root["projection"] = projection
         return try JSONDecoder().decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
@@ -82,4 +120,58 @@ private actor PairedSyntheticClient: EngineClient {
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertFalse(paired.isCurrent(second.sourceToken))
     }
+    func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        var acceptedStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
+            makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
+            activateSettings: {})
+        await app.prepare()
+        await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa"
+        let initial = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(initial.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, "75%")
+        XCTAssertNotNil(timer.action)
+        wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+        elapsed = 50_000_000; timer.fire()
+        let expired = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(expired.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, "--")
+        let store = try XCTUnwrap(acceptedStore)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(try app.composition.dock.cardContent(for: id, at: wall))
+        await app.composition.stop()
+    }
+
+    func testNormalEntryPreservesTwoStableAccountsAndClearsBothOnRevocation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-multi-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 33)
+        var acceptedStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
+            activateSettings: {})
+        await app.prepare(); await app.composition.start()
+        for (id, value) in [("aaaaaaaaaaaaaaaa", "75%"), ("bbbbbbbbbbbbbbbb", "33%")] {
+            let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+            XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, value)
+        }
+        let store = try XCTUnwrap(acceptedStore)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(try app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa", at: wall))
+        XCTAssertNil(try app.composition.dock.cardContent(for: "bbbbbbbbbbbbbbbb", at: wall))
+        await app.composition.stop()
+    }
+
 }

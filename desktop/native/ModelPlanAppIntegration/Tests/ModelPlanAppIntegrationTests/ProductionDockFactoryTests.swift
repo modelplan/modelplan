@@ -115,7 +115,7 @@ import ModelPlanSettings
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("supplied-sliver-" + UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
             let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
-            try await store.update { $0.dockEdge = edge; $0.dockDisplayID = "fixture" }
+            try await store.update { $0.dockEdge = edge; $0.dockDisplayID = "fixture"; $0.autoHide = true }
             let span: CGFloat = 147.3962
             let screen = DockDisplayArea(id: "fixture", frame: .init(x: 0, y: 0, width: 1200, height: 900),
                 visibleFrame: .init(x: 0, y: 24, width: 1200, height: 850))

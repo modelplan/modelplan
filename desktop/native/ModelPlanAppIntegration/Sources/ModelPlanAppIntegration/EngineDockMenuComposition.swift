@@ -23,9 +23,9 @@ public struct EngineMenuRefreshResult {
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
     private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
-    private let deadlineWall: @MainActor () -> Date = { Date() }
-    private let deadlineElapsed: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
-    private lazy var deadlineScheduler: any DockEdgeScheduling = DockCommonModeScheduler(clock: deadlineElapsed)
+    private let deadlineWall: @MainActor () -> Date
+    private let deadlineElapsed: () -> TimeInterval
+    private let deadlineScheduler: any DockEdgeScheduling
     private lazy var deadlineDriver: HostDeadlineDriver<DockContent> = {
         HostDeadlineDriver(wallNow: deadlineWall, elapsed: deadlineElapsed, scheduler: deadlineScheduler,
             clear: { [weak self] in
@@ -61,7 +61,13 @@ public struct EngineMenuRefreshResult {
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                deadlineNow: @escaping @MainActor () -> Date = { Date() },
+                deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
+        self.deadlineWall = deadlineNow
+        let elapsed = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
+        self.deadlineElapsed = elapsed
+        self.deadlineScheduler = deadlineScheduling ?? DockCommonModeScheduler(clock: elapsed)
         let store: EngineStore
         if let makeClient {
             store = EngineStore(); client = makeClient(configuration, store)
@@ -73,7 +79,7 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment)
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         dock.setDockContentProvider(admittedCache)
