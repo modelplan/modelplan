@@ -794,18 +794,34 @@ private actor ReserveJourneyClient: EngineClient {
     // producer normalizes both to "other" and does not emit them directly.
     func testUnknownAndEmptyUnitAreNotMisreportedOrEchoed() async throws {
         for english in [true, false] {
-            let label = english ? "Credits" : "点数"
-            let other = try await reserve(balance: 12_345.678, unit: "other", english: english)
+            let label = english ? "Reserve" : "储备"
+            let (_, other) = try await projection(balance: 12_345.678, unit: "other", english: english, deadlineProbe: { rows, _ in
+                XCTAssertEqual(rows.first?.accounts.first?.credits?.balance, 12_345.678)
+                XCTAssertEqual(rows.first?.accounts.first?.credits?.unit, "other")
+            })
             XCTAssertEqual(other?.value, "12,346")
             XCTAssertEqual(other?.label, label)
             XCTAssertEqual(other?.detail, "")
             let tiny = try await reserve(balance: 0.004, unit: "other", english: english)
             XCTAssertEqual(tiny?.value, "<1")
+            XCTAssertEqual(tiny?.label, label)
+            let zero = try await reserve(balance: 0, unit: "other", english: english)
+            XCTAssertEqual(zero?.value, "0")
+            XCTAssertEqual(zero?.label, label)
             let empty = try await reserve(balance: 12.5, unit: "", english: english)
             XCTAssertEqual(empty?.value, "13")
+            XCTAssertEqual(empty?.label, label)
             let unrecognized = try await reserve(balance: 12.5, unit: "PRIVATE-UNIT-CANARY", english: english)
             XCTAssertEqual(unrecognized?.value, "13")
+            XCTAssertEqual(unrecognized?.label, label)
             XCTAssertFalse(unrecognized?.detail.contains("CANARY") ?? true)
+            let retained = try await projection(balance: 12_345.678, unit: "other", english: english, state: .retained)
+            XCTAssertEqual(retained.1?.value, "12,346")
+            XCTAssertEqual(retained.1?.label, label)
+            XCTAssertEqual(retained.1?.detail, english ? "Last known reading" : "上次读数")
+            let cleared = try await projection(balance: 12_345.678, unit: "other", english: english, state: .retained, clearAfter: true)
+            XCTAssertNil(cleared.0)
+            XCTAssertNil(cleared.1)
         }
     }
 }

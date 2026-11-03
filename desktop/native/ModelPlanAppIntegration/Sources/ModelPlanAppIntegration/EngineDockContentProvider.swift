@@ -216,9 +216,9 @@ public enum EngineDeadlineFacts {
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {
                     case .rendered(_,_,let text,_):
-                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:text,detail:reserveDetail()))
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:text,detail:reserveDetail()))
                     case .fallback(let value,_),.notApplicable(let value?,_):
-                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:String(value),detail:reserveDetail()))
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(value),detail:reserveDetail()))
                     case .missing,.invalid,.notApplicable(nil,_): break
                     }
                 }

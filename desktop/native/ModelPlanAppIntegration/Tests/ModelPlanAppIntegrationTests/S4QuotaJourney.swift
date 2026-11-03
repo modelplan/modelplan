@@ -620,7 +620,7 @@ private actor S4RowsClient: EngineClient {
                 try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
                 try require(content.snapshot.inputs.first?.name == "合成工具 · 账号 1","duplicate member copy must use the account term consistently")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
-                try require(cards.map{$0.rows.first(where:{$0.kind == .reserve})?.label} == ["余额","点数","点数"],"reserve labels must follow the credits display decision")
+                try require(cards.map{$0.rows.first(where:{$0.kind == .reserve})?.label} == ["余额","储备","点数"],"wire units must map to localized facts without inventing a currency")
             } else {
                 try require(!visible.joined().unicodeScalars.contains{(0x3400...0x9FFF).contains(Int($0.value))},"English projection must not retain Chinese strings after language change")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5h"},"English quota row must use the glossary label")
