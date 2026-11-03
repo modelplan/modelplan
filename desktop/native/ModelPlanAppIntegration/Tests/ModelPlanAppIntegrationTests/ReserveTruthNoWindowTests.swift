@@ -37,7 +37,7 @@ private actor ReserveJourneyClient: EngineClient {
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
-    private enum ProofMutation { case fallbackMember, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
+    private enum ProofMutation { case fallbackMember, unknownBound, unrecognizedBound, unknownUnbound, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
     private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
@@ -107,6 +107,9 @@ private actor ReserveJourneyClient: EngineClient {
             var altered = account["windows"] as! [[String: Any]]
             switch proofMutation {
             case .fallbackMember: account["subscriptionRef"] = NSNull()
+            case .unknownBound: account["route"] = "unknown"
+            case .unrecognizedBound: account["route"] = "synthetic_unrecognized_route"
+            case .unknownUnbound: account["route"] = "unknown"; account["subscriptionRef"] = NSNull()
             case .duplicateFallback, .duplicateRef: break
             case .missingLatch: row["stateAfterExpiry"] = NSNull()
             case .nonStaleLatch: row["stateAfterExpiry"] = ["state": "needs_action", "reason": staleReason, "nextStep": refresh]
@@ -540,7 +543,7 @@ private actor ReserveJourneyClient: EngineClient {
         // about an observed user account or a producer output. A legal null
         // reset is separately covered under the strict decoder contract.
         let earlierReset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        for mutation in [ProofMutation.duplicateFallback, .duplicateRef, .malformedReset, .mismatchReset,
+        for mutation in [ProofMutation.unknownBound, .unrecognizedBound, .unknownUnbound, .duplicateFallback, .duplicateRef, .malformedReset, .mismatchReset,
                          .missingValidUntil, .malformedValidUntil, .futureAccountObservation,
                          .malformedAccountObservation, .futureWindowObservation, .malformedWindowObservation,
                          .duplicateWindowID] {
