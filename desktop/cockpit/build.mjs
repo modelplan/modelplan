@@ -24,6 +24,18 @@ for(const file of emitted){
 }
 await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
+// Renderer code only. Visual resources are managed separately by their owner.
+const studyModules=[
+  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','i18n.js',
+  'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
+  'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/where.js',
+  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','window-time.js',
+];
+for(const name of studyModules){
+  const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
+  await cp(resolve(here,'study/rocket-r1',name),target);
+}
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+'\n'+await readFile(resolve(here,'web/cockpit.css'),'utf8');
 const notices=['MIT: cockpit bridge, schema adapter and community layout.'];
