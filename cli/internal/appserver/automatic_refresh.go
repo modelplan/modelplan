@@ -31,6 +31,7 @@ func (s *RefreshScheduler) automatic() {
 		if stamp != previous {
 			s.mu.Lock()
 			s.autoNext = map[string]time.Time{}
+			s.autoReason = map[string]wire.MemberRefreshReason{}
 			for key, job := range s.scheduled {
 				if job.stamp != stamp {
 					delete(s.scheduled, key)

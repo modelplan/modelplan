@@ -2,6 +2,7 @@
 package appserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,7 @@ type refreshJob struct {
 	at         time.Time
 	scope, key string
 	stamp      Stamp
+	member     *wire.RefreshMember
 }
 type RefreshScheduler struct {
 	credentialWait map[string]bool
@@ -48,6 +50,7 @@ type RefreshScheduler struct {
 	autoDone       chan struct{}
 	autoWake       chan struct{}
 	autoNext       map[string]time.Time
+	autoReason     map[string]wire.MemberRefreshReason
 	autoStarted    bool
 	decisions      refreshDecisionRing
 }
@@ -67,7 +70,7 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}}
+	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}}
 	go s.work()
 	return s
 }
@@ -81,6 +84,22 @@ func (s *RefreshScheduler) Close() {
 		<-s.autoDone
 	}
 	s.decisions.clear()
+}
+
+// PendingDeadline reports the scheduler's in-memory lower bound. A pending
+// operation without a future bound is unknown and must not be presented as due.
+func (s *RefreshScheduler) PendingDeadline(scope string) (time.Time, bool, bool) {
+	definition, ok := consent.Definition(scope)
+	if !ok { return time.Time{}, false, false }
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	if until, pending := s.pending[definition.Tool]; pending {
+		if !until.After(now) { return time.Time{}, true, false }
+		return until.UTC(), true, true
+	}
+	if until := s.autoNext[definition.Tool]; until.After(now) { return until.UTC(), true, true }
+	return time.Time{}, false, false
 }
 
 // Decisions exposes only the bounded code-only history for this process.
@@ -97,6 +116,15 @@ func (s *RefreshScheduler) Handler() Handler {
 		p, err := params[wire.RefreshRequestParams](raw)
 		if err != nil {
 			return Reply{}, ProtocolError{wire.CodeInvalidParams}
+		}
+		var fields map[string]json.RawMessage
+		if len(raw) > 0 { if err := json.Unmarshal(raw, &fields); err != nil { return Reply{}, ProtocolError{wire.CodeInvalidParams} } }
+		if member, present := fields["member"]; present && bytes.Equal(bytes.TrimSpace(member), []byte("null")) { return Reply{}, ProtocolError{wire.CodeInvalidParams} }
+		if p.Member != nil {
+			_, hasScopes := fields["scopes"]
+			if !MemberRefreshEnabled(ctx) || hasScopes { return Reply{}, ProtocolError{wire.CodeInvalidParams} }
+			result, stamp, err := s.RequestMember(ctx, *p.Member)
+			return Reply{Stamp: stamp, Data: result, Receipt: true}, err
 		}
 		result, stamp, err := s.Request(ctx, p)
 		return Reply{Stamp: stamp, Data: result, Receipt: true}, err
@@ -143,6 +171,7 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 	paths := s.paths(admission)
 	now := s.now()
 	result := []wire.RefreshScheduled{}
+	enqueued := false
 	for _, scope := range scopes {
 		scheduled := wire.RefreshScheduled{Scope: scope, At: now.UTC()}
 		disable := func(reason wire.RefreshDisabledReason) { r := reason; scheduled.DisabledReason = &r }
@@ -191,6 +220,7 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 						s.pending[key] = now.Add(5 * time.Minute)
 					}
 					s.scheduled[key] = refreshJob{scope: scope, key: key, stamp: stamp, at: plan.At}
+					enqueued = true
 					s.signal()
 				}
 				s.mu.Unlock()
@@ -198,6 +228,7 @@ func (s *RefreshScheduler) Request(ctx context.Context, p wire.RefreshRequestPar
 		}
 		result = append(result, scheduled)
 	}
+	if enqueued && s.config.Changed != nil { s.config.Changed() }
 	return result, stamp, nil
 }
 func stampOfFence(f consent.Fence) Stamp { return Stamp{Epoch: f.StoreEpoch, Generation: f.Generation} }
@@ -276,6 +307,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 			s.mu.Lock()
 			if !attempted && currentFence {
 				s.autoNext[job.key] = s.now().Add(10 * time.Minute)
+				s.autoReason[job.key] = wire.MemberRefreshBudget
 			}
 			delete(s.pending, job.key)
 			delete(s.credentialWait, job.key)
@@ -300,6 +332,16 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	original, _ := rawPaths.ReaderAccessGrant("claude")
 	credentialBound := original.Credential != nil
 	paths := s.safePaths(rawPaths)
+	if job.member != nil {
+		definition, ok := consent.Definition(job.scope)
+		if !ok { return }
+		view, err := s.config.Backend.Get(s.ctx)
+		if err != nil || view.Stamp != job.stamp { return }
+		matches, routeMembers := matchingMemberCount(view, *job.member)
+		if matches != 1 || (!quota.MemberProfilesAreScoped(definition.Tool) && routeMembers != 1) || liveMemberScope(job.member.RowID, job.member.Route, admission.State(), admission.Mode(), view.Scopes) != job.scope { return }
+		paths, ok = quota.NarrowMemberPaths(paths, definition.Tool, job.member.AccountLocator, job.member.SubscriptionRef)
+		if !ok { return }
+	}
 	plan, err := s.plan(paths, job.scope, s.now())
 	if err != nil || !plan.Admitted || !plan.BudgetKnown || plan.PolicyPending {
 		return
@@ -354,6 +396,8 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if stampOfFence(consent.Capture().Fence()) == job.stamp {
 		s.mu.Lock()
 		s.autoNext[job.key] = started.Add(wait)
+		s.autoReason[job.key] = wire.MemberRefreshFloor
+		if err != nil || outcome == refreshFailed { s.autoReason[job.key] = wire.MemberRefreshBackoff }
 		s.mu.Unlock()
 	}
 }

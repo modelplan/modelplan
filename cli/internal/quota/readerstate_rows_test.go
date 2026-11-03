@@ -782,3 +782,40 @@ func TestManagedReaderSubscriptionBasisPairs(t *testing.T) {
 		}
 	}
 }
+
+func TestNarrowMemberPathsUsesExistingProfileLocator(t *testing.T) {
+	p := claudeTestPaths(t)
+	status, paths := http.StatusOK, []string{}
+	claudeTestServer(t, &status, &paths)
+	if err := refreshManaged(context.Background(), p, "claude", claudeTestNow); err != nil { t.Fatal(err) }
+	state, err := loadReaderState(p.Cache, "claude")
+	if err != nil || len(state.Entries) != 1 { t.Fatal("missing profile") }
+	locator := readerProfileLocator(p.Cache, "claude", state.Entries[0].ProfileKey)
+	if locator == "" { t.Fatal("missing locator") }
+	narrowed, ok := NarrowMemberPaths(p, "claude", locator, "")
+	if !ok || len(narrowed.ReaderAccess.Grants["claude"].Profiles) != 1 { t.Fatal("matching profile not selected") }
+	if _, ok := NarrowMemberPaths(p, "claude", "0123456789abcdef", ""); ok { t.Fatal("unknown profile selected") }
+	if _, ok := NarrowMemberPaths(p, "claude", "", ""); ok { t.Fatal("unbound profile selected") }
+}
+
+func TestNarrowMemberPathsSelectsExactlyOneOfMultipleProfiles(t *testing.T) {
+	p := claudeTestPaths(t)
+	grant := p.ReaderAccess.Grants["claude"]
+	grant.Profiles = []ReaderProfile{{Root: t.TempDir()}, {Root: t.TempDir()}}
+	p.ReaderAccess.Grants["claude"] = grant
+	state := &readerState{SchemaVersion: 1, Provider: "claude", GrantKey: readerHash(p.Cache, "claude:grant", grant.Generation), Entries: []readerEntry{}}
+	locators := []string{}
+	for _, profile := range grant.Profiles {
+		key := readerHash(p.Cache, "claude:profile", profile.Root+"\x00"+profile.AccountFile)
+		ref := assignSubscription(p.Cache, readerProfileBasis("claude"), key, claudeTestNow)
+		if key == "" || ref == "" { t.Fatal("failed to seed bound profile") }
+		locators = append(locators, ref)
+		state.Entries = append(state.Entries, readerEntry{ProfileKey: key})
+	}
+	if err := saveReaderState(p.Cache, state); err != nil { t.Fatal(err) }
+	for i, ref := range locators {
+		selected, ok := NarrowMemberPaths(p, "claude", ref, "")
+		if !ok || len(selected.ReaderAccess.Grants["claude"].Profiles) != 1 || selected.ReaderAccess.Grants["claude"].Profiles[0].Root != grant.Profiles[i].Root { t.Fatalf("wrong profile for member %d", i) }
+	}
+	if len(p.ReaderAccess.Grants["claude"].Profiles) != 2 { t.Fatal("narrowing mutated the shared grant") }
+}

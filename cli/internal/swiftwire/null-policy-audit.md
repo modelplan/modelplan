@@ -74,6 +74,9 @@ containers and failure ID retain their required-key checks.
 | Diagnostics.LastErrorClass | coalesced | [server.go:368](../appserver/server.go#L368), diagnostics reply; `WireDiagnostics` absent/null both mean no last-error class. |
 | ScopeDiag.LastRead | coalesced | [shared_backend.go:191](../appserver/shared_backend.go#L191), diagnostics projection; `WireScopeDiag` absent/null both yield no timestamp. |
 | ScopeDiag.NextDueAt | coalesced | Same projection/decoder: absent/null both yield no scheduled timestamp. |
+| RefreshRequestParams.Member | forbidden | Omission selects the legacy scopes form; null is rejected. |
+| MemberRefreshResult.NotBefore | forbidden | Omission means no trustworthy deadline; null is rejected. |
+| MemberRefreshResult.Reason | forbidden | Omission means a started result; null is rejected. |
 | RefreshScheduled.DisabledReason | coalesced | [refresh.go:114](../appserver/refresh.go#L114), `Request`, attaches a reason only for deferral. `WireRefreshScheduled` absent/null both yield no reason. |
 | HistoryItem.Model | coalesced | [queries/history.go:155](../appserver/queries/history.go#L155), page construction; generated `WireHistoryItem` absent/null mean unknown model, never a manufactured model label. |
 | HistoryItem.Tokens | coalesced | Same page/decoder: absent/null are unavailable, not numeric zero. |
@@ -106,6 +109,8 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Row.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the budget deadline is unknown. |
+| rows.Account.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the member deadline is unknown. |
 | rows.Window.Source | forbidden | Omission means provenance unavailable; null or malformed data is rejected. |
 | rows.Window.ModelScope | forbidden | Omission means plan-wide; explicit null or a malformed object is rejected rather than interpreted as plan-wide. |
 | rows.Window.DurationSeconds | coalesced | [values.go:160](../rows/values.go#L160), `buildWindows`; `RowsWindow` absent/null both have no duration. |

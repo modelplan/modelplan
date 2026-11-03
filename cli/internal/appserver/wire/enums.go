@@ -185,3 +185,18 @@ const (
 	DecisionUnavailable RefreshDecisionReason = "unavailable"
 	DecisionCompleted   RefreshDecisionReason = "completed"
 )
+
+
+type MemberRefreshOutcome string
+const (
+	MemberRefreshStarted MemberRefreshOutcome = "started"
+	MemberRefreshDeferred MemberRefreshOutcome = "deferred"
+)
+type MemberRefreshReason string
+const (
+	MemberRefreshFloor MemberRefreshReason = "floor"
+	MemberRefreshBackoff MemberRefreshReason = "backoff"
+	MemberRefreshBudget MemberRefreshReason = "budget"
+	MemberRefreshNotGranted MemberRefreshReason = "not_granted"
+	MemberRefreshOffline MemberRefreshReason = "offline"
+)

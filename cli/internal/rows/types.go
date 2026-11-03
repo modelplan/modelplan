@@ -30,6 +30,7 @@ type NextStep struct {
 }
 
 type Row struct {
+	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
 	ID               string       `json:"id"`
 	Kind             Kind         `json:"kind"`
 	Order            int          `json:"order"`
@@ -53,6 +54,7 @@ type ExpiryState struct {
 }
 
 type Account struct {
+	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
 	Route           Route      `json:"route"`
 	SubscriptionRef *string    `json:"subscriptionRef" null:"coalesced"`
 	AccountLocator  *string    `json:"accountLocator" null:"coalesced"`

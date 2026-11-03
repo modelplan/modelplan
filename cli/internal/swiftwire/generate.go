@@ -216,7 +216,7 @@ func strict(name, field string) bool {
 	if name == "WireCockpitQueryParams" {
 		return true
 	}
-	if name == "RowsWindow" && (field == "modelScope" || field == "source") || name == "WireRowsProjection" && field == "resetEvents" || name == "WireDiagnostics" && field == "refreshDecisions" {
+	if name == "RowsWindow" && (field == "modelScope" || field == "source") || name == "WireRowsProjection" && field == "resetEvents" || name == "WireDiagnostics" && field == "refreshDecisions" || name == "WireRefreshRequestParams" && field == "member" || name == "WireMemberRefreshResult" && (field == "reason" || field == "notBefore") {
 		return true
 	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {

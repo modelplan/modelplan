@@ -36,6 +36,7 @@ type SharedBackend struct {
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
 	CredentialSink CredentialReceiver
+	RefreshDeadline func(string) (time.Time, bool, bool)
 }
 
 func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
@@ -62,7 +63,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityMemberRefresh, CapabilityWindowSources, CapabilityCockpitDetailsV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents)
 	}
@@ -244,6 +245,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		diagnostics = append(diagnostics, diag)
 	}
+	if !changed { b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now) }
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
 		if fact.CleanupPending {

@@ -87,6 +87,8 @@ func Generate(root string) ([]byte, error) {
 		"HistoryPage":          reflect.TypeFor[wire.HistoryPage](),
 		"CockpitData":          reflect.TypeFor[wire.CockpitData](),
 		"CockpitQueryParams":   reflect.TypeFor[wire.CockpitQueryParams](),
+		"RefreshMember":        reflect.TypeFor[wire.RefreshMember](),
+		"MemberRefreshResult":  reflect.TypeFor[wire.MemberRefreshResult](),
 		"RefreshRequestParams": reflect.TypeFor[wire.RefreshRequestParams](),
 		"RefreshScheduled":     reflect.TypeFor[wire.RefreshScheduled](),
 		"CancelParams":         reflect.TypeFor[wire.CancelParams](),
@@ -127,6 +129,14 @@ func Generate(root string) ([]byte, error) {
 	b.defs["CockpitQueryParams"].(object)["properties"].(object)["redBelow"] = object{"type": "integer", "enum": []int{10, 16, 20, 25}}
 	// The optional session reference is null or a validated opaque reference.
 	b.defs["CockpitSession"].(object)["properties"].(object)["subscriptionRef"] = object{"anyOf": []any{object{"type": "string", "pattern": "^[a-f0-9]{16}$", "maxLength": 16}, object{"type": "null"}}}
+	// The member variant is mutually exclusive with scope selection. Optional
+	// identity and outcome fields reject explicit null at the protocol boundary.
+	refreshParams := b.defs["RefreshRequestParams"].(object)
+	refreshParams["not"] = object{"required": []string{"member", "scopes"}}
+	refreshParams["properties"].(object)["member"] = object{"$ref": "#/$defs/RefreshMember"}
+	memberResult := b.defs["MemberRefreshResult"].(object)
+	memberResult["properties"].(object)["notBefore"] = object{"type": "string", "format": "date-time"}
+	memberResult["properties"].(object)["reason"] = b.schema(reflect.TypeFor[wire.MemberRefreshReason](), true)
 	// Conditional token placement and the grant choice are semantic constraints
 	// beyond field shape. A denied/canceled result cannot carry a token.
 	cred := b.defs["CredentialResult"].(object)
@@ -162,7 +172,7 @@ func Generate(root string) ([]byte, error) {
 	}
 	b.defs["Request"] = object{"oneOf": incoming}
 	envelopes := []any{}
-	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult"} {
+	for _, name := range []string{"InitializeResult", "RowsSnapshot", "ConsentFacts", "ConsentReceipt", "Diagnostics", "Health", "HistoryPage", "CockpitData", "PluginInstallResult", "PublicationResult", "MemberRefreshResult"} {
 		env := b.schema(reflect.TypeFor[wire.Envelope[wire.Empty]](), false).(object)
 		env["properties"].(object)["data"] = object{"$ref": "#/$defs/" + name}
 		b.defs[name+"Envelope"] = env
