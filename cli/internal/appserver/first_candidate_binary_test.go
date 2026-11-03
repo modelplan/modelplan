@@ -293,8 +293,10 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 		c, stderr := candidateClient(t, bin, home, nil, env)
 		c.initialize(t)
 		first := refreshReply(t, c, 2, consent.ScopeCodexRuntimeUsage)
-		if first[0].DisabledReason != nil {
-			t.Fatalf("due refresh not scheduled: %+v", first)
+		// The startup scheduler and explicit request race for the same provider.
+		// Either can win; the other must coalesce behind the shared budget.
+		if first[0].DisabledReason != nil && *first[0].DisabledReason != wire.RefreshCooldown {
+			t.Fatalf("unexpected refresh result: %+v", first)
 		}
 		deadline := time.Now().Add(5 * time.Second)
 		for runtimeReadCount(t, trace) == 0 && time.Now().Before(deadline) {

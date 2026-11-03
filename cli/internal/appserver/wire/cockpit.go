@@ -41,10 +41,12 @@ type CockpitDetails struct {
 	Alerts          []CockpitAlert               `json:"alerts" schema:"maxItems=128"`
 }
 type CockpitSubscriptionDetails struct {
-	SubscriptionRef string              `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
-	ResetCounts     []CockpitResetCount `json:"resetCounts" schema:"maxItems=64"`
-	Credits         *CockpitCredits     `json:"credits" null:"coalesced"`
-	Today           []CockpitToday      `json:"today" schema:"maxItems=4"`
+	ResetCountsTruncated bool                `json:"resetCountsTruncated,omitempty" null:"forbidden"`
+	ResetCards           *rows.ResetCards    `json:"resetCards,omitempty" null:"forbidden"`
+	SubscriptionRef      string              `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	ResetCounts          []CockpitResetCount `json:"resetCounts" schema:"maxItems=64"`
+	Credits              *CockpitCredits     `json:"credits" null:"coalesced"`
+	Today                []CockpitToday      `json:"today" schema:"maxItems=4"`
 }
 type CockpitResetCount struct {
 	Kind      string     `json:"kind"`

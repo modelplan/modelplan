@@ -62,3 +62,51 @@ func TestSharedProjectionKeepsApprovedPOSTOptIn(t *testing.T) {
 		}
 	}
 }
+
+func TestResetCardsTravelFromReportToProjection(t *testing.T) {
+	now := time.Now().UTC()
+	count := 0
+	ref := "0123456789abcdef"
+	facts := &rows.ResetCards{State: rows.ResetCardComplete, Count: &count, Sources: []rows.ResetCardSource{{Source: rows.ResetCardCodexAccount, ObservedAt: now}}}
+	in := rows.Input{Now: now, ConsentGeneration: 1, Catalogue: []rows.CatalogueEntry{{ToolID: "codex", Detected: true, ReaderExists: true}}, Consents: []rows.ConsentRecord{{ToolID: "codex", Generation: 1, State: rows.ConsentAllowed}}}
+	appendReportRows(&in, quota.Report{Accounts: []quota.Account{{Source: "codex", Via: "codex-account", ObservedAt: now, Subscription: &quota.Binding{Ref: ref, Status: "verified"}, ResetCards: facts}}}, false)
+	p := rows.Build(in)
+	if err := rows.Validate(in, p); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Rows) != 1 || len(p.Rows[0].Accounts) != 1 {
+		t.Fatalf("missing admitted row: %+v", p.Rows)
+	}
+	got := wire.Project(p).Rows[0].Accounts[0].ResetCards
+	if got == nil || got.State != rows.ResetCardComplete || got.Count == nil || *got.Count != 0 || len(got.Sources) != 1 || !got.Sources[0].ObservedAt.Equal(now) {
+		t.Fatalf("missing bound observation: %+v", got)
+	}
+	in.ConsentChanged = true
+	for _, row := range rows.Build(in).Rows {
+		for _, a := range row.Accounts {
+			if a.ResetCards != nil && a.ResetCards.State != rows.ResetCardUnknown {
+				t.Fatal("fenced facts were delivered")
+			}
+		}
+	}
+}
+
+func TestReportWindowSourcesRemainIndependent(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-2 * time.Hour)
+	in := rows.Input{Now: now}
+	report := quota.Report{Accounts: []quota.Account{{Source: "codex", Via: "codex-account", ObservedAt: now,
+		Windows: []quota.Window{{Kind: "five_hour", Origin: "local_history", ObservedAt: old}, {Kind: "weekly", Origin: "runtime", ObservedAt: now}}}}}
+	appendReportRows(&in, report, false)
+	if len(in.Accounts) != 1 || len(in.Accounts[0].Windows) != 2 {
+		t.Fatalf("windows lost: %+v", in.Accounts)
+	}
+	local, runtime := in.Accounts[0].Windows[0], in.Accounts[0].Windows[1]
+	if local.Source != rows.WindowSourceLocalHistory || local.ObservedAt == nil || !local.ObservedAt.Equal(old) {
+		t.Fatalf("local provenance lost: %+v", local)
+	}
+	if runtime.Source != rows.WindowSourceRuntime || runtime.ObservedAt == nil || !runtime.ObservedAt.Equal(now) {
+		t.Fatalf("runtime provenance lost: %+v", runtime)
+
+	}
+}

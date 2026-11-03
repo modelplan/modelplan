@@ -28,6 +28,12 @@
       "nextStep": null,
       "accounts": [
         {
+          "resetCards": {
+            "state": "unknown",
+            "count": null,
+            "truncated": false,
+            "sources": []
+          },
           "route": "unknown",
           "subscriptionRef": "0123456789abcdef",
           "accountLocator": null,
