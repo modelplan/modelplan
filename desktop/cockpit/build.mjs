@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyVisualPack } from '../../scripts/check-visual-pack.mjs';
+import { selectBuildEdition } from './internal-visual-boundary.mjs';
 const here=fileURLToPath(new URL('.',import.meta.url)),repo=resolve(here,'../..');
-const args=process.argv.slice(2),official=args.length===1&&args[0]==='--official';
-if(args.length&&!official)throw Error('Usage: node build.mjs [--official]');
+// Internal integration is deliberately unavailable until its independently
+// reviewed helper, trust anchors and exact resource mapping are integrated.
+const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
