@@ -239,3 +239,9 @@ func TestModelScopeAndResetEventsAreStrictNonNull(t *testing.T) {
 		t.Fatalf("missing strict optional captures: %v", want)
 	}
 }
+
+func TestEnumCaseAcceptsDottedScopeIDs(t *testing.T) {
+	if got := enumCase("claude.account_usage.saved_login"); got != "claudeAccountUsageSavedLogin" {
+		t.Fatalf("dotted scope generated invalid Swift case %q", got)
+	}
+}

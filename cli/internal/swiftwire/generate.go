@@ -60,7 +60,7 @@ func enumCase(s string) string {
 	var b strings.Builder
 	upper := false
 	for _, r := range s {
-		if r == '_' || r == '-' {
+		if r == '_' || r == '-' || r == '.' {
 			upper = true
 			continue
 		}
@@ -219,7 +219,7 @@ func strict(name, field string) bool {
 	if name == "WireCockpitQueryParams" {
 		return true
 	}
-	if name == "RowsWindow" && (field == "modelScope" || field == "resetsAt") || name == "WireRowsProjection" && field == "resetEvents" {
+	if name == "RowsWindow" && (field == "modelScope" || field == "source" || field == "resetsAt") || name == "WireRowsProjection" && field == "resetEvents" || name == "WireDiagnostics" && field == "refreshDecisions" || name == "WireRefreshRequestParams" && field == "member" || name == "WireMemberRefreshResult" && (field == "reason" || field == "notBefore") {
 		return true
 	}
 	if name == "WirePublicationResult" || name == "WirePluginInstallResult" || name == "WireCredentialResult" || name == "WireConsentGrantParams" || name == "WireConsentReceipt" || name == "WireErrorContext" {
@@ -574,6 +574,7 @@ func emitStruct(b *bytes.Buffer, d *declaration) {
 	fmt.Fprintln(b, "    }")
 	if d.Swift == "RowsRow" {
 		fmt.Fprintln(b, `    fileprivate init(invalidID: String, invalidOrder: Int, invalidSurfaces: [RowsSurface]) throws {
+        self.refreshNotBefore = nil
         self.id = invalidID
         self.kind = .unknown("invalid_row")
         self.order = invalidOrder

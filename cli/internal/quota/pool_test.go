@@ -88,6 +88,7 @@ func TestAccountReadingKeepsReserveApart(t *testing.T) {
 	}
 	old := acctNow.Add(-time.Hour)
 	r := Report{Accounts: []Account{{Source: "codex", Subscription: &Binding{Ref: "0123456789abcdef", Status: "verified"}, Plan: "plus", ObservedAt: old,
+
 		Windows: []Window{{Kind: "weekly", UsedPercent: ptr(25.0), WindowMinutes: 10080, ObservedAt: old}}}}}
 	applyAccount(&r, cache, acctNow)
 	got := map[string]float64{}

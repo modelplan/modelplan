@@ -122,6 +122,7 @@ func TestAccountReadingMergesWithLogsAndAddsCredits(t *testing.T) {
 	}
 	old := acctNow.Add(-2 * time.Hour)
 	r := Report{Accounts: []Account{{Source: "codex", Subscription: binding(), Plan: "pro", ObservedAt: old, Harness: &Harness{Model: "gpt-6-astra"},
+
 		Windows: []Window{{Kind: "five_hour", UsedPercent: ptr(70.0), WindowMinutes: 300, ObservedAt: old}}}},
 		Sources: []SourceStatus{{Source: "codex", Status: "ok"}}}
 	applyAccount(&r, cache, acctNow)
@@ -162,11 +163,13 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 	}
 	binding := func() *Binding { return &Binding{Ref: "0123456789abcdef", Status: "verified"} }
 	if err := save(cache, boundSnap(&resp)); err != nil {
+
 		t.Fatal(err)
 	}
 	// The logs' older balance gives way to the newer account reading.
 	old := acctNow.Add(-time.Hour)
 	r := Report{Accounts: []Account{{Source: "codex", Subscription: binding(), Plan: "pro", ObservedAt: old, Credits: &Credits{Balance: ptr(80000), ObservedAt: old}}}}
+
 	applyAccount(&r, cache, acctNow)
 	c := r.Accounts[0].Credits
 	if c == nil || c.Balance == nil || *c.Balance != 73172.5 || !c.ObservedAt.Equal(acctNow) {
@@ -184,6 +187,7 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 	_ = json.Unmarshal([]byte(acctResponse), &older)
 	_ = save(cache, boundSnap(&older))
 	r = Report{Accounts: []Account{{Source: "codex", Subscription: binding(), ObservedAt: old, Credits: &Credits{Balance: ptr(5), ObservedAt: old}}}}
+
 	applyAccount(&r, cache, acctNow)
 	if r.Accounts[0].Credits == nil {
 		t.Fatal("a reading without the field keeps the logs' balance")
@@ -191,6 +195,7 @@ func TestUsageCreditsFromAccountAndLogs(t *testing.T) {
 	var empty rlResponse
 	_ = json.Unmarshal([]byte(none), &empty)
 	_ = save(cache, boundSnap(&empty))
+
 	applyAccount(&r, cache, acctNow)
 	if r.Accounts[0].Credits != nil {
 		t.Fatal("no credits now: cleared")
@@ -428,6 +433,28 @@ func TestOldResetReadingDoesNotBorrowAccountFreshness(t *testing.T) {
 			if a.ResetCards != nil && a.ResetCards.State != rows.ResetCardUnknown {
 				t.Fatalf("old cards admitted: %+v", a.ResetCards)
 			}
+		}
+	}
+}
+
+func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	var resp rlResponse
+	if err := json.Unmarshal([]byte(acctResponse), &resp); err != nil {
+		t.Fatal(err)
+	}
+	snap := snapFrom(&resp, acctNow)
+	snap.SubscriptionRef = "0123456789abcdef"
+	if err := save(cache, snap); err != nil {
+		t.Fatal(err)
+	}
+	for _, binding := range []*Binding{nil, {Ref: snap.SubscriptionRef, Status: "unverified"}, {Ref: "fedcba9876543210", Status: "verified"}} {
+		r := Report{Accounts: []Account{{Source: "codex", Subscription: binding, ObservedAt: acctNow.Add(-time.Hour), Windows: []Window{{Kind: "weekly", ObservedAt: acctNow.Add(-time.Hour)}}}}}
+		applyAccount(&r, cache, acctNow)
+		if len(r.Accounts) != 2 || r.Accounts[0].Via == "codex-account" || r.Accounts[1].Via != "codex-account" {
+			t.Fatalf("unbound readings were combined: %+v", r.Accounts)
+
 		}
 	}
 }

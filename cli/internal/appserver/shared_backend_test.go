@@ -90,3 +90,23 @@ func TestResetCardsTravelFromReportToProjection(t *testing.T) {
 		}
 	}
 }
+
+func TestReportWindowSourcesRemainIndependent(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-2 * time.Hour)
+	in := rows.Input{Now: now}
+	report := quota.Report{Accounts: []quota.Account{{Source: "codex", Via: "codex-account", ObservedAt: now,
+		Windows: []quota.Window{{Kind: "five_hour", Origin: "local_history", ObservedAt: old}, {Kind: "weekly", Origin: "runtime", ObservedAt: now}}}}}
+	appendReportRows(&in, report, false)
+	if len(in.Accounts) != 1 || len(in.Accounts[0].Windows) != 2 {
+		t.Fatalf("windows lost: %+v", in.Accounts)
+	}
+	local, runtime := in.Accounts[0].Windows[0], in.Accounts[0].Windows[1]
+	if local.Source != rows.WindowSourceLocalHistory || local.ObservedAt == nil || !local.ObservedAt.Equal(old) {
+		t.Fatalf("local provenance lost: %+v", local)
+	}
+	if runtime.Source != rows.WindowSourceRuntime || runtime.ObservedAt == nil || !runtime.ObservedAt.Equal(now) {
+		t.Fatalf("runtime provenance lost: %+v", runtime)
+
+	}
+}
