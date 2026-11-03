@@ -12,7 +12,7 @@ import ModelPlanWire
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, atExpiry, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -45,6 +45,14 @@ import ModelPlanWire
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
         row["accounts"] = state == .revoked ? [] : [account]
+        if mixedTransition {
+            var second = account
+            second["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; second["freshUntil"] = "2028-12-01T00:00:00Z"
+            var secondWindow = window
+            secondWindow["validUntil"] = "2028-12-01T00:00:00Z"; secondWindow["resetsAt"] = "2028-12-01T00:00:00Z"
+            second["windows"] = [secondWindow]
+            row["accounts"] = [account, second]
+        }
         if isRevoked {
             row["consent"] = "denied"; row["state"] = "needs_consent"
             row["reason"] = ["code": "consent_denied", "text": ["en": "Reader consent is denied", "zh": "读取授权已拒绝"]]
@@ -74,6 +82,43 @@ import ModelPlanWire
         else { now = Date(timeIntervalSince1970: seconds) }
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
+        if mixedTransition {
+            func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
+                snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
+            }
+            XCTAssertNotNil(reserveRow(content.snapshot, "aaaaaaaaaaaaaaaa"))
+            XCTAssertNotNil(reserveRow(content.snapshot, "bbbbbbbbbbbbbbbb"))
+            let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline))
+            let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
+            // Current behaviour, not an adjudication of the second account's reserve policy.
+            XCTAssertNil(reserveRow(held.snapshot, "aaaaaaaaaaaaaaaa"))
+            XCTAssertNil(reserveRow(held.snapshot, "bbbbbbbbbbbbbbbb"))
+            let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+            XCTAssertLessThan(firstDeadline, secondDeadline)
+
+            var refreshedAccount = account
+            refreshedAccount["observedAt"] = "2027-12-20T00:00:00Z"; refreshedAccount["freshUntil"] = "2028-12-01T00:00:00Z"
+            var refreshedWindow = window
+            refreshedWindow["observedAt"] = "2027-12-20T00:00:00Z"; refreshedWindow["validUntil"] = "2028-12-01T00:00:00Z"
+            refreshedWindow["resetsAt"] = "2028-12-01T00:00:00Z"
+            refreshedAccount["windows"] = [refreshedWindow]
+            var second = refreshedAccount; second["subscriptionRef"] = "bbbbbbbbbbbbbbbb"
+            row["accounts"] = [refreshedAccount, second]; row["expiresAt"] = "2028-12-01T00:00:00Z"
+            projection["rows"] = [row]; root["projection"] = projection
+            let refreshedRows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+            await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+                consentGeneration: 1, data: refreshedRows), delivery: context), invalidRowCount: 0))
+            let after = Date(timeIntervalSince1970: 1_830_000_000)
+            let refreshed = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            XCTAssertNotNil(reserveRow(refreshed.snapshot, "aaaaaaaaaaaaaaaa"))
+            XCTAssertNotNil(reserveRow(refreshed.snapshot, "bbbbbbbbbbbbbbbb"))
+            await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
+                nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
+            let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: after))
+            XCTAssertNil(reserveRow(cleared.snapshot, "aaaaaaaaaaaaaaaa"))
+            XCTAssertNil(reserveRow(cleared.snapshot, "bbbbbbbbbbbbbbbb"))
+            XCTAssertTrue(source.dockContent.dockRows.isEmpty)
+        }
         if clearAfter {
             XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
@@ -132,6 +177,10 @@ import ModelPlanWire
     func testConsentGenerationClearWithdrawsReserveFromSameStoreAndProvider() async throws {
         let cleared = try await projection(balance: 12.5, unit: "credits", english: true, clearAfter: true)
         XCTAssertNil(cleared.0); XCTAssertNil(cleared.1)
+    }
+
+    func testMixedAccountDeadlinesHeldRefreshAndClearInSameStore() async throws {
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true)
     }
 
     func testFreshRetainedAndExpiredProjectionStatesAndReserve() async throws {
