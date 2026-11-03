@@ -2,6 +2,7 @@
 // Adapter around the released study engine model/view. Every wire string is
 // escaped once before the prototype's trusted HTML renderer; its fmt wrapper
 // does not escape again. All non-text substitutions use closed vocabularies.
+import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
@@ -14,7 +15,7 @@ const palette:Readonly<Record<string,{colour:string;logo:string}>>={openai:{colo
 const finite=(v:number|null)=>v!==null&&Number.isFinite(v)?v:null;
 const role=(w:WireWindow)=>w.role==='session'&&w.durationSeconds===18000?'5h':w.role==='weekly'&&w.durationSeconds===604800?'week':w.role==='daily'?'day':w.role==='monthly'?'month':'other';
 const general=(w:WireWindow)=>!w.modelScope&&w.poolKey==='main'&&(w.role==='session'?(w.limitKey==='main'||w.limitKey==='five_hour'):w.role==='weekly'?(w.limitKey==='main'||w.limitKey==='weekly'):false);
-export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,_cell:(w:WireWindow|undefined,other?:boolean)=>HTMLElement,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null}|null {
+export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['locale'],root:HTMLElement,priorScope:string,onSelect:(key:string)=>boolean,onAdd:()=>boolean,priorPage=0,initialNow=0,redBelow:()=>number=()=>effectiveRedBelow(undefined)):{table:HTMLElement;applyScope:(scope:string)=>void;refresh:(now?:number)=>void;setLocale:(value:Appearance['locale'],now:number)=>void;focusIdentity:(element:HTMLElement)=>string|null}|null {
  const members=cockpitMembers(data);if(!members.length)return null;
  const seen=new Map(members.map(x=>[x.key,x]));let scope=seen.has(priorScope)?priorScope:'',page=Number.isSafeInteger(priorPage)?Math.max(0,Math.min(priorPage,Math.ceil(members.length/6)-1)):0;
  const host=document.createElement('div');host.className='u11-engine-table s6-page';const focusIdentities=new WeakMap<HTMLElement,string>();
@@ -35,14 +36,15 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
   return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:null,event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
- const alerts=data.details?data.details.alerts.flatMap(a=>{const m=members.find(m=>m.key===a.subscriptionRef&&m.row.id===a.source);return m&&m.account.windows.some(w=>w.id===a.windowId&&currentWindow(m.account,w,now))&&['critical','warning'].includes(a.severity)?[{level:a.severity==='critical'?'red':'amber',sub:esc(m.key)}]:[];}):members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>currentWindow(account,w,now)&&w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=25?'red':'amber',sub:esc(key)})));
+ const alerts=data.details?data.details.alerts.flatMap(a=>{const m=members.find(m=>m.key===a.subscriptionRef&&m.row.id===a.source);return m&&m.account.windows.some(w=>w.id===a.windowId&&currentWindow(m.account,w,now))&&['critical','warning'].includes(a.severity)?[{level:a.severity==='critical'?'red':'amber',sub:esc(m.key)}]:[];}):members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>currentWindow(account,w,now)&&w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=redBelow()?'red':'amber',sub:esc(key)})));
  const hasReset=!!data.details?.resetEvents.some(e=>Date.parse(e.expiresAt)>now&&members.some(m=>m.row.id===e.rowId));
  const level=alerts.some(a=>a.level==='red')?'red':alerts.some(a=>a.level==='amber')||hasReset?'amber':null;
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
+ let renderedNow=initialNow;
  const paint=(time?:number)=>{
-  const now=time??Date.now(),source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:25,ack:null,lang:locale,now};
+  if(time!==undefined)renderedNow=time;const now=renderedNow,source=sourceAt(now);setLanguage(locale);const ui={few:members.length<=6?'c3':'a',page,scope:scope?esc(scope):null,tint:true,pctMode:'left',redAt:redBelow(),ack:null,lang:locale,now};
   const model=engineModel(source,ui);page=model.page;host.dataset.cls=model.cls;host.style.setProperty('--n',String(model.slots));host.innerHTML=engineView(model,{changed:new Set(),lang:locale,now});
   // Keep the selected source-window identity in memory, never in rendered HTML.
   for(const [index,column] of [...host.querySelectorAll<HTMLElement>('.eng-cols > .ec[data-col]')].entries()){const rendered=model.cols[index];for(const cell of column.querySelectorAll<HTMLElement>('.qcell[data-row]')){const identity=rendered?.cells?.[cell.dataset.row??'']?.focusIdentity;if(typeof identity==='string')focusIdentities.set(cell,identity);}}

@@ -75,6 +75,18 @@
       "sourceSha256": "3cafacf1e2250ad612d97398f3d68824834176b026b8eca051f1ede02f77fd47",
       "destination": "src/view.ts",
       "transform": "Port litTens display arithmetic only; Go provides account groups and classifications"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/help-model.js",
+      "sourceSha256": "0de72868451f474ce3c998060df43b138aebe35e79b1b9267c83727b2927ecf1",
+      "destination": "study/rocket-r1/help-routing.js",
+      "transform": "Extract leader routing and anchor selection; omit storage, timers and hint code"
+    },
+    {
+      "source": "design-handoffs/opus-r7/src/rocket-r1/strings/help.js",
+      "sourceSha256": "1525f6c23db07a966e7d4832ed72148439ad5df513f0557cf0b6d80b99f0fdf9",
+      "destination": "src/prototype-help.ts",
+      "transform": "Reuse cockpit Option-map captions in the native page"
     }
   ],
   "fixtureAudit": {

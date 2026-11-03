@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
-import type { WireCockpitData, WireWindow } from '../generated/wire.js';
+import type { WireCockpitData } from '../generated/wire.js';
 import type { Appearance,CockpitView,LiveAppearance,ShellState,PageAction } from './bridge.js';
+import {effectiveRedBelow} from './threshold.js';
+import { mountPrototypeHelp } from './prototype-help.js';
 import { prototypeFrame } from './prototype-frame.js';
 import { cockpitLayout } from './prototype-layout.js';
 import { renderPrototypeEngine } from './prototype-engine.js';
@@ -9,14 +11,13 @@ import { mountPrototypeTape } from './prototype-tape.js';
 import { cockpitMembers } from './members.js';
 const words={en:{all:'All',settings:'Settings',waiting:'Waiting for readings',cleared:'Readings cleared',empty:'No subscriptions',rows:['5h','Weekly','Other'],page:'Page',resets:'resets in',now:'now'},'zh-CN':{all:'全部',settings:'设置',waiting:'等待读数',cleared:'读数已清除',empty:'无订阅',rows:['5小时','每周','其他'],page:'第',resets:'后重置',now:'现在'}};
 const element=<K extends keyof HTMLElementTagNameMap>(tag:K,text?:string,className?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
-const status=(n:number|null)=>n===null?'':n<=25?'red':n<=40?'amber':'ok';
-const count=(n:number|null)=>n===null||n<=0?0:Math.max(1,Math.min(10,Math.round(n/10)));
-export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void):CockpitView {
+export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:string)=>void,readRedBelow:()=>unknown=()=>undefined):CockpitView {
  let locale:Appearance['locale']='en',disposed=false,active=false,reduceMotion=false;
  let nativeShell:ShellState|null=null,tier:ShellState['tier']='tall';
  let applyScope:((scope:string)=>void)|null=null,refreshEngine:((now?:number)=>void)|null=null,localiseEngine:((value:Appearance['locale'],now:number)=>void)|null=null,quotaFocusIdentity:((element:HTMLElement)=>string|null)|null=null,lastData:WireCockpitData|null=null;
  let lastRenderedAt=0;const retiredUnstableScopes=new Set<string>();
- const frame=prototypeFrame(root);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;});const tape=mountPrototypeTape(root);
+ const redBelow=()=>effectiveRedBelow(readRedBelow());
+ const frame=prototypeFrame(root);const help=mountPrototypeHelp(root,()=>locale,()=>active,()=>nativeShell?.attached??true);const deck=mountPrototypeDeck(root,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};applyScope?.(key);return true;},undefined,redBelow);const tape=mountPrototypeTape(root);
  const head=root.querySelector<HTMLElement>('.ck-head')!;head.style.pointerEvents='auto';
  const shutter=root.querySelector<HTMLButtonElement>('[data-shutter]')!;
  let drag:{id:number;x:number;start:number;scale:number;moved:boolean}|null=null,suppressClick=false;
@@ -50,9 +51,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  function localise(now?:number){
   document.documentElement.lang=locale;deck.locale(locale,now);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);
   for(const e of root.querySelectorAll<HTMLElement>('[data-en][data-zh]')){e.textContent=locale==='en'?e.dataset.en!:e.dataset.zh!;if(e.tagName==='BUTTON')e.setAttribute('aria-label',e.textContent);else if(e.classList.contains('ek-name'))e.parentElement?.setAttribute('aria-label',e.textContent);}
-  for(const e of root.querySelectorAll<HTMLElement>('[data-reset]'))e.textContent=relative(e.dataset.reset??null);
   for(const e of root.querySelectorAll<HTMLButtonElement>('.eng-led[data-page]')){const n=Number(e.dataset.page)+1;e.setAttribute('aria-label',locale==='en'?`Page ${n}`:`第 ${n} 页`);}
-  shellControls();
+  shellControls();help.refresh();
  }
  const bilingual=(e:HTMLElement,en:string,zh:string)=>{e.dataset.en=en;e.dataset.zh=zh;return e;};
  frame.settings.onclick=e=>{if(e.isTrusted)action('openSettings');};
@@ -62,27 +62,6 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
  const displayedState=()=>[frame.engine.innerHTML,frame.hud.innerHTML,frame.mfd.innerHTML].join('\0');
  const pulse=()=>{stop();if(!active||nativeShell?.profile==='closed'||reduceMotion||matchMedia('(prefers-reduced-motion: reduce)').matches)return;void frame.lamp.offsetWidth;frame.lamp.classList.add('state-pulse');};
  const setEmpty=(key:'waiting'|'cleared'|'empty')=>{refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;const alert=root.querySelector<HTMLElement>('.s6-alert')!;alert.classList.remove('lit','red','amber');alert.setAttribute('aria-label',locale==='en'?'Alert inactive':'告警未激活');applyScope=null;frame.engine.replaceChildren(bilingual(element('p',words[locale][key],'ec-empty'),words.en[key],words['zh-CN'][key]));frame.hud.replaceChildren();deck.clear();tape.clear();};
- function relative(raw:string|null):string {
-  if(!raw)return '';const delta=Date.parse(raw)-Date.now();if(!Number.isFinite(delta))return '';
-  const mins=Math.max(0,Math.ceil(delta/60000)),d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;
-  const t=[d?`${d}d`:'',h?`${h}h`:'',m||(!d&&!h)?`${m}m`:''].filter(Boolean).join(' ');
-  return locale==='en'?`${words.en.resets} ${t}`:`${t} ${words['zh-CN'].resets}`;
- }
- function cell(w:WireWindow|undefined,other=false):HTMLElement {
-  // DOM equivalent of the study engine-view cell; wire text is never HTML.
-  const box=element('div',undefined,'qcell');if(!w){box.classList.add('none');return box;}
-  const s=status(w.remainingPercent);box.dataset.status=s;
-  const line=element('span',undefined,'qline'),num=element('b',undefined,'qnum');
-  num.append(element('span',w.remainingPercent===null?'--':String(Math.round(w.remainingPercent)),'qvalue'));
-  if(w.remainingPercent!==null)num.append(element('small','%'));line.append(num);
-  const info=element('em',undefined,'qtxt');
-  if(other){const en=w.role==='monthly'?'mo':w.label.en,zh=w.role==='monthly'?'月':w.label.zh;info.append(bilingual(element('span',locale==='en'?en:zh),en,zh));}
-  if(w.resetsAt){const txt=relative(w.resetsAt);if(txt){const reset=element('span',txt,'qreset');reset.dataset.reset=w.resetsAt;info.append(reset);}}
-  line.append(info);box.append(line);
-  const meter=element('span',undefined,'qmeter'),bar=element('span',undefined,'qbar');for(let i=0;i<10;i++)bar.append(element('i',undefined,i<count(w.remainingPercent)?'on':''));meter.append(bar);
-  if(w.resetsAt&&w.durationSeconds&&w.durationSeconds>0){const fraction=Math.max(0,Math.min(1,(Date.parse(w.resetsAt)-Date.now())/(w.durationSeconds*1000)));const dots=element('span',undefined,'qtime');for(let i=0;i<10;i++)dots.append(element('i',undefined,i<(fraction>0?Math.max(1,Math.ceil(fraction*10)):0)?'on':''));meter.append(dots);}
-  box.append(meter);return box;
- }
  function nextDeadline(data:WireCockpitData,now:number):number|null {
   let next=Infinity;
   for(const row of data.projection.rows)for(const account of row.accounts)if(account.valueState==='current')for(const w of account.windows){
@@ -126,25 +105,25 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   target?.focus({preventScroll:true});
  }
  function refreshDeadlines(now:number){if(!lastData||disposed)return;lastRenderedAt=now;preserveFocus(()=>{refreshEngine?.(now);deck.refresh(now);});}
- function renderData(data:WireCockpitData){
+ function renderData(data:WireCockpitData,now:number){
   preserveFocus(()=>{
-   const previousData=lastData;lastData=data;lastRenderedAt=Date.now();
+   const previousData=lastData;lastData=data;lastRenderedAt=now;
    if(disposed)throw Error('closed');const before=displayedState();const priorPage=Number(frame.engine.querySelector('[data-page][aria-current="true"]')?.getAttribute('data-page')??0);const priorButton=frame.engine.querySelector<HTMLButtonElement>('.ek[aria-pressed="true"]');const selectedScope=nativeShell?.scope??priorButton?.dataset.scope??'all';const unstable=previousData?cockpitMembers(previousData).some(m=>m.key===selectedScope&&m.unstable):false;const priorScope=unstable?'':selectedScope==='all'?'':selectedScope;if(unstable){retiredUnstableScopes.add(selectedScope);if(nativeShell)nativeShell={...nativeShell,scope:'all'};}applyScope=null;frame.engine.replaceChildren();
-   const engine=renderPrototypeEngine(data,locale,root,priorScope,cell,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;},priorPage);
-   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');deck.render(data);tape.render(data);frame.hud.replaceChildren();
+   const engine=renderPrototypeEngine(data,locale,root,priorScope,key=>{if(!active)return false;retiredUnstableScopes.delete(key);action('scopeSelect',key);if(nativeShell)nativeShell={...nativeShell,scope:key};deck.scope(key);return true;},()=>{if(!active)return false;action('openSettings');return true;},priorPage,lastRenderedAt,redBelow);
+   if(!engine){setEmpty('empty');return;}frame.engine.append(engine.table);applyScope=engine.applyScope;refreshEngine=engine.refresh;localiseEngine=engine.setLocale;quotaFocusIdentity=engine.focusIdentity;deck.scope(nativeShell?.scope??'all');deck.render(data,lastRenderedAt);tape.render(data);frame.hud.replaceChildren();help.refresh();
    if(before!==displayedState())pulse();
   },true);
  }
  setEmpty('waiting');
  return {
   configure(value){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.lang=locale;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);deck.locale(locale);tape.locale(locale);frame.settings.setAttribute('aria-label',words[locale].settings);setEmpty('waiting');},
-  updateAppearance(value:LiveAppearance){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();if(lastData){lastRenderedAt=Date.now();preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);});}else localise();},
+  updateAppearance(value:LiveAppearance,now:number){locale=value.locale;reduceMotion=value.reduceMotion;document.documentElement.dataset.theme='night';document.documentElement.dataset.reduceMotion=String(value.reduceMotion);document.documentElement.dataset.reduceTransparency=String(value.reduceTransparency);frame.hud.classList.toggle('solid',value.reduceTransparency);if(reduceMotion)stop();if(lastData){lastRenderedAt=now;preserveFocus(()=>{localise(lastRenderedAt);localiseEngine?.(locale,lastRenderedAt);});}else localise();},
   shell(value:ShellState){if(retiredUnstableScopes.has(value.scope))value={...value,scope:'all'};const changed=(nativeShell?.scope??'all')!==value.scope;nativeShell=value;preserveFocus(()=>{tier=value.tier;const h=tier==='tall'?890:640,layout=cockpitLayout(h);document.documentElement.dataset.profile=tier==='tall'?'full':'compact';root.dataset.layout=String(h);root.style.setProperty('--console-h',layout.console+'px');root.style.setProperty('--tape-h',layout.tapeH+'px');root.style.setProperty('--eng-h',layout.eng+'px');tape.layout(layout.tapeLines);shellControls();if(changed){applyScope?.(value.scope);deck.scope(value.scope);}});},
   render:renderData,
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value)stop();},
-  dispose(){if(disposed)return;disposed=true;applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
+  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){stop();help.hide();}},
+  dispose(){if(disposed)return;disposed=true;applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

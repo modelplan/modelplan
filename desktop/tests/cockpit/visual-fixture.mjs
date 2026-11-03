@@ -26,6 +26,6 @@ export async function renderVisualDeck(page,fixture,locale){
  await page.evaluate(async({data,publication,locale})=>{
   const {mountPrototypeDeck}=await import('/src/prototype-deck.js');
   const deck=mountPrototypeDeck(document.querySelector('#cockpit'),undefined,{publication,liveSessions:data.details.sessions,resetEvents:null,history:null});
-  deck.locale(locale);deck.render(data);
+  deck.locale(locale);deck.render(data,Date.parse('2026-10-20T14:05:00Z'));
  },{...fixture,locale});
 }

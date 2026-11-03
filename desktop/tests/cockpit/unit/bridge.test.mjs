@@ -244,3 +244,15 @@ test('appearance and tick reports obey visibility, replay and generation fences'
  assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
  assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
 });
+
+test('display and appearance receive the bridge clock, while ticks use the host-supplied instant',()=>{
+  const times=[],view={clear(){},configure(){},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(_data,now){times.push(['display',now]);},updateAppearance(_value,now){times.push(['appearance',now]);},tick(now){times.push(['tick',now]);}};
+  const send=commands(),bridge=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>123456);
+  bridge.documentHidden(false);bridge.ready();
+  assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);
+  assert.equal(bridge.receive(send('visibility',{visible:true,occluded:false,key:true}),source),true);
+  assert.equal(bridge.receive(send('display',{data:capture()}),source),true);
+  assert.equal(bridge.receive(send('appearance',appearance),source),true);
+  assert.equal(bridge.receive(send('tick',{nowUnixMs:'234567',reason:'clockChange'}),source),true);
+  assert.deepEqual(times,[['display',123456],['appearance',123456],['tick',234567]]);
+});
