@@ -37,7 +37,9 @@ public struct DockCardInteraction:Sendable {
         if let pending,let enterAt,now>=enterAt,parentExpanded{
             visibility = .hover(pending);self.pending=nil;self.enterAt=nil
         }
-        if visibility == .hidden || insideShared != false || menuActuallyOpen{leaveAt=nil}
+        // A current ring hover is direct evidence that the pointer is inside,
+        // even if an independently sampled shared region briefly disagrees.
+        if visibility == .hidden || hover != nil || insideShared != false || menuActuallyOpen{leaveAt=nil}
         else{
             if leaveAt==nil{leaveAt=now+Self.independentLeaveGrace}
             if now>=leaveAt!{visibility = .hidden;leaveAt=nil}

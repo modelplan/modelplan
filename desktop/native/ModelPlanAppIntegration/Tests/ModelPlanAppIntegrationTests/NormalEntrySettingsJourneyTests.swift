@@ -282,10 +282,13 @@ private actor SettingsJourneyClient: EngineClient {
 
         // The host receives the same committed-placement event its real drag controller produces.
         dock.commitDisplayPlacement?("synthetic-display", .left, 0.3)
-        for _ in 0..<40 {
-            if (await first.foundationStore.snapshot()).preferences.dockEdge == .left { break }
-            try await Task.sleep(for: .milliseconds(25))
+        for _ in 0..<250 {
+            if !editor.isSaving, editor.snapshot?.preferences.dockEdge == .left,
+               editor.snapshot?.preferences.dockDisplayID == "synthetic-display" { break }
+            try await Task.sleep(for: .milliseconds(20))
         }
+        XCTAssertFalse(editor.isSaving, "The placement commit must finish before the next Settings edit")
+        XCTAssertEqual(editor.snapshot?.preferences.dockDisplayID, "synthetic-display")
         XCTAssertEqual(dock.currentMenuBarPreferences?.dockEdge, .left, "The dragged edge applies without a restart")
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         await editor.reload()

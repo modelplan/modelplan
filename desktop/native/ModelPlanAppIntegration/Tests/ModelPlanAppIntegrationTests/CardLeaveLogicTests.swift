@@ -76,6 +76,19 @@ final class CardLeaveLogicTests: XCTestCase {
         controller.stop()
     }
 
+    func testHoveredRingKeepsCardOpenWhenPointerSampleTemporarilyDisagrees() throws {
+        var state = DockCardInteraction()
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.3)
+        XCTAssertEqual(state.visibility, .hover("synthetic"))
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1)
+        try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.4)
+        XCTAssertEqual(state.visibility, .hover("synthetic"), "An active ring hover owns the card despite an inconsistent pointer sample")
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.5)
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.76)
+        XCTAssertEqual(state.visibility, .hidden, "Leaving both ring and card still closes after the grace")
+    }
+
     func testOnlyKeyWindowFocusedDescendantControlProtectsCard() {
         XCTAssertFalse(DockCardFocus.protectsCard(isKeyWindow: false, isDescendant: true, isFocusableControl: true))
         XCTAssertFalse(DockCardFocus.protectsCard(isKeyWindow: true, isDescendant: false, isFocusableControl: false))
