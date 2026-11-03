@@ -381,11 +381,16 @@ import ModelPlanWire
         // The public row constructor also rejects a denied row with accounts;
         // bypassing it to reach the defensive Provider branch is not a safe seam.
         _ = try await projection(balance: 12.5, unit: "credits", english: true) { rows, _ in
-            guard let row = rows.first else { return XCTFail("missing synthetic row") }
-            XCTAssertThrowsError(try RowsRow(id: row.id, kind: row.kind, order: row.order, name: row.name,
-                vendorKey: row.vendorKey, surfaces: row.surfaces, consent: .denied, state: .fresh,
-                reason: row.reason, nextStep: row.nextStep, accounts: row.accounts,
-                expiresAt: row.expiresAt, stateAfterExpiry: row.stateAfterExpiry))
+            guard let row = rows.first else { XCTFail("missing synthetic row"); return }
+            do {
+                _ = try RowsRow(id: row.id, kind: row.kind, order: row.order, name: row.name,
+                    vendorKey: row.vendorKey, surfaces: row.surfaces, consent: .denied, state: .fresh,
+                    reason: row.reason, nextStep: row.nextStep, accounts: row.accounts,
+                    expiresAt: row.expiresAt, stateAfterExpiry: row.stateAfterExpiry)
+                XCTFail("denied consent with accounts must be rejected")
+            } catch WireDecodeError.invalidAuthorization {
+                // Expected: denied consent cannot retain account values.
+            } catch { XCTFail("unexpected row validation error") }
         }
     }
 
