@@ -276,12 +276,6 @@ import ModelPlanWire
             // Characterizes the existing gap; it does not approve indefinite retention.
             XCTAssertEqual(early.1?.value, "12.5 credits"); XCTAssertEqual(later.1?.value, "12.5 credits")
         }
-        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained, deadlineOnlyMixed: true) { rows, now in
-            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(first, hasUnknownDeadline: true))
-        }
-        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed) { rows, now in
-            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(second, hasUnknownDeadline: false))
-        }
     }
 
     func testRecomputeDeadlineFactsUseOnlyFutureAndReportUnknown() async throws {
@@ -298,6 +292,12 @@ import ModelPlanWire
             _ = try await projection(balance: 12.5, unit: "credits", english: true, state: state) { rows, now in
                 XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .unknown)
             }
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained, deadlineOnlyMixed: true) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(first, hasUnknownDeadline: true))
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(second, hasUnknownDeadline: false))
         }
         _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .revokedWithValues) { rows, now in
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .none)
