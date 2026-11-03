@@ -404,9 +404,10 @@ import ModelPlanWire
 
     func testWindowProofRejectsAmbiguousIdentityAndNoncanonicalFacts() async throws {
         // These mutations are defensive noncanonical wire inputs, not claims
-        // about an observed user account or a producer output.
+        // about an observed user account or a producer output. A null reset is
+        // separately covered because it is legal, although currently withheld.
         let earlierReset = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        for mutation in [ProofMutation.fallbackMember, .missingReset, .malformedReset, .mismatchReset,
+        for mutation in [ProofMutation.fallbackMember, .malformedReset, .mismatchReset,
                          .missingValidUntil, .malformedValidUntil, .futureAccountObservation,
                          .malformedAccountObservation, .futureWindowObservation, .malformedWindowObservation,
                          .duplicateWindowID] {
@@ -423,6 +424,28 @@ import ModelPlanWire
                 XCTAssertEqual(provider.verifiedWindows.count, 1)
                 XCTAssertEqual(provider.verifiedWindows.first?.until, ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
             })
+    }
+
+    func testNullAndMalformedResetCollapseToSameDecodedFacts() async throws {
+        // Null is producer-permitted; the malformed string is noncanonical.
+        // Both currently decode as nil, so the Provider cannot distinguish
+        // them when deciding whether a no-reset window is safe to prove.
+        var decodedFacts: [String] = []
+        for mutation in [ProofMutation.missingReset, .malformedReset] {
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, proofMutation: mutation,
+                providerProbe: { provider, _, _ in XCTAssertTrue(provider.verifiedWindows.isEmpty) },
+                deadlineProbe: { rows, _ in
+                    guard let account = rows.first?.accounts.first, let window = account.windows.first else {
+                        XCTFail("missing synthetic account or window"); return
+                    }
+                    XCTAssertNil(window.resetsAt)
+                    XCTAssertEqual(window.validUntil?.rawValue, account.freshUntil?.rawValue)
+                    decodedFacts.append([account.freshUntil?.rawValue ?? "nil", window.validUntil?.rawValue ?? "nil",
+                                         window.resetsAt?.rawValue ?? "nil", String(window.current)].joined(separator: "|"))
+                })
+        }
+        XCTAssertEqual(decodedFacts.count, 2)
+        XCTAssertEqual(decodedFacts.first, decodedFacts.last)
     }
 
     func testWindowProofStopsAtRowLatchWhenLatchIsMissingOrNonStale() async throws {
