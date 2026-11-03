@@ -11,8 +11,8 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, atExpiry, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -23,8 +23,10 @@ import ModelPlanWire
         let observed = state == .refreshed ? "2027-12-20T00:00:00Z" : "2026-12-01T00:00:00Z"
         let staleReason: [String: Any] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
         let refresh: [String: Any] = ["action": "refresh", "text": ["en": "Refresh when permitted", "zh": "在允许时刷新"], "availableAt": NSNull(), "disabledReason": NSNull()]
-        let unknownDeadline = state == .unknownDeadline || state == .malformedDeadline
-        let isRetained = state == .retained || state == .retainedExpired || unknownDeadline
+        let currentUnknown = state == .currentUnknownDeadline || state == .currentMalformedDeadline
+        let malformed = state == .malformedDeadline || state == .currentMalformedDeadline
+        let unknownDeadline = state == .unknownDeadline || state == .malformedDeadline || currentUnknown
+        let isRetained = state == .retained || state == .retainedExpired || (unknownDeadline && !currentUnknown)
         let isRevoked = state == .revoked || state == .revokedWithValues
         row["state"] = isRetained ? "stale" : "fresh"
         row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
@@ -54,11 +56,22 @@ import ModelPlanWire
             account["windows"] = [window, weekly]
         }
         if unknownDeadline {
-            row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
-            row["expiresAt"] = state == .malformedDeadline ? "invalid-deadline" as Any : NSNull()
-            account["observedAt"] = NSNull()
-            account["freshUntil"] = state == .malformedDeadline ? "invalid-deadline" as Any : NSNull()
-            window["observedAt"] = NSNull(); window["validUntil"] = NSNull(); window["current"] = false
+            if isRetained {
+                row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
+                account["observedAt"] = NSNull(); window["observedAt"] = NSNull()
+            }
+            row["expiresAt"] = malformed ? "invalid-deadline" as Any : NSNull()
+            account["freshUntil"] = malformed ? "invalid-deadline" as Any : NSNull()
+            window["validUntil"] = malformed ? "invalid-deadline" as Any : NSNull(); window["current"] = currentUnknown
+            account["windows"] = [window]
+        }
+        // Isolated contradictory wire fields: separate account and window
+        // decoder failures from the case where both deadlines are absent.
+        if state == .currentAccountMissing || state == .currentAccountMalformed {
+            account["freshUntil"] = state == .currentAccountMalformed ? "invalid-deadline" as Any : NSNull()
+        }
+        if state == .currentWindowMissing || state == .currentWindowMalformed {
+            window["validUntil"] = state == .currentWindowMalformed ? "invalid-deadline" as Any : NSNull()
             account["windows"] = [window]
         }
         row["accounts"] = state == .revoked ? [] : [account]
@@ -92,6 +105,7 @@ import ModelPlanWire
         }
         let store = EngineStore(), source = EngineDockMenuProvider(store: store), provider = EngineDockContentProvider(source: source)
         provider.language = english ? "en" : "zh-CN"
+        provider.resetEventState = { .available(resetEvents) }
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
@@ -104,6 +118,7 @@ import ModelPlanWire
         else { now = overrideNow ?? Date(timeIntervalSince1970: seconds) }
         deadlineProbe?(rows.projection.rows, now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        providerProbe?(provider, content, now)
         if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
         if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none) }
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
@@ -120,15 +135,30 @@ import ModelPlanWire
             XCTAssertEqual(held.snapshot.inputs.count, 1)
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
-            // The row-level reason remains latched, while the later weekly
-            // window is still an independently current reading for this member.
+            // The row-level reason and overall input remain non-fresh. The
+            // later weekly window is still time-valid on the wire, but the
+            // current Dock model cannot present it under a non-fresh input.
             let heldInput = try XCTUnwrap(held.snapshot.inputs.first)
             XCTAssertNil(heldInput.windows.first { $0.period == .fiveHour }?.remainingPercent)
-            XCTAssertEqual(heldInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
-            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "75%")
+            XCTAssertEqual(heldInput.dataState, .unavailable)
+            XCTAssertNil(heldInput.windows.first { $0.period == .week }?.remainingPercent)
+            XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
             XCTAssertNil(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            // Isolate the representation gap: even an explicitly supplied valid
+            // weekly value is suppressed when overall state is stale.
+            var staleProbe = heldInput
+            staleProbe.dataState = .stale
+            let weeklyIndex = try XCTUnwrap(staleProbe.windows.firstIndex { $0.period == .week })
+            staleProbe.windows[weeklyIndex].remainingPercent = 75.0
+            staleProbe.windows[weeklyIndex].resetsAt = secondDeadline
+            let staleReading = try DockInstrumentProjection.evaluate(staleProbe, now: firstDeadline)
+            XCTAssertEqual(staleReading.dataState, .stale); XCTAssertEqual(staleReading.readout, "--")
+            XCTAssertEqual(staleReading.status, .unknown)
+            let card = try DockCardProjection.content(input: staleProbe, stateLabel: "A retained reading is shown", at: firstDeadline)
+            XCTAssertEqual(card.stateLabel, "A retained reading is shown")
+            XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.value, "--")
             let fullyExpired = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: secondDeadline))
             XCTAssertNil(fullyExpired.snapshot.inputs.first?.windows.first { $0.period == .week }?.remainingPercent)
 
@@ -276,6 +306,45 @@ import ModelPlanWire
             // Characterizes the existing gap; it does not approve indefinite retention.
             XCTAssertEqual(early.1?.value, "12.5 credits"); XCTAssertEqual(later.1?.value, "12.5 credits")
         }
+    }
+
+    func testCurrentWithMissingOrMalformedDeadlineCharacterizesUnprovenFreshness() async throws {
+        // Deliberately noncanonical: producer validation requires current accounts
+        // and current windows to carry valid future deadlines.
+        let knownDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        for state in [FixtureState.currentUnknownDeadline, .currentMalformedDeadline, .currentAccountMissing, .currentAccountMalformed, .currentWindowMissing, .currentWindowMalformed] {
+            let projected = try await projection(balance: 12.5, unit: "credits", english: true, state: state, providerProbe: { provider, _, _ in
+                let expected: EngineRecomputeDeadline = (state == .currentUnknownDeadline || state == .currentMalformedDeadline)
+                    ? .unknown : .scheduled(knownDeadline, hasUnknownDeadline: true)
+                XCTAssertEqual(provider.recomputeDeadline, expected)
+            })
+            XCTAssertEqual(projected.0?.dataState, .fresh)
+            XCTAssertEqual(projected.0?.windows.first?.remainingPercent, 42.5)
+            XCTAssertEqual(projected.1?.value, "12.5 credits")
+            // These characterize today's nil fallbacks, not approval of the result.
+        }
+    }
+
+    func testResetEventPublicationAndExpiryAreRecomputeDeadlines() async throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let published = start.addingTimeInterval(10), expires = start.addingTimeInterval(20)
+        let rowDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        let event = EngineResetEvent(id: "synthetic", rowID: "codex", provider: "synthetic", status: "announced",
+                                     publishedAt: published, expiresAt: expires, planIDs: nil, confirms: nil)
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, overrideNow: start, resetEvents: [event], providerProbe: { provider, _, _ in
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(published, hasUnknownDeadline: false))
+            XCTAssertNil(provider.signals.first?.reset)
+        })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, overrideNow: published, resetEvents: [event], providerProbe: { provider, content, _ in
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(expires, hasUnknownDeadline: false))
+            XCTAssertNotNil(provider.signals.first?.reset)
+            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "reset-event:synthetic:announced" })
+        })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, overrideNow: expires, resetEvents: [event], providerProbe: { provider, content, _ in
+            XCTAssertEqual(provider.recomputeDeadline, .scheduled(rowDeadline, hasUnknownDeadline: false))
+            XCTAssertNil(provider.signals.first?.reset)
+            XCTAssertNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "reset-event:synthetic:announced" })
+        })
     }
 
     func testRecomputeDeadlineFactsUseOnlyFutureAndReportUnknown() async throws {

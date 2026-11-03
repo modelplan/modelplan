@@ -16,9 +16,13 @@ public enum EngineRecomputeDeadline: Equatable, Sendable {
 /// Reads only already-admitted rows. The consumer must recompute after each
 /// replacement or invalidation and use its own snapshot token to cancel timers.
 public enum EngineDeadlineFacts {
-    public static func evaluate(rows: [RowsRow], now: Date) -> EngineRecomputeDeadline {
+    public static func evaluate(rows: [RowsRow], events: [EngineResetEvent] = [], eventRows: [RowsRow]? = nil, now: Date) -> EngineRecomputeDeadline {
         var next: Date?
         var unknown = false
+        func includeDate(_ date: Date) {
+            guard date > now else { return }
+            if next.map({ date < $0 }) ?? true { next = date }
+        }
         func include(_ stamp: WireTimestamp?) {
             guard let stamp else { unknown = true; return }
             let fractional = ISO8601DateFormatter()
@@ -26,8 +30,7 @@ public enum EngineDeadlineFacts {
             guard let date = fractional.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue) else {
                 unknown = true; return
             }
-            guard date > now else { return }
-            if next.map({ date < $0 }) ?? true { next = date }
+            includeDate(date)
         }
         for row in rows where row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired {
             let accounts = row.accounts.filter { $0.valueState == .current || $0.valueState == .retained }
@@ -37,6 +40,16 @@ public enum EngineDeadlineFacts {
                 include(account.freshUntil)
                 for window in account.windows where window.current { include(window.validUntil) }
             }
+        }
+        let eligibleEventRows = eventRows ?? rows
+        for event in events where event.publishedAt < event.expiresAt {
+            let matches = eligibleEventRows.contains { row in
+                (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired) && row.id == event.rowID &&
+                row.accounts.contains { account in event.planIDs.map { $0.contains(account.plan.id) } ?? true }
+            }
+            guard matches else { continue }
+            includeDate(event.publishedAt)
+            includeDate(event.expiresAt)
         }
         if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
         return unknown ? .unknown : .none
@@ -64,13 +77,13 @@ public enum EngineDeadlineFacts {
     public init(source: EngineDockMenuProvider) { self.source = source }
     public func makeContent(_ context: DockContentContext) -> DockContent {
         let value = source.dockContent
-        recomputeDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, now: context.now)
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
         memberInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
         if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
+        recomputeDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, events: events, eventRows: value.dockRows, now: context.now)
         signals = []
         for member in members {
             let row=member.row
@@ -216,10 +229,9 @@ public enum EngineDeadlineFacts {
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
         input.vendorResourceKey = row.vendorKey
         input.duplicateAccountTag=member.duplicateTag
-        // For one member, row expiry may be an earlier window's deadline;
-        // keep each window's own deadline while the row reason stays latched.
-        // The multi-member policy remains unchanged pending adjudication.
-        let rowCurrent = row.state == .fresh && (row.accounts.count == 1 || (date(row.expiresAt).map { now < $0 } ?? true))
+        // A non-fresh row remains non-fresh. The Dock model currently cannot
+        // display a current weekly window while its overall input is non-fresh.
+        let rowCurrent = row.state == .fresh && (date(row.expiresAt).map { now < $0 } ?? true)
         let account=member.account
             let accountCurrent = rowCurrent && account.valueState == .current && (date(account.freshUntil).map { now < $0 } ?? true)
             for window in account.windows {
