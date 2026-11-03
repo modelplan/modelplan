@@ -144,7 +144,7 @@ import ModelPlanSettings
                 let menu = host.menu().items.map(\.title).joined(separator: " ")
                 XCTAssertFalse(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
                 XCTAssertFalse(menu.contains(failure))
-                host.dockView.onAction?(.subscription(row.input.id))
+                try presentSyntheticHostCard(host, id: row.input.id)
                 func labels(_ view: NSView) -> [NSTextField] { (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(labels) }
                 XCTAssertTrue(labels(host.card).contains { $0.stringValue.contains("Reading unavailable") })
                 XCTAssertFalse(labels(host.card).contains { $0.stringValue.contains(failure) })
@@ -280,8 +280,8 @@ import ModelPlanSettings
         let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).inputs.first)
         XCTAssertEqual(row.name, "Grok"); XCTAssertTrue(row.alias?.contains("Grok") == true)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertFalse(menu.contains("Grok")); XCTAssertTrue(menu.contains("Settings"))
-        host.dockView.onAction?(.subscription(row.id))
+        XCTAssertFalse(menu.contains("Grok")); XCTAssertTrue(menu.contains("设置"))
+        try presentSyntheticHostCard(host, id: row.id)
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
@@ -313,7 +313,7 @@ import ModelPlanSettings
             var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
             host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
             XCTAssertFalse(host.menu().items.contains { $0.title.contains(expected) })
-            host.dockView.onAction?(.subscription(row.input.id))
+            try presentSyntheticHostCard(host, id: row.input.id)
             func text(_ v: NSView) -> [String] { (v as? NSTextField).map { [$0.stringValue] } ?? v.subviews.flatMap(text) }
             XCTAssertTrue(text(host.card).contains { $0.contains(expected) })
             XCTAssertNil(host.nativePanel)

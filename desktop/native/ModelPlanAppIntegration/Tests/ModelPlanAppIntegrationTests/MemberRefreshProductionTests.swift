@@ -77,7 +77,7 @@ private actor MemberRefreshTestClient: EngineClient {
         let unsupported = AppServerMemberRefreshAdapter(client: engine, store: app.composition.store)
         await engine.setOutcome(try .init(outcome: .deferred, reason: .notGranted))
         do { try await unsupported.request(member: member, delivery: context); XCTFail("Unavailable refresh must not succeed") }
-        catch EngineClientError.unsupportedCapability {} 
+        catch EngineClientError.unsupportedCapability {}
         await app.composition.stop()
     }
 }
