@@ -20,8 +20,9 @@ export function cockpitMembers(data:WireCockpitData):{key:string;row:WireRow;acc
     }
     const base=`${row.id}#${account.route}`,position=(positions.get(base)??0)+1;
     positions.set(base,position);
-    const unstable=(fallbackCounts.get(base)??0)>1;
-    members.push({key:unstable?`${base}#${position}`:base,row,account,unstable});
+    const collision=(fallbackCounts.get(base)??0)>1;
+    // A row/route key is never proof of account identity, even for one member.
+    members.push({key:collision?`${base}#${position}`:base,row,account,unstable:true});
   }
   return members;
 }
