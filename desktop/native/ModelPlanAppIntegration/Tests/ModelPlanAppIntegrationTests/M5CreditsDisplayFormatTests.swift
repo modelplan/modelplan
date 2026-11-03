@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import Foundation
 import XCTest
 @testable import ModelPlanAppIntegration
 
@@ -11,25 +12,27 @@ final class M5CreditsDisplayFormatTests: XCTestCase {
         XCTAssertEqual(M5CreditsDisplayFormat.text(-0.0, unit: .credits), .formatted("0"))
         XCTAssertEqual(M5CreditsDisplayFormat.text(-1_500, unit: .credits), .formatted("-1500"))
         XCTAssertEqual(M5CreditsDisplayFormat.text(999, unit: .credits), .formatted("999"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_000, unit: .credits), .formatted("1k"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_000, unit: .credits), .formatted("1,000"))
     }
 
     func testThousandsRoundingAndMillionBoundary() {
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_499, unit: .credits), .formatted("1k"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_500, unit: .credits), .formatted("2k"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(999_499, unit: .credits), .formatted("999k"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(999_500, unit: .credits), .formatted("1000k"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_000_000, unit: .credits), .formatted("1.0M"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_150_000, unit: .credits), .formatted("1.1M"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(1_250_000, unit: .credits), .formatted("1.3M"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(Double(1_150_000).nextDown, unit: .credits), .formatted("1.1M"))
-        XCTAssertEqual(M5CreditsDisplayFormat.text(Double(1_150_000).nextUp, unit: .credits), .formatted("1.2M"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_499, unit: .credits), .formatted("1,499"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_500, unit: .credits), .formatted("1,500"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(999_499, unit: .credits), .formatted("999,499"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(999_500, unit: .credits), .formatted("999,500"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_000_000, unit: .credits), .formatted("1,000,000"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_150_000, unit: .credits), .formatted("1,150,000"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(1_250_000, unit: .credits), .formatted("1,250,000"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(Double(1_150_000).nextDown, unit: .credits), .formatted("1,150,000"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(Double(1_150_000).nextUp, unit: .credits), .formatted("1,150,000"))
     }
 
     func testUnapprovedFiniteCreditsPreserveTheOriginalValueAndUnit() {
-        for value in [0.123456789, 999.5, -1.5, -1e21, 1e21, Double.greatestFiniteMagnitude] {
+        for value in [-1.5, -1e21] {
             XCTAssertEqual(M5CreditsDisplayFormat.text(value, unit: .credits), .fallback(value: value, unit: .credits))
         }
+        XCTAssertEqual(M5CreditsDisplayFormat.text(0.123456789, unit: .credits), .formatted("<1"))
+        XCTAssertEqual(M5CreditsDisplayFormat.text(999.5, unit: .credits), .formatted("1,000"))
     }
 
     func testCurrencyAndUnknownUnitPreserveTheOriginalValueAndUnit() {
@@ -65,11 +68,12 @@ final class M5CreditsDisplayFormatTests: XCTestCase {
         let units = [M5CreditsDisplayFormat.Unit(identifier: nil), .init(identifier: ""),
                      .init(identifier: "other"), .init(identifier: "SYNTHETIC-UNIT-CANARY")]
         for unit in units {
-            for (value, text) in [(0.0, "0"), (1.0, "1"), (0.1, "0.1"), (1.1, "1.1"),
-                                  (3.25, "3.25"), (47.25, "47.25"), (-42.5, "-42.5")] {
+            for (value, text) in [(0.0, "0"), (1.0, "1"), (1_000.0, "1,000")] {
                 XCTAssertEqual(M5CreditsDisplayFormat.unknownUnitText(value, unit: unit, knowledge: .unknown),
                                .rendered(value: value, unit: unit, text: text, isApproximate: false))
             }
+            XCTAssertEqual(M5CreditsDisplayFormat.unknownUnitText(-42.5, unit: unit, knowledge: .unknown),
+                           .fallback(value: -42.5, unit: unit))
             guard case .rendered(let raw, let returnedUnit, let text, let approximate) =
                     M5CreditsDisplayFormat.unknownUnitText(-0.0, unit: unit, knowledge: .unknown) else {
                 XCTFail("negative zero must remain a reported value"); continue
@@ -79,21 +83,34 @@ final class M5CreditsDisplayFormatTests: XCTestCase {
         }
     }
 
-    func testUnknownUnitApproximationOnlyWhenDisplayedValueChanges() {
+    func testUnknownUnitRoundingKeepsRawValueWithoutApproximationMarker() {
         let unit = M5CreditsDisplayFormat.Unit(identifier: "other")
-        for (value, text) in [(247.538, "≈247.54"), (84.996, "≈85"),
-                              (0.004, "≈0"), (0.30000000000000004, "≈0.3")] {
+        for (value, text) in [(247.538, "248"), (84.996, "85"),
+                              (0.004, "<1"), (0.30000000000000004, "<1")] {
             XCTAssertEqual(M5CreditsDisplayFormat.unknownUnitText(value, unit: unit, knowledge: .unknown),
                            .rendered(value: value, unit: unit, text: text, isApproximate: true))
         }
-        // Halfway rounding direction is not specified here; either result must be marked approximate.
-        for value in [0.005, 1.005, -0.005] {
+        for (value, expected) in [(0.5, "<1"), (1.5, "2"), (2.5, "3"), (999.5, "1,000")] {
             guard case .rendered(let original, let returnedUnit, let text, let approximate) =
                     M5CreditsDisplayFormat.unknownUnitText(value, unit: unit, knowledge: .unknown) else {
                 XCTFail("a finite midpoint must retain its source value"); continue
             }
             XCTAssertEqual(original.bitPattern, value.bitPattern); XCTAssertEqual(returnedUnit, unit)
-            XCTAssertTrue(approximate); XCTAssertTrue(text.hasPrefix("≈"))
+            XCTAssertTrue(approximate); XCTAssertEqual(text, expected); XCTAssertFalse(text.contains("≈"))
+        }
+    }
+
+    func testEnglishAndChineseGroupingAndHalfUpBoundaries() {
+        for english in [true, false] {
+            XCTAssertEqual(M5CreditsDisplayFormat.text(0, unit: .credits, english: english), .formatted("0"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(0.0001, unit: .credits, english: english), .formatted("<1"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(0.9999, unit: .credits, english: english), .formatted("<1"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(1, unit: .credits, english: english), .formatted("1"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(1.5, unit: .credits, english: english), .formatted("2"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(2.5, unit: .credits, english: english), .formatted("3"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(12_345.678, unit: .credits, english: english), .formatted("12,346"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(12_345.5, unit: .credits, english: english), .formatted("12,346"))
+            XCTAssertEqual(M5CreditsDisplayFormat.text(1_000_000, unit: .credits, english: english), .formatted("1,000,000"))
         }
     }
 
@@ -106,12 +123,12 @@ final class M5CreditsDisplayFormatTests: XCTestCase {
         }
         let boundary = 1_000_000_000_000_000.0
         XCTAssertEqual(M5CreditsDisplayFormat.unknownUnitText(boundary, unit: unit, knowledge: .unknown),
-                       .rendered(value: boundary, unit: unit, text: "1000000000000000", isApproximate: false))
+                       .rendered(value: boundary, unit: unit, text: "1,000,000,000,000,000", isApproximate: false))
         let huge = Double.greatestFiniteMagnitude
         switch M5CreditsDisplayFormat.unknownUnitText(huge, unit: unit, knowledge: .unknown) {
         case .rendered(let original, let returnedUnit, let text, let approximate):
             XCTAssertEqual(original.bitPattern, huge.bitPattern); XCTAssertEqual(returnedUnit, unit)
-            XCTAssertFalse(approximate); XCTAssertEqual(Double(text), huge)
+            XCTAssertFalse(approximate); XCTAssertEqual(Double(text.replacingOccurrences(of: ",", with: "")), huge)
         case .fallback(let original, let returnedUnit):
             XCTAssertEqual(original.bitPattern, huge.bitPattern); XCTAssertEqual(returnedUnit, unit)
         default: XCTFail("finite values must not become missing or invalid")
