@@ -7,8 +7,8 @@ import ModelPlanEngineClient
 @testable import ModelPlanAppIntegration
 
 @MainActor final class EngineDesignConformanceTests: XCTestCase {
-    private func app(_ store:SettingsStore) -> EngineDockMenuApplication {
-        EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/modelplan"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false)
+    private func app(_ store:SettingsStore, cockpitEntryEnabled: Bool = false) -> EngineDockMenuApplication {
+        EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/modelplan"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:cockpitEntryEnabled)
     }
     func testDragCommitSurvivesContentRebuildAndRestart() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -46,17 +46,22 @@ import ModelPlanEngineClient
     func testMenusFollowSettingsLanguageAndSpecOrder() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }
-        let store=try SettingsStore(url:root.appendingPathComponent("settings.json")),entry=app(store)
-        for language in [SettingsLanguage.chinese,.english] {
-            try await store.update { $0.language=language };await entry.prepare()
-            let en=language == .english
-            let dock=entry.composition.dock.menu().items.map(\.title)
-            XCTAssertEqual(Array(dock.suffix(3)),en ? ["Open Cockpit","Settings…","Hide Dock"]:["打开驾驶舱","设置…","隐藏挂件"])
-            let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
-            XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Check for updates","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","检查更新","说明…","设置…","关于","退出"])
-            XCTAssertFalse(titles.contains { $0.contains(" / ") })
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        for enabled in [false,true] {
+            let entry=app(store,cockpitEntryEnabled:enabled)
+            for language in [SettingsLanguage.chinese,.english] {
+                try await store.update { $0.language=language };await entry.prepare()
+                let en=language == .english
+                let cockpit = enabled ? (en ? "Open Cockpit" : "打开驾驶舱") : (en ? "Coming soon" : "即将推出")
+                let dock=entry.composition.dock.menu().items
+                XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Dock" : "隐藏挂件"])
+                XCTAssertEqual(dock.first { $0.title == cockpit }?.isEnabled, enabled)
+                let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
+                XCTAssertEqual(Array(titles.suffix(8)),en ? ["Website","Methodology","Privacy","Check for updates","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","检查更新","说明…","设置…","关于","退出"])
+                XCTAssertFalse(titles.contains { $0.contains(" / ") })
+            }
+            entry.composition.dock.close()
         }
-        entry.composition.dock.close()
     }
     func testUnreadableFaceShowsReasonAndClearsItWithRows() throws {
         let view=DockInstrumentView(frame:.zero),now=Date()

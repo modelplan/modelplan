@@ -9,12 +9,8 @@ import XCTest
     }
     func testNormalEntryAnnouncedResetShowsMenuIndicator() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
-        let title=try await S4QuotaJourney.announcedMenuIndicator(capture:capture)
-        let options=XCTExpectedFailure.Options()
-        options.isStrict=true
-        XCTExpectFailure("completed by #412 (menu notice indicator)",options:options) {
-            XCTAssertFalse(title.isEmpty,"an announced reset must show the normal menu-bar indicator")
-        }
+        let displayed=try await S4QuotaJourney.announcedMenuIndicator(capture:capture)
+        XCTAssertTrue(displayed,"an announced reset must reach the normal menu-bar indicator")
     }
     func testNormalEntryRejectsUnstableMemberPersistenceAcrossRefreshAndRestart() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL

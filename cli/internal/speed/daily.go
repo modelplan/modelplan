@@ -56,7 +56,7 @@ func LoadLong(cache string) (l LongLedger, ok bool) {
 }
 
 // observeLong rolls perf.json's rows (roll, taken before perf.json pruned them) into the ledger.
-// The caller holds perf.lock and has just written perf.json, whose since is perfSince.
+// The caller holds perf.flock and has just written perf.json, whose since is perfSince.
 func observeLong(cache string, now, perfSince time.Time, roll []Daily) error {
 	l, ok := LoadLong(cache)
 	if !ok {

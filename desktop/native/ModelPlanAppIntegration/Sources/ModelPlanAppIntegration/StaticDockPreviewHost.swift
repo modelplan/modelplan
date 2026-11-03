@@ -53,6 +53,7 @@ public struct StaticDockGeometry {
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
+@MainActor private final class InertCockpitVeil: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 /// Empty-state copy must not swallow the neutral Dock's background grab area.
 @MainActor private final class StaticDockStatusLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -74,6 +75,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
     public var showSettings: (() -> Void)?
     public var requestHideDock:(() -> Void)?
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -96,7 +98,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let appearance: Appearance?
     private var attention = DockAttentionState()
     private var attentionSignals: [DockSubscriptionSignal] = []
-    private var attentionWasSliver = false
+    private var attentionWasExpanded = false
     public private(set) var menuNotice: DockNotice?
     /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
     public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
@@ -244,6 +246,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     /// Synthetic offscreen captures may select a deterministic backing scale.
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, rendering = false, menuOpen = false
+    private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
     private var rebuildPending = false
@@ -253,6 +256,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
     private var edgeViews: [DockEdge: DockInstrumentView] = [:]
     private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
+    func ownsDockMenu(_ menu: NSMenu) -> Bool {
+        if menu.delegate === self { return true }
+        return (menu.delegate as? DockSliverMenu)?.owner === self
+    }
     private var outlinePanel: NSPanel?
     private let outlineView = DockSnapOutlineView()
     private var cardID: String?
@@ -412,6 +419,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = NSButton(frame: .zero)
+    private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
@@ -444,7 +452,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        container.addSubview(dockView); container.addSubview(consoleButton)
+        cockpitVeil.wantsLayer = true; cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
+        cockpitVeil.isHidden = true
+        container.addSubview(dockView); container.addSubview(cockpitVeil); container.addSubview(consoleButton)
         bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -566,6 +576,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         self.snapshot = snapshot; self.diagnostics = diagnostics
         rebuild()
     }
+    func pauseForLifecycle() {
+        lifecycleSuspended = true
+        NotificationCenter.default.post(name: LivePrivateMenus.lifecyclePause, object: self)
+        setPresentationAllowed(false)
+    }
+    func resumeFromLifecycle() { lifecycleSuspended = false }
     public func setPresentationAllowed(_ allowed: Bool) {
         guard !retired else { return }
         inputGeneration &+= 1
@@ -724,7 +740,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
-        if let rect = geometry.consoleButton { consoleButton.frame = rect }
+        if let rect = geometry.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect }
+        cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
@@ -943,7 +960,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
-            attentionWasSliver = false; pointerSurface.stop()
+            attentionWasExpanded = false; pointerSurface.stop()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil { panel = makePanel(forDock: true) }
@@ -957,15 +974,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             let view = edgeViews[orientation] ?? dockView
             for child in container.subviews where child is DockInstrumentView && child !== view { child.removeFromSuperview() }
             if view.superview !== container { container.addSubview(view, positioned: .below, relativeTo: consoleButton) }
+            container.addSubview(cockpitVeil, positioned: .below, relativeTo: consoleButton)
             container.setFrameSize(view.frame.size)
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
-            if let rect = current.consoleButton { consoleButton.frame = rect }
+            if let rect = current.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect }
+            cockpitVeil.isHidden = cockpitEntryEnabled || current.consoleButton == nil
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
@@ -978,11 +997,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }
         panel.displayIfNeeded(); panel.orderFrontRegardless()
-        if panel.isVisible, value.state == .expanded, attentionWasSliver {
-            try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
-            publishAttention()
-        }
-        attentionWasSliver = panel.isVisible && value.state == .sliver
+        if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
+        attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
         publishPlacementObservation(value)
         reportVisibility(panel.isVisible)
@@ -1047,61 +1063,75 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
     }
     func menu() -> NSMenu {
-        let menu = NSMenu(); menu.delegate = self
+        let component = DockSliverMenu(labels: [:], handlers: [:])
+        component.owner = self
+        component.onMenuActuallyOpen = { [weak self] open in
+            guard let self else { return }; self.menuOpen = open; self.edge.refresh()
+        }
+        let menu = component.menu
+        component.retainWithMenu()
+        var items: [DockMenuPresentationItem] = []
+        if lifecycleSuspended {
+            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
+            items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.settings.value(preferences.language)))
+            items.append(.init(title: nil))
+            let english = preferences.language == .english
+            let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
+            items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
+            component.replace(with: items)
+            return menu
+        }
         if let lines = contentMenuStatusLines {
             for (index, text) in lines.enumerated() {
-                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.provider-status.\(index)")
-                menu.addItem(status)
+                items.append(.init(title: text, accessibilityID: "dock.provider-status.\(index)"))
             }
-            if !lines.isEmpty { menu.addItem(.separator()) }
+            if !lines.isEmpty { items.append(.init(title: nil)) }
         } else if let model {
             let emptyStatus = CommunityReaderStatusPresentation.emptyMenuLine(model, english: preferences.language == .english)
-            if let emptyStatus {
-                let status = NSMenuItem(title: emptyStatus, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.empty-reader-status-menu")
-                menu.addItem(status)
-            }
+            if let emptyStatus { items.append(.init(title: emptyStatus, accessibilityID: "dock.empty-reader-status-menu")) }
             for (index, text) in CommunityReaderStatusPresentation.menuLines(model, english: preferences.language == .english).enumerated() {
-                let status = NSMenuItem(title: text, action: nil, keyEquivalent: "")
-                status.isEnabled = false
-                status.setAccessibilityIdentifier("dock.reader-status.\(index)")
-                menu.addItem(status)
+                items.append(.init(title: text, accessibilityID: "dock.reader-status.\(index)"))
             }
-            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { menu.addItem(.separator()) }
+            if emptyStatus != nil || !model.readerDiagnostics.isEmpty { items.append(.init(title: nil)) }
         }
         if let model {
             for row in model.presentationRows.values.sorted(by: { $0.input.id < $1.input.id }) {
-                let item = NSMenuItem(title: row.input.name + ": " + row.reason + " — " + row.nextStep, action: #selector(openSettings), keyEquivalent: "")
-                item.target = self
-                menu.addItem(item)
+                items.append(.init(title: row.input.name + ": " + row.reason + " — " + row.nextStep,
+                                   action: { [weak self] in self?.openSettings() }))
             }
         }
         let english = application == nil || preferences.language == .english
-        let quitTitle: String
+        let quit: String
         switch (purpose, english) {
-        case (.production, true): quitTitle = "Quit ModelPlan"
-        case (.production, false): quitTitle = "退出 ModelPlan"
-        case (.selfTest, true): quitTitle = "Quit preview"
-        case (.selfTest, false): quitTitle = "退出自测版"
+        case (.production, true): quit = "Quit ModelPlan"
+        case (.production, false): quit = "退出 ModelPlan"
+        case (.selfTest, true): quit = "Quit preview"
+        case (.selfTest, false): quit = "退出自测版"
         }
-        menu.addItem(withTitle: quitTitle, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(.separator())
-        let hideTitle=preferences.language == .english ? "Hide Dock" : "隐藏挂件"
-        let cockpitTitle = preferences.language == .english ? "Open Cockpit" : "打开驾驶舱"
-        for (title, action) in [(cockpitTitle, #selector(openConsole)), (EngineRowsText.settings.value(preferences.language), #selector(openSettings)), (hideTitle, #selector(hideDockMenu))] {
-            let item = menu.addItem(withTitle: title, action: action, keyEquivalent: ""); item.target = self
-        }
+        items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
+        items.append(.init(title: nil))
+        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
+        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: english ? "Hide Dock" : "隐藏挂件", action: { [weak self] in self?.hideDockMenu() }))
+        component.replace(with: items)
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
     public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
-    @objc private func openConsole() {
-        guard permitted, !retired, let showConsole else { return }
+    func acknowledgeDockReveal() {
+        guard permitted, !retired else { return }
+        try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
+        publishAttention()
+    }
+    public func acknowledgeCockpitOpening() {
+        guard cockpitEntryEnabled, !retired else { return }
         try? attention.acknowledge(.cockpitOpening, signals: attentionSignals, at: currentDate())
-        publishAttention(); dismissCard(); showConsole()
+        publishAttention()
+    }
+    @objc private func openConsole() {
+        guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
+        acknowledgeCockpitOpening(); dismissCard(); showConsole()
     }
     @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
     @objc private func hideDockMenu() {

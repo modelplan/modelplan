@@ -192,7 +192,7 @@ private actor RowsEntryClient: EngineClient {
         let settingsStore = try SettingsStore(url: profile.appendingPathComponent("settings.json"))
         try await settingsStore.update { $0.language = .english }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: settingsStore, createsNativePanels: false,
+            settingsStore: settingsStore, createsNativePanels: false, cockpitEntryEnabled: true,
             makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) },
             makeSettingsSurface: { _ in settingsSurface },
             makeConsole: { let surface = EntryConsoleSurface($0); consoleSurface = surface; return surface },
@@ -214,6 +214,7 @@ private actor RowsEntryClient: EngineClient {
         app.menuWillOpen(trackedStatus); app.composition.dock.menuWillOpen(trackedDock)
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: trackedDock)
         let retainedButUntrackedDock = app.composition.dock.menu()
+        XCTAssertFalse(trackedDock === retainedButUntrackedDock, "A retained old menu must remain independently scrubbed")
         let unrelated = NSMenu()
         unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
         let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items

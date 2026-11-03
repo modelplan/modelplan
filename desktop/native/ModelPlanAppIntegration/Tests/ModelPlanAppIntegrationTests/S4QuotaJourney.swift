@@ -192,7 +192,7 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
-    static func announcedMenuIndicator(capture:URL) async throws -> String {
+    static func announcedMenuIndicator(capture:URL) async throws -> Bool {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
         let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
@@ -218,9 +218,13 @@ private actor S4RowsClient: EngineClient {
             await entry.composition.stop()
             throw Failure(description:"announced event must reach the normal host before the menu indicator is tested")
         }
-        let title=entry.composition.menuPresentation.title
+        let displayed = entry.noticeIndicator.notice == entry.composition.dock.menuNotice
+        entry.composition.dock.setPresentationAllowed(true)
+        try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
+        entry.composition.dock.acknowledgeDockReveal()
+        try require(entry.noticeIndicator.notice == nil, "opening Dock must clear the indicator without cockpit")
         await entry.composition.stop()
-        return title
+        return displayed
     }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
@@ -240,7 +244,7 @@ private actor S4RowsClient: EngineClient {
         defer { try? FileManager.default.removeItem(at:directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english; $0.notifications.optedIn = true }
-        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
         var deliveries:[String]=[]
         entry.composition.setResetNotificationDelivery { deliveries.append($0) }
         await entry.prepare();await entry.composition.start()
@@ -278,6 +282,11 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(rows);try await Task.sleep(for:.milliseconds(50))
         try require(recoveredDeliveries.count == 1,"recovered ledger must deduplicate repeated events")
         recovered.stop()
+        entry.composition.dock.setPresentationAllowed(true)
+        try require(entry.noticeIndicator.notice != nil, "normal entry must show the projected menu notice")
+        entry.composition.dock.showConsole = {}
+        entry.composition.dock.perform(NSSelectorFromString("openConsole"))
+        try require(entry.noticeIndicator.notice == nil, "cockpit acknowledgement must clear the menu indicator")
         let signals=entry.composition.presentedContent.signals
         guard let matching=signals.first(where:{$0.id == "0123456789abcdef"}),let unmatched=signals.first(where:{$0.id == "fedcba9876543210"}) else { throw Failure(description:"event members missing") }
         try require(matching.reset?.id == decoded[0].id && unmatched.reset == nil,"only the matching member must expose the event signal")
@@ -457,9 +466,9 @@ private actor S4RowsClient: EngineClient {
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
         try require(firstCard.rows.contains { $0.id == "source" && $0.value == "Saved sign-in" },"card must retain its localized reported source")
-        try require(firstCard.rows.contains{$0.kind == .reserve && $0.value.contains("42.5")},"first card needs only its own reported credits")
-        try require(secondCard.rows.contains{$0.kind == .reserve && $0.value.contains("7")},"second card needs its own reported credits")
-        try require(!secondCard.rows.contains{$0.value.contains("42.5")},"source totals must not leak across members")
+        try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
+        try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
+        try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Wrong shared alias",percentagePin:.fiveHour)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
