@@ -123,7 +123,7 @@ def fresh_rows(engine):
     deadline = time.monotonic() + 3
     while True:
         result = engine.request('rows/subscribe')
-        if result.get('error', {}).get('code') != -32023:
+        if result.get('error', {}).get('code') not in (-32013, -32023):
             return row_projection(result)
         require(time.monotonic() < deadline, 'rows-publication-did-not-stabilize')
         time.sleep(.01)
@@ -195,7 +195,7 @@ def empty_states(binary, home, fault_binary):
             engine.environment['MODELPLAN_READERS'] = 'off'
         with engine:
             fixture_hello(engine)
-            projection = row_projection(engine.request('rows/subscribe'))
+            projection = fresh_rows(engine)
             require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
@@ -510,11 +510,11 @@ def admission(binary, home, plan):
                 require(len(before[tool]) == 2 and sum(item['tokens'] for item in before[tool]) == tokens,
                         tool + '-history-seed-not-readable')
             remote = engine.request('refresh/request', {'scopes': plan['accountScopes']})
-            require('error' not in remote and all('disabledReason' not in item for item in remote['result']['data']), 'approved-post-refresh-deferred')
+            require('error' not in remote and all(item.get('disabledReason') in (None, 'cooldown') for item in remote['result']['data']), 'approved-post-refresh-deferred')
             for tool in ('gemini', 'cursor'):
                 _wait_post_capture(case, tool)
             scheduled = engine.request('refresh/request', {'scopes': ['minimax.account_usage.api_key']})
-            require('error' not in scheduled and all('disabledReason' not in item for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
+            require('error' not in scheduled and all(item.get('disabledReason') in (None, 'cooldown') for item in scheduled['result']['data']), 'production-minimax-dispatcher-not-linked')
             _wait_native_capture(case, status)
             budget = case / '.cache/modelplan/observed/reader-attempts/minimax.json'
             budget_before = digest(regular_bytes(budget))

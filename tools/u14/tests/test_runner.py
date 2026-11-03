@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent.parent
 sys.path.insert(0, str(ROOT))
 from engine_process import EngineProcess, EngineFailure, build_binary
-from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors
+from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows
 from engine_build import build_tools
 from shape_home import build_home
 from contracts import load_json, encoded, write_private
@@ -335,6 +335,18 @@ class EpochFloorTests(unittest.TestCase):
         self.assertEqual(self.engine.floor, 7)
         with self.assertRaises(EngineFailure):
             self.engine._validate(self.frame('current', 6, {'items': []}))
+
+
+class RefreshRaceTests(unittest.TestCase):
+    def test_rows_retry_transient_busy_and_consent_change(self):
+        engine = mock.Mock()
+        engine.request.side_effect = [
+            {'error': {'code': -32013}},
+            {'error': {'code': -32023}},
+            {'result': {'data': {'projection': {'rows': []}}}},
+        ]
+        self.assertEqual(fresh_rows(engine), {'rows': []})
+        self.assertEqual(engine.request.call_count, 3)
 
 
 if __name__ == '__main__':
