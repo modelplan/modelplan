@@ -39,10 +39,10 @@ type Reply struct {
 }
 
 type Config struct {
-	Version  string
-	Backend  Backend
-	Handlers map[string]Handler
-	SessionStarted func()
+	Version          string
+	Backend          Backend
+	Handlers         map[string]Handler
+	SessionStarted   func()
 	RefreshDecisions func() []wire.RefreshDecision
 	// Shorter durations are for synthetic transport tests; zero uses wire limits.
 	WriteTimeout   time.Duration
@@ -595,7 +595,9 @@ func (s *Server) initialize(r wire.Request) {
 		caps := s.capabilities()
 		s.out.controlMessage(success(p.SessionID, r.ID, v.Stamp, nil, wire.InitializeResult{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, Capabilities: caps}))
 		s.out.controlMessage(notification(p.SessionID, "engine/health", v.Stamp, nil, v.Health))
-		if s.config.SessionStarted != nil { s.config.SessionStarted() }
+		if s.config.SessionStarted != nil {
+			s.config.SessionStarted()
+		}
 	}()
 }
 func validSession(id string) bool {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 5b0542dd04388a59464ce0edaca0df01e4adb732e651e3b1c4a3f55e93ecdab7
+// Schema SHA-256: 5013b10aa9638ccd275fc55268f3fe81f4b9026ac48480f89172c1c4c67067e0
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -209,6 +209,7 @@ export type WireWindow = {
   readonly "resetMode": "fixed" | "rolling" | "unknown";
   readonly "resetsAt": string | null;
   readonly "role": "session" | "daily" | "weekly" | "monthly" | "other";
+  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other" | null;
   readonly "validUntil": string | null;
 };
 
@@ -1432,6 +1433,23 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "other"
         ],
         "type": "string"
+      },
+      "source": {
+        "anyOf": [
+          {
+            "enum": [
+              "local_history",
+              "runtime",
+              "saved_login",
+              "api_key",
+              "other"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "validUntil": {
         "anyOf": [

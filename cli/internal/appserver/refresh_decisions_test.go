@@ -16,7 +16,7 @@ func TestRefreshDecisionRingBoundsCodesAndLifetime(t *testing.T) {
 	}
 	ring.add(now, "private-path-canary", refreshFailed, refreshUnavailable)
 	ring.add(now, consent.ScopeCodexRuntimeUsage, refreshOutcome("raw-error-canary"), refreshUnavailable)
-	got := ring.snapshot(now.Add(24*time.Second))
+	got := ring.snapshot(now.Add(24 * time.Second))
 	if len(got) != 20 || got[0].AgoSeconds != 21 || got[19].AgoSeconds != 2 {
 		t.Fatalf("unexpected bounded history: %+v", got)
 	}

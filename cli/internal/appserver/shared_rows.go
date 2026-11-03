@@ -86,14 +86,20 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 		for _, window := range account.Windows {
 			source := rows.WindowSourceOther
 			switch window.Origin {
-			case "local_history": source = rows.WindowSourceLocalHistory
-			case "runtime": source = rows.WindowSourceRuntime
+			case "local_history":
+				source = rows.WindowSourceLocalHistory
+			case "runtime":
+				source = rows.WindowSourceRuntime
 			default:
 				switch route {
-				case rows.RouteLocalLog, rows.RouteStatusLine, rows.RouteLocalSQLite: source = rows.WindowSourceLocalHistory
-				case rows.RouteRuntimeRPC: source = rows.WindowSourceRuntime
-				case rows.RouteSavedLoginAPI: source = rows.WindowSourceSavedLogin
-				case rows.RouteAPIKeyAPI: source = rows.WindowSourceAPIKey
+				case rows.RouteLocalLog, rows.RouteStatusLine, rows.RouteLocalSQLite:
+					source = rows.WindowSourceLocalHistory
+				case rows.RouteRuntimeRPC:
+					source = rows.WindowSourceRuntime
+				case rows.RouteSavedLoginAPI:
+					source = rows.WindowSourceSavedLogin
+				case rows.RouteAPIKeyAPI:
+					source = rows.WindowSourceAPIKey
 				}
 			}
 			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}

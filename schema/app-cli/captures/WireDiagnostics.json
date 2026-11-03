@@ -1,4 +1,12 @@
 {
+  "refreshDecisions": [
+    {
+      "agoSeconds": 1,
+      "scope": "codex.runtime_usage",
+      "outcome": "not_attempted",
+      "reason": "startup"
+    }
+  ],
   "protocolVersion": "1.0",
   "serverVersion": "synthetic",
   "uptimeSeconds": 1,

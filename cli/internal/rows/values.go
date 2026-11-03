@@ -164,6 +164,7 @@ func SanitizeModelIDs(ids []string) []string {
 	}
 	return scope.Models
 }
+
 // windowValidUntil applies the account's freshness interval to this window's
 // own observation, never to a newer reading of another window.
 func windowValidUntil(account Account, window Window) *time.Time {
@@ -210,7 +211,8 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 		var source *WindowSource
 		switch v.Source {
 		case WindowSourceLocalHistory, WindowSourceRuntime, WindowSourceSavedLogin, WindowSourceAPIKey, WindowSourceOther:
-			value := v.Source; source = &value
+			value := v.Source
+			source = &value
 		}
 		w := Window{Source: source, ModelScope: scope, ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
 		w.ValidUntil = windowValidUntil(account, w)

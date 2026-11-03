@@ -153,7 +153,9 @@ func CockpitDetailsEnabled(ctx context.Context) bool {
 
 // WindowSourcesEnabled reports the negotiated per-window provenance contract.
 const CapabilityWindowSources = "windowSourcesV1"
+
 type windowSourcesContextKey struct{}
+
 func WindowSourcesEnabled(ctx context.Context) bool {
 	enabled, _ := ctx.Value(windowSourcesContextKey{}).(bool)
 	return enabled

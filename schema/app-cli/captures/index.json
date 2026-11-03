@@ -334,6 +334,14 @@
       "type": "RowsWindow",
       "optional": [
         {
+          "field": "source",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "modelScope",
           "omission": true,
           "null": false,
@@ -742,6 +750,14 @@
       "type": "WireDiagnostics",
       "optional": [
         {
+          "field": "refreshDecisions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "lastErrorClass",
           "omission": true,
           "null": true,
@@ -1074,6 +1090,17 @@
         "code",
         "message",
         "data"
+      ]
+    },
+    {
+      "file": "WireRefreshDecision.json",
+      "type": "WireRefreshDecision",
+      "optional": [],
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
       ]
     },
     {

@@ -141,6 +141,7 @@
             },
             "windows": [
               {
+                "source": "local_history",
                 "modelScope": {
                   "models": [
                     "opus"
@@ -242,6 +243,7 @@
             },
             "windows": [
               {
+                "source": "local_history",
                 "modelScope": {
                   "models": [
                     "opus"

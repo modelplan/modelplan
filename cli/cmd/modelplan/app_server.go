@@ -117,7 +117,10 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	var sessionStarted func()
 	var decisions func() []wire.RefreshDecision
-	if scheduler != nil { sessionStarted = scheduler.StartAutomatic; decisions = scheduler.Decisions }
+	if scheduler != nil {
+		sessionStarted = scheduler.StartAutomatic
+		decisions = scheduler.Decisions
+	}
 	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions})
 	broker.Request = server.ReadCredential
 	return server, closeBackend, nil
