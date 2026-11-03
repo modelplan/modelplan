@@ -82,7 +82,9 @@ func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.T
 		return false
 	}
 	for _, window := range s.Windows {
-		if window.ResetsAt == nil || now.Before(*window.ResetsAt) { return true }
+		if window.ResetsAt == nil || now.Before(*window.ResetsAt) {
+			return true
+		}
 	}
 	return false
 }
