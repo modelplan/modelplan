@@ -3,6 +3,24 @@ import Foundation
 import XCTest
 
 @MainActor final class S4QuotaJourneyTests:XCTestCase {
+    func testFailureIsReportedBeforeThrowingScratchTeardown() {
+        struct SyntheticCleanupError:Error {}
+        let existingFixture=URL(fileURLWithPath:#filePath)
+        XCTExpectFailure("The synthetic journey failure is reported") {
+            do {
+                defer {
+                    XCTExpectFailure("The synthetic cleanup failure is reported") {
+                        S4QuotaJourney.removeScratch(existingFixture,remove:{ _ in throw SyntheticCleanupError() })
+                    }
+                }
+                throw S4QuotaJourney.Failure(description:"original synthetic journey failure")
+            } catch let failure as S4QuotaJourney.Failure {
+                XCTAssertEqual(failure.description,"original synthetic journey failure")
+            } catch {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
     func testNormalEntryStrictScopeAndResetEvents() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.strictScopeAndEvents(capture:capture)
