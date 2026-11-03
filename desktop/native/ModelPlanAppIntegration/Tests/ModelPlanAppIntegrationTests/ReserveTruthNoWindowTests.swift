@@ -6,7 +6,32 @@ import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
+import ModelPlanSettings
 @testable import ModelPlanAppIntegration
+
+private actor ReserveJourneyClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
+    let store: EngineStore, rows: WireRowsSnapshot
+    let context = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
+    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    func start() async throws -> EngineDeliveryContext {
+        await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
+            consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
+        return context
+    }
+    func stop() async {}
+    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-rows")) }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
 
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
@@ -226,7 +251,8 @@ import ModelPlanWire
             XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
-            XCTAssertNil(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve }
+            XCTAssertEqual(heldReserve?.value, "12.5 credits"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
             // Isolate the representation gap: even an explicitly supplied valid
             // weekly value is suppressed when overall state is stale.
             var staleProbe = heldInput
@@ -289,9 +315,10 @@ import ModelPlanWire
             XCTAssertNotNil(reserveRow(content.snapshot, "bbbbbbbbbbbbbbbb"))
             let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline))
             let held = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: firstDeadline))
-            // Current behaviour, not an adjudication of the second account's reserve policy.
-            XCTAssertNil(reserveRow(held.snapshot, "aaaaaaaaaaaaaaaa"))
-            XCTAssertNil(reserveRow(held.snapshot, "bbbbbbbbbbbbbbbb"))
+            // Both remain admitted last-known readings; this does not classify
+            // the freshness of each member's separate quota windows.
+            XCTAssertEqual(reserveRow(held.snapshot, "aaaaaaaaaaaaaaaa")?.detail, "Last known reading")
+            XCTAssertEqual(reserveRow(held.snapshot, "bbbbbbbbbbbbbbbb")?.detail, "Last known reading")
             let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
             XCTAssertLessThan(firstDeadline, secondDeadline)
 
@@ -359,10 +386,11 @@ import ModelPlanWire
         XCTAssertEqual(largeOther?.value, "1000000000000001")
     }
 
-    func testExpiredAndRevokedDoNotExposeReserveForAnyUnit() async throws {
+    func testLastKnownReserveRemainsLabeledAndRevokedDoesNotExposeIt() async throws {
         for unit in ["credits", "other", "money"] {
             let expired = try await projection(balance: 12.5, unit: unit, english: true, state: .expired)
-            XCTAssertNil(expired.1)
+            XCTAssertNotNil(expired.1)
+            XCTAssertTrue(expired.1?.detail.contains("Last known reading") == true)
             let revoked = try await projection(balance: 12.5, unit: unit, english: true, state: .revoked)
             XCTAssertNil(revoked.1)
             // Deliberately contradictory wire: denied consent must not expose retained values.
@@ -397,6 +425,50 @@ import ModelPlanWire
     func testConsentGenerationClearWithdrawsReserveFromSameStoreAndProvider() async throws {
         let cleared = try await projection(balance: 12.5, unit: "credits", english: true, clearAfter: true)
         XCTAssertNil(cleared.0); XCTAssertNil(cleared.1)
+    }
+
+    func testNormalEntryRetainedReserveIsLabeledAndClearWithdrawsIt() async throws {
+        let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
+        var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
+        var account = (row["accounts"] as! [[String: Any]])[0], window = (account["windows"] as! [[String: Any]])[0]
+        row["id"] = "codex"; row["name"] = ["en": "Codex", "zh": "Codex"]; row["vendorKey"] = "openai"
+        row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu"]; row["state"] = "stale"
+        row["reason"] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
+        row["nextStep"] = ["action": "refresh", "text": ["en": "Refresh when permitted", "zh": "在允许时刷新"], "availableAt": NSNull(), "disabledReason": NSNull()]
+        row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
+        account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "retained"
+        account["observedAt"] = "2001-01-01T00:00:00Z"; account["freshUntil"] = "2001-01-02T00:00:00Z"
+        account["lastFailure"] = NSNull(); account["plan"] = ["id": "unknown", "name": NSNull()]
+        account["credits"] = ["balance": 12.5, "unit": "credits"]
+        window["id"] = "session:18000:main:main"; window["role"] = "session"; window["durationSeconds"] = 18000
+        window["label"] = ["en": "Session", "zh": "会话"]; window["limitKey"] = "main"; window["poolKey"] = "main"
+        window.removeValue(forKey: "modelScope"); window["observedAt"] = "2001-01-01T00:00:00Z"
+        window["resetsAt"] = "2001-02-01T00:00:00Z"; window["validUntil"] = "2001-01-02T00:00:00Z"; window["current"] = false
+        account["windows"] = [window]; row["accounts"] = [account]; projection["rows"] = [row]
+        let summary = ["en": "Readings and actions are available", "zh": "读数或操作可用"]
+        projection["rowsSummary"] = ["state": "ok", "reason": ["code": "ok", "text": summary], "text": summary, "nextStep": NSNull()]
+        projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let settings = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
+        try await settings.update { $0.language = .english }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"),
+            applicationVersion: "reserve-synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
+            settingsStore: settings, createsNativePanels: false, makeClient: { _, store in ReserveJourneyClient(store: store, rows: rows) }, activateSettings: {})
+        await app.prepare(); await app.composition.start()
+        let content = app.composition.presentedContent
+        let retained = try XCTUnwrap(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        XCTAssertEqual(retained.value, "12.5 credits"); XCTAssertEqual(retained.detail, "Last known reading")
+        let card = try XCTUnwrap(app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
+        XCTAssertEqual(card.rows.first { $0.kind == .reserve }?.detail, "Last known reading")
+        let delivery = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery,
+            nextFloor: .init(storeEpoch: "reserve-synthetic", generation: 2))))
+        XCTAssertNil(app.composition.presentedContent.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
+        XCTAssertNil(try app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
+        await app.composition.stop()
     }
 
     func testMixedAccountDeadlinesHeldRefreshAndClearInSameStore() async throws {
@@ -611,11 +683,13 @@ import ModelPlanWire
         let retainedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         XCTAssertLessThan(Date(timeIntervalSince1970: 1_800_000_000), retainedDeadline)
         let atExpiry = try await projection(balance: 12.5, unit: "credits", english: true, state: .atExpiry)
-        XCTAssertEqual(atExpiry.0?.dataState, .unavailable); XCTAssertNil(atExpiry.1)
+        XCTAssertEqual(atExpiry.0?.dataState, .unavailable); XCTAssertEqual(atExpiry.1?.detail, "Last known reading")
         let retainedExpired = try await projection(balance: 12.5, unit: "credits", english: true, state: .retainedExpired)
-        XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertNil(retainedExpired.1)
+        XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertEqual(retainedExpired.1?.value, "12.5 credits")
+        XCTAssertEqual(retainedExpired.1?.detail, "Last known reading")
         let expired = try await projection(balance: 12.5, unit: "credits", english: true, state: .expired)
-        XCTAssertEqual(expired.0?.dataState, .unavailable); XCTAssertNil(expired.1)
+        XCTAssertEqual(expired.0?.dataState, .unavailable); XCTAssertEqual(expired.1?.value, "12.5 credits")
+        XCTAssertEqual(expired.1?.detail, "Last known reading")
         let refreshed = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed)
         XCTAssertEqual(refreshed.0?.dataState, .fresh); XCTAssertEqual(refreshed.1?.value, "12.5 credits")
         let beforeExpiry = Date(timeIntervalSince1970: 1_800_000_000)

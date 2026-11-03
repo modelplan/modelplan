@@ -194,10 +194,14 @@ public enum EngineDeadlineFacts {
                 reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
             }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
-               (date(row.expiresAt).map { context.now < $0 } ?? true),
-               (date(account.freshUntil).map { context.now < $0 } ?? true),
                account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
+                let lastKnown = account.valueState == .retained || row.state != .fresh ||
+                    (date(row.expiresAt).map { context.now >= $0 } ?? false) ||
+                    (date(account.freshUntil).map { context.now >= $0 } ?? false)
+                func reserveDetail(_ detail: String = "") -> String {
+                    [detail, lastKnown ? (english ? "Last known reading" : "上次读数") : ""].filter { !$0.isEmpty }.joined(separator: " · ")
+                }
                 switch credits.unit {
                 case "credits":
                     let number:String?
@@ -206,19 +210,19 @@ public enum EngineDeadlineFacts {
                     case .fallback(let value, _): number=String(value)
                     case .missing,.invalid: number=nil
                     }
-                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number+(english ? " credits":" 点"))) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:english ? "Currency not reported":"未报告币种"))
-                case "": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not reported":"未报告单位"))
+                    if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number+(english ? " credits":" 点"),detail:reserveDetail())) }
+                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:reserveDetail(english ? "Currency not reported":"未报告币种")))
+                case "": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:reserveDetail(english ? "Unit not reported":"未报告单位")))
                 case "other":
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown) {
                     case .rendered(_,_,let text,_):
-                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:text,detail:english ? "Unit unavailable":"单位不可用"))
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:text,detail:reserveDetail(english ? "Unit unavailable":"单位不可用")))
                     case .fallback(let value,_),.notApplicable(let value?,_):
-                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(value),detail:english ? "Unit unavailable; exact value shown":"单位不可用；显示原始数值"))
+                        reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(value),detail:reserveDetail(english ? "Unit unavailable; exact value shown":"单位不可用；显示原始数值")))
                     case .missing,.invalid,.notApplicable(nil,_): break
                     }
-                default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:english ? "Unit not recognized":"单位未识别"))
+                default: reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Reserve":"储备",value:String(balance),detail:reserveDetail(english ? "Unit not recognized":"单位未识别")))
                 }
             }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
