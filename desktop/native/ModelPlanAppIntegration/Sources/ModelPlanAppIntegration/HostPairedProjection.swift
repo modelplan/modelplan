@@ -59,7 +59,7 @@ import ModelPlanDock
         do {
             let result = try HostVerifiedWindowAdapter.candidate(.init(content: pair.content,
                 deadline: deadline, verifiedWindows: proofs, evaluatedAt: context.now,
-                sourceToken: token), sourceIsCurrent: isCurrent)
+                sourceToken: token, language: provider.language), sourceIsCurrent: isCurrent)
             guard isCurrent(token) else { throw HostVerifiedWindowError.staleSnapshot }
             evaluatedAt = context.now
             return result
@@ -77,10 +77,17 @@ import ModelPlanDock
     private var evaluatedAt: Date?
     var isCurrent: (@MainActor () -> Bool)?
     var onStale: (@MainActor () -> Void)?
+    var fallbackText: (@MainActor () -> String?)?
     func install(_ value: DockContent, evaluatedAt: Date) {
         self.value = value; self.evaluatedAt = evaluatedAt
     }
     func clear() { value = nil; evaluatedAt = nil }
+    /// A presentation-only re-projection may retain the current card only
+    /// while the same delivery and its original deadline remain valid.
+    func isAdmissible(at now: Date) -> Bool {
+        guard let value, let evaluatedAt else { return false }
+        return valid(value, evaluatedAt: evaluatedAt, now: now)
+    }
     func makeContent(_ context: DockContentContext) -> DockContent {
         guard let value, let evaluatedAt else { return empty() }
         guard valid(value, evaluatedAt: evaluatedAt, now: context.now) else {
@@ -100,5 +107,8 @@ import ModelPlanDock
         }
         return true
     }
-    private func empty() -> DockContent { DockContent(snapshot: .init(inputs: []), menuStatusLines: []) }
+    private func empty() -> DockContent {
+        let text = fallbackText?()
+        return DockContent(snapshot: .init(inputs: []), menuStatusLines: text.map { [$0] } ?? [], emptyText: text)
+    }
 }

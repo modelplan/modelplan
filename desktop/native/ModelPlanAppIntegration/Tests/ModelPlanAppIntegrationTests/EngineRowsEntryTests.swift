@@ -9,13 +9,17 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor RowsEntryClient: EngineClient {
-    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool {
+        context.sessionID == "synthetic-entry" && context.floor.storeEpoch == "synthetic-entry" &&
+            context.floor.generation == 1 && context.revision == 1
+    }
     let store: EngineStore
     let rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         return context
     }
@@ -199,7 +203,9 @@ private actor RowsEntryClient: EngineClient {
             activateSettings: { activationCount += 1 })
         XCTAssertNotNil(app.composition.dock.showSettings, "Normal Dock Settings must not be a nil action")
         XCTAssertNotNil(app.composition.dock.showConsole, "Normal Dock Console must not be a nil action")
-        await app.prepare(); await app.composition.start()
+        await app.prepare()
+        XCTAssertTrue(app.dockHelpInstalled, "normal entry installs the real Help presenter and Dock binding")
+        await app.composition.start()
         app.composition.dock.showSettings?(); await settingsSurface.waitForShow()
         XCTAssertEqual(settingsSurface.shown, 1); XCTAssertEqual(activationCount, 1)
         app.composition.dock.showConsole?(); XCTAssertEqual(consoleSurface?.shown, 1)

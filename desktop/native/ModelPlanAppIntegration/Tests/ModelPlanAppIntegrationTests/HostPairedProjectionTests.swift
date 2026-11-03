@@ -57,7 +57,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -74,11 +74,14 @@ private actor EntrySyntheticClient: EngineClient {
         var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
         var session = windows[0]
         row["consent"] = "allowed"; row["state"] = "fresh"; row["surfaces"] = ["dock"]
+        row["name"] = ["en": "Synthetic account", "zh": "合成账户"]
         row["expiresAt"] = "2027-01-01T00:00:00Z"
         row["stateAfterExpiry"] = ["state": "stale",
             "reason": ["code": "stale_reading", "text": ["en": "Last known", "zh": "旧读数"]],
             "nextStep": NSNull()]
-        account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
+        if unbound { account["subscriptionRef"] = NSNull() }
+        else { account["subscriptionRef"] = "aaaaaaaaaaaaaaaa" }
+        account["valueState"] = "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
         session["id"] = "session:18000:main:main"; session["role"] = "session"
@@ -223,6 +226,110 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-language-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        var acceptedStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
+            activateSettings: {})
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa"
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
+        app.composition.dock.dockView.onAction?(.subscription(id))
+        XCTAssertFalse(app.composition.dock.card.isHidden)
+        XCTAssertTrue(app.composition.dock.card.accessibilityPerformPress(), "Pinning must be explicit")
+        let store = try XCTUnwrap(acceptedStore), before = store.snapshot.rows?.sequence
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(store.snapshot.rows?.sequence, before, "no new engine delivery")
+        XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the pinned card")
+        let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(card.name, "合成账户")
+        XCTAssertEqual(card.stateLabel, "旧读数")
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(try app.composition.dock.cardContent(for: id, at: wall))
+        XCTAssertFalse(app.composition.menuPresentation.detail.contains("合成账户"))
+        await app.composition.stop()
+    }
+
+    func testNormalEntryUniqueUnboundMemberUsesSnapshotScopedProofAndClears() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-unbound-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, unbound: true)
+        var acceptedStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
+            activateSettings: {})
+        await app.prepare(); await app.composition.start()
+        let id = "codex#saved_login_api"
+        let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, "75%")
+        let store = try XCTUnwrap(acceptedStore)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(try app.composition.dock.cardContent(for: id, at: wall))
+        await app.composition.stop()
+    }
+
+    func testNormalHostCloseCancelsDeadlineAndRetiresCachedContent() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-close-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        await app.prepare(); await app.composition.start()
+        XCTAssertFalse(app.composition.presentedContent.snapshot.inputs.isEmpty)
+        let late = try XCTUnwrap(timer.action)
+        app.composition.dock.close()
+        XCTAssertNil(timer.action)
+        XCTAssertTrue(app.composition.presentedContent.snapshot.inputs.isEmpty)
+        late()
+        XCTAssertTrue(app.composition.presentedContent.snapshot.inputs.isEmpty)
+        await app.composition.stop()
+    }
+
+    func testNormalEntryMenuShowsActionableLoadingAndFailureWithoutAdmittedRows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        var acceptedStore: EngineStore?
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            makeClient: { _, store in acceptedStore = store; return PairedSyntheticClient() }, activateSettings: {})
+        await app.prepare()
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("Loading"))
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
+        app.renderMenu()
+        XCTAssertFalse(app.liveStatusMenu?.items.first?.title.isEmpty ?? true)
+        let initialDockMenu = app.composition.dock.menu()
+        XCTAssertTrue(initialDockMenu.items.contains { $0.title.contains("Loading") && $0.title.contains("Settings") })
+        let store = try XCTUnwrap(acceptedStore)
+        await store.consume(.connection(.stopped(.requested)))
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("unavailable"))
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
+        let failedDockMenu = app.composition.dock.menu()
+        XCTAssertTrue(failedDockMenu.items.contains { $0.title.contains("unavailable") && $0.title.contains("Settings") })
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("不可用"))
+        XCTAssertTrue(app.composition.menuPresentation.detail.contains("设置"))
+        await app.composition.stop()
     }
 
 }

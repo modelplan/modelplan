@@ -152,8 +152,20 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var followedDisplayID: String?
     private lazy var displayFollower = makeDisplayFollower()
     private var application: SettingsApplication?
-    public var currentMenuBarPreferences: SettingsPreferences? { retired ? nil : application?.snapshot.preferences }
+    public var currentMenuBarPreferences: SettingsPreferences? { (retired || retiring) ? nil : application?.snapshot.preferences }
     public var menuBarPreferencesChanged: (() -> Void)?
+    /// Composition invalidates its retained provider and deadline before close returns.
+    var onWillRetire: (() -> Void)?
+    /// Screen-coordinate anchors exist only while the actual Dock panel is visible.
+    var dockHelpSurfaceDidChange: ((DockHelpSurface?) -> Void)? {
+        didSet { dockHelpSurfaceDidChange?(lastDockHelpSurface) }
+    }
+    private var lastDockHelpSurface: DockHelpSurface?
+    private var dockHelpInputGeneration: UInt64?
+    var currentDockHelpSurface: DockHelpSurface? {
+        guard let surface = lastDockHelpSurface, isCurrentDockHelpSurface(surface) else { return nil }
+        return surface
+    }
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
     private var contentProvider: any DockContentProvider
@@ -252,7 +264,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
     /// Synthetic offscreen captures may select a deterministic backing scale.
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
-    private var permitted = false, retired = false, rendering = false, menuOpen = false
+    private var permitted = false, retired = false, retiring = false, rendering = false, menuOpen = false
     private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -666,7 +678,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         displayFollower.start(); displayFollower.sample()
     }
     private func rebuild() {
-        guard !retired, application != nil else { return }
+        guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
         guard !rendering else { return }
         rendering = true
@@ -677,7 +689,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
     }
     private func passIsCurrent(_ generation: UInt64) -> Bool {
-        guard !retired else { dockView.dispose(); return false }
+        guard !retired, !retiring else { dockView.dispose(); return false }
         guard inputGeneration == generation else { rebuildPending = true; return false }
         return true
     }
@@ -1005,7 +1017,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         pointerSurface.setActive(true)
     }
     private func present(_ value: DockEdgePresentation) {
-        defer { if !rendering { bindInteractionInput(); interactionController?.refresh() } }
+        defer {
+            publishDockHelpSurface(value)
+            if !rendering { bindInteractionInput(); interactionController?.refresh() }
+        }
         // Native panels and the no-window construction checks share this actual input binding.
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
@@ -1013,7 +1028,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             attentionWasExpanded = false; pointerSurface.stop()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
-        if panel == nil { panel = makePanel(forDock: true) }
+        if panel == nil {
+            let newPanel = makePanel(forDock: true)
+            panel = newPanel
+            NotificationCenter.default.addObserver(self, selector: #selector(dockHelpOcclusionChanged(_:)),
+                name: NSWindow.didChangeOcclusionStateNotification, object: newPanel)
+        }
         guard let panel else { publishPlacementObservation(nil); return }
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
@@ -1055,6 +1075,81 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         #if DEBUG && MODELPLAN_U5_REAL_INPUT
         U5RealInputObservation.install(self, panel: panel)
         #endif
+    }
+    /// Samples only registered, hit-testable body/grip points. Missing geometry
+    /// remains absent; a panel frame is never substituted for an actual anchor.
+    private func dockHelpDragAnchor(in view: DockInstrumentView, regions: DockBackgroundDragRegions) -> CGRect? {
+        DockHelpAnchorSearch.find(paths: regions.grips + [regions.body],
+                                  visible: view.visibleRect, contains: regions.contains)
+    }
+    private func withdrawDockHelpSurface() {
+        guard lastDockHelpSurface != nil else { return }
+        lastDockHelpSurface = nil; dockHelpInputGeneration = nil
+        dockHelpSurfaceDidChange?(nil)
+    }
+    @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
+        guard let current = edge.presentation else { withdrawDockHelpSurface(); return }
+        publishDockHelpSurface(current)
+    }
+    func isCurrentDockHelpSurface(_ value: DockHelpSurface) -> Bool {
+        guard !retired, !retiring, permitted, preferences.showDock, lastDockHelpSurface == value,
+              dockHelpInputGeneration == inputGeneration,
+              let panel, panel.isVisible, !panel.isMiniaturized, panel.alphaValue > 0,
+              panel.occlusionState.contains(.visible), edge.presentation?.state == .expanded else { return false }
+        return true
+    }
+    func dockHelpBlockingRects(_ value: DockHelpSurface) -> [CGRect] {
+        guard isCurrentDockHelpSurface(value), let panel else { return [] }
+        var result = [panel.frame]
+        if let cardPanel, cardPanel.isVisible { result.append(cardPanel.frame) }
+        if let overflowPanel, overflowPanel.isVisible { result.append(overflowPanel.frame) }
+        return result
+    }
+    func dockHelpWindowPolicy(_ value: DockHelpSurface) -> (NSWindow.SharingType, NSWindow.CollectionBehavior)? {
+        guard isCurrentDockHelpSurface(value), let panel else { return nil }
+        return (panel.sharingType, panel.collectionBehavior)
+    }
+    private func publishDockHelpSurface(_ value: DockEdgePresentation) {
+        guard createsNativePanels, !retired, !retiring, permitted, preferences.showDock, value.state == .expanded,
+              let panel, panel.isVisible, !panel.isMiniaturized, panel.alphaValue > 0,
+              panel.occlusionState.contains(.visible) else { withdrawDockHelpSurface(); return }
+        let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let view = edgeViews[orientation] ?? dockView
+        guard view.window === panel, !view.isHiddenOrHasHiddenAncestor else { withdrawDockHelpSurface(); return }
+        let current = edgeGeometries[orientation] ?? geometry
+        func screenRect(_ rect: CGRect) -> CGRect? {
+            guard !rect.isNull, !rect.isInfinite, rect.width > 0, rect.height > 0,
+                  view.visibleRect.contains(rect) else { return nil }
+            let global = panel.convertToScreen(view.convert(rect, to: nil))
+            guard global.origin.x.isFinite, global.origin.y.isFinite,
+                  global.width.isFinite, global.height.isFinite else { return nil }
+            return global
+        }
+        var anchors: [FirstUseHintKind: CGRect] = [:]
+        if cockpitEntryEnabled, !consoleButton.isHiddenOrHasHiddenAncestor,
+           consoleButton.window === panel, consoleButton.bounds.width > 0, consoleButton.bounds.height > 0,
+           consoleButton.visibleRect.contains(consoleButton.bounds) {
+            let global = panel.convertToScreen(consoleButton.convert(consoleButton.bounds, to: nil))
+            if global.origin.x.isFinite, global.origin.y.isFinite,
+               global.width.isFinite, global.height.isFinite { anchors[.ignition] = global }
+        }
+        if let regions = current.dragRegions ?? view.registeredDragRegions(excluding: current.consoleButton.map { [$0] } ?? []),
+           let drag = dockHelpDragAnchor(in: view, regions: regions), let global = screenRect(drag) {
+            anchors[.drag] = global
+        }
+        if cardPinnedVisible, !card.isHidden, let cardPanel, cardPanel.isVisible,
+           !cardPanel.isMiniaturized, cardPanel.alphaValue > 0, cardPanel.occlusionState.contains(.visible),
+           card.window === cardPanel, card.bounds.width > 0, card.bounds.height > 0 {
+            anchors[.pinned] = cardPanel.convertToScreen(card.convert(card.bounds, to: nil))
+        }
+        let previous = lastDockHelpSurface
+        let sameLayout = previous?.anchors == anchors && dockHelpInputGeneration == inputGeneration
+        let next = DockHelpSurface(revealID: previous?.revealID ?? UUID(),
+                                   layoutID: sameLayout ? (previous?.layoutID ?? UUID()) : UUID(),
+                                   visible: true, dragging: value.moving, anchors: anchors)
+        guard next != previous else { return }
+        lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
+        dockHelpSurfaceDidChange?(next)
     }
     /// Consume a first appearance only on the surface actually presented.
     private func pulsePresentedNotices(_ value: DockEdgePresentation) {
@@ -1229,9 +1324,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
                 sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
-                stateLabel: model?.presentationRows[id]?.reason ?? (input.dataState == .fresh ? (preferences.language == .english ? "Local reading" : "本地读数") : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
+                stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
-                additionalRows: model?.presentationRows[id].map { $0.additionalRows + [.init(id: "reader-status", kind: .notice, label: $0.reason, value: $0.nextStep)] } ?? [],
+                additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
                 enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
@@ -1323,9 +1418,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         cardGeneration &+= 1; cardID = nil; cardPresentedRevision = nil; cardPresentedGeneration = nil
         cardPinnedVisible = false; card.isHidden = true
         card.dispose(); cardPanel?.orderOut(nil)
+        if let current = edge.presentation { publishDockHelpSurface(current) }
     }
     public func close() {
-        guard !retired else { return }; clearLocateHighlight(); inputGeneration &+= 1; retired = true; permitted = false
+        guard !retired, !retiring else { return }
+        retiring = true
+        let retireContent = onWillRetire; onWillRetire = nil
+        retireContent?()
+        withdrawAdmittedContent(privacy: true)
+        clearLocateHighlight(); inputGeneration &+= 1; retired = true; permitted = false
+        withdrawDockHelpSurface(); dockHelpSurfaceDidChange = nil
         if let controller = interactionController { uninstallInteraction(controller) }
         workingSignals = [:]; attentionSignals = []; menuNotice = nil; menuNoticeDidChange?(nil, false); menuNoticeDidChange = nil; uninstallWorkingEffects()
         menuBarPreferencesChanged?(); menuBarPreferencesChanged = nil

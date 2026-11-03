@@ -8,13 +8,17 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor CardDismissalClient: EngineClient {
-    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool {
+        context.sessionID == "synthetic-entry" && context.floor.storeEpoch == "synthetic-entry" &&
+            context.floor.generation == 1 && context.revision == 1
+    }
     let store: EngineStore
     let rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         return context
     }
@@ -69,6 +73,7 @@ private actor CardDismissalClient: EngineClient {
         // Member identity rule: cards use the verified subscription member ID.
         dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
+        XCTAssertTrue(dock.card.accessibilityPerformPress(), "Pinning is an explicit card action")
         XCTAssertTrue(dock.cardPinsDock, "An actually visible pinned card must protect the Dock")
         try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the official Dock card")

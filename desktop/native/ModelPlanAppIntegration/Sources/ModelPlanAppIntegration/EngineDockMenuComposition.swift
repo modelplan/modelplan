@@ -32,6 +32,9 @@ public struct EngineMenuRefreshResult {
                 guard let self else { return }
                 self.admittedCache.clear()
                 self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared)
+                // Rebuild from the empty, localized cache after scrubbing so the
+                // Dock menu has a next step even if no new projection is admitted.
+                self.dock.refreshDockContent()
                 self.menuDidChange?()
             }, recompute: { [weak self] now in
                 guard let self else { return nil }
@@ -84,6 +87,12 @@ public struct EngineMenuRefreshResult {
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
+        dock.onWillRetire = { [weak self] in
+            guard let self else { return }
+            self.pairedProjection.invalidate()
+            self.deadlineDriver.close()
+        }
+        admittedCache.fallbackText = { [weak self] in self?.fallbackStatusText }
         admittedCache.isCurrent = { [weak self] in
             guard let self else { return false }
             return self.pairedProjection.isCurrent(self.pairedProjection.generation)
@@ -104,7 +113,26 @@ public struct EngineMenuRefreshResult {
         }
     }
     public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
-    func setLanguage(_ language:String) { adapter.language=language }
+    func setLanguage(_ language: String) {
+        guard adapter.language != language else { return }
+        adapter.language = language
+        // A locale change does not replace the accepted delivery. Reproject
+        // atomically only if the existing cache and source are still current,
+        // preserving an open card without retaining stale source data.
+        if !deadlineLifecycleSuspended, !pairedProjection.isProjecting {
+            let now = deadlineWall(), token = pairedProjection.generation
+            if admittedCache.isAdmissible(at: now),
+               let candidate = try? pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now)),
+               candidate.sourceToken == token, pairedProjection.isCurrent(token) {
+                admittedCache.install(candidate.value, evaluatedAt: now)
+                dock.refreshDockContent(); menuDidChange?()
+                return
+            }
+        }
+        pairedProjection.invalidate()
+        if pairedProjection.isProjecting { pendingProjectionReplacement = true; return }
+        if !deadlineLifecycleSuspended { deadlineDriver.replace() }
+    }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
     public var accountMembers:EngineAccountMemberCatalogue {
@@ -133,9 +161,26 @@ public struct EngineMenuRefreshResult {
         resetNotifier?.deliveryOverride=delivery
         resetNotifier?.apply(store.snapshot)
     }
+    private var fallbackStatusText: String {
+        let english = adapter.language == "en"
+        let fallback: String
+        switch provider.dockContent.status {
+        case .loading:
+            fallback = english ? "Loading readings. If this persists, check Settings." : "正在读取；若持续无响应，请检查设置。"
+        case .empty:
+            fallback = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
+        case .failed:
+            fallback = english ? "Readings unavailable. Check the engine connection in Settings." : "读数不可用，请在设置中检查引擎连接。"
+        case .cleared:
+            fallback = english ? "Readings cleared. Check Settings to reconnect." : "读数已清除，请在设置中重新连接。"
+        case .ready:
+            fallback = english ? "Readings unavailable. Check Settings." : "读数不可用，请检查设置。"
+        }
+        return fallback
+    }
     public var menuPresentation: CommunityMenuBarPresentation {
-        let content = presentedContent
-        return .init(title: "", detail: (content.menuStatusLines ?? []).joined(separator: " · "))
+        let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
+        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }

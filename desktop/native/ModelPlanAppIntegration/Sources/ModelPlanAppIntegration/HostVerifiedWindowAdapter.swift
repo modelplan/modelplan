@@ -20,6 +20,7 @@ struct HostVerifiedContentFacts: Sendable {
     let verifiedWindows: [HostVerifiedWindowFact]
     let evaluatedAt: Date
     let sourceToken: UInt64
+    var language: String = "en"
 }
 
 enum HostVerifiedWindowError: Error, Equatable {
@@ -32,7 +33,7 @@ enum HostVerifiedWindowError: Error, Equatable {
     private struct Key: Hashable { let member: String, window: String }
 
     static func apply(_ content: DockContent, proofs: [HostVerifiedWindowFact], now: Date,
-                      sourceToken: UInt64, sourceIsCurrent: @MainActor (UInt64) -> Bool) throws -> DockContent {
+                      sourceToken: UInt64, language: String = "en", sourceIsCurrent: @MainActor (UInt64) -> Bool) throws -> DockContent {
         guard sourceIsCurrent(sourceToken) else { throw HostVerifiedWindowError.staleSnapshot }
         guard now.timeIntervalSinceReferenceDate.isFinite else { throw HostVerifiedWindowError.invalidProof }
         let original = content.snapshot
@@ -93,6 +94,13 @@ enum HostVerifiedWindowError: Error, Equatable {
                 input.windows[index].resetsAt = proof.resetsAt
                 input.windows[index].validity = .verifiedCurrent(until: proof.until)
             }
+            let hasCurrentWindow = input.windows.contains { window in
+                guard case .verifiedCurrent(let until) = window.validity else { return false }
+                return now < until && window.remainingPercent != nil
+            }
+            if input.dataState == .fresh && !input.windows.isEmpty && !hasCurrentWindow {
+                input.dataState = .unavailable
+            }
             inputs.append(input)
         }
         guard pending.isEmpty else { throw HostVerifiedWindowError.unmatchedIdentity }
@@ -108,12 +116,16 @@ enum HostVerifiedWindowError: Error, Equatable {
             let admitted = subscriptions[input.id].map {
                 !$0.isUnstable && ($0.source == .fresh || $0.source == .stale)
             } ?? false
-            rows[input.id] = .init(input: input, reason: row.reason, nextStep: row.nextStep,
+            let unproved = input.dataState == .unavailable && subscriptions[input.id]?.source == .fresh
+            let reason = unproved ? (language == "en" ? "Reading unavailable" : "读数不可用") : row.reason
+            let nextStep = unproved ? (language == "en" ? "Check Settings" : "请检查设置") : row.nextStep
+            rows[input.id] = .init(input: input, reason: reason, nextStep: nextStep,
                 originalObservedAt: admitted ? row.originalObservedAt : nil,
                 plan: admitted ? row.plan : "", sourceName: admitted ? row.sourceName : "",
                 resetTimes: safeResetTimes,
                 windowDescriptions: row.windowDescriptions.filter { provenIDs.contains($0.key) },
-                additionalRows: admitted ? row.additionalRows : [])
+                additionalRows: admitted ? row.additionalRows : [],
+                cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
             presentationRows: rows, unavailableReason: original.unavailableReason,
@@ -133,8 +145,9 @@ enum HostVerifiedWindowError: Error, Equatable {
         // Rebuild menu text from the same proof-checked values, never the raw
         // preformatted Provider lines that bypass this projection.
         let lines = inputs.map { input -> String in
-            guard let reading = try? DockInstrumentProjection.evaluate(input, now: now) else { return input.name + " · --" }
-            return (reading.alias ?? reading.name) + " · " + reading.readout
+            let reading = try? DockInstrumentProjection.evaluate(input, now: now)
+            return [reading?.alias ?? reading?.name ?? input.name, reading?.readout ?? "--", rows[input.id]?.reason]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
         return .init(snapshot: snapshot, menuStatusLines: lines.isEmpty ? content.emptyText.map { [$0] } : lines,
                      emptyText: content.emptyText, signals: signals, recomputeDeadline: content.recomputeDeadline)
@@ -145,7 +158,7 @@ enum HostVerifiedWindowError: Error, Equatable {
                           sourceIsCurrent: @MainActor (UInt64) -> Bool) throws -> HostDeadlineDriver<DockContent>.Candidate {
         let content = facts.content, deadline = facts.deadline, proofs = facts.verifiedWindows
         let now = facts.evaluatedAt, sourceToken = facts.sourceToken
-        let checked = try apply(content, proofs: proofs, now: now, sourceToken: sourceToken, sourceIsCurrent: sourceIsCurrent)
+        let checked = try apply(content, proofs: proofs, now: now, sourceToken: sourceToken, language: facts.language, sourceIsCurrent: sourceIsCurrent)
         let active = proofs.filter { now < $0.until }
         let bounded: DockContentRecomputeDeadline?
         switch deadline {

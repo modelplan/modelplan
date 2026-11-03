@@ -154,6 +154,8 @@ import ModelPlanSettings
     func testRasterDefaultHostDragShowsPreviewAndRestoresAtBothScales() async throws {
         for scale in [1, 2] {
             let url = try temporaryURL(), folder = url.deletingLastPathComponent()
+            let settings = try SettingsStore(url: url)
+            try await settings.update { $0.autoHide = true }
             let context = try XCTUnwrap(CGContext(data: nil, width: 192, height: 320,
                 bitsPerComponent: 8, bytesPerRow: 768, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -268,7 +270,7 @@ import ModelPlanSettings
 
     func testPlacementProducerReportsActualSeamRecoveryAndClearsOnTopologyAndClose() async throws {
         let url = try temporaryURL(), store = try SettingsStore(url: url)
-        try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right }
+        try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right; $0.autoHide = true }
         let persisted = try Data(contentsOf: url)
         let appearance: StaticDockPreviewHost.Appearance = { view, rows, prefs in
             try view.applyCommunity(rows)
@@ -321,7 +323,9 @@ import ModelPlanSettings
     }
 
     func testItem2SliverRegistrationAndTenDwellRevealLeaveCycles() async throws {
-        let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
+        let url = try temporaryURL(), settings = try SettingsStore(url: url)
+        try await settings.update { $0.autoHide = true }
+        let f = try BehaviourFixture(url: url); defer { f.host.close() }
         await f.start()
         let panel = try f.panel(), placement = try XCTUnwrap(f.host.edgePresentation?.placement)
         XCTAssertEqual(f.host.edgePresentation?.state, .sliver)

@@ -61,7 +61,7 @@ import ModelPlanShell
             let id = try XCTUnwrap(CommunityDockSnapshot(snapshot:snapshot,diagnostics:ready,now:now).inputs.first?.id)
             host.dockView.onAction?(.subscription(id))
             let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "读取于 2 小时前")
+            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "2小时前")
             XCTAssertFalse(field.stringValue.contains("7200s")); XCTAssertEqual(field.accessibilityLabel(),field.stringValue)
             XCTAssertNil(host.nativePanel); XCTAssertNil(host.dockView.window)
         }}

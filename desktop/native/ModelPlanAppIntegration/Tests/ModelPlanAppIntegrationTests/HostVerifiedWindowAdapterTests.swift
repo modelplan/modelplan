@@ -33,6 +33,7 @@ import ModelPlanSettings
         XCTAssertEqual(card.rows.first { $0.id == "quota:weekly" }?.value, "75%")
         XCTAssertEqual(candidate.value.snapshot.presentationRows["member"]?.input.dataState, .stale)
         XCTAssertEqual(candidate.value.snapshot.subscriptions.first?.source, .stale)
+        XCTAssertTrue(candidate.value.menuStatusLines?.first?.contains("Some readings are stale") == true)
         XCTAssertNil(try DockInstrumentProjection.evaluate(input, now: now.addingTimeInterval(200)).remainingPercent,
                      "The value remains time-fenced even before a new row is delivered")
     }
@@ -97,7 +98,7 @@ import ModelPlanSettings
         let checked = try HostVerifiedWindowAdapter.apply(raw, proofs: [], now: now, sourceToken: 1, sourceIsCurrent: { $0 == 1 })
         let result = try XCTUnwrap(checked.snapshot.inputs.first)
         XCTAssertNil(try DockInstrumentProjection.evaluate(result, now: now).remainingPercent)
-        XCTAssertEqual(checked.menuStatusLines, ["Synthetic · --"])
+        XCTAssertEqual(checked.menuStatusLines, ["Synthetic · -- · Reading unavailable"])
         XCTAssertEqual(checked.signals.first?.dataState, .unavailable)
         XCTAssertTrue(try XCTUnwrap(checked.snapshot.presentationRows["member"]).resetTimes.isEmpty)
     }
@@ -183,6 +184,25 @@ import ModelPlanSettings
         cache.install(first.value, evaluatedAt: now)
         let result = cache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: until))
         XCTAssertEqual(result.menuStatusLines, ["refreshed"])
+    }
+
+    func testUnprovedFreshReadingIsUnavailableAndHasLocalizedNextStep() throws {
+        let base = fixture(source: .fresh)
+        var input = try XCTUnwrap(base.snapshot.inputs.first)
+        input.dataState = .fresh; input.windows[0].remainingPercent = 30
+        let row = DockContentRow(input: input, reason: "Reading available", nextStep: "No action")
+        let content = DockContent(snapshot: .init(inputs: [input], subscriptions: base.snapshot.subscriptions,
+                                                  presentationRows: [input.id: row]))
+        for (language, reason, step) in [("en", "Reading unavailable", "Check Settings"),
+                                         ("zh", "读数不可用", "请检查设置")] {
+            let result = try HostVerifiedWindowAdapter.apply(content, proofs: [], now: now,
+                sourceToken: 1, language: language, sourceIsCurrent: { $0 == 1 })
+            let safe = try XCTUnwrap(result.snapshot.inputs.first)
+            XCTAssertEqual(safe.dataState, .unavailable)
+            XCTAssertNil(try DockInstrumentProjection.evaluate(safe, now: now).remainingPercent)
+            XCTAssertEqual(result.snapshot.presentationRows[input.id]?.reason, reason)
+            XCTAssertEqual(result.snapshot.presentationRows[input.id]?.nextStep, step)
+        }
     }
 
 }

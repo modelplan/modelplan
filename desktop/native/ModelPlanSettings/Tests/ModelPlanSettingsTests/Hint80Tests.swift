@@ -3,6 +3,17 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Hint80Tests: XCTestCase {
+    func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.ignitionAvailable = false
+        try value.updateContext(context, at: 0)
+        XCTAssertNil(value.reservedDockHint)
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertEqual(value.reservedDockHint, .drag)
+        try value.beginDockRevealDwell(at: 1)
+        XCTAssertEqual(try value.nextOffer(placeable: [.drag], at: 1.5)?.kind, .drag)
+        XCTAssertFalse(value.preferences.seen.contains(.ignition))
+    }
     private func cockpit(seen: Set<FirstUseHintKind> = []) throws -> FirstUseHints {
         var value = FirstUseHints(preferences: .init(seen: seen))
         var context = HintContext(cockpitOpen: UUID()); context.captureReady = true

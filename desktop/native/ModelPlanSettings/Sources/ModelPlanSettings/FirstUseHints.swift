@@ -44,6 +44,7 @@ public enum TrialHintCancellation: CaseIterable, Sendable {
 public struct HintContext: Equatable, Sendable {
     public var cockpitOpen: UUID?, dockReveal: UUID?
     public var cardPinned = false, captureReady = false, helpMapVisible = false, reducedMotion = false
+    public var ignitionAvailable = true
     public init(cockpitOpen: UUID? = nil, dockReveal: UUID? = nil) { self.cockpitOpen = cockpitOpen; self.dockReveal = dockReveal }
 }
 public struct HintOffer: Equatable, Sendable {
@@ -148,7 +149,7 @@ public struct FirstUseHints: Sendable {
     }
     public var reservedDockHint: FirstUseHintKind? {
         guard context.dockReveal != nil else { return nil }
-        if !preferences.seen.contains(.ignition) { return .ignition }
+        if context.ignitionAvailable && !preferences.seen.contains(.ignition) { return .ignition }
         return preferences.reveals >= 2 && !preferences.seen.contains(.drag) ? .drag : nil
     }
     public mutating func advance(at now: TimeInterval) throws { try tick(now) }
@@ -185,7 +186,8 @@ public struct FirstUseHints: Sendable {
         // Exact frozen guarded list: pinned/drag deliberately do not gain a capture barrier.
         if [.detach,.optionHelp,.shutter,.field,.page,.trial].contains(kind), !context.captureReady { return false }
         if kind == .shutter && preferences.opens < 2 { return false }
-        if kind == .drag && (preferences.reveals < 2 || !preferences.seen.contains(.ignition)) { return false }
+        if kind == .ignition && !context.ignitionAvailable { return false }
+        if kind == .drag && (preferences.reveals < 2 || (context.ignitionAvailable && !preferences.seen.contains(.ignition))) { return false }
         if kind == .pinned && (!context.cardPinned || (usesDock(kind) && reservedDockHint != nil)) { return false }
         return true
     }

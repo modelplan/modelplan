@@ -354,17 +354,18 @@ private actor SettingsJourneyClient: EngineClient {
         // Member identity rule: interaction targets the member, not its tool row.
         dock.dockView.onAction?(.subscription("0123456789abcdef"))
         XCTAssertFalse(dock.card.isHidden)
+        XCTAssertTrue(dock.card.accessibilityPerformPress(), "Pinning must be explicit")
         func field(_ view: NSView) -> NSTextField? {
             if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }
             return view.subviews.lazy.compactMap(field).first
         }
         let age = try XCTUnwrap(field(dock.card)?.stringValue)
-        XCTAssertTrue(age == "读数时间未知" || age.hasPrefix("读取于 "), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
+        XCTAssertTrue(age.contains("读数时间未知") || age.contains("刚刚") || age.contains("分钟前") || age.contains("小时前"), "Fresh Chinese entry must render the actual card age in Chinese: \(age)")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         // The real controller keeps the card pinned; clicking again would dismiss it.
         XCTAssertFalse(dock.card.isHidden, "The pinned card must survive the language change")
         let englishAge = try XCTUnwrap(field(dock.card)?.stringValue)
-        XCTAssertTrue(englishAge == "Reading time unknown" || englishAge.hasPrefix("Reading taken "), "The same card must follow an explicit English choice: \(englishAge)")
+        XCTAssertTrue(englishAge.contains("Reading time unknown") || englishAge.contains("just now") || englishAge.contains(" ago"), "The same card must follow an explicit English choice: \(englishAge)")
         await app.composition.stop()
     }
 

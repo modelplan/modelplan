@@ -34,6 +34,9 @@ import ModelPlanMenuVerification
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
     private var showFeedback: ShowQuotaWidgetOutcome?
+    private var dockHelp: DockHelpCoordinator?
+    var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
+    private var dockHelpSetupInProgress = false
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
     #endif
@@ -88,6 +91,7 @@ import ModelPlanMenuVerification
             guard let self, !self.terminating else { return }
             if self.liveStatusMenu != nil { self.renderMenu() }
             self.console?.applySettings(value)
+            self.dockHelp?.refresh()
         }
         let application=settings
         composition.dock.requestHideDock = { [weak application] in
@@ -181,6 +185,14 @@ import ModelPlanMenuVerification
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        if dockHelp == nil, !dockHelpSetupInProgress {
+            dockHelpSetupInProgress = true
+            let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings)
+            dockHelpSetupInProgress = false
+            if terminating { await help?.dispose(); return }
+            if dockHelp == nil { dockHelp = help }
+            else { await help?.dispose() }
+        }
         renderMenu()
         interactionBinding?.install()
     }
@@ -203,7 +215,7 @@ import ModelPlanMenuVerification
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
-                self.allowDockPresentation(); self.renderMenu()
+                self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
             }, onGateOpen: { [weak self] in self?.renderMenu() })
         lifecycleController = controller
@@ -223,6 +235,7 @@ import ModelPlanMenuVerification
         lifecyclePaused = true
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
+        dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         renderMenu()
     }
@@ -427,6 +440,7 @@ import ModelPlanMenuVerification
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
+        dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
@@ -434,6 +448,7 @@ import ModelPlanMenuVerification
         Task {
             if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
             else { await composition.stop() }
+            await dockHelp?.dispose(); dockHelp = nil
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
