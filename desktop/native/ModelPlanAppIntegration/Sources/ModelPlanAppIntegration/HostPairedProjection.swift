@@ -14,6 +14,7 @@ import ModelPlanDock
     private var pinnedEvents: EngineRowsEventState?
     var isProjecting: Bool { pinnedEvents != nil }
     private var captured: HostRowsSnapshotFence.Capture?
+    private(set) var evaluatedAt: Date?
     private(set) var generation: UInt64 = 0
 
     init(store: EngineStore, source: EngineDockMenuProvider,
@@ -25,7 +26,7 @@ import ModelPlanDock
         }
     }
 
-    func invalidate() { generation &+= 1; captured = nil }
+    func invalidate() { generation &+= 1; captured = nil; evaluatedAt = nil }
     func isCurrent(_ token: UInt64) -> Bool {
         guard token == generation, let captured else { return false }
         return (try? HostRowsSnapshotFence.check(captured, snapshot: store.snapshot,
@@ -60,20 +61,44 @@ import ModelPlanDock
                 deadline: deadline, verifiedWindows: proofs, evaluatedAt: context.now,
                 sourceToken: token), sourceIsCurrent: isCurrent)
             guard isCurrent(token) else { throw HostVerifiedWindowError.staleSnapshot }
+            evaluatedAt = context.now
             return result
         } catch {
-            captured = nil
+            captured = nil; evaluatedAt = nil
             throw error
         }
     }
 }
 
-/// Only an admitted, currently installed pair can be read by the normal Host.
+/// Only an admitted pair inside its evaluated clock interval can be read.
+/// A late timer or clock rollback clears before synchronously requesting a new pass.
 @MainActor final class HostPairedContentCache: DockContentProvider {
     private var value: DockContent?
-    func install(_ value: DockContent) { self.value = value }
-    func clear() { value = nil }
-    func makeContent(_ context: DockContentContext) -> DockContent {
-        value ?? DockContent(snapshot: .init(inputs: []), menuStatusLines: [])
+    private var evaluatedAt: Date?
+    var isCurrent: (@MainActor () -> Bool)?
+    var onStale: (@MainActor () -> Void)?
+    func install(_ value: DockContent, evaluatedAt: Date) {
+        self.value = value; self.evaluatedAt = evaluatedAt
     }
+    func clear() { value = nil; evaluatedAt = nil }
+    func makeContent(_ context: DockContentContext) -> DockContent {
+        guard let value, let evaluatedAt else { return empty() }
+        guard valid(value, evaluatedAt: evaluatedAt, now: context.now) else {
+            clear(); onStale?()
+            if let replacement = self.value, let at = self.evaluatedAt,
+               valid(replacement, evaluatedAt: at, now: context.now) { return replacement }
+            return empty()
+        }
+        return value
+    }
+    private func valid(_ value: DockContent, evaluatedAt: Date, now: Date) -> Bool {
+        guard now.timeIntervalSinceReferenceDate.isFinite,
+              evaluatedAt.timeIntervalSinceReferenceDate.isFinite, now >= evaluatedAt,
+              isCurrent?() == true else { return false }
+        if case .some(.scheduled(let date, _)) = value.recomputeDeadline {
+            return date.timeIntervalSinceReferenceDate.isFinite && now < date
+        }
+        return true
+    }
+    private func empty() -> DockContent { DockContent(snapshot: .init(inputs: []), menuStatusLines: []) }
 }

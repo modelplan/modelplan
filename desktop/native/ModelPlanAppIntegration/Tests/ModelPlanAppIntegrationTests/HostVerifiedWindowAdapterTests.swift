@@ -2,6 +2,7 @@
 import Foundation
 import XCTest
 import ModelPlanDock
+import ModelPlanCore
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -145,6 +146,43 @@ import ModelPlanSettings
             XCTAssertEqual(rendered.additionalRows, source == .stale ? [reserve] : [])
             XCTAssertEqual(rendered.input.dataState, source == .stale ? .stale : .unavailable)
         }
+    }
+
+    func testCacheWithdrawsBeforeLateTimerOrClockRollbackCanExposeValues() throws {
+        let until = now.addingTimeInterval(10)
+        let checked = try HostVerifiedWindowAdapter.candidate(.init(content: fixture(),
+            deadline: .scheduled(until, hasUnknownDeadline: false),
+            verifiedWindows: [proof(until: until)], evaluatedAt: now, sourceToken: 1),
+            sourceIsCurrent: { $0 == 1 })
+        let cache = HostPairedContentCache(); var withdrawals = 0
+        cache.isCurrent = { true }; cache.onStale = { withdrawals += 1 }
+        func context(_ date: Date) -> DockContentContext { .init(snapshot: nil, diagnostics: .init(), now: date) }
+        cache.install(checked.value, evaluatedAt: now)
+        XCTAssertFalse(cache.makeContent(context(now)).snapshot.inputs.isEmpty)
+        XCTAssertTrue(cache.makeContent(context(until)).snapshot.inputs.isEmpty)
+        XCTAssertEqual(withdrawals, 1)
+        cache.install(checked.value, evaluatedAt: now)
+        XCTAssertTrue(cache.makeContent(context(now.addingTimeInterval(-1))).snapshot.inputs.isEmpty)
+        XCTAssertEqual(withdrawals, 2)
+        cache.install(checked.value, evaluatedAt: now)
+        cache.isCurrent = { false }
+        XCTAssertTrue(cache.makeContent(context(now)).snapshot.inputs.isEmpty)
+        XCTAssertEqual(withdrawals, 3)
+    }
+
+    func testCacheReturnsOnlyRevalidatedSynchronousReplacement() throws {
+        let until = now.addingTimeInterval(10)
+        let first = try HostVerifiedWindowAdapter.candidate(.init(content: fixture(),
+            deadline: .scheduled(until, hasUnknownDeadline: false), verifiedWindows: [proof(until: until)],
+            evaluatedAt: now, sourceToken: 1), sourceIsCurrent: { $0 == 1 })
+        let replacement = DockContent(snapshot: fixture().snapshot, menuStatusLines: ["refreshed"],
+            recomputeDeadline: .scheduled(until.addingTimeInterval(20), hasUnknownDeadline: false))
+        let cache = HostPairedContentCache()
+        cache.isCurrent = { true }
+        cache.onStale = { cache.install(replacement, evaluatedAt: until) }
+        cache.install(first.value, evaluatedAt: now)
+        let result = cache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: until))
+        XCTAssertEqual(result.menuStatusLines, ["refreshed"])
     }
 
 }

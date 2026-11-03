@@ -44,7 +44,9 @@ public struct EngineMenuRefreshResult {
                 return try? self.pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now))
             }, install: { [weak self] content in
                 guard let self else { return }
-                self.admittedCache.install(content); self.dock.refreshDockContent(); self.menuDidChange?()
+                guard let evaluatedAt = self.pairedProjection.evaluatedAt else { return }
+                self.admittedCache.install(content, evaluatedAt: evaluatedAt)
+                self.dock.refreshDockContent(); self.menuDidChange?()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
             installValidatedUnknown: true)
     }()
@@ -82,6 +84,16 @@ public struct EngineMenuRefreshResult {
         dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
+        admittedCache.isCurrent = { [weak self] in
+            guard let self else { return false }
+            return self.pairedProjection.isCurrent(self.pairedProjection.generation)
+        }
+        admittedCache.onStale = { [weak self] in
+            guard let self else { return }
+            self.pairedProjection.invalidate()
+            if self.pairedProjection.isProjecting { self.pendingProjectionReplacement = true; return }
+            if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+        }
         dock.setDockContentProvider(admittedCache)
         provider.dockContentDidChange = { [weak self] in
             guard let self else { return }
