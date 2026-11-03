@@ -87,6 +87,7 @@ type ModelScope struct {
 }
 
 type Window struct {
+	Source *WindowSource `json:"source,omitempty" null:"forbidden"`
 	ModelScope       *ModelScope `json:"modelScope,omitempty" null:"forbidden"`
 	ID               string      `json:"id"`
 	Role             Role        `json:"role"`

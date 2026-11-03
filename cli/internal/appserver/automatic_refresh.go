@@ -49,7 +49,16 @@ func (s *RefreshScheduler) automatic() {
 					if until.Before(next) { next = until }
 					continue
 				}
-				_, _, _ = s.Request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}})
+				result, _, err := s.Request(s.ctx, wire.RefreshRequestParams{Scopes: []string{scope}})
+				outcome, reason := refreshNotAttempted, refreshUnavailable
+				if err == nil && len(result) == 1 {
+					if result[0].DisabledReason == nil {
+						outcome, reason = refreshDeferred, refreshDue
+					} else if *result[0].DisabledReason == wire.RefreshCooldown {
+						outcome, reason = refreshDeferred, refreshBudget
+					}
+				}
+				s.decisions.add(now, scope, outcome, reason)
 			}
 		}
 		wait := time.Until(next)

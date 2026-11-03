@@ -375,6 +375,7 @@ func readCodex(home, thread string) ([]Account, SourceStatus) {
 		return nil, st
 	}
 	a.Harness, a.Pool = codexHarness(rs, own)
+	for i := range a.Windows { a.Windows[i].Origin = "local_history" }
 	st.Status = "ok"
 	return []Account{*a}, st
 }

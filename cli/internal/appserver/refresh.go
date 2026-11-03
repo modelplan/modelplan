@@ -47,6 +47,7 @@ type RefreshScheduler struct {
 	autoWake       chan struct{}
 	autoNext       map[string]time.Time
 	autoStarted    bool
+	decisions      refreshDecisionRing
 }
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
@@ -62,6 +63,16 @@ func (s *RefreshScheduler) Close() {
 	started := s.autoStarted
 	s.mu.Unlock()
 	if started { <-s.autoDone }
+	s.decisions.clear()
+}
+// Decisions exposes only the bounded code-only history for this process.
+func (s *RefreshScheduler) Decisions() []wire.RefreshDecision {
+	items := s.decisions.snapshot(time.Now())
+	out := make([]wire.RefreshDecision, 0, len(items))
+	for _, item := range items {
+		out = append(out, wire.RefreshDecision{AgoSeconds: item.AgoSeconds, Scope: wire.RefreshDecisionScope(item.Scope), Outcome: wire.RefreshDecisionOutcome(item.Outcome), Reason: wire.RefreshDecisionReason(item.Reason)})
+	}
+	return out
 }
 func (s *RefreshScheduler) Handler() Handler {
 	return Handler{Capability: "refresh", Handle: func(ctx context.Context, raw json.RawMessage, _ Stamp) (Reply, error) {
@@ -289,6 +300,16 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	defer cancel()
 	started := time.Now()
 	err = s.config.Run(ctx, paths, job.scope, started)
+	outcome, reason := refreshNotAttempted, refreshUnavailable
+	if err != nil {
+		outcome = refreshFailed
+	} else {
+		switch quota.ScopeRefreshOutcome(paths, job.scope, started) {
+		case "succeeded": outcome, reason = refreshSucceeded, refreshCompleted
+		case "failed": outcome = refreshFailed
+		}
+	}
+	s.decisions.add(started, job.scope, outcome, reason)
 	wait := 5 * time.Minute
 	if err != nil {
 		wait = 10 * time.Minute

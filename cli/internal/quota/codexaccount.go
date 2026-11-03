@@ -456,6 +456,7 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		a.Plan = s.Plan
 	}
 	for _, w := range s.Windows {
+		w.Origin = "runtime"
 		found := false
 		for i := range a.Windows {
 			x := &a.Windows[i]

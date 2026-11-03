@@ -43,6 +43,7 @@ type Config struct {
 	Backend  Backend
 	Handlers map[string]Handler
 	SessionStarted func()
+	RefreshDecisions func() []wire.RefreshDecision
 	// Shorter durations are for synthetic transport tests; zero uses wire limits.
 	WriteTimeout   time.Duration
 	RequestTimeout time.Duration
@@ -370,7 +371,12 @@ func (s *Server) dispatch(r wire.Request) {
 			s.mu.Lock()
 			v := s.view
 			s.mu.Unlock()
-			return Reply{Stamp: v.Stamp, Data: wire.Diagnostics{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, UptimeSeconds: int64(time.Since(s.started).Seconds()), Scopes: v.Diagnostics}}, nil
+			diag := wire.Diagnostics{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, UptimeSeconds: int64(time.Since(s.started).Seconds()), Scopes: v.Diagnostics}
+			if s.clientCapabilities["refreshDecisionsV1"] && s.config.RefreshDecisions != nil {
+				items := s.config.RefreshDecisions()
+				diag.RefreshDecisions = &items
+			}
+			return Reply{Stamp: v.Stamp, Data: diag}, nil
 		})
 		return
 	}
@@ -444,6 +450,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 		return
 	}
 	base := context.WithValue(s.ctx, sessionContextKey{}, s.session)
+	base = context.WithValue(base, windowSourcesContextKey{}, s.clientCapabilities[CapabilityWindowSources])
 	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
 	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
 	ctx, cancel := context.WithTimeout(base, timeout)
@@ -514,7 +521,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents])}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources])}
 				}
 				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
@@ -675,6 +682,7 @@ func (s *Server) readView(ctx context.Context) error {
 	}
 	session, seq, subscribed := s.session, s.sequence, s.subscribed
 	eventsEnabled := s.clientCapabilities[CapabilityResetEvents]
+	sourcesEnabled := s.clientCapabilities[CapabilityWindowSources]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -696,7 +704,7 @@ func (s *Server) readView(ctx context.Context) error {
 				s.rowsPending = false
 			}
 			s.mu.Unlock()
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled)}), v.Stamp, func(error) {
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled)}), v.Stamp, func(error) {
 				s.mu.Lock()
 				if s.sequence == seq {
 					s.rowsPending = true

@@ -143,3 +143,40 @@ const (
 	PluginPlanned      PluginInstallStatus = "planned"
 	PluginFailed       PluginInstallStatus = "failed"
 )
+
+type RefreshDecisionScope string
+const (
+	DecisionCodexRuntime RefreshDecisionScope = "codex.runtime_usage"
+	DecisionCodexLocal RefreshDecisionScope = "codex.local_history"
+	DecisionClaude RefreshDecisionScope = "claude.account_usage.saved_login"
+	DecisionGemini RefreshDecisionScope = "gemini.account_usage.saved_login"
+	DecisionCursor RefreshDecisionScope = "cursor.account_usage.saved_login"
+	DecisionCopilot RefreshDecisionScope = "copilot.runtime_usage"
+	DecisionKimi RefreshDecisionScope = "kimi.account_usage.saved_login"
+	DecisionGrok RefreshDecisionScope = "grok.account_usage.saved_login"
+	DecisionKiro RefreshDecisionScope = "kiro.runtime_usage"
+	DecisionAntigravity RefreshDecisionScope = "antigravity.runtime_usage"
+	DecisionZai RefreshDecisionScope = "zai.account_usage.api_key"
+	DecisionMiniMax RefreshDecisionScope = "minimax.account_usage.api_key"
+	DecisionOpenCodeGo RefreshDecisionScope = "opencodego.account_usage.api_key"
+)
+type RefreshDecisionOutcome string
+const (
+	DecisionNotAttempted RefreshDecisionOutcome = "not_attempted"
+	DecisionDeferred RefreshDecisionOutcome = "deferred"
+	DecisionFailed RefreshDecisionOutcome = "failed"
+	DecisionSucceeded RefreshDecisionOutcome = "succeeded"
+)
+type RefreshDecisionReason string
+const (
+	DecisionStartup RefreshDecisionReason = "startup"
+	DecisionWake RefreshDecisionReason = "wake"
+	DecisionDue RefreshDecisionReason = "due"
+	DecisionNotGranted RefreshDecisionReason = "not_granted"
+	DecisionOffline RefreshDecisionReason = "offline"
+	DecisionReadOnly RefreshDecisionReason = "read_only"
+	DecisionBudget RefreshDecisionReason = "budget"
+	DecisionInFlight RefreshDecisionReason = "in_flight"
+	DecisionUnavailable RefreshDecisionReason = "unavailable"
+	DecisionCompleted RefreshDecisionReason = "completed"
+)

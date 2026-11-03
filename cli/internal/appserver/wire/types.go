@@ -107,16 +107,27 @@ type RowsProjection struct {
 	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
 }
 
-func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool) RowsProjection {
-	result := Project(value)
-	if enabled {
-		result.ResetEvents = events
-	}
+func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool, sourceEnabled ...bool) RowsProjection {
+	expose := len(sourceEnabled) > 0 && sourceEnabled[0]
+	result := project(value, expose)
+	if enabled { result.ResetEvents = events }
 	return result
 }
 
-func Project(value rows.Projection) RowsProjection {
-	return RowsProjection{RowsVersion: value.RowsVersion, Rows: value.Rows, RowsSummary: value.RowsSummary}
+func Project(value rows.Projection) RowsProjection { return project(value, false) }
+
+func project(value rows.Projection, expose bool) RowsProjection {
+	result := RowsProjection{RowsVersion: value.RowsVersion, Rows: append([]rows.Row{}, value.Rows...), RowsSummary: value.RowsSummary}
+	if expose { return result }
+	for i := range result.Rows {
+		result.Rows[i].Accounts = append([]rows.Account{}, result.Rows[i].Accounts...)
+		for j := range result.Rows[i].Accounts {
+			account := &result.Rows[i].Accounts[j]
+			account.Windows = append([]rows.Window{}, account.Windows...)
+			for k := range account.Windows { account.Windows[k].Source = nil }
+		}
+	}
+	return result
 }
 
 type ConsentScope struct {
@@ -206,7 +217,15 @@ type HistoryPage struct {
 	NextCursor string        `json:"nextCursor,omitempty" null:"coalesced"`
 }
 
+type RefreshDecision struct {
+	AgoSeconds int64 `json:"agoSeconds" schema:"minimum=0"`
+	Scope RefreshDecisionScope `json:"scope"`
+	Outcome RefreshDecisionOutcome `json:"outcome"`
+	Reason RefreshDecisionReason `json:"reason"`
+}
+
 type Diagnostics struct {
+	RefreshDecisions *[]RefreshDecision `json:"refreshDecisions,omitempty" schema:"maxItems=20" null:"forbidden"`
 	ProtocolVersion string      `json:"protocolVersion"`
 	ServerVersion   string      `json:"serverVersion"`
 	UptimeSeconds   int64       `json:"uptimeSeconds"`
