@@ -23,6 +23,43 @@ enum M5CreditsDisplayFormat {
         case invalid(unit: Unit)
     }
 
+    /// A separate, unwired presentation for balances whose unit is not known.
+    /// Every case keeps the unit; finite values are retained exactly as supplied.
+    enum NeutralResult: Equatable {
+        case missing(unit: Unit)
+        case invalid(bits: UInt64, unit: Unit)
+        case notApplicable(value: Double?, unit: Unit)
+        case fallback(value: Double, unit: Unit)
+        case rendered(value: Double, unit: Unit, text: String, isApproximate: Bool)
+    }
+
+    enum UnitKnowledge: Equatable { case known, unknown }
+
+    static func unknownUnitText(_ value: Double?, unit: Unit, knowledge: UnitKnowledge) -> NeutralResult {
+        // The caller must establish that the unit is unknown; raw identifiers are not classified here.
+        // Credits and money, or any explicitly identified currency, keep their own policies.
+        guard knowledge == .unknown, unit.identifier != "credits", unit.identifier != "money", unit.currencyIdentifier == nil else {
+            return .notApplicable(value: value, unit: unit)
+        }
+        guard let value else { return .missing(unit: unit) }
+        guard value.isFinite else { return .invalid(bits: value.bitPattern, unit: unit) }
+        if value == 0 { return .rendered(value: value, unit: unit, text: "0", isApproximate: false) }
+
+        // Match existing project numeric formatting: POSIX decimal, no invented unit or currency.
+        var number = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+        // Do not guess if formatting or parsing cannot preserve a finite numeric result.
+        guard number.utf8.count <= 400,
+              number.utf8.allSatisfy({ (48...57).contains($0) || $0 == 45 || $0 == 46 }),
+              number.contains(".") else { return .fallback(value: value, unit: unit) }
+        while number.last == "0" { number.removeLast() }
+        if number.last == "." { number.removeLast() }
+        guard let displayed = Double(number), displayed.isFinite else { return .fallback(value: value, unit: unit) }
+        // Compare representable values rather than multiplying the Double by 100:
+        // e.g. the formatted decimal 0.1 decodes to the same Double as the input.
+        let approximate = displayed != value
+        return .rendered(value: value, unit: unit, text: (approximate ? "≈" : "") + number, isApproximate: approximate)
+    }
+
     static func text(_ value: Double?, unit: Unit) -> Result {
         guard let value else { return .missing }
         guard value.isFinite else { return .invalid(unit: unit) }
