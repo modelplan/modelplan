@@ -35,6 +35,71 @@ public struct EngineContentAndDeadline: Sendable {
     public let content: DockContent
     public let deadline: EngineRecomputeDeadline
     public let verifiedWindows: [EngineVerifiedWindow]
+    /// Per-member facts from this same pass; discard them with the delivery.
+    public let resetCards: [String: EngineResetCardFacts]
+}
+
+/// No partial source-reported count is presented as an exact total.
+public struct EngineResetCardFacts: Sendable {
+    public enum State: Sendable { case complete, partial, unknown }
+    public let state: State
+    public let count: Int?
+    public let earliestExpiry: Date?
+    public let warning: Bool?
+    public let countText: String?
+    public let expiryText: String?
+    /// Reproject at this instant, or earlier if the delivery is replaced.
+    public let nextChange: Date?
+
+    static func evaluate(_ cards: RowsResetCards?, eligible: Bool, now: Date, english: Bool) -> Self {
+        func result(_ state: State, _ count: Int? = nil, _ expiry: Date? = nil, _ warning: Bool? = nil, _ next: Date? = nil) -> Self {
+            var text: String?
+            if let expiry {
+                let seconds = expiry.timeIntervalSince(now)
+                if seconds > 0 && seconds.isFinite && seconds < Double(Int.max / 60) {
+                    let minutes = Int(ceil(seconds / 60)), days = minutes / 1440, hours = (minutes % 1440) / 60, mins = minutes % 60
+                    let duration = english ? "\(days)d \(hours)h \(mins)m" : "\(days)天\(hours)小时\(mins)分"
+                    text = english ? "expires in \(duration)" : "\(duration)后到期"
+                }
+            }
+            return .init(state: state, count: count, earliestExpiry: expiry, warning: warning,
+                         countText: count.map { "↺\($0)" }, expiryText: text, nextChange: next)
+        }
+        guard eligible, now.timeIntervalSinceReferenceDate.isFinite, let cards,
+              cards.state != .knownUnknown, !cards.sources.isEmpty,
+              cards.sources.allSatisfy({ EngineResetTimestampContract.date($0.observedAt).map { $0 <= now } ?? false }) else { return result(.unknown) }
+        let items = cards.items ?? []
+        let knownExpiries = items.compactMap { EngineResetTimestampContract.date($0.expiresAt) }
+        let future = knownExpiries.filter { $0 > now }
+        if cards.state == .partial || cards.truncated {
+            // A known near expiry is useful as a warning; its absence cannot disprove one.
+            let transitions = future.flatMap { [$0.addingTimeInterval(-48 * 3600), $0] }.filter { $0 > now }
+            return result(.partial, nil, nil, future.contains { $0.timeIntervalSince(now) <= 48 * 3600 } ? true : nil, transitions.min())
+        }
+        guard cards.state == .complete, let count = cards.count, count == items.count,
+              Set(items.map(\.id)).count == items.count,
+              items.allSatisfy({ $0.expiresAt == nil || EngineResetTimestampContract.date($0.expiresAt) != nil }) else { return result(.unknown) }
+        let reported = EngineResetTimestampContract.date(cards.earliestExpiresAt)
+        let computed = knownExpiries.count == items.count ? knownExpiries.min() : nil
+        guard reported == computed else { return result(.unknown) }
+        let activeCount = count - knownExpiries.filter { $0 <= now }.count
+        let expiry = knownExpiries.count == items.count ? future.min() : nil
+        var next: Date?
+        for candidate in future {
+            let warningAt = candidate.addingTimeInterval(-48 * 3600)
+            for time in [warningAt, candidate] where time > now {
+                if next.map({ time < $0 }) ?? true { next = time }
+            }
+        }
+        if let expiry {
+            let seconds = expiry.timeIntervalSince(now)
+            let untilNextMinute = seconds - (ceil(seconds / 60) - 1) * 60
+            let tick = now.addingTimeInterval(max(0.001, untilNextMinute))
+            if next.map({ tick < $0 }) ?? true { next = tick }
+        }
+        let warning: Bool? = future.contains { $0.timeIntervalSince(now) <= 48 * 3600 } ? true : (knownExpiries.count == items.count ? false : nil)
+        return result(.complete, activeCount, expiry, warning, next)
+    }
 }
 
 /// The merged generated row decoder rejects malformed non-null reset timestamps
@@ -148,7 +213,26 @@ public enum EngineDeadlineFacts {
         let passInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
         if case .available(let admitted)=resetEventState() { events=admitted } else { events=[] }
-        let passDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, events: events, eventRows: value.dockRows, now: context.now)
+        let baseDeadline = EngineDeadlineFacts.evaluate(rows: value.dockRows + value.menuRows, events: events, eventRows: value.dockRows, now: context.now)
+        var passResetCards: [String: EngineResetCardFacts] = [:]
+        for member in members {
+            let row = member.row, account = member.account
+            let eligible = value.status == .ready && member.subscriptionRef == member.id && member.isStable &&
+                account.route.isKnown && account.route != .knownUnknown &&
+                (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired) && row.state == .fresh &&
+                account.valueState == .current && (date(account.observedAt).map { $0 <= context.now } ?? false) &&
+                (date(row.expiresAt).map { context.now < $0 } ?? false) &&
+                (date(account.freshUntil).map { context.now < $0 } ?? false)
+            passResetCards[member.id] = EngineResetCardFacts.evaluate(account.resetCards, eligible: eligible, now: context.now, english: english)
+        }
+        let cardDeadline = passResetCards.values.compactMap(\.nextChange).min()
+        let passDeadline: EngineRecomputeDeadline
+        switch (baseDeadline, cardDeadline) {
+        case (.scheduled(let current, let unknown), .some(let card)): passDeadline = .scheduled(min(current, card), hasUnknownDeadline: unknown)
+        case (.unknown, .some(let card)): passDeadline = .scheduled(card, hasUnknownDeadline: true)
+        case (.none, .some(let card)): passDeadline = .scheduled(card, hasUnknownDeadline: false)
+        default: passDeadline = baseDeadline
+        }
         var passSignals:[DockSubscriptionSignal] = []
         for member in members {
             let row=member.row
@@ -250,7 +334,7 @@ public enum EngineDeadlineFacts {
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
-        return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows)
+        return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, resetCards: passResetCards)
     }
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account

@@ -38,7 +38,7 @@ private actor ReserveJourneyClient: EngineClient {
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
     private enum ProofMutation { case fallbackMember, unknownBound, unrecognizedBound, unknownUnbound, duplicateFallback, duplicateRef, missingLatch, nonStaleLatch, missingReset, absentReset, malformedReset, missingWeeklyReset, absentWeeklyReset, malformedWeeklyReset, mismatchReset, laterReset, missingValidUntil, malformedValidUntil, futureAccountObservation, malformedAccountObservation, futureWindowObservation, malformedWindowObservation, duplicateWindowID }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, mixedOneRetained: Bool = false, multiWindowTransition: Bool = false, proofTwoWindows: Bool = false, proofMutation: ProofMutation? = nil, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, resetCards: [String: Any]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -73,6 +73,7 @@ private actor ReserveJourneyClient: EngineClient {
         window["resetsAt"] = deadline; window["remainingPercent"] = 42.5
         account["windows"] = [window]
         account["credits"] = ["balance": balance ?? NSNull(), "unit": unit]
+        if let resetCards { account["resetCards"] = resetCards }
         if multiWindowTransition || proofTwoWindows {
             account["freshUntil"] = "2028-12-01T00:00:00Z"
             var weekly = window
@@ -387,7 +388,9 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
-            let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+            let clearedPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: now))
+            let cleared = clearedPair.content
+            XCTAssertTrue(clearedPair.resetCards.isEmpty)
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
             XCTAssertNil(cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
             return (cleared.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" },
@@ -792,6 +795,25 @@ private actor ReserveJourneyClient: EngineClient {
 
     // Empty and unrecognized units are decoder-boundary inputs; the current
     // producer normalizes both to "other" and does not emit them directly.
+    func testResetCardsAreBoundToTheAdmittedMemberAndWithdrawnOnClear() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let format = ISO8601DateFormatter(), expiry = now.addingTimeInterval(3600)
+        let cards: [String: Any] = ["state": "complete", "count": 1, "earliestExpiresAt": format.string(from: expiry),
+            "items": [["id": String(repeating: "a", count: 64), "expiresAt": format.string(from: expiry)]],
+            "truncated": false, "sources": [["source": "codex-account", "observedAt": format.string(from: now.addingTimeInterval(-60))]]]
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, clearAfter: true, overrideNow: now, resetCards: cards,
+            providerProbe: { provider, _, time in
+                let paired = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: time))
+                XCTAssertEqual(paired.resetCards["aaaaaaaaaaaaaaaa"]?.countText, "↺1")
+                XCTAssertEqual(paired.resetCards["aaaaaaaaaaaaaaaa"]?.warning, true)
+                XCTAssertEqual(paired.resetCards["aaaaaaaaaaaaaaaa"]?.earliestExpiry, expiry)
+            })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained, overrideNow: now, resetCards: cards,
+            providerProbe: { provider, _, time in
+                XCTAssertNil(provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: time)).resetCards["aaaaaaaaaaaaaaaa"]?.count)
+            })
+    }
+
     func testUnknownAndEmptyUnitAreNotMisreportedOrEchoed() async throws {
         for english in [true, false] {
             let label = english ? "Reserve" : "储备"
