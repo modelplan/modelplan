@@ -429,8 +429,9 @@ def _wait_scheduler_capture(engine, home, scope, path, capture_ready, error_code
                 # An older fenced-out attempt can precede a newly granted job.
                 # Keep observing until the required terminal outcome and capture
                 # agree, or the bounded operation deadline expires.
-        time.sleep(.05)
-    require(False, error_code)
+        time.sleep(.5)
+    fixed = ','.join(item['outcome'] + '/' + item['reason'] for item in transitions[-10:])
+    require(False, error_code + (':' + fixed if fixed else ':no_scheduler_outcome'))
 
 
 def _wait_native_capture(engine, home, status):

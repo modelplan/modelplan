@@ -1,5 +1,7 @@
 {
-  "scopes": [
-    "synthetic"
-  ]
+  "member": {
+    "rowId": "codex",
+    "route": "runtime_rpc",
+    "subscriptionRef": "0123456789abcdef"
+  }
 }
