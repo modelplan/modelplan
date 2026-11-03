@@ -2,12 +2,24 @@
 
 Releases of the `modelplan` CLI and the plugins in this repository. Binaries are on [Releases](https://github.com/modelplan/modelplan/releases). The website and data change continuously; see [modelplan.ai/updates](https://modelplan.ai/updates).
 
-## Unreleased
+## CLI v0.5.52 (proposed; not released)
 
-These ship with the next CLI release; its pin PR gives them a version heading.
+This draft targets the next CLI release. The tag, release and plugin pins require separate approval and published artifacts.
 
-- Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
-  请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
+- Update every installed ModelPlan CLI copy together, including plugin-pinned copies. Stop older CLI processes before starting this version; older and newer copies must not run concurrently against the same cache because their ledger lock protocols do not mutually exclude one another.
+  请同时更新所有已安装的 ModelPlan CLI，包括插件锁定的副本。启动此版本前请停止旧 CLI 进程；新旧版本不得同时使用同一缓存，因为两者的账本锁协议无法相互排斥。
+
+- Give the App richer, consent-aware cockpit details, including available reserve and performance, recent sessions and quota alerts. Missing or uncertain readings stay unknown.
+  App 可在授权范围内显示更丰富的驾驶舱详情，包括可用储备与性能、最近会话和额度提醒；缺失或不确定的读数保持未知。
+
+- Refresh permitted live quota readings automatically when the App starts or resumes and when each provider is due. Individual account refreshes respect the same wait times and retry limits; each reading retains its own source and observation time.
+  App 启动、恢复及各提供方到期时自动刷新已授权的实时额度；单个账户刷新遵守相同的等待时间与重试限制，每条读数保留自己的来源和观察时间。
+
+- Give the App clearer reset-card counts and expiry details when the source supports them. Incomplete or uncertain information is marked accordingly instead of being presented as complete.
+  在来源支持时，向 App 提供更清晰的重置卡数量与到期详情；信息不完整或不确定时会明确标记，不会显示为完整数据。
+
+- The App–CLI connection can negotiate `cockpitDetailsV1`, `resetEvents`, `windowSourcesV1`, `refreshDecisionsV1` and `memberRefreshV1` for these details, reset announcements, per-window provenance, refresh diagnostics and individual member refreshes. Older clients can continue without these optional capabilities.
+  App 与 CLI 的连接可协商 `cockpitDetailsV1`、`resetEvents`、`windowSourcesV1`、`refreshDecisionsV1` 和 `memberRefreshV1`，分别获取详情、重置公告、窗口来源、刷新诊断及单个成员刷新；旧客户端无需这些可选功能仍可继续使用。
 
 - Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
   C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
