@@ -12,7 +12,7 @@ import ModelPlanWire
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
     private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, atExpiry, expired, refreshed, revoked, revokedWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, overrideNow: Date? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, overrideNow: Date? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -54,7 +54,7 @@ import ModelPlanWire
             account["windows"] = [window]
         }
         row["accounts"] = state == .revoked ? [] : [account]
-        if mixedTransition {
+        if mixedTransition || deadlineOnlyMixed {
             var second = account
             second["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; second["freshUntil"] = "2028-12-01T00:00:00Z"
             var secondWindow = window
@@ -94,6 +94,7 @@ import ModelPlanWire
         let now: Date
         if state == .atExpiry { now = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline)) }
         else { now = overrideNow ?? Date(timeIntervalSince1970: seconds) }
+        deadlineProbe?(rows.projection.rows, now)
         let content = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
         if mixedTransition {
@@ -207,6 +208,32 @@ import ModelPlanWire
             XCTAssertEqual(early.0?.dataState, .unavailable); XCTAssertEqual(later.0?.dataState, .unavailable)
             // Characterizes the existing gap; it does not approve indefinite retention.
             XCTAssertEqual(early.1?.value, "12.5 credits"); XCTAssertEqual(later.1?.value, "12.5 credits")
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained, deadlineOnlyMixed: true) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(first, hasUnknownDeadline: true))
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(second, hasUnknownDeadline: false))
+        }
+    }
+
+    func testRecomputeDeadlineFactsUseOnlyFutureAndReportUnknown() async throws {
+        let first = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
+        let second = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
+        XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: [], now: first), .none)
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(first, hasUnknownDeadline: false))
+            // Once the row latch is due, a different account's later deadline remains a fact.
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: first), .scheduled(second, hasUnknownDeadline: false))
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: second), .none)
+        }
+        for state in [FixtureState.unknownDeadline, .malformedDeadline] {
+            _ = try await projection(balance: 12.5, unit: "credits", english: true, state: state) { rows, now in
+                XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .unknown)
+            }
+        }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .revokedWithValues) { rows, now in
+            XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .none)
         }
     }
 

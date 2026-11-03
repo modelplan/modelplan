@@ -6,6 +6,43 @@ import ModelPlanDock
 import ModelPlanWire
 import ModelPlanSettings
 
+/// Scheduling facts only; this type does not determine retained-value policy.
+public enum EngineRecomputeDeadline: Equatable, Sendable {
+    case scheduled(Date, hasUnknownDeadline: Bool)
+    case unknown
+    case none
+}
+
+/// Reads only already-admitted rows. The consumer must recompute after each
+/// replacement or invalidation and use its own snapshot token to cancel timers.
+public enum EngineDeadlineFacts {
+    public static func evaluate(rows: [RowsRow], now: Date) -> EngineRecomputeDeadline {
+        var next: Date?
+        var unknown = false
+        func include(_ stamp: WireTimestamp?) {
+            guard let stamp else { unknown = true; return }
+            let fractional = ISO8601DateFormatter()
+            fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let date = fractional.date(from: stamp.rawValue) ?? ISO8601DateFormatter().date(from: stamp.rawValue) else {
+                unknown = true; return
+            }
+            guard date > now else { return }
+            if next.map({ date < $0 }) ?? true { next = date }
+        }
+        for row in rows where row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired {
+            let accounts = row.accounts.filter { $0.valueState == .current || $0.valueState == .retained }
+            guard !accounts.isEmpty else { continue }
+            include(row.expiresAt)
+            for account in accounts {
+                include(account.freshUntil)
+                for window in account.windows where window.current { include(window.validUntil) }
+            }
+        }
+        if let next { return .scheduled(next, hasUnknownDeadline: unknown) }
+        return unknown ? .unknown : .none
+    }
+}
+
 /// Shared host seam backed only by admitted app-server rows. Legacy context data is unused.
 @MainActor public final class EngineDockContentProvider: DockContentProvider {
     public var resetEventState:() -> EngineRowsEventState = { .absentFromSchema }
