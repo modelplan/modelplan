@@ -11,7 +11,7 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
+    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, currentWindowMissingObservation, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
     private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
@@ -73,6 +73,9 @@ import ModelPlanWire
         if state == .currentWindowMissing || state == .currentWindowMalformed {
             window["validUntil"] = state == .currentWindowMalformed ? "invalid-deadline" as Any : NSNull()
             account["windows"] = [window]
+        }
+        if state == .currentWindowMissingObservation {
+            window["observedAt"] = NSNull(); account["windows"] = [window]
         }
         row["accounts"] = state == .revoked ? [] : [account]
         if mixedTransition || deadlineOnlyMixed {
@@ -136,8 +139,9 @@ import ModelPlanWire
         let content = paired.content
         XCTAssertEqual(paired.deadline, provider.recomputeDeadline)
         providerProbe?(provider, content, now)
-        if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
-        if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none) }
+        if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown); XCTAssertTrue(paired.verifiedWindows.isEmpty) }
+        if isRetained { XCTAssertTrue(paired.verifiedWindows.isEmpty) }
+        if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none); XCTAssertTrue(paired.verifiedWindows.isEmpty) }
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
         if let replacementEvents {
             let initial = try XCTUnwrap(resetEvents.first), replacement = try XCTUnwrap(replacementEvents.first)
@@ -163,6 +167,8 @@ import ModelPlanWire
             XCTAssertEqual(content.snapshot.inputs.count, 1)
             XCTAssertEqual(input?.windows.count, 2)
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(firstDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(Set(paired.verifiedWindows.map(\.windowID)), Set(["session:18000:main:main", "weekly:604800:main:main"]))
+            XCTAssertTrue(paired.verifiedWindows.allSatisfy { $0.memberID == "aaaaaaaaaaaaaaaa" })
             XCTAssertEqual(input?.windows.first { $0.period == .fiveHour }?.remainingPercent, 42.5)
             XCTAssertEqual(input?.windows.first { $0.period == .week }?.remainingPercent, 75.0)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: now), .scheduled(firstDeadline, hasUnknownDeadline: false))
@@ -172,6 +178,11 @@ import ModelPlanWire
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(heldPair.deadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(paired.deadline, .scheduled(firstDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(heldPair.verifiedWindows.count, 1)
+            XCTAssertEqual(heldPair.verifiedWindows.first?.memberID, "aaaaaaaaaaaaaaaa")
+            XCTAssertEqual(heldPair.verifiedWindows.first?.windowID, "weekly:604800:main:main")
+            XCTAssertEqual(heldPair.verifiedWindows.first?.remainingPercent, 75.0)
+            XCTAssertEqual(heldPair.verifiedWindows.first?.until, secondDeadline)
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows.projection.rows, now: firstDeadline), .scheduled(secondDeadline, hasUnknownDeadline: false))
             // The row-level reason and overall input remain non-fresh. The
             // later weekly window is still time-valid on the wire, but the
@@ -199,6 +210,7 @@ import ModelPlanWire
             XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.value, "--")
             let fullyExpired = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: secondDeadline))
             XCTAssertNil(fullyExpired.snapshot.inputs.first?.windows.first { $0.period == .week }?.remainingPercent)
+            XCTAssertTrue(provider.verifiedWindows.isEmpty)
 
             var refreshedAccount = account
             refreshedAccount["observedAt"] = "2027-12-20T00:00:00Z"
@@ -218,6 +230,7 @@ import ModelPlanWire
             let refreshedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-02-01T00:00:00Z"))
             XCTAssertEqual(provider.recomputeDeadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(refreshedPair.deadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
+            XCTAssertEqual(refreshedPair.verifiedWindows.count, 2)
             XCTAssertEqual(heldPair.deadline, .scheduled(secondDeadline, hasUnknownDeadline: false))
             XCTAssertEqual(refreshed.snapshot.inputs.count, 1)
             let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
@@ -232,9 +245,11 @@ import ModelPlanWire
             XCTAssertNil(withdrawn.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
             XCTAssertEqual(provider.recomputeDeadline, .none)
             XCTAssertEqual(withdrawnPair.deadline, .none)
+            XCTAssertTrue(withdrawnPair.verifiedWindows.isEmpty)
             XCTAssertEqual(refreshedPair.deadline, .scheduled(refreshedDeadline, hasUnknownDeadline: false))
         }
         if mixedTransition {
+            XCTAssertTrue(paired.verifiedWindows.isEmpty)
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
                 snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
             }
@@ -383,6 +398,8 @@ import ModelPlanWire
             XCTAssertEqual(projected.1?.value, "12.5 credits")
             // These characterize today's nil fallbacks, not approval of the result.
         }
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .currentWindowMissingObservation,
+            providerProbe: { provider, _, _ in XCTAssertTrue(provider.verifiedWindows.isEmpty) })
     }
 
     func testResetEventPublicationAndExpiryAreRecomputeDeadlines() async throws {
