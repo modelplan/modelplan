@@ -3,9 +3,8 @@ import Foundation
 import CoreGraphics
 
 public enum DockCardVisibility:Equatable,Sendable {
-    case hidden,hover(String),pinned(String)
-    public var subscriptionID:String?{switch self{case .hidden:return nil;case .hover(let id),.pinned(let id):return id}}
-    public var isPinned:Bool{if case .pinned=self{return true};return false}
+    case hidden,hover(String)
+    public var subscriptionID:String?{switch self{case .hidden:return nil;case .hover(let id):return id}}
 }
 /// Only a key window with a real descendant control focused protects a card.
 public enum DockCardFocus {
@@ -29,36 +28,25 @@ public struct DockCardInteraction:Sendable {
         let hover=parentExpanded ? hoveredID.flatMap{self.catalogue.contains($0) ? $0:nil}:nil
         if hover != hovered{
             hovered=hover;pending=nil;enterAt=nil
-            if !visibility.isPinned,let hover,parentExpanded{
+            if let hover,parentExpanded{
                 if visibility.subscriptionID != nil{visibility = .hover(hover)}
                 else{pending=hover;enterAt=now+Self.entryDwell}
             }
         }
-        if !parentExpanded{pending=nil;enterAt=nil;if !visibility.isPinned{visibility = .hidden}}
-        if let pending,let enterAt,now>=enterAt,parentExpanded,!visibility.isPinned{
+        if !parentExpanded{pending=nil;enterAt=nil;visibility = .hidden}
+        if let pending,let enterAt,now>=enterAt,parentExpanded{
             visibility = .hover(pending);self.pending=nil;self.enterAt=nil
         }
-        if visibility.isPinned || visibility == .hidden || insideShared != false || menuActuallyOpen{leaveAt=nil}
+        if visibility == .hidden || insideShared != false || menuActuallyOpen{leaveAt=nil}
         else{
             if leaveAt==nil{leaveAt=now+Self.independentLeaveGrace}
             if now>=leaveAt!{visibility = .hidden;leaveAt=nil}
         }
         nextDeadline=[enterAt,leaveAt].compactMap{$0}.min()
     }
-    public mutating func click(_ id:String,at now:TimeInterval)throws{
-        try time(now);guard catalogue.contains(id) else{throw DockLogicError.missingSubscription}
-        visibility = .pinned(id)
-        pending=nil;enterAt=nil;leaveAt=nil;nextDeadline=nil
-    }
-    /// A hovered preview may also be pinned or released explicitly.
-    public mutating func setPinned(_ pinned:Bool, id:String, at now:TimeInterval)throws {
-        try time(now);guard catalogue.contains(id),visibility.subscriptionID == id else{throw DockLogicError.missingSubscription}
-        visibility = pinned ? .pinned(id):.hover(id)
-        pending=nil;enterAt=nil;leaveAt=nil;nextDeadline=nil
-    }
     public mutating func dismiss(){visibility = .hidden;pending=nil;enterAt=nil;leaveAt=nil;nextDeadline=nil}
-    public mutating func suspend(preservingPin:Bool=true){
-        if !preservingPin || !visibility.isPinned{visibility = .hidden}
+    public mutating func suspend(){
+        visibility = .hidden
         pending=nil;enterAt=nil;leaveAt=nil;nextDeadline=nil;hovered=nil
     }
     private mutating func time(_ now:TimeInterval)throws{

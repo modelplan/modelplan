@@ -72,7 +72,9 @@ public extension SettingsStore {
             p.onboarding.next(in: .task65)
         }
         let effects: [FirstRunEffect]
-        if action == .seeWhatsHere { effects = (host == .popup ? [.closeFirstRunPopup] : []) + [.openCockpit,.latchOptionHelp] }
+        if action == .seeWhatsHere {
+            effects = (host == .popup ? [.closeFirstRunPopup] : []) + [capabilities.helpMapUsesDock ? .revealDock : .openCockpit, .latchOptionHelp]
+        }
         else { effects = host == .popup ? [.closeFirstRunPopup,.revealDock] : [.returnToSettings] }
         return .init(snapshot: saved, effects: effects, login: .init(snapshot: saved, observedState: capabilities.login,
             request: LoginServicePolicy.request(choice: saved.preferences.openAtLogin, observed: capabilities.login, reason: .firstRunCompletion)))

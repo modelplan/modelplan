@@ -31,6 +31,12 @@ private actor PairedSyntheticClient: EngineClient {
     func cancel() { action = nil }
     func fire() { let saved = action; action = nil; saved?() }
 }
+@MainActor private final class DiagnosticSettingsSurface: SettingsWindowSurface {
+    var pane: String?
+    func prepare() async {}
+    func show(paneID: String?) { pane = paneID }
+    func hide() {}
+}
 private actor EntrySyntheticClient: EngineClient {
     let store: EngineStore, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
@@ -233,26 +239,34 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 55)
+        let surface = DiagnosticSettingsSurface()
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
+            makeSettingsSurface: { _ in surface },
             activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let problems = try XCTUnwrap(app.liveStatusMenu).items.filter { $0.title == "Synthetic account: Reading stale · Details…" }
+        XCTAssertEqual(problems.count, 1, "Multiple members from one provider produce one diagnostic line")
+        let problem = try XCTUnwrap(problems.first)
+        _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
+        for _ in 0..<250 { if surface.pane == "diagnostics" { break }; try await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
-        app.composition.dock.dockView.onAction?(.subscription(id))
+        try XCTUnwrap(app.composition.dock.dockView.nozzleEventDelegate).hoverNozzle(id)
+        for _ in 0..<100 { if !app.composition.dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.composition.dock.card.isHidden)
-        XCTAssertTrue(app.composition.dock.cardPinsDock, "Clicking the nozzle pins the card")
         let store = try XCTUnwrap(acceptedStore), before = store.snapshot.rows?.sequence
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(store.snapshot.rows?.sequence, before, "no new engine delivery")
-        XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the pinned card")
+        XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
-        XCTAssertEqual(card.name, "合成账户")
+        XCTAssertEqual(card.name, "合成账户 · 账号 1")
         XCTAssertEqual(card.stateLabel, "过期 · 4368小时前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)

@@ -3,6 +3,12 @@ import AppKit
 import ModelPlanInstruments
 import ModelPlanSettings
 
+struct DockStatusHelpAnchor {
+    let frame: CGRect
+    let sharing: NSWindow.SharingType
+    let collection: NSWindow.CollectionBehavior
+}
+
 /// Connects the real Dock surface to the same app-scoped hint arbiter and ledger
 /// used by the existing Help composition. It creates no independent hint queue.
 @MainActor final class DockHelpCoordinator {
@@ -14,16 +20,26 @@ import ModelPlanSettings
     private var binding: DockHelpBinding?
     private var suspended = false
     private var retired = false
+    private let statusAnchor: @MainActor () -> DockStatusHelpAnchor?
+    private var activeSurface: DockHelpSurface?
+    private var statusSurface: DockHelpSurface?
+    private var requestedMap: RequestedHelpMap?
+    private var mapSurface: DockHelpSurface?
+    private var mapStatusFrame: CGRect?
+    private var dismissingMap = false
     var isInstalled: Bool { !retired && presenter != nil && binding != nil }
 
     private init(dock: StaticDockPreviewHost, application: SettingsApplicationCoordinator,
-                 composition: InstrumentHelpComposition, router: HelpOverlayRouter) {
+                 composition: InstrumentHelpComposition, router: HelpOverlayRouter,
+                 statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor?) {
         self.dock = dock; self.application = application
         self.composition = composition; self.router = router
+        self.statusAnchor = statusAnchor
     }
 
     static func restored(dock: StaticDockPreviewHost,
-                         application: SettingsApplicationCoordinator) async -> DockHelpCoordinator? {
+                         application: SettingsApplicationCoordinator,
+                         statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor? = { nil }) async -> DockHelpCoordinator? {
         var routed: HelpOverlayRouter?
         let composition = await InstrumentHelpComposition.restored(application: application, overlayFactory: { cockpit in
             let router = HelpOverlayRouter(cockpit: cockpit)
@@ -32,17 +48,27 @@ import ModelPlanSettings
         })
         guard let router = routed else { composition.dispose(); return nil }
         let owner = DockHelpCoordinator(dock: dock, application: application,
-                                        composition: composition, router: router)
+                                        composition: composition, router: router, statusAnchor: statusAnchor)
         owner.install()
         return owner
     }
 
     private func install() {
         guard let dock, !retired else { return }
-        let presenter = DockHelpPresenter(currentSurface: { [weak dock] in dock?.currentDockHelpSurface },
-            isCurrent: { [weak dock] surface in dock?.isCurrentDockHelpSurface(surface) == true },
-            blockers: { [weak dock] surface in dock?.dockHelpBlockingRects(surface) ?? [] },
-            windowPolicy: { [weak dock] surface in dock?.dockHelpWindowPolicy(surface) },
+        let presenter = DockHelpPresenter(currentSurface: { [weak self] in
+            guard let self, self.mapSurface == nil else { return nil }
+            return self.activeSurface
+        },
+            isCurrent: { [weak self] surface in self?.isCurrent(surface) == true },
+            blockers: { [weak self] surface in
+                guard let self else { return [] }
+                return self.statusSurface == surface ? Array(surface.anchors.values) : (self.dock?.dockHelpBlockingRects(surface) ?? [])
+            },
+            windowPolicy: { [weak self] surface in
+                guard let self else { return nil }
+                if self.statusSurface == surface, let anchor = self.statusAnchor() { return (anchor.sharing, anchor.collection) }
+                return self.dock?.dockHelpWindowPolicy(surface)
+            },
             language: { [weak self] in self?.application.latest?.effective.language == .chinese ? .chinese : .english },
             accessibility: { [weak self] in
                 let effective = self?.application.latest?.effective
@@ -50,26 +76,57 @@ import ModelPlanSettings
             }, copy: { kind, language in
                 let zh = language == .chinese
                 switch kind {
+                case .ringRefresh: return (zh ? "悬停查看详情 · 点击刷新" : "Hover to see details · click to refresh", zh ? "不再显示" : "Don't show again")
+                case .findWidget: return (zh ? "在菜单中选择“显示额度挂件”再次找到" : "Find it again from the menu: Show Quota Widget", zh ? "不再显示" : "Don't show again")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
-                case .pinned: return (zh ? "已固定；使用关闭按钮收起" : "Pinned. Use Close to dismiss.", zh ? "关闭" : "Close")
                 default: return nil
                 }
-            }, dismiss: { [weak self] _ in self?.composition.host.dismiss() })
+            }, dismiss: { [weak self] _ in self?.composition.host.dismiss() }, layer: composition.layer)
         let binding = DockHelpBinding(presenter: presenter,
-            isCurrent: { [weak dock] surface in dock?.isCurrentDockHelpSurface(surface) == true })
+            isCurrent: { [weak self] surface in self?.isCurrent(surface) == true })
         self.presenter = presenter; self.binding = binding
+        requestedMap = RequestedHelpMap(composition: composition, isCurrent: { [weak self] input in
+            guard let self, let surface = self.mapSurface else { return false }
+            return input.sessionID == surface.layoutID && self.isCurrent(surface) &&
+                (self.mapStatusFrame == nil || self.statusAnchor()?.frame == self.mapStatusFrame)
+        })
+        composition.onHelpAction = { [weak self] action in
+            guard let self else { return }
+            self.dismissingMap = true
+            let handled = (try? self.requestedMap?.handleHelpAction(action)) == true
+            self.dismissingMap = false
+            if handled { self.finishMap(); self.refresh() }
+        }
         router.installDock(binding)
         dock.dockHelpSurfaceDidChange = { [weak self] surface in self?.update(surface) }
     }
 
     private func update(_ surface: DockHelpSurface?) {
         guard !retired, !suspended, let binding else { return }
+        if let mapSurface, surface != mapSurface { dismissRequestedMap() }
         let eligible = application.latest?.snapshot.preferences.onboarding.completed == true
-        let admittedSurface = eligible ? surface : nil
+        let concealed: Bool
+        switch dock?.edgePresentation?.state {
+        case .sliver?, .suppressed(.userHidden)?: concealed = true
+        default: concealed = false
+        }
+        if eligible, concealed, let anchor = statusAnchor(), !anchor.frame.isEmpty {
+            if statusSurface?.anchors[.findWidget] != anchor.frame {
+                statusSurface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
+                                                anchors: [.findWidget: anchor.frame])
+            }
+        } else { statusSurface = nil }
+        let admittedSurface = eligible ? (statusSurface ?? surface) : nil
+        activeSurface = admittedSurface
         var context = composition.host.hints.context
+        context.helpMapVisible = mapSurface != nil
+        context.v1MinimalHints = true
+        context.ringRefreshAvailable = statusSurface == nil && dock?.ringRefreshAvailable == true
+        context.widgetConcealed = concealed
+        context.statusAnchorAvailable = statusSurface != nil
         context.ignitionAvailable = dock?.cockpitEntryEnabled == true
-        context.cardPinned = admittedSurface?.anchors[.pinned] != nil
+        context.cardPinned = false
         context.reducedMotion = application.latest?.effective.reduceMotion ?? true
         do {
             if !composition.host.isRunning { try composition.host.resume(context: context) }
@@ -80,9 +137,59 @@ import ModelPlanSettings
         }
     }
 
+    @discardableResult func presentRequestedMap() -> Bool {
+        guard !retired, !suspended, let surface = dock?.currentDockHelpSurface else { return false }
+        update(surface)
+        guard isCurrent(surface), let presenter, let requestedMap else { return false }
+        composition.host.dismiss()
+        guard let viewport = presenter.prepareMap(surface: surface) else { return false }
+        mapSurface = surface
+        func local(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY, width: rect.width, height: rect.height)
+        }
+        var anchors = surface.mapAnchors.map { DockRequestedHelpAnchor(id: $0.id, region: $0.region, rect: local($0.rect), visible: $0.visible, caption: $0.caption) }
+        if let status = statusAnchor(), viewport.contains(status.frame) {
+            mapStatusFrame = status.frame
+            let caption = application.latest?.effective.language == .chinese ? "从菜单中选择“显示额度挂件”。" : "Choose Show Quota Widget from the menu."
+            anchors.append(.init(id: "status.menu", region: .sliver, rect: local(status.frame), visible: true, caption: caption))
+        } else { mapStatusFrame = nil }
+        let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)
+        let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
+        guard var input = DockRequestedHelpLayout.make(session: surface.layoutID, viewport: viewport.size,
+                language: language, anchors: anchors, blocked: blockers, recipe: composition.layer.recipeProvider) else {
+            finishMap(); return false
+        }
+        input.reduceMotion = application.latest?.effective.reduceMotion ?? true
+        input.reduceTransparency = application.latest?.effective.reduceTransparency ?? true
+        do {
+            guard try requestedMap.presentHelpMap(input: input, content: [:], context: composition.host.hints.context),
+                  presenter.showPreparedMap(surface: surface, dismissMap: { [weak self] in self?.dismissRequestedMap() }) else {
+                try? requestedMap.dismissHelpMap(); finishMap(); return false
+            }
+            return true
+        } catch { finishMap(); return false }
+    }
+
+    func dismissRequestedMap() {
+        guard mapSurface != nil else { return }
+        dismissingMap = true
+        try? requestedMap?.dismissHelpMap()
+        dismissingMap = false
+        finishMap()
+        if !retired && !suspended { update(dock?.currentDockHelpSurface) }
+    }
+    private func finishMap() { mapSurface = nil; mapStatusFrame = nil; presenter?.endMap() }
+
+    private func isCurrent(_ surface: DockHelpSurface) -> Bool {
+        guard !retired, !suspended, !dismissingMap, activeSurface == surface else { return false }
+        if statusSurface == surface { return statusAnchor()?.frame == surface.anchors[.findWidget] }
+        return dock?.isCurrentDockHelpSurface(surface) == true
+    }
+
     func refresh() { update(dock?.currentDockHelpSurface) }
     func suspend() {
         guard !retired, !suspended else { return }
+        dismissRequestedMap()
         suspended = true
         if let binding { try? binding.update(nil, context: composition.host.hints.context, host: composition.host) }
         composition.host.suspend()
@@ -94,7 +201,7 @@ import ModelPlanSettings
     }
     func dispose() async {
         guard !retired else { return }
-        retired = true; dock?.dockHelpSurfaceDidChange = nil
+        dismissRequestedMap(); retired = true; activeSurface = nil; statusSurface = nil; dock?.dockHelpSurfaceDidChange = nil
         if let binding { try? binding.retire(context: composition.host.hints.context, host: composition.host) }
         router.installDock(nil); presenter?.dispose(); presenter = nil; binding = nil
         await composition.flush()

@@ -4,7 +4,7 @@ import Foundation
 /// Provisional identifiers retained for callers of the original eight-page draft.
 /// The injected structure, not this enum or its declaration order, determines navigation/grouping.
 public enum SettingsPane: String, CaseIterable, Sendable {
-    case appearance, rings, position, general, notifications, subscriptions, privacy, about, dock, cockpit
+    case appearance, rings, position, general, notifications, subscriptions, privacy, diagnostics, about, dock, cockpit
     public var title: SettingsText {
         SettingsStructure.task65.panes.first { $0.id == rawValue }?.title ?? SettingsStructure.provisional.panes.first { $0.id == rawValue }?.title ?? .init(rawValue, rawValue)
     }
@@ -50,7 +50,8 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
     /// Historical input only; not the default. Retained for generic compatibility/regression tests.
     /// Current content only, not a final page/visual freeze. Regrouping changes this input table alone.
@@ -62,6 +63,6 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.readerDetails,.refreshHistory,.diagnostics,.feedback,.licenses])]),
     ])
 }

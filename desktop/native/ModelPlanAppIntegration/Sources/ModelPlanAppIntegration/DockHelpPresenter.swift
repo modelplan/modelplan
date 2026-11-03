@@ -21,6 +21,7 @@ import ModelPlanSettings
     private let layer: HelpUILayerView
     private var panel: NSPanel?
     private var eventMonitor: Any?
+    private var deactivateObserver: NSObjectProtocol?
     private var currentOffer: HintOffer?
     private var currentSurfaceValue: DockHelpSurface?
     private var generation: UInt64 = 0
@@ -34,19 +35,19 @@ import ModelPlanSettings
          accessibility: @escaping @MainActor () -> (motion: Bool, transparency: Bool),
          copy: @escaping @MainActor (FirstUseHintKind, InstrumentLanguage) -> Copy?,
          dismiss: @escaping @MainActor (UUID) -> Void,
-         recipe: HelpUIRecipeProvider? = nil) {
+         layer: HelpUILayerView) {
         self.currentSurface = currentSurface; self.isCurrent = isCurrent
         self.blockers = blockers; self.windowPolicy = windowPolicy
         self.language = language; self.accessibility = accessibility
         self.copy = copy; self.dismiss = dismiss
-        self.layer = HelpUILayerView(recipeProvider: recipe)
+        self.layer = layer
     }
 
     func placeableKinds(context: HintContext, trial: InstrumentHintSourceSnapshot?) -> Set<FirstUseHintKind> {
         guard !retired, let surface = currentSurface(), surface.visible, !surface.dragging,
               context.dockReveal == surface.revealID, isCurrent(surface) else { return [] }
         let lang = language()
-        return Set([FirstUseHintKind.ignition, .drag, .pinned].filter {
+        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget].filter {
             surface.anchors[$0] != nil && copy($0, lang) != nil
         })
     }
@@ -66,10 +67,11 @@ import ModelPlanSettings
         layer.removeFromSuperview()
         guard let surface = currentSurface(), surface.visible, !surface.dragging,
               isCurrent(surface), let anchor = surface.anchors[offer.kind],
-              let screen = NSScreen.screens.first(where: { $0.visibleFrame.contains(anchor) }),
+              let screen = NSScreen.screens.first(where: { offer.kind == .findWidget ? $0.frame.intersects(anchor) : $0.visibleFrame.contains(anchor) }),
               let policy = windowPolicy(surface),
               let words = copy(offer.kind, language()) else { return false }
-        let viewport = screen.visibleFrame
+        // The status item lies in the menu-bar area above visibleFrame; its real frame remains the anchor.
+        let viewport = offer.kind == .findWidget ? screen.frame : screen.visibleFrame
         func local(_ rect: CGRect) -> CGRect {
             CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY,
                    width: rect.width, height: rect.height)
@@ -94,6 +96,7 @@ import ModelPlanSettings
         guard viewport.contains(screenRect), !blockers(surface).contains(where: { $0.intersects(screenRect) }) else { return false }
         let window = panel ?? makePanel()
         panel = window
+        window.ignoresMouseEvents = false
         window.sharingType = policy.0; window.collectionBehavior = policy.1
         let container = ClipView(frame: CGRect(origin: .zero, size: rect.size))
         container.wantsLayer = true; container.layer?.masksToBounds = true
@@ -140,15 +143,70 @@ import ModelPlanSettings
         panel?.orderOut(nil); layer.suspend()
     }
 
+    /// Prepare the same transparent panel for a map without intercepting input outside the app.
+    func prepareMap(surface: DockHelpSurface) -> CGRect? {
+        guard !retired, isCurrent(surface), surface.visible, !surface.dragging,
+              let anchor = surface.mapAnchors.first?.rect,
+              let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) }),
+              let policy = windowPolicy(surface) else { return nil }
+        generation &+= 1; removeEventMonitor(); removeDeactivateObserver()
+        currentOffer = nil; currentSurfaceValue = surface
+        panel?.orderOut(nil); layer.removeFromSuperview()
+        let window = panel ?? makePanel(); panel = window
+        window.sharingType = policy.0; window.collectionBehavior = policy.1
+        window.ignoresMouseEvents = true
+        // The menu-bar item may be a visible Help target on this same display.
+        let viewport = screen.frame
+        layer.frame = CGRect(origin: .zero, size: viewport.size)
+        window.contentView = layer
+        window.setFrame(viewport, display: false)
+        return viewport
+    }
+
+    func showPreparedMap(surface: DockHelpSurface, dismissMap: @escaping @MainActor () -> Void) -> Bool {
+        guard !retired, currentSurfaceValue == surface, isCurrent(surface), let window = panel,
+              layer.presentation?.mapHeader != nil else { return false }
+        let token = generation
+        window.orderFrontRegardless()
+        guard window.isVisible, window.alphaValue > 0, window.occlusionState.contains(.visible), isCurrent(surface) else {
+            window.orderOut(nil); return false
+        }
+        var optionHeld = NSEvent.modifierFlags.contains(.option)
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self] event in
+            guard let self, !self.retired, self.generation == token, self.currentSurfaceValue == surface else { return event }
+            if event.type == .keyDown && event.keyCode == 53 { dismissMap(); return nil }
+            if event.type == .flagsChanged {
+                let held = event.modifierFlags.contains(.option)
+                if optionHeld && !held { dismissMap() }
+                optionHeld = held
+            }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown { dismissMap() }
+            return event
+        }
+        deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { dismissMap() }
+        }
+        return true
+    }
+
+    func endMap() {
+        generation &+= 1; currentSurfaceValue = nil
+        removeEventMonitor(); removeDeactivateObserver()
+        panel?.orderOut(nil); layer.removeFromSuperview()
+    }
+
     func dispose() {
         guard !retired else { return }
         retired = true; generation &+= 1; currentOffer = nil; currentSurfaceValue = nil
-        removeEventMonitor()
+        removeEventMonitor(); removeDeactivateObserver()
         panel?.orderOut(nil); panel?.close(); panel = nil; layer.dispose()
     }
 
     private func removeEventMonitor() {
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor); self.eventMonitor = nil }
+    }
+    private func removeDeactivateObserver() {
+        if let deactivateObserver { NotificationCenter.default.removeObserver(deactivateObserver); self.deactivateObserver = nil }
     }
 
     private func makePanel() -> NSPanel {

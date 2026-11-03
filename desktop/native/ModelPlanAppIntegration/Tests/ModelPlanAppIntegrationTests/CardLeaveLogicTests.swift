@@ -11,29 +11,17 @@ import ModelPlanDock
 }
 
 final class CardLeaveLogicTests: XCTestCase {
-    func testClickPinsAcrossLeavingSharedRegion() throws {
-        var state = DockCardInteraction()
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
-        try state.click("synthetic", at: 0.01)
-        XCTAssertEqual(state.visibility, .pinned("synthetic"), "A click opens and pins")
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.10)
-        XCTAssertEqual(state.visibility, .pinned("synthetic"))
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.20)
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.46)
-        XCTAssertEqual(state.visibility, .pinned("synthetic"), "A click-pinned card remains after leave")
-    }
-    func testExplicitPinSurvivesPointerLeaveAndCanBeReleased() throws {
+    func testHoverStaysAcrossGapAndClosesAfterLeaving() throws {
         var state = DockCardInteraction()
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0)
         try state.step(catalogue: ["synthetic"], hoveredID: "synthetic", insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.25)
-        try state.setPinned(true, id: "synthetic", at: 0.26)
-        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1)
-        XCTAssertEqual(state.visibility, .pinned("synthetic"))
-        try state.setPinned(false, id: "synthetic", at: 1.01)
+        XCTAssertEqual(state.visibility, .hover("synthetic"))
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.30)
+        try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: true, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 0.45)
+        XCTAssertEqual(state.visibility, .hover("synthetic"), "Crossing the gap keeps the card open")
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.02)
         try state.step(catalogue: ["synthetic"], hoveredID: nil, insideShared: false, parentOwnsHide: true, parentExpanded: true, menuActuallyOpen: false, at: 1.30)
         XCTAssertEqual(state.visibility, .hidden)
-        XCTAssertThrowsError(try state.setPinned(true, id: "synthetic", at: 1.31))
     }
 
     @MainActor func testOpenCardPollsSharedRegionWithoutPointerEvents() throws {
@@ -49,25 +37,43 @@ final class CardLeaveLogicTests: XCTestCase {
         XCTAssertEqual(controller.presentation?.card, .hover("synthetic"))
         now = 0.66; scheduler.fire()
         XCTAssertEqual(controller.presentation?.card, .hidden)
-        controller.stop(preservingPin: false)
+        controller.stop()
     }
 
-    @MainActor func testPinnedCardWithdrawsWhenMemberOrLifecycleIsInvalid() throws {
-        var env = DockInteractionEnvironment(catalogue: ["synthetic"], preferences: .init(), targets: [], insideShared: true,
+    @MainActor func testNoMovementActivatesButDragDoesNot() {
+        let env = DockInteractionEnvironment(catalogue: ["synthetic"], preferences: .init(),
+            targets: [.init(id: "synthetic", along: 0)], insideShared: true)
+        let controller = DockInteractionController(clock: { 0 }, scheduler: CardLogicScheduler(), read: { env })
+        var activated: [String] = []
+        controller.onActivate = { activated.append($0) }
+        controller.start()
+        XCTAssertTrue(controller.beginNozzle(id: "synthetic", along: 0))
+        controller.moveNozzle(along: 10)
+        controller.endNozzle(insideMain: true, overSameSource: true)
+        XCTAssertTrue(activated.isEmpty, "A drag must not request refresh")
+        XCTAssertTrue(controller.beginNozzle(id: "synthetic", along: 0))
+        controller.endNozzle(insideMain: true, overSameSource: true)
+        XCTAssertEqual(activated, ["synthetic"])
+        controller.stop()
+    }
+
+    @MainActor func testHoveredCardWithdrawsWhenMemberOrLifecycleIsInvalid() throws {
+        var now = 0.0
+        var env = DockInteractionEnvironment(catalogue: ["synthetic"], preferences: .init(), targets: [], hoveredID: "synthetic", insideShared: true,
             contents: ["synthetic": .init(subscriptionID: "synthetic", name: "Synthetic", rows: [])])
         let scheduler = CardLogicScheduler()
-        let controller = DockInteractionController(clock: { 0 }, scheduler: scheduler, read: { env })
-        controller.start(); controller.click("synthetic"); controller.setCardPinned(true, id: "synthetic")
-        XCTAssertEqual(controller.presentation?.card, .pinned("synthetic"))
+        let controller = DockInteractionController(clock: { now }, scheduler: scheduler, read: { env })
+        controller.start(); now = 0.25; scheduler.fire()
+        XCTAssertEqual(controller.presentation?.card, .hover("synthetic"))
         env.catalogue = []; env.contents = [:]; controller.refresh()
         XCTAssertEqual(controller.presentation?.card, .hidden)
-        controller.click("synthetic"); controller.setCardPinned(true, id: "synthetic")
+        controller.click("synthetic")
         XCTAssertEqual(controller.presentation?.card, .hidden, "A removed member cannot reopen")
         env.catalogue = ["synthetic"]; env.contents = ["synthetic": .init(subscriptionID: "synthetic", name: "Synthetic", rows: [])]
-        controller.refresh(); controller.click("synthetic"); controller.setCardPinned(true, id: "synthetic")
+        controller.refresh()
         env.active = false; controller.refresh()
-        XCTAssertEqual(controller.presentation?.card, .hidden, "Inactive lifecycle must withdraw even a pinned card")
-        controller.stop(preservingPin: false)
+        XCTAssertEqual(controller.presentation?.card, .hidden, "Inactive lifecycle must withdraw the card")
+        controller.stop()
     }
 
     func testOnlyKeyWindowFocusedDescendantControlProtectsCard() {

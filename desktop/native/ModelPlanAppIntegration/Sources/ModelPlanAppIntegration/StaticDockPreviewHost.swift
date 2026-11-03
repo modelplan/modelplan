@@ -7,6 +7,7 @@ import ModelPlanShell
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanPrimitives
 import ModelPlanSettings
+import ModelPlanInstruments
 import ModelPlanOfficialDock
 import ModelPlanCommunityHost
 
@@ -79,6 +80,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
     public var showSettings: (() -> Void)?
     public var requestHideDock:(() -> Void)?
+    /// Set only when the member-scoped refresh adapter is actually installed.
+    public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
     public var displayChoicesChanged: (([SettingsDisplayChoice]) -> Void)?
     public var commitDisplayPlacement: ((String, SettingsDockEdge, Double) -> Void)?
@@ -283,12 +286,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let outlineView = DockSnapOutlineView()
     private var cardID: String?
     private var cardPresentedRevision: UInt64?, cardPresentedGeneration: UInt64?
-    private var cardPinnedVisible = false
     private var fallbackCardLeaveTask: Task<Void, Never>?
     private var interactionController: DockInteractionController?
     var interactionBindingInstalled: Bool { interactionController != nil }
     var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
-    var cardPinsDock: Bool { environment().presence.cardPinned }
     private var interactionEvents: [DockNozzleEvents] = []
     private var interactionHoveredID: String?
     private var interactionPreviewOrder: [String]?
@@ -344,16 +345,23 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 .region(at: pointer, policy: visibilityPolicy)
             switch region { case .inside, .wake: inside = true; case .outside: inside = false; default: inside = nil }
         }
-        if cardHasKeyboardFocus { inside = true }
+        let focusedID = view.keyboardTargetID.flatMap { catalogue.contains($0) ? $0 : nil }
+        if cardHasKeyboardFocus || focusedID != nil { inside = true }
         let safePreferences = memberSafePreferences
         let visible = Set((try? safePreferences.presentedSubscriptionIDs(catalogue)) ?? [])
         var contents: [String: DockCardContent] = [:]
         for id in catalogue where visible.contains(id) { contents[id] = interactionCardContent(id) }
         return DockInteractionEnvironment(catalogue: catalogue, preferences: safePreferences.subscriptions,
             targets: view.interactionTargets(edge: orientation), overflowIDs: view.interactionOverflowIDs,
-            bindingRevision: inputGeneration, hoveredID: interactionHoveredID, insideShared: inside,
+            bindingRevision: inputGeneration, hoveredID: focusedID ?? interactionHoveredID, insideShared: inside,
             parentOwnsHide: true, parentExpanded: expanded && active, menuActuallyOpen: menuOpen,
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
+    }
+
+    @discardableResult func sweepRefresh(_ id: String) -> Bool {
+        guard permitted, !retired, preferences.showDock,
+              model?.inputs.contains(where: { $0.id == id }) == true else { return false }
+        return interactionView.playRefreshSweep(id, reduceMotion: application?.effective.reduceMotion ?? true)
     }
 
     public func installInteraction(_ controller: DockInteractionController) {
@@ -430,7 +438,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let preview = value.reorder?.order
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
         if let id = value.card.subscriptionID, let content = value.content {
-            showCard(id, pinned: value.card.isPinned, supplied: content)
+            showCard(id, supplied: content)
         } else { dismissCard() }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
@@ -503,7 +511,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
             switch action {
-            case .subscription(let id), .notice(let id): self.showCard(id, pinned: true)
+            case .subscription, .notice: break // Refresh is bound only after scope and floor admission.
             case .overflow: self.openConsole()
             }
         }
@@ -854,7 +862,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
-        if let cardID { if order.contains(cardID) { showCard(cardID, pinned: cardPinnedVisible) } else { dismissCard() } }
+        if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
         if permitted {
             edge.start(); edge.refresh()
             // Pixel/material changes can leave the geometric presentation equal. Flush that
@@ -896,8 +904,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         presence.lifecycleActive = permitted && !retired
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen; presence.locating = locating
-        presence.cardPinned = cardPinnedVisible && !card.isHidden && (!createsNativePanels || cardPanel?.isVisible == true)
-        presence.cardFocused = cardHasKeyboardFocus
+        presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         var auxiliary = cardPanel?.isVisible == true ? cardPanel?.frame : (!createsNativePanels ? native.cardFrame : nil)
         if overflowPanel?.isVisible == true, let frame = overflowPanel?.frame { auxiliary = auxiliary.map { $0.union(frame) } ?? frame }
@@ -1105,6 +1112,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if let overflowPanel, overflowPanel.isVisible { result.append(overflowPanel.frame) }
         return result
     }
+    func dockHelpMapBlockingRects(_ value: DockHelpSurface) -> [CGRect] {
+        guard isCurrentDockHelpSurface(value), let panel else { return [] }
+        let view = interactionView
+        var result = (model?.inputs ?? []).compactMap { input -> CGRect? in
+            guard let rect = view.helpReadoutAnchor(input.id), view.visibleRect.contains(rect) else { return nil }
+            return panel.convertToScreen(view.convert(rect, to: nil))
+        }
+        if let cardPanel, cardPanel.isVisible { result.append(cardPanel.frame) }
+        if let overflowPanel, overflowPanel.isVisible { result.append(overflowPanel.frame) }
+        return result
+    }
     func dockHelpWindowPolicy(_ value: DockHelpSurface) -> (NSWindow.SharingType, NSWindow.CollectionBehavior)? {
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
@@ -1126,6 +1144,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return global
         }
         var anchors: [FirstUseHintKind: CGRect] = [:]
+        if let id = model?.inputs.first(where: { view.interactionAnchor($0.id) != nil })?.id,
+           let local = view.interactionAnchor(id), let global = screenRect(local) {
+            anchors[.ringRefresh] = global
+        }
         if cockpitEntryEnabled, !consoleButton.isHiddenOrHasHiddenAncestor,
            consoleButton.window === panel, consoleButton.bounds.width > 0, consoleButton.bounds.height > 0,
            consoleButton.visibleRect.contains(consoleButton.bounds) {
@@ -1137,16 +1159,34 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
            let drag = dockHelpDragAnchor(in: view, regions: regions), let global = screenRect(drag) {
             anchors[.drag] = global
         }
-        if cardPinnedVisible, !card.isHidden, let cardPanel, cardPanel.isVisible,
-           !cardPanel.isMiniaturized, cardPanel.alphaValue > 0, cardPanel.occlusionState.contains(.visible),
+        var mapAnchors: [DockRequestedHelpAnchor] = []
+        if let grip = anchors[.drag] { mapAnchors.append(.init(id: "dock.move", region: .dockMove, rect: grip, visible: true)) }
+        if let ignition = anchors[.ignition] { mapAnchors.append(.init(id: "dock.ignition", region: .ignition, rect: ignition, visible: true)) }
+        for input in model?.inputs ?? [] {
+            if let local = view.interactionAnchor(input.id), let rect = screenRect(local) {
+                mapAnchors.append(.init(id: "dock.nozzle." + input.id, region: .nozzle, rect: rect, visible: true))
+                mapAnchors.append(.init(id: "dock.rings." + input.id, region: .rings, rect: rect, visible: true))
+            }
+            if let local = view.helpReadoutAnchor(input.id), let rect = screenRect(local) {
+                mapAnchors.append(.init(id: "dock.number." + input.id, region: .number, rect: rect, visible: true))
+            }
+            if let local = view.helpNoticeAnchor(input.id), let rect = screenRect(local) {
+                mapAnchors.append(.init(id: "dock.notice." + input.id, region: .eventDot, rect: rect, visible: true))
+            }
+        }
+        if !card.isHidden, let cardPanel, cardPanel.isVisible, cardPanel.occlusionState.contains(.visible),
            card.window === cardPanel, card.bounds.width > 0, card.bounds.height > 0 {
-            anchors[.pinned] = cardPanel.convertToScreen(card.convert(card.bounds, to: nil))
+            let language: InstrumentLanguage = preferences.language == .chinese ? .chinese : .english
+            let rect = cardPanel.convertToScreen(card.convert(card.bounds, to: nil))
+            mapAnchors.append(.init(id: "dock.card", region: .rings, rect: rect, visible: true,
+                                    caption: HelpCatalog(language).explanation(.dockQuota).body))
         }
         let previous = lastDockHelpSurface
-        let sameLayout = previous?.anchors == anchors && dockHelpInputGeneration == inputGeneration
-        let next = DockHelpSurface(revealID: previous?.revealID ?? UUID(),
+        let sameLayout = previous?.anchors == anchors && previous?.mapAnchors == mapAnchors && dockHelpInputGeneration == inputGeneration
+        var next = DockHelpSurface(revealID: previous?.revealID ?? UUID(),
                                    layoutID: sameLayout ? (previous?.layoutID ?? UUID()) : UUID(),
                                    visible: true, dragging: value.moving, anchors: anchors)
+        next.mapAnchors = mapAnchors
         guard next != previous else { return }
         lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
         dockHelpSurfaceDidChange?(next)
@@ -1311,7 +1351,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
-    private func showCard(_ id: String, pinned: Bool = false, supplied: DockCardContent? = nil) {
+    private func showCard(_ id: String, supplied: DockCardContent? = nil) {
         guard permitted, !retired, preferences.showDock,
               (try? memberSafePreferences.presentedSubscriptionIDs(model?.inputs.map(\.id) ?? []))?.contains(id) == true,
               let content = supplied ?? interactionCardContent(id), content.subscriptionID == id,
@@ -1335,19 +1375,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             self.dismissCard()
         }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
-        card.onPin = { [weak self] in
-            guard let self, self.cardIsCurrent(id, revision: content.revision, token: token, feed: feed) else { return }
-            if let controller = self.interactionController, controller.isActive {
-                controller.setCardPinned(true, id: id)
-            } else { self.showCard(id, pinned: true) }
-        }
-        let english = preferences.language == .english
-        let pinHelp = pinned ? nil : (english ? "Press to pin card" : "按下以固定卡片")
         let unavailable = model?.presentationRows[id] == nil && !cockpitEntryEnabled
         do {
-            try card.apply(content, pinned: pinned, pinAccessibilityHelp: pinHelp,
-                           enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
-            cardPinnedVisible = pinned
+            try card.apply(content, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         guard createsNativePanels else { return }
@@ -1386,7 +1416,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled, let self, !self.retired, self.cardID != nil else { return }
                 if self.interactionController?.isActive == true { self.fallbackCardLeaveTask = nil; return }
-                if self.cardPinnedVisible || self.menuOpen || self.interactionEnvironment().insideShared != false {
+                if self.menuOpen || self.interactionEnvironment().insideShared != false {
                     outsideSince = nil
                 } else if let start = outsideSince {
                     if start.duration(to: clock.now) >= .milliseconds(250) { self.dismissCard(); return }
@@ -1397,7 +1427,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func dismissCard() {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil
         cardGeneration &+= 1; cardID = nil; cardPresentedRevision = nil; cardPresentedGeneration = nil
-        cardPinnedVisible = false; card.isHidden = true
+        card.isHidden = true
         card.dispose(); cardPanel?.orderOut(nil)
         if let current = edge.presentation { publishDockHelpSurface(current) }
     }

@@ -54,6 +54,13 @@ final class FirstRun65Tests: XCTestCase {
             XCTAssertFalse(replay.onboarding.completed); XCTAssertFalse(replay.openAtLogin); XCTAssertTrue(replay.readerConsent.gemini)
         }}
     }
+    func testFirstRunDockHelpRevealsDockBeforeRequestingMap() async throws {
+        let store = try SettingsStore(url: file()), initial = await store.snapshot()
+        var capabilities = SettingsCapabilities(); capabilities.helpMapAvailable = true; capabilities.helpMapUsesDock = true
+        let result = try await store.completeFirstRun(options: .init(preferences: initial.preferences), action: .seeWhatsHere,
+            host: .popup, capabilities: capabilities, expectedRevision: initial.revision)
+        XCTAssertEqual(result.effects, [.closeFirstRunPopup, .revealDock, .latchOptionHelp])
+    }
     func testSameOptionMapLatchAndReleaseDoNotRequireAnotherMapOrWindowEffects() {
         var help = OptionHelpState(); XCTAssertFalse(help.visible)
         help.optionChanged(true); XCTAssertTrue(help.visible)

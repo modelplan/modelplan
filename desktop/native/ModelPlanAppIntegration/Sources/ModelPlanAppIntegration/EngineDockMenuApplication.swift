@@ -34,8 +34,24 @@ import ModelPlanMenuVerification
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
     private var showFeedback: ShowQuotaWidgetOutcome?
+    private var memberRefreshInFlight = Set<String>()
+    private var unavailableMemberRefreshes = Set<String>()
+    public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
+        didSet {
+            composition.dock.ringRefreshAvailable = memberRefreshAdapter != nil
+            if dockHelp?.isInstalled == true {
+                var context = settings.editor.context
+                context.capabilities.helpMapAvailable = true
+                settings.update(context: context)
+            }
+            dockHelp?.refresh()
+        }
+    }
     private var dockHelp: DockHelpCoordinator?
     var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
+    private var helpMapUnavailable = false
+    /// The presentation boundary remains replaceable for synthetic, window-free tests.
+    var requestHelpMap: (() -> Bool)?
     private var dockHelpSetupInProgress = false
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
@@ -86,6 +102,7 @@ import ModelPlanMenuVerification
             let clock = { ProcessInfo.processInfo.systemUptime }
             interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
                 scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
+            interactionBinding?.onActivate = { [weak self] id in self?.activateMember(id) }
         }
         composition.settingsDidChange = { [weak self] value in
             guard let self, !self.terminating else { return }
@@ -103,9 +120,11 @@ import ModelPlanMenuVerification
         }
         #endif
         composition.menuDidChange = { [weak self] in
-            self?.updateSettingsContext(); self?.renderMenu(); self?.console?.render()
+            guard let self else { return }
+            if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
+            self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             #if MODELPLAN_U6_DRIVE
-            if self?.composition.provider.dockContent.status == .cleared { self?.driveGuard?.recordClear() }
+            if self.composition.provider.dockContent.status == .cleared { self.driveGuard?.recordClear() }
             #endif
         }
         composition.dock.cockpitEntryEnabled = self.cockpitEntryEnabled
@@ -116,13 +135,56 @@ import ModelPlanMenuVerification
     private func updateSettingsContext() {
         let ready: Bool
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
-        guard ready != lastAboutConnectionReady else { return }
+        let admitted = composition.presentedContent.snapshot.presentationRows
+        let readers: [SettingsReaderDiagnostic] = composition.accountMembers.members.compactMap { member in
+            guard let row = admitted[member.id] else { return nil }
+            return .init(name: .init(member.name(english: true), member.name(english: false)),
+                         source: row.sourceName.isEmpty ? nil : .init(EngineDockContentProvider.sourceName(member.account.route, english: true), EngineDockContentProvider.sourceName(member.account.route, english: false)),
+                         lastRead: row.originalObservedAt, nextRefresh: nil)
+        }
+        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics else { return }
         lastAboutConnectionReady = ready
         // Preserve Dock-owned catalogue, display and placement facts when the
         // engine connection changes; only About's CLI readiness comes from here.
         var context = settings.editor.context
         context.about.cliState = contextSource.make(engineReady: ready).about.cliState
+        context.readerDiagnostics = readers
         settings.update(context: context)
+    }
+    private func activateMember(_ id: String) {
+        guard !terminating, !lifecyclePaused,
+              composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
+        _ = composition.dock.sweepRefresh(id)
+        guard !memberRefreshInFlight.contains(id),
+              let member = composition.accountMembers.members.first(where: { $0.id == id && $0.isStable }),
+              let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery) else { return }
+        guard let adapter = memberRefreshAdapter else { unavailableMemberRefreshes.insert(id); renderMenu(); return }
+        let admission = adapter.admission(for: member, delivery: delivery, now: Date())
+        guard admission == .ready else {
+            if admission == .unavailable { unavailableMemberRefreshes.insert(id) }
+            else { unavailableMemberRefreshes.remove(id) }
+            renderMenu(); return
+        }
+        unavailableMemberRefreshes.remove(id)
+        memberRefreshInFlight.insert(id)
+        Task { @MainActor [weak self, weak adapter] in
+            guard let self else { return }
+            defer { self.memberRefreshInFlight.remove(id) }
+            guard let adapter, !self.terminating, !self.lifecyclePaused,
+                  self.composition.client.isCurrent(delivery),
+                  self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }),
+                  self.composition.accountMembers.members.contains(where: {
+                      $0.id == id && $0.isStable && $0.rowID == member.rowID && $0.source == member.source &&
+                      $0.account.subscriptionRef == member.account.subscriptionRef && $0.account.accountLocator == member.account.accountLocator
+                  }),
+                  adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { return }
+            do { try await adapter.request(member: member, delivery: delivery) }
+            catch {
+                guard !self.terminating, self.composition.client.isCurrent(delivery),
+                      self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
+                self.unavailableMemberRefreshes.insert(id); self.renderMenu()
+            }
+        }
     }
     /// Core preferences share the exact foundation store used by Settings.
     public func coreSnapshot() async -> FoundationCorePreferences? { await foundationStore.coreSnapshot() }
@@ -187,11 +249,27 @@ import ModelPlanMenuVerification
         guard !terminating else { return }
         if dockHelp == nil, !dockHelpSetupInProgress {
             dockHelpSetupInProgress = true
-            let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings)
+            let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings, statusAnchor: { [weak self] in
+                guard let self, let status = self.status, status.isVisible,
+                      let button = status.button, !button.isHiddenOrHasHiddenAncestor,
+                      let window = button.window, window.isVisible, !window.isMiniaturized,
+                      window.alphaValue > 0, window.occlusionState.contains(.visible) else { return nil }
+                let frame = window.convertToScreen(button.convert(button.bounds, to: nil))
+                guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
+                      [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
+                return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
+            })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
             if dockHelp == nil { dockHelp = help }
             else { await help?.dispose() }
+            if dockHelp?.isInstalled == true {
+                if requestHelpMap == nil { requestHelpMap = { [weak self] in self?.dockHelp?.presentRequestedMap() == true } }
+                var context = settings.editor.context
+                context.capabilities.helpMapAvailable = true
+                context.capabilities.helpMapUsesDock = true
+                settings.update(context: context)
+            }
         }
         renderMenu()
         interactionBinding?.install()
@@ -269,7 +347,10 @@ import ModelPlanMenuVerification
                 case .revealDock: composition.dock.setPresentationAllowed(true)
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
-                case .closeFirstRunPopup, .latchOptionHelp: break
+                case .latchOptionHelp:
+                    helpMapUnavailable = requestHelpMap?() != true
+                    renderMenu()
+                case .closeFirstRunPopup: break
                 }
             }
         default:
@@ -328,7 +409,8 @@ import ModelPlanMenuVerification
         }
         let menu = component.menu
         let canRetry = lifecyclePaused && (lifecycleController?.canRetry ?? false)
-        let detail = showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
+        let helpError = helpMapUnavailable ? SettingsText("Help unavailable. Try again when the Quota Widget is visible.", "说明暂不可用，请在额度挂件可见时重试。").value(language) : nil
+        let detail = helpError ?? showFeedbackText(language) ?? (lifecyclePaused ? (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language) : composition.menuPresentation.detail)
         if composition.provider.dockContent.status == .cleared { LivePrivateMenus.scrub(menu) }
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
@@ -342,7 +424,7 @@ import ModelPlanMenuVerification
         case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
         }
         var menuItems: [DockMenuPresentationItem] = []
-        if let feedback = showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
+        if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
         else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
         menuItems += [
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
@@ -353,6 +435,31 @@ import ModelPlanMenuVerification
             .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
             .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
         ]
+        let admitted = composition.presentedContent.snapshot.presentationRows
+        unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
+        var diagnosticFacts: [ProviderDiagnosticFact] = []
+        for member in composition.accountMembers.members {
+            guard let row = admitted[member.id] else { continue }
+            let condition: ProviderDiagnosticCondition
+            switch row.cardReadingState {
+            case .ok: condition = unavailableMemberRefreshes.contains(member.id) ? .refreshUnavailable : .normal
+            case .loading: condition = .loading
+            case .stale: condition = .stale
+            case .errorLastGood: condition = .failed
+            case .error:
+                if member.row.consent == .denied || member.row.consent == .unset || member.row.state == .needsConsent || member.row.state == .needsKeychain {
+                    condition = .permission
+                } else if member.row.state == .failed {
+                    condition = .failed
+                } else { condition = .normal }
+            }
+            let provider = english ? member.row.name.en : member.row.name.zh
+            diagnosticFacts.append(.init(providerID: member.rowID, name: provider, condition: condition))
+        }
+        for summary in ProviderDiagnosticSummary.lines(diagnosticFacts, english: english) {
+            menuItems.append(.init(title: summary,
+                action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
+        }
         if settings.editor.context.capabilities.updateServiceAvailable, settings.editor.onHostRequest != nil {
             menuItems.append(.init(title: label("Check for updates", "检查更新"), action: { [weak self] in self?.checkForUpdates() }))
         }
@@ -375,6 +482,7 @@ import ModelPlanMenuVerification
         status?.button?.title = composition.menuPresentation.title + (showFeedback == nil ? "" : " !")
         status?.button?.toolTip = detail
         status?.button?.setAccessibilityHelp(detail)
+        dockHelp?.refresh()
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
         #endif

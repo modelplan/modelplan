@@ -3,10 +3,10 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Settings65DataTests: XCTestCase {
-    func testConfirmedEightPaneTableAndKnownHomesStayDataDriven() {
+    func testDiagnosticsPaneAndKnownHomesStayDataDriven() {
         XCTAssertFalse(Settings65Homes.paneCountPending)
-        XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","about"])
-        XCTAssertEqual(SettingsStructure.task65.panes.count, 8)
+        XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","diagnostics","about"])
+        XCTAssertEqual(SettingsStructure.task65.panes.count, 9)
         XCTAssertEqual(SettingsStructure.task65.panes.last?.id, "about")
         XCTAssertEqual(Settings65Homes.dock.map(\.id), ["display","numbers","location","sequence"])
         XCTAssertTrue(Settings65Homes.dock[0].keys.contains(.size)); XCTAssertTrue(Settings65Homes.dock[2].keys.contains(.dockEdge))
@@ -21,8 +21,27 @@ final class Settings65DataTests: XCTestCase {
         let size = try XCTUnwrap(rows.first { $0.key == .size }); XCTAssertEqual(size.paneID, "dock"); XCTAssertEqual(size.groupID, "display")
         let opening = try XCTUnwrap(rows.first { $0.key == .opening }); XCTAssertEqual(opening.paneID, "cockpit")
         let login = try XCTUnwrap(rows.first { $0.key == .login }); XCTAssertEqual(login.paneID, "general")
-        let diagnostics = try XCTUnwrap(rows.first { $0.key == .diagnostics }); XCTAssertEqual(diagnostics.paneID, "about")
+        let diagnostics = try XCTUnwrap(rows.first { $0.key == .diagnostics }); XCTAssertEqual(diagnostics.paneID, "diagnostics")
+        XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == .source }).paneID, "diagnostics")
+        XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == .readerDetails }).paneID, "diagnostics")
+        XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == .refreshHistory }).paneID, "diagnostics")
         XCTAssertEqual(rows.first?.key, .login)
+    }
+    func testReaderDiagnosticsUseUnknownMarkersForUnavailableFacts() throws {
+        var context = SettingsPageContext()
+        context.readerDiagnostics = [.init(name: .init("Codex", "Codex"), source: .init("Local history", "本地历史"), lastRead: nil, nextRefresh: nil)]
+        var preferences = SettingsPreferences(); preferences.language = .english
+        let english = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
+        XCTAssertEqual(english.first { $0.key == .readerDetails }?.value, .text("Codex · Source: Local history · Last read: -- · Next refresh: --"))
+        XCTAssertEqual(english.first { $0.key == .refreshHistory }?.value, .text("--"))
+        preferences.language = .chinese
+        let chinese = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
+        XCTAssertEqual(chinese.first { $0.key == .readerDetails }?.value, .text("Codex · 来源：本地历史 · 上次读取：-- · 下次刷新：--"))
+        context.refreshHistory = (0..<25).map { .init(relativeTime: "t\($0)", scope: "scope", outcome: "deferred", reason: $0 == 24 ? "invalid\nreason" : "cooldown") }
+        let historyRows = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
+        guard case .text(let history) = try XCTUnwrap(historyRows.first { $0.key == .refreshHistory }).value else { return XCTFail("Missing refresh history") }
+        XCTAssertEqual(history.components(separatedBy: "\n").count, 20)
+        XCTAssertFalse(history.contains("t0 ·")); XCTAssertTrue(history.contains("t24 · scope · deferred · --"))
     }
     func testFiveDiagramInputsHaveFiniteAnimationAndStaticReducedMotionWithoutGeometryChanges() throws {
         var p = SettingsPreferences(); p.showPercentages = false; p.dockEdge = .bottom; p.subscriptionSettings["b"] = .init(percentagePin: .week)

@@ -322,7 +322,7 @@ private actor P1SyntheticEngine: EngineClient {
         let nozzle = try XCTUnwrap(host.dockView.nozzleEventDelegate)
         nozzle.hoverNozzle(id)
         for _ in 0..<100 { if host.detachedCardForChecks != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNotNil(host.detachedCardForChecks); XCTAssertFalse(host.cardPinsDock)
+        XCTAssertNotNil(host.detachedCardForChecks)
         cardFrame = CGRect(x: placement.frame.minX - 320, y: placement.frame.midY - 90, width: 300, height: 180)
         pointer = CGPoint(x: try XCTUnwrap(cardFrame).midX, y: try XCTUnwrap(cardFrame).midY)
         try await Task.sleep(for: .milliseconds(500))
@@ -331,11 +331,9 @@ private actor P1SyntheticEngine: EngineClient {
         for _ in 0..<200 { if host.detachedCardForChecks == nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNil(host.detachedCardForChecks, "Ordinary card closes after the shared-region leave grace")
         pointer = CGPoint(x: placement.frame.midX, y: placement.frame.midY)
-        host.dockView.onAction?(.subscription(id))
+        nozzle.hoverNozzle(nil); nozzle.hoverNozzle(id)
+        for _ in 0..<100 { if host.detachedCardForChecks != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
         let card = try XCTUnwrap(host.detachedCardForChecks)
-        XCTAssertTrue(host.cardPinsDock, "Clicking the nozzle pins the card")
-        pointer = CGPoint(x: 50, y: 200); try await Task.sleep(for: .milliseconds(600))
-        XCTAssertNotNil(host.detachedCardForChecks, "An explicitly pinned card remains open")
         card.onDismiss?(); XCTAssertNil(host.detachedCardForChecks)
         await app.stopLifecycle(); host.close()
     }

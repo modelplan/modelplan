@@ -12,7 +12,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
-    case appVersion, cliStatus, architecture, diagnostics, feedback, licenses, consentHelp
+    case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
 }
@@ -20,6 +20,22 @@ public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
 }
 public enum SubscriptionSourceState: String, Sendable { case fresh, stale, unavailable, denied, readerDisabled }
+public struct SettingsReaderDiagnostic: Equatable, Sendable {
+    public let name: SettingsText
+    public let source: SettingsText?
+    public let lastRead: Date?
+    public let nextRefresh: Date?
+    public init(name: SettingsText, source: SettingsText?, lastRead: Date?, nextRefresh: Date?) {
+        self.name = name; self.source = source; self.lastRead = lastRead; self.nextRefresh = nextRefresh
+    }
+}
+/// Sanitized producer-supplied entries; no raw logs or credentials belong here.
+public struct SettingsRefreshAttempt: Equatable, Sendable {
+    public let relativeTime: String, scope: String, outcome: String, reason: String
+    public init(relativeTime: String, scope: String, outcome: String, reason: String) {
+        self.relativeTime = relativeTime; self.scope = scope; self.outcome = outcome; self.reason = reason
+    }
+}
 public struct SettingsSubscription: Sendable {
     public let id: String, name: SettingsText, plan: String, vendor: String
     public let modelNames: [String], toolNames: [String]
@@ -123,6 +139,9 @@ public struct SettingsPageContext: Sendable {
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
+    public var readerDiagnostics: [SettingsReaderDiagnostic] = []
+    /// Nil until the engine provides its admitted bounded history.
+    public var refreshHistory: [SettingsRefreshAttempt]?
     public var capabilities = SettingsCapabilities()
     public var shortcutObservations: [SettingsShortcutObservation] = []
     public var about = SettingsAbout()
@@ -215,6 +234,8 @@ public enum SettingsCatalogue {
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader identifiers and error codes only.","仅含版本、macOS、读取器标识和错误代码。"),
+        .init(.readerDetails,"Reader status","读取状态","Source and observation times for admitted readers.","已授权读取器的来源与观察时间。"),
+        .init(.refreshHistory,"Recent refreshes","最近刷新","Recent admitted refresh outcomes.","最近的已授权刷新结果。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
         .init(.licenses,"Third-party notices","第三方声明","The app adapter supplies bundled license notices.","由应用适配器提供随包许可证声明。"),
         .init(.updateStatus,"App updates","应用更新","Check for a newer public version.","检查是否有新的公开版本。"),
@@ -276,7 +297,7 @@ public enum SettingsCatalogue {
         switch k {
         case .captureHiding: return .unsupportedCaptureHiding
         case .retention, .clearCLI: return .cliOwned
-        case .source, .detectedReaders, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .licenses: return .readOnly
+        case .source, .detectedReaders, .privacyStatement, .appVersion, .cliStatus, .architecture, .diagnostics, .readerDetails, .refreshHistory, .licenses: return .readOnly
         case .login: return .available // The local choice stays editable even when service actions are unavailable.
         case .clearAppCache: return c.capabilities.appCacheClearAvailable ? .available : .cacheUnavailable
         case .updateStatus: return c.capabilities.updateServiceAvailable ? .available : .serviceUnavailable
@@ -345,6 +366,24 @@ public enum SettingsCatalogue {
         case .consentHelp: return .link(SettingsAbout.consentHelpURL)
         case .architecture: return .text(c.about.architecture == .intelUntested ? SettingsAbout.intelNote.value(p.language) : c.about.architecture.rawValue)
         case .diagnostics: return .text(c.about.diagnosticText)
+        case .readerDetails:
+            let formatter = ISO8601DateFormatter()
+            let lines = c.readerDiagnostics.map { value -> String in
+                let source = value.source.map { $0.value(p.language) }.flatMap { $0.isEmpty ? nil : $0 } ?? "--"
+                let read = value.lastRead.map(formatter.string(from:)) ?? "--"
+                let next = value.nextRefresh.map(formatter.string(from:)) ?? "--"
+                return p.language == .english
+                    ? "\(value.name.english) · Source: \(source) · Last read: \(read) · Next refresh: \(next)"
+                    : "\(value.name.chinese) · 来源：\(source) · 上次读取：\(read) · 下次刷新：\(next)"
+            }
+            return .text(lines.isEmpty ? "--" : lines.joined(separator: "\n"))
+        case .refreshHistory:
+            guard let history = c.refreshHistory, !history.isEmpty else { return .text("--") }
+            func safe(_ value: String) -> String {
+                guard value.utf8.count <= 128, !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return "--" }
+                return value
+            }
+            return .text(history.suffix(20).map { [$0.relativeTime, $0.scope, $0.outcome, $0.reason].filter { !$0.isEmpty }.map(safe).joined(separator: " · ") }.joined(separator: "\n"))
         case .feedback: return .link(SettingsAbout.feedbackURL)
         case .licenses: return .notices(c.licenseNotices)
         case .websiteLink: return .link(SettingsPublicLink.website.url)

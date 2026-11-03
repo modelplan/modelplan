@@ -20,7 +20,7 @@ import ModelPlanDock
         func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
         for (enter, close) in [("Settings", "Close"), ("设置", "关闭")] {
             let card = DockCardView(frame: .zero)
-            try card.apply(.init(subscriptionID: "synthetic", revision: 1, name: "Synthetic", rows: [], enterLabel: enter, dismissLabel: close), pinned: false)
+            try card.apply(.init(subscriptionID: "synthetic", revision: 1, name: "Synthetic", rows: [], enterLabel: enter, dismissLabel: close))
             let buttons = descendants(card).compactMap { $0 as? NSButton }
             XCTAssertTrue(buttons.contains { $0.title == enter }, "The ordinary card must offer its contextual action")
             XCTAssertTrue(buttons.contains { $0.title == close }, "The ordinary card must offer close")
@@ -28,19 +28,6 @@ import ModelPlanDock
             XCTAssertNil(card.window)
             card.dispose()
         }
-    }
-    func testCardBodyAccessiblePressPinsCurrentContentOnly() throws {
-        let card = DockCardView(frame: .zero)
-        var pins = 0
-        card.onPin = { pins += 1 }
-        card.permitsAction = { _, revision in revision == 2 }
-        try card.apply(.init(subscriptionID: "synthetic", revision: 2, name: "Synthetic", rows: []), pinned: false, pinAccessibilityHelp: "Press to pin card")
-        XCTAssertTrue(card.accessibilityPerformPress())
-        XCTAssertEqual(pins, 1)
-        card.permitsAction = { _, _ in false }
-        XCTAssertFalse(card.accessibilityPerformPress(), "Stale or withdrawn content cannot pin")
-        XCTAssertEqual(pins, 1)
-        card.dispose()
     }
 
 }

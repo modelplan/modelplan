@@ -39,6 +39,49 @@ private actor DockHelpMemory: HintPreferenceWriting {
 
 /// All surfaces, timing and persistence are in-memory fakes; no AppKit surface is constructed.
 @MainActor final class DockHelpBindingTests: XCTestCase {
+    func testV1RingHintUsesRealAnchorOnceAndSuppressesLegacyHints() async throws {
+        let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
+        dock.kinds = [.ringRefresh, .ignition, .drag, .pinned]
+        let router = HelpOverlayRouter(cockpit: cockpit)
+        let host = await HintExecutionHost.restored(persistence: store, scheduler: timer, overlay: router, uptime: { clock.now })
+        let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
+        var context = HintContext(); context.v1MinimalHints = true; context.ringRefreshAvailable = true
+        let first = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
+                                    anchors: [.ringRefresh: CGRect(x: 1, y: 1, width: 4, height: 4)])
+        try binding.update(first, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.ringRefresh])
+        await host.flushPersistence()
+        try binding.update(nil, context: context, host: host)
+        clock.now = 1
+        let second = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
+                                     anchors: [.ringRefresh: CGRect(x: 1, y: 1, width: 4, height: 4)])
+        try binding.update(second, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.ringRefresh])
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.preferences.helpHints.seen, [.ringRefresh])
+    }
+    func testV1FindHintRequiresVisibleStatusAnchorAndIsShownOnce() async throws {
+        let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
+        dock.kinds = [.findWidget]
+        let router = HelpOverlayRouter(cockpit: cockpit)
+        let host = await HintExecutionHost.restored(persistence: store, scheduler: timer, overlay: router, uptime: { clock.now })
+        let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
+        var context = HintContext(); context.v1MinimalHints = true; context.widgetConcealed = true
+        try binding.update(nil, context: context, host: host)
+        XCTAssertTrue(dock.offers.isEmpty)
+        context.statusAnchorAvailable = true
+        let status = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
+                                     anchors: [.findWidget: CGRect(x: 1, y: 1, width: 4, height: 4)])
+        try binding.update(status, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget])
+        await host.flushPersistence()
+        try binding.update(nil, context: context, host: host)
+        clock.now = 1
+        try binding.update(status, context: context, host: host)
+        XCTAssertEqual(dock.offers.map(\.kind), [.findWidget])
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.preferences.helpHints.seen, [.findWidget])
+    }
     private func surface(_ id: UUID = UUID(), layout: UUID = UUID(), visible: Bool = true, dragging: Bool = false) -> DockHelpSurface {
         .init(revealID: id, layoutID: layout, visible: visible, dragging: dragging,
               anchors: [.ignition: CGRect(x: 1, y: 1, width: 4, height: 4), .drag: CGRect(x: 9, y: 1, width: 4, height: 4)])
