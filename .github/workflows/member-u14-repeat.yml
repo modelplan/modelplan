@@ -1,0 +1,31 @@
+name: Member refresh U14 repeat
+on:
+  push:
+    branches: [ci/member-refresh-u14]
+permissions:
+  contents: read
+jobs:
+  repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Repeat production-constructor admission and negative control
+        env:
+          GOFLAGS: -buildvcs=false
+          PYTHONPATH: tools/u14/tests
+        run: |
+          python3 -m unittest -v \
+            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
+            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
+            test_runner.RealBinaryTests.test_admission_reads_cursor_and_qualifies_the_shared_refresh_budget \
+            test_runner.RealBinaryTests.test_post_recorder_rejects_bad_body_even_when_production_guard_is_removed
