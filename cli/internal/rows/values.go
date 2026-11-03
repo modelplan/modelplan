@@ -164,6 +164,20 @@ func SanitizeModelIDs(ids []string) []string {
 	}
 	return scope.Models
 }
+// windowValidUntil applies the account's freshness interval to this window's
+// own observation, never to a newer reading of another window.
+func windowValidUntil(account Account, window Window) *time.Time {
+	if account.ObservedAt == nil || account.FreshUntil == nil || window.ObservedAt == nil {
+		return nil
+	}
+	interval := account.FreshUntil.Sub(*account.ObservedAt)
+	if interval <= 0 {
+		return nil
+	}
+	deadline := window.ObservedAt.Add(interval)
+	return earlier(earlier(knownTime(account.FreshUntil), &deadline), window.ResetsAt)
+}
+
 func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 	result := []Window{}
 	for _, v := range raw {
@@ -194,9 +208,7 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 			durationKey = strconv.FormatInt(*duration, 10)
 		}
 		w := Window{ModelScope: scope, ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
-		if account.FreshUntil != nil {
-			w.ValidUntil = earlier(knownTime(account.FreshUntil), w.ResetsAt)
-		}
+		w.ValidUntil = windowValidUntil(account, w)
 		result = append(result, w)
 	}
 	sort.SliceStable(result, func(i, j int) bool {

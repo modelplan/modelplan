@@ -336,10 +336,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		if w.ObservedAt != nil && w.ObservedAt.After(in.Now) {
 			return fail("future window observation")
 		}
-		var until *time.Time
-		if a.FreshUntil != nil {
-			until = earlier(a.FreshUntil, w.ResetsAt)
-		}
+		until := windowValidUntil(a, w)
 		if !reflect.DeepEqual(until, w.ValidUntil) {
 			return fail("window validity")
 		}
