@@ -2,6 +2,7 @@
 package appserver
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -12,6 +13,41 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
+
+func TestMixedRoutesDeadlineRequiresMatchingLiveGrant(t *testing.T) {
+	backend, paths, _, member := memberFixture(t)
+	admission := consent.Capture()
+	ref := member.SubscriptionRef
+	localRef := "fedcba9876543210"
+	projection := rows.Projection{Rows: []rows.Row{{ID: "codex", State: rows.StateFresh, Accounts: []rows.Account{
+		{Route: rows.RouteRuntimeRPC, SubscriptionRef: &ref},
+		{Route: rows.RouteLocalLog, SubscriptionRef: &localRef},
+	}}}}
+	shared := &SharedBackend{}
+	shared.populateRefreshDeadlines(&projection, paths(admission), admission, []string{consent.ScopeCodexRuntimeUsage}, time.Now())
+	live, local := projection.Rows[0].Accounts[0], projection.Rows[0].Accounts[1]
+	if live.RefreshNotBefore == nil || *live.RefreshNotBefore == nil || local.RefreshNotBefore != nil {
+		t.Fatalf("incorrect route eligibility: live=%+v local=%+v", live.RefreshNotBefore, local.RefreshNotBefore)
+	}
+	projected := wire.ProjectWithEvents(projection, nil, false, false, true)
+	encoded, err := json.Marshal(projected.Rows[0].Accounts[1])
+	if err != nil { t.Fatal(err) }
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &object); err != nil { t.Fatal(err) }
+	if _, ok := object["refreshNotBefore"]; ok { t.Fatalf("ungranted route serialized deadline: %s", encoded) }
+	old := wire.Project(projection)
+	if old.Rows[0].Accounts[0].RefreshNotBefore != nil || old.Rows[0].Accounts[1].RefreshNotBefore != nil { t.Fatal("legacy client received deadline") }
+	backend.view.Projection = projection
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths})
+	defer scheduler.Close()
+	result, _, err := scheduler.RequestMember(context.Background(), wire.RefreshMember{RowID: "codex", Route: rows.RouteLocalLog, SubscriptionRef: localRef})
+	if err != nil || result.Reason == nil || *result.Reason != wire.MemberRefreshNotGranted { t.Fatalf("local member accepted: %+v %v", result, err) }
+	projection.Rows[0].Accounts[0].SubscriptionRef = nil
+	projection.Rows[0].Accounts[1].SubscriptionRef = nil
+	shared.populateRefreshDeadlines(&projection, paths(admission), admission, []string{consent.ScopeCodexRuntimeUsage}, time.Now())
+	if value := projection.Rows[0].Accounts[0].RefreshNotBefore; value == nil || *value != nil { t.Fatal("unknown granted binding must serialize null") }
+	if projection.Rows[0].Accounts[1].RefreshNotBefore != nil { t.Fatal("unknown ungranted binding must stay omitted") }
+}
 
 func TestRefreshDeadlinePresentForFreshRowAndMember(t *testing.T) {
 	_, paths, cache, member := memberFixture(t)
