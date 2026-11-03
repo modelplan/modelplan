@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import XCTest
+@testable import ModelPlanAppIntegration
 
 final class HostDeadlineFenceTests: XCTestCase {
     private let t0 = Date(timeIntervalSince1970: 1_000)
