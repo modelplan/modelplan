@@ -29,6 +29,7 @@
         "rowsVersion": 1,
         "rows": [
           {
+            "refreshNotBefore": "2026-10-29T12:00:00.123456789Z",
             "id": "codex",
             "kind": "tool",
             "order": 1,
@@ -60,6 +61,7 @@
             },
             "accounts": [
               {
+                "refreshNotBefore": "2026-10-29T12:00:00.123456789Z",
                 "route": "saved_login_api",
                 "subscriptionRef": "0123456789abcdef",
                 "accountLocator": "0123456789abcdef",

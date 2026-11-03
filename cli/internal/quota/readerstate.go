@@ -595,7 +595,7 @@ func managedRowsAccount(provider, key string, a *Account, cache string, now time
 	// Evaluate only the freshly decoded cache copy, never the legacy Report or
 	// a persisted file. This reuses the quota window arithmetic/reset handling.
 	Evaluate(a, now)
-	out := rows.AccountInput{ToolID: provider, ProfileKey: key, Source: a.Source, PlanID: a.Plan, Beta: true}
+	out := rows.AccountInput{ToolID: provider, ProfileKey: key, Source: a.Source, Route: rows.RouteSavedLoginAPI, PlanID: a.Plan, Beta: true}
 	if !identityOff {
 		out.SubscriptionRef = readerString(existingReaderSubscription(cache, provider, a.Subscription))
 	}

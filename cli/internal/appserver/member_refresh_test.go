@@ -87,3 +87,17 @@ func TestMemberRefreshPreservesPersistedBackoff(t *testing.T) {
 	result, _, err := s.RequestMember(context.Background(), member)
 	if err != nil || result.Reason == nil || *result.Reason != wire.MemberRefreshBackoff || result.NotBefore == nil || !result.NotBefore.Equal(now.Add(30*time.Minute)) { t.Fatalf("persisted backoff lost: %+v %v", result, err) }
 }
+
+func TestMatchingMemberCountSeparatesAccountsAndRoutes(t *testing.T) {
+	first, second := "0123456789abcdef", "fedcba9876543210"
+	view := View{Projection: rows.Projection{Rows: []rows.Row{{ID: "claude", Accounts: []rows.Account{
+		{Route: rows.RouteSavedLoginAPI, AccountLocator: &first},
+		{Route: rows.RouteSavedLoginAPI, AccountLocator: &second},
+		{Route: rows.RouteLocalLog, AccountLocator: &second},
+	}}}}}
+	member := wire.RefreshMember{RowID: "claude", Route: rows.RouteSavedLoginAPI, AccountLocator: second}
+	matches, routes := matchingMemberCount(view, member)
+	if matches != 1 || routes != 2 { t.Fatalf("wrong member selection: matches=%d routes=%d", matches, routes) }
+	member.AccountLocator = "aaaaaaaaaaaaaaaa"
+	if matches, _ := matchingMemberCount(view, member); matches != 0 { t.Fatal("unknown member matched") }
+}
