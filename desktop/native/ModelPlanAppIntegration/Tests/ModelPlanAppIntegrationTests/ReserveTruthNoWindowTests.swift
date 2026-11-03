@@ -11,8 +11,8 @@ import ModelPlanWire
 /// Detached Store → production provider only. No application, view, window,
 /// system event, real reader or process is constructed.
 @MainActor final class ReserveTruthNoWindowTests: XCTestCase {
-    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues }
-    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
+    private enum FixtureState { case fresh, retained, retainedExpired, unknownDeadline, malformedDeadline, currentUnknownDeadline, currentMalformedDeadline, currentAccountMissing, currentAccountMalformed, currentWindowMissing, currentWindowMalformed, atExpiry, expired, refreshed, revoked, revokedWithValues, revokedFreshWithValues, retiredWithValues }
+    private func projection(balance: Any?, unit: String, english: Bool, state: FixtureState = .fresh, clearAfter: Bool = false, mixedTransition: Bool = false, deadlineOnlyMixed: Bool = false, multiWindowTransition: Bool = false, overrideNow: Date? = nil, resetEvents: [EngineResetEvent] = [], replacementEvents: [EngineResetEvent]? = nil, providerProbe: ((EngineDockContentProvider, DockContent, Date) -> Void)? = nil, deadlineProbe: (([RowsRow], Date) -> Void)? = nil) async throws -> (DockInstrumentInput?, DockCardRow?) {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json"))) as? [String: Any])
         var projection = root["projection"] as! [String: Any], row = (projection["rows"] as! [[String: Any]])[0]
@@ -92,6 +92,11 @@ import ModelPlanWire
             }
             row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         }
+        if state == .retiredWithValues {
+            row["consent"] = "retired"; row["state"] = "needs_action"
+            row["reason"] = ["code": "catalogue_retired", "text": ["en": "The allowed tool was retired from the catalogue", "zh": "已授权工具已从目录移除"]]
+            row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Review reader consent in Settings", "zh": "在设置中检查读取授权"], "availableAt": NSNull(), "disabledReason": NSNull()]
+        }
         projection["rows"] = [row]
         let summaryText = ["en": "Readings and actions are available", "zh": "读数或操作可用"]
         projection["rowsSummary"] = ["state": "ok", "reason": ["code": "ok", "text": summaryText], "text": summaryText, "nextStep": NSNull()]
@@ -102,6 +107,11 @@ import ModelPlanWire
         }
         projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        if state == .revokedWithValues || state == .revokedFreshWithValues {
+            XCTAssertEqual(rows.projection.invalidRowCount, 1)
+            XCTAssertEqual(rows.projection.rows.first?.invalid, true)
+            XCTAssertTrue(rows.projection.rows.first?.accounts.isEmpty == true)
+        }
         if unknownDeadline {
             // Generated optional timestamp decoding currently turns malformed strings into nil.
             XCTAssertNil(rows.projection.rows.first?.expiresAt)
@@ -109,11 +119,12 @@ import ModelPlanWire
         }
         let store = EngineStore(), source = EngineDockMenuProvider(store: store), provider = EngineDockContentProvider(source: source)
         provider.language = english ? "en" : "zh-CN"
-        provider.resetEventState = { .available(resetEvents) }
+        var currentResetEvents = resetEvents
+        provider.resetEventState = { .available(currentResetEvents) }
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.connection(.ready(context))); await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch,
-            consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
+            consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
         // The expired case holds the same valid fresh snapshot past its deadline;
         // it does not pretend the producer emitted current=true after expiry.
         let seconds: TimeInterval = (state == .expired || state == .refreshed) ? 1_830_000_000 : 1_800_000_000
@@ -128,6 +139,24 @@ import ModelPlanWire
         if unknownDeadline { XCTAssertEqual(provider.recomputeDeadline, .unknown) }
         if isRevoked { XCTAssertEqual(provider.recomputeDeadline, .none) }
         let input = content.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" }
+        if let replacementEvents {
+            let initial = try XCTUnwrap(resetEvents.first), replacement = try XCTUnwrap(replacementEvents.first)
+            XCTAssertEqual(paired.deadline, .scheduled(initial.publishedAt, hasUnknownDeadline: false))
+            currentResetEvents = replacementEvents
+            let replaced = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: now))
+            XCTAssertEqual(replaced.deadline, .scheduled(replacement.publishedAt, hasUnknownDeadline: false))
+            XCTAssertEqual(paired.deadline, .scheduled(initial.publishedAt, hasUnknownDeadline: false))
+            currentResetEvents = []
+            let noEvent = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: now))
+            let rowDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: deadline))
+            XCTAssertEqual(noEvent.deadline, .scheduled(rowDeadline, hasUnknownDeadline: false))
+            XCTAssertNil(provider.signals.first?.reset)
+            currentResetEvents = replacementEvents
+            await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
+                nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
+            let cleared = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: now))
+            XCTAssertEqual(cleared.deadline, .none); XCTAssertTrue(cleared.content.snapshot.inputs.isEmpty)
+        }
         if multiWindowTransition {
             let firstDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
             let secondDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
@@ -297,18 +326,20 @@ import ModelPlanWire
         XCTAssertEqual(money?.value, "12.5"); XCTAssertEqual(money?.detail, "Currency not reported")
     }
 
-    func testDeniedConsentWithContradictoryFreshQuotaCannotProjectValues() async throws {
-        // Malformed/contradictory wire only: normal producer removes denied accounts.
+    func testDeniedConsentWithContradictoryFreshQuotaBecomesEmptyPlaceholder() async throws {
+        // Noncanonical wire: decoder isolates this row before Provider admission.
         let result = try await projection(balance: 12.5, unit: "credits", english: true, state: .revokedFreshWithValues)
-        let input = try XCTUnwrap(result.0)
-        XCTAssertEqual(input.dataState, .unavailable)
-        XCTAssertTrue(input.windows.allSatisfy { $0.remainingPercent == nil })
+        XCTAssertNil(result.0)
         XCTAssertNil(result.1)
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
-        XCTAssertEqual(try DockInstrumentProjection.evaluate(input, now: now).readout, "--")
-        let card = try DockCardProjection.content(input: input, at: now)
-        XCTAssertTrue(card.rows.filter { $0.kind == .quota }.allSatisfy { $0.value == "--" && $0.remainingFraction == nil })
-        XCTAssertFalse(card.rows.filter { $0.kind == .quota }.isEmpty)
+        // The public row constructor also rejects a denied row with accounts;
+        // bypassing it to reach the defensive Provider branch is not a safe seam.
+        _ = try await projection(balance: 12.5, unit: "credits", english: true) { rows, _ in
+            guard let row = rows.first else { return XCTFail("missing synthetic row") }
+            XCTAssertThrowsError(try RowsRow(id: row.id, kind: row.kind, order: row.order, name: row.name,
+                vendorKey: row.vendorKey, surfaces: row.surfaces, consent: .denied, state: .fresh,
+                reason: row.reason, nextStep: row.nextStep, accounts: row.accounts,
+                expiresAt: row.expiresAt, stateAfterExpiry: row.stateAfterExpiry))
+        }
     }
 
     func testConsentGenerationClearWithdrawsReserveFromSameStoreAndProvider() async throws {
@@ -376,10 +407,52 @@ import ModelPlanWire
         })
     }
 
+    func testRetiredMemberResetAndPlanMismatchUseSameAdmissionForDisplayAndDeadline() async throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let published = start.addingTimeInterval(10), expires = start.addingTimeInterval(20)
+        let admitted = EngineResetEvent(id: "synthetic", rowID: "codex", provider: "synthetic", status: "announced",
+                                        publishedAt: published, expiresAt: expires, planIDs: nil, confirms: nil)
+        let mismatch = EngineResetEvent(id: "other-plan", rowID: "codex", provider: "synthetic", status: "announced",
+                                        publishedAt: published, expiresAt: expires, planIDs: ["different-plan"], confirms: nil)
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retiredWithValues,
+            overrideNow: start, resetEvents: [admitted], providerProbe: { provider, _, _ in
+                XCTAssertEqual(provider.recomputeDeadline, .scheduled(published, hasUnknownDeadline: false))
+                XCTAssertNil(provider.signals.first?.reset)
+            })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retiredWithValues,
+            overrideNow: published, resetEvents: [admitted], providerProbe: { provider, content, _ in
+                XCTAssertEqual(provider.recomputeDeadline, .scheduled(expires, hasUnknownDeadline: false))
+                XCTAssertNotNil(provider.signals.first?.reset)
+                XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "reset-event:synthetic:announced" })
+            })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retiredWithValues,
+            overrideNow: expires, resetEvents: [admitted], providerProbe: { provider, _, _ in
+                XCTAssertEqual(provider.recomputeDeadline, .none)
+                XCTAssertNil(provider.signals.first?.reset)
+            })
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .retiredWithValues,
+            overrideNow: start, resetEvents: [mismatch], providerProbe: { provider, _, _ in
+                XCTAssertEqual(provider.recomputeDeadline, .none)
+                XCTAssertNil(provider.signals.first?.reset)
+            })
+    }
+
+    func testResetEventReplacementRemovalAndStoreClearRecomputePairedDeadline() async throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = EngineResetEvent(id: "first", rowID: "codex", provider: "synthetic", status: "announced",
+                                     publishedAt: start.addingTimeInterval(10), expiresAt: start.addingTimeInterval(20), planIDs: nil, confirms: nil)
+        let replacement = EngineResetEvent(id: "replacement", rowID: "codex", provider: "synthetic", status: "announced",
+                                           publishedAt: start.addingTimeInterval(15), expiresAt: start.addingTimeInterval(30), planIDs: nil, confirms: nil)
+        _ = try await projection(balance: 12.5, unit: "credits", english: true, overrideNow: start,
+                                 resetEvents: [first], replacementEvents: [replacement])
+    }
+
     func testRecomputeDeadlineFactsUseOnlyFutureAndReportUnknown() async throws {
         let first = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         let second = try XCTUnwrap(ISO8601DateFormatter().date(from: "2028-12-01T00:00:00Z"))
         XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: [], now: first), .none)
+        XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: [], now: Date(timeIntervalSinceReferenceDate: .nan)), .unknown)
+        XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: [], now: Date(timeIntervalSinceReferenceDate: .infinity)), .unknown)
         _ = try await projection(balance: 12.5, unit: "credits", english: true, mixedTransition: true) { rows, now in
             XCTAssertEqual(EngineDeadlineFacts.evaluate(rows: rows, now: now), .scheduled(first, hasUnknownDeadline: false))
             // Once the row latch is due, a different account's later deadline remains a fact.

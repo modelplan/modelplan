@@ -24,9 +24,11 @@ public struct EngineContentAndDeadline: Sendable {
 /// replacement or invalidation and use its own snapshot token to cancel timers.
 public enum EngineDeadlineFacts {
     public static func evaluate(rows: [RowsRow], events: [EngineResetEvent] = [], eventRows: [RowsRow]? = nil, now: Date) -> EngineRecomputeDeadline {
+        guard now.timeIntervalSinceReferenceDate.isFinite else { return .unknown }
         var next: Date?
         var unknown = false
         func includeDate(_ date: Date) {
+            guard date.timeIntervalSinceReferenceDate.isFinite else { unknown = true; return }
             guard date > now else { return }
             if next.map({ date < $0 }) ?? true { next = date }
         }
@@ -48,11 +50,12 @@ public enum EngineDeadlineFacts {
                 for window in account.windows where window.current { include(window.validUntil) }
             }
         }
-        let eligibleEventRows = eventRows ?? rows
+        // Use the same admitted member catalogue as reset presentation. In
+        // particular, a retired catalogue row may still contain an account.
+        let eventMembers = EngineAccountMemberCatalogue(rows: eventRows ?? rows).members
         for event in events where event.publishedAt < event.expiresAt {
-            let matches = eligibleEventRows.contains { row in
-                (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired) && row.id == event.rowID &&
-                row.accounts.contains { account in event.planIDs.map { $0.contains(account.plan.id) } ?? true }
+            let matches = eventMembers.contains { member in
+                member.rowID == event.rowID && (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
             }
             guard matches else { continue }
             includeDate(event.publishedAt)
