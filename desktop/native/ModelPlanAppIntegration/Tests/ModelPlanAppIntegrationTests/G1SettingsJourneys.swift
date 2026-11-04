@@ -115,11 +115,9 @@ private actor G1SettingsEngine: EngineClient {
             let app = try await entry(locale: locale)
             let window = try await firstRun(app)
             let privacy = try control("firstRun.privacy", in: window, as: NSTextField.self)
-            let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }.filter { !$0.isHiddenOrHasHiddenAncestor }
-            let line = try XCTUnwrap(fields.first { field in
-                let text = field.stringValue.lowercased()
-                return locale.hasPrefix("zh") ? text.contains("公开") && text.contains("推荐") : text.contains("public") && text.contains("recommend")
-            }, "The public-data recommendation must be visible")
+            let line = try control("firstRun.publicRecommendation", in: window, as: NSTextField.self)
+            XCTAssertFalse(line.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(line.stringValue, locale.hasPrefix("zh") ? "推荐基于公开数据。" : "Recommendations use public data.")
             let privacyFrame = privacy.convert(privacy.bounds, to: nil)
             let recommendationFrame = line.convert(line.bounds, to: nil)
             XCTAssertLessThan(recommendationFrame.midY, privacyFrame.midY)
