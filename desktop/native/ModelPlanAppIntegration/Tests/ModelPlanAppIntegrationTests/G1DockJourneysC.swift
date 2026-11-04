@@ -6,6 +6,7 @@ import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
+@_spi(DockResourceChecks) import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 private actor G1PartCRowsClient: EngineClient {
@@ -75,6 +76,48 @@ private actor G1PartCRowsClient: EngineClient {
         XCTAssertEqual(try readout(),"10%")
         try await client.replaceRows(snapshot([5,55,60]))
         XCTAssertEqual(try readout(),"5%")
+        await app.composition.stop()
+    }
+    func testG1_DOCK_3_3_08() async throws {
+        let profile=FileManager.default.temporaryDirectory.appendingPathComponent("g1-tightest-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:profile) }
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var projection=try XCTUnwrap(root["projection"] as? [String:Any])
+        var row=try XCTUnwrap((projection["rows"] as? [[String:Any]])?.first)
+        var account=try XCTUnwrap((row["accounts"] as? [[String:Any]])?.first)
+        let original=try XCTUnwrap((account["windows"] as? [[String:Any]])?.first)
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        func snapshot(_ amounts:[Double]) throws -> WireRowsSnapshot {
+            account["windows"]=zip([( "five","session",18000),("week","weekly",604800),("month","monthly",2592000)],amounts).map { spec,amount -> [String:Any] in
+                var window=original;window["id"]=spec.0;window["role"]=spec.1;window["durationSeconds"]=spec.2
+                window["remainingPercent"]=amount;window["limitKey"]="main";window["poolKey"]="main"
+                window["current"]=true;window["validUntil"]="2099-01-01T00:00:00Z";window["resetsAt"]="2099-01-01T00:00:00Z"
+                window.removeValue(forKey:"modelScope");return window
+            }
+            row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        let initial=try snapshot([41,70,70])
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"g1",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:try EngineRowsEntry.makeSettingsStore(applicationSupport:profile,preferredLanguages:["en"]),createsNativePanels:false,makeClient:{_,store in G1PartCRowsClient(store:store,rows:initial)},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);await app.composition.start()
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1PartCRowsClient)
+        for (percent, expectedStatus, expectedKey) in [(41.0, DockQuotaStatus.normal, "lcdWhite"), (40.0, .warning, "warning"), (25.0, .critical, "critical"), (0.0, .critical, "critical")] {
+            try await client.replaceRows(snapshot([percent, 70, 70]))
+            let reading = try XCTUnwrap(app.composition.dock.dockView.presentedReadingsForChecks["0123456789abcdef"])
+            XCTAssertEqual(reading.remainingPercent, percent)
+            XCTAssertEqual(reading.status, expectedStatus)
+            let skin = try XCTUnwrap(app.composition.dock.dockView.presentedSkinForChecks)
+            let key = skin.readoutPalette?[reading.status.rawValue] ?? (reading.status == .normal ? "text" : reading.status.rawValue)
+            XCTAssertEqual(key, expectedKey)
+            let ink = try XCTUnwrap(skin.palette[key])
+            let rgb: (Double, Double, Double) = expectedStatus == .normal ? (233,237,240) : expectedStatus == .warning ? (234,193,123) : (239,68,68)
+            XCTAssertEqual(ink.r, rgb.0 / 255, accuracy: 0.000001)
+            XCTAssertEqual(ink.g, rgb.1 / 255, accuracy: 0.000001)
+            XCTAssertEqual(ink.b, rgb.2 / 255, accuracy: 0.000001)
+        }
         await app.composition.stop()
     }
     // DOCK-3.3-06: observe the actual retained widget's accessibility value,
