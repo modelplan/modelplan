@@ -1,0 +1,248 @@
+// SPDX-License-Identifier: MIT
+import AppKit
+import XCTest
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanSettings
+import ModelPlanWire
+@testable import ModelPlanAppIntegration
+
+// Only the engine is synthetic. First run and Settings use the production entry.
+private actor G1SettingsEngine: EngineClient {
+    let store: EngineStore
+    let rows: WireRowsSnapshot
+    let context = EngineDeliveryContext(sessionID: "g1-settings", floor: .init(storeEpoch: "g1-settings", generation: 1), revision: 1)
+    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
+    func start() async throws -> EngineDeliveryContext {
+        await store.consume(.connection(.ready(context))); await store.consume(.context(context))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
+        return context
+    }
+    func stop() async {}
+    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("g1-settings-rows")) }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
+
+/// Window journeys are compiled locally; execution requires an admitted GUI CI runner.
+@MainActor final class G1SettingsJourneys: XCTestCase {
+    private func entry(locale: String, discoveredMembers: Int? = nil) async throws -> EngineDockMenuApplication {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        if let discoveredMembers {
+            var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            var row = try XCTUnwrap(rows.first)
+            let template = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+            row["name"] = ["en": "Synthetic tool", "zh": "合成工具"]
+            row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
+            row["expiresAt"] = "2099-01-01T00:00:00Z"
+            row["accounts"] = (0..<discoveredMembers).map { index -> [String: Any] in
+                var account = template
+                account["subscriptionRef"] = String(repeating: String(index + 1), count: 16)
+                account["valueState"] = "current"; account["freshUntil"] = "2099-01-01T00:00:00Z"
+                return account
+            }
+            rows = discoveredMembers == 0 ? [] : [row]
+            projection["rows"] = rows; root["projection"] = projection
+        }
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, target in G1SettingsEngine(store: target, rows: rows) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); await app.composition.start()
+        return app
+    }
+    private func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
+    private func firstRun(_ app: EngineDockMenuApplication) async throws -> NSWindow {
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await app.restoreFirstRunIfNeeded()
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+        addTeardownBlock { @MainActor in window.close() }
+        return window
+    }
+    private func control<T: NSView>(_ id: String, in window: NSWindow, as type: T.Type) throws -> T {
+        let root = try XCTUnwrap(window.contentView)
+        return try XCTUnwrap(flatten(root).first { $0.accessibilityIdentifier() == id } as? T, "Missing \(id)")
+    }
+    private func settings(_ app: EngineDockMenuApplication, pane: String) async throws -> NSWindow {
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await app.settingsHost.present(paneID: pane, origin: .userInitiated)
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+        addTeardownBlock { @MainActor in window.close() }
+        return window
+    }
+
+    func testG1_FR_9_02_FirstRunPrivacyText() async throws {
+        for (locale, expected) in [("en-US", "Nothing on this Mac is uploaded; only public data is downloaded"), ("zh-CN", "不上传任何本机数据，只下载公开数据")] {
+            let app = try await entry(locale: locale)
+            let window = try await firstRun(app)
+            let privacy = try control("firstRun.privacy", in: window, as: NSTextField.self)
+            XCTAssertEqual(privacy.stringValue, expected)
+            XCTAssertFalse(privacy.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(privacy.accessibilityValue() ?? privacy.accessibilityLabel(), expected)
+        }
+    }
+
+    func testG1_FR_9_03_PublicRecommendationFollowsPrivacy() async throws {
+        for locale in ["en-US", "zh-CN"] {
+            let app = try await entry(locale: locale)
+            let window = try await firstRun(app)
+            let privacy = try control("firstRun.privacy", in: window, as: NSTextField.self)
+            let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }.filter { !$0.isHiddenOrHasHiddenAncestor }
+            let line = try XCTUnwrap(fields.first { field in
+                let text = field.stringValue.lowercased()
+                return locale.hasPrefix("zh") ? text.contains("公开") && text.contains("推荐") : text.contains("public") && text.contains("recommend")
+            }, "The public-data recommendation must be visible")
+            let privacyFrame = privacy.convert(privacy.bounds, to: nil)
+            let recommendationFrame = line.convert(line.bounds, to: nil)
+            XCTAssertLessThan(recommendationFrame.midY, privacyFrame.midY)
+        }
+    }
+
+    func testG1_FR_9_04_DiscoveredSubscriptionsAndEmptyState() async throws {
+        for count in [0, 2] {
+            let app = try await entry(locale: "en-US", discoveredMembers: count)
+            let window = try await firstRun(app)
+            let subscriptions = try control("firstRun.subscriptions", in: window, as: NSTextField.self)
+            XCTAssertFalse(subscriptions.isHiddenOrHasHiddenAncestor)
+            if count == 0 { XCTAssertTrue(subscriptions.stringValue.contains("No subscriptions detected")) }
+            else {
+                XCTAssertTrue(subscriptions.stringValue.contains("Account 1"))
+                XCTAssertTrue(subscriptions.stringValue.contains("Account 2"))
+            }
+        }
+    }
+
+    func testG1_FR_9_06_LoginChoiceDefaultAndCompletion() async throws {
+        for enabled in [true, false] {
+            let app = try await entry(locale: "en-US")
+            let window = try await firstRun(app)
+            let login = try control("firstRun.login", in: window, as: NSButton.self)
+            let done = try control("firstRun.done", in: window, as: NSButton.self)
+            XCTAssertEqual(login.state, .on)
+            XCTAssertEqual(login.accessibilityHelp(), "You can turn this off in Settings")
+            XCTAssertGreaterThan(login.convert(login.bounds, to: nil).midY, done.convert(done.bounds, to: nil).midY)
+            if !enabled { XCTAssertTrue(login.isEnabled); login.performClick(nil) }
+            XCTAssertTrue(done.isEnabled); done.performClick(nil)
+            var saved = await app.foundationStore.snapshot()
+            for _ in 0..<1000 where !saved.preferences.onboarding.completed {
+                await Task.yield(); saved = await app.foundationStore.snapshot()
+            }
+            XCTAssertTrue(saved.preferences.onboarding.completed)
+            XCTAssertEqual(saved.preferences.openAtLogin, enabled)
+        }
+    }
+
+    func testG1_SET_9_08_DockSectionHeadings() async throws {
+        for (locale, expected) in [
+            ("en-US", ["Display", "Numbers", "Position", "Order"]),
+            ("zh-CN", ["显示", "数字", "位置", "顺序"])
+        ] {
+            let app = try await entry(locale: locale)
+            let window = try await settings(app, pane: "dock")
+            let labels = flatten(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }
+            for heading in expected {
+                XCTAssertTrue(labels.contains { $0 == heading || $0.hasSuffix(" · " + heading) }, "Missing Dock section \(heading)")
+            }
+        }
+    }
+
+    func testG1_SET_9_03_GeneralLoginChoiceDefaultsOn() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        let login = try control("settings.login", in: window, as: NSPopUpButton.self)
+        XCTAssertEqual(login.selectedItem?.representedObject as? String, "true")
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertTrue(saved.preferences.openAtLogin)
+    }
+
+    func testG1_SET_9_05_GeneralControlsArePresent() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        let views = flatten(try XCTUnwrap(window.contentView))
+        for id in ["settings.language", "settings.menuDisplay", "settings.openShortcut", "settings.dockShortcut", "settings.resetHints"] {
+            let view = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == id }, "Missing \(id)")
+            XCTAssertFalse(view.isHiddenOrHasHiddenAncestor)
+        }
+    }
+
+    func testG1_SET_9_07_AutomaticUpdatesDefaultOn() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        let choice = try control("settings.automaticUpdates", in: window, as: NSPopUpButton.self)
+        XCTAssertEqual(choice.selectedItem?.representedObject as? String, "true")
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertTrue(saved.preferences.automaticUpdates)
+    }
+
+    func testG1_SET_9_19_PrivacyDefaultsAndRetentionLabels() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "privacy")
+        let projectNames = try control("settings.projectNames", in: window, as: NSPopUpButton.self)
+        XCTAssertEqual(projectNames.selectedItem?.representedObject as? String, "true")
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertTrue(saved.preferences.showProjectNames)
+        let copy = flatten(try XCTUnwrap(window.contentView)).compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " ")
+        XCTAssertTrue(copy.contains("35")); XCTAssertTrue(copy.contains("371"))
+    }
+
+    // The synthetic bundle has no packaged notices; packaged provenance remains a separate check.
+    func testG1_SET_9_22_MissingLicenseBundleIsDisclosed() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "about")
+        let views = flatten(try XCTUnwrap(window.contentView))
+        let notice = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "settings.licenses.text" } as? NSScrollView)
+        let text = try XCTUnwrap(notice.documentView as? NSTextView)
+        XCTAssertTrue(text.string.contains("Bundled licence notices could not be loaded"))
+        XCTAssertTrue(text.string.contains("ModelPlan"))
+    }
+
+    func testG1_SET_9_25_ExcludedSettingsStayAbsent() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        for pane in SettingsStructure.task65.panes {
+            await app.settingsHost.present(paneID: pane.id, origin: .userInitiated)
+            let views = flatten(try XCTUnwrap(window.contentView)).filter { !$0.isHiddenOrHasHiddenAncestor }
+            let labels = views.compactMap { view -> String? in
+                if let text = view as? NSTextField { return text.stringValue }
+                if let button = view as? NSButton { return button.title }
+                return nil
+            }
+            XCTAssertFalse(labels.isEmpty, "The visible pane must contain controls or labels")
+            let titles = Set(labels.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+            for forbidden in ["sign in", "cookies", "api keys", "money estimates", "floating dock", "mascots", "proxy", "refresh interval", "custom identity colour", "column tint"] {
+                XCTAssertFalse(titles.contains(forbidden), "Unexpected setting: \(forbidden)")
+            }
+        }
+    }
+
+    func testG1_SET_9_23_DockDiagramsHaveExpectedRolesAndWidth() async throws {
+        let app = try await entry(locale: "en-US", discoveredMembers: 2)
+        let window = try await settings(app, pane: "dock")
+        let diagrams = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsDiagramView }.filter { !$0.isHiddenOrHasHiddenAncestor }
+        let roles = diagrams.map { diagram -> String in
+            switch diagram.input {
+            case .edge: return "edge"
+            case .percentages: return "percentages"
+            case .autoCollapse: return "autoCollapse"
+            case .size: return "size"
+            case .quotaWindow: return "quotaWindow"
+            }
+        }
+        XCTAssertEqual(roles.count, 5)
+        XCTAssertEqual(Set(roles), Set(["edge", "percentages", "autoCollapse", "size", "quotaWindow"]))
+        for diagram in diagrams { XCTAssertEqual(diagram.bounds.width, 96, accuracy: 0.01) }
+    }
+}
