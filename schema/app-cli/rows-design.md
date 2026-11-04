@@ -358,8 +358,11 @@ the source-reported count, not a deduplicated total across incomplete sources.
 `truncated` is true whenever a source or merged item list exceeded its bound.
 Items use installation-keyed opaque references, never provider card IDs. A
 complete union deduplicates those references; missing identities, conflicting
-facts, different observation times, or an unknown contributing source prevent
-a complete union. Expiry is omitted when not established for every item. The
+facts or an unknown contributing source prevent a complete union. Healthy
+sources may have different observation times: each source is independently
+eligible only until one hour after its observation, and the freshest source is
+listed first with the source ID breaking ties. Future or expired observations
+remain unknown. Expiry is omitted when not established for every item. The
 source and observation time travel with the facts so consumers can show their
 age without treating them as a new reading. `resetCounts` remains a legacy
 field; consumers should use `resetCards`, and check `resetCountsTruncated` if
