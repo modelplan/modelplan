@@ -285,6 +285,15 @@ private actor G1SettingsEngine: EngineClient {
         for _ in 0..<1000 where saved.preferences.showPercentages { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertFalse(saved.preferences.showPercentages)
         XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.showPercentages, false)
+        try choose("settings.percentageMode", value: "used", in: window)
+        saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.percentageMode != .used { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.percentageMode, .used)
+        try choose("settings.redBelow", value: "16", in: window)
+        saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.redBelow != 16 { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.redBelow, 16)
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 16)
         throw XCTSkip("Actual widget values, event dots, per-member pin and relaunch remain unverified")
     }
 
@@ -293,6 +302,11 @@ private actor G1SettingsEngine: EngineClient {
         let window = try await settings(app, pane: "dock")
         try assertControls(["settings.dockDisplay", "settings.dockEdge", "settings.fullscreen", "settings.activeDisplay"], in: window)
         try assertLabel("Hide from capture", in: window)
+        try choose("settings.dockEdge", value: "left", in: window)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.dockEdge != .left { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.dockEdge, .left)
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.dockEdge, .left)
         throw XCTSkip("Multi-display placement and actual fullscreen/capture behaviour require an admitted GUI session")
     }
 
