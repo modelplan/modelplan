@@ -86,6 +86,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var renderedLayerRolesForChecks: [DockRenderedLayerRole] { failed || community ? [] : renderedInspection?.layerRoles ?? [] }
     public var renderedResourceFiltersForChecks: [DockRenderedResourceFilter] { failed || community ? [] : renderedInspection?.resourceFilters ?? [] }
     public var renderedNozzleMaterialForChecks: [String:DockRenderedNozzleMaterial] { failed || community ? [:] : renderedInspection?.nozzles ?? [:] }
+    /// Actual CGContext transform of each successful nozzle pass, not an invented hover transform.
+    public var renderedNozzleTransformsForChecks: [String:CGAffineTransform] { renderedNozzleMaterialForChecks.mapValues(\.surfaceTransform) }
     public var renderedClockDotsForChecks: [String:DockRenderedClockDots] { failed || community ? [:] : renderedInspection?.clockDots ?? [:] }
     public var renderedReadoutTransformsForChecks: [String: CGAffineTransform] { renderedReadoutBackingForChecks.mapValues(\.glyphTransform) }
     private var officialRenderer: DockInstrumentRenderer?

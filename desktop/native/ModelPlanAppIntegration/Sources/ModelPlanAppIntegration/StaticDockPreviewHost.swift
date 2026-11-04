@@ -454,9 +454,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 self.interactionHoveredID = id
             }
             events.insideMainDrop = { [weak self, weak view] point in
-                guard let self, let view, self.interactionView === view, let window = view.window,
-                      self.interactionEnvironment().active else { return false }
-                return view.isPainted(atLocal: view.convert(window.convertPoint(fromScreen: point), from: nil))
+                guard let self, let view, self.interactionView === view,
+                      self.interactionEnvironment().active,
+                      let local=self.registeredInstrumentPoint(fromScreen:point,in:view) else { return false }
+                return view.isPainted(atLocal:local)
             }
             interactionEvents.append(events)
         }
@@ -475,6 +476,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         bindInteractionInput()
     }
 
+    private func registeredInstrumentPoint(fromScreen point:CGPoint,in view:DockInstrumentView) -> CGPoint? {
+        guard point.x.isFinite,point.y.isFinite else { return nil }
+        if let window=view.window { return view.convert(window.convertPoint(fromScreen:point),from:nil) }
+        guard !createsNativePanels, edge.presentation?.state == .expanded,
+              let placement=edge.presentation?.placement, view.bounds.size == placement.frame.size,
+              placement.frame.contains(point) else { return nil }
+        return CGPoint(x:point.x-placement.frame.minX+view.bounds.minX,
+                       y:placement.frame.maxY-point.y+view.bounds.minY)
+    }
     private func bindInteractionInput() {
         guard interactionController != nil else { return }
         let active = interactionEnvironment().active

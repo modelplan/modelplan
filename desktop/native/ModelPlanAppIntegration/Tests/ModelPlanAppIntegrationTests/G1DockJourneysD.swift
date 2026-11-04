@@ -95,18 +95,21 @@ private actor G1DEngine: EngineClient {
         }
         projection["rows"] = rows; projection["resetEvents"] = []; raw["projection"] = projection
     }
-    func open(autoHide: Bool = false, cockpitEnabled: Bool = false, notifications: Bool = false) async throws {
+    func open(autoHide: Bool = false, cockpitEnabled: Bool = false, notifications: Bool = false, windowEntry: Bool = false) async throws {
         _ = try await store.update { p in p.autoHide = autoHide; p.showDock = true; p.language = .english; p.motion = .on; if notifications { p.notifications.optedIn = true }; for _ in 0..<16 { p.onboarding.next() } }
         let rows = try decode()
         let previousLedger = EngineRowsEntry.isolatedNativeNotificationLedgerForChecks
         EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = root.appendingPathComponent("g1-notifications.json")
-        app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEnabled,
+        app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: windowEntry, cockpitEntryEnabled: cockpitEnabled,
             dockEnvironment: { [weak self] in guard let self else { return .init(displays: [], layouts: []) }; return .init(displays: self.displays, layouts: [], primaryDisplayID: "primary", pointer: self.pointer, presence: self.presence, cardFrame: self.cardFrame) },
             deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed }, deadlineScheduling: timer,
             makeClient: { [weak self] _, store in let engine = G1DEngine(store: store, rows: rows); self?.engine = engine; return engine }, activateSettings: {})
         EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = previousLedger
         app.composition.setResetNotificationDelivery { [weak self] in self?.notificationRequests.append($0) }
-        await app.prepare(); app.allowDockPresentation(); await app.composition.start(); tick(0.5)
+        if windowEntry {
+            // Exercise the WINDOW composition and real notifier without presenting any window or reading OS authorization.
+            await app.composition.start()
+        } else { await app.prepare(); app.allowDockPresentation(); await app.composition.start(); tick(0.5) }
     }
     func decode() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: raw)) }
     func publish() async throws { raw["sequence"] = ((raw["sequence"] as? Int) ?? 1) + 1; try await engine.deliver(decode()) }
@@ -381,13 +384,66 @@ private actor G1DEngine: EngineClient {
         XCTAssertTrue(f.host.sliverQuotaColorsForChecks.contains{$0.remainingPercent == 0})
     }
     func testG1_DOCK_3_6_12() async throws {
-        let f = try await fixture(); let controller = try XCTUnwrap(f.host.interactionControllerForChecks)
-        let target = try XCTUnwrap(f.host.interactionEnvironment().targets.first)
-        XCTAssertTrue(controller.beginNozzle(id: target.id, along: target.along))
-        controller.moveNozzle(along: target.along + 5)
-        XCTAssertNil(controller.presentation?.reorder)
-        controller.cancelNozzle()
-        throw XCTSkip("DOCK-3.6-12: SEAM-NEEDED detached normal-entry preview/drop stalls or retires before commit; threshold prefix only, no drop proof")
+        let f = try await fixture(), first=G1DFixture.ids[0], second=G1DFixture.ids[1]
+        let events = try XCTUnwrap(f.host.dockView.nozzleEventDelegate)
+        let controller = try XCTUnwrap(f.host.interactionControllerForChecks)
+        let source = try XCTUnwrap(f.host.dockView.interactionAnchor(first))
+        let destination = try XCTUnwrap(f.host.dockView.interactionAnchor(second))
+        let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
+        let begin=CGPoint(x:source.midX,y:source.midY), end=CGPoint(x:destination.midX,y:destination.midY)
+        f.pointer = .init(x:placement.frame.minX+begin.x,y:placement.frame.maxY-begin.y)
+        f.presence.mouseButtonDown=true
+        XCTAssertTrue(events.beginNozzle(id:first,local:begin))
+        events.moveNozzle(local:.init(x:begin.x,y:begin.y+5))
+        XCTAssertNil(controller.presentation?.reorder,"Exactly five points is not a drag")
+        f.pointer = .init(x:placement.frame.minX+end.x,y:placement.frame.maxY-end.y)
+        events.moveNozzle(local:end)
+        XCTAssertEqual(controller.presentation?.reorder?.order,[second,first,G1DFixture.ids[2]])
+        XCTAssertEqual(controller.presentation?.reorder?.neighbourYieldSeconds,0,"Reduced Motion is instant")
+        f.presence.mouseButtonDown=false
+        events.endNozzle(global:f.pointer,currentID:first)
+        try await complete { !f.editor.isSaving && f.editor.snapshot?.preferences.subscriptions.order == [second,first,G1DFixture.ids[2]] }
+        let saved = await f.store.snapshot()
+        XCTAssertEqual(saved.preferences.subscriptions.order,[second,first,G1DFixture.ids[2]])
+        let trace = await f.engine.trace()
+        XCTAssertFalse(trace.contains("member-refresh"),"Dragging must not refresh")
+        _ = try await f.editor.commit(SettingsB20Edit.motion(.system))
+        f.app.updateSystemAccessibility(SettingsEnvironment())
+        // The original fixture reserves the bottom for the system Dock. Make it genuinely eligible.
+        f.displays[0] = .init(id:"primary",frame:.init(x:0,y:0,width:1440,height:900),visibleFrame:.init(x:0,y:0,width:1440,height:820))
+        f.tick(0)
+        _ = try await f.editor.commit(SettingsB21Edit.dockEdge(.bottom))
+        f.tick(0)
+        try await complete { f.host.edgePresentation?.placement?.edge == .bottom }
+        func reversePreview() throws -> (any DockNozzleEventHandling,CGPoint) {
+            let port=try XCTUnwrap(f.host.dockView.nozzleEventDelegate)
+            let source=try XCTUnwrap(f.host.dockView.interactionAnchor(first)), target=try XCTUnwrap(f.host.dockView.interactionAnchor(second))
+            let place=try XCTUnwrap(f.host.edgePresentation?.placement)
+            let local=CGPoint(x:source.midX,y:source.midY), destination=CGPoint(x:target.midX,y:target.midY)
+            f.pointer = .init(x:place.frame.minX+local.x,y:place.frame.maxY-local.y);f.presence.mouseButtonDown=true
+            XCTAssertTrue(port.beginNozzle(id:first,local:local))
+            let global=CGPoint(x:place.frame.minX+destination.x,y:place.frame.maxY-destination.y)
+            f.pointer=global;port.moveNozzle(local:destination)
+            XCTAssertNotEqual(source.midX,target.midX)
+            XCTAssertNotNil(controller.presentation?.reorder)
+            XCTAssertEqual(controller.presentation?.reorder?.neighbourYieldSeconds,0.150)
+            return (port,global)
+        }
+        _ = try reversePreview()
+        f.host.dockView.cancelOperation(nil) // The production Escape command.
+        f.presence.mouseButtonDown=false
+        XCTAssertFalse(controller.hasCapture);XCTAssertNil(controller.presentation?.reorder)
+        var current=await f.store.snapshot()
+        XCTAssertEqual(current.preferences.subscriptions.order,saved.preferences.subscriptions.order)
+        let (port,_) = try reversePreview()
+        f.pointer = .init(x:-100,y:-100);f.presence.mouseButtonDown=false
+        port.endNozzle(global:f.pointer,currentID:nil)
+        XCTAssertFalse(controller.hasCapture);XCTAssertNil(controller.presentation?.reorder)
+        await Task.yield();current=await f.store.snapshot()
+        XCTAssertEqual(current.preferences.subscriptions.order,saved.preferences.subscriptions.order,"An outside release must cancel")
+        let finalTrace=await f.engine.trace()
+        XCTAssertFalse(finalTrace.contains("member-refresh"))
+
     }
     func testG1_DOCK_3_6_13() async throws {
         let f = try await fixture(); let first=G1DFixture.ids[0]
@@ -447,9 +503,12 @@ private actor G1DEngine: EngineClient {
         f.tick(3601); XCTAssertNil(f.app.composition.resetSignals.first?.reset)
     }
     func testG1_DOCK_3_7_04() async throws {
+      for windowEntry in [false,true] {
         let first = try G1DFixture(wall: Date().addingTimeInterval(-5))
         addTeardownBlock { @MainActor in await first.close() }
-        try await first.open(notifications: true)
+        try await first.open(notifications: true,windowEntry:windowEntry)
+        XCTAssertEqual(first.app.composition.nativeNotificationLedgerForChecks,first.root.appendingPathComponent("g1-notifications.json"))
+        if windowEntry { XCTAssertNil(first.host.nativePanel) }
         try await first.event(); try await complete { first.notificationRequests.count == 1 }
         try await complete { FileManager.default.fileExists(atPath:first.root.appendingPathComponent("g1-notifications.json").path) }
         try await first.publish(); await Task.yield(); XCTAssertEqual(first.notificationRequests.count,1)
@@ -457,12 +516,14 @@ private actor G1DEngine: EngineClient {
         let second = try G1DFixture(profile:first.root,wall:first.clock.wall)
         addTeardownBlock { @MainActor in await second.close() }
         second.raw = first.raw
-        try await second.open(notifications:true)
+        try await second.open(notifications:true,windowEntry:windowEntry)
         // Queue a distinct event and await it: this also drains the preceding duplicate turn.
         var p = second.raw["projection"] as! [String:Any], events = p["resetEvents"] as! [[String:Any]]
         events[0]["id"] = String(repeating:"e",count:64); p["resetEvents"] = events; second.raw["projection"] = p
         try await second.publish(); try await complete { second.notificationRequests.count == 1 }
         XCTAssertTrue(second.notificationRequests[0].hasPrefix(String(repeating:"e",count:64)))
+        if windowEntry { XCTAssertNil(first.host.nativePanel); XCTAssertNil(second.host.nativePanel) }
+      }
     }
     func testG1_DOCK_3_7_05() async throws {
         for duration in [3600.0,48*3600,24*3600] as [Double] {
@@ -487,15 +548,48 @@ private actor G1DEngine: EngineClient {
         await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
         XCTAssertNil(f.app.noticeIndicator.notice)
     }
-    func testG1_DOCK_3_8_01() async throws { try await seam("DOCK-3.8-01","resolved per-nozzle magnification/lift metadata is absent; stored choice alone is not motion proof") }
-    func testG1_DOCK_3_8_02() async throws { try await seam("DOCK-3.8-02","readout glyph transforms are exposed; per-nozzle hover/magnification transition still needs observation") }
+    func testG1_DOCK_3_8_01() async throws {
+        let f = try await fixture(); let id=G1DFixture.ids[0]
+        XCTAssertEqual(f.editor.snapshot?.preferences.magnification,.subtle)
+        _ = try await f.editor.commit(SettingsB20Edit.motion(.system))
+        f.app.updateSystemAccessibility(SettingsEnvironment())
+        let before=try XCTUnwrap(f.host.dockView.renderedNozzleTransformsForChecks[id])
+        try f.hover();f.tick(0.25)
+        let after=try XCTUnwrap(f.host.dockView.renderedNozzleTransformsForChecks[id])
+        XCTExpectFailure("DOCK-3.8-01 not implemented: baked nozzle raster has no per-nozzle hover transform; needs a counted independent nozzle compositor, not a fabricated inspection role") {
+            XCTAssertEqual(abs(after.a/before.a),1.15,accuracy:0.001,"Subtle hover must change the actual nozzle draw transform")
+        }
+    }
+    func testG1_DOCK_3_8_02() async throws {
+        let f = try await fixture();let id=G1DFixture.ids[0]
+        _ = try await f.editor.commit(SettingsB20Edit.motion(.system))
+        f.app.updateSystemAccessibility(SettingsEnvironment())
+        let nozzle=try XCTUnwrap(f.host.dockView.renderedNozzleTransformsForChecks[id])
+        let readout=try XCTUnwrap(f.host.dockView.renderedReadoutTransformsForChecks[id])
+        try f.hover();f.tick(0.25)
+        XCTAssertEqual(f.host.dockView.renderedReadoutTransformsForChecks[id],readout)
+        XCTExpectFailure("DOCK-3.8-02 not implemented: readout stays fixed, but independent nozzle magnification is missing in the shared raster renderer") {
+            XCTAssertNotEqual(f.host.dockView.renderedNozzleTransformsForChecks[id],nozzle,"Fixed text alone does not establish an independently magnifying nozzle")
+        }
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(f.host.dockView.renderedNozzleTransformsForChecks.isEmpty)
+    }
     func testG1_DOCK_3_8_03() async throws {
         let f = try await fixture(); try f.hover(); f.tick(0.249); XCTAssertTrue(f.host.card.isHidden)
         f.tick(0.002); XCTAssertFalse(f.host.card.isHidden)
         f.pointer = .init(x:500,y:400); try XCTUnwrap(f.host.dockView.nozzleEventDelegate).hoverNozzle(nil)
         f.tick(0); f.tick(0.249); XCTAssertFalse(f.host.card.isHidden);f.tick(0.002);XCTAssertTrue(f.host.card.isHidden)
     }
-    func testG1_DOCK_3_8_04() async throws { try await seam("DOCK-3.8-04","metal plate/LCD appearance roles are not exposed; generic NSView geometry does not prove visual identity") }
+    func testG1_DOCK_3_8_04() async throws {
+        let f = try await fixture();try f.hover();f.tick(0.25)
+        let material=try XCTUnwrap(f.host.card.renderedMaterialForChecks)
+        XCTAssertEqual(material.passRoles,["background-fill"])
+        XCTExpectFailure("DOCK-3.8-04 not implemented: actual card is one generic background fill; approved metal-plate/LCD appearance needs its own visual integration") {
+            XCTAssertTrue(material.passRoles.contains("metal-plate") && material.lcdWindow != nil,"Actual card needs the approved metal plate and dark LCD material, not a role label on a solid fill")
+        }
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertNil(f.host.card.renderedMaterialForChecks)
+    }
     func testG1_DOCK_3_8_05() async throws {
         let f = try await fixture();try f.hover();f.tick(0.25)
         let card=try f.card();XCTAssertTrue(card.name.contains("Synthetic Alpha"));XCTAssertEqual(card.plan,"Synthetic Pro")
@@ -515,10 +609,30 @@ private actor G1DEngine: EngineClient {
     func testG1_DOCK_3_8_08() async throws {
         let f = try await fixture();let repo=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
         var facts=try JSONSerialization.jsonObject(with:Data(contentsOf:repo.appendingPathComponent("schema/app-cli/captures/RowsResetCards.json"))) as! [String:Any]
+        facts["sources"]=[["source":"codex-account","observedAt":G1DFixture.stamp(f.clock.wall.addingTimeInterval(-60))]]
         facts["earliestExpiresAt"]=G1DFixture.stamp(f.clock.wall.addingTimeInterval(86400));facts["items"]=[["id":String(repeating:"d",count:64),"expiresAt":G1DFixture.stamp(f.clock.wall.addingTimeInterval(86400))]]
+        var projection=f.raw["projection"] as! [String:Any], rows=projection["rows"] as! [[String:Any]], accounts=rows[0]["accounts"] as! [[String:Any]]
+        accounts[1]["resetCards"]=["state":"unknown","count":NSNull(),"truncated":false,"sources":[]]
+        rows[0]["accounts"]=accounts;projection["rows"]=rows;f.raw["projection"]=projection
         f.mutateFirst{$0["resetCards"]=facts};try await f.publish();let card=try f.card()
         XCTAssertTrue(card.rows.contains{$0.kind == .reserve && $0.value == "1,500"})
-        XCTExpectFailure("DOCK-3.8-08: reported reset-card count and expiry are not projected") { XCTAssertTrue(card.rows.contains{$0.id.contains("reset-card") && !$0.detail.isEmpty}) }
+        let reset = try XCTUnwrap(card.rows.first { $0.id == "reset-cards" })
+        XCTAssertEqual(reset.value,"1")
+        XCTAssertTrue(reset.detail.contains(facts["earliestExpiresAt"] as! String))
+        XCTAssertFalse(try f.card(G1DFixture.ids[1]).rows.contains { $0.id == "reset-cards" },"Do not borrow another account's reset cards")
+        facts["state"]="partial"; facts["count"]=7; facts["truncated"]=true
+        f.mutateFirst { $0["resetCards"]=facts }; try await f.publish()
+        let partial = try XCTUnwrap(try f.card().rows.first { $0.id == "reset-cards" })
+        XCTAssertEqual(partial.value,"7","Use the reported count, not the one retained opaque item")
+        XCTAssertTrue(partial.detail.contains("Reported subset"))
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertTrue(try f.card().rows.first { $0.id == "reset-cards" }?.detail.contains("已报告部分") == true)
+        facts["state"]="unknown"; facts["count"]=NSNull(); facts.removeValue(forKey:"earliestExpiresAt")
+        f.mutateFirst { $0["resetCards"]=facts }; try await f.publish()
+        XCTAssertFalse(try f.card().rows.contains { $0.id == "reset-cards" },"Unknown never becomes zero or an inferred item count")
+        facts["state"]="complete"; facts["count"]=0; facts["items"]=[]; facts["truncated"]=false
+        f.mutateFirst { $0["resetCards"]=facts }; try await f.publish()
+        XCTAssertEqual(try f.card().rows.first { $0.id == "reset-cards" }?.value,"0")
     }
     func testG1_DOCK_3_8_09() async throws {
         let f = try await fixture();let card=try f.card()

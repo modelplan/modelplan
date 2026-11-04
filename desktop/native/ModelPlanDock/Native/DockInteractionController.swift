@@ -93,8 +93,10 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             case .none:refresh()
             case .click(let id):click(id)
             case .order(let request):
-                if let current=presentation{publish(.init(card:current.card,content:current.content,reorder:nil,overflowIDs:current.overflowIDs))}
+                // Publish can synchronously refresh the host/controller and advance generation.
+                // Submit the already validated drop first; the writer independently fences its commit.
                 guard running,generation==token else{return};submit(request,keyboard:false)
+                refresh()
             }
         }catch{cancelNozzle();onFailure?(error)}
     }

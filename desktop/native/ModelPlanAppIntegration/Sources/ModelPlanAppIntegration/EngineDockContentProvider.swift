@@ -201,6 +201,24 @@ public enum EngineDeadlineFacts {
             }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
                account.valueState == .current || account.valueState == .retained,
+               let facts=account.resetCards, facts.state == .complete || facts.state == .partial,
+               facts.count != nil || facts.earliestExpiresAt != nil {
+                var details=[String]()
+                if facts.state == .partial { details.append(english ? "Reported subset":"已报告部分") }
+                if facts.truncated { details.append(english ? "Details truncated":"明细已截断") }
+                if let expiry=date(facts.earliestExpiresAt) {
+                    details.append((english ? "Earliest expiry: ":"最早到期：") + ISO8601DateFormatter().string(from:expiry))
+                }
+                if account.valueState == .retained || row.state != .fresh ||
+                   (date(row.expiresAt).map { context.now >= $0 } ?? false) ||
+                   (date(account.freshUntil).map { context.now >= $0 } ?? false) {
+                    details.append(english ? "Last known reading":"上次读数")
+                }
+                // The producer reports count/completeness. Never count retained item IDs or infer zero.
+                reserve.append(.init(id:"reset-cards",kind:.reserve,label:english ? "Reset cards":"重置卡",value:facts.count.map(String.init) ?? "--",detail:details.joined(separator:" · ")))
+            }
+            if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
+               account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
                 let lastKnown = account.valueState == .retained || row.state != .fresh ||
                     (date(row.expiresAt).map { context.now >= $0 } ?? false) ||

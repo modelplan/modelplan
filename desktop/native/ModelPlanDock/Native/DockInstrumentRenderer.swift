@@ -78,7 +78,9 @@ public struct DockRenderedResourceFilter {
     public let preservesSourcePixels: Bool, fitsVisibleGlyph: Bool
 }
 public struct DockRenderedNozzleMaterial {
-    public let frame: CGRect, resources: [String], replacementResource: String?
+    public let frame: CGRect
+    public let surfaceTransform: CGAffineTransform
+    public let resources: [String], replacementResource: String?
     public let caseInk: DockInk?, radialOverlay: DockRadialOverlayRecipe?
 }
 public struct DockRenderedClockDots {
@@ -312,7 +314,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 try text(reading.name, station.glyphRect, skin.aliasText, try ink("text")); role("vendor-name",id)
             }
             }
-            nozzleMaterials[id] = .init(frame:frame,resources:station.replacementResource.map { [$0] } ?? station.layers,replacementResource:station.replacementResource,caseInk:station.replacementResource == nil ? skin.palette["case"]:nil,radialOverlay:station.replacementResource == nil ? station.radialOverlay:nil)
+            nozzleMaterials[id] = .init(frame:frame,surfaceTransform:c.ctm,resources:station.replacementResource.map { [$0] } ?? station.layers,replacementResource:station.replacementResource,caseInk:station.replacementResource == nil ? skin.palette["case"]:nil,radialOverlay:station.replacementResource == nil ? station.radialOverlay:nil)
             if reading.timeLeftFraction != nil {
                 let clock=station.clock,r=clock.radius
                 guard r>0,r.isFinite,clock.dotRadius>0,clock.backWidth>=0 else{throw DockArtworkError.invalidManifest}

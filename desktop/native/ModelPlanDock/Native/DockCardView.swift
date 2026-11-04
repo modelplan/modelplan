@@ -37,6 +37,11 @@ import CryptoKit
             if let fraction{let fill=max(0,min(1,fraction*Double(segmentCount)-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
     }
 }
+public struct DockCardMaterialInspection {
+    public let passRoles: [String], bodyBounds: CGRect
+    public let background: NSColor
+    public let lcdWindow: CGRect?
+}
 @MainActor public final class DockCardView:NSView {
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
@@ -53,6 +58,10 @@ import CryptoKit
     }
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
+    /// The currently mounted draw recipe. The present card has one background fill, no separate LCD pass.
+    public var renderedMaterialForChecks: DockCardMaterialInspection? {
+        content.map { _ in .init(passRoles:["background-fill"],bodyBounds:bounds,background:style.background,lcdWindow:nil) }
+    }
     public var quotaBarSegmentCountsForChecks: [String: Int] { bars.mapValues(\.segmentCount) }
     /// TextKit fragments of currently mounted text, in card-local coordinates.
     /// Unlaid-out fields have no observed fragments; this getter does not force layout.
