@@ -26,7 +26,9 @@ func memberFixture(t *testing.T) (*memoryBackend, func(consent.Admission) quota.
 func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	backend, paths, _, member := memberFixture(t)
 	called := make(chan string, 1)
-	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { called <- scope; return nil }})
+	changed := make(chan struct{}, 2)
+	now := time.Date(2026, time.January, 2, 12, 0, 0, 0, time.UTC)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: func() time.Time { return now }, Changed: func() { changed <- struct{}{} }, Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { called <- scope; return nil }})
 	defer s.Close()
 	result, _, err := s.RequestMember(context.Background(), member)
 	if err != nil || result.Outcome != wire.MemberRefreshStarted {
@@ -40,9 +42,24 @@ func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("member reader did not run")
 	}
-	waitAutomaticFloor(t, s, "codex", time.Now().Add(-time.Second))
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		s.mu.Lock()
+		_, pending := s.pending["codex"]
+		until := s.autoNext["codex"]
+		s.mu.Unlock()
+		if !pending && until.Equal(now.Add(5*time.Minute)) {
+			break
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			t.Fatal("member refresh did not finish and record its floor")
+		}
+	}
 	result, _, err = s.RequestMember(context.Background(), member)
-	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshFloor || result.NotBefore == nil {
+	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshFloor || result.NotBefore == nil || !result.NotBefore.Equal(now.Add(5*time.Minute)) {
 		t.Fatalf("floor not enforced: %+v %v", result, err)
 	}
 }
