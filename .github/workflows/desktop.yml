@@ -187,7 +187,7 @@ jobs:
   native-headless:
     name: native-headless (macos-latest)
     if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@e6a04f9ff2c9288994170eeaf3bd82198fe4160a
     with:
       task: native-headless
       os: macos-latest
