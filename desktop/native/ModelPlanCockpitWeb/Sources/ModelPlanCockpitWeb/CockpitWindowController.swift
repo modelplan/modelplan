@@ -206,6 +206,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       freshnessDriver.show()
     }
     func verificationReceive(_ raw: String, source: CockpitMessageSource) { receiveRaw(raw, source: source) }
+    /// External navigation boundary for a synthetic browser transport; generates no ready/rendered receipt.
+    func verificationStartPageWithoutWindow() {
+      guard web == nil, verificationNoWindowDelivery != nil else { return }
+      publishInitialLoad()
+    }
     func verificationHideWithoutWindow() throws {
       suspendForHiddenPage(); visibilityFence.invalidate()
       _ = try bridge.setVisibility(.init(visible: false, occluded: true, key: false))
@@ -529,6 +534,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       fail()
       return
     }
+    publishInitialLoad()
+  }
+  private func publishInitialLoad() {
     guard let shell = currentShell else { fail(); return }
     do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail() }
   }

@@ -115,13 +115,16 @@ import ModelPlanDock
     var pageFailure: (() -> Void)?
     var anchor: (() -> CGRect?)?
     let shell = CockpitShellSession()
-    var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
+    var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full,redBelow:25)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         if inspectsWithoutWindow, let verifiedBundleForChecks {
             let page = CockpitWindowController.withoutWindowForChecks(bundle: verifiedBundleForChecks, context: context, appearance: appearance,shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
             page.onFailure = { [weak self] _ in self?.pageFailure?() }
             pageForChecks = page
+            #if MODELPLAN_TEST_ONLY_SPI
+            CommunityCockpitApplicationFactory.verificationPage?(page)
+            #endif
             return page
         }
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
@@ -185,7 +188,14 @@ struct CockpitUnavailableNotice {
             case .night:theme = .night
             case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
             }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full)
+            let effective:EffectiveSettings
+            if let current=composition.latestSettings, current.snapshot.revision == snapshot.revision {
+                effective=current.effective
+            } else { effective = .init(snapshot.preferences,environment:SettingsWindowController.systemEnvironment()) }
+            let previous=owner.appearance
+            owner.appearance = .init(theme:theme,locale:effective.language == .english ? .en:.zhCN,
+                profile:previous.profile,reduceMotion:effective.reduceMotion,reduceTransparency:effective.reduceTransparency,
+                shutterClosed:previous.shutterClosed,detached:previous.detached,redBelow:effective.redBelow)
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
                 switch intent {
@@ -203,6 +213,15 @@ struct CockpitUnavailableNotice {
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
+    func applySettings(_ value:SettingsApplication) {
+        let effective=value.effective, previous=owner.appearance
+        let next=CockpitAppearance(theme:previous.theme,locale:effective.language == .english ? .en:.zhCN,
+            profile:previous.profile,reduceMotion:effective.reduceMotion,reduceTransparency:effective.reduceTransparency,
+            shutterClosed:previous.shutterClosed,detached:previous.detached,redBelow:effective.redBelow)
+        guard next != previous else { return }
+        owner.appearance=next
+        owner.coordinator?.updateAppearance(next)
+    }
     func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
