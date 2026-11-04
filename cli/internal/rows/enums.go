@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: MIT
 package rows
 
+type ActivityPhase string
+
+const (
+	ActivityPhaseModel    ActivityPhase = "model"
+	ActivityPhaseTool     ActivityPhase = "tool"
+	ActivityPhaseFinished ActivityPhase = "finished"
+	ActivityPhaseFallback ActivityPhase = "fallback"
+)
+
 type Kind string
 
 const (

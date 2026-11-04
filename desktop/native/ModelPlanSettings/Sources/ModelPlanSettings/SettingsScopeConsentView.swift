@@ -85,6 +85,8 @@ import ModelPlanWire
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         label(.init("Reading permissions", "读取权限"))
+        label(.init("Local session files are read to show tool activity. Their contents are not uploaded.",
+                    "读取本地会话文件以显示工具活动状态，文件内容不会上传。"))
         switch controller.notice {
         case .none: break
         case .outcomeUnknown: label(.init("The change outcome is unknown. Check current permissions before trying again.", "这次变更结果未知，请先检查当前权限，再决定是否重试。"))

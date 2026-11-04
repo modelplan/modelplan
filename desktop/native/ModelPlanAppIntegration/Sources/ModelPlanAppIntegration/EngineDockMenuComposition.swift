@@ -23,6 +23,8 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    private var activityExpiryTask: Task<Void, Never>?
+    private var activityPresentationPaused = false
     private let clock: EngineDockClock
     // Internal injection seam: the production entry retains the system clock.
     var currentDate: @MainActor () -> Date {
@@ -61,8 +63,27 @@ public struct EngineMenuRefreshResult {
         dock.setDockContentProvider(adapter)
         provider.dockContentDidChange = { [weak self] in
             self?.adapter.scrubInvalidatedMenus()
-            self?.dock.refreshDockContent(); self?.menuDidChange?()
+            self?.refreshActivityPresentation()
         }
+    }
+    deinit { activityExpiryTask?.cancel() }
+    private func refreshActivityPresentation() {
+        activityExpiryTask?.cancel(); activityExpiryTask=nil
+        dock.refreshDockContent(); menuDidChange?()
+        guard !activityPresentationPaused else { return }
+        let now=currentDate()
+        guard let expiry=presentedContent.snapshot.inputs.compactMap({$0.working?.expiresAt}).filter({$0>now}).min() else { return }
+        let delay=expiry.timeIntervalSince(now)
+        activityExpiryTask=Task { @MainActor [weak self] in
+            do { try await Task.sleep(for:.seconds(delay)); try Task.checkCancellation() }
+            catch { return }
+            self?.refreshActivityPresentation()
+        }
+    }
+    func setActivityPresentationPaused(_ paused:Bool) {
+        activityPresentationPaused=paused
+        if paused { activityExpiryTask?.cancel(); activityExpiryTask=nil }
+        else { refreshActivityPresentation() }
     }
     public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: currentDate())) }
     func setLanguage(_ language:String) { adapter.language=language }
@@ -120,5 +141,5 @@ public struct EngineMenuRefreshResult {
         }
         catch { onResult?(.failure(error)) /* No automatic retry or optimistic value. */ }
     }
-    public func stop() async { dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { setActivityPresentationPaused(true); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

@@ -1215,12 +1215,7 @@ func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report
 	if claude == "" {
 		claude = filepath.Join(home, ".claude")
 	}
-	refs := map[string]string{}
-	for _, a := range report.Accounts {
-		if a.Subscription != nil {
-			refs[a.Source] = a.Subscription.Ref
-		}
-	}
+	refs := quota.UniqueSubscriptionRefs(report.Accounts)
 	reportWrite(report, func() error {
 		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
 	})

@@ -197,7 +197,7 @@ import ModelPlanMenuVerification
             onReady: { [weak self] in
                 guard let self, !self.terminating else { return }
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle()
-                self.allowDockPresentation(); self.renderMenu()
+                self.allowDockPresentation(); self.composition.setActivityPresentationPaused(false); self.renderMenu()
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
             }, onGateOpen: { [weak self] in self?.renderMenu() })
         lifecycleController = controller
@@ -215,6 +215,7 @@ import ModelPlanMenuVerification
     private func withdrawForLifecycle() {
         guard !terminating else { return }
         lifecyclePaused = true
+        composition.setActivityPresentationPaused(true)
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
