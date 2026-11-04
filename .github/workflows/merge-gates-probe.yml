@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+# Signal only. A PR event, a submitted review or a merge-queue group starts this no-op run; its run
+# starts `merge-gates` (workflow_run), which evaluates the gates with the default branch's rules. This
+# file runs the PR's or the group's own code, so it holds no logic and no permissions.
+name: merge-gates probe
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  merge_group:
+    types: [checks_requested]
+permissions: {}
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Pilot evidence for routing trusted Mac jobs in the queue later: who GitHub reports as the actor.
+      - run: echo "event=$EVENT actor=$ACTOR actor_id=$ACTOR_ID triggering_actor=$TRIGGERING ref=$REF"
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+          TRIGGERING: ${{ github.triggering_actor }}
+          REF: ${{ github.ref }}
