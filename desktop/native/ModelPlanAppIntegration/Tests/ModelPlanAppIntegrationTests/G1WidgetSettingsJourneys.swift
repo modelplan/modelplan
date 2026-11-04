@@ -44,12 +44,24 @@ private actor G1RowsClient: EngineClient {
 }
 
 @MainActor private final class G1DisplayEnvironment {
-    let display = DockDisplayArea(id: "g1-display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 900))
+    let display = DockDisplayArea(id: "g1-display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1440, height: 850))
     let second = DockDisplayArea(id: "g1-second", frame: CGRect(x: 1800, y: 0, width: 1200, height: 700), visibleFrame: CGRect(x: 1800, y: 0, width: 1200, height: 700))
     var pointer = CGPoint(x: 720, y: 450)
     var presence = DockPresence()
     func sample() -> DockEdgeEnvironment {
         .init(displays: [display, second], layouts: [], primaryDisplayID: display.id, pointer: pointer, presence: presence)
+    }
+}
+
+@MainActor private final class G1Clock: DockEdgeScheduling {
+    var elapsed: TimeInterval = 0
+    var deadline: TimeInterval?
+    var action: (@MainActor () -> Void)?
+    func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) { self.deadline = deadline; self.action = action }
+    func cancel() { deadline = nil; action = nil }
+    func advance(_ seconds: TimeInterval) {
+        elapsed += seconds
+        if let deadline, deadline <= elapsed { let next = action; cancel(); next?() }
     }
 }
 
@@ -87,13 +99,14 @@ private actor G1RowsClient: EngineClient {
         projection["rows"] = empty ? [] : rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
-    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false) async throws -> EngineDockMenuApplication {
+    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
         let fixture = try fixture(empty: empty, secondMember: secondMember)
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
-            createsNativePanels: false, dockEnvironment: { environment.sample() },
+            createsNativePanels: panels, dockEnvironment: { environment.sample() },
+            deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1RowsClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
@@ -331,5 +344,133 @@ private actor G1RowsClient: EngineClient {
         XCTAssertEqual(reopened.composition.dock.dockView.presentedReadingsForChecks[first]?.remainingPercent, 72)
         XCTAssertEqual(reopened.composition.dock.dockView.presentedReadingsForChecks[second]?.remainingPercent, 16)
         await reopened.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_1_07() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-threshold-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        var app = try await open(G1DisplayEnvironment(), profile: profile)
+        XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.redBelow, 25)
+        let editor = app.settingsHost.application.editor
+        let preferences = try XCTUnwrap(editor.snapshot?.preferences)
+        let rows = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: nil)
+        let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
+        guard case let .choice(selected, options) = thresholdRow.value else { return XCTFail("Threshold choices must be presented") }
+        XCTAssertEqual(selected, "25")
+        XCTAssertEqual(options, ["10", "16", "20", "25"])
+        for threshold in [10, 16, 20, 25] {
+            let editor = app.settingsHost.application.editor
+            _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
+            let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
+            for value in [threshold - 1, threshold, threshold + 1] {
+                try await client.replaceRows(fixture(five: Double(value)))
+                let reading = try XCTUnwrap(app.composition.dock.dockView.presentedReadingsForChecks["0123456789abcdef"])
+                if value <= threshold { XCTAssertEqual(reading.status, .critical) }
+                else { XCTAssertNotEqual(reading.status, .critical) }
+            }
+            await app.composition.stop(); app.composition.dock.close()
+            app = try await open(G1DisplayEnvironment(), profile: profile)
+            XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.redBelow, threshold)
+        }
+        await app.composition.stop(); app.composition.dock.close()
+    }
+
+    func testG1_DOCK_3_1_02() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-system-dock-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1DisplayEnvironment()
+        let app = try await open(environment, profile: profile)
+        defer { app.composition.dock.close() }
+        let screen = environment.display.frame
+        let systemDock = CGRect(x: screen.minX, y: screen.minY, width: screen.width, height: 24)
+        let corners = [CGRect(x: screen.minX, y: screen.minY, width: 24, height: 24),
+                       CGRect(x: screen.maxX - 24, y: screen.minY, width: 24, height: 24),
+                       CGRect(x: screen.minX, y: screen.maxY - 24, width: 24, height: 24),
+                       CGRect(x: screen.maxX - 24, y: screen.maxY - 24, width: 24, height: 24)]
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.dockEdge(edge))
+            let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+            XCTAssertEqual(placement.displayID, environment.display.id)
+            let regions = placement.globalHoverRects + [placement.wakeFrame]
+            XCTAssertFalse(regions.isEmpty)
+            for region in regions {
+                XCTAssertFalse(region.intersects(systemDock), "Dock region intersects the synthetic system Dock")
+                for corner in corners { XCTAssertFalse(region.intersects(corner), "Dock region enters a 24-pixel hot corner") }
+            }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_6_02() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-wake-zone-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1DisplayEnvironment(), clock = G1Clock()
+        let app = try await open(environment, profile: profile, clock: clock)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        for size in [SettingsSize.small, .medium, .large] {
+            _ = try await editor.commit(SettingsB20Edit.size(size))
+            for edge in [SettingsDockEdge.left, .right, .bottom] {
+                _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+                environment.pointer = CGPoint(x: 720, y: 450); dock.refreshPresence(); clock.advance(1)
+                let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+                let wake = placement.wakeFrame, sliver = placement.sliverFrame
+                if edge == .bottom {
+                    XCTAssertEqual(wake.height, 20, accuracy: 0.0001)
+                    XCTAssertEqual(wake.minX, sliver.minX, accuracy: 0.0001)
+                    XCTAssertEqual(wake.maxX, sliver.maxX, accuracy: 0.0001)
+                    environment.pointer = CGPoint(x: wake.midX, y: wake.maxY + 0.5)
+                } else {
+                    XCTAssertEqual(wake.width, 20, accuracy: 0.0001)
+                    XCTAssertEqual(wake.minY, sliver.minY, accuracy: 0.0001)
+                    XCTAssertEqual(wake.maxY, sliver.maxY, accuracy: 0.0001)
+                    environment.pointer = CGPoint(x: edge == .left ? wake.maxX + 0.5 : wake.minX - 0.5, y: wake.midY)
+                }
+                dock.refreshPresence(); clock.advance(1)
+                XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+                environment.pointer = CGPoint(x: wake.midX, y: wake.midY)
+                dock.refreshPresence(); clock.advance(0.151)
+                XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+                environment.pointer = CGPoint(x: 720, y: 450); dock.refreshPresence(); clock.advance(1)
+                environment.pointer = edge == .bottom ? CGPoint(x: wake.maxX + 0.5, y: wake.midY) : CGPoint(x: wake.midX, y: wake.maxY + 0.5)
+                dock.refreshPresence(); clock.advance(1)
+                XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+            }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_6_09() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-arrival-guard-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1DisplayEnvironment(), clock = G1Clock()
+        let app = try await open(environment, profile: profile, clock: clock, panels: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(true))
+        environment.pointer = CGPoint(x: 720, y: 450); dock.refreshPresence(); clock.advance(1)
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        environment.pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.midY)
+        dock.refreshPresence(); clock.advance(0.151)
+        XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+        let panel = try XCTUnwrap(dock.nativePanel)
+        let view = dock.dockView
+        let anchor = try XCTUnwrap(view.interactionAnchor("0123456789abcdef"))
+        let local = CGPoint(x: anchor.midX, y: anchor.midY)
+        let screen = panel.convertPoint(toScreen: view.convert(local, to: nil))
+        environment.pointer = screen
+        func click() throws {
+            let location = panel.convertPoint(fromScreen: screen)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: clock.elapsed, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+                if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseUp(with: event) }
+            }
+        }
+        clock.advance(0.299); try click()
+        XCTAssertTrue(dock.card.isHidden, "The arrival click must not activate the card")
+        clock.advance(0.001); try click()
+        XCTAssertFalse(dock.card.isHidden, "The same control must accept a click at the boundary")
+        await app.composition.stop()
     }
 }
