@@ -9,28 +9,33 @@ public struct DockSliverNoticeMark: Equatable {
     public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
 }
 
-/// One admitted member reading. The host supplies its canonical quota role and appearance ink.
+/// One member's registered pitch. A nil role means no alert paint over the neutral body.
 public struct DockSliverQuotaInput {
-    public let subscriptionID: String, remainingPercent: Double?, quotaRole: DockQuotaStatus, ink: DockInk
-    public init(subscriptionID:String,remainingPercent:Double?,quotaRole:DockQuotaStatus,ink:DockInk) {
-        self.subscriptionID=subscriptionID;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole;self.ink=ink
+    public let subscriptionID: String, remainingPercent: Double?, quotaRole: DockQuotaStatus?, ink: DockInk?
+    public let from: Double, through: Double, opacity: Double
+    public init(subscriptionID:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,ink:DockInk?,from:Double,through:Double,opacity:Double=0.18) {
+        self.subscriptionID=subscriptionID;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole
+        self.ink=quotaRole == nil ? nil:ink;self.opacity=quotaRole == nil ? 0:opacity
+        self.from=from;self.through=through
     }
 }
-/// The same normalized member segment and ink used by the actual quota drawing pass.
+/// Registered member pitch and alert paint. Nil role/zero opacity means no quota overlay.
 /// A raw raster diagnostic has no member provenance; unknown readings never invent a percentage.
 public struct DockSliverResolvedColorSegment: Equatable {
     public let from: Double, through: Double
     public let rgbaHex: String, subscriptionID: String?
     public let remainingPercent: Double?
     public let quotaRole: DockQuotaStatus?
-    public init(from:Double,through:Double,rgbaHex:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,subscriptionID:String?=nil) {
-        self.from=from;self.through=through;self.rgbaHex=rgbaHex;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole;self.subscriptionID=subscriptionID
+    public let opacity: Double
+    public init(from:Double,through:Double,rgbaHex:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,subscriptionID:String?=nil,opacity:Double=1) {
+        self.from=from;self.through=through;self.rgbaHex=rgbaHex;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole;self.subscriptionID=subscriptionID;self.opacity=opacity
     }
 }
 
 /// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
-    private var quotaDrawing: [(segment:DockSliverResolvedColorSegment, ink:DockInk)] = []
+    private struct PitchKey:Hashable { let from:Double, through:Double }
+    private var quotaDrawing: [(segment:DockSliverResolvedColorSegment, ink:DockInk?)] = []
     /// Semantic bindings consumed by draw(), with no pixel-to-quota inference or window side effect.
     public var quotaSegmentColorRolesForChecks: [DockSliverResolvedColorSegment] { failed ? [] : quotaDrawing.map(\.segment) }
     /// Optional raster calibration only; these runs make no quota/member claim.
@@ -87,8 +92,13 @@ public struct DockSliverResolvedColorSegment: Equatable {
             logicalSize.width>0,logicalSize.height>0,logicalSize.width<=4096,logicalSize.height<=4096 else{throw DockArtworkError.invalidManifest}
         guard quotaReadings.count <= 256, Set(quotaReadings.map(\.subscriptionID)).count == quotaReadings.count,
               quotaReadings.allSatisfy({ value in
-                !value.subscriptionID.isEmpty && value.subscriptionID.utf8.count <= 256 && value.ink.valid &&
-                (value.remainingPercent.map { $0.isFinite && (0...100).contains($0) && value.quotaRole != .unknown } ?? (value.quotaRole == .unknown))
+                guard !value.subscriptionID.isEmpty, value.subscriptionID.utf8.count <= 256,
+                      value.from.isFinite, value.through.isFinite, 0 <= value.from, value.from < value.through, value.through <= 1,
+                      value.remainingPercent.map({ $0.isFinite && (0...100).contains($0) }) ?? true else { return false }
+                if let role=value.quotaRole {
+                    return (role == .warning || role == .critical) && value.remainingPercent != nil && value.ink?.valid == true && value.opacity.isFinite && value.opacity > 0 && value.opacity < 1
+                }
+                return value.ink == nil && value.opacity == 0
               }) else { throw DockArtworkError.invalidManifest }
         let w=Int(ceil(logicalSize.width*CGFloat(scale))),h=Int(ceil(logicalSize.height*CGFloat(scale)))
         guard w*h<=800_000 else{throw DockArtworkError.decodedBudget}
@@ -122,9 +132,9 @@ public struct DockSliverResolvedColorSegment: Equatable {
             let p=bytes.assumingMemoryBound(to:UInt8.self);alpha=(0..<(w*h)).map{p[$0*4+3]};self.image=normalized
             retainedBytes=normalized.bytesPerRow*normalized.height+alpha.count
         }
-        quotaDrawing = quotaReadings.enumerated().map { index, value in
-            let hex = String(format:"#%02X%02X%02X%02X",Int((value.ink.r*255).rounded()),Int((value.ink.g*255).rounded()),Int((value.ink.b*255).rounded()),Int((value.ink.a*255).rounded()))
-            let segment = DockSliverResolvedColorSegment(from:Double(index)/Double(quotaReadings.count),through:Double(index+1)/Double(quotaReadings.count),rgbaHex:hex,remainingPercent:value.remainingPercent,quotaRole:value.quotaRole,subscriptionID:value.subscriptionID)
+        quotaDrawing = quotaReadings.map { value in
+            let hex = value.ink.map { ink in String(format:"#%02X%02X%02X%02X",Int((ink.r*255).rounded()),Int((ink.g*255).rounded()),Int((ink.b*255).rounded()),Int((ink.a*255).rounded())) } ?? ""
+            let segment = DockSliverResolvedColorSegment(from:value.from,through:value.through,rgbaHex:hex,remainingPercent:value.remainingPercent,quotaRole:value.quotaRole,subscriptionID:value.subscriptionID,opacity:value.opacity)
             return (segment,value.ink)
         }
         self.scale=scale;frame.size=logicalSize;failed=false;setAccessibilityElement(true);setAccessibilityEnabled(onReveal != nil);setAccessibilityLabel(accessibilityLabel)
@@ -147,17 +157,27 @@ public struct DockSliverResolvedColorSegment: Equatable {
         graphics.cgContext.setShouldAntialias(true)
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil)}
         else{drawNeutralMetal(in:graphics.cgContext)}
-        // Tint the existing painted alpha, preserving authored caps and the neutral footprint.
-        // Notice marks remain a separate pass above these persistent quota colours.
+        // The body stays neutral. Alert paint is faint, static, and limited to the registered pitch.
+        // Overflow members share a physical pitch: paint its highest severity once, without accumulating alpha.
         let c = graphics.cgContext
+        var paints = [PitchKey:Int]()
+        for (index,value) in quotaDrawing.enumerated() where value.segment.quotaRole != nil {
+            let key = PitchKey(from:value.segment.from,through:value.segment.through)
+            if let previous=paints[key], quotaDrawing[previous].segment.quotaRole == .critical { continue }
+            paints[key]=index
+        }
         c.saveGState(); c.setBlendMode(.sourceAtop)
-        for value in quotaDrawing {
-            let horizontal = bounds.width > bounds.height
-            let from = CGFloat(value.segment.from), through = CGFloat(value.segment.through)
-            let rect = horizontal
-                ? CGRect(x:bounds.minX+bounds.width*from,y:bounds.minY,width:bounds.width*(through-from),height:bounds.height)
-                : CGRect(x:bounds.minX,y:bounds.minY+bounds.height*from,width:bounds.width,height:bounds.height*(through-from))
-            c.setFillColor(value.ink.cg); c.fill(rect)
+        for role in [DockQuotaStatus.warning,.critical] {
+            for index in paints.values where quotaDrawing[index].segment.quotaRole == role {
+                let value=quotaDrawing[index]
+                guard let ink=value.ink else { continue }
+                let horizontal = bounds.width > bounds.height
+                let from = CGFloat(value.segment.from), through = CGFloat(value.segment.through)
+                let rect = horizontal
+                    ? CGRect(x:bounds.minX+bounds.width*from,y:bounds.minY,width:bounds.width*(through-from),height:bounds.height)
+                    : CGRect(x:bounds.minX,y:bounds.minY+bounds.height*from,width:bounds.width,height:bounds.height*(through-from))
+                c.setAlpha(value.segment.opacity); c.setFillColor(ink.cg); c.fill(rect)
+            }
         }
         c.restoreGState()
         for mark in noticeMarks where mark.position.isFinite && (0...1).contains(mark.position) && mark.unit.isFinite && mark.unit > 0 {

@@ -171,17 +171,27 @@ private actor G1DEngine: EngineClient {
     func testNormalEntrySliverQuotaColorsUseDefaultThreshold() async throws {
         let f = try await quotaSliverFixture()
         XCTAssertEqual(f.editor.snapshot?.preferences.redBelow,25)
-        _ = try f.host.prepareSliver(size:.init(width:4,height:240))
+        XCTAssertTrue(f.editor.snapshot?.preferences.sliverAlert == true)
+        let size = try XCTUnwrap(f.host.edgePresentation?.placement).sliverFrame.size
+        _ = try f.host.prepareSliver(size:size)
         let segments = f.host.sliverQuotaColorsForChecks
         XCTAssertEqual(segments.count,5)
         XCTAssertEqual(segments.compactMap(\.remainingPercent),[41,40,26,25,0])
-        XCTAssertEqual(segments.compactMap(\.quotaRole),[.normal,.warning,.warning,.critical,.critical])
-        XCTAssertEqual(segments.map(\.rgbaHex),["#5AD9BAFF","#EAC17BFF","#EAC17BFF","#EF4444FF","#EF4444FF"])
+        XCTAssertEqual(segments.map(\.quotaRole),[nil,.warning,.warning,.critical,.critical])
+        XCTAssertNil(segments.first?.quotaRole,"41% must leave its pitch neutral; no teal segment")
+        XCTAssertEqual(segments.first?.opacity,0)
+        XCTAssertTrue(segments.filter { $0.quotaRole != nil }.allSatisfy { $0.opacity > 0 && $0.opacity < 0.5 })
+        XCTAssertEqual(segments.map(\.rgbaHex),["","#EAC17BFF","#EAC17BFF","#EF4444FF","#EF4444FF"])
         XCTAssertEqual(segments.compactMap(\.subscriptionID), ["a","b","c","d","e"].map { String(repeating:$0,count:16) })
-        XCTAssertEqual(segments.first?.from,0); XCTAssertEqual(segments.last?.through,1)
+        let geometry = try XCTUnwrap(f.host.resolvedT2CurvatureForChecks)
+        let station = try XCTUnwrap(geometry.stations.first { $0.subscription?.id == String(repeating:"b",count:16) })
+        let amber = try XCTUnwrap(segments.first { $0.subscriptionID == station.subscription?.id })
+        XCTAssertEqual((amber.through-amber.from)*Double(size.height),Double(station.pitch),accuracy:0.01,"Alert length must be its registered pitch, not one fifth of the whole strip")
         _ = try await f.editor.commit(SettingsB21Edit.dockEdge(.bottom))
-        _ = try f.host.prepareSliver(size:.init(width:240,height:4))
-        XCTAssertEqual(f.host.sliverQuotaColorsForChecks,segments)
+        let horizontalSize = try XCTUnwrap(f.host.edgePresentation?.placement).sliverFrame.size
+        _ = try f.host.prepareSliver(size:horizontalSize)
+        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.map(\.remainingPercent),segments.map(\.remainingPercent))
+        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.map(\.quotaRole),segments.map(\.quotaRole))
 
     }
     func testNormalEntrySliverQuotaColorsFollowLiveThreshold16() async throws {
@@ -191,7 +201,7 @@ private actor G1DEngine: EngineClient {
         let segments = f.host.sliverQuotaColorsForChecks
         XCTAssertEqual(segments.count,5)
         XCTAssertEqual(segments.compactMap(\.remainingPercent),[41,40,26,25,0])
-        XCTAssertEqual(segments.compactMap(\.quotaRole),[.normal,.warning,.warning,.warning,.critical])
+        XCTAssertEqual(segments.map(\.quotaRole),[nil,.warning,.warning,.warning,.critical])
         f.mutateFirst { account in
             var windows = account["windows"] as! [[String:Any]]
             windows[0]["remainingPercent"] = 16.0; account["windows"] = windows
@@ -205,8 +215,15 @@ private actor G1DEngine: EngineClient {
         }
         try await f.publish()
         XCTAssertEqual(f.host.sliverQuotaColorsForChecks.first?.quotaRole,.warning)
+        f.mutateFirst { account in
+            var windows = account["windows"] as! [[String:Any]]
+            windows[0]["remainingPercent"] = 41.0; account["windows"] = windows
+        }
+        try await f.publish()
+        XCTAssertNil(f.host.sliverQuotaColorsForChecks.first?.quotaRole,"Improvement removes the quota alert")
+        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.first?.rgbaHex,"")
         _ = try await f.editor.commit(SettingsB20Edit.percentageMode(.used))
-        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.first?.remainingPercent,17,"Colour always uses remaining quota")
+        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.first?.remainingPercent,41,"Colour always uses remaining quota")
         _ = try await f.editor.commit(SettingsB20Edit.sliverAlert(false))
         XCTAssertTrue(f.host.sliverQuotaColorsForChecks.isEmpty)
         _ = try await f.editor.commit(SettingsB20Edit.sliverAlert(true))
@@ -229,7 +246,7 @@ private actor G1DEngine: EngineClient {
         let segments = f.host.sliverQuotaColorsForChecks
         XCTAssertEqual(segments.count,5)
         let unknown = try XCTUnwrap(segments.first { $0.subscriptionID == String(repeating:"a",count:16) })
-        XCTAssertNil(unknown.remainingPercent); XCTAssertEqual(unknown.quotaRole,.unknown)
+        XCTAssertNil(unknown.remainingPercent); XCTAssertNil(unknown.quotaRole)
         XCTAssertEqual(segments.first { $0.subscriptionID == String(repeating:"b",count:16) }?.remainingPercent,40)
         await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
         XCTAssertTrue(f.host.sliverQuotaColorsForChecks.isEmpty)
@@ -342,8 +359,10 @@ private actor G1DEngine: EngineClient {
         let f = try await fixture(autoHide:true,cockpitEnabled:true); try await f.event(); XCTAssertNotNil(f.app.noticeIndicator.notice)
         f.host.acknowledgeCockpitOpening(); XCTAssertNil(f.app.noticeIndicator.notice)
         _ = try f.host.prepareSliver(size: .init(width:4,height:180)); XCTAssertFalse(f.host.sliverNoticeMarksForChecks.isEmpty)
+        let quotaBeforeReveal = f.host.sliverQuotaColorsForChecks.filter { $0.quotaRole != nil }
+        XCTAssertFalse(quotaBeforeReveal.isEmpty)
         f.host.acknowledgeDockReveal(); _ = try f.host.prepareSliver(size:.init(width:4,height:180)); XCTAssertTrue(f.host.sliverNoticeMarksForChecks.isEmpty)
-        XCTAssertTrue(f.host.sliverQuotaColorsForChecks.contains{$0.remainingPercent != nil})
+        XCTAssertEqual(f.host.sliverQuotaColorsForChecks.filter { $0.quotaRole != nil },quotaBeforeReveal)
     }
     func testG1_DOCK_3_6_09() async throws {
         let f = try await fixture(autoHide:true); try f.revealFromWake()
