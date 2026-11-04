@@ -25,6 +25,7 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    var resolvedT2GeometryForChecks: T2Geometry?
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -129,6 +130,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var workingFrameProvider: (any EffectFrameProvider)?
     private var workingInstallationError: Error?
     public private(set) var lastWorkingEffectError: Error?
+    /// Samples the installed driver only; an absent or unobservable effect has no invented frame.
+    public var workingEffectFramesForChecks: [String: Int] { workingDriver?.frameIndicesForChecks ?? [:] }
+    public var workingEffectFrameBoundsForChecks: [String:CGRect] { workingDriver?.frameBoundsForChecks ?? [:] }
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
@@ -288,6 +292,26 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var cardPresentedRevision: UInt64?, cardPresentedGeneration: UInt64?
     private var fallbackCardLeaveTask: Task<Void, Never>?
     private var interactionController: DockInteractionController?
+    /// The actual installed controller; tests may sample its externally supplied clock.
+    public var resolvedT2GapAndOverflowForChecks: (gap: CGFloat, shownIDs: [String], overflowIDs: [String])? {
+        guard !retired, permitted, interactionView.interactionProjectionAvailable, let value = presentationGeometry.resolvedT2GeometryForChecks else { return nil }
+        return (value.gap, value.shown.map(\.id), value.overflow.map(\.id))
+    }
+    /// Registered grip in the same study coordinates as the actual T2 geometry.
+    public var resolvedT2GripForChecks: CGPoint? { resolvedT2CurvatureForChecks?.grip }
+    public var ignitionPresentationForChecks: (enabled: Bool, visible: Bool, frame: CGRect, veilVisible: Bool)? {
+        guard !retired, permitted, presentationGeometry.consoleButton != nil else { return nil }
+        return (consoleButton.isEnabled, !consoleButton.isHiddenOrHasHiddenAncestor,
+                consoleButton.frame, !cockpitVeil.isHiddenOrHasHiddenAncestor)
+    }
+    public var resolvedT2CurvatureForChecks: T2Geometry? {
+        guard !retired, permitted, interactionView.interactionProjectionAvailable else { return nil }
+        return presentationGeometry.resolvedT2GeometryForChecks
+    }
+    var orderAnnouncementInstalledForChecks: Bool { interactionController?.onOrderAnnouncement != nil }
+    var interactionControllerForChecks: DockInteractionController? { interactionController }
+    var sliverNoticeMarksForChecks: [DockSliverNoticeMark] { sliver.noticeMarks }
+    var sliverQuotaColorsForChecks: [DockSliverResolvedColorSegment] { sliver.quotaSegmentColorRolesForChecks }
     var interactionBindingInstalled: Bool { interactionController != nil }
     var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
     private var interactionEvents: [DockNozzleEvents] = []
@@ -377,6 +401,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
     }
 
+    /// Registered member frames in the current instrument view's local coordinates.
+    public var renderedStationFramesForChecks: [String: CGRect] {
+        let view = interactionView
+        guard view.interactionProjectionAvailable else { return [:] }
+        return Dictionary(uniqueKeysWithValues: (model?.inputs ?? []).compactMap { input in
+            view.interactionAnchor(input.id).map { (input.id, $0) }
+        })
+    }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -390,6 +423,22 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         controller.onPresent = { [weak self, weak controller] value in
             guard let self, let controller, self.interactionController === controller, !self.retired else { return }
             self.renderInteraction(value)
+        }
+        controller.onOrderAnnouncement = { [weak self, weak controller] id, position, total in
+            guard let self, let controller, self.interactionController === controller,
+                  self.permitted, !self.retired, controller.isActive,
+                  let input = self.model?.inputs.first(where: { $0.id == id }),
+                  position >= 0, position < total else { return }
+            let current = self.memberSafePreferences.applying(to: input)
+            let name = current.alias ?? current.name
+            let message = self.preferences.language == .english
+                ? "\(name), position \(position + 1) of \(total)"
+                : "\(name)，第 \(position + 1) 项，共 \(total) 项"
+            self.dockView.setAccessibilityValue(message)
+            if self.createsNativePanels {
+                NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                    userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            }
         }
         for view in [dockView] + alternateViews {
             interactionOriginalActions.append((view, view.onAction, view.keyboardNavigationEnabled))
@@ -440,7 +489,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
     public func uninstallInteraction(_ controller: DockInteractionController) {
         guard interactionController === controller else { return }
-        controller.onPresent = nil
+        controller.onPresent = nil; controller.onOrderAnnouncement = nil
+        dockView.setAccessibilityValue(nil)
         for (index, original) in interactionOriginalActions.enumerated() {
             let (view, action, keyboard) = original
             if index < interactionEvents.count, view.nozzleEventDelegate === interactionEvents[index] {
@@ -1371,6 +1421,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
+                links: model?.presentationRows[id]?.links ?? [],
                 enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }

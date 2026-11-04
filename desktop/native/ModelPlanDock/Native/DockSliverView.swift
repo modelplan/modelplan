@@ -9,8 +9,55 @@ public struct DockSliverNoticeMark: Equatable {
     public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
 }
 
+/// A contiguous centreline colour run in the model's actual drawing, in normalized along-axis order.
+/// These are raster runs, not inferred quota/member boundaries. Animated overlay layers are excluded.
+public struct DockSliverResolvedColorSegment: Equatable {
+    public let from: Double, through: Double
+    public let rgbaHex: String
+    /// No percentage is delivered to the current Sliver renderer; never infer one from a colour.
+    public let remainingPercent: Double?
+    public let quotaRole: DockQuotaStatus?
+}
+
 /// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
+    /// Resolve current drawing colours without ordering a window, changing layout or guessing quota facts.
+    /// Empty means there is no valid drawn surface. All current runs have unknown quota provenance.
+    public var quotaSegmentColorRolesForChecks: [DockSliverResolvedColorSegment] {
+        guard !failed, bounds.width.isFinite, bounds.height.isFinite,
+              bounds.width > 0, bounds.height > 0, bounds.width <= 4096, bounds.height <= 4096 else { return [] }
+        let width = Int(ceil(bounds.width * CGFloat(scale))), height = Int(ceil(bounds.height * CGFloat(scale)))
+        guard width > 0, height > 0, width * height <= 800_000,
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else { return [] }
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
+        context.translateBy(x: -bounds.minX, y: -bounds.minY)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        draw(bounds)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let data = context.data else { return [] }
+        let bytes = data.assumingMemoryBound(to: UInt8.self)
+        let vertical = height > width, length = vertical ? height : width
+        func colour(_ index: Int) -> String {
+            let x = vertical ? width / 2 : index, y = vertical ? index : height / 2
+            let offset = (y * width + x) * 4, alpha = Int(bytes[offset + 3])
+            let rgb = (0..<3).map { alpha == 0 ? 0 : min(255, (Int(bytes[offset + $0]) * 255 + alpha / 2) / alpha) }
+            return String(format: "#%02X%02X%02X%02X", rgb[0], rgb[1], rgb[2], alpha)
+        }
+        var result: [DockSliverResolvedColorSegment] = [], start = 0, current = colour(0)
+        for index in 1...length {
+            let next = index < length ? colour(index) : ""
+            if next != current {
+                result.append(.init(from: Double(start) / Double(length), through: Double(index) / Double(length),
+                    rgbaHex: current, remainingPercent: nil, quotaRole: nil))
+                start = index; current = next
+            }
+        }
+        return result
+    }
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public var onNeedsFreshPresentation:(()->Void)?
     public var noticeMarks: [DockSliverNoticeMark] = [] { didSet { if oldValue != noticeMarks { clearPulses(); needsDisplay = true } } }

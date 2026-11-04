@@ -38,6 +38,7 @@ import ModelPlanSettings
         let button = try geometry.consoleButtonRect(in: skin.bounds)
         var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
+        result.resolvedT2GeometryForChecks = geometry
         let horizontal = edge == .bottom || edge == .top
         for station in geometry.stations {
             let position = horizontal ? station.centre.x : station.centre.y

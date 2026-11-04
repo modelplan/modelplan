@@ -32,6 +32,33 @@ public struct DockEffectRotation: Equatable, Sendable {
     public var interpolatedIDs:Set<String>{Set(interpolations.keys)}
     public var interpolationLayerCount:Int{interpolations.values.reduce(0){$0+$1.layerCount}}
     public var frameCounts:[String:Int]{consumers.mapValues(\.frameCount)}
+    /// Sampled CA contents matched against the active stepped atlas. Unobservable IDs are omitted.
+    public var frameIndicesForChecks: [String: Int] {
+        var result: [String: Int] = [:]
+        for (id, effect) in consumers {
+            guard let frames = (effect.layer.animation(forKey: "stepped-images") as? CAKeyframeAnimation)?.values,
+                  let raw = effect.layer.presentation()?.contents ?? effect.layer.contents,
+                  CFGetTypeID(raw as CFTypeRef) == CGImage.typeID else { continue }
+            let image = raw as! CGImage
+            if let index = frames.firstIndex(where: { CFGetTypeID($0 as CFTypeRef) == CGImage.typeID && ($0 as! CGImage) === image }) { result[id] = index }
+        }
+        return result
+    }
+    /// Current layer frames in the station parent's local coordinates; retired consumers are absent.
+    public var frameBoundsForChecks: [String:CGRect] { consumers.mapValues { $0.layer.presentation()?.frame ?? $0.layer.frame } }
+    public var rotationRecipesForChecks: [String: DockEffectRotation] { motionByID }
+    /// Current attachment state, not a historical event log. Retired IDs are absent.
+    public var animationLifecycleForChecks: [String: Bool] { consumers.mapValues { $0.layer.superlayer != nil } }
+    /// Actual stepped sample interval. Static/interpolated consumers have no stepped cadence.
+    public var cadenceForChecks: Double? {
+        let intervals = consumers.values.compactMap { effect -> Double? in
+            guard let animation = effect.layer.animation(forKey: "stepped-images") as? CAKeyframeAnimation,
+                  let values = animation.values, !values.isEmpty else { return nil }
+            return animation.duration / Double(values.count)
+        }
+        guard let first = intervals.first, intervals.allSatisfy({ $0 == first }) else { return nil }
+        return first
+    }
     private let systemReduceMotion:()->Bool
     private var motionByID=[String:DockEffectRotation]()
     private var staticIDs=Set<String>()

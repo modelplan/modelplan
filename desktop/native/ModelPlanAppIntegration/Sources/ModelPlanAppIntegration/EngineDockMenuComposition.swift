@@ -84,7 +84,10 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
+        // An explicitly injected elapsed clock drives the real edge controller too.
+        // The nil/default production path retains its existing scheduler and clock.
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment,
+            elapsedClock: deadlineElapsed, edgeScheduling: deadlineElapsed.map { DockCommonModeScheduler(clock: $0) }, currentDate: deadlineNow)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         dock.onWillRetire = { [weak self] in
@@ -143,14 +146,16 @@ public struct EngineMenuRefreshResult {
     public var memberInstability:[String:Bool] {
         Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
     }
-    func installResetEvents(settings:SettingsStore,live:Bool) {
+    var nativeNotificationLedgerForChecks: URL? { resetNotifier?.ledgerURLForChecks }
+    func installResetEvents(settings:SettingsStore,live:Bool,isolatedLedger:URL? = nil) {
         let base:URL
-        if live {
+        if let isolatedLedger { base=isolatedLedger.deletingLastPathComponent() }
+        else if live {
             guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
             base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
-            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live)
+            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live)
             resetNotifier=notifier;notifier.start()
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")

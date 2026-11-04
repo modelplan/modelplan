@@ -5,6 +5,7 @@ import ModelPlanShell
 import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
+import ModelPlanCockpitWeb
 import ModelPlanSettings
 #if MODELPLAN_U6_DRIVE
 import ModelPlanMenuVerification
@@ -12,6 +13,8 @@ import ModelPlanMenuVerification
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// This composition has no sound/haptic request recorder. nil cannot prove absence of requests.
+    public var effectRequestsForChecks: [String]? { nil }
     public let composition: EngineDockMenuComposition
     private let scopeBinding: EngineScopeConsentBinding
     public var scopeConsentEntry: ScopeConsentEntry { scopeBinding.entry }
@@ -59,6 +62,8 @@ import ModelPlanMenuVerification
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
+    var inspectCockpitState: (() -> CockpitWindowInspection?)?
+    public var cockpitStateForChecks: CockpitWindowInspection? { inspectCockpitState?() }
     private var firstRunFlow: CommunityConnectionFlow?
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
@@ -99,7 +104,7 @@ import ModelPlanMenuVerification
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
         // M0's host opts in only when the native interaction port exists.
         if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
-            let clock = { ProcessInfo.processInfo.systemUptime }
+            let clock = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
             interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
                 scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
             interactionBinding?.onActivate = { [weak self] id in self?.activateMember(id) }

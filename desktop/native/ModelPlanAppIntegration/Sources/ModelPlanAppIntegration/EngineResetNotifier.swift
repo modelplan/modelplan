@@ -13,6 +13,7 @@ import ModelPlanSettings
     private let settings:SettingsStore
     private let consumer:SettingsNotificationConsumer
     private let cacheURL:URL
+    var ledgerURLForChecks: URL { cacheURL }
     private let deliverToSystem:Bool
     private var pending=Set<String>()
     private var attachment:UUID?
