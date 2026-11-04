@@ -62,6 +62,7 @@ private extension EngineDeliveryContext {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
         let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: repo.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        _ = try await settings.update { $0.language = .english }
         let configuration = EngineClientConfiguration(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         var fanout: CockpitStoreFanout?
         let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: configuration, settingsStore: settings, bundleURL: bundle, createsNativePanels: false, cockpitEntryEnabled: true) { _, consumer in
@@ -113,6 +114,40 @@ private extension EngineDeliveryContext {
             XCTAssertEqual(Double(contentHeight) - rootHeight, 34, accuracy: 1)
         }
     }
+    func testG1_CKP_ENTRY_01_menuAndDockRoutes() async throws {
+        try await withLivePage { app, coordinator, initial in
+            func waitRetired(_ page: CockpitWindowController) async throws {
+                let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+                while !page.g1PageStateForChecks.disposed && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertTrue(page.g1PageStateForChecks.disposed)
+            }
+            func waitNewPage(_ previous: CockpitWindowController) async throws -> CockpitWindowController {
+                let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+                while ContinuousClock.now < deadline {
+                    if let current = coordinator.g1LivePageForChecks, current !== previous, current.g1PageStateForChecks.ready { return current }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                throw CockpitBridgeError.unavailable
+            }
+            initial.requestClose(); try await waitRetired(initial)
+            app.composition.dock.setPresentationAllowed(true)
+            app.renderMenu()
+            let status = try XCTUnwrap(app.liveStatusMenu)
+            let statusIndex = try XCTUnwrap(status.items.firstIndex { $0.title == "Open Cockpit" })
+            status.performActionForItem(at: statusIndex)
+            let fromMenu = try await waitNewPage(initial)
+            XCTAssertTrue(fromMenu.g1PageStateForChecks.hasWindow)
+            fromMenu.requestClose(); try await waitRetired(fromMenu)
+            let dock = app.composition.dock.menu()
+            let dockIndex = try XCTUnwrap(dock.items.firstIndex { $0.title == "Open Cockpit" })
+            dock.performActionForItem(at: dockIndex)
+            let fromDock = try await waitNewPage(fromMenu)
+            XCTAssertTrue(fromDock.g1PageStateForChecks.hasWindow)
+            XCTAssertTrue(initial.g1PageStateForChecks.disposed)
+        }
+    }
     func testG1_CKP_SHELL_24_closeControlUsesNonblockingFade() async throws {
         try await withLivePage { _, _, page in
             let facts = try await self.geometry(page)
@@ -142,16 +177,26 @@ private extension EngineDeliveryContext {
         }
     }
     func testG1_CKP_SHELL_20_closeRetiresActualPage() async throws {
-        try await withLivePage { _, coordinator, page in
+        try await withLivePage { app, coordinator, page in
             page.requestClose()
-            let limit = ContinuousClock.now.advanced(by: .seconds(3))
-            while !page.g1PageStateForChecks.disposed && ContinuousClock.now < limit {
+            let closeLimit = ContinuousClock.now.advanced(by: .seconds(3))
+            while !page.g1PageStateForChecks.disposed && ContinuousClock.now < closeLimit {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertTrue(page.g1PageStateForChecks.disposed)
             XCTAssertFalse(page.g1PageStateForChecks.hasPage)
             XCTAssertFalse(page.g1PageStateForChecks.hasWindow)
             XCTAssertNil(coordinator.g1LivePageForChecks)
+            app.showConsole()
+            let reopenLimit = ContinuousClock.now.advanced(by: .seconds(10))
+            while coordinator.g1LivePageForChecks?.g1PageStateForChecks.ready != true && ContinuousClock.now < reopenLimit {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let reopened = try XCTUnwrap(coordinator.g1LivePageForChecks)
+            XCTAssertFalse(reopened === page, "Reopen must construct a new actual page after disposal")
+            XCTAssertTrue(reopened.g1PageStateForChecks.ready)
+            XCTAssertTrue(reopened.g1PageStateForChecks.hasWindow)
+            XCTAssertTrue(page.g1PageStateForChecks.disposed, "The retired page must not revive")
         }
     }
 }
