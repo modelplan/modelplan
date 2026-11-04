@@ -124,7 +124,7 @@ private actor G1AEngine: EngineClient {
         addTeardownBlock { @MainActor in await fixture.close() }
         _ = try await fixture.store.update { $0.theme = theme }
         try await fixture.open(autoHide: true)
-        _ = try await fixture.store.update { $0.redBelow = threshold }
+        _ = try await fixture.editor.commit(SettingsB20Edit.redBelow(threshold))
         fixture.mutateFirst { account in
             var windows = account["windows"] as! [[String: Any]]
             windows[0]["remainingPercent"] = percent
@@ -144,13 +144,16 @@ private actor G1AEngine: EngineClient {
         XCTAssertEqual(ink.b, expectedRGB.2 / 255, accuracy: 0.000001)
         XCTAssertEqual(ink.a, 1, accuracy: 0.000001)
         _ = try fixture.host.prepareSliver(size: CGSize(width: 4, height: 180))
-        let actual = fixture.host.sliverQuotaColorsForChecks.map(\.rgbaHex)
-        XCTAssertFalse(actual.isEmpty, "The actual Sliver must have a resolved drawing")
+        let segment = try XCTUnwrap(fixture.host.sliverQuotaColorsForChecks.first { $0.subscriptionID == G1AFixture.ids[0] })
+        XCTAssertEqual(segment.remainingPercent, Double(percent))
         if let expected {
-            XCTAssertTrue(actual.contains(expected), "Actual Sliver RGBA runs: \(actual), expected \(expected)")
+            XCTAssertEqual(segment.rgbaHex, expected)
+            XCTAssertEqual(segment.quotaRole, role)
+            XCTAssertGreaterThan(segment.opacity, 0)
         } else {
-            XCTAssertFalse(actual.contains("#EAC17BFF"), "An OK reading must not produce an amber alert segment: \(actual)")
-            XCTAssertFalse(actual.contains("#EF4444FF"), "An OK reading must not produce a red alert segment: \(actual)")
+            XCTAssertNil(segment.quotaRole)
+            XCTAssertEqual(segment.rgbaHex, "")
+            XCTAssertEqual(segment.opacity, 0)
         }
     }
     func testCOL_2_1_01() async throws { try await checkSliver(41, expected: nil) }
