@@ -245,9 +245,9 @@ private actor S4RowsClient: EngineClient {
             try cardView.apply(card,pinned:false)
             let views=descendants(cardView)
             let icons=views.filter{$0.accessibilityIdentifier() == "dock.card.reset-source-icon"}
-            let buttons=views.compactMap{$0 as? NSButton}.filter { $0.accessibilityIdentifier()?.contains(".source.") == true }
+            let buttons:[NSButton]=views.compactMap{$0 as? NSButton}.filter { $0.accessibilityIdentifier().contains(".source.") }
             try require(icons.count == (expected.isEmpty ? 0:1),"one shared source icon is required")
-            try require(buttons.map(\.title) == expected,"source buttons must preserve the localized order")
+            try require(buttons.map{$0.title} == expected,"source buttons must preserve the localized order")
             try require(buttons.allSatisfy{$0.accessibilityLabel() == $0.title},"each source must have an accessible label")
             if let button=buttons.first { opened.removeAll();button.performClick(nil);try require(opened.count == 1,"source action must remain available") }
         }
