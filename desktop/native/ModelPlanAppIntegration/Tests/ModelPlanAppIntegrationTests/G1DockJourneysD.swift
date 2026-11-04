@@ -186,6 +186,20 @@ private actor G1DEngine: EngineClient {
         await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
         XCTAssertTrue(f.app.currentSettingsContext.readerDiagnostics.isEmpty)
     }
+    func testPost429MissingNextStepHasAnActualSettingsFallbackInBothLanguages() async throws {
+        let f=try await fixture()
+        var projection=f.raw["projection"] as! [String:Any], rows=projection["rows"] as! [[String:Any]]
+        rows[0]["state"]="failed";rows[0].removeValue(forKey:"nextStep")
+        rows[0]["reason"]=["code":"read_failed","text":["en":"Read failed","zh":"读取失败"]]
+        projection["rows"]=rows;f.raw["projection"]=projection
+        try await f.publish()
+        XCTAssertEqual(f.app.composition.presentedContent.snapshot.presentationRows[G1DFixture.ids[0]]?.nextStep,"Open Settings to review this subscription.")
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(f.app.composition.presentedContent.snapshot.presentationRows[G1DFixture.ids[0]]?.nextStep,"打开设置检查此订阅。")
+        rows[0]["nextStep"]=["action":"none","text":["en":"  ","zh":"  "]]
+        projection["rows"]=rows;f.raw["projection"]=projection;try await f.publish()
+        XCTAssertEqual(f.app.composition.presentedContent.snapshot.presentationRows[G1DFixture.ids[0]]?.nextStep,"打开设置检查此订阅。")
+    }
     private func quotaSliverFixture() async throws -> G1DFixture {
         let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }
         var projection = f.raw["projection"] as! [String:Any]

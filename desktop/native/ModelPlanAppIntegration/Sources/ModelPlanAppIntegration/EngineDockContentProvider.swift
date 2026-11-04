@@ -267,7 +267,10 @@ public enum EngineDeadlineFacts {
                 return .init(sourceName:Self.sourceName(window.source,english:english),observedAt:date(window.observedAt))
             }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? "",
+                nextStep: message.1.flatMap { step in
+                    let value=text(step.text).trimmingCharacters(in:.whitespacesAndNewlines)
+                    return value.isEmpty ? nil:value
+                } ?? (english ? "Open Settings to review this subscription.":"打开设置检查此订阅。"),
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
                 sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,
                 links: preferred?.sourceLinks.map { source in
