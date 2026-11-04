@@ -83,7 +83,7 @@ func Collect(cache, version string) Report {
 			continue
 		}
 		// This is a diagnostics output allowlist, not a detector or reader catalogue.
-		for _, id := range []string{"copilot", "cursor", "kimi", "kiro", "minimax", "opencodego", "zai"} {
+		for _, id := range []string{"antigravity", "copilot", "cursor", "kimi", "kiro", "minimax", "opencodego", "zai"} {
 			seen := map[string]bool{}
 			for _, provider := range envelope.Providers {
 				if provider.Provider == id {
@@ -95,6 +95,32 @@ func Collect(cache, version string) Report {
 						seen[status] = true
 					}
 				}
+			}
+		}
+	}
+	// Managed native readers (claude-account, gemini, grok) keep no entry in native.json;
+	// their state is observed/readers/<id>.json. The same allowlist discipline applies.
+	for _, id := range []string{"claude", "gemini", "grok"} {
+		var s struct {
+			SchemaVersion int    `json:"schemaVersion"`
+			Provider      string `json:"provider"`
+			Entries       []struct {
+				Status string `json:"status"`
+			} `json:"entries"`
+		}
+		if readJSON(cache, filepath.Join("observed", "readers", id+".json"), &s) != "cached" || s.SchemaVersion != 1 || s.Provider != id || len(s.Entries) > 16 {
+			continue
+		}
+		seen := map[string]bool{}
+		for _, entry := range s.Entries {
+			if entry.Status == "" {
+				continue
+			}
+			// Profiles of one tool can differ; every state is kept, none of the
+			// entry's notice, error code or account identity is.
+			if status := safeStatus(entry.Status); !seen[status] {
+				r.Sources = append(r.Sources, shareSource("native:"+id, status))
+				seen[status] = true
 			}
 		}
 	}
