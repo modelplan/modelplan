@@ -94,4 +94,35 @@ private actor G1RowsClient: EngineClient {
         XCTAssertNotEqual(app.composition.dock.edgePresentation?.state, .suppressed(.fullscreen))
         await app.composition.stop()
     }
+
+    func testG1_DOCK_3_1_1_08() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-choices-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let path = profile.appendingPathComponent("ModelPlan/settings.json")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
+        let app = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path), "Reading defaults must not persist them")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.showDock(false))
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        let settings = try XCTUnwrap(document["settings"] as? [String: Any])
+        XCTAssertEqual(Set(settings.keys), Set(["showDock"]), "Only the explicit choice should be stored")
+        await app.composition.stop(); app.composition.dock.close()
+
+        let reopened = try await open(G1DisplayEnvironment(), profile: profile)
+        XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.showDock, false)
+        await reopened.composition.stop(); reopened.composition.dock.close()
+
+        var injected = document
+        var unknownSettings = settings
+        unknownSettings["g1UnknownSetting"] = "synthetic"
+        injected["settings"] = unknownSettings
+        try JSONSerialization.data(withJSONObject: injected).write(to: path, options: .atomic)
+        let attempted = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { attempted.composition.dock.close() }
+        _ = try await attempted.settingsHost.application.editor.commit(SettingsB21Edit.showDock(true))
+        let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        XCTAssertNil((after["settings"] as? [String: Any])?["g1UnknownSetting"])
+        await attempted.composition.stop()
+    }
 }
