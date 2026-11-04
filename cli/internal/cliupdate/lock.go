@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-// Existing versions use an empty exclusive-create marker. A generous timeout
+// Older CLI versions use an exclusive-create file marker; the Skill installer
+// uses an empty directory marker. A generous timeout
 // permits recovery of abandoned legacy markers, but cannot prove an older CLI
 // with an aged marker is dead. New updaters serialize on a persistent OS lock.
 const legacyUpdateLockStale = 10 * time.Minute
@@ -19,7 +20,7 @@ func acquireUpdateLock(target string) (func(), error) {
 	}
 	marker := target + ".update.lock"
 	info, err := os.Lstat(marker)
-	if err == nil && info.Mode().IsRegular() && time.Since(info.ModTime()) > legacyUpdateLockStale {
+	if err == nil && (info.Mode().IsRegular() || info.IsDir()) && time.Since(info.ModTime()) > legacyUpdateLockStale {
 		if err = os.Remove(marker); err != nil {
 			unlock()
 			return nil, errors.New("cannot recover stale CLI update lock")
