@@ -53,9 +53,10 @@ private actor RouteClient: EngineClient {
     var queryTicket:CockpitQueryTicket?{state.queryTicket}
     init(_ context:CockpitEngineContext,sink:ClearSink){state = .init(context:context);self.sink=sink}
     func open(){
-        let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full))
+        let raw=try! state.load(.init(theme:.day,locale:.en,profile:.full),shell:.init(closed:false,attached:true,forcedClosed:false,tier:.tall))
         var value=try! JSONSerialization.jsonObject(with:Data(raw.utf8)) as! [String:Any]
-        value["appearance"]=nil;value["type"]="ready";value["sequence"]="1"
+        value["appearance"]=nil;value["shell"]=nil;value["redBelow"]=nil;value["type"]="ready";value["sequence"]="1"
+        value["appearanceVersion"]=2;value["capabilities"]=["appearanceUpdates","shellState","shellActions"]
         _=try! state.accept(String(decoding:try! JSONSerialization.data(withJSONObject:value),as:UTF8.self),source:.init(mainFrame:true,origin:"modelplan-cockpit://bundle"));onReady?()
     }
     func display(_ data:WireCockpitData,ticket:CockpitQueryTicket){}
@@ -103,6 +104,27 @@ final class CommunityCockpitEntryTests:XCTestCase {
         app.composition.dock.setPresentationAllowed(false)
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
         XCTAssertEqual(surface.shows,2)
+        await app.composition.stop()
+    }
+    // #403 normal-entry journey: use the actual menu actions with a synthetic
+    // console/client, without opening a panel or launching an engine process.
+    @MainActor func testStatusAndDockMenusOpenSameEnabledConsole() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("s6-menu-journey-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+        let client=RouteClient(),surface=ConsoleRouteProbe();var constructions=0,clients=0
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in clients += 1;return client},makeConsole:{_ in constructions += 1;return surface},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);app.renderMenu()
+        let status=try XCTUnwrap(app.liveStatusMenu)
+        let statusIndex=try XCTUnwrap(status.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(status.items[statusIndex].isEnabled)
+        status.performActionForItem(at:statusIndex)
+        let dock=app.composition.dock.menu()
+        let dockIndex=try XCTUnwrap(dock.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(dock.items[dockIndex].isEnabled)
+        dock.performActionForItem(at:dockIndex)
+        XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
         await app.composition.stop()
     }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {

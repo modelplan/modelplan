@@ -150,7 +150,16 @@ func ApplyGrant(file string, grant Grant, hooks GrantHooks) (GrantReceipt, error
 			delete(r.DeniedSources, d.Class)
 			if d.Keychain {
 				r.Keychain = old.Keychain
-				SetKeychain(&r, grant.Keychain[id])
+				choice := grant.Keychain[id]
+				// A legacy native grant can be allowed without an explicit
+				// Keychain field. Preserve that existing permission and make
+				// its scope readback explicit; never infer a new grant.
+				if choice == "" && old.Keychain == "" && s.AllowsScope(id, Automatic) &&
+					!old.DeniedSources["keychain"] && !old.DeniedSources[keychainUnset] &&
+					s.KeychainStatus(d.Tool, Automatic) == "allowed" && KeychainSupported(d.Tool, r.Backend, r.ReaderID) {
+					choice = "allow"
+				}
+				SetKeychain(&r, choice)
 			}
 			s.Scopes[id] = r
 			// Tools retains route descriptors for legacy collectors, never scope authority.
