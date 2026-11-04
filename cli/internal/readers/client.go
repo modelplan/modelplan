@@ -3,8 +3,8 @@ package readers
 
 import "net/http"
 
-// NewReadClient preserves the caller's timeout and underlying transport, but
-// removes ambient cookies and redirect following. Create it once per logical
+// NewReadClient preserves the caller's timeout and proxy/TLS settings, but
+// uses fresh HTTP/1 connections without transport replay, and removes ambient cookies and redirect following. Create it once per logical
 // read: all requests in that read share one ReadTransport and its stop state.
 func NewReadClient(scope string, base *http.Client) *http.Client {
 	if base == nil {

@@ -2,6 +2,7 @@
 package readers
 
 import (
+	"crypto/tls"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"net/http"
@@ -36,6 +37,22 @@ type ReadTransport struct {
 func NewReadTransport(scope string, next http.RoundTripper) *ReadTransport {
 	if next == nil {
 		next = http.DefaultTransport
+	}
+	if transport, ok := next.(*http.Transport); ok {
+		// net/http may replay requests on reused HTTP/1 connections or on
+		// HTTP/2 streams inside a single RoundTrip. Isolate this read and
+		// force fresh HTTP/1 connections while retaining proxy/TLS settings.
+		bounded := transport.Clone()
+		bounded.DisableKeepAlives = true
+		bounded.ForceAttemptHTTP2 = false
+		if bounded.TLSClientConfig == nil {
+			bounded.TLSClientConfig = &tls.Config{}
+		}
+		bounded.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		bounded.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		bounded.Protocols = new(http.Protocols)
+		bounded.Protocols.SetHTTP1(true)
+		next = bounded
 	}
 	return &ReadTransport{scope: scope, next: next, stage: -1}
 }

@@ -2,8 +2,11 @@
 # Reader admission and fixed request sets
 
 Production account-usage readers create one `NewReadClient` per logical read.
-It preserves the injected transport/proxy and timeout, removes ambient cookies,
-and stops redirect following. Its `NewReadTransport` pins the request set,
+For standard Go HTTP transports it clones proxy, TLS and timeout configuration,
+disables connection reuse and HTTP/2, and stops redirect following and ambient cookies.
+This prevents automatic wire retries within one admitted stage. Nonstandard injected
+RoundTrippers are trusted internal test seams and must themselves send at most one
+wire request per call; production uses the standard Go HTTP transport. Its `NewReadTransport` pins the request set,
 serializes attempts and latches HTTP 401/403 or a redirect for the lifetime of
 that read. Helpers share that transport; constructing another client to retry a
 rejection would reset its budget and is forbidden.
