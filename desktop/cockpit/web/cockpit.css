@@ -33,3 +33,17 @@
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 :root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
+
+/* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
+@keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
+#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
+html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
+@media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
+
+/* Running cursor uses a compositor-only blink; inactive and reduced-motion views are static. */
+.ck-tape .t-time{position:relative;padding-right:10px}
+.ck-tape .t-cur{position:absolute;right:0;top:2.5px;width:6px;height:11px;background:currentColor;opacity:1}
+@keyframes cockpit-running-cursor{50%{opacity:0}}
+#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}
+html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}
+@media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}}

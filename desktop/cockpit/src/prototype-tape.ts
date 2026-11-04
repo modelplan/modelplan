@@ -19,7 +19,7 @@ export function mountPrototypeTape(root:HTMLElement){
    const running=s.state==='running'?(locale==='en'?'Running':'运行中'):(locale==='en'?'Last seen':'最近观察'),rateLabel=rate===null?'':(locale==='en'?'Session rate ':'会话速率 ')+rate+' t/s';
    return `<button class="tl t-observed" type="button" aria-disabled="true" tabindex="-1" aria-label="${esc([s.source,s.model,s.effort??'--',s.projectLabel??'--',running,rateLabel].filter(Boolean).join(' · '))}">
    <i class="chip"></i><span class="t-tool">${esc(s.source)}</span><span class="t-model">${esc(s.model)}</span><span class="t-eff">${esc(s.effort??'--')}</span>
-   <span class="t-proj">${esc(s.projectLabel??'--')}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(running)}</span></button>`;
+   <span class="t-proj">${esc(s.projectLabel??'--')}</span><span class="t-live" aria-label="${esc(rateLabel)}">${rate===null?'--':`${esc(Math.round(rate))}<em class="t-unit"> t/s</em>`}</span><span class="t-time">${esc(running)}${s.state==='running'?'<i class="t-cur" aria-hidden="true"></i>':''}</span></button>`;
   });
   if(sessions.length>shown.length){const hidden=sessions.slice(shown.length),n=hidden.length,running=hidden.every(s=>s.state==='running');rows.push(`<span class="tl t-overflow">${locale==='en'?(running?`${n} more running`:`${n} more sessions`):(running?`另有 ${n} 个会话运行中`:`另有 ${n} 个会话`)}</span>`);}
   while(rows.length<count)rows.push('<span class="tl t-blank" aria-hidden="true"></span>');
