@@ -13,14 +13,18 @@ def is_appledouble(path):
     return any(part.startswith('._') for part in Path(path).parts)
 
 
-def validate(repo):
+def validate(repo, editions=('community', 'official')):
+    if not editions or len(set(editions)) != len(editions) or not set(editions) <= {'community', 'official'}:
+        raise ValueError('Invalid edition selection')
     source = (repo / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift').read_text()
     pins = dict(re.findall(r'"(community|official)"\s*:\s*"([a-f0-9]{64})"', source))
     if set(pins) != {'community', 'official'}:
         raise ValueError('Both explicit native edition pins are required')
     results = []
-    for edition in ('community', 'official'):
+    for edition in editions:
         root = repo / 'desktop/cockpit/.tmp' / edition
+        if root.is_symlink() or not root.is_dir():
+            raise ValueError('Missing or linked canonical bundle')
         manifest = root / 'bundle-manifest.json'
         data = manifest.read_bytes()
         if hashlib.sha256(data).hexdigest() != pins[edition]:
@@ -49,4 +53,6 @@ def validate(repo):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', type=Path, default=Path(__file__).resolve().parents[3])
-    print(json.dumps(validate(parser.parse_args().repo)))
+    parser.add_argument('--edition', choices=('community', 'official'), help='Check one edition (default: both)')
+    args = parser.parse_args()
+    print(json.dumps(validate(args.repo, editions=(args.edition,) if args.edition else ('community', 'official'))))

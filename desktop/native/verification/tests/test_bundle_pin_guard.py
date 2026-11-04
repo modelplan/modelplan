@@ -48,3 +48,34 @@ class BundlePinGuardTests(unittest.TestCase):
             (root / 'desktop/cockpit/.tmp/official/orphan.js').write_text('orphan')
             with self.assertRaises(ValueError):
                 guard.validate(root)
+
+    def test_community_only_requires_complete_pinned_community_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.fixture(root)
+            import shutil
+            shutil.rmtree(root / 'desktop/cockpit/.tmp/official')
+            self.assertEqual([x['edition'] for x in guard.validate(root, editions=('community',))], ['community'])
+            community = root / 'desktop/cockpit/.tmp/community'
+            (community / 'index.html').write_text('tampered')
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+            (community / 'index.html').unlink()
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+            pins = json.loads(source.read_text())
+            pins['community'] = '0' * 64
+            source.write_text(json.dumps(pins))
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+
+    def test_community_bundle_root_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            community = root / 'desktop/cockpit/.tmp/community'
+            moved = root / 'moved'
+            community.rename(moved)
+            community.symlink_to(moved, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))

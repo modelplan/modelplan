@@ -70,6 +70,12 @@ jobs:
       run: swift test --package-path desktop/native --jobs 2 --skip GeneratedDecoderTests
     - name: Settings models and offscreen AppKit tests (no system effects)
       run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
+    - name: Build and verify the community cockpit for native GUI tests
+      run: |
+        npm ci --prefix desktop/cockpit --ignore-scripts
+        npm run build --prefix desktop/cockpit
+        python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --edition community
+        echo "MODELPLAN_COCKPIT_BUNDLE_DIR=$GITHUB_WORKSPACE/desktop/cockpit/.tmp/community" >> "$GITHUB_ENV"
     - name: App settings application tests (no window or system effects)
       run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/app-integration-tests" --jobs 2 --skip GeneratedConsentPortTests
     - name: Build the integrated Community entry without launching or packaging
