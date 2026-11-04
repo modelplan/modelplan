@@ -157,7 +157,7 @@ import AppKit
             scopePresentation?.apply(language: language)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable || engineOwnsReaderConsent
             engineConsentNotice.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable || !engineOwnsReaderConsent
-            engineConsentNotice.stringValue = SettingsWords.text("Reader permissions are managed by the engine. Set them in Connections when available.", "读取权限由引擎管理，可在连接可用时设置。", language)
+            engineConsentNotice.stringValue = SettingsWords.text("Reading permissions are managed by the engine. Set them in Connections when available.", "读取权限由引擎管理，可在连接可用时设置。", language)
             subscriptions.isHidden = editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
