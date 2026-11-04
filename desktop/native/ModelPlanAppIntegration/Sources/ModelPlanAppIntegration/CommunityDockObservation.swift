@@ -13,6 +13,16 @@ enum CommunityObservationAge {
     static func unknown(language: SettingsLanguage) -> String {
         language == .english ? unknown : "读数时间未知"
     }
+    static func cardText(observedAt: Date?, now: Date, english: Bool) -> String {
+        guard let observedAt else { return english ? "Reading time unknown" : "读数时间未知" }
+        let seconds = now.timeIntervalSince(observedAt)
+        guard seconds.isFinite, seconds >= 0, seconds < Double(Int.max) else { return english ? "Reading time unknown" : "读数时间未知" }
+        if seconds < 60 { return english ? "just now" : "刚刚" }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return english ? "\(minutes)m ago" : "\(minutes)分钟前" }
+        let hours = minutes / 60
+        return english ? "\(hours)h ago" : "\(hours)小时前"
+    }
     static func text(observedAt: Date?, now: Date, language: SettingsLanguage = .english) -> String {
         guard let observedAt else { return unknown(language: language) }
         let age = now.timeIntervalSince(observedAt)
@@ -35,14 +45,14 @@ enum CommunityDockObservation {
                 for (accountIndex, account) in accounts {
                     for windowIndex in (account.windows ?? []).indices {
                         if CommunityDockWindowIdentity.make(account: accountIndex, window: windowIndex) == selected {
-                            return CommunityObservationAge.text(observedAt: account.observedAt?.date, now: now, language: language)
+                            return CommunityObservationAge.cardText(observedAt: account.observedAt?.date, now: now, english: language == .english)
                         }
                     }
                 }
                 return CommunityObservationAge.unknown(language: language)
             }
-            return CommunityObservationAge.text(observedAt: accounts.count == 1 ? accounts[0].element.observedAt?.date : nil, now: now, language: language)
+            return CommunityObservationAge.cardText(observedAt: accounts.count == 1 ? accounts[0].element.observedAt?.date : nil, now: now, english: language == .english)
         }
-        return CommunityObservationAge.text(observedAt: model?.presentationRows[input.id]?.originalObservedAt, now: now, language: language)
+        return CommunityObservationAge.cardText(observedAt: model?.presentationRows[input.id]?.originalObservedAt, now: now, english: language == .english)
     }
 }

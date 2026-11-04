@@ -3,11 +3,13 @@ import AppKit
 import CryptoKit
 
 @MainActor private final class DockCardButton:NSButton {
-    var invoke:(()->Void)?
+    var invoke:(()->Void)?,focusChanged:(()->Void)?
+    override func becomeFirstResponder()->Bool { let accepted=super.becomeFirstResponder();if accepted{focusChanged?()};return accepted }
+    override func resignFirstResponder()->Bool { let accepted=super.resignFirstResponder();if accepted{focusChanged?()};return accepted }
     init(_ title:String,_ invoke:@escaping ()->Void){super.init(frame:.zero);self.title=title;self.invoke=invoke;bezelStyle = .rounded;target=self;action=#selector(pressed)}
     required init?(coder:NSCoder){fatalError()}
     @objc private func pressed(){invoke?()}
-    func retire(){invoke=nil;isEnabled=false;target=nil;action=nil}
+    func retire(){invoke=nil;focusChanged=nil;isEnabled=false;target=nil;action=nil}
 }
 /// Neutral complete card; official geometry/material/font/brand image is an injected appearance input.
 @MainActor public struct DockCardStyle {
@@ -37,6 +39,7 @@ import CryptoKit
 @MainActor public final class DockCardView:NSView {
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
+    public var onFocusChange:(()->Void)?
     private let stack=NSStackView();private var edges=[NSLayoutConstraint]()
     private var content:DockCardContent?,generation:UInt64=0,style=DockCardStyle()
     private var labels=[String:NSTextField](),buttons=[String:DockCardButton]()
@@ -49,6 +52,28 @@ import CryptoKit
     }
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
+    /// TextKit fragments of currently mounted text, in card-local coordinates.
+    /// Unlaid-out fields have no observed fragments; this getter does not force layout.
+    public var renderedLineFragmentsForChecks: [String: [CGRect]] {
+        var result: [String: [CGRect]] = [:]
+        for (key, field) in labels where field.superview != nil && !field.isHiddenOrHasHiddenAncestor {
+            let drawing = field.cell?.drawingRect(forBounds: field.bounds) ?? field.bounds
+            guard drawing.width > 0, drawing.height > 0 else { continue }
+            let storage = NSTextStorage(attributedString: field.attributedStringValue)
+            let manager = NSLayoutManager(), container = NSTextContainer(size: drawing.size)
+            container.lineFragmentPadding = 0; container.lineBreakMode = field.lineBreakMode
+            container.maximumNumberOfLines = field.maximumNumberOfLines
+            manager.addTextContainer(container); storage.addLayoutManager(manager)
+            let range = manager.glyphRange(for: container)
+            var fragments: [CGRect] = []
+            manager.enumerateLineFragments(forGlyphRange: range) { _, used, _, _, _ in
+                fragments.append(field.convert(used.offsetBy(dx: drawing.minX, dy: drawing.minY), to: self))
+            }
+            result[field.accessibilityIdentifier() ?? key] = fragments
+        }
+        return result
+    }
+
     private func arrange(_ parent:NSStackView,_ children:[NSView]){
         let kept=Set(children.map{ObjectIdentifier($0)})
         for old in parent.arrangedSubviews where !kept.contains(ObjectIdentifier(old)){
@@ -60,10 +85,10 @@ import CryptoKit
             }else{parent.insertArrangedSubview(child,at:index)}
         }
     }
-    public func apply(_ value:DockCardContent,pinned:Bool,style:DockCardStyle? = nil,brandImage:NSImage?=nil)throws{
+    public func apply(_ value:DockCardContent,style:DockCardStyle? = nil,brandImage:NSImage?=nil,enterDisabledReason:String?=nil)throws{
         let replacing=content?.subscriptionID != value.subscriptionID
         generation &+= 1;content=nil
-        if replacing{clear()}
+        if replacing { clear() }
         let style=style ?? DockCardStyle()
         do{
             try value.validate()
@@ -84,7 +109,7 @@ import CryptoKit
         }
         func button(_ id:String,_ title:String,_ invoke:@escaping ()->Void)->DockCardButton{
             usedButtons.insert(id);let b=buttons[id] ?? DockCardButton(title,invoke);buttons[id]=b
-            b.title=title;b.invoke=invoke;b.setAccessibilityIdentifier("dock.card."+id);return b
+            b.title=title;b.invoke=invoke;b.focusChanged={ [weak self] in self?.onFocusChange?() };b.setAccessibilityIdentifier("dock.card."+id);return b
         }
         let head=group("head");var heading=[NSView]()
         if let brandImage{
@@ -116,17 +141,17 @@ import CryptoKit
                 guard let self,self.current(value,token:token) else{return};self.onOpenURL?(link.url)
             })
         }
-        if pinned{
-            let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
-            let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
-            let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
-        }
+        let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
+        enter.isEnabled = enterDisabledReason == nil;enter.setAccessibilityHelp(enterDisabledReason)
+        let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
+        let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
+        setAccessibilityRole(.group);setAccessibilityLabel(value.name);setAccessibilityHelp(nil)
         arrange(stack,children)
         for id in Array(buttons.keys) where !usedButtons.contains(id){buttons.removeValue(forKey:id)?.retire()}
         for id in Array(bars.keys) where !usedBars.contains(id){bars.removeValue(forKey:id)?.setAccessibilityElement(false)}
         labels=labels.filter{usedLabels.contains($0.key)};groups=groups.filter{usedGroups.contains($0.key)}
         frame.size=CGSize(width:style.width,height:max(40,stack.fittingSize.height+2*style.padding))
-        setAccessibilityElement(false);needsDisplay=true
+        setAccessibilityElement(true);needsDisplay=true
     }
     private func current(_ value:DockCardContent,token:UInt64)->Bool{
         guard !isHiddenOrHasHiddenAncestor,generation==token,content==value,permitsAction?(value.subscriptionID,value.revision) ?? true else{return false}
@@ -137,5 +162,5 @@ import CryptoKit
         arrange(stack,[]);buttons.removeAll();bars.removeAll();labels.removeAll();groups.removeAll()
     }
     public override func draw(_ dirtyRect:NSRect){style.background.setFill();bounds.fill()}
-    public func dispose(){generation &+= 1;clear();onEnter=nil;onDismiss=nil;onOpenURL=nil;permitsAction=nil}
+    public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onFocusChange=nil;permitsAction=nil}
 }

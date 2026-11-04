@@ -19,7 +19,7 @@ class AppSmokeAssertionsTests(unittest.TestCase):
                        'firstRunConnectionStatus': 'Connection service is ready.',
                        'consentPortPresent': True, 'consentAPIAvailable': True,
                        'cliHelp': 'Usage:\n  modelplan consent --json\n', 'cliHelpExitCode': 0,
-                       'cliSupportsConsentJSON': True, 'cliPath': str(self.helper), 'showDock': True, 'autoHide': True,
+                       'cliSupportsConsentJSON': True, 'cliPath': str(self.helper), 'showDock': True, 'autoHide': False,
                        'edge': 'right', 'home': str(self.home), 'visibleWindows': 0}
 
     def results(self, *, expect_unverified=False):
@@ -158,6 +158,12 @@ class AppSmokeAssertionsTests(unittest.TestCase):
 
     def test_missing_or_changed_defaults_fail(self):
         self.report.pop('showDock')
+        self.assertFalse(self.results()['dock-defaults'])
+
+    def test_visible_fresh_default_and_explicit_autohide_are_distinct(self):
+        self.report['autoHide'] = False
+        self.assertTrue(self.results()['dock-defaults'])
+        self.report['autoHide'] = True
         self.assertFalse(self.results()['dock-defaults'])
 
 

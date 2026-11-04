@@ -59,9 +59,9 @@ import ModelPlanShell
             let snapshot = try joined([account(source,ref:bound ? "sub-a":nil,remaining:75,observed:now.addingTimeInterval(-7200),now:now)],now:now)
             host.render(snapshot:snapshot,diagnostics:ready); host.setPresentationAllowed(true)
             let id = try XCTUnwrap(CommunityDockSnapshot(snapshot:snapshot,diagnostics:ready,now:now).inputs.first?.id)
-            host.dockView.onAction?(.subscription(id))
+            try presentSyntheticHostCard(host, id: id)
             let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "读取于 2 小时前")
+            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "2小时前")
             XCTAssertFalse(field.stringValue.contains("7200s")); XCTAssertEqual(field.accessibilityLabel(),field.stringValue)
             XCTAssertNil(host.nativePanel); XCTAssertNil(host.dockView.window)
         }}
@@ -70,7 +70,7 @@ import ModelPlanShell
         let now = Date(), host = dock(); defer {host.close()}
         let application = try app(host); await application.reload()
         let snapshot = try joined([account("codex",ref:"sub-a",remaining:75,observed:nil,now:now)],now:now)
-        host.render(snapshot:snapshot,diagnostics:ready);host.setPresentationAllowed(true);host.dockView.onAction?(.subscription("sub-a"))
+        host.render(snapshot:snapshot,diagnostics:ready);host.setPresentationAllowed(true);try presentSyntheticHostCard(host, id: "sub-a")
         let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
         XCTAssertFalse(field.isHidden);XCTAssertEqual(field.stringValue, "读数时间未知")
     }

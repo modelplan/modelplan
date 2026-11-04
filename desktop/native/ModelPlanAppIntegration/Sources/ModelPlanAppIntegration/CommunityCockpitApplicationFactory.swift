@@ -5,6 +5,7 @@ import ModelPlanCockpitWeb
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanDock
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -31,26 +32,59 @@ import ModelPlanSettings
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                             cockpitEntryEnabled: Bool? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            deadlineNow: @escaping @MainActor () -> Date = { Date() },
+                            deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
+        makeComposed(configuration: configuration, settingsStore: settingsStore,
+            createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled,
+            dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling,
+            makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
+    }
+
+    /// Internal constructor seam: only the engine changes; owner, page factory and fanout remain real.
+    static func makeForChecks(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
+                              bundleURL: URL, createsNativePanels: Bool = false,
+                              cockpitEntryEnabled: Bool = true,
+                              makeEngineClient: @escaping @MainActor (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient) -> EngineDockMenuApplication {
+        makeComposed(configuration: configuration, settingsStore: settingsStore,
+            createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled,
+            activateSettings: {}, engineClientOverride: makeEngineClient)
+    }
+
+    private static func makeComposed(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
+                            createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
+                            cockpitEntryEnabled: Bool? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            deadlineNow: @escaping @MainActor () -> Date = { Date() },
+                            deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
+                            makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
+                            makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
+                            makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() },
+                            engineClientOverride: (@MainActor (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient)? = nil) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     guard let owner else { throw CockpitBridgeError.unavailable }
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
                 owner.coordinator=coordinator
-                let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
+                let fanout = CockpitStoreFanout(store: store, cockpit: coordinator)
+                let client: any EngineClient
+                if let engineClientOverride { client = engineClientOverride(configuration, fanout) }
+                else { client = ProcessEngineClient(configuration: configuration, consumer: fanout) }
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 return client
             },makeSettingsSurface:makeSettingsSurface,
