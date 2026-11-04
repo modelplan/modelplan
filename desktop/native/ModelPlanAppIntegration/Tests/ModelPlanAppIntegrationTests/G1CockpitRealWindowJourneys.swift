@@ -97,6 +97,22 @@ private extension EngineDeliveryContext {
         let rect = try XCTUnwrap(facts[element] as? [String: Any], "Missing actual element: " + element)
         return try XCTUnwrap((rect[axis] as? NSNumber)?.doubleValue)
     }
+    func testG1_CKP_ENT_01_actualFadeAndOutline() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            let duration = try XCTUnwrap(page.g1OpenAnimationDurationForChecks)
+            let reduce = facts["reduceMotion"] as? Bool == true
+            XCTAssertEqual(duration, reduce ? 0 : 0.18, accuracy: 0.001)
+            XCTAssertEqual(facts["rootOutline"] as? String, "none")
+        }
+    }
+    func testG1_CKP_ENT_02_actualRootHasNoClipPath() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            XCTAssertEqual(facts["rootClipPath"] as? String, "none")
+            XCTAssertEqual(facts["rootOpacity"] as? String, "1")
+        }
+    }
     func testG1_CKP_SHELL_18() async throws {
         try await withLivePage { _, _, page in
             XCTAssertTrue(page.g1PageStateForChecks.hasWindow)

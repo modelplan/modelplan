@@ -214,7 +214,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
   #endif
   #if DEBUG
-  /// Duration actually applied to the latest close transition; no page content.
+  /// Durations actually applied to the latest transitions; no page content.
+  public private(set) var g1OpenAnimationDurationForChecks: TimeInterval?
   public private(set) var g1CloseAnimationDurationForChecks: TimeInterval?
   /// Reports only controller-owned live objects and acknowledged bridge state.
   public var g1PageStateForChecks: G1CockpitPageState {
@@ -231,7 +232,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         const r = element.getBoundingClientRect();
         return {x:r.x, y:r.y, width:r.width, height:r.height};
       };
+      const root = document.querySelector('#cockpit');
+      const style = root ? getComputedStyle(root) : null;
       return JSON.stringify({root:rect('#cockpit'), field:rect('.ck-field'), canopy:rect('.ck-port'),
+        rootOutline:style?.outlineStyle ?? null, rootClipPath:style?.clipPath ?? null,
+        rootOpacity:style?.opacity ?? null,
         hud:rect('.hud'), engine:rect('.ck-eng'), deck:rect('.ck-deck'), tape:rect('.ck-tape'), close:rect('[data-close]'),
         shutterClosed:document.querySelector('[data-shutter]')?.getAttribute('aria-pressed') === 'true',
         reduceMotion:document.documentElement.dataset.reduceMotion === 'true',
@@ -386,7 +391,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     panel.alphaValue = appearance.reduceMotion ? 1 : 0
     panel.makeKeyAndOrderFront(nil)
     if !appearance.reduceMotion {
-      NSAnimationContext.runAnimationGroup { context in context.duration = 0.18; panel.animator().alphaValue = 1 }
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0.18
+        #if DEBUG
+        g1OpenAnimationDurationForChecks = context.duration
+        #endif
+        panel.animator().alphaValue = 1
+      }
+    } else {
+      #if DEBUG
+      g1OpenAnimationDurationForChecks = 0
+      #endif
     }
     #if MODELPLAN_TEST_ONLY_SPI
       verificationDidOpen?(view, panel)
