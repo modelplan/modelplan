@@ -69,7 +69,7 @@ private actor G1RowsClient: EngineClient {
 @MainActor final class G1WidgetSettingsJourneys: XCTestCase {
     private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false, thirdMember: Bool = false,
                          five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
-                         resetStatus: String? = nil, newReading: Bool = false) throws -> WireRowsSnapshot {
+                         resetStatus: String? = nil, newReading: Bool = false, eventNow: Date = Date(timeIntervalSince1970: 1_800_000_000)) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -118,7 +118,7 @@ private actor G1RowsClient: EngineClient {
             let data = try XCTUnwrap(result["data"] as? [String: Any])
             let source = try XCTUnwrap(data["projection"] as? [String: Any])
             var event = try XCTUnwrap((source["resetEvents"] as? [[String: Any]])?.first)
-            let now = Date(timeIntervalSince1970: 1_800_000_000), format = ISO8601DateFormatter()
+            let now = eventNow, format = ISO8601DateFormatter()
             event["rowId"] = "codex"; event["planIds"] = ["codex"]
             event["publishedAt"] = format.string(from: now.addingTimeInterval(-60))
             event["expiresAt"] = format.string(from: now.addingTimeInterval(3600))
@@ -133,14 +133,16 @@ private actor G1RowsClient: EngineClient {
         root["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
-    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, thirdMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
+    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, thirdMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false, resetStatus: String? = nil, now: Date = Date(timeIntervalSince1970: 1_800_000_000), notificationOptIn: Bool = false) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
-        let fixture = try fixture(empty: empty, secondMember: secondMember, thirdMember: thirdMember, resetStatus: resetStatus)
+        let fixture = try fixture(empty: empty, secondMember: secondMember, thirdMember: thirdMember, resetStatus: resetStatus, eventNow: now)
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        if notificationOptIn { try await settings.update { $0.notifications.optedIn = true } }
         let app = EngineRowsEntry.make(configuration: configuration,
-            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+            settingsStore: settings,
             createsNativePanels: panels, dockEnvironment: { environment.sample() },
-            deadlineNow: { Date(timeIntervalSince1970: 1_800_000_000 + (clock?.elapsed ?? 0)) },
+            deadlineNow: { now.addingTimeInterval(clock?.elapsed ?? 0) },
             deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1RowsClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
@@ -569,6 +571,28 @@ private actor G1RowsClient: EngineClient {
         XCTAssertEqual(station.showsReadout, true)
         XCTAssertGreaterThan(station.eventRect.midX, station.readout.midX)
         XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 5, accuracy: 0.0001)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_7_01() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-reset-no-popup-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let now = Date()
+        let app = try await open(G1DisplayEnvironment(), profile: profile, now: now, notificationOptIn: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        XCTAssertTrue(dock.card.isHidden)
+        let delivered = expectation(description: "synthetic reset notification was delivered")
+        var episodes: [String] = []
+        app.composition.setResetNotificationDelivery { episode in episodes.append(episode); delivered.fulfill() }
+        let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
+        try await client.replaceRows(fixture(resetStatus: "announced", eventNow: now))
+        await fulfillment(of: [delivered], timeout: 3)
+        XCTAssertEqual(episodes.count, 1)
+        XCTAssertTrue(dock.card.isHidden, "An announced reset must not open a card")
+        let notice = try XCTUnwrap(dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertEqual(notice.key.kind, .resetAnnounced)
+        XCTAssertEqual(notice.tone, .blue)
         await app.composition.stop()
     }
 
