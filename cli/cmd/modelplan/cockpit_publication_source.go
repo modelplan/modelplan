@@ -3,9 +3,14 @@ package main
 
 import (
 	"context"
+	"math"
+	"time"
+	"unicode"
 
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/publication"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -27,4 +32,88 @@ func loadCockpitPublication(ctx context.Context, st *store.Store) (*digest.Diges
 		return nil, nil
 	}
 	return d, nil
+}
+
+// publishedCockpitModel copies public verdicts without calculating a rank,
+// multiplier or recommendation. Missing published values stay unknown.
+func publishedCockpitModel(m digest.Model) (wire.CockpitPublicationModel, bool) {
+	validText := func(s string, limit int, required bool) bool {
+		if len(s) > limit || (required && s == "") {
+			return false
+		}
+		for _, r := range s {
+			if unicode.IsControl(r) {
+				return false
+			}
+		}
+		return true
+	}
+	if !validText(m.ID, 128, true) || !validText(m.Name, 200, true) || !validText(m.DeveloperID, 128, true) || !validText(m.Recommended, 64, false) || len(m.Efforts) > 32 {
+		return wire.CockpitPublicationModel{}, false
+	}
+	out := wire.CockpitPublicationModel{ID: m.ID, Name: m.Name, DeveloperID: m.DeveloperID, Recommended: m.Recommended, Efforts: []wire.CockpitPublicationEffort{}}
+	for _, e := range m.Efforts {
+		if !validText(e.Effort, 64, true) || !validText(e.Label, 64, false) {
+			return wire.CockpitPublicationModel{}, false
+		}
+		for _, value := range []*float64{e.Ability, e.Cost, e.Time} {
+			if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0)) {
+				return wire.CockpitPublicationModel{}, false
+			}
+		}
+		out.Efforts = append(out.Efforts, wire.CockpitPublicationEffort{Effort: e.Effort, Label: e.Label, Star: m.Recommended != "" && e.Effort == m.Recommended, Ability: e.Ability, Cost: e.Cost, Time: e.Time, Provisional: e.Provisional})
+	}
+	return out, true
+}
+
+// eligibleCockpitVendors uses only current consent-fenced row readings. Multi-
+// vendor aggregators are intentionally absent: their own account is not proof
+// of a particular model vendor's entitlement or current reading.
+func eligibleCockpitVendors(projection rows.Projection) map[string]bool {
+	vendors := map[string]string{"codex": "openai", "claude": "anthropic", "gemini": "google", "grok": "xai", "kimi": "kimi", "zai": "zhipuai", "minimax": "minimax", "qwen": "alibaba"}
+	out := map[string]bool{}
+	for _, row := range projection.Rows {
+		vendor := vendors[row.ID]
+		if row.Kind != rows.KindTool || row.Consent != rows.ConsentAllowed || vendor == "" {
+			continue
+		}
+		for _, account := range row.Accounts {
+			if account.ValueState == rows.ValueStateCurrent {
+				out[vendor] = true
+				break
+			}
+		}
+	}
+	return out
+}
+
+// materializeCockpitPublication encodes an already-selected publication lineup
+// without ranking it or manufacturing values. Invalid source facts fail closed.
+func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, truncated bool) *wire.CockpitPublication {
+	if d == nil || d.Source != digest.ComponentClient || len(d.PublicationID) != 24 || len(selected) > 3 {
+		return nil
+	}
+	for _, ch := range d.PublicationID {
+		if !(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f') {
+			return nil
+		}
+	}
+	publishedAt, err := time.Parse(time.RFC3339Nano, d.PublishedAt)
+	if err != nil || publishedAt.IsZero() {
+		return nil
+	}
+	result := &wire.CockpitPublication{ContractVersion: 1, PublicationID: d.PublicationID, PublishedAt: publishedAt.UTC(), Source: d.Source, Models: []wire.CockpitPublicationModel{}, Truncated: truncated}
+	seen := map[string]bool{}
+	for _, model := range selected {
+		if model == nil || seen[model.ID] {
+			return nil
+		}
+		converted, ok := publishedCockpitModel(*model)
+		if !ok {
+			return nil
+		}
+		result.Models = append(result.Models, converted)
+		seen[model.ID] = true
+	}
+	return result
 }

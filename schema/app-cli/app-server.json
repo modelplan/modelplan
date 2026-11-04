@@ -296,6 +296,16 @@
           "maxItems": 128,
           "type": "array"
         },
+        "publication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitPublication"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"
@@ -342,6 +352,157 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ],
+      "type": "object"
+    },
+    "CockpitPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationModel"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "publicationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "publicationId",
+        "publishedAt",
+        "source",
+        "models",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationEffort": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "star": {
+          "type": "boolean"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "effort",
+        "label",
+        "star",
+        "ability",
+        "cost",
+        "time"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationModel": {
+      "additionalProperties": false,
+      "properties": {
+        "developerId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "efforts": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationEffort"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "recommended": {
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "developerId",
+        "recommended",
+        "efforts"
       ],
       "type": "object"
     },
