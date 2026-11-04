@@ -109,12 +109,12 @@ public struct SettingsPageContext: Sendable {
         let shortcuts = SettingsText("Unavailable until shortcuts can be registered.", "快捷键可注册前不可用。")
         let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
         let surfaces = SettingsText("Unavailable until all views support this setting.", "所有界面支持此设置前不可用。")
-        for key in [SettingKey.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow] { unavailableControls[key] = dock }
+        for key in [SettingKey.magnification, .sliverAlert, .fullscreen] { unavailableControls[key] = dock }
         for key in [SettingKey.percentagePin, .order, .visible, .alias] { unavailableControls[key] = members }
         for key in [SettingKey.login, .notificationConsent, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] { unavailableControls[key] = services }
         for key in [SettingKey.openShortcut, .dockShortcut] { unavailableControls[key] = shortcuts }
         for key in [SettingKey.forecast, .reset, .official, .expiring, .stale] { unavailableControls[key] = notices }
-        for key in [SettingKey.language, .menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
+        for key in [SettingKey.menuDisplay, .projectNames] { unavailableControls[key] = surfaces }
         unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
