@@ -11,6 +11,15 @@ import ModelPlanWire
 
 // Only the engine transport is synthetic. Settings, the production entry and
 // the Dock's retained presentation and visibility controllers remain real.
+// Pending read-only inspection/injection seams, named here for the owning lane:
+// DOCK-3.1.1-09: EngineRowsEntry isolatedNativeNotificationLedgerForChecks.
+// DOCK-3.1.1-11: StaticDockPreviewHost workingEffectFramesForChecks.
+// DOCK-3.1-11: DockInstrumentView renderedFaceMaterialForChecks.
+// DOCK-3.1-13: DockInstrumentView renderedReadoutBackingForChecks.
+// DOCK-3.1-14: DockInstrumentView renderedAliasBackingForChecks.
+// DOCK-3.1-15: DockInstrumentView renderedReadoutTransformsForChecks.
+// DOCK-3.1-16: StaticDockPreviewHost resolvedT2GapAndOverflowForChecks.
+// DOCK-3.1-17: StaticDockPreviewHost resolvedT2CurvatureForChecks.
 private actor G1CRowsClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     let store: EngineStore
