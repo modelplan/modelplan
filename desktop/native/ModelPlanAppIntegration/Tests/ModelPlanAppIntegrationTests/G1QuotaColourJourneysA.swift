@@ -119,9 +119,10 @@ private actor G1AEngine: EngineClient {
 }
 
 @MainActor final class G1QuotaColourJourneysA: XCTestCase {
-    private func checkSliver(_ percent: Int, threshold: Int = 25, expected: String?) async throws {
+    private func checkSliver(_ percent: Int, threshold: Int = 25, expected: String?, theme: SettingsTheme = .night) async throws {
         let fixture = try G1AFixture()
         addTeardownBlock { @MainActor in await fixture.close() }
+        _ = try await fixture.store.update { $0.theme = theme }
         try await fixture.open(autoHide: true)
         _ = try await fixture.store.update { $0.redBelow = threshold }
         fixture.mutateFirst { account in
@@ -160,6 +161,7 @@ private actor G1AEngine: EngineClient {
             try await checkSliver(percent, threshold: threshold, expected: colour)
         }
     }
+    func testDayThemeDarkWidgetCriticalToken() async throws { try await checkSliver(25, expected: "#EF4444FF", theme: .day) }
     func testCOL_2_1_04() throws { throw XCTSkip("COL-2.1-04: NOT RUN: day surface resolved quota colour inspection unavailable") }
     func testCOL_2_1_06() throws { throw XCTSkip("COL-2.1-06: NOT RUN: surface-role colour inspection and approved visual reference unavailable") }
     func testCOL_2_1_07() throws { throw XCTSkip("COL-2.1-07: NOT RUN: identity-colour surface inspection and approved visual reference unavailable") }
