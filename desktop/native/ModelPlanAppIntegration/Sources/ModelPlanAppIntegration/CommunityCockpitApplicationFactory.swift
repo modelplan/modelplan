@@ -58,6 +58,7 @@ import ModelPlanSettings
                 if let makeConsole { return makeConsole(composition) }
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -69,6 +70,8 @@ import ModelPlanSettings
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
     var pageFailure: (() -> Void)?
+    var anchor: (() -> CGRect?)?
+    let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
@@ -80,7 +83,8 @@ import ModelPlanSettings
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
-        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
