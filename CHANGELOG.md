@@ -18,8 +18,11 @@ This draft targets the next CLI release. The tag, release and plugin pins requir
 - Give the App clearer reset-card counts and expiry details when the source supports them. Incomplete or uncertain information is marked accordingly instead of being presented as complete.
   在来源支持时，向 App 提供更清晰的重置卡数量与到期详情；信息不完整或不确定时会明确标记，不会显示为完整数据。
 
-- The App–CLI connection can negotiate `cockpitDetailsV1`, `resetEvents`, `windowSourcesV1`, `refreshDecisionsV1` and `memberRefreshV1` for these details, reset announcements, per-window provenance, refresh diagnostics and individual member refreshes. Older clients can continue without these optional capabilities.
-  App 与 CLI 的连接可协商 `cockpitDetailsV1`、`resetEvents`、`windowSourcesV1`、`refreshDecisionsV1` 和 `memberRefreshV1`，分别获取详情、重置公告、窗口来源、刷新诊断及单个成员刷新；旧客户端无需这些可选功能仍可继续使用。
+- Include reviewed public source links with reset announcements when available. Links are optional and separately negotiated; an announcement remains available even when a link is absent or not admitted.
+  在可用时为重置公告附上经过审核的公开来源链接。链接为可选项并单独协商；缺少链接或链接未获准时，公告仍然可用。
+
+- The App–CLI connection can negotiate `cockpitDetailsV1`, `resetEvents`, `windowSourcesV1`, `refreshDecisionsV1`, `memberRefreshV1` and `resetEventLinksV1` for details, reset announcements, per-window provenance, refresh diagnostics, individual member refreshes and reset source links. Older clients can continue without these optional capabilities.
+  App 与 CLI 的连接可协商 `cockpitDetailsV1`、`resetEvents`、`windowSourcesV1`、`refreshDecisionsV1`、`memberRefreshV1` 和 `resetEventLinksV1`，分别获取详情、重置公告、窗口来源、刷新诊断、单个成员刷新及重置来源链接；旧客户端无需这些可选功能仍可继续使用。
 
 - Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
   C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
