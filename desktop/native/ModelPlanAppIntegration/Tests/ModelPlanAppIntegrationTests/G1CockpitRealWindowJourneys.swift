@@ -3,6 +3,7 @@
 import AppKit
 import CryptoKit
 import XCTest
+import WebKit
 import ModelPlanCockpitWeb
 import ModelPlanEngineClient
 import ModelPlanSettings
@@ -110,6 +111,34 @@ private extension EngineDeliveryContext {
             let rootHeight = try self.dimension(facts, "root", "height")
             let contentHeight = try XCTUnwrap(page.window?.contentView?.bounds.height)
             XCTAssertEqual(Double(contentHeight) - rootHeight, 34, accuracy: 1)
+        }
+    }
+    func testG1_CKP_SHELL_24_closeControlUsesNonblockingFade() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            let close = try XCTUnwrap(facts["close"] as? [String: Any])
+            let x = try XCTUnwrap((close["x"] as? NSNumber)?.doubleValue)
+            let y = try XCTUnwrap((close["y"] as? NSNumber)?.doubleValue)
+            let width = try XCTUnwrap((close["width"] as? NSNumber)?.doubleValue)
+            let height = try XCTUnwrap((close["height"] as? NSNumber)?.doubleValue)
+            let window = try XCTUnwrap(page.window)
+            let web = try XCTUnwrap(window.contentView?.subviews.first { $0 is WKWebView } as? WKWebView)
+            let local = web.convert(CGPoint(x: x + width / 2, y: web.isFlipped ? y + height / 2 : web.bounds.height - y - height / 2), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: local, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
+            }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while page.g1CloseAnimationDurationForChecks == nil && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let duration = try XCTUnwrap(page.g1CloseAnimationDurationForChecks)
+            let reduce = facts["reduceMotion"] as? Bool == true
+            XCTAssertEqual(duration, reduce ? 0 : 0.12, accuracy: 0.001)
+            while !page.g1PageStateForChecks.disposed && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(page.g1PageStateForChecks.disposed)
         }
     }
     func testG1_CKP_SHELL_20_closeRetiresActualPage() async throws {

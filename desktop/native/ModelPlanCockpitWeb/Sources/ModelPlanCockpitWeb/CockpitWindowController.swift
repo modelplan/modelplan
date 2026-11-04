@@ -214,6 +214,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
   #endif
   #if DEBUG
+  /// Duration actually applied to the latest close transition; no page content.
+  public private(set) var g1CloseAnimationDurationForChecks: TimeInterval?
   /// Reports only controller-owned live objects and acknowledged bridge state.
   public var g1PageStateForChecks: G1CockpitPageState {
     .init(hasPage: web != nil, hasWindow: window != nil, ready: bridge.ready, disposed: bridge.disposed)
@@ -230,7 +232,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         return {x:r.x, y:r.y, width:r.width, height:r.height};
       };
       return JSON.stringify({root:rect('#cockpit'), field:rect('.ck-field'), canopy:rect('.ck-port'),
-        hud:rect('.hud'), engine:rect('.ck-eng'), deck:rect('.ck-deck'), tape:rect('.ck-tape'),
+        hud:rect('.hud'), engine:rect('.ck-eng'), deck:rect('.ck-deck'), tape:rect('.ck-tape'), close:rect('[data-close]'),
         shutterClosed:document.querySelector('[data-shutter]')?.getAttribute('aria-pressed') === 'true',
         reduceMotion:document.documentElement.dataset.reduceMotion === 'true',
         reduceTransparency:document.documentElement.dataset.reduceTransparency === 'true'});
@@ -784,8 +786,19 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     verificationCloseStarted?(appearance.reduceMotion ? 0 : 0.12)
     #endif
-    guard !appearance.reduceMotion, let window else { discard(); return }
-    NSAnimationContext.runAnimationGroup { context in context.duration = 0.12; window.animator().alphaValue = 0 }
+    guard !appearance.reduceMotion, let window else {
+      #if DEBUG
+      g1CloseAnimationDurationForChecks = 0
+      #endif
+      discard(); return
+    }
+    NSAnimationContext.runAnimationGroup { context in
+      context.duration = 0.12
+      #if DEBUG
+      g1CloseAnimationDurationForChecks = context.duration
+      #endif
+      window.animator().alphaValue = 0
+    }
     closeTask = Task { @MainActor [weak self] in
       do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
       self?.discard()
