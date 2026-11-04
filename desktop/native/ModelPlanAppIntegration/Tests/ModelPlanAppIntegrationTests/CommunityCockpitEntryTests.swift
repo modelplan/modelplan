@@ -88,7 +88,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
         owner.appearance = .init(theme:.night,locale:.en,profile:.full,reduceMotion:true)
         let anchor=CGRect(x:screen.visibleFrame.midX,y:screen.visibleFrame.maxY,width:20,height:20)
-        owner.menuAnchor = { anchor }
+        owner.anchor = { anchor }
         let context=try CockpitEngineContext(sessionID:UUID(),storeEpoch:"synthetic",generation:1)
         return (owner,verified,context,anchor)
     }
@@ -105,8 +105,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let second=owner.makePage(context:context,verified:bundle)
         defer { second.discard() }
         second.open()
-        XCTAssertTrue(owner.shellSession.detached)
-        XCTAssertTrue(owner.shellSession.shutterClosed)
+        XCTAssertTrue(owner.shell.detached)
+        XCTAssertTrue(owner.shell.shutterClosed)
         let reopened=try XCTUnwrap(second.window)
         XCTAssertEqual(reopened.frame.origin.x,origin.x,accuracy:1)
         XCTAssertEqual(reopened.frame.origin.y,origin.y,accuracy:1)
@@ -152,7 +152,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(pages.count,2)
         let second=try XCTUnwrap(pages.last)
         let reopened=try XCTUnwrap(second.window)
-        XCTAssertTrue(owner.shellSession.detached);XCTAssertTrue(owner.shellSession.shutterClosed)
+        XCTAssertTrue(owner.shell.detached);XCTAssertTrue(owner.shell.shutterClosed)
         XCTAssertEqual(reopened.frame.origin.x,origin.x,accuracy:1)
         XCTAssertEqual(reopened.frame.origin.y,origin.y,accuracy:1)
         let fit=try XCTUnwrap(CockpitShellLayout.fit(usable:try XCTUnwrap(NSScreen.main).visibleFrame,anchor:anchor,shutterClosed:true))
@@ -201,8 +201,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         defer { try? FileManager.default.removeItem(at:root) }
         let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
         let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
-        owner.shellSession.detached=true;owner.shellSession.shutterClosed=true
-        let origin=CGPoint(x:123,y:456);owner.shellSession.remember(origin,arrangement:"synthetic")
+        owner.shell.detached=true;owner.shell.shutterClosed=true
+        let origin=CGPoint(x:123,y:456);owner.shell.remember(origin,arrangement:"synthetic")
         let client=RouteClient();var surface:SharedEngineCockpitConsole?
         let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:settings,createsNativePanels:false,cockpitEntryEnabled:true,
             makeClient:{_,_ in client},makeConsole:{ composition in
@@ -216,9 +216,30 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertFalse(try XCTUnwrap(surface).wantsVisible)
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
         XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
-        XCTAssertTrue(owner.shellSession.detached);XCTAssertTrue(owner.shellSession.shutterClosed)
-        XCTAssertEqual(owner.shellSession.origin(for:"synthetic"),origin)
+        XCTAssertTrue(owner.shell.detached);XCTAssertTrue(owner.shell.shutterClosed)
+        XCTAssertEqual(owner.shell.origin(for:"synthetic"),origin)
         surface?.hide();await app.composition.stop()
+    }
+    // #403 normal-entry journey: use the actual menu actions with a synthetic
+    // console/client, without opening a panel or launching an engine process.
+    @MainActor func testStatusAndDockMenusOpenSameEnabledConsole() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("s6-menu-journey-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+        let client=RouteClient(),surface=ConsoleRouteProbe();var constructions=0,clients=0
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in clients += 1;return client},makeConsole:{_ in constructions += 1;return surface},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);app.renderMenu()
+        let status=try XCTUnwrap(app.liveStatusMenu)
+        let statusIndex=try XCTUnwrap(status.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(status.items[statusIndex].isEnabled)
+        status.performActionForItem(at:statusIndex)
+        let dock=app.composition.dock.menu()
+        let dockIndex=try XCTUnwrap(dock.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(dock.items[dockIndex].isEnabled)
+        dock.performActionForItem(at:dockIndex)
+        XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
+        await app.composition.stop()
     }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {

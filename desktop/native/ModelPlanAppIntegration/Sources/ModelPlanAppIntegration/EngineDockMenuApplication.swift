@@ -22,10 +22,6 @@ import ModelPlanMenuVerification
     private let appBundleURL: URL
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
-    var cockpitMenuAnchor: CGRect? {
-        guard let button = status?.button, let window = button.window else { return nil }
-        return window.convertToScreen(button.convert(button.bounds, to: nil))
-    }
     private(set) var liveStatusMenu: NSMenu?
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
@@ -121,6 +117,10 @@ import ModelPlanMenuVerification
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
+    var cockpitAnchor: CGRect? {
+        guard let button = status?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
     public func showConsole() {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()
