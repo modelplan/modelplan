@@ -31,6 +31,13 @@ final class DecodeTests: XCTestCase {
             .appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
     }
     private func data(_ name: String) throws -> Data { try Data(contentsOf: captures.appendingPathComponent(name)) }
+
+    func testRowsSubscribeBusyFixtureIsTypedRPCError() throws {
+        let failure = try WireDecoder.decode(WireFailure.self, from: data("rows-subscribe-busy.json"))
+        XCTAssertEqual(failure.error.code, WireErrorCode.busy)
+        XCTAssertEqual(failure.error.message, "busy")
+        XCTAssertEqual(failure.error.data.sessionId, "s-synthetic")
+    }
     private func object(_ name: String) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: data(name)) as? [String: Any])
     }
@@ -44,10 +51,46 @@ final class DecodeTests: XCTestCase {
         else { XCTAssertThrowsError(try decodeCapture(type, bytes), context) }
     }
 
+    func testCockpitThresholdIsStrictAndBounded() throws {
+        let decoder = JSONDecoder()
+        XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(#"{"redBelow":16}"#.utf8)).redBelow, 16)
+        for json in [#"{"redBelow":17}"#, #"{"redBelow":"16"}"#, #"{"redBelow":null}"#] {
+            XCTAssertThrowsError(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)))
+        }
+    }
+
+    func testMalformedCockpitDetailsNeverDisappear() throws {
+        let original = try object("WireCockpitData.json")
+        var invalidVersion = original
+        var details = try XCTUnwrap(invalidVersion["details"] as? [String: Any])
+        details["version"] = 2
+        invalidVersion["details"] = details
+        try check("WireCockpitData", invalidVersion, accepted: false, context: "details version")
+        var invalidReference = original
+        details = try XCTUnwrap(invalidReference["details"] as? [String: Any])
+        var subs = try XCTUnwrap(details["subscriptions"] as? [[String: Any]])
+        subs[0]["subscriptionRef"] = "bad-reference"
+        details["subscriptions"] = subs
+        invalidReference["details"] = details
+        try check("WireCockpitData", invalidReference, accepted: false, context: "details subscription")
+        var missingTime = original
+        details = try XCTUnwrap(missingTime["details"] as? [String: Any])
+        var sessions = try XCTUnwrap(details["sessions"] as? [[String: Any]])
+        sessions[0].removeValue(forKey: "lastObservedAt")
+        details["sessions"] = sessions
+        missingTime["details"] = details
+        try check("WireCockpitData", missingTime, accepted: false, context: "details session time")
+        sessions[0]["lastObservedAt"] = "2026-10-29T12:00:00Z"
+        sessions[0]["sessionRef"] = "bad-reference"
+        details["sessions"] = sessions
+        missingTime["details"] = details
+        try check("WireCockpitData", missingTime, accepted: false, context: "details session reference")
+    }
+
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 47)
+        XCTAssertEqual(catalog.cases.count, 66)
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
@@ -72,7 +115,49 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 55)
+        XCTAssertEqual(fields, 89)
+    }
+
+    func testModelScopeAndResetEventsRejectMalformedValues() throws {
+        for (file, type, field) in [("RowsWindow.json", "RowsWindow", "modelScope"),
+                                    ("RowsWindow.json", "RowsWindow", "source"),
+                                    ("WireDiagnostics.json", "WireDiagnostics", "refreshDecisions"),
+                                    ("WireRefreshRequestParams.json", "WireRefreshRequestParams", "member"),
+                                    ("WireMemberRefreshResult.json", "WireMemberRefreshResult", "notBefore"),
+                                    ("WireMemberRefreshResult.json", "WireMemberRefreshResult", "reason"),
+                                    ("WireRowsProjection.json", "WireRowsProjection", "resetEvents")] {
+            var value = try object(file)
+            value.removeValue(forKey: field)
+            try check(type, value, accepted: true, context: type + " absent")
+            value[field] = NSNull()
+            try check(type, value, accepted: false, context: type + " null")
+            value[field] = ["wrongType": true]
+            try check(type, value, accepted: false, context: type + " wrong type")
+        }
+    }
+
+    func testMalformedNestedModelScopeDoesNotBecomePlanWide() throws {
+        var projection = try object("WireRowsProjection.json")
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
+        var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+        windows[0]["modelScope"] = "malformed"
+        accounts[0]["windows"] = windows
+        rows[0]["accounts"] = accounts
+        projection["rows"] = rows
+        XCTAssertThrowsError(try WireDecoder.decode(WireRowsProjection.self, from: encoded(projection)))
+    }
+
+    func testResetCardFactsRejectMalformedNestedData() throws {
+        var account = try object("RowsAccount.json")
+        var facts = try XCTUnwrap(account["resetCards"] as? [String: Any])
+        facts["state"] = "fabricated"
+        account["resetCards"] = facts
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = "malformed"
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
+        account["resetCards"] = NSNull()
+        XCTAssertThrowsError(try WireDecoder.decode(RowsAccount.self, from: encoded(account)))
     }
 
     func testRequiredFieldsRemainRequired() throws {
@@ -394,6 +479,45 @@ extension DecodeTests {
 
 
 extension DecodeTests {
+    func testResetTimestampDistinguishesAbsentNullAndInvalidValues() throws {
+        for mode in ["valid", "null", "missing", "invalid-string", "invalid-type"] {
+            var message = try object("retired-with-account.json")
+            var envelope = try XCTUnwrap(message["result"] as? [String: Any])
+            var snapshot = try XCTUnwrap(envelope["data"] as? [String: Any])
+            var projection = try XCTUnwrap(snapshot["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            let index = try XCTUnwrap(rows.firstIndex { $0["id"] as? String == "claude" })
+            var accounts = try XCTUnwrap(rows[index]["accounts"] as? [[String: Any]])
+            var windows = try XCTUnwrap(accounts[0]["windows"] as? [[String: Any]])
+            switch mode {
+            case "valid": windows[0]["resetsAt"] = "2026-10-29T12:00:00Z"
+            case "null": windows[0]["resetsAt"] = NSNull()
+            case "missing": windows[0].removeValue(forKey: "resetsAt")
+            case "invalid-string": windows[0]["resetsAt"] = "not-a-timestamp"
+            default: windows[0]["resetsAt"] = 42
+            }
+            accounts[0]["windows"] = windows; rows[index]["accounts"] = accounts
+            projection["rows"] = rows; snapshot["projection"] = projection
+            envelope["data"] = snapshot; message["result"] = envelope
+
+            let decoded = try WireDecoder.decodeWithDiagnostics(WireSuccess<WireRowsSnapshot>.self, from: encoded(message))
+            let output = decoded.value.result.data.projection.rows
+            let selected = try XCTUnwrap(output.first { $0.id == "claude" })
+            let healthy = try XCTUnwrap(output.first { $0.id == "codex" })
+            let invalid = mode == "invalid-string" || mode == "invalid-type"
+            XCTAssertEqual(decoded.invalidRowCount, invalid ? 1 : 0, mode)
+            XCTAssertEqual(selected.invalid, invalid, mode)
+            XCTAssertFalse(healthy.invalid, mode)
+            XCTAssertEqual(healthy.accounts.first?.windows.first?.remainingPercent, 75, mode)
+            if invalid {
+                XCTAssertTrue(selected.accounts.isEmpty, mode)
+            } else {
+                let reset = try XCTUnwrap(selected.accounts.first?.windows.first).resetsAt
+                XCTAssertEqual(reset?.rawValue, mode == "valid" ? "2026-10-29T12:00:00Z" : nil, mode)
+            }
+        }
+    }
+
     func testCredentialOptionalNullsRespectOutcomePresence() throws {
         for outcome in ["canceled", "denied", "not_found", "interaction_required", "timeout", "error"] {
             var omitted = try object("WireCredentialResult.json")

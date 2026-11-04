@@ -6,7 +6,7 @@ import ModelPlanCommunityHost
 
 @MainActor private final class ConnectionFirstRunSurface: SettingsWindowSurface {
     private let controller: SettingsFirstRunController
-    init(editor: SettingsEditor) { controller = SettingsFirstRunController(editor: editor) }
+    init(editor: SettingsEditor, scopeConsentEntry: ScopeConsentEntry?) { controller = SettingsFirstRunController(editor: editor, scopeConsentEntry: scopeConsentEntry) }
     func prepare() async { await controller.prepare() }
     func show(paneID: String?) { controller.showWindow(nil); controller.window?.makeKeyAndOrderFront(nil) }
     func hide() { controller.suspend(); controller.window?.orderOut(nil) }
@@ -27,10 +27,16 @@ import ModelPlanCommunityHost
     public init(application: SettingsApplicationCoordinator, backend: (any SettingsConnectionAllowing)? = nil,
                 canPresent: @escaping @MainActor () -> Bool,
                 showSettings: @escaping @MainActor (String?) async -> Void,
-                activate: @escaping @MainActor () -> Void = {},
-                makeFirstRun: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil) throws {
+                activate: @escaping @MainActor () -> Void = {}, scopeConsentEntry: ScopeConsentEntry? = nil,
+                makeFirstRun: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
+                makeFirstRunWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)? = nil) throws {
         self.application = application; self.canPresent = canPresent; self.showSettings = showSettings
-        self.activate = activate; self.makeFirstRun = makeFirstRun ?? { ConnectionFirstRunSurface(editor: $0) }
+        self.activate = activate
+        self.makeFirstRun = { editor in
+            if let scopeConsentEntry, let makeFirstRunWithConsent { return makeFirstRunWithConsent(editor, scopeConsentEntry) }
+            if let makeFirstRun { return makeFirstRun(editor) }
+            return ConnectionFirstRunSurface(editor: editor, scopeConsentEntry: scopeConsentEntry)
+        }
         let editor = application.editor
         navigation = editor.bindFirstRunPresentation({ [weak self] in Task { await self?.openFirstRun() } },
             about: { [weak self] in Task { await self?.perform(.about) } })
@@ -129,7 +135,10 @@ import ModelPlanCommunityHost
         item.target = self; return item
     }()
     public private(set) lazy var settingsMenuItem: NSMenuItem = {
-        let item = NSMenuItem(title: base.settingsMenuItem.title, action: #selector(openSettings), keyEquivalent: ",")
+        // Retain the session's item: its live language updates must not be lost
+        // in a title copied once by this consent-routing wrapper.
+        let item = base.settingsMenuItem
+        item.action = #selector(openSettings);item.keyEquivalent = ","
         item.keyEquivalentModifierMask = .command; item.target = self; return item
     }()
     public init(base: any CommunitySettingsIntegration, flow: CommunityConnectionFlow) throws {

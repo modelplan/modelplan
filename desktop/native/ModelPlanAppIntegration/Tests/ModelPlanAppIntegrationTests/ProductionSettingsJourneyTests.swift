@@ -298,7 +298,7 @@ import ModelPlanDock
         XCTAssertEqual(port.grants, 0); XCTAssertNil(view.window)
     }
 
-    func testRealCommunityFactoryRegistersTheGestureHandlerAndPersistsItsDropWithoutASkinOrWindow() async throws {
+    func testRealCommunityFactoryRegistersTheGestureHandlerAndPersistsItsDropWithOfficialSkinWithoutAWindow() async throws {
         let store = try store()
         try await store.update { $0.dockEdge = .right; $0.dockDisplayID = "fixture"; $0.autoHide = false }
         let screen = DockDisplayArea(id: "fixture", frame: .init(x: 0, y: 0, width: 1200, height: 900), visibleFrame: .init(x: 0, y: 0, width: 1200, height: 900))
@@ -320,11 +320,15 @@ import ModelPlanDock
         XCTAssertEqual(host.edgePresentation?.state, .expanded)
         let placement = try XCTUnwrap(host.edgePresentation?.placement)
         XCTAssertEqual(placement.edge, .right)
-        XCTAssertTrue(host.dockView.hitTest(CGPoint(x: host.dockView.bounds.midX, y: host.dockView.bounds.midY)) === host.dockView,
-            "Fresh-install status copy cannot intercept the neutral background")
         let handler = try XCTUnwrap(host.dockView.backgroundDragDelegate,
             "This must be the production handler installed by present, not a test-installed callback")
-        let local = CGPoint(x: 2, y: 2)
+        let bounds = host.dockView.bounds
+        let candidates = (0..<Int(bounds.height)).lazy.flatMap { y in
+            (0..<Int(bounds.width)).lazy.map { x in CGPoint(x: CGFloat(x) + 0.5, y: CGFloat(y) + 0.5) }
+        }
+        let local = try XCTUnwrap(candidates.first { handler.backgroundCanDrag(local: $0) && host.dockView.isPainted(atLocal: $0) },
+            "The official hull must expose a painted, registered background drag point")
+        XCTAssertTrue(host.dockView.hitTest(local) === host.dockView, "The registered hull point must reach the actual Dock view")
         XCTAssertTrue(handler.backgroundCanDrag(local: local))
         XCTAssertFalse(handler.backgroundCanDrag(local: CGPoint(x: -1, y: 2)))
         let start = CGPoint(x: placement.frame.minX + local.x, y: placement.frame.maxY - local.y)
@@ -334,8 +338,8 @@ import ModelPlanDock
         pointer = drop; handler.updateBackgroundMove(global: drop)
         XCTAssertTrue(handler.isBackgroundMoving)
         XCTAssertEqual(host.edgePresentation?.snapPreview?.edge, .left,
-            "The actual neutral factory must register a left destination, not just its starting edge")
-        XCTAssertNotNil(host.dockView.registeredMoveOutlinePath, "The actual neutral pixels have an exact move-outline path")
+            "The actual official factory must register a left destination, not just its starting edge")
+        XCTAssertNotNil(host.dockView.registeredMoveOutlinePath, "The actual official hull has an exact move-outline path")
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: drop)
         for _ in 0..<1000 where app.editor.snapshot?.preferences.dockEdge != .left { await Task.yield() }
         let saved = await store.snapshot()

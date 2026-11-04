@@ -672,3 +672,114 @@ func TestPublicMutationResultSurvivesConsentChange(t *testing.T) {
 		t.Fatalf("public mutation receipt was discarded: %s", response["error"])
 	}
 }
+
+type resetCapabilityBackend struct{ *memoryBackend }
+
+func (b resetCapabilityBackend) Capabilities() []string {
+	return []string{"rows", CapabilityResetEvents, CapabilityResetEventLinksV1}
+}
+
+func TestResetEventsCapabilityControlsSnapshotsAndChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		caps    []string
+		enabled bool
+		links   bool
+	}{
+		{"negotiated", []string{"rows", "resetEvents", "resetEventLinksV1"}, true, true},
+		{"old events", []string{"rows", "resetEvents"}, true, false},
+		{"links alone", []string{"rows", "resetEventLinksV1"}, false, false},
+		{"legacy", []string{"rows"}, false, false},
+		{"obsolete alias", []string{"rows", "reset_events_v1"}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := newMemoryBackend()
+			events := []rows.ResetEvent{{ID: "first", RowID: "claude", Source: rows.ResetSource{Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/reset"}}}}}
+			b.view.ResetEvents = &events
+			c := startClient(t, Config{Backend: resetCapabilityBackend{b}})
+			c.readMessages()
+			c.send(t, 1, "initialize", wire.InitializeParams{SessionID: "s-test", ProtocolVersion: wire.ProtocolVersion, AppVersion: "test", Capabilities: tc.caps})
+			var init wire.Envelope[wire.InitializeResult]
+			if err := json.Unmarshal(c.response(t, 1)["result"], &init); err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, cap := range init.Data.Capabilities {
+				if cap == "resetEvents" {
+					found = true
+				}
+				if cap == "reset_events_v1" {
+					t.Fatal("obsolete capability advertised")
+				}
+			}
+			if !found {
+				t.Fatal("resetEvents not advertised")
+			}
+			c.send(t, 2, "rows/subscribe", wire.Empty{})
+			var first wire.Envelope[wire.RowsSnapshot]
+			if err := json.Unmarshal(c.response(t, 2)["result"], &first); err != nil {
+				t.Fatal(err)
+			}
+			if (first.Data.Projection.ResetEvents != nil) != tc.enabled {
+				t.Fatalf("subscription capability mismatch: %+v", first.Data.Projection.ResetEvents)
+			}
+			if tc.enabled && (len((*first.Data.Projection.ResetEvents)[0].Source.Links) > 0) != tc.links {
+				t.Fatal("snapshot links capability mismatch")
+			}
+			b.mu.Lock()
+			changed := []rows.ResetEvent{{ID: "second", RowID: "claude", Source: rows.ResetSource{Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/reset"}}}}}
+			b.view.ResetEvents = &changed
+			b.mu.Unlock()
+			b.changed <- struct{}{}
+			msg := c.next(t, func(m map[string]json.RawMessage) bool { return string(m["method"]) == `"rows/changed"` })
+			var next wire.Envelope[wire.RowsSnapshot]
+			if err := json.Unmarshal(msg["params"], &next); err != nil {
+				t.Fatal(err)
+			}
+			if (next.Data.Projection.ResetEvents != nil) != tc.enabled {
+				t.Fatalf("notification capability mismatch: %+v", next.Data.Projection.ResetEvents)
+			}
+			if tc.enabled && (len((*next.Data.Projection.ResetEvents)[0].Source.Links) > 0) != tc.links {
+				t.Fatal("notification links capability mismatch")
+			}
+			if len(changed[0].Source.Links) != 1 {
+				t.Fatal("projection mutated shared event")
+			}
+			if tc.enabled && (*next.Data.Projection.ResetEvents)[0].ID != "second" {
+				t.Fatal("notification lost updated event")
+			}
+		})
+	}
+}
+
+func TestRefreshDecisionDiagnosticsCapability(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			decisions := func() []wire.RefreshDecision {
+				return []wire.RefreshDecision{{AgoSeconds: 2, Scope: wire.DecisionCodexRuntime, Outcome: wire.DecisionSucceeded, Reason: wire.DecisionCompleted}}
+			}
+			c := startClient(t, Config{Backend: newMemoryBackend(), RefreshDecisions: decisions})
+			c.readMessages()
+			caps := []string{"diagnostics"}
+			if enabled {
+				caps = append(caps, "refreshDecisionsV1")
+			}
+			c.send(t, 1, "initialize", wire.InitializeParams{SessionID: "diag", ProtocolVersion: wire.ProtocolVersion, AppVersion: "test", Capabilities: caps})
+			if m := c.response(t, 1); m["error"] != nil {
+				t.Fatal(string(m["error"]))
+			}
+			c.send(t, 2, "diagnostics/get", wire.Empty{})
+			m := c.response(t, 2)
+			var envelope struct {
+				Data map[string]json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(m["result"], &envelope); err != nil {
+				t.Fatal(err)
+			}
+			_, present := envelope.Data["refreshDecisions"]
+			if present != enabled {
+				t.Fatalf("capability=%v, payload=%s", enabled, m["result"])
+			}
+		})
+	}
+}

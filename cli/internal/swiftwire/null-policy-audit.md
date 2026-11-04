@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 55 optional/nullable fields reachable from the production
+This inventory covers the 72 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -18,10 +18,11 @@ The compiled catalog mutates the capture for each output field through that
 production decoder and checks normalization/preservation, including any required
 key or authorization rejection.
 
-## Inputs and RPC framing (10 fields)
+## Inputs and RPC framing (11 fields)
 
 | Field | Declaration | Actual consumer and observed rule | Regression evidence |
 | --- | --- | --- | --- |
+| CockpitQueryParams.RedBelow | forbidden | `cockpitParams` accepts an omitted default or one of the App's committed thresholds for a negotiated client; explicit null and unsupported values are rejected before admission. |
 | Request.ID | forbidden | [frame.go:108](../appserver/frame.go#L108), `decodeRequest`/`validID`: absent notification ID is legal; explicit null is rejected. | `TestRequestNullPoliciesAtProductionDecoderAndDispatch`; compiled Swift catalog forbidden-null case. |
 | Request.Params | distinct | [frame.go:98](../appserver/frame.go#L98) preserves raw absence/null. [frame.go:133](../appserver/frame.go#L133), `params[T]`, treats absent as `{}` but rejects null; a raw value must survive until method validation. | Same Go test dispatches both forms to `diagnostics/get`; `testOptionalRawRequestParamsRetainExplicitNull`. |
 | ConsentGrantParams.Forget | coalesced | [server.go:395](../appserver/server.go#L395), `validGrant`, and [shared_backend.go:248](../appserver/shared_backend.go#L248), `Grant`, receive the same empty list for absence/null; neither inspects raw presence. | `TestConsentOptionalNullsThroughGrantHandler`; compiled catalog. |
@@ -41,7 +42,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (45 fields)
+## Outputs (61 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -51,6 +52,16 @@ containers and failure ID retain their required-key checks.
 
 | Field | Declaration | Producer and consumer behavior |
 | --- | --- | --- |
+| CockpitData.Details | coalesced | The cockpit producer omits this field without `cockpitDetailsV1`; absence/null both mean unavailable, never an empty details projection. |
+| CockpitSubscriptionDetails.Credits | coalesced | The admitted producer uses null for unknown credits; generated decoding preserves that as no reading. |
+| CockpitResetCount.Count | coalesced | Null is an unknown count, distinct from zero; required-key validation is separate. |
+| CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
+| CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
+| CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
+| CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
+| CockpitSession.Effort | coalesced | Null means an unreported or unsupported effort. |
+| CockpitSession.ProjectLabel | coalesced | Null means no permitted local label; the producer honors the project-label switch. |
+| CockpitSession.Rate | coalesced | Null means insufficient or unavailable samples, not zero throughput. |
 | Envelope.Scopes | coalesced | [server.go:228](../appserver/server.go#L228), `envelope`, emits optional scopes. Generated `WireEnvelope.init(from:)` maps absent/null to nil; empty scopes grant no private permission. |
 | ErrorContext.StoreEpoch | coalesced | [server.go:213](../appserver/server.go#L213), `errorMessage`; generated `WireErrorContext` returns nil for absent/null. Delivery observes a floor only with both epoch and generation. |
 | ErrorContext.ConsentGeneration | coalesced | Same error and delivery path: absent/null cannot advance the floor. |
@@ -59,9 +70,13 @@ containers and failure ID retain their required-key checks.
 | ConsentScope.Disabled | coalesced | Same facts producer; generated `disabledReason` absent/null both yield no disabled reason. Unknown display reasons retain the existing tolerant behavior. |
 | ConsentReceipt.CommittedGeneration | coalesced | [shared_backend.go:248](../appserver/shared_backend.go#L248), `Grant`, emits the committed generation or null. `WireConsentReceipt`/Delivery require a generation for committed receipts; absent/null both fail that contextual check, and neither creates a fabricated generation. |
 | ConsentReceipt.CleanupPending | coalesced | Same grant producer; `WireConsentReceipt` returns nil for absent/null, with no pending cleanup entries. |
+| Diagnostics.RefreshDecisions | forbidden | Omission means capability not negotiated; null or malformed data is rejected. |
 | Diagnostics.LastErrorClass | coalesced | [server.go:368](../appserver/server.go#L368), diagnostics reply; `WireDiagnostics` absent/null both mean no last-error class. |
 | ScopeDiag.LastRead | coalesced | [shared_backend.go:191](../appserver/shared_backend.go#L191), diagnostics projection; `WireScopeDiag` absent/null both yield no timestamp. |
 | ScopeDiag.NextDueAt | coalesced | Same projection/decoder: absent/null both yield no scheduled timestamp. |
+| RefreshRequestParams.Member | forbidden | Omission selects the legacy scopes form; null is rejected. |
+| MemberRefreshResult.NotBefore | forbidden | Omission means no trustworthy deadline; null is rejected. |
+| MemberRefreshResult.Reason | forbidden | Omission means a started result; null is rejected. |
 | RefreshScheduled.DisabledReason | coalesced | [refresh.go:114](../appserver/refresh.go#L114), `Request`, attaches a reason only for deferral. `WireRefreshScheduled` absent/null both yield no reason. |
 | HistoryItem.Model | coalesced | [queries/history.go:155](../appserver/queries/history.go#L155), page construction; generated `WireHistoryItem` absent/null mean unknown model, never a manufactured model label. |
 | HistoryItem.Tokens | coalesced | Same page/decoder: absent/null are unavailable, not numeric zero. |
@@ -82,6 +97,11 @@ containers and failure ID retain their required-key checks.
 | rows.Row.ExpiresAt | coalesced | Same projection/decoder: absent/null both have no expiry. |
 | rows.Row.StateAfterExpiry | coalesced | Same projection/decoder: absent/null both have no expiry-state override. |
 | rows.ExpiryState.NextStep | coalesced | [build.go:304](../rows/build.go#L304), expiry-latch projection; `RowsExpiryState` absent/null both have no post-expiry action. |
+| rows.ResetEvent.Confirms | coalesced | An absent or null confirmation reference yields no reference; the producer drops confirmations without an eligible reference. |
+| rows.ResetEvent.PlanIDs | coalesced | Absent/null both mean no published structured plan links; no plan is inferred. |
+| rows.ResetEvent.Schedule | coalesced | Absent/null both mean no published schedule. |
+| rows.ResetSource.Links | coalesced | Absent/null both mean no typed source links; only policy-admitted links are published, and a failing candidate is omitted without dropping the event. |
+| rows.ResetSource.URL | coalesced | Absent/null both mean no source link; only producer-approved links can be emitted. |
 | rows.Account.SubscriptionRef | coalesced | [values.go:56](../rows/values.go#L56), `buildAccounts`; `RowsAccount` absent/null both have no subscription reference; present references still validate. |
 | rows.Account.AccountLocator | coalesced | Same projection/decoder: absent/null both have no account locator; present locators still validate. |
 | rows.Account.Credits | coalesced | Same projection/decoder: absent/null both have no credit reading. |
@@ -90,12 +110,17 @@ containers and failure ID retain their required-key checks.
 | rows.Account.LastFailure | coalesced | Same projection/decoder: absent/null both have no recorded failure. |
 | rows.Plan.Name | coalesced | [catalogue.go:81](../rows/catalogue.go#L81), `planValue`; `RowsPlan` absent/null both have no plan name. |
 | rows.Credits.Balance | coalesced | [values.go:77](../rows/values.go#L77), credit projection; `RowsCredits` absent/null both have unavailable balance, not zero. |
+| rows.Row.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the budget deadline is unknown. |
+| rows.Account.RefreshNotBefore | coalesced | Omitted when the capability or live grant is absent; null means the member deadline is unknown. |
+| rows.Window.Source | forbidden | Omission means provenance unavailable; null or malformed data is rejected. |
+| rows.Window.ModelScope | forbidden | Omission means plan-wide; explicit null or a malformed object is rejected rather than interpreted as plan-wide. |
 | rows.Window.DurationSeconds | coalesced | [values.go:160](../rows/values.go#L160), `buildWindows`; `RowsWindow` absent/null both have no duration. |
 | rows.Window.RemainingPercent | coalesced | Same projection/decoder: absent/null both are unavailable, not zero percent. |
 | rows.Window.ResetsAt | coalesced | Same projection/decoder: absent/null both have no reset timestamp. |
 | rows.Window.ObservedAt | coalesced | Same projection/decoder: absent/null both have no observation timestamp. |
 | rows.Window.ValidUntil | coalesced | Same projection/decoder: absent/null both have no validity deadline. |
 | rows.RowsSummary.NextStep | coalesced | [build.go:435](../rows/build.go#L435), `summary`; `RowsRowsSummary` absent/null both have no summary action. |
+| RowsProjection.ResetEvents | forbidden | Omission means the source is unavailable; an empty array is known empty. Explicit null or a malformed array is rejected. |
 
 The output DTO implementations are generated together in
 [Generated.swift](../../../clients/swift/ModelPlanWire/Sources/ModelPlanWire/Generated.swift).
@@ -107,3 +132,6 @@ rows become safe placeholders and cannot retain accounts or private optional dat
 No additional null/absence state mismatch was found in the remaining output
 consumers. This inventory is a source-backed audit, not a claim that a type-only
 encoder probe can prove handler semantics for future fields.
+
+| ResetCards.Count | coalesced | Null represents an unknown count; the key remains required. |
+| ResetCardItem.ExpiresAt | coalesced | Null represents no known expiry; it does not invent a deadline. |

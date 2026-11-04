@@ -10,8 +10,8 @@ D=load('drive-scenario');E=load('export-native');I=load('check_inputs')
 class Drive(unittest.TestCase):
  def test_shared_setup_failure_omits_user_home_paths_and_subprocess_arguments(self):
   errors=[FileNotFoundError(2,'missing','/Users/synthetic-owner/private/binary'),
-          subprocess.TimeoutExpired(['/home/synthetic-owner/private/binary','private-argument'],5),
-          subprocess.CalledProcessError(1,['/home/synthetic-owner/private/binary'],output='private-output')]
+          subprocess.TimeoutExpired(['/synthetic-owner-home/private/binary','private-argument'],5),
+          subprocess.CalledProcessError(1,['/synthetic-owner-home/private/binary'],output='private-output')]
   for error in errors:
    with self.subTest(error=type(error).__name__),tempfile.TemporaryDirectory() as d:
     root=Path(d);out=root/'batch'

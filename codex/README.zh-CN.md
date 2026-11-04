@@ -63,9 +63,11 @@ codex plugin add modelplan-codex@modelplan
 
 **插件配套的 CLI。** 插件在 `cli-pin.json` 里锁定一个 `modelplan` CLI 版本，写明它的版本号和各个 macOS、Linux 程序包的 SHA-256。Codex 启动插件时，插件的服务会在后台从 GitHub 下载这个版本，放到 `~/.cache/modelplan-cli/<版本>`，只有校验值和插件里写的完全一致才使用。所以安装或升级插件就够了，不需要另外安装或升级 CLI。不改其他任何东西：不改 PATH、配置文件，也不用 sudo；你自己装的 `modelplan`（给终端用的）保持不动，只在配套的那份还没下载好时临时使用。`MODELPLAN_PLUGIN_CLI=off` 可关闭自动下载。
 
-**开启主动提醒。** 主动提醒需要插件配套的 CLI，以及插件唯一的钩子（Codex 只在你允许后运行）。看板的 NOW 面板只列出没就绪的部分，每项一行：CLI 正在下载、下载失败（附原因和 **重试**），或者暂时在用你自己装的旧版本；钩子在本机还没运行过；钩子定义变了、新定义还没运行（Codex 会跳过有变化的钩子，直到你重新审核；正在进行的对话里没有提示）；或者上一次运行没能算出提醒（附退出码、错误和最近一次成功时间）。插件看不到钩子是否已授权，所以面板只说钩子最近一次在本机（任一对话）什么时候运行、结果如何，不会写“已授权”。全部正常时只显示一行：设置完整、提醒计算正常，以及当前有没有要提醒的事。也可以直接让 Codex “检查 ModelPlan 设置”（`setup` 技能）。
+**开启主动提醒。** 主动提醒需要插件配套的 CLI，以及插件的提示钩子（Codex 只在你允许后运行）。看板的 NOW 面板只列出没就绪的部分，每项一行：CLI 正在下载、下载失败（附原因和 **重试**），或者暂时在用你自己装的旧版本；钩子在本机还没运行过；钩子定义变了、新定义还没运行（Codex 会跳过有变化的钩子，直到你重新审核；正在进行的对话里没有提示）；或者上一次运行没能算出提醒（附退出码、错误和最近一次成功时间）。插件看不到钩子是否已授权，所以面板只说钩子最近一次在本机（任一对话）什么时候运行、结果如何，不会写“已授权”。全部正常时只显示一行：设置完整、提醒计算正常，以及当前有没有要提醒的事。也可以直接让 Codex “检查 ModelPlan 设置”（`setup` 技能）。
 
-**关于这个钩子。** Codex 的钩子审核里它显示为 `UserPromptSubmit · Hook 1`，来源 `Plugin - modelplan-codex@modelplan`，命令 `sh "$PLUGIN_ROOT/hooks/modelplan-quota-hints.sh"`，超时 5 秒；Codex 0.157 不显示别的名称（`statusMessage` 只在运行时显示）。每次提交提示时，有新的额度提醒就显示给你（钩子的提示消息，不进 Codex 的上下文）；对话的第一条提示给 Codex 一份任务开始简报（`modelplan advise --hook codex`）。配套的 CLI 还没下载好时它什么都不说；如果下载失败，会说明原因，每周最多一次；CLI 第一次就绪时说一声。钩子本身不下载任何东西（由插件的服务下载），只写 `~/.cache/modelplan-codex`，也不改任何设置。允许方法：桌面端点输入框旁带黄点的钩子图标，确认来源是 `modelplan-codex` 后允许；CLI 里用 `/hooks`。从下一条提示开始生效，正在进行的对话也一样。提醒只随提示到达：一轮很长的任务进行中不会有新提醒，要等你的下一条消息；插件不声称持续监控。
+**关于这个钩子。** Codex 的钩子审核里它显示为 `UserPromptSubmit · Hook 1`，来源 `Plugin - modelplan-codex@modelplan`，命令 `sh "$PLUGIN_ROOT/hooks/modelplan-quota-hints.sh"`，超时 5 秒；Codex 0.157 不显示别的名称（`statusMessage` 只在运行时显示）。每次提交提示时，有新的额度提醒就显示给你（钩子的提示消息，不进 Codex 的上下文）；对话的第一条提示给 Codex 一份任务开始简报（`modelplan advise --hook codex`）。配套的 CLI 还没下载好时它什么都不说；如果下载失败，会说明原因，每周最多一次；CLI 第一次就绪时说一声。钩子本身不下载任何东西（由插件的服务下载），只写 `~/.cache/modelplan-codex`，也不改任何设置。允许方法：桌面端点输入框旁带黄点的钩子图标，确认来源是 `modelplan-codex` 后允许；CLI 里用 `/hooks`。从下一条提示开始生效，正在进行的对话也一样。提醒只随提示到达：一轮很长的任务进行中不会有新提醒，要等你的下一条消息；插件不声称持续监控。额度偏低时，Codex 每个窗口周期还会收到事实一行：剩 20%、10%、5% 时，以及按最近的用量（每周窗口看最近一天，5 小时窗口看最近几十分钟）会在重置前用完时；只有当前档位高于 ★ 才附带降到 ★ 的建议，否则只在有能力相当、更省额度的其他模型时附上它。窗口快重置、还剩很多时也给一行。
+
+**第二个钩子（可选）。** `SessionStart · Hook 2`，matcher 为 `compact|resume`，命令 `sh "$PLUGIN_ROOT/hooks/session-start.sh"`：Codex 压缩或恢复对话后，把这个对话收到过、现在仍然成立的额度偏低那一行按当前数字重新交给 Codex。不下载、不记录、不改设置。不允许它也不影响其他功能，只是压缩后的对话会少这一行。
 
 插件已自带三个 Skill：`model-dashboard`（看板、模型与档位比较）、`model-plan`（结合任务、公开数据和本机额度给建议）和 `setup`（首次检查），不需要再单独安装同一份 Skill。想在终端里用 CLI，仍可用 `curl -fsSL https://raw.githubusercontent.com/modelplan/modelplan/main/install.sh | sh` 自己安装；插件不需要它。
 

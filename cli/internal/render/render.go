@@ -50,14 +50,14 @@ func (s Style) c(code, v string) string {
 // Text holds every user-visible string; zh is the default, en mirrors the website's English.
 type Text struct {
 	WhichEngine, AtRec, BaseIs, Ability, Cost, Time, Skip, SkipWhy, Strongest, BestValue, Cheapest,
-	NotBetter, Equivalent, Recommended, AboveRec, Estimated, Stale, NotListed, Syncing, VsRec, Pts, SkipFmt, StepUp string
+	NotBetter, Equivalent, Recommended, AboveRec, Estimated, Provisional, Stale, NotListed, Syncing, VsRec, Pts, SkipFmt, StepUp string
 }
 
 var ZH = Text{
 	WhichEngine: "选哪台", AtRec: "各模型都在 ★推荐档", BaseIs: "成本以 %s 为 ×1",
 	Ability: "能力", Cost: "成本", Time: "耗时", Skip: "跳过", SkipWhy: "又贵又不更强",
 	Strongest: "最强", BestValue: "最划算", Cheapest: "最省", NotBetter: "不如 %s", Equivalent: "≈ %s 但更贵",
-	Recommended: "推荐", AboveRec: "超推荐", Estimated: "估算", Stale: "数据过期", NotListed: "未核对型号",
+	Recommended: "推荐", AboveRec: "超推荐", Estimated: "估算", Provisional: "暂定", Stale: "数据过期", NotListed: "未核对型号",
 	Syncing: "正在同步数据…", VsRec: "相对 ★推荐", Pts: "分", SkipFmt: "%s：%s（%s）", StepUp: "↑ 比低一档",
 }
 
@@ -65,7 +65,7 @@ var EN = Text{
 	WhichEngine: "Which engine", AtRec: "every model at its ★ recommended effort", BaseIs: "cost relative to %s = ×1",
 	Ability: "ability", Cost: "cost", Time: "time", Skip: "Skip", SkipWhy: "costs more, not stronger",
 	Strongest: "strongest", BestValue: "best value", Cheapest: "cheapest", NotBetter: "not better than %s", Equivalent: "≈ %s, costs more",
-	Recommended: "recommended", AboveRec: "above rec.", Estimated: "estimate", Stale: "stale data", NotListed: "id not reviewed",
+	Recommended: "recommended", AboveRec: "above rec.", Estimated: "estimate", Provisional: "provisional", Stale: "stale data", NotListed: "id not reviewed",
 	Syncing: "syncing data…", VsRec: "vs ★", Pts: "pts", SkipFmt: "%s: %s (%s)", StepUp: "↑ vs one below",
 }
 
@@ -222,7 +222,7 @@ func (s Style) Effort(w io.Writer, m *digest.Model) {
 			lever = s.c(cost, "┆")
 		}
 		fmt.Fprintf(w, "  %s %s  %s %s  %s %s  %s %s  %s\n", lever, label,
-			s.c(dim, s.T.Ability), s.c(hi, pad(num(e.Ability, rec, true, s.T.Pts), 14)),
+			s.c(dim, s.T.Ability), s.c(hi, pad(abilityOf(e, rec, s.T), 14)),
 			s.c(dim, s.T.Cost), s.c(cost, pad(num(e.Cost, rec, false, ""), 7)),
 			s.c(dim, s.T.Time), s.c(tcyan, pad(timeOf(e, rec, s.T.Estimated), 6)),
 			s.c(dim, step(m.Efforts, i, s.T.Pts)))
@@ -269,6 +269,16 @@ func num(v *float64, rec *digest.Effort, ability bool, pts string) string {
 		return "—"
 	}
 	return X(*v / *rec.Cost)
+}
+
+// abilityOf is num for an effort's ability, marked when the producer published it as provisional:
+// valid within this model's ladder, not across models.
+func abilityOf(e, rec *digest.Effort, t Text) string {
+	s := num(e.Ability, rec, true, t.Pts)
+	if e.Provisional && e.Ability != nil {
+		s += " " + t.Provisional
+	}
+	return s
 }
 
 func timeOf(e, rec *digest.Effort, est string) string {

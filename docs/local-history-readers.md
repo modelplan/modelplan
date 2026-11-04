@@ -14,6 +14,10 @@ compiled roots, the existing installation key, and generation-fenced publication
 See the [production admission audit](production-reader-admission.md) for all paths
 and the separate Gemini/Qwen display source.
 
+The additional [C15 OpenCode V2 seam](readers/opencode-v2.md) is default off and
+excluded from the v1 production inventory. It reads only the native V2 SQLite
+metadata projection after explicit consent.
+
 ## Sources and limits
 
 The caller supplies the selected store root; these are relative record paths,

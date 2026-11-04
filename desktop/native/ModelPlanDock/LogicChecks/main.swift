@@ -164,10 +164,11 @@ do {
         s.cards=[DockResetCardSignal(id:"card",expiresAt:now.addingTimeInterval(3600))];s.reset=reset()
         s.forecast=DockForecastSignal(windowID:"5h",validUntil:now.addingTimeInterval(600))
         try expect(DockNoticeProjection.candidates(for:s,at:now).map(\.key.kind)==[.forecast,.resetAnnounced,.cardsExpiring,.credits],"priority order")
-        s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
+        s.forecast=nil;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"card expiry precedes announced reset")
+        let cards=s.cards;s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.shape == .hollow,"announced hollow blue")
         s.reset=reset(confirmed:true);let confirmed=DockNoticeProjection.selected(for:s,at:now)
         try expect(confirmed?.tone == .blue && confirmed?.shape == .solid,"confirmed solid blue, never credits white")
-        s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
+        s.cards=cards;s.reset?.restartedReading=true;try expect(DockNoticeProjection.selected(for:s,at:now)?.key.kind == .cardsExpiring,"reading clears confirmed reset only")
         s.cards=[];try expect(DockNoticeProjection.selected(for:s,at:now)?.tone == .white,"credits are white")
         s.creditsKnown=false;try expect(DockNoticeProjection.selected(for:s,at:now)==nil,"unknown credits not fabricated")
     }
@@ -278,11 +279,17 @@ do {
         let week=DockQuotaWindowInput(id:"week",period:.week,label:"Weekly",remainingPercent:20,resetsAt:now.addingTimeInterval(302400),durationSeconds:604800)
         var input=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[week,five]);input.dataState = .fresh
         var result=try DockInstrumentProjection.evaluate(input,now:now)
-        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","fixed period order, not remaining order")
+        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","shortest outer, weekly inner")
         try expect(result.readout=="20%" && result.selectedWindowID=="week" && result.litTimePoints(positions:37)==19,"selected tightest quota, clock actual time")
         input.selectedWindowID="5h";input.showUsedPercent=true;result=try DockInstrumentProjection.evaluate(input,now:now)
         try expect(result.readout=="20%" && result.status == .normal && result.litTimePoints(positions:37)==15,"used display does not invert status or clock")
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="week","pin never swaps quota rings")
+        input.windows=[week]; result=try DockInstrumentProjection.evaluate(input,now:now)
+        try expect(result.outer?.windowID=="week" && result.inner==nil,"one weekly window uses the outer ring only")
+        let day=DockQuotaWindowInput(id:"day",period:.day,label:"Day",remainingPercent:50,resetsAt:nil,durationSeconds:nil)
+        let month=DockQuotaWindowInput(id:"month",period:.month,label:"Month",remainingPercent:30,resetsAt:nil,durationSeconds:nil)
+        input.windows=[month,day,five];result=try DockInstrumentProjection.evaluate(input,now:now)
+        try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="month","when weekly is absent the inner ring uses the longest remaining window")
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
         for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.critical),(25.0,.critical),(25.01,.warning),(40.0,.warning),(41.0,.normal)] {
@@ -310,7 +317,7 @@ do {
                     input.showUsedPercent = used
                     let reading = try DockInstrumentProjection.evaluate(input,now:now,redBelow:threshold)
                     let expected:DockQuotaStatus = remaining <= threshold ? .critical:.warning
-                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold")
+                    try expect(reading.status == expected && reading.outer?.status == expected,"readout mode never changes inclusive remaining threshold on the five-hour outer ring")
                 }
             }
         }

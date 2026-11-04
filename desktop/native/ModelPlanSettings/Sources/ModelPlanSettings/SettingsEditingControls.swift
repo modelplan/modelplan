@@ -116,14 +116,15 @@ import AppKit
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     func configure(chord: ShortcutChord, language: SettingsLanguage) {
         self.chord = chord; self.language = language
-        if !recording { title = Self.label(chord) }
+        if !recording { title = Self.label(chord, language: language) }
         setAccessibilityLabel(settingKey == .openShortcut
-            ? (language == .english ? "Open cockpit shortcut" : "开舱快捷键")
+            ? (language == .english ? "Open cockpit shortcut" : "打开驾驶舱快捷键")
             : (language == .english ? "Toggle dock shortcut" : "显示隐藏挂件快捷键"))
-        setAccessibilityValueDescription(Self.label(chord))
+        setAccessibilityValueDescription(Self.label(chord, language: language))
         setAccessibilityHelp(language == .english ? "Press to record a shortcut. Escape cancels." : "按下以录制快捷键；Escape 取消。")
     }
-    static func label(_ chord: ShortcutChord) -> String {
+    static func label(_ chord: ShortcutChord, language: SettingsLanguage = .english) -> String {
+        if chord.isUnassigned { return language == .english ? "Not assigned" : "未设置" }
         let symbols: [(ShortcutChord.Modifier, String)] = [(.control,"⌃"),(.option,"⌥"),(.shift,"⇧"),(.command,"⌘")]
         return symbols.filter { chord.modifiers.contains($0.0) }.map(\.1).joined() + chord.key
     }
@@ -136,7 +137,7 @@ import AppKit
         guard recording, isEnabled, !isRetired, !repeated else { return false }
         let candidate = ShortcutChord(key.uppercased(), modifiers: modifiers)
         guard candidate.isValid else { return false }
-        recording = false; title = Self.label(chord); onRecord?(self, candidate); return true
+        recording = false; title = Self.label(chord, language: language); onRecord?(self, candidate); return true
     }
     private func handle(_ event: NSEvent) -> Bool {
         guard recording, !isRetired else { return false }
@@ -153,7 +154,7 @@ import AppKit
         guard window?.firstResponder === self, recording else { return super.performKeyEquivalent(with: event) }
         return handle(event)
     }
-    private func cancelRecording() { recording = false; title = Self.label(chord) }
+    private func cancelRecording() { recording = false; title = Self.label(chord, language: language) }
     override func resignFirstResponder() -> Bool { cancelRecording(); return super.resignFirstResponder() }
     override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
         guard !isRetired, isEnabled else { return false }; return super.sendAction(action, to: target)

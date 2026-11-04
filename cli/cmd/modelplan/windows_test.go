@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/modelplan/modelplan/cli/internal/advise"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -55,6 +56,15 @@ func TestWindowsIsCacheOnlyPublicAndFiltersFlags(t *testing.T) {
 	code, out, err := commandRun("windows", "--provider", "test", "--plan", "test-pro", "--model", "z-model", "--json")
 	if code != 0 || err != "" || !strings.Contains(out, `"multiplier": 2`) || strings.Contains(out, "personal") {
 		t.Fatalf("exit=%d out=%s err=%s", code, out, err)
+	}
+	var view struct {
+		Groups []advise.WindowGroup `json:"groups"`
+	}
+	if parseErr := json.Unmarshal([]byte(out), &view); parseErr != nil {
+		t.Fatal(parseErr)
+	}
+	if len(view.Groups) != 1 || len(view.Groups[0].Series) != 1 || view.Groups[0].Series[0].Next == nil || view.Groups[0].Series[0].Next.Multiplier == nil || *view.Groups[0].Series[0].Next.Multiplier != 1 || view.Groups[0].Series[0].Next.Status != "TENTATIVE" {
+		t.Fatal("next field missing from real windows JSON", out)
 	}
 	if len(*hits) != initialHits || !reflect.DeepEqual(beforeCache, tree(t, cache)) || !reflect.DeepEqual(beforeHome, tree(t, os.Getenv("HOME"))) {
 		t.Fatal("windows performed network/write work")

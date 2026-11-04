@@ -1,0 +1,63 @@
+name: U11 native cockpit
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/ModelPlanAppIntegration/**'
+      - 'desktop/native/verification/**'
+      - 'clients/swift/ModelPlanEngineClient/**'
+      - 'clients/swift/ModelPlanWire/**'
+      - '.github/workflows/u11-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/ModelPlanCockpitWeb/**'
+      - 'desktop/native/ModelPlanAppIntegration/**'
+      - 'desktop/native/verification/**'
+      - 'clients/swift/ModelPlanEngineClient/**'
+      - 'clients/swift/ModelPlanWire/**'
+      - '.github/workflows/u11-native.yml'
+permissions:
+  contents: read
+concurrency:
+  group: u11-native-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Canonical web/native pin regression (no GUI)
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm test --prefix desktop/cockpit
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
+      - name: Build the actual public CLI
+        working-directory: cli
+        run: |
+          mkdir -p ../.tmp
+          go build -o ../.tmp/u11-cli ./cmd/modelplan
+      - name: Native protocol, bundle and actual EngineClient regressions (no GUI)
+        env:
+          MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
+        run: swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-native-build --jobs 2
+      - name: Compile production without test SPI
+        run: swift build --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-release-build --configuration release --jobs 2
+      - name: Compile wired verification host (not execution)
+        run: swift build --package-path desktop/native/verification --scratch-path .tmp/u11-host-build --jobs 2 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI
+      - name: Compile actual product and guard its Dock/menu cockpit action (no windows)
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 --filter CommunityCockpitEntryTests
+      - name: Public numerical receipt privacy
+        run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_public_receipts.py'
+      - name: Source policy
+        run: node scripts/check-source-policy.mjs

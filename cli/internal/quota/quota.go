@@ -13,7 +13,10 @@ import (
 	"encoding/json"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"math"
+	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,6 +53,11 @@ func (w *Window) evalRequests(now time.Time) {
 }
 
 type Window struct {
+	Origin string `json:"-"`
+	// ModelIDs records explicit provider scope; nil means plan-wide.
+	ModelIDs []string `json:"modelIds,omitempty"`
+	// ScopeKnown distinguishes fresh plan-wide windows from older cached records.
+	ScopeKnown    bool       `json:"scopeKnown,omitempty"`
 	Kind          string     `json:"kind"` // five_hour | weekly | monthly | spend | unknown
 	Limit         string     `json:"limit,omitempty"`
 	UsedPercent   *float64   `json:"usedPercent"`
@@ -79,6 +87,14 @@ type Window struct {
 	observedUsedPercent *float64 // retained only in memory for clock-independent snapshot revisions
 	observedUsedUSD     *float64
 	recent              []Sample // earlier readings of this window in its current cycle, oldest first
+}
+
+// MarshalJSON protects all quota JSON and cache output, including legacy
+// cached values written before provider identifiers were normalized.
+func (w Window) MarshalJSON() ([]byte, error) {
+	type windowJSON Window
+	w.ModelIDs = rows.SanitizeModelIDs(w.ModelIDs)
+	return json.Marshal(windowJSON(w))
 }
 
 // Sample is one earlier reading of a window, kept to measure the recent rate of use.
@@ -159,16 +175,17 @@ func creditsFrom(has, unlimited bool, balance json.RawMessage, at time.Time) *Cr
 
 // Account groups the windows one subscription reports; Claude Code and Codex are separate accounts.
 type Account struct {
-	Beta       bool      `json:"beta,omitempty"` // reader has not completed real-account verification
-	Source     string    `json:"source"`         // claude-code | codex | user | codexbar:<provider>
-	Plan       string    `json:"plan,omitempty"`
-	Region     string    `json:"region,omitempty"`
-	Generation string    `json:"generation,omitempty"` // user: the plan's metering generation, as declared
-	ObservedAt time.Time `json:"observedAt"`
-	Stale      bool      `json:"stale"`
-	Harness    *Harness  `json:"harness,omitempty"`
-	Windows    []Window  `json:"windows"`
-	Cards      []Card    `json:"cards,omitempty"`
+	ResetCards *rows.ResetCards `json:"-"`
+	Beta       bool             `json:"beta,omitempty"` // reader has not completed real-account verification
+	Source     string           `json:"source"`         // claude-code | codex | user | codexbar:<provider>
+	Plan       string           `json:"plan,omitempty"`
+	Region     string           `json:"region,omitempty"`
+	Generation string           `json:"generation,omitempty"` // user: the plan's metering generation, as declared
+	ObservedAt time.Time        `json:"observedAt"`
+	Stale      bool             `json:"stale"`
+	Harness    *Harness         `json:"harness,omitempty"`
+	Windows    []Window         `json:"windows"`
+	Cards      []Card           `json:"cards,omitempty"`
 	// Subscription: the account the windows belong to, when a reader saw it (identity.go).
 	Subscription *Binding `json:"subscription,omitempty"`
 	// Credits: the account's usage credits (Codex: bought or granted), which the harness draws on
@@ -182,6 +199,51 @@ type Account struct {
 	// pool of its own, limit "reserve"); "" is the main one. Headroom and Deciding are the pool's.
 	Pool       string             `json:"pool,omitempty"`
 	SharedPool *SharedPoolBinding `json:"sharedPool,omitempty"`
+}
+
+// MarshalJSON also protects Gemini labels in caches written before model IDs
+// were sanitized. Other providers have their own independent label vocabularies.
+func (a Account) MarshalJSON() ([]byte, error) {
+	type accountJSON Account
+	if a.Source == "native:gemini" {
+		a.Windows = append([]Window(nil), a.Windows...)
+		for i := range a.Windows {
+			a.Windows[i].Limit = a.SafeLimit(a.Windows[i].Limit)
+		}
+	}
+	return json.Marshal(accountJSON(a))
+}
+
+// SafeLimit permits only reviewed IDs or the bounded opaque labels generated for
+// fresh Gemini windows. ScopeKnown alone never makes provider text safe to emit.
+func (a Account) SafeLimit(label string) string {
+	if a.Source == "native:gemini" {
+		for _, w := range a.Windows {
+			if w.ScopeKnown && w.Limit == label && opaqueGeminiLimit.MatchString(label) {
+				return label
+			}
+		}
+		return safeGeminiLimit(label)
+	}
+	return label
+}
+
+var opaqueGeminiLimit = regexp.MustCompile(`^unknown-[0-9a-f]{16}( input tokens| output tokens| requests| tokens)?$`)
+
+// Gemini labels consist only of a reviewed model ID and a fixed token suffix.
+func safeGeminiLimit(label string) string {
+	if label == "" {
+		return ""
+	}
+	suffix := ""
+	for _, candidate := range []string{" input tokens", " output tokens", " requests", " tokens"} {
+		if strings.HasSuffix(label, candidate) {
+			suffix = candidate
+			label = strings.TrimSuffix(label, candidate)
+			break
+		}
+	}
+	return rows.SanitizeModelIDs([]string{label})[0] + suffix
 }
 
 // SharedPoolBinding describes eligibility without asserting a cross-tool account
@@ -252,7 +314,7 @@ func Read(p Paths, now time.Time) Report {
 		r.Accounts = append(r.Accounts, a...)
 		r.Sources = append(r.Sources, st)
 	}
-	add(readClaudeCode(p.Cache, p.ClaudeSession))
+	add(readClaudeCode(p.Cache, p.ClaudeSession, now))
 	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
 	if p.CodexHome != "" {
@@ -422,14 +484,7 @@ func recentRate(w *Window, now time.Time) {
 	if rise < recentMinRise || *w.UsedPercent >= 100 || w.ResetsInMinutes == nil {
 		return
 	}
-	// Counted from the latest reading, which may be a few minutes old.
-	out := int(math.Ceil((100-*w.UsedPercent)/rate*60 - now.Sub(w.ObservedAt).Minutes()))
-	if out < 1 {
-		out = 1
-	}
-	if out < *w.ResetsInMinutes {
-		w.RunsOutInMinutes = &out
-	}
+	w.RunsOutInMinutes = projectedRunout(w, rate, now)
 }
 
 // sameCycle: two readings name the same reset, within the jitter of a computed reset time.
@@ -441,9 +496,9 @@ func sameCycle(a, b *time.Time) bool {
 	return d < 2*time.Minute && d > -2*time.Minute
 }
 
-// History is kept for recentKeep, one sample per sampleEvery at most.
+// History keeps a sparse day for the full-day rate and a dense hour for bursts.
 const (
-	recentKeep  = time.Hour
+	recentKeep  = 25 * time.Hour
 	sampleEvery = 2 * time.Minute
 )
 
@@ -457,19 +512,27 @@ func withHistory(w, older Window) Window {
 	return w
 }
 
-// thin: the samples of w's cycle within recentKeep before its reading, oldest first, at most one
-// per sampleEvery.
+// thin keeps this cycle's readings, oldest first: ten minutes apart before
+// the recent hour, two minutes apart within it. History off keeps only the hour.
 func thin(ss []Sample, w Window) []Sample {
+	keep := recentKeep
+	if os.Getenv("MODELPLAN_HISTORY") == "off" {
+		keep = time.Hour
+	}
 	var in []Sample
 	for _, s := range ss {
-		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= recentKeep {
+		if sameCycle(s.ResetsAt, w.ResetsAt) && s.At.Before(w.ObservedAt) && w.ObservedAt.Sub(s.At) <= keep {
 			in = append(in, s)
 		}
 	}
 	sort.SliceStable(in, func(i, j int) bool { return in[i].At.Before(in[j].At) })
 	var out []Sample
 	for _, s := range in {
-		if len(out) == 0 || s.At.Sub(out[len(out)-1].At) >= sampleEvery {
+		spacing := sampleEvery
+		if w.ObservedAt.Sub(s.At) > time.Hour {
+			spacing = 10 * time.Minute
+		}
+		if len(out) == 0 || s.At.Sub(out[len(out)-1].At) >= spacing {
 			out = append(out, s)
 		}
 	}

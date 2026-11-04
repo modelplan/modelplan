@@ -22,10 +22,10 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.Request](), reflect.TypeFor[wire.ErrorContext](), reflect.TypeFor[wire.RPCError](), reflect.TypeFor[wire.Failure](),
 		reflect.TypeFor[wire.InitializeParams](), reflect.TypeFor[wire.InitializeResult](), reflect.TypeFor[wire.Empty](), reflect.TypeFor[wire.CancelParams](),
 		reflect.TypeFor[wire.RowsSnapshot](), reflect.TypeFor[wire.ConsentScope](), reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](),
-		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](),
-		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
+		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshMember](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](), reflect.TypeFor[wire.CockpitDetails](), reflect.TypeFor[wire.CockpitSubscriptionDetails](), reflect.TypeFor[wire.CockpitResetCount](), reflect.TypeFor[wire.CockpitCredits](), reflect.TypeFor[wire.CockpitToday](), reflect.TypeFor[wire.CockpitSession](), reflect.TypeFor[wire.CockpitAlert](),
+		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.RefreshDecision](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
 		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
-		reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
+		reflect.TypeFor[rows.ResetEvent](), reflect.TypeFor[rows.ResetLink](), reflect.TypeFor[rows.ResetSource](), reflect.TypeFor[rows.ResetSchedule](), reflect.TypeFor[rows.ModelScope](), reflect.TypeFor[rows.ResetCards](), reflect.TypeFor[rows.ResetCardItem](), reflect.TypeFor[rows.ResetCardSource](), reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
 	}
 	out := []captureRoot{}
 	for _, t := range roots {
@@ -43,6 +43,40 @@ func captureRoots() []captureRoot {
 	)
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
+	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	if t == reflect.TypeFor[rows.ResetCardItem]() {
+		return reflect.ValueOf(rows.ResetCardItem{ID: strings.Repeat("a", 64), ExpiresAt: &now}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetCardSource]() {
+		return reflect.ValueOf(rows.ResetCardSource{Source: rows.ResetCardCodexAccount, ObservedAt: now}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetCards]() {
+		count := 1
+		return reflect.ValueOf(rows.ResetCards{State: rows.ResetCardComplete, Count: &count, Items: []rows.ResetCardItem{{ID: strings.Repeat("a", 64), ExpiresAt: &now}}, EarliestExpiresAt: &now, Sources: []rows.ResetCardSource{{Source: rows.ResetCardCodexAccount, ObservedAt: now}}}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetSource]() {
+		return reflect.ValueOf(rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset"}}}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetSchedule]() {
+		return reflect.ValueOf(rows.ResetSchedule{Precision: "window", From: now.Add(time.Hour), Through: now.Add(3 * time.Hour)}), nil
+	}
+	if t == reflect.TypeFor[rows.ResetEvent]() {
+		return reflect.ValueOf(rows.ResetEvent{Version: 1, ID: "synthetic-reset", Provider: "openai", RowID: "codex", Status: "announced", PublishedAt: now, ExpiresAt: now.Add(48 * time.Hour), Source: rows.ResetSource{Kind: "publication", PublicationID: "0123456789abcdef01234567", Links: []rows.ResetLink{{Type: "aihot", URL: "https://aihot.news/codex-reset"}}}}), nil
+	}
+
+	if t == reflect.TypeFor[wire.RefreshMember]() {
+		return reflect.ValueOf(wire.RefreshMember{RowID: "codex", Route: rows.RouteRuntimeRPC, SubscriptionRef: "0123456789abcdef"}), nil
+	}
+	if t == reflect.TypeFor[wire.RefreshRequestParams]() {
+		return reflect.ValueOf(wire.RefreshRequestParams{Member: &wire.RefreshMember{RowID: "codex", Route: rows.RouteRuntimeRPC, SubscriptionRef: "0123456789abcdef"}}), nil
+	}
+	if t == reflect.TypeFor[wire.MemberRefreshResult]() {
+		at, reason := now.Add(time.Minute), wire.MemberRefreshFloor
+		return reflect.ValueOf(wire.MemberRefreshResult{Outcome: wire.MemberRefreshDeferred, NotBefore: &at, Reason: &reason}), nil
+	}
+	if t == reflect.TypeFor[rows.ModelScope]() {
+		return reflect.ValueOf(rows.ModelScope{Models: []string{"opus"}}), nil
+	}
 	if t == reflect.TypeFor[wire.PluginInstallResult]() {
 		return reflect.ValueOf(wire.PluginInstallResult{SchemaVersion: 1, Tool: wire.PluginCodex,
 			Status: wire.PluginPlanned, Commands: [][]string{{"codex", "plugin", "marketplace", "add", "modelplan/modelplan"}, {"codex", "plugin", "add", "modelplan-codex@modelplan"}},
@@ -93,7 +127,7 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 				s = "e-synthetic"
 			case "Scope":
 				s = "codex.runtime_usage"
-			case "SubscriptionRef", "AccountLocator":
+			case "SubscriptionRef", "AccountLocator", "SessionRef":
 				s = "0123456789abcdef"
 			case "AccessToken":
 				s = "TOKEN-CANARY-U4"
@@ -107,7 +141,11 @@ func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	case reflect.Bool:
 		v.SetBool(false)
 	case reflect.Int, reflect.Int64:
-		v.SetInt(1)
+		if name == "RedBelow" {
+			v.SetInt(25)
+		} else {
+			v.SetInt(1)
+		}
 	case reflect.Uint64:
 		v.SetUint(7)
 	case reflect.Float64:

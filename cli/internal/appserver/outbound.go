@@ -16,7 +16,7 @@ type message struct {
 	stamp   Stamp
 	private bool
 	after   func()
-	stale   func()
+	stale   func(error)
 }
 
 type outbound struct {
@@ -31,10 +31,10 @@ type outbound struct {
 	stop         context.CancelFunc
 	writer       io.WriteCloser
 	timeout      time.Duration
-	current      func(Stamp) bool
+	current      func(Stamp) error
 }
 
-func newOutbound(ctx context.Context, stop context.CancelFunc, w io.WriteCloser, timeout time.Duration, current func(Stamp) bool) *outbound {
+func newOutbound(ctx context.Context, stop context.CancelFunc, w io.WriteCloser, timeout time.Duration, current func(Stamp) error) *outbound {
 	return &outbound{ctx: ctx, stop: stop, writer: w, timeout: timeout, wake: make(chan struct{}, 1), current: current}
 }
 func (o *outbound) signal() {
@@ -81,7 +81,7 @@ func (o *outbound) controlThen(value any, after func()) bool {
 	o.signal()
 	return true
 }
-func (o *outbound) dataMessage(value any, stamp Stamp, private bool, stale func()) bool {
+func (o *outbound) dataMessage(value any, stamp Stamp, private bool, stale func(error)) bool {
 	m, err := encode(value, stamp, private)
 	m.stale = stale
 	o.mu.Lock()
@@ -97,12 +97,13 @@ func (o *outbound) dataMessage(value any, stamp Stamp, private bool, stale func(
 	o.signal()
 	return true
 }
-func (o *outbound) rowsMessage(value any, stamp Stamp) {
+func (o *outbound) rowsMessage(value any, stamp Stamp, stale func(error)) {
 	m, err := encode(value, stamp, true)
 	if err != nil {
 		o.stop()
 		return
 	}
+	m.stale = stale
 	o.mu.Lock()
 	o.latest = &m
 	o.mu.Unlock()
@@ -146,11 +147,13 @@ func (o *outbound) run(done chan<- struct{}) {
 				continue
 			}
 		}
-		if m.private && !o.current(m.stamp) {
-			if m.stale != nil {
-				m.stale()
+		if m.private {
+			if err := o.current(m.stamp); err != nil {
+				if m.stale != nil {
+					m.stale(err)
+				}
+				continue
 			}
-			continue
 		}
 		// Closing our pipe interrupts a blocked write; no goroutine per write leaks.
 		timer := time.AfterFunc(o.timeout, func() { o.stop(); _ = o.writer.Close() })

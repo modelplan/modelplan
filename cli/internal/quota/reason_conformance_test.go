@@ -149,6 +149,108 @@ func TestReaderReasonWriterConformance(t *testing.T) {
 	}
 }
 
+// Exercise HTTP-200 failures through the registered reader, dispatcher, cache
+// and read-back projection. Provider prose never determines the reason code.
+func TestReaderReasonZaiBodyConformance(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"http-auth", `{"code":401,"success":false}`, "http_401"},
+		{"auth", `{"code":1003,"success":false}`, "http_401"},
+		{"denied", `{"code":1220,"success":false}`, "http_403"},
+		{"rate-limit", `{"code":1302,"success":false}`, "http_429"},
+		{"nested-auth", `{"error":{"code":"1001"}}`, "http_401"},
+		{"nested-denied", `{"error":{"code":"1220"}}`, "http_403"},
+		{"nested-rate-limit", `{"error":{"code":"1302"}}`, "http_429"},
+		{"unknown", `{"code":987654,"success":false}`, "other"},
+		{"false-success", `{"code":200,"success":false}`, "other"},
+		{"missing-code", `{}`, "other"},
+		{"bad-schema", `{"code":200,"success":true,"data":{}}`, "schema_changed"},
+		{"bad-json", `{`, "parse_error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateHome(t)
+			defer captureReaderReasonLogs(t)()
+			t.Setenv("MODELPLAN_HISTORY", "off")
+			at, _ := productionLegacyTests["zai"](t)
+			productionConsent(t, "zai", true)
+			previous := nativeClient
+			t.Cleanup(func() { nativeClient = previous })
+			calls := 0
+			nativeClient = &http.Client{Transport: productionTransport(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if req.URL.Host != "api.z.ai" || req.URL.Path != "/api/monitor/usage/quota/limit" {
+					t.Fatal("unexpected fixture request")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tc.body))}, nil
+			})}
+			p := ProductionPaths(t.TempDir(), "1.0.0")
+			for _, now := range []time.Time{at, at.Add(time.Minute)} {
+				if err := RefreshNative(context.Background(), p, now); err != nil {
+					t.Fatal(err)
+				}
+				source := readerFailureSource(t, ReadPermitted(p, now), "zai")
+				if source.Status != "unavailable" || source.ErrorCode != tc.want || source.Reason != tc.want {
+					t.Fatalf("reason = %q, code = %q, status = %q; want %q", source.Reason, source.ErrorCode, source.Status, tc.want)
+				}
+				if err := readerReasonViolation(reasonArtifact{writer: "Z.ai report", value: source}); err != nil {
+					t.Error(err)
+				}
+			}
+			if calls != 1 {
+				t.Fatal("body rejection bypassed failure backoff")
+			}
+			retained, err := os.ReadFile(nativePath(p.Cache))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := readerReasonViolation(reasonArtifact{writer: "Z.ai retained errors", value: retained}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
+func TestReaderReasonCodexBarExitConformance(t *testing.T) {
+	for _, tc := range []struct {
+		code int
+		want string
+	}{
+		{0, "other"}, {1, "other"}, {2, "runtime_missing"}, {3, "parse_error"},
+		{4, "timeout"}, {64, "other"}, {401, "other"}, {403, "other"}, {429, "other"}, {987654, "other"},
+	} {
+		t.Run(fmt.Sprint(tc.code), func(t *testing.T) {
+			isolateHome(t)
+			defer captureReaderReasonLogs(t)()
+			p := cbPaths(t, "zai")
+			raw, _ := json.Marshal([]any{map[string]any{"provider": "zai", "error": map[string]any{
+				"code": tc.code, "kind": "provider", "message": strings.Join(runtimeErrorCanaries, " | "),
+			}}})
+			e := parseCodexBar(raw, "zai", os.Getenv("HOME"), cbNow)
+			if e.Status != "error" || e.ErrorCode != tc.want || e.Error != tc.want {
+				t.Fatalf("entry reason = %q, code = %q; want %q", e.Error, e.ErrorCode, tc.want)
+			}
+			if err := saveCodexBar(p.Cache, &codexbarSnap{SchemaVersion: 1, Status: "ok", ObservedAt: cbNow, Providers: []codexbarEntry{e}}); err != nil {
+				t.Fatal(err)
+			}
+			report := Report{}
+			applyCodexBar(&report, p, cbNow)
+			if len(report.Sources) != 1 || report.Sources[0].Reason != tc.want || report.Sources[0].ErrorCode != tc.want {
+				t.Fatal("CodexBar projection lost error category")
+			}
+			retained, err := os.ReadFile(codexbarPath(p.Cache))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, artifact := range []reasonArtifact{{writer: "CodexBar entry", value: e}, {writer: "CodexBar report", value: report}, {writer: "CodexBar retained errors", value: retained}} {
+				if err := readerReasonViolation(artifact); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+}
+
 // Every registered native HTTP reader must keep the production transport,
 // dispatcher, retained cache and read-back projection in this table. Adding a
 // reader without an error fixture is a failure, not an implicit exemption.

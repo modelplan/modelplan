@@ -62,6 +62,34 @@
         "plan": {
           "$ref": "#/$defs/Plan"
         },
+        "refreshNotBefore": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "route": {
           "enum": [
             "saved_login_api",
@@ -144,9 +172,73 @@
       ],
       "type": "object"
     },
+    "CockpitAlert": {
+      "additionalProperties": false,
+      "properties": {
+        "remainingPercent": {
+          "type": "number"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "windowId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "severity",
+        "remainingPercent"
+      ],
+      "type": "object"
+    },
+    "CockpitCredits": {
+      "additionalProperties": false,
+      "properties": {
+        "balance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "balance",
+        "observedAt"
+      ],
+      "type": "object"
+    },
     "CockpitData": {
       "additionalProperties": false,
       "properties": {
+        "details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitDetails"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projection": {
           "$ref": "#/$defs/RowsProjection"
         },
@@ -194,6 +286,193 @@
       ],
       "type": "object"
     },
+    "CockpitDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "alerts": {
+          "items": {
+            "$ref": "#/$defs/CockpitAlert"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "resetEvents": {
+          "items": {
+            "$ref": "#/$defs/ResetEvent"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sessionCoverage": {
+          "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/CockpitSession"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/CockpitSubscriptionDetails"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "version": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "sources",
+        "subscriptions",
+        "sessions",
+        "sessionCoverage",
+        "resetEvents",
+        "alerts"
+      ],
+      "type": "object"
+    },
+    "CockpitQueryParams": {
+      "additionalProperties": false,
+      "properties": {
+        "redBelow": {
+          "enum": [
+            10,
+            16,
+            20,
+            25
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "CockpitResetCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "CockpitSession": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastObservedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "projectLabel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "anyOf": [
+            {
+              "maxLength": 16,
+              "pattern": "^[a-f0-9]{16}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionRef",
+        "source",
+        "subscriptionRef",
+        "model",
+        "effort",
+        "projectLabel",
+        "lastObservedAt",
+        "state",
+        "rate"
+      ],
+      "type": "object"
+    },
     "CockpitSubscription": {
       "additionalProperties": false,
       "properties": {
@@ -212,6 +491,91 @@
       "required": [
         "subscriptionRef",
         "accounts"
+      ],
+      "type": "object"
+    },
+    "CockpitSubscriptionDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "credits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitCredits"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetCounts": {
+          "items": {
+            "$ref": "#/$defs/CockpitResetCount"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "resetCountsTruncated": {
+          "type": "boolean"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "today": {
+          "items": {
+            "$ref": "#/$defs/CockpitToday"
+          },
+          "maxItems": 4,
+          "type": "array"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "resetCounts",
+        "credits",
+        "today"
+      ],
+      "type": "object"
+    },
+    "CockpitToday": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingBasis": {
+          "type": "string"
+        },
+        "generationTps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "observedOutputTokens",
+        "generationTps",
+        "bindingBasis"
       ],
       "type": "object"
     },
@@ -616,6 +980,20 @@
         },
         "protocolVersion": {
           "type": "string"
+        },
+        "refreshDecisions": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RefreshDecision"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxItems": 20
         },
         "scopes": {
           "items": {
@@ -1116,6 +1494,133 @@
       ],
       "type": "object"
     },
+    "MemberRefreshResult": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "started"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reason"
+                  ]
+                },
+                {
+                  "required": [
+                    "notBefore"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "deferred"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "notBefore": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "started",
+            "deferred"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "floor",
+            "backoff",
+            "budget",
+            "not_granted",
+            "offline"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "MemberRefreshResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/MemberRefreshResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
+    "ModelScope": {
+      "additionalProperties": false,
+      "properties": {
+        "models": {
+          "items": {
+            "enum": [
+              "gemini-2.5-flash",
+              "gemini-2.5-pro",
+              "opus",
+              "sonnet",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "type": "object"
+    },
     "Name": {
       "additionalProperties": false,
       "properties": {
@@ -1508,6 +2013,91 @@
       ],
       "type": "object"
     },
+    "ProposedResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "aihot",
+            "original",
+            "official"
+          ],
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ProposedResetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "precision": {
+          "enum": [
+            "window",
+            "date",
+            "approximate",
+            "deadline"
+          ],
+          "type": "string"
+        },
+        "through": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ],
+      "type": "object"
+    },
+    "ProposedResetSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "publication"
+          ],
+          "type": "string"
+        },
+        "links": {
+          "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
+          "items": {
+            "$ref": "#/$defs/ProposedResetLink"
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "publicationId": {
+          "pattern": "^[a-f0-9]{24}$",
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/%+:-]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "publicationId"
+      ],
+      "type": "object"
+    },
     "PublicationCapability": {
       "additionalProperties": false,
       "properties": {
@@ -1764,9 +2354,113 @@
       ],
       "type": "object"
     },
-    "RefreshRequestParams": {
+    "RefreshDecision": {
       "additionalProperties": false,
       "properties": {
+        "agoSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "not_attempted",
+            "deferred",
+            "failed",
+            "succeeded"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "startup",
+            "wake",
+            "due",
+            "not_granted",
+            "offline",
+            "read_only",
+            "budget",
+            "in_flight",
+            "unavailable",
+            "completed"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "codex.runtime_usage",
+            "codex.local_history",
+            "claude.account_usage.saved_login",
+            "gemini.account_usage.saved_login",
+            "cursor.account_usage.saved_login",
+            "copilot.runtime_usage",
+            "kimi.account_usage.saved_login",
+            "grok.account_usage.saved_login",
+            "kiro.runtime_usage",
+            "antigravity.runtime_usage",
+            "zai.account_usage.api_key",
+            "minimax.account_usage.api_key",
+            "opencodego.account_usage.api_key"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RefreshMember": {
+      "additionalProperties": false,
+      "properties": {
+        "accountLocator": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "saved_login_api",
+            "runtime_rpc",
+            "local_log",
+            "api_key_api",
+            "local_sqlite",
+            "status_line",
+            "browser_session",
+            "manual",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rowId",
+        "route"
+      ],
+      "type": "object"
+    },
+    "RefreshRequestParams": {
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "member",
+          "scopes"
+        ]
+      },
+      "properties": {
+        "member": {
+          "$ref": "#/$defs/RefreshMember"
+        },
         "scopes": {
           "items": {
             "type": "string"
@@ -1884,8 +2578,7 @@
               "const": "cockpit/query"
             },
             "params": {
-              "maxProperties": 0,
-              "type": "object"
+              "$ref": "#/$defs/CockpitQueryParams"
             }
           },
           "required": [
@@ -2171,6 +2864,236 @@
         }
       ]
     },
+    "ResetCardItem": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "ResetCardSource": {
+      "additionalProperties": false,
+      "properties": {
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "ResetCards": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maximum": 10000,
+          "minimum": 0
+        },
+        "earliestExpiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResetCardItem"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/ResetCardSource"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "state": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "count",
+        "truncated",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "ResetEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "confirms": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "type": "string"
+        },
+        "planIds": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,47}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9-]{0,47}$",
+          "type": "string"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "rowId": {
+          "pattern": "^[a-z][a-z0-9-]{0,47}$",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/ProposedResetSchedule"
+        },
+        "source": {
+          "$ref": "#/$defs/ProposedResetSource"
+        },
+        "status": {
+          "enum": [
+            "announced",
+            "confirmed"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "enum": [
+            1
+          ],
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "id",
+        "rowId",
+        "status",
+        "publishedAt",
+        "expiresAt",
+        "source",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "ResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ResetSchedule": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "precision": {
+          "type": "string"
+        },
+        "through": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ],
+      "type": "object"
+    },
+    "ResetSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/ResetLink"
+          },
+          "type": "array"
+        },
+        "publicationId": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "publicationId"
+      ],
+      "type": "object"
+    },
     "Response": {
       "anyOf": [
         {
@@ -2216,6 +3139,9 @@
                 },
                 {
                   "$ref": "#/$defs/PublicationResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/MemberRefreshResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"
@@ -2323,6 +3249,24 @@
         "reason": {
           "$ref": "#/$defs/Reason"
         },
+        "refreshNotBefore": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "state": {
           "enum": [
             "off",
@@ -2390,6 +3334,14 @@
     "RowsProjection": {
       "additionalProperties": false,
       "properties": {
+        "resetEvents": {
+          "items": {
+            "$ref": "#/$defs/ResetEvent"
+          },
+          "maxItems": 64,
+          "type": "array",
+          "uniqueItems": true
+        },
         "rows": {
           "items": {
             "$ref": "#/$defs/Row"
@@ -2644,6 +3596,9 @@
         "limitKey": {
           "type": "string"
         },
+        "modelScope": {
+          "$ref": "#/$defs/ModelScope"
+        },
         "observedAt": {
           "anyOf": [
             {
@@ -2696,6 +3651,23 @@
             "other"
           ],
           "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_history",
+                "runtime",
+                "saved_login",
+                "api_key",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "validUntil": {
           "anyOf": [

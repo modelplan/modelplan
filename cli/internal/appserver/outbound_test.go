@@ -34,13 +34,13 @@ func TestOutboundControlBeforeDataAndRowsCoalesce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w := &recordingWriter{done: make(chan struct{})}
-	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) bool { return true })
+	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) error { return nil })
 	if !o.reserve() {
 		t.Fatal("first slot unavailable")
 	}
 	o.dataMessage("query", Stamp{}, false, nil)
-	o.rowsMessage("old row", Stamp{})
-	o.rowsMessage("latest row", Stamp{})
+	o.rowsMessage("old row", Stamp{}, nil)
+	o.rowsMessage("latest row", Stamp{}, nil)
 	o.controlMessage("revoke receipt")
 	done := make(chan struct{})
 	go o.run(done)
@@ -61,7 +61,7 @@ func TestOutboundControlBeforeDataAndRowsCoalesce(t *testing.T) {
 func TestOutboundDataReservationAndControlCaps(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	o := newOutbound(ctx, cancel, &recordingWriter{}, time.Second, func(Stamp) bool { return true })
+	o := newOutbound(ctx, cancel, &recordingWriter{}, time.Second, func(Stamp) error { return nil })
 	for i := 0; i < wire.MaxDataMessages-1; i++ {
 		if !o.reserve() {
 			t.Fatalf("result slot %d missing", i)
@@ -97,12 +97,12 @@ func TestStaleQueryTurnsIntoErrorAndStaleRowsDrop(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	r, w := io.Pipe()
-	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) bool { return false })
+	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) error { return ProtocolError{wire.CodeConsentChanged} })
 	o.reserve()
-	o.dataMessage("private stale query", Stamp{}, true, func() {
+	o.dataMessage("private stale query", Stamp{}, true, func(_ error) {
 		o.controlMessage(wire.Failure{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`), Error: wire.RPCError{Code: wire.CodeConsentChanged, Message: "consent_changed"}})
 	})
-	o.rowsMessage("private stale row", Stamp{})
+	o.rowsMessage("private stale row", Stamp{}, nil)
 	done := make(chan struct{})
 	go o.run(done)
 	var response wire.Failure
@@ -121,11 +121,11 @@ func TestStaleQueryTurnsIntoErrorAndStaleRowsDrop(t *testing.T) {
 func TestRowsSlotIsIncludedInDataCap(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	o := newOutbound(ctx, cancel, &recordingWriter{}, time.Second, func(Stamp) bool { return true })
+	o := newOutbound(ctx, cancel, &recordingWriter{}, time.Second, func(Stamp) error { return nil })
 	for o.reserve() {
 		o.dataMessage("result", Stamp{}, false, nil)
 	}
-	o.rowsMessage("latest", Stamp{})
+	o.rowsMessage("latest", Stamp{}, nil)
 	o.mu.Lock()
 	count := len(o.data) + o.reserved
 	if o.latest != nil {
@@ -135,4 +135,29 @@ func TestRowsSlotIsIncludedInDataCap(t *testing.T) {
 	if count > wire.MaxDataMessages {
 		t.Fatalf("queued %d data messages, cap %d", count, wire.MaxDataMessages)
 	}
+}
+
+func TestBusyAtFinalFenceReturnsBusyWithoutPrivateData(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r, w := io.Pipe()
+	o := newOutbound(ctx, cancel, w, time.Second, func(Stamp) error { return ProtocolError{wire.CodeBusy} })
+	o.reserve()
+	o.dataMessage("private value", Stamp{}, true, func(err error) {
+		code := errorCode(err)
+		o.controlMessage(wire.Failure{JSONRPC: wire.JSONRPC, ID: json.RawMessage(`7`), Error: wire.RPCError{Code: code, Message: wire.ErrorName(code)}})
+	})
+	done := make(chan struct{})
+	go o.run(done)
+	var response wire.Failure
+	if err := json.NewDecoder(r).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Error.Code != wire.CodeBusy {
+		t.Fatalf("got %d, want busy", response.Error.Code)
+	}
+	cancel()
+	_ = w.Close()
+	_ = r.Close()
+	<-done
 }

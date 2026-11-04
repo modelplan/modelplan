@@ -55,4 +55,14 @@ final class CommunityReaderFactsBindingTests: XCTestCase {
         XCTAssertFalse(CommunityReaderStatusPresentation.menuLines(unknown, english: true).joined().contains(raw))
         XCTAssertFalse(CommunityReaderStatusPresentation.emptyText(unknown, english: false).contains(raw))
     }
+    func testUnknownProviderUsesOneGlossaryReaderName() {
+        let diagnostic = CommunityReaderDiagnostic(providerID: nil, category: .unknown, detection: .unknown,
+            consent: .unknown, freshness: .unknown, beta: nil)
+        let model = CommunityDockSnapshot(inputs: [], readerDiagnostics: [diagnostic])
+        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english: false),
+                       ["读取器: 读取器状态未知。 打开设置检查此工具。"])
+        XCTAssertEqual(CommunityReaderStatusPresentation.menuLines(model, english: true),
+                       ["Reader: Reader status is unknown. Open Settings to check this tool."])
+    }
+
 }

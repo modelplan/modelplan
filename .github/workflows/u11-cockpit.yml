@@ -1,0 +1,69 @@
+name: U11 cockpit web
+on:
+  pull_request:
+    paths:
+      - 'desktop/cockpit/**'
+      - 'desktop/tests/cockpit/**'
+      - 'desktop/official-visuals/**'
+      - 'desktop/third-party/fonts/**'
+      - 'schema/app-cli/**'
+      - 'source-policy.json'
+      - 'scripts/check-source-policy.mjs'
+      - 'scripts/check-visual-pack.mjs'
+      - '.github/workflows/u11-cockpit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/cockpit/**'
+      - 'desktop/tests/cockpit/**'
+      - 'desktop/official-visuals/**'
+      - 'desktop/third-party/fonts/**'
+      - 'schema/app-cli/**'
+      - 'source-policy.json'
+      - 'scripts/check-source-policy.mjs'
+      - 'scripts/check-visual-pack.mjs'
+      - '.github/workflows/u11-cockpit.yml'
+permissions:
+  contents: read
+concurrency:
+  group: u11-cockpit-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+jobs:
+  webkit:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/cockpit/package-lock.json
+      - run: npm ci --prefix desktop/cockpit --ignore-scripts
+      - run: npm run check --prefix desktop/cockpit
+      - run: npm test --prefix desktop/cockpit
+      - name: Install the pinned headless WebKit and system font fallback
+        working-directory: desktop/cockpit
+        run: |
+          npx playwright install --with-deps webkit
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - name: Record exact subject and browser profile
+        run: |
+          mkdir -p .tmp/u11
+          git rev-parse HEAD > .tmp/u11/subject.txt
+          node --version >> .tmp/u11/subject.txt
+          node desktop/cockpit/node_modules/@playwright/test/cli.js --version >> .tmp/u11/subject.txt
+      - name: WebKit lifecycle, callback counts and visual comparisons
+        run: npm run test:webkit --prefix desktop/cockpit
+      - run: node scripts/check-source-policy.mjs
+      - name: Preserve bounded synthetic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u11-webkit-${{ github.sha }}
+          path: |
+            .tmp/u11/
+            desktop/cockpit/.tmp/test-results/
+            desktop/cockpit/.tmp/official/bundle-manifest.json
+            desktop/cockpit/.tmp/official/VISUAL-LICENSE.md
+          retention-days: 14

@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: MIT */
+/* Copyright (c) 2026 ModelPlan. Owner-released G/P6 port; source 1d3f82429f1b853314ee120d4bd0007f84fc051d. */
+:root[data-theme="night"]{
+  --hull-crown:image-set(none 1x,none 2x);
+  --hull-upper:image-set(none 1x,none 2x);
+  --hull-upper-detail:image-set(none 1x,none 2x);
+  --hull-cone:image-set(none 1x,none 2x);
+  --hull-lower:image-set(none 1x,none 2x);
+  --hull-lower-detail:image-set(none 1x,none 2x);
+  --hull-aft:image-set(none 1x,none 2x);
+  --hull-engine-gutter:image-set(none 1x,none 2x);
+  --hull-console-gutter:image-set(none 1x,none 2x);
+  --hull-record-gutter:image-set(none 1x,none 2x);
+  --hull-mouth:image-set(none 1x,none 2x);
+  --hull-compact-crown:image-set(none 1x,none 2x);
+  --hull-record-detail:image-set(none 1x,none 2x);
+  --hull-cone-h:24px;--hull-crown-height:64px;--hull-upper-height:428px;--hull-lower-height:250px;--hull-record-height:94px;
+}
+:root[data-theme="night"][data-cockpit-layout="640"]{
+    --hull-crown:image-set(none 1x,none 2x);
+    --hull-upper:image-set(none 1x,none 2x);
+    --hull-upper-detail:image-set(none 1x,none 2x);
+    --hull-cone:image-set(none 1x,none 2x);
+    --hull-lower:image-set(none 1x,none 2x);
+    --hull-lower-detail:image-set(none 1x,none 2x);
+    --hull-aft:image-set(none 1x,none 2x);
+    --hull-engine-gutter:image-set(none 1x,none 2x);
+    --hull-console-gutter:image-set(none 1x,none 2x);
+    --hull-record-gutter:image-set(none 1x,none 2x);
+    --hull-mouth:image-set(none 1x,none 2x);
+    --hull-record-detail:image-set(none 1x,none 2x);
+    --hull-cone-h:20px;--hull-crown-height:12px;--hull-upper-height:308px;--hull-lower-height:212px;--hull-record-height:58px;
+  }
+.ck-shell :is(.hull-crown,.hull-upper,.hull-cone,.hull-lower,.hull-record){display:none}
+:root[data-theme="night"] .ck-shell{background:none;box-shadow:none;border-radius:0;transition:none;pointer-events:none}
+
+:root[data-theme="night"] .ck-shell::before{inset:0;clip-path:inset(12px 16px 22px);border-radius:0;box-shadow:none;background:radial-gradient(120% 60% at 18% 0,var(--metal-sheen),transparent 60%),linear-gradient(180deg,var(--metal-1),var(--metal-2) 45%,var(--metal-3))}
+:root[data-theme="night"] .ck-booster{display:none}
+:root[data-theme="night"] .ck{--hull-record-span:var(--tape-h);--hull-cap-height:var(--hull-crown-height);--hull-cone-top:calc(100% - var(--console-h) - var(--tape-h) - 35.5px - var(--hull-cone-h) / 2)}
+:root[data-theme="night"] .ck.shut{--hull-cap-height:12px;--hull-record-span:calc(var(--tape-h) + (100% - 120px - var(--eng-h) - var(--console-h) - var(--tape-h)) / 3);--hull-cone-top:calc(84.5px + var(--eng-h) - var(--hull-cone-h) / 2 + (100% - 120px - var(--eng-h) - var(--console-h) - var(--tape-h)) / 3)}
+
+:root[data-theme="night"] .ck-shell :is(.hull-crown,.hull-upper,.hull-cone,.hull-lower,.hull-record){display:block;position:absolute;left:-8px;width:636px;background-repeat:no-repeat;background-position:center top}
+:root[data-theme="night"] .ck-shell .hull-crown{top:0;height:var(--hull-cap-height);background-image:var(--hull-crown);background-size:636px var(--hull-crown-height)}
+:root[data-theme="night"] .ck.shut .hull-crown{background-image:var(--hull-compact-crown);background-size:636px 12px}
+
+:root[data-theme="night"] .ck-shell .hull-upper{top:var(--hull-cap-height);height:calc(var(--hull-cone-top) - var(--hull-cap-height));background-image:var(--hull-upper-detail),var(--hull-upper);background-position:center bottom,center top;background-size:636px var(--hull-upper-height),636px 32px;background-repeat:no-repeat,repeat-y}
+:root[data-theme="night"] .ck-shell .hull-cone{top:var(--hull-cone-top);height:var(--hull-cone-h);background-image:var(--hull-cone);background-size:636px var(--hull-cone-h)}
+:root[data-theme="night"] .ck-shell .hull-lower{top:calc(var(--hull-cone-top) + var(--hull-cone-h));bottom:calc(31px + var(--hull-record-span));background-image:var(--hull-lower-detail),var(--hull-lower);background-position:center bottom,center top;background-size:636px var(--hull-lower-height),636px 32px;background-repeat:no-repeat,repeat-y}
+:root[data-theme="night"] .ck-shell .hull-record{bottom:22px;height:var(--hull-record-span);background-image:var(--hull-record-detail),var(--hull-lower);background-position:center top,center bottom;background-size:636px var(--hull-record-height),636px 32px;background-repeat:no-repeat,repeat-y}
+:root[data-theme="night"] .ck-shell::after{content:"";position:absolute;left:-8px;bottom:0;width:636px;height:22px;background-image:var(--hull-aft);background-position:center;background-size:636px 22px;background-repeat:no-repeat}
+:root[data-theme="night"] :is(.ck-eng,.ck-deck)::before{left:-24px;right:-24px;top:-9px;height:9px;background-size:636px 9px;background-position:center;background-repeat:no-repeat}
+:root[data-theme="night"] .ck-eng::before{background-image:var(--hull-engine-gutter)}
+:root[data-theme="night"] .ck-deck::before{background-image:var(--hull-console-gutter)}
+:root[data-theme="night"] .ck-tape::before{left:-26px;right:-26px;top:-11px;height:9px;background-image:var(--hull-record-gutter);background-size:636px 9px;background-position:center;background-repeat:no-repeat}
+
+:root[data-theme="night"] .bz-line{top:2px;height:6px;border-radius:0;background-color:transparent;background-image:var(--hull-mouth);background-position:center;background-size:81px 6px;background-repeat:no-repeat}
+:root[data-theme="night"] .bz-glow,:root[data-theme="night"] .bz:hover .bz-glow{box-shadow:none}

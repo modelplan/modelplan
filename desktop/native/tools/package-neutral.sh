@@ -8,6 +8,19 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+# U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
+credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
+credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
+credential_tools="$native_root/ModelPlanCredentialAgent/tools"
+# Reject missing or mismatched pins before starting either App compilation.
+if [[ ! "$credential_sha" =~ ^[0-9a-f]{64}$ ]]; then echo 'Invalid credential helper pin' >&2; exit 1; fi
+if [ ! -d "$credential_artifact" ] || [ -L "$credential_artifact" ] || \
+   [ ! -f "$credential_artifact/credential-agent.json" ] || [ -L "$credential_artifact/credential-agent.json" ] || \
+   [ ! -f "$credential_artifact/modelplan-credential-agent" ] || [ -L "$credential_artifact/modelplan-credential-agent" ]; then
+    echo 'Missing or linked credential helper artifact/pin' >&2; exit 1
+fi
+credential_actual=$(shasum -a 256 "$credential_artifact/modelplan-credential-agent" | awk '{print $1}')
+if [ "$credential_actual" != "$credential_sha" ]; then echo 'Credential helper pin mismatch' >&2; exit 1; fi
 case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
@@ -47,6 +60,15 @@ app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 # The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
+cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
+# The Z.ai mark is authorized for beta use only; neutral distribution excludes it.
+mark_bundle="$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle"
+mark_path=$(find "$mark_bundle" -type f -name zai-white.svg -print)
+if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" != 1 ]; then
+    echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
+fi
+rm -- "$mark_path"
 xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
     "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
 xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"
@@ -63,12 +85,17 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
+<key>ModelPlanCockpitEntryEnabled</key><false/>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Intel untested; 3D may stutter.</string>
 </dict></plist>
 PLIST
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
+cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"
+cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
+python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
+    --expected-sha256 "$credential_sha" --universal "$app"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \
@@ -76,4 +103,6 @@ python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_
     --x86-64-input "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan"
 codesign --force --sign - --options runtime "$app"
 codesign --verify --deep --strict "$app"
+python3 "$credential_tools/check_embedded_agent.py" --pin "$credential_artifact/credential-agent.json" \
+    --expected-sha256 "$credential_sha" --single "$app"
 printf '%s\n' "$app"

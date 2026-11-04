@@ -1,4 +1,10 @@
 {
+  "source": "local_history",
+  "modelScope": {
+    "models": [
+      "opus"
+    ]
+  },
   "id": "codex",
   "role": "session",
   "durationSeconds": 1,

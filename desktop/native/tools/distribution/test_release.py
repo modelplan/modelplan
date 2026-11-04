@@ -4,6 +4,7 @@ import importlib.util
 import itertools
 import json
 import plistlib
+import shutil
 from pathlib import Path
 import stat
 import tempfile
@@ -137,6 +138,53 @@ class AdhocBetaGates(unittest.TestCase):
         self.assertEqual(release.beta_feed_url(env), env['MACOS_BETA_FEED_URL'])
 
 
+class BetaZaiPackaging(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.app = root / 'Synthetic.app'
+        resources = self.app / 'Contents/Resources'; resources.mkdir(parents=True)
+        (resources / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic notice')
+        self.source_root = root / 'source'; source = self.source_root / 'desktop/third-party/dock-resources/Resources/Marks/zai-white.svg'
+        source.parent.mkdir(parents=True); source.write_bytes(b'synthetic original beta mark')
+        self.source = source
+        bundle = resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle' / 'Contents/Resources/Resources'
+        (bundle / 'Marks').mkdir(parents=True)
+        self.destination = bundle / 'Marks/zai-white.svg'
+        self.manifest = bundle / 'manifest.json'
+        attribution = bundle / 'Marks/SOURCES.md'; attribution.write_text('synthetic vendor attribution')
+        self.manifest.write_text(json.dumps({'schemaVersion': 1, 'files': {
+            'logo-zai-white': {'path':'Marks/zai-white.svg','sha256':release.sha256(source),'bytes':source.stat().st_size,'betaOnly':True},
+            'notice-vendors': {'path':'Marks/SOURCES.md','sha256':release.sha256(attribution),'bytes':attribution.stat().st_size}}}))
+        source_manifest = self.source_root / 'desktop/third-party/dock-resources/Resources/manifest.json'
+        source_manifest.write_bytes(self.manifest.read_bytes())
+        (self.app / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier':'test.synthetic'}))
+
+    def test_beta_default_embeds_verified_original_and_enables_switch(self):
+        release.configure_beta_zai(self.app, source_root=self.source_root)
+        self.assertEqual(self.destination.read_bytes(), self.source.read_bytes())
+        self.assertIs(plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())['zaiMarkEnabled'], True)
+
+    def test_switch_off_keeps_mark_absent(self):
+        release.configure_beta_zai(self.app, source_root=self.source_root, zaiMarkEnabled=False)
+        self.assertFalse(self.destination.exists())
+        self.assertIs(plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())['zaiMarkEnabled'], False)
+
+    def test_missing_tampered_or_duplicate_mark_fails_closed(self):
+        for case in ('tampered', 'missing_notice', 'missing_attribution', 'duplicate_destination'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                app = Path(temp) / 'Synthetic.app'; shutil.copytree(self.app, app)
+                source_root = Path(temp) / 'source'; shutil.copytree(self.source_root, source_root)
+                if case == 'tampered': (source_root / self.source.relative_to(self.source_root)).write_bytes(b'tampered')
+                if case == 'missing_notice': (app / 'Contents/Resources/THIRD-PARTY-TRADEMARKS.md').unlink()
+                if case == 'missing_attribution': (app / self.manifest.relative_to(self.app)).parent.joinpath('Marks/SOURCES.md').unlink()
+                if case == 'duplicate_destination':
+                    path = app / self.destination.relative_to(self.app); path.write_bytes(b'preexisting')
+                with self.assertRaises(ValueError):
+                    release.configure_beta_zai(app, source_root=source_root)
+                self.assertNotIn('zaiMarkEnabled', plistlib.loads((app / 'Contents/Info.plist').read_bytes()))
+
+
 class AdhocBetaCandidate(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -144,8 +192,21 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.root = Path(temporary.name)
         self.app = self.root / 'ModelPlan.app'
         self.resources = self.app / 'Contents/Resources'; self.resources.mkdir(parents=True)
+        dock = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle' / 'Resources'
+        (dock / 'Marks').mkdir(parents=True)
+        shutil.copyfile(release.ROOT / 'desktop/third-party/dock-resources/Resources/manifest.json', dock / 'manifest.json')
+        shutil.copyfile(release.ROOT / 'desktop/third-party/dock-resources/Resources/Marks/SOURCES.md', dock / 'Marks/SOURCES.md')
+        (self.resources / 'THIRD-PARTY-TRADEMARKS.md').write_text('synthetic third-party trademark notice')
         self.helper = self.app / 'Contents/Helpers/modelplan'; self.helper.parent.mkdir()
         self.helper.write_bytes(b'synthetic universal helper')
+        self.credential = self.app / release.CREDENTIAL_HELPER
+        self.credential.write_bytes(b'synthetic pinned credential helper')
+        pin = {'schemaVersion': 1, 'sha256': release.sha256(self.credential), 'bytes': self.credential.stat().st_size,
+               'inputSHA256': 'b' * 64, 'bundleIdentifier': 'ai.modelplan.credential-agent'}
+        (self.resources / 'credential-agent.json').write_text(json.dumps(pin))
+        approval = self.root / 'approved.json'; approval.write_text(json.dumps({'runID': '123', 'artifactName': 'synthetic', 'sha256': pin['sha256']}))
+        pin_override = patch.object(release, 'CREDENTIAL_PIN_FILE', approval)
+        pin_override.start(); self.addCleanup(pin_override.stop)
         executable = self.app / 'Contents/MacOS/ModelPlan'; executable.parent.mkdir()
         executable.write_bytes(b'synthetic universal executable')
         self.output = self.root / 'payload'
@@ -176,6 +237,12 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.calls.append((args, input))
         if args[:3] == ('xcrun', 'lipo', '-archs'):
             return b'arm64 x86_64'
+        if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+            info = plistlib.loads((self.app / 'Contents/Info.plist').read_bytes())
+            self.assertIs(info.get('zaiMarkEnabled'), True)
+            mark = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle/Resources/Marks/zai-white.svg'
+            source = release.ROOT / 'desktop/third-party/dock-resources/Resources/Marks/zai-white.svg'
+            self.assertEqual(mark.read_bytes(), source.read_bytes())
         if args[:5] == ('codesign', '--force', '--deep', '--sign', '-'):
             self.helper.write_bytes(b'synthetic helper changed by deep signing')
         if args[0] == 'ditto':
@@ -188,15 +255,17 @@ class AdhocBetaCandidate(unittest.TestCase):
         return release.adhoc_appcast(self.app, self.output, '/fake/sign_update')
 
     def test_payload_signing_order_integrity_xml_and_draft_metadata(self):
+        original_credential = release.sha256(self.credential)
         with patch.object(release, 'run', side_effect=self.fake_run):
             self.prepare()
+        self.assertEqual(release.sha256(self.credential), original_credential)
         commands = [args for args, _ in self.calls]
-        sign = commands.index(('codesign', '--force', '--deep', '--sign', '-', str(self.app)))
         seal = commands.index(('codesign', '--force', '--sign', '-', str(self.app)))
         verify = commands.index(('codesign', '--verify', '--deep', '--strict', str(self.app)))
         archive = self.output / 'ModelPlan-beta-universal.zip'
         zip_index = commands.index(('ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', str(self.app), str(archive)))
-        self.assertLess(sign, seal); self.assertLess(seal, verify); self.assertLess(verify, zip_index)
+        self.assertLess(seal, verify); self.assertLess(verify, zip_index)
+        self.assertFalse(any('--deep' in args and '--force' in args for args in commands if args[0] == 'codesign'))
         self.assertEqual((self.resources / 'modelplan.sha256').read_text().strip(), release.sha256(self.helper))
         self.assertIn(('/fake/sign_update', '--ed-key-file', '-', '--verify', str(archive), self.signature), commands)
         swift = next(args for args in commands if args[0] == 'swift')
@@ -222,7 +291,71 @@ class AdhocBetaCandidate(unittest.TestCase):
             checksum, name = line.split('  ')
             self.assertEqual(checksum, release.sha256(self.output / name))
         self.assertEqual({path.name for path in self.output.iterdir()},
-                         {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json'})
+                         {'ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'SHA256SUMS', 'draft-release.json',
+                          'RELEASE_NOTES.md', 'release-notes.html'})
+        self.assertIn('Gatekeeper', (self.output / 'RELEASE_NOTES.md').read_text())
+        self.assertIn('re-granting', (self.output / 'RELEASE_NOTES.md').read_text())
+        self.assertIn('0.1 &amp; beta', (self.output / 'release-notes.html').read_text())
+
+    def test_beta_mark_tamper_after_sign_fails_before_archive(self):
+        def corrupt(*args, **kwargs):
+            value = self.fake_run(*args, **kwargs)
+            if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+                mark = self.resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle/Resources/Marks/zai-white.svg'
+                mark.write_bytes(b'tampered after signing')
+            return value
+        with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(ValueError, 'changed after signing'):
+            self.prepare()
+        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
+
+    def test_adhoc_post_sign_mismatch_fails_before_archive(self):
+        def corrupt(*args, **kwargs):
+            value = self.fake_run(*args, **kwargs)
+            if args[:4] == ('codesign', '--force', '--sign', '-') and args[-1] == str(self.app):
+                self.credential.write_bytes(b'changed after seal')
+            return value
+        with patch.object(release, 'run', side_effect=corrupt), self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+            self.prepare()
+        self.assertFalse((self.output / 'ModelPlan-beta-universal.zip').exists())
+
+    def test_signed_path_preserves_helper_and_detects_post_sign_tamper(self):
+        env = dict(self.env, MACOS_SIGNING_IDENTITY='Developer ID Application: Synthetic',
+                   MACOS_TEAM_ID='synthetic-team', MACOS_CERTIFICATE_P12_BASE64=base64.b64encode(b'synthetic').decode(),
+                   MACOS_CERTIFICATE_PASSWORD='synthetic')
+        original = release.sha256(self.credential)
+        def command(*args, **kwargs):
+            if args[:2] == ('file', '-b'):
+                return b'Mach-O synthetic' if Path(args[-1]) in (self.helper, self.credential, self.app / 'Contents/MacOS/ModelPlan') else b'text'
+            if args[0] == 'codesign' and '--force' in args:
+                Path(args[-1]).write_bytes(b'resigned') if Path(args[-1]).is_file() else None
+            return b''
+        display = type('Result', (), {'stderr': b'TeamIdentifier=synthetic-team'})()
+        with patch.dict(release.os.environ, env, clear=True), patch.object(release, 'validate_candidate'), \
+             patch.object(release, 'refresh_helper_identity'), patch.object(release, 'run', side_effect=command), \
+             patch.object(release.subprocess, 'run', return_value=display):
+            release.sign(self.app)
+            self.assertEqual(release.sha256(self.credential), original)
+            def tamper(*args, **kwargs):
+                value = command(*args, **kwargs)
+                if args[0] == 'codesign' and '--force' in args and args[-1] == str(self.app):
+                    self.credential.write_bytes(b'tampered')
+                return value
+            with patch.object(release, 'run', side_effect=tamper), self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+                release.sign(self.app)
+
+    def test_notary_staple_cannot_change_helper_before_archive(self):
+        env = dict(self.env, APPLE_NOTARY_KEY_P8_BASE64=base64.b64encode(b'synthetic').decode(),
+                   APPLE_NOTARY_KEY_ID='synthetic', APPLE_NOTARY_ISSUER_ID='synthetic')
+        def command(*args, **kwargs):
+            if args[:2] == ('xcrun', 'notarytool'):
+                return b'{"status":"Accepted","id":"synthetic"}'
+            if args[:3] == ('xcrun', 'stapler', 'staple'):
+                self.credential.write_bytes(b'tampered')
+            return self.fake_run(*args, **kwargs)
+        with patch.dict(release.os.environ, env, clear=True), patch.object(release, 'run', side_effect=command), \
+             self.assertRaisesRegex(Exception, 'helper-(size|hash)-mismatch'):
+            release.notarize(self.app, self.output)
+        self.assertFalse((self.output / 'ModelPlan-universal.zip').exists())
 
     def test_invalid_candidate_is_refused_before_signing_or_output(self):
         # Exercise the real shared validation rather than replacing it with a successful stub.

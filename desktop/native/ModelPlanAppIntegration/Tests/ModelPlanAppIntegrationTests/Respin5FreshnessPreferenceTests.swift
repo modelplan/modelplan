@@ -61,7 +61,7 @@ import ModelPlanShell
             let id = try XCTUnwrap(CommunityDockSnapshot(snapshot:snapshot,diagnostics:ready,now:now).inputs.first?.id)
             host.dockView.onAction?(.subscription(id))
             let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-            XCTAssertFalse(field.isHidden); XCTAssertTrue(field.stringValue.contains("2h"),field.stringValue)
+            XCTAssertFalse(field.isHidden); XCTAssertEqual(field.stringValue, "读取于 2 小时前")
             XCTAssertFalse(field.stringValue.contains("7200s")); XCTAssertEqual(field.accessibilityLabel(),field.stringValue)
             XCTAssertNil(host.nativePanel); XCTAssertNil(host.dockView.window)
         }}
@@ -72,7 +72,7 @@ import ModelPlanShell
         let snapshot = try joined([account("codex",ref:"sub-a",remaining:75,observed:nil,now:now)],now:now)
         host.render(snapshot:snapshot,diagnostics:ready);host.setPresentationAllowed(true);host.dockView.onAction?(.subscription("sub-a"))
         let field = try XCTUnwrap(descendants(host.card).compactMap{$0 as? NSTextField}.first{$0.accessibilityIdentifier()=="dock.card.text.source"})
-        XCTAssertFalse(field.isHidden);XCTAssertTrue(field.stringValue.contains("unknown"),field.stringValue)
+        XCTAssertFalse(field.isHidden);XCTAssertEqual(field.stringValue, "读数时间未知")
     }
     func testActualFactoryMenuUsesSameHiddenAndUsedPreferencesAsDock() async throws {
         let now = Date(), host = dock();defer{host.close()}
@@ -164,6 +164,14 @@ import ModelPlanShell
         let after = await feed.count();XCTAssertEqual(after,before)
         XCTAssertNil(delegate.status);XCTAssertNil(host.nativePanel)
         await runtime.store.stopAndWait()
+    }
+
+    func testReadingAgeUsesSelectedLanguageAndGlossaryTerms() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: nil, now: now, language: .english), "Reading time unknown")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: nil, now: now, language: .chinese), "读数时间未知")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: now.addingTimeInterval(-180), now: now, language: .english), "Reading taken 3m ago")
+        XCTAssertEqual(CommunityObservationAge.text(observedAt: now.addingTimeInterval(-180), now: now, language: .chinese), "读取于 3 分钟前")
     }
 
 }

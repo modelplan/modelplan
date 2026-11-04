@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,10 @@ func buildAccounts(in Input, c *candidate) []Account {
 			}
 			discard := p.LoginChanged || p.GenerationChanged
 			if !discard {
+				a.ResetCards = unknownResetCards()
+				if p.LatestAttempt == AttemptResultSucceeded && p.WithinFreshness && p.FreshUntil != nil && in.Now.Before(*p.FreshUntil) {
+					a.ResetCards = sanitizeResetCards(raw.ResetCards, in.Now)
+				}
 				a.ObservedAt = observed(p.ObservedAt, in.Now)
 				a.FreshUntil = knownTime(p.FreshUntil)
 				if p.LatestAttempt == AttemptResultFailed && p.LastFailure != nil {
@@ -78,7 +83,7 @@ func buildAccounts(in Input, c *candidate) []Account {
 					}
 				}
 				a.Windows = buildWindows(raw.Windows, a, in.Now)
-				has := a.Credits != nil
+				has := a.Credits != nil || a.ResetCards != nil && a.ResetCards.State != ResetCardUnknown
 				for _, w := range a.Windows {
 					has = has || w.RemainingPercent != nil
 				}
@@ -132,9 +137,59 @@ func role(kind string) (Role, Text) {
 		return RoleOther, Text{EN: "Other limit", ZH: "其他限额"}
 	}
 }
+
+// Only reviewed public IDs cross the rows trust boundary. An unrecognized
+// explicit scope becomes a sanitized unknown-scoped marker.
+var scopedModels = map[string]bool{"opus": true, "sonnet": true, "gemini-2.5-pro": true, "gemini-2.5-flash": true, "unknown": true}
+
+func modelScope(ids []string) (*ModelScope, bool) {
+	if ids == nil {
+		return nil, true
+	}
+	if len(ids) == 0 || len(ids) > 32 {
+		return &ModelScope{Models: []string{"unknown"}}, true
+	}
+	result := append([]string(nil), ids...)
+	sort.Strings(result)
+	for i, id := range result {
+		if !scopedModels[id] || i > 0 && id == result[i-1] {
+			return &ModelScope{Models: []string{"unknown"}}, true
+		}
+	}
+	return &ModelScope{Models: result}, true
+}
+
+// SanitizeModelIDs applies the same reviewed vocabulary at every output
+// boundary. A non-nil unknown scope remains explicitly model-scoped.
+func SanitizeModelIDs(ids []string) []string {
+	scope, _ := modelScope(ids)
+	if scope == nil {
+		return nil
+	}
+	return scope.Models
+}
+
+// windowValidUntil applies the account's freshness interval to this window's
+// own observation, never to a newer reading of another window.
+func windowValidUntil(account Account, window Window) *time.Time {
+	if account.ObservedAt == nil || account.FreshUntil == nil || window.ObservedAt == nil {
+		return nil
+	}
+	interval := account.FreshUntil.Sub(*account.ObservedAt)
+	if interval <= 0 {
+		return nil
+	}
+	deadline := window.ObservedAt.Add(interval)
+	return earlier(earlier(knownTime(account.FreshUntil), &deadline), window.ResetsAt)
+}
+
 func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 	result := []Window{}
 	for _, v := range raw {
+		scope, ok := modelScope(v.ModelIDs)
+		if !ok {
+			continue
+		}
 		r, label := role(v.Kind)
 		key := limitKey(v.Limit)
 		// Unknown limits never acquire a provider-supplied label, even with a familiar role.
@@ -157,16 +212,29 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 		if duration != nil {
 			durationKey = strconv.FormatInt(*duration, 10)
 		}
-		w := Window{ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
-		if account.FreshUntil != nil {
-			w.ValidUntil = earlier(knownTime(account.FreshUntil), w.ResetsAt)
+		var source *WindowSource
+		switch v.Source {
+		case WindowSourceLocalHistory, WindowSourceRuntime, WindowSourceSavedLogin, WindowSourceAPIKey, WindowSourceOther:
+			value := v.Source
+			source = &value
 		}
+		w := Window{Source: source, ModelScope: scope, ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
+		w.ValidUntil = windowValidUntil(account, w)
 		result = append(result, w)
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		a, b := result[i], result[j]
 		if a.ID != b.ID {
 			return a.ID < b.ID
+		}
+		scopeKey := func(s *ModelScope) string {
+			if s == nil {
+				return ""
+			}
+			return strings.Join(s.Models, "\x00")
+		}
+		if scopeKey(a.ModelScope) != scopeKey(b.ModelScope) {
+			return scopeKey(a.ModelScope) < scopeKey(b.ModelScope)
 		}
 		if a.ResetsAt == nil && b.ResetsAt != nil {
 			return false

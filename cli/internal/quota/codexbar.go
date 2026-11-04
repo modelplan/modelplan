@@ -596,6 +596,7 @@ type cbPayload struct {
 	Provider string `json:"provider"`
 	Source   string `json:"source"`
 	Error    *struct {
+		Code    int    `json:"code"`
 		Kind    string `json:"kind"`
 		Message string `json:"message"`
 	} `json:"error"`
@@ -648,7 +649,18 @@ func parseCodexBar(out []byte, provider, home string, now time.Time) codexbarEnt
 	if p.Error != nil || p.Usage == nil {
 		e.Error = "no usage"
 		if p.Error != nil {
-			e.ErrorCode = "other"
+			// CodexBar v0.81.0 CLIExitCode/CLIHelpers.mapError expose process
+			// categories, not HTTP statuses or provider business codes.
+			switch p.Error.Code {
+			case 2:
+				e.ErrorCode = "runtime_missing"
+			case 3:
+				e.ErrorCode = "parse_error"
+			case 4:
+				e.ErrorCode = "timeout"
+			default:
+				e.ErrorCode = "other"
+			}
 			e.Error = e.ErrorCode
 		}
 		return e
