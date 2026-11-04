@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,13 +129,26 @@ func TestSelectCockpitPublicationUsesCurrentReadingsAndPublicationOrder(t *testi
 }
 
 func TestCockpitPublicationRealBinaryIncludesCurrentVendorModels(t *testing.T) {
+	for _, explicit := range []bool{true, false} {
+		name := "implicit"
+		if explicit {
+			name = "explicit"
+		}
+		t.Run(name, func(t *testing.T) { testCockpitPublicationCurrentVendorModels(t, explicit) })
+	}
+}
+
+func testCockpitPublicationCurrentVendorModels(t *testing.T, explicit bool) {
+	t.Helper()
 	home := setupQueryHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC().Truncate(time.Second)
-	if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "codex", true, "native:codex", "native", now) }); err != nil {
-		t.Fatal(err)
+	if explicit {
+		if err := consent.Change(consent.Path(), func(s *consent.State) error { return consent.Set(s, "codex", true, "native:codex", "native", now) }); err != nil {
+			t.Fatal(err)
+		}
 	}
 	state, err := consent.Load(consent.Path())
 	if err != nil {
@@ -183,6 +197,22 @@ func TestCockpitPublicationRealBinaryIncludesCurrentVendorModels(t *testing.T) {
 	if err := json.Unmarshal(response["result"], &envelope); err != nil || envelope.Data.Details == nil || envelope.Data.Details.Publication == nil {
 		t.Fatalf("missing publication: %s %s %v", response["result"], response["error"], err)
 	}
+	wantConsent := rows.ConsentImplicit
+	if explicit {
+		wantConsent = rows.ConsentAllowed
+	}
+	foundCodex := false
+	for _, row := range envelope.Data.Projection.Rows {
+		if row.ID == "codex" {
+			foundCodex = true
+			if row.Consent != wantConsent || len(row.Accounts) == 0 || row.Accounts[0].ValueState != rows.ValueStateCurrent {
+				t.Fatalf("Codex row does not have the expected consent and current reading: %+v", row)
+			}
+		}
+	}
+	if !foundCodex {
+		t.Fatal("Codex row missing")
+	}
 	pub := envelope.Data.Details.Publication
 	if len(pub.Models) != 3 || !pub.Truncated || pub.Models[0].ID != "openai-1" || pub.Models[1].ID != "openai-2" || pub.Models[2].ID != "openai-3" {
 		t.Fatalf("vendor selection: %+v; rows=%+v", pub, envelope.Data.Projection.Rows)
@@ -200,5 +230,30 @@ func TestCockpitPublicationRealBinaryIncludesCurrentVendorModels(t *testing.T) {
 	}
 	if err := validator.Validate("app-server", encoded); err != nil {
 		t.Fatalf("publication response violates schema: %v", err)
+	}
+}
+
+func TestEligibleCockpitVendorsConsentStates(t *testing.T) {
+	for _, provider := range []struct{ tool, vendor string }{{"codex", "openai"}, {"claude", "anthropic"}} {
+		for _, tc := range []struct {
+			consent rows.Consent
+			current bool
+			want    bool
+		}{
+			{rows.ConsentImplicit, true, true}, {rows.ConsentAllowed, true, true},
+			{rows.ConsentDenied, true, false}, {rows.ConsentUnset, true, false},
+			{rows.ConsentImplicit, false, false}, {rows.ConsentAllowed, false, false},
+		} {
+			t.Run(provider.tool+"/"+string(tc.consent)+fmt.Sprint("/current=", tc.current), func(t *testing.T) {
+				value := rows.ValueStateRetained
+				if tc.current {
+					value = rows.ValueStateCurrent
+				}
+				p := rows.Projection{Rows: []rows.Row{{ID: provider.tool, Kind: rows.KindTool, Consent: tc.consent, Accounts: []rows.Account{{ValueState: value}}}}}
+				if got := eligibleCockpitVendors(p)[provider.vendor]; got != tc.want {
+					t.Fatalf("eligible=%v, want %v", got, tc.want)
+				}
+			})
+		}
 	}
 }

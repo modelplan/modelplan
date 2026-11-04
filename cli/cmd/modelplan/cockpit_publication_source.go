@@ -74,7 +74,7 @@ func eligibleCockpitVendors(projection rows.Projection) map[string]bool {
 	out := map[string]bool{}
 	for _, row := range projection.Rows {
 		vendor := vendors[row.ID]
-		if row.Kind != rows.KindTool || row.Consent != rows.ConsentAllowed || vendor == "" {
+		if row.Kind != rows.KindTool || (row.Consent != rows.ConsentAllowed && row.Consent != rows.ConsentImplicit) || vendor == "" {
 			continue
 		}
 		for _, account := range row.Accounts {
