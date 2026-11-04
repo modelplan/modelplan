@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 
 PIN = 'desktop/native/consent-cli-pin.json'
+MINIMUM = 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineRowsEntry.swift'
+VERSION = r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
 
 
 def git(repo, *args):
@@ -39,8 +41,18 @@ def assert_pin_matches(repo):
         version = json.loads((Path(repo) / PIN).read_text())['version']
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ValueError('invalid native CLI pin') from error
-    if not isinstance(version, str) or not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version):
         raise ValueError('invalid native CLI pin version')
+    try:
+        source = (Path(repo) / MINIMUM).read_text()
+    except OSError as error:
+        raise ValueError('missing app minimum CLI version') from error
+    matches = re.findall(r'\bminimumAppServerVersion\s*=\s*"(' + VERSION + r')"', source)
+    if len(matches) != 1:
+        raise ValueError('invalid app minimum CLI version')
+    minimum = matches[0][0]
+    if tuple(map(int, version.split('.'))) < tuple(map(int, minimum.split('.'))):
+        raise ValueError('pinned CLI version is older than the app minimum ' + minimum)
     tag = 'refs/tags/v' + version
     if git(repo, 'rev-parse', '--verify', tag + '^{commit}').returncode:
         raise ValueError('pinned CLI release tag is unavailable')

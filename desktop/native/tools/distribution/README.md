@@ -6,7 +6,9 @@ PR with the `release-candidate` label, a `candidate/` or `release-candidate/`
 branch, or a title beginning `Release candidate:`. The check also runs whenever
 that pin changes, and runs unconditionally before signed or ad-hoc candidate
 preparation. An unavailable tag or a differing tree fails closed. It does not
-publish, tag, verify archive hashes, or replace the existing release gates.
+publish, tag, verify archive hashes, or replace the existing release gates. The
+pin must also meet the app's `EngineRowsEntry.minimumAppServerVersion`, which
+the normal app entry enforces against the helper's initialize response.
 
 The public `.github/workflows/macos-distribution.yml` prepares Sparkle updates without an Apple Developer account. It validates an approved official assembly, ad-hoc signs the app, signs its update ZIP with the owner's EdDSA key, generates a separate beta appcast and release notes, and creates a **draft prerelease**. PR builds use standard hosted runners without secrets. Developer ID and notarization remain disabled placeholders.
 

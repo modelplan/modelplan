@@ -24,6 +24,9 @@ class CLIPinConsistencyTests(unittest.TestCase):
         self.pin = self.repo / 'desktop/native/consent-cli-pin.json'
         self.pin.parent.mkdir(parents=True)
         self.pin.write_text(json.dumps({'version': '0.5.52'}))
+        minimum = self.repo / module.MINIMUM
+        minimum.parent.mkdir(parents=True, exist_ok=True)
+        minimum.write_text('public static let minimumAppServerVersion = "0.5.52"\n')
         self.git('add', '.')
         self.git('commit', '-qm', 'base')
         self.base = self.git('rev-parse', 'HEAD').strip()
@@ -68,6 +71,12 @@ class CLIPinConsistencyTests(unittest.TestCase):
         self.pin.write_text(json.dumps({'version': '0.5.53'}))
         self.commit()
         module.assert_pin_matches(self.repo)
+
+    def test_tag_cannot_be_older_than_the_app_minimum(self):
+        self.git('tag', 'v0.5.49')
+        self.pin.write_text(json.dumps({'version': '0.5.49'}))
+        with self.assertRaisesRegex(ValueError, 'older than the app minimum'):
+            module.assert_pin_matches(self.repo)
 
 if __name__ == '__main__':
     unittest.main()
