@@ -204,6 +204,50 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
+    static func resetSourceLinks(capture:URL) async throws {
+        let fixture=capture.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        var data=(document["result"] as! [String:Any])["data"] as! [String:Any]
+        var projection=data["projection"] as! [String:Any], events=projection["resetEvents"] as! [[String:Any]]
+        let clock=Date(), formatter=ISO8601DateFormatter()
+        events[0]["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60))
+        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        var source=events[0]["source"] as! [String:Any]
+        let aihot=["type":"aihot","url":"https://aihot.news/codex-reset"]
+        let original=["type":"original","url":"https://x.com/OpenAI/status/123"]
+        let official=["type":"official","url":"https://status.openai.com/incidents/synthetic"]
+        func rows(_ links:[[String:String]]?) throws -> WireRowsSnapshot {
+            source["links"]=links;events[0]["source"]=source;projection["resetEvents"]=events;data["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        }
+        let initial=try rows([official,aihot,original,["type":"aihot","url":"https://aihot.news.evil.test/codex-reset"]])
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-reset-links-"+UUID().uuidString)
+        defer { removeScratch(directory) }
+        let settings=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:settings,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:initial)},activateSettings:{})
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        let provider=EngineDockContentProvider(source:entry.composition.provider)
+        provider.resetEventState = { entry.composition.rowEvents }
+        func kinds(_ english:Bool) -> [EngineResetSourceLink.Kind] {
+            provider.language = english ? "en" : "zh-CN"
+            return provider.makeContentAndDeadline(.init(snapshot:nil,diagnostics:.init(),now:clock)).resetEventLinks["0123456789abcdef"]?.map(\.kind) ?? []
+        }
+        try require(kinds(true) == [.original,.aihot,.official],"English must prefer the original post and retain the official source")
+        try require(kinds(false) == [.aihot,.original,.official],"Chinese must prefer AIhot and retain the official source")
+        provider.language = "ja"
+        try require(provider.makeContentAndDeadline(.init(snapshot:nil,diagnostics:.init(),now:clock)).resetEventLinks["0123456789abcdef"]?.map(\.kind) == [.original,.aihot,.official],"other languages must prefer the original post")
+        try await client.replaceRows(rows([aihot,official]))
+        try require(kinds(true) == [.aihot,.official] && kinds(false) == [.aihot,.official],"AIhot and official sources must remain without an original")
+        try await client.replaceRows(rows([aihot]))
+        try require(kinds(true) == [.aihot] && kinds(false) == [.aihot],"an AIhot-only source must remain visible")
+        try await client.replaceRows(rows(nil))
+        try require(kinds(true).isEmpty && kinds(false).isEmpty,"an unnegotiated client must not invent source links")
+        await entry.composition.stop()
+    }
+
     static func announcedMenuIndicator(capture:URL) async throws -> Bool {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")

@@ -37,6 +37,8 @@ public struct EngineContentAndDeadline: Sendable {
     public let verifiedWindows: [EngineVerifiedWindow]
     /// Per-member facts from this same pass; discard them with the delivery.
     public let resetCards: [String: EngineResetCardFacts]
+    /// Ordered source links for the selected, admitted event of each member.
+    public let resetEventLinks: [String: [EngineResetSourceLink]]
 }
 
 /// No partial source-reported count is presented as an exact total.
@@ -234,6 +236,7 @@ public enum EngineDeadlineFacts {
         default: passDeadline = baseDeadline
         }
         var passSignals:[DockSubscriptionSignal] = []
+        var passEventLinks:[String:[EngineResetSourceLink]] = [:]
         for member in members {
             let row=member.row
             let input = makeInput(member, now: context.now)
@@ -262,6 +265,7 @@ public enum EngineDeadlineFacts {
                 .max { $0.publishedAt < $1.publishedAt }
             var signal=DockSubscriptionSignal(id:member.id);signal.dataState=input.dataState
             if let event=preferred {
+                passEventLinks[member.id] = event.orderedLinks(english:!language.lowercased().hasPrefix("zh"))
                 if event.status == "confirmed" {
                     var reset=DockResetSignal(id:event.id,status:.confirmed,confirmedAt:event.publishedAt,expiresAt:event.expiresAt)
                     reset.restartedReading=member.account.valueState == .current && member.account.windows.contains { window in
@@ -334,7 +338,7 @@ public enum EngineDeadlineFacts {
                      menuStatusLines: lines.isEmpty ? [status] : lines, emptyText: status, signals:passSignals)
         verifiedWindows = passWindows; recomputeDeadline = passDeadline
         memberInstability = passInstability; signals = passSignals
-        return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, resetCards: passResetCards)
+        return .init(content: content, deadline: passDeadline, verifiedWindows: passWindows, resetCards: passResetCards, resetEventLinks: passEventLinks)
     }
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account
