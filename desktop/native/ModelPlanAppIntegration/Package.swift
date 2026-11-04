@@ -42,6 +42,7 @@ let package = Package(
             .product(name: "ModelPlanDockResources", package: "dock-resources"),
         ], resources: [.copy("Resources")]),
         .executableTarget(name: "ModelPlanCommunityApp", dependencies: [
+            .product(name: "ModelPlanEngineStore", package: "ModelPlanEngineStore"),
             .product(name: "ModelPlanCockpitWeb", package: "ModelPlanCockpitWeb"),
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
             .product(name: "ModelPlanWire", package: "ModelPlanWire"),

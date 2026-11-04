@@ -7,6 +7,9 @@ import ModelPlanAppIntegration
 import ModelPlanCore
 import ModelPlanEngineClient
 import ModelPlanWire
+#if MODELPLAN_NORMAL_ENTRY_SMOKE
+import ModelPlanEngineStore
+#endif
 
 /// Normal entry is above both packages. Probe modes remain in the shared root host and skip Settings.
 @main struct CommunityApp {
@@ -141,8 +144,40 @@ import ModelPlanWire
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
                 allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }), settingsStore: preferences)
             NSApplication.shared.delegate = app
+            #if MODELPLAN_NORMAL_ENTRY_SMOKE
+            let observer = ProcessInfo.processInfo.environment["MODELPLAN_NORMAL_ENTRY_SMOKE"] == "1"
+                ? NormalEntrySmokeObserver(store: app.composition.store) : nil
+            withExtendedLifetime((app, observer)) { NSApplication.shared.run() }
+            #else
             withExtendedLifetime(app) { NSApplication.shared.run() }
+            #endif
         } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }
     }
 
 }
+
+#if MODELPLAN_NORMAL_ENTRY_SMOKE
+/// Test-build-only observation of the real store; no data or engine actions are exposed.
+@MainActor private final class NormalEntrySmokeObserver: EngineStoreSink {
+    private var ready = false, rows = false
+    init(store: EngineStore) {
+        store.attach(self)
+        FileHandle.standardInput.readabilityHandler = { handle in
+            guard handle.availableData == Data([0x71]) else { return }
+            handle.readabilityHandler = nil
+            Task { @MainActor in NSApplication.shared.terminate(nil) }
+        }
+    }
+    func clearPrivateViews(_ invalidation: EngineInvalidation) {}
+    func apply(_ snapshot: EngineStoreSnapshot) {
+        if !ready, case .ready = snapshot.connection {
+            ready = true
+            FileHandle.standardOutput.write(Data("MODELPLAN_SMOKE_READY\n".utf8))
+        }
+        if ready, !rows, snapshot.rows != nil {
+            rows = true
+            FileHandle.standardOutput.write(Data("MODELPLAN_SMOKE_ROWS\n".utf8))
+        }
+    }
+}
+#endif
