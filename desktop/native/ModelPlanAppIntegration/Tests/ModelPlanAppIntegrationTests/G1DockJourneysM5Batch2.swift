@@ -3,6 +3,7 @@ import AppKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanOfficialDock
+import ModelPlanDockResources
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -78,13 +79,14 @@ private actor G1CRowsClient: EngineClient {
 @MainActor final class G1DockJourneysM5Batch2: XCTestCase {
     private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false,
                          five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
-                         resetStatus: String? = nil, newReading: Bool = false) throws -> WireRowsSnapshot {
+                         resetStatus: String? = nil, newReading: Bool = false, vendorKey: String = "synthetic") throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
         var projection = try XCTUnwrap(root["projection"] as? [String: Any])
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         rows[0]["state"] = "fresh"; rows[0]["consent"] = "allowed"
+        rows[0]["vendorKey"] = vendorKey
         rows[0]["surfaces"] = ["dock", "menu"]; rows[0]["expiresAt"] = "2099-01-01T00:00:00Z"
         var accounts = try XCTUnwrap(rows[0]["accounts"] as? [[String: Any]])
         accounts[0]["valueState"] = "current"; accounts[0]["freshUntil"] = "2099-01-01T00:00:00Z"
@@ -148,6 +150,67 @@ private actor G1CRowsClient: EngineClient {
             makeClient: { _, store in G1CRowsClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
+    }
+
+    func testG1_DOCK_3_2_07() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-white-marks-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), view = app.composition.dock.dockView
+        let manifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
+        for (vendor, resource) in [("openai", "logo-openai"), ("cursor", "logo-cursor")] {
+            try await client.replaceRows(fixture(vendorKey: vendor))
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == reading.subscriptionID })
+            XCTAssertEqual(reading.vendorResourceKey, vendor)
+            XCTAssertEqual(station.glyphs[vendor], resource)
+            XCTAssertNotNil(manifest.files[resource])
+        }
+        for vendor in ["zhipu", "glm", "zai", "zcode"] {
+            try await client.replaceRows(fixture(vendorKey: vendor))
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+            XCTAssertEqual(station.glyphs[vendor], view.zaiMarkEnabled ? "logo-zai-white" : nil)
+        }
+        XCTAssertEqual(manifest.files["logo-zai-white"] != nil, view.zaiMarkEnabled)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_2_08() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-colour-marks-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), view = app.composition.dock.dockView
+        let manifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
+        for vendor in ["google", "alibaba", "qwen", "minimax"] {
+            try await client.replaceRows(fixture(vendorKey: vendor))
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == reading.subscriptionID })
+            XCTAssertEqual(reading.vendorResourceKey, vendor)
+            let resource = station.glyphs[vendor]
+            XCTAssertNotNil(resource, "No selected mark for \(vendor)")
+            if let resource { XCTAssertNotNil(manifest.files[resource], "The selected mark must be packaged") }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_2_09() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-other-marks-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), view = app.composition.dock.dockView
+        let manifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
+        for (vendor, resource) in [("claude", "logo-claude"), ("kimi", "logo-kimi"), ("copilot", "logo-copilot"), ("opencode", "logo-opencode")] {
+            try await client.replaceRows(fixture(vendorKey: vendor))
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == reading.subscriptionID })
+            XCTAssertEqual(reading.vendorResourceKey, vendor)
+            XCTAssertEqual(station.glyphs[vendor], resource)
+            XCTAssertNotNil(manifest.files[resource])
+        }
+        await app.composition.stop()
     }
 
     func testG1_DOCK_3_1_22() async throws {
