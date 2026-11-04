@@ -34,8 +34,8 @@ private actor G1SettingsEngine: EngineClient {
 
 /// Window journeys are compiled locally; execution requires an admitted GUI CI runner.
 @MainActor final class G1SettingsJourneys: XCTestCase {
-    private func entry(locale: String, discoveredMembers: Int? = nil) async throws -> EngineDockMenuApplication {
-        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-" + UUID().uuidString)
+    private func entry(locale: String, discoveredMembers: Int? = nil, profileURL: URL? = nil) async throws -> EngineDockMenuApplication {
+        let profile = profileURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -82,6 +82,21 @@ private actor G1SettingsEngine: EngineClient {
         let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
         addTeardownBlock { @MainActor in window.close() }
         return window
+    }
+    private func assertControls(_ ids: [String], in window: NSWindow) throws {
+        let views = flatten(try XCTUnwrap(window.contentView))
+        for id in ids { XCTAssertNotNil(views.first { $0.accessibilityIdentifier() == id }, "Missing \(id)") }
+    }
+    private func assertLabel(_ text: String, in window: NSWindow) throws {
+        let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }
+        XCTAssertTrue(fields.contains { !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == text }, "Missing \(text)")
+    }
+    private func choose(_ id: String, value: String, in window: NSWindow) throws {
+        let popup = try control(id, in: window, as: NSPopUpButton.self)
+        XCTAssertTrue(popup.isEnabled, "\(id) must accept the explicit choice")
+        let item = try XCTUnwrap(popup.itemArray.first { ($0.representedObject as? String) == value })
+        popup.select(item)
+        XCTAssertTrue(popup.sendAction(popup.action, to: popup.target))
     }
 
     func testG1_FR_9_02_FirstRunPrivacyText() async throws {
@@ -244,5 +259,116 @@ private actor G1SettingsEngine: EngineClient {
         XCTAssertEqual(roles.count, 5)
         XCTAssertEqual(Set(roles), Set(["edge", "percentages", "autoCollapse", "size", "quotaWindow"]))
         for diagram in diagrams { XCTAssertEqual(diagram.bounds.width, 96, accuracy: 0.01) }
+    }
+
+    func testG1_SET_9_04_NativeLoginItemOperation() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        try assertControls(["settings.login"], in: window)
+        XCTAssertNil(app.loginServiceAdapter, "The synthetic non-app bundle must not register a system login item")
+        throw XCTSkip("Native SMAppService operations and denial require a separately admitted system test")
+    }
+
+    func testG1_SET_9_06_RealShortcutOperationAndPersistence() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "general")
+        try assertControls(["settings.openShortcut", "settings.dockShortcut"], in: window)
+        throw XCTSkip("Global shortcut input and resulting host actions require an admitted GUI session")
+    }
+
+    func testG1_SET_9_10_DockNumbersAndEventPresentation() async throws {
+        let app = try await entry(locale: "en-US", discoveredMembers: 2)
+        let window = try await settings(app, pane: "dock")
+        try assertControls(["settings.showPercentages", "settings.percentageMode", "settings.redBelow", "settings.sliverAlert"], in: window)
+        try choose("settings.showPercentages", value: "false", in: window)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.showPercentages { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertFalse(saved.preferences.showPercentages)
+        XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.showPercentages, false)
+        throw XCTSkip("Actual widget values, event dots, per-member pin and relaunch remain unverified")
+    }
+
+    func testG1_SET_9_11_DockPositionAndDisplayBehaviour() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "dock")
+        try assertControls(["settings.dockDisplay", "settings.dockEdge", "settings.fullscreen", "settings.activeDisplay"], in: window)
+        try assertLabel("Hide from capture", in: window)
+        throw XCTSkip("Multi-display placement and actual fullscreen/capture behaviour require an admitted GUI session")
+    }
+
+    func testG1_SET_9_12_CaptureVisibilityPersists() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "dock")
+        try assertLabel("Hide from capture", in: window)
+        throw XCTSkip("Actual widget sharing state and relaunch require an admitted GUI session")
+    }
+
+    func testG1_SET_9_13_SubscriptionOrderChangesAndReset() async throws {
+        let app = try await entry(locale: "en-US", discoveredMembers: 3)
+        let window = try await settings(app, pane: "dock")
+        try assertControls(["settings.order.list"], in: window)
+        throw XCTSkip("Three-member drag, arrow actions, engine-column order and relaunch are not yet exercised")
+    }
+
+    func testG1_SET_9_15_AppearanceAndAccessibilityApplyLive() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "appearance")
+        try assertControls(["settings.motion", "settings.transparency"], in: window)
+        let snapshot = await app.foundationStore.snapshot()
+        XCTAssertEqual(snapshot.preferences.motion, .system)
+        XCTAssertEqual(snapshot.preferences.transparency, .system)
+        try choose("settings.motion", value: "on", in: window)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.motion != .on { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.motion, .on)
+        try choose("settings.transparency", value: "on", in: window)
+        saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.transparency != .on { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.transparency, .on)
+        throw XCTSkip("Theme and accessibility effects on all open surfaces and relaunch remain unverified")
+    }
+
+    func testG1_SET_9_17_OneReaderConsentModel() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await firstRun(app)
+        try assertControls(["settings.scopeConsent"], in: window)
+        throw XCTSkip("Synthetic engine consent grant/revoke and Settings relaunch are not yet exercised")
+    }
+
+    func testG1_SET_9_18_NotificationKindsDispatch() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "notifications")
+        try assertControls(["settings.notificationConsent", "settings.reset"], in: window)
+        throw XCTSkip("Notification authorization and matching/nonmatching delivery require an admitted system test")
+    }
+
+    func testG1_SET_9_24_SettingsDiagramMotionAndReduceMotion() async throws {
+        let app = try await entry(locale: "en-US", discoveredMembers: 2)
+        let window = try await settings(app, pane: "dock")
+        let diagrams = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsDiagramView }
+        XCTAssertFalse(diagrams.isEmpty)
+        throw XCTSkip("Actual hover, focus, value-change timing and Reduce Motion require controlled GUI input")
+    }
+
+    func testG1_SET_9_27_SettingsPersistAcrossRestart() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-relaunch-" + UUID().uuidString)
+        let app = try await entry(locale: "en-US", profileURL: profile)
+        let window = try await settings(app, pane: "general")
+        try assertControls(["settings.language", "settings.menuDisplay"], in: window)
+        try choose("settings.language", value: "zh-CN", in: window)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where saved.preferences.language != .chinese { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        XCTAssertEqual(saved.preferences.language, .chinese)
+        window.close(); await app.composition.stop()
+        let reopened = try await entry(locale: "en-US", profileURL: profile)
+        XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.language, .chinese)
+        throw XCTSkip("One actual edit per pane, relaunch and all downstream consumers remain unverified")
+    }
+
+    func testG1_SET_9_28_SignedBuildNoticeApplicability() async throws {
+        let app = try await entry(locale: "en-US")
+        let window = try await settings(app, pane: "about")
+        try assertControls(["settings.licenses.text"], in: window)
+        throw XCTSkip("Signed/unsigned packaged build comparison requires separately authorized signed artifacts")
     }
 }
