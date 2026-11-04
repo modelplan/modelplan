@@ -66,14 +66,33 @@ import ModelPlanEngineClient
         XCTAssertNil(app.composition.store.snapshot.delivery)
         XCTAssertFalse(try XCTUnwrap(injected).isCurrent(context), "Construction must not launch or admit an engine session")
     }
-    func testSliverQuotaRolesAreNotInferredFromNoticeMarksOrPixels() {
-        let sliver = DockSliverView(frame: .init(x: 0, y: 0, width: 4, height: 100))
-        XCTAssertNil(sliver.quotaSegmentColorRolesForChecks)
-        sliver.noticeMarks = []
-        XCTAssertNil(sliver.quotaSegmentColorRolesForChecks, "An empty notice set cannot prove neutral quota segments")
-        sliver.dispose()
+    func testSliverReportsDrawnColourRunsWithoutInventingQuotaProvenance() throws {
+        let sliver = DockSliverView(frame: .init(x: 0, y: 0, width: 4, height: 20))
+        defer { sliver.dispose() }
+        XCTAssertTrue(sliver.quotaSegmentColorRolesForChecks.isEmpty)
+        let context = try XCTUnwrap(CGContext(data: nil, width: 4, height: 20, bitsPerComponent: 8, bytesPerRow: 16,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1)); context.fill(.init(x: 0, y: 0, width: 4, height: 10))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1)); context.fill(.init(x: 0, y: 10, width: 4, height: 10))
+        try sliver.apply(image: try XCTUnwrap(context.makeImage()), logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
+        let frame = sliver.frame, bytes = sliver.retainedBytes
+        let segments = sliver.quotaSegmentColorRolesForChecks
+        // AppKit colour-matches supplied images. Inspect the actual resolved channels,
+        // while keeping the exact RGBA available to a controlled-profile acceptance test.
+        let rgb = segments.map { segment -> [Int] in
+            let hex = Array(segment.rgbaHex.dropFirst())
+            return stride(from: 0, to: 6, by: 2).map { Int(String(hex[$0...($0 + 1)]), radix: 16)! }
+        }
+        XCTAssertTrue(rgb.contains { $0[0] > 230 && $0[1] < 70 && $0[2] < 70 })
+        XCTAssertTrue(rgb.contains { $0[2] > 230 && $0[0] < 70 && $0[1] < 70 })
+        XCTAssertTrue(segments.allSatisfy { $0.rgbaHex.count == 9 && $0.rgbaHex.hasSuffix("FF") })
+        XCTAssertEqual(segments.first?.from, 0); XCTAssertEqual(segments.last?.through, 1)
+        XCTAssertTrue(segments.allSatisfy { $0.remainingPercent == nil && $0.quotaRole == nil })
+        XCTAssertEqual(sliver.frame, frame); XCTAssertEqual(sliver.retainedBytes, bytes)
+        XCTAssertEqual(sliver.quotaSegmentColorRolesForChecks, segments, "Inspection must not alter drawing state")
+        try sliver.apply(image: nil, logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
+        XCTAssertFalse(sliver.quotaSegmentColorRolesForChecks.isEmpty, "The neutral metal also has observable colours")
     }
-
     func testSettingsSurfaceReadDoesNotConstructOrPresent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
