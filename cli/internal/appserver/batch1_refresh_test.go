@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ func TestRunningRefreshRetainsPendingAcrossConsentChange(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	autoPass := make(chan struct{}, 1)
+	var startedOnce sync.Once
 	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
 		Plan: func(p quota.Paths, scope string, at time.Time) (quota.ScopeRefreshPlan, error) {
 			if scope == consent.ScopeKiroRuntimeUsage {
@@ -32,7 +34,7 @@ func TestRunningRefreshRetainsPendingAcrossConsentChange(t *testing.T) {
 			return quota.PlanScopeRefresh(p, scope, at)
 		},
 		Run: func(ctx context.Context, _ quota.Paths, _ string, _ time.Time) error {
-			close(started)
+			startedOnce.Do(func() { close(started) })
 			select {
 			case <-release:
 			case <-ctx.Done():
@@ -87,6 +89,7 @@ func TestExpiredCredentialWaitDoesNotClearReplacement(t *testing.T) {
 	clock.Store(time.Now().Unix())
 	entered, release, cleaned, proceed := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
 	var waitCleanup atomic.Bool
+	var enteredOnce, releaseOnce, proceedOnce sync.Once
 	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
 		Now: func() time.Time { return time.Unix(clock.Load(), 0) },
 		Plan: func(_ quota.Paths, _ string, at time.Time) (quota.ScopeRefreshPlan, error) {
@@ -94,18 +97,20 @@ func TestExpiredCredentialWaitDoesNotClearReplacement(t *testing.T) {
 		},
 		Run: func(context.Context, quota.Paths, string, time.Time) error { return nil },
 		CredentialRequest: func(CredentialNeed) (string, error) {
-			close(entered)
+			enteredOnce.Do(func() { close(entered) })
 			<-release
 			return "", errors.New("synthetic timeout")
 		},
 		Changed: func() {
-			if waitCleanup.Load() {
+			if waitCleanup.CompareAndSwap(true, false) {
 				close(cleaned)
 				<-proceed
 			}
 		},
 	})
 	defer s.Close()
+	defer releaseOnce.Do(func() { close(release) })
+	defer proceedOnce.Do(func() { close(proceed) })
 	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
 	first, _, err := s.Request(context.Background(), params)
 	if err != nil || first[0].DisabledReason != nil {
@@ -122,7 +127,7 @@ func TestExpiredCredentialWaitDoesNotClearReplacement(t *testing.T) {
 		t.Fatalf("replacement not queued: %+v %v", second, err)
 	}
 	waitCleanup.Store(true)
-	close(release)
+	releaseOnce.Do(func() { close(release) })
 	select {
 	case <-cleaned:
 	case <-time.After(3 * time.Second):
@@ -132,8 +137,7 @@ func TestExpiredCredentialWaitDoesNotClearReplacement(t *testing.T) {
 	_, pending := s.pending["claude"]
 	_, queued := s.scheduled["claude"]
 	s.mu.Unlock()
-	waitCleanup.Store(false)
-	close(proceed)
+	proceedOnce.Do(func() { close(proceed) })
 	if !pending || !queued {
 		t.Fatalf("replacement lost guard: pending=%v queued=%v", pending, queued)
 	}
