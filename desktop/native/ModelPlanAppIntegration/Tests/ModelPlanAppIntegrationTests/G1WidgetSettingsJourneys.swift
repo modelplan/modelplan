@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanOfficialDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -67,7 +68,8 @@ private actor G1RowsClient: EngineClient {
 
 @MainActor final class G1WidgetSettingsJourneys: XCTestCase {
     private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false,
-                         five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89) throws -> WireRowsSnapshot {
+                         five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
+                         resetStatus: String? = nil, newReading: Bool = false) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -87,25 +89,52 @@ private actor G1RowsClient: EngineClient {
         weekly["id"] = "g1-week"; weekly["role"] = "weekly"; weekly["limitKey"] = "weekly"
         weekly["durationSeconds"] = 604800; weekly["remainingPercent"] = missingReading ? nil : week
         windows = [windows[0], weekly]
+        if newReading {
+            let observed = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 1_800_000_000))
+            accounts[0]["observedAt"] = observed
+            for index in windows.indices { windows[index]["observedAt"] = observed }
+        }
         accounts[0]["windows"] = windows
         if secondMember {
             var second = accounts[0]
             second["subscriptionRef"] = "fedcba9876543210"; second["accountLocator"] = "fedcba9876543210"
+            var plan = try XCTUnwrap(second["plan"] as? [String: Any]); plan["id"] = "g1-other"; second["plan"] = plan
             var secondWindows = windows
             secondWindows[0]["remainingPercent"] = secondFive; secondWindows[1]["remainingPercent"] = secondWeek
             second["windows"] = secondWindows; accounts.append(second)
         }
         rows[0]["accounts"] = accounts
-        projection["rows"] = empty ? [] : rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
+        projection["rows"] = empty ? [] : rows
+        if let resetStatus {
+            let path = capture.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
+            let document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+            let result = try XCTUnwrap(document["result"] as? [String: Any])
+            let data = try XCTUnwrap(result["data"] as? [String: Any])
+            let source = try XCTUnwrap(data["projection"] as? [String: Any])
+            var event = try XCTUnwrap((source["resetEvents"] as? [[String: Any]])?.first)
+            let now = Date(timeIntervalSince1970: 1_800_000_000), format = ISO8601DateFormatter()
+            event["rowId"] = "codex"; event["planIds"] = ["codex"]
+            event["publishedAt"] = format.string(from: now.addingTimeInterval(-60))
+            event["expiresAt"] = format.string(from: now.addingTimeInterval(3600))
+            event["schedule"] = ["precision": "window", "from": format.string(from: now), "through": format.string(from: now.addingTimeInterval(3600))]
+            if resetStatus == "confirmed" {
+                var confirmation = event
+                confirmation["status"] = "confirmed"; confirmation["confirms"] = event["id"]
+                confirmation["publishedAt"] = format.string(from: now.addingTimeInterval(-1))
+                projection["resetEvents"] = [event, confirmation]
+            } else { projection["resetEvents"] = [event] }
+        } else { projection.removeValue(forKey: "resetEvents") }
+        root["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
-    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false) async throws -> EngineDockMenuApplication {
+    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
-        let fixture = try fixture(empty: empty, secondMember: secondMember)
+        let fixture = try fixture(empty: empty, secondMember: secondMember, resetStatus: resetStatus)
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
             createsNativePanels: panels, dockEnvironment: { environment.sample() },
+            deadlineNow: { Date(timeIntervalSince1970: 1_800_000_000 + (clock?.elapsed ?? 0)) },
             deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1RowsClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
@@ -471,6 +500,189 @@ private actor G1RowsClient: EngineClient {
         XCTAssertTrue(dock.card.isHidden, "The arrival click must not activate the card")
         clock.advance(0.001); try click()
         XCTAssertFalse(dock.card.isHidden, "The same control must accept a click at the boundary")
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_2_02() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-dual-rings-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let view = app.composition.dock.dockView
+        let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+        XCTAssertGreaterThan(station.outer.width, station.inner.width)
+        XCTAssertNil(station.outer.unknownDash)
+        XCTAssertNil(station.inner.unknownDash)
+        let client = try XCTUnwrap(app.composition.client as? G1RowsClient)
+        for (five, week, outerStatus, innerStatus) in [(25.0, 72.0, DockQuotaStatus.critical, DockQuotaStatus.normal),
+                                                       (41.0, 25.0, .normal, .critical)] {
+            try await client.replaceRows(fixture(five: five, week: week))
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
+            let outer = try XCTUnwrap(reading.outer), inner = try XCTUnwrap(reading.inner)
+            XCTAssertEqual(outer.windowID, "g1-five"); XCTAssertEqual(inner.windowID, "g1-week")
+            XCTAssertEqual(try XCTUnwrap(outer.fraction), five / 100, accuracy: 0.0001)
+            XCTAssertEqual(try XCTUnwrap(inner.fraction), week / 100, accuracy: 0.0001)
+            XCTAssertEqual(outer.status, outerStatus); XCTAssertEqual(inner.status, innerStatus)
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_3_10() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-hidden-percent-event-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, resetStatus: "announced")
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        _ = try await editor.commit(SettingsB20Edit.showPercentages(false))
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+            let notice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
+            XCTAssertEqual(station.showsReadout, false)
+            XCTAssertEqual(notice.tone, .blue)
+            XCTAssertGreaterThan(station.eventRect.midX, station.centre.x)
+            XCTAssertLessThan(station.eventRect.midY, station.centre.y)
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_4_03() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-announced-dot-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, resetStatus: "announced")
+        defer { app.composition.dock.close() }
+        let notice = try XCTUnwrap(app.composition.dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertEqual(notice.key.kind, .resetAnnounced)
+        XCTAssertEqual(notice.tone, .blue); XCTAssertEqual(notice.shape, .hollow)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_4_04() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-confirmed-dot-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, resetStatus: "confirmed")
+        defer { app.composition.dock.close() }
+        let notice = try XCTUnwrap(app.composition.dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertEqual(notice.key.kind, .resetConfirmed)
+        XCTAssertEqual(notice.tone, .blue); XCTAssertEqual(notice.shape, .solid)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_4_06() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-no-quota-dot-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1RowsClient), view = app.composition.dock.dockView
+        try await client.replaceRows(fixture(five: 0))
+        XCTAssertEqual(view.presentedReadingsForChecks["0123456789abcdef"]?.status, .critical)
+        XCTAssertNil(view.presentedNoticesForChecks["0123456789abcdef"], "Low quota alone must not create an event dot")
+        try await client.replaceRows(fixture(five: 0, resetStatus: "announced"))
+        XCTAssertEqual(view.presentedNoticesForChecks["0123456789abcdef"]?.tone, .blue)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_4_10() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-event-size-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, resetStatus: "announced")
+        defer { app.composition.dock.close() }
+        let view = app.composition.dock.dockView
+        let notice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
+        let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+        XCTAssertEqual(notice.tone, .blue)
+        XCTAssertEqual(station.showsReadout, true)
+        XCTAssertGreaterThan(station.eventRect.midX, station.readout.midX)
+        XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 5, accuracy: 0.0001)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_7_06() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-reset-truth-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1RowsClient), view = app.composition.dock.dockView
+        func remaining() throws -> Double { try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"]?.outer?.fraction) }
+        XCTAssertEqual(try remaining(), 0.41, accuracy: 0.0001)
+        try await client.replaceRows(fixture(five: 41, resetStatus: "announced"))
+        XCTAssertEqual(try remaining(), 0.41, accuracy: 0.0001)
+        XCTAssertEqual(view.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetAnnounced)
+        try await client.replaceRows(fixture(five: 41, resetStatus: "confirmed"))
+        XCTAssertEqual(try remaining(), 0.41, accuracy: 0.0001)
+        XCTAssertEqual(view.presentedNoticesForChecks["0123456789abcdef"]?.key.kind, .resetConfirmed)
+        try await client.replaceRows(fixture(five: 88, resetStatus: "confirmed", newReading: true))
+        XCTAssertEqual(try remaining(), 0.88, accuracy: 0.0001)
+        XCTAssertNil(view.presentedNoticesForChecks["0123456789abcdef"])
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_4_01() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-event-spacing-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, secondMember: true, resetStatus: "announced")
+        defer { app.composition.dock.close() }
+        let view = app.composition.dock.dockView
+        let stations = try XCTUnwrap(view.presentedSkinForChecks?.stations)
+        let first = try XCTUnwrap(stations.first { $0.subscriptionID == "0123456789abcdef" })
+        let second = try XCTUnwrap(stations.first { $0.subscriptionID == "fedcba9876543210" })
+        XCTAssertNotNil(view.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertNil(view.presentedNoticesForChecks["fedcba9876543210"])
+        XCTAssertEqual(view.presentedNoticesForChecks.count, 1)
+        XCTAssertGreaterThan(first.eventRect.midX, first.readout.midX)
+        XCTAssertEqual(first.eventRect.width, second.eventRect.width, accuracy: 0.0001)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_3_12() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-t2-pitch-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let view = app.composition.dock.dockView
+        let size = try XCTUnwrap(view.appearanceDisplaySize), skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let prefs = try XCTUnwrap(app.settingsHost.application.editor.snapshot?.preferences)
+        let subscriptions = [T2Subscription(id: "0123456789abcdef"), T2Subscription(id: "fedcba9876543210")]
+        let coords = T2EdgeCoordinates(edge: .right, width: size.width, height: size.height, menuBarExclusion: view.appearanceMenuBarExclusion)
+        let geometry = try T2Geometry.make(subscriptions: subscriptions, input: .init(coordinates: coords, diameter: prefs.size.nozzleDiameter, showsPercentages: prefs.showPercentages, along: prefs.dockAlongFraction))
+        XCTAssertEqual(skin.stations.count, geometry.stations.count)
+        for expected in geometry.stations {
+            let id = try XCTUnwrap(expected.subscription?.id)
+            let actual = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
+            XCTAssertEqual(actual.centre.x, expected.centre.x, accuracy: 0.0001)
+            XCTAssertEqual(actual.centre.y, expected.centre.y, accuracy: 0.0001)
+            XCTAssertNotEqual(expected.pitch, 82, accuracy: 0.0001)
+        }
+        let expectedBounds = geometry.outline.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
+            .union(geometry.ignitionBounds.insetBy(dx: -4 * prefs.size.nozzleDiameter / 52, dy: -4 * prefs.size.nozzleDiameter / 52)).integral
+        XCTAssertEqual(skin.bounds, expectedBounds)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_6_18() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-accessible-help-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1DisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView
+        func inspect(_ node: NSView) {
+            XCTAssertNil(node.toolTip, "Dock controls must not expose native hover tooltips")
+            if node is NSControl && node.isAccessibilityElement() {
+                XCTAssertFalse((node.accessibilityLabel() ?? "").isEmpty, "Accessible controls need a label")
+            }
+            node.subviews.forEach(inspect)
+        }
+        inspect(try XCTUnwrap(view.superview))
+        let children = try XCTUnwrap(view.accessibilityChildren()?.compactMap { $0 as? NSAccessibilityElement })
+        XCTAssertFalse(children.isEmpty)
+        for element in children {
+            XCTAssertFalse((element.accessibilityLabel() ?? "").isEmpty)
+            element.setAccessibilityFocused(true)
+            inspect(view)
+            element.setAccessibilityFocused(false)
+        }
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle("0123456789abcdef")
+        inspect(view); inspect(dock.card)
         await app.composition.stop()
     }
 }
