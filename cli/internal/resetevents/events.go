@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
@@ -17,20 +18,22 @@ import (
 )
 
 type Source = rows.ResetSource
+type Link = rows.ResetLink
 type Schedule = rows.ResetSchedule
 type Event = rows.ResetEvent
 type record struct {
-	ID          string     `json:"id"`
-	Provider    string     `json:"provider"`
-	EventType   string     `json:"eventType"`
-	Status      string     `json:"status"`
-	At          *time.Time `json:"at"`
-	URL         string     `json:"url"`
-	PublishedAt time.Time  `json:"publishedAt"`
-	Schedule    *Schedule  `json:"schedule"`
-	PlanIDs     *[]string  `json:"planIds"`
-	Scope       *string    `json:"scope"`
-	Confirms    string     `json:"confirms"`
+	ID             string     `json:"id"`
+	Provider       string     `json:"provider"`
+	EventType      string     `json:"eventType"`
+	Status         string     `json:"status"`
+	At             *time.Time `json:"at"`
+	URL            string     `json:"url"`
+	ObservationURL string     `json:"observationUrl"`
+	PublishedAt    time.Time  `json:"publishedAt"`
+	Schedule       *Schedule  `json:"schedule"`
+	PlanIDs        *[]string  `json:"planIds"`
+	Scope          *string    `json:"scope"`
+	Confirms       string     `json:"confirms"`
 }
 
 var publicID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
@@ -38,13 +41,83 @@ var publicationID = regexp.MustCompile(`^[a-f0-9]{24}$`)
 var safePlan = map[string]bool{"free": true, "plus": true, "pro": true, "team": true, "teams": true, "business": true, "enterprise": true}
 var planID = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
 
+// Typed source-link admission: the AIhot event page, the original X post and an
+// optional official vendor page. Exact hosts only; a failing candidate link is
+// omitted without dropping the event or changing its times or identity.
+var originalLinkHosts = map[string]bool{"x.com": true, "twitter.com": true}
+var originalStatusPath = regexp.MustCompile(`^/[A-Za-z0-9_]{1,15}/status/[0-9]{1,19}$`)
+var officialLinkHosts = map[string]bool{
+	"openai.com": true, "help.openai.com": true, "status.openai.com": true,
+	"platform.openai.com": true, "developers.openai.com": true,
+	"anthropic.com": true, "www.anthropic.com": true, "support.anthropic.com": true,
+	"status.anthropic.com": true, "docs.anthropic.com": true,
+}
+
+// Paths must be plain public page paths, not account, credential, or encoded data.
+var publicPath = regexp.MustCompile(`^/[A-Za-z0-9][A-Za-z0-9/_-]*$`)
+
+// AIhot citations are public reset article slugs; official citations use
+// public documentation, news or incident paths, never arbitrary profiles.
+var aihotArticlePath = regexp.MustCompile(`(?i)^/[a-z0-9-]*reset[a-z0-9-]*$`)
+var officialPublicPath = regexp.MustCompile(`(?i)^/(incidents|docs|en/docs|articles|news|index|research|blog|updates|releases)(/[a-z0-9_-]+)*$`)
+var privatePathPart = regexp.MustCompile(`(?i)(^|[/_-])(user|users|profile|profiles|account|accounts|member|members|personal|private|settings|login|session|auth|token|secret|password|credential|api|key|email|me)([/_-]|$)`)
+
+func admittedLink(kind, raw string) (Link, bool) {
+	if raw == "" || len(raw) > 2048 || strings.ContainsAny(raw, "?#%") {
+		return Link{}, false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.Opaque != "" || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" || u.RawFragment != "" {
+		return Link{}, false
+	}
+	if u.Host != u.Hostname() {
+		return Link{}, false
+	}
+	host := strings.ToLower(u.Hostname())
+	switch kind {
+	case "aihot":
+		if host != "aihot.news" || !aihotArticlePath.MatchString(u.Path) || !publicPath.MatchString(u.Path) || privatePathPart.MatchString(u.Path) {
+			return Link{}, false
+		}
+	case "original":
+		if !originalLinkHosts[host] || !originalStatusPath.MatchString(u.Path) || privatePathPart.MatchString(u.Path) {
+			return Link{}, false
+		}
+	case "official":
+		if !officialLinkHosts[host] || !officialPublicPath.MatchString(u.Path) || !publicPath.MatchString(u.Path) || privatePathPart.MatchString(u.Path) {
+			return Link{}, false
+		}
+	default:
+		return Link{}, false
+	}
+	return Link{Type: kind, URL: raw}, true
+}
+
+// Only the publication's reviewed URL fields are candidates. Classify by
+// admitted host and path, never by an upstream-supplied link type.
+func sourceLinks(r record) []Link {
+	var out []Link
+	for _, kind := range []string{"aihot", "official", "original"} {
+		for _, raw := range []string{r.URL, r.ObservationURL} {
+			if link, ok := admittedLink(kind, raw); ok {
+				out = append(out, link)
+				break
+			}
+		}
+	}
+	return out
+}
+
 func eventID(r record) (string, bool) {
 	if r.At == nil || r.URL == "" {
 		return r.ID, publicID.MatchString(r.ID)
 	}
 	u, err := url.Parse(r.URL)
-	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || r.At.IsZero() {
+	if r.At.IsZero() {
 		return "", false
+	}
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return r.ID, publicID.MatchString(r.ID)
 	}
 	h := sha256.New()
 	for _, part := range []string{"modelplan-reset-event-v1", r.Provider, r.At.UTC().Format(time.RFC3339Nano), r.URL} {
@@ -144,7 +217,7 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 			blocked[id] = true
 			continue
 		}
-		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID}}
+		known[id] = Event{Version: 1, ID: id, Provider: r.Provider, RowID: row.ID, Status: "announced", PlanIDs: plans, PublishedAt: r.PublishedAt, Schedule: r.Schedule, ExpiresAt: expiry, Source: Source{Kind: "publication", PublicationID: d.PublicationID, Links: sourceLinks(r)}}
 	}
 	dropped := 0
 	for _, r := range confirmations {
@@ -162,6 +235,11 @@ func Project(d *digest.Digest, projection rows.Projection, now time.Time) ([]Eve
 		e.PublishedAt = r.PublishedAt
 		e.Schedule = nil
 		e.ExpiresAt = r.PublishedAt.Add(24 * time.Hour)
+		// A confirmation's own admitted links supersede the announcement's;
+		// a confirmation without links keeps the original citations.
+		if links := sourceLinks(r); len(links) > 0 {
+			e.Source.Links = links
+		}
 		known[e.ID] = e
 	}
 	out := make([]Event, 0, len(known))

@@ -2013,6 +2013,29 @@
       ],
       "type": "object"
     },
+    "ProposedResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "aihot",
+            "original",
+            "official"
+          ],
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
     "ProposedResetSchedule": {
       "additionalProperties": false,
       "properties": {
@@ -2049,6 +2072,15 @@
             "publication"
           ],
           "type": "string"
+        },
+        "links": {
+          "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
+          "items": {
+            "$ref": "#/$defs/ProposedResetLink"
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
         },
         "publicationId": {
           "pattern": "^[a-f0-9]{24}$",
@@ -2999,6 +3031,22 @@
       ],
       "type": "object"
     },
+    "ResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
     "ResetSchedule": {
       "additionalProperties": false,
       "properties": {
@@ -3026,6 +3074,12 @@
       "properties": {
         "kind": {
           "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/ResetLink"
+          },
+          "type": "array"
         },
         "publicationId": {
           "type": "string"

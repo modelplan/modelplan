@@ -122,7 +122,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	}
 	if view.ResetEvents != nil {
 		result.Sources = append(result.Sources, "reset-events")
-		result.ResetEvents = append(result.ResetEvents, (*view.ResetEvents)...)
+		result.ResetEvents = append(result.ResetEvents, wire.ProjectResetEventLinks(*view.ResetEvents, appserver.ResetEventLinksEnabled(ctx))...)
 		sort.Slice(result.ResetEvents, func(i, j int) bool { return result.ResetEvents[i].ID < result.ResetEvents[j].ID })
 		if len(result.ResetEvents) > 64 {
 			result.ResetEvents = result.ResetEvents[:64]
