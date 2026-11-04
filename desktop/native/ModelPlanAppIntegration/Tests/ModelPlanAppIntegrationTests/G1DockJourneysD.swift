@@ -23,9 +23,10 @@ private actor G1DEngine: EngineClient {
     let context = EngineDeliveryContext(sessionID: "g1-d", floor: .init(storeEpoch: "g1-d", generation: 1), revision: 1)
     var rows: WireRowsSnapshot
     var requests: [String] = []
-    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    let refreshDecisions: [WireRefreshDecision]?
+    init(store: EngineStore, rows: WireRowsSnapshot, refreshDecisions: [WireRefreshDecision]? = nil) { self.store = store; self.rows = rows; self.refreshDecisions = refreshDecisions }
     nonisolated func isCurrent(_ value: EngineDeliveryContext) -> Bool { value.sessionID == "g1-d" && value.revision == 1 }
-    func supportsCapability(_ value: String) async -> Bool { value == "memberRefreshV1" }
+    func supportsCapability(_ value: String) async -> Bool { value == "memberRefreshV1" || (value == "refreshDecisionsV1" && refreshDecisions != nil) }
     func start() async throws -> EngineDeliveryContext { requests.append("start"); await store.consume(.connection(.ready(context))); await store.consume(.context(context)); return context }
     func stop() async { requests.append("stop") }
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -46,7 +47,13 @@ private actor G1DEngine: EngineClient {
     func cockpit(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func pluginInstall(_ value: WirePluginInstallParams, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func diagnostics(timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion {
+        guard let refreshDecisions else { throw EngineClientError.unsupportedCapability }
+        requests.append("diagnostics")
+        let data = try WireDiagnostics(refreshDecisions: refreshDecisions, protocolVersion: "1.0", serverVersion: "synthetic", uptimeSeconds: 0, scopes: [])
+        await store.consume(.response(requestID: .string("diagnostics"), .diagnostics(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: data), delivery: context))))
+        return .init(requestID: .string("diagnostics"))
+    }
 }
 @MainActor private final class G1DFixture {
     static let ids = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"]
@@ -54,6 +61,7 @@ private actor G1DEngine: EngineClient {
     let root: URL, store: SettingsStore
     var app: EngineDockMenuApplication!
     var engine: G1DEngine!
+    var refreshDecisions: [WireRefreshDecision]?
     var raw: [String: Any]
     var pointer = CGPoint(x: 700, y: 400), cardFrame: CGRect?, presence = DockPresence()
     var displays = [DockDisplayArea(id: "primary", frame: .init(x: 0,y: 0,width: 1440,height: 900), visibleFrame: .init(x: 0,y: 80,width: 1440,height: 820))]
@@ -103,7 +111,7 @@ private actor G1DEngine: EngineClient {
         app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: windowEntry, cockpitEntryEnabled: cockpitEnabled,
             dockEnvironment: { [weak self] in guard let self else { return .init(displays: [], layouts: []) }; return .init(displays: self.displays, layouts: [], primaryDisplayID: "primary", pointer: self.pointer, presence: self.presence, cardFrame: self.cardFrame) },
             deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed }, deadlineScheduling: timer,
-            makeClient: { [weak self] _, store in let engine = G1DEngine(store: store, rows: rows); self?.engine = engine; return engine }, activateSettings: {})
+            makeClient: { [weak self] _, store in let engine = G1DEngine(store: store, rows: rows, refreshDecisions: self?.refreshDecisions); self?.engine = engine; return engine }, activateSettings: {})
         EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = previousLedger
         app.composition.setResetNotificationDelivery { [weak self] in self?.notificationRequests.append($0) }
         if windowEntry {
@@ -147,6 +155,37 @@ private actor G1DEngine: EngineClient {
 }
 
 @MainActor final class G1DockJourneysD: XCTestCase {
+    func testPost429RecentRefreshesUseNegotiatedAdmittedDiagnostics() async throws {
+        let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }
+        f.refreshDecisions = try (0..<24).map { try WireRefreshDecision(agoSeconds: Int64($0 * 60), scope: .codexRuntimeUsage, outcome: .succeeded, reason: .completed) }
+        f.refreshDecisions?.append(try .init(agoSeconds: 0, scope: .unknown("untrusted-scope"), outcome: .succeeded, reason: .completed))
+        try await f.open()
+        try await complete { f.app.currentSettingsContext.refreshHistory != nil }
+        let history = try XCTUnwrap(f.app.currentSettingsContext.refreshHistory)
+        XCTAssertEqual(history.count, 20)
+        XCTAssertTrue(history.allSatisfy { $0.scope == "codex.runtime_usage" && $0.outcome == "Succeeded" })
+        let presented = try XCTUnwrap(SettingsCatalogue.rows(preferences: try XCTUnwrap(f.editor.snapshot).preferences, context: f.app.currentSettingsContext, paneID: "diagnostics").first { $0.key == .refreshHistory })
+        guard case .text(let summary) = presented.value else { return XCTFail("History must be presented as text") }
+        XCTAssertTrue(summary.contains("codex.runtime_usage")); XCTAssertFalse(summary.contains("untrusted-scope"))
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        try await f.publish()
+        XCTAssertEqual(f.app.currentSettingsContext.refreshHistory?.first?.outcome, "成功")
+        XCTAssertEqual(f.app.currentSettingsContext.refreshHistory?.first?.reason, "已完成")
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertNil(f.app.currentSettingsContext.refreshHistory)
+        XCTAssertFalse(try SettingsCatalogue.rows(preferences: try XCTUnwrap(f.editor.snapshot).preferences, context: f.app.currentSettingsContext, paneID: "diagnostics").contains { $0.key == .refreshHistory })
+    }
+    func testPost429RecentRefreshesHideWithoutCapabilityAndExplainEmptyHistory() async throws {
+        let unsupported = try await fixture()
+        XCTAssertNil(unsupported.app.currentSettingsContext.refreshHistory)
+        let trace = await unsupported.engine.trace(); XCTAssertFalse(trace.contains("diagnostics"))
+        let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; f.refreshDecisions = []
+        try await f.open(); try await complete { f.app.currentSettingsContext.refreshHistory != nil }
+        let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: try XCTUnwrap(f.editor.snapshot).preferences, context: f.app.currentSettingsContext, paneID: "diagnostics").first { $0.key == .refreshHistory })
+        XCTAssertEqual(row.value, .text("No recent refreshes"))
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: try XCTUnwrap(f.editor.snapshot).preferences, context: f.app.currentSettingsContext, paneID: "diagnostics").first { $0.key == .refreshHistory }?.value, .text("暂无刷新记录"))
+    }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }
     private func seam(_ id: String, _ reason: String) async throws {
