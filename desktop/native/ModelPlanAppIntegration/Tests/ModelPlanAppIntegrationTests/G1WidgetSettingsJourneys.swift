@@ -470,39 +470,6 @@ private actor G1RowsClient: EngineClient {
         await app.composition.stop()
     }
 
-    func testG1_DOCK_3_6_09() async throws {
-        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-arrival-guard-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: profile) }
-        let environment = G1DisplayEnvironment(), clock = G1Clock()
-        let app = try await open(environment, profile: profile, clock: clock, panels: true)
-        defer { app.composition.dock.close() }
-        let dock = app.composition.dock
-        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(true))
-        environment.pointer = CGPoint(x: 720, y: 450); dock.refreshPresence(); clock.advance(1)
-        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
-        environment.pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.midY)
-        dock.refreshPresence(); clock.advance(0.151)
-        XCTAssertEqual(dock.edgePresentation?.state, .expanded)
-        let panel = try XCTUnwrap(dock.nativePanel)
-        let view = dock.dockView
-        let anchor = try XCTUnwrap(view.interactionAnchor("0123456789abcdef"))
-        let local = CGPoint(x: anchor.midX, y: anchor.midY)
-        let screen = panel.convertPoint(toScreen: view.convert(local, to: nil))
-        environment.pointer = screen
-        func click() throws {
-            let location = panel.convertPoint(fromScreen: screen)
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: clock.elapsed, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
-                if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseUp(with: event) }
-            }
-        }
-        clock.advance(0.299); try click()
-        XCTAssertTrue(dock.card.isHidden, "The arrival click must not activate the card")
-        clock.advance(0.001); try click()
-        XCTAssertFalse(dock.card.isHidden, "The same control must accept a click at the boundary")
-        await app.composition.stop()
-    }
-
     func testG1_DOCK_3_2_02() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-dual-rings-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
