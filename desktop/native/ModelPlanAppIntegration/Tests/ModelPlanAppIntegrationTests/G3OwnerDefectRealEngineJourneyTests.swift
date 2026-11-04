@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
 import XCTest
 import ModelPlanDock
 import ModelPlanEngineClient
@@ -43,6 +44,61 @@ private actor G3SyntheticEngine: EngineClient {
 }
 
 @MainActor final class G3OwnerDefectJourneyTests: XCTestCase {
+    // A detached real-engine preflight is useful evidence, but does not claim
+    // a displayed status-item contour or visible-extent result.
+    private func realStatusPreflight() async throws -> (EngineDockMenuApplication, NSImage) {
+        let environment = ProcessInfo.processInfo.environment
+        guard let candidate = environment["MODELPLAN_G3_CANDIDATE_APP"],
+              let expectedHash = environment["MODELPLAN_G3_HELPER_SHA256"], expectedHash.count == 64 else {
+            throw XCTSkip("NOT RUN: an identity-bound packaged candidate and helper are required")
+        }
+        let bundle = URL(fileURLWithPath: candidate, isDirectory: true).standardizedFileURL
+        guard bundle.pathExtension == "app" else { throw XCTSkip("NOT RUN: candidate is not a packaged app") }
+        let binary = bundle.appendingPathComponent("Contents/Helpers/modelplan")
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else { throw XCTSkip("NOT RUN: packaged app-server is unavailable") }
+        let digest = SHA256.hash(data: try Data(contentsOf: binary)).map { String(format: "%02x", $0) }.joined()
+        guard digest == expectedHash.lowercased() else { throw XCTSkip("NOT RUN: candidate helper identity mismatch") }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-real-engine-" + UUID().uuidString, isDirectory: true)
+        let session = root.appendingPathComponent(".codex/sessions/2026/11/05", isDirectory: true)
+        try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+        let timestamp = Date(), formatter = ISO8601DateFormatter()
+        let synthetic: [String: Any] = ["timestamp": formatter.string(from: timestamp), "type": "event_msg", "payload": ["type": "token_count", "rate_limits": ["limit_id": "codex", "plan_type": "plus", "primary": ["used_percent": 25, "window_minutes": 300, "resets_at": Int(timestamp.addingTimeInterval(7200).timeIntervalSince1970)]]]]
+        var bytes = try JSONSerialization.data(withJSONObject: synthetic, options: [.sortedKeys]); bytes.append(0x0a)
+        try bytes.write(to: session.appendingPathComponent("rollout-2026-11-05T00-00-00-synthetic.jsonl"), options: .atomic)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("settings"), preferredLanguages: ["en"])
+        let configuration = EngineClientConfiguration(executableURL: binary, applicationVersion: "g3-synthetic", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"], offline: true, readOnly: true)
+        let entry = EngineRowsEntry.make(configuration: configuration, settingsStore: settings, createsNativePanels: false, bundleURL: bundle, activateSettings: {})
+        addTeardownBlock { @MainActor in await entry.composition.stop(); entry.composition.dock.close(); try? FileManager.default.removeItem(at: root) }
+        await entry.prepare(); entry.allowDockPresentation(); await entry.composition.start()
+        XCTAssertTrue(entry.composition.client is ProcessEngineClient)
+        for _ in 0..<200 {
+            if entry.composition.store.snapshot.delivery != nil && entry.composition.store.snapshot.rows != nil { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertNotNil(entry.composition.store.snapshot.delivery, "The real app-server must complete its handshake")
+        XCTAssertNotNil(entry.composition.store.snapshot.rows, "The real app-server must deliver a synthetic snapshot")
+        let image = try XCTUnwrap(CommunityMenuBarResources.templateImage(appURL: bundle))
+        return (entry, image)
+    }
+
+    func testG3_07RealEnginePackagedGlyphPreflight() async throws {
+        let (entry, image) = try await realStatusPreflight()
+        XCTAssertTrue(image.isTemplate)
+        XCTAssertNotNil(entry.composition.client)
+        // Actual status-item contour and ring absence require an approved
+        // reference and a GUI reservation; detached asset evidence is not G3.
+    }
+
+    func testG3_08RealEnginePackagedGlyphPreflight() async throws {
+        let (entry, image) = try await realStatusPreflight()
+        XCTAssertTrue(image.isTemplate)
+        XCTAssertGreaterThan(image.size.width, 0)
+        XCTAssertGreaterThan(image.size.height, 0)
+        XCTAssertNotNil(entry.composition.client)
+        // Nominal image dimensions do not establish visible extent, alignment,
+        // actual status-item display, or 1x/2x and appearance comparisons.
+    }
+
     private func app(language: String = "en") async throws -> EngineDockMenuApplication {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g3-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
