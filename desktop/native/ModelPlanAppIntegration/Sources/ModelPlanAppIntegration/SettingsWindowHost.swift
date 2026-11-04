@@ -6,13 +6,20 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
 
 /// The app host checks lifecycle eligibility after asynchronous preparation and before ordering a window.
 @MainActor public protocol SettingsWindowSurface: AnyObject {
+    var windowForChecks: NSWindow? { get }
     func prepare() async
     func show(paneID: String?)
     func hide()
 }
 
+public extension SettingsWindowSurface {
+    /// Custom headless surfaces may not own a native window.
+    var windowForChecks: NSWindow? { nil }
+}
+
 @MainActor private final class NativeSettingsWindowSurface: SettingsWindowSurface {
     private let controller: SettingsWindowController
+    var windowForChecks: NSWindow? { controller.window }
     init(editor: SettingsEditor, environment: @escaping @MainActor () -> SettingsEnvironment, scopeConsentEntry: ScopeConsentEntry?) {
         controller = SettingsWindowController(editor: editor, environmentProvider: environment, scopeConsentEntry: scopeConsentEntry)
     }
@@ -60,6 +67,9 @@ public enum SettingsPresentationOrigin: Sendable { case userInitiated, restorati
         self.makeSurface = makeSurface ?? { NativeSettingsWindowSurface(editor: $0, environment: resolveEnvironment, scopeConsentEntry: scopeConsentEntry) }
         super.init()
     }
+
+    /// Actual retained surface; reading never constructs or presents a window.
+    public var currentSurfaceForChecks: (any SettingsWindowSurface)? { surface }
 
     /// Gear and other app-owned buttons may call this; the returned action retains no window or host.
     public var action: @MainActor () -> Void { { [weak self] in self?.showSettings(nil) } }

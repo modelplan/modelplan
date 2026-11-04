@@ -377,6 +377,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
     }
 
+    /// Registered member frames in the current instrument view's local coordinates.
+    public var renderedStationFramesForChecks: [String: CGRect] {
+        let view = interactionView
+        guard view.interactionProjectionAvailable else { return [:] }
+        return Dictionary(uniqueKeysWithValues: (model?.inputs ?? []).compactMap { input in
+            view.interactionAnchor(input.id).map { (input.id, $0) }
+        })
+    }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }

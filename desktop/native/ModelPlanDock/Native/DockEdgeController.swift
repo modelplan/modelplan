@@ -67,6 +67,8 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private var primaryID:String?
     private var dragOrigin:CGPoint?,preview:DockEdgePlacement?,dragStartPlacement:DockEdgePlacement?
     private var dragStarted=false
+    /// This controller publishes geometry, not native animation role/curve receipts.
+    public var animationRolesForChecks: [String: String]? { nil }
     public var isBackgroundMoving:Bool{dragStarted}
     public var isBackgroundPressed:Bool{dragOrigin != nil}
     public init(preference:DockEdgePreference = .init(),policy:DockVisibilityPolicy = .init(),clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockEdgeEnvironment,position:@escaping (DockPlacementRequest)throws->DockEdgePlacement? = {try $0.resolveEligibleEdge()}){

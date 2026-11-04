@@ -84,6 +84,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
     private var noticePulseLayers = [CALayer]()
     @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
+    /// No persistent pulse-start history is recorded. nil is unsupported, never a zero-start receipt.
+    public var noticePulseReceiptsForChecks: [String: Int]? { nil }
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
         guard let path = registeredHullPath else { return nil }

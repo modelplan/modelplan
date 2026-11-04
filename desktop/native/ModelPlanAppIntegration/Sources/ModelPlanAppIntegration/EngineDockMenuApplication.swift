@@ -12,6 +12,8 @@ import ModelPlanMenuVerification
 
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    /// This composition has no sound/haptic request recorder. nil cannot prove absence of requests.
+    public var effectRequestsForChecks: [String]? { nil }
     public let composition: EngineDockMenuComposition
     private let scopeBinding: EngineScopeConsentBinding
     public var scopeConsentEntry: ScopeConsentEntry { scopeBinding.entry }

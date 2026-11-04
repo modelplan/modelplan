@@ -52,6 +52,28 @@ import CryptoKit
     }
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
+    /// TextKit fragments of currently mounted text, in card-local coordinates.
+    /// Unlaid-out fields have no observed fragments; this getter does not force layout.
+    public var renderedLineFragmentsForChecks: [String: [CGRect]] {
+        var result: [String: [CGRect]] = [:]
+        for (key, field) in labels where field.superview != nil && !field.isHiddenOrHasHiddenAncestor {
+            let drawing = field.cell?.drawingRect(forBounds: field.bounds) ?? field.bounds
+            guard drawing.width > 0, drawing.height > 0 else { continue }
+            let storage = NSTextStorage(attributedString: field.attributedStringValue)
+            let manager = NSLayoutManager(), container = NSTextContainer(size: drawing.size)
+            container.lineFragmentPadding = 0; container.lineBreakMode = field.lineBreakMode
+            container.maximumNumberOfLines = field.maximumNumberOfLines
+            manager.addTextContainer(container); storage.addLayoutManager(manager)
+            let range = manager.glyphRange(for: container)
+            var fragments: [CGRect] = []
+            manager.enumerateLineFragments(forGlyphRange: range) { _, used, _, _, _ in
+                fragments.append(field.convert(used.offsetBy(dx: drawing.minX, dy: drawing.minY), to: self))
+            }
+            result[field.accessibilityIdentifier() ?? key] = fragments
+        }
+        return result
+    }
+
     private func arrange(_ parent:NSStackView,_ children:[NSView]){
         let kept=Set(children.map{ObjectIdentifier($0)})
         for old in parent.arrangedSubviews where !kept.contains(ObjectIdentifier(old)){
