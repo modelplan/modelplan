@@ -25,8 +25,27 @@ func memberFixture(t *testing.T) (*memoryBackend, func(consent.Admission) quota.
 
 func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	backend, paths, _, member := memberFixture(t)
+	now := time.Now().UTC().Truncate(time.Second)
 	called := make(chan string, 1)
-	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { called <- scope; return nil }})
+	release := make(chan struct{})
+	changed := make(chan struct{}, 1)
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{
+		Backend: backend, Paths: paths, Now: func() time.Time { return now },
+		Changed: func() {
+			select {
+			case changed <- struct{}{}:
+			default:
+			}
+		},
+		Run: func(ctx context.Context, _ quota.Paths, scope string, _ time.Time) error {
+			called <- scope
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return nil
+		},
+	})
 	defer s.Close()
 	result, _, err := s.RequestMember(context.Background(), member)
 	if err != nil || result.Outcome != wire.MemberRefreshStarted {
@@ -35,14 +54,38 @@ func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	select {
 	case scope := <-called:
 		if scope != consent.ScopeCodexRuntimeUsage {
-			t.Fatalf("wrong scope: %s", scope)
+			t.Fatalf("wrong scope %s", scope)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("member reader did not run")
 	}
-	waitAutomaticFloor(t, s, "codex", time.Now().Add(-time.Second))
+	// A running job has not yet completed its cleanup; it must remain busy.
 	result, _, err = s.RequestMember(context.Background(), member)
-	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshFloor || result.NotBefore == nil {
+	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshBudget || result.NotBefore == nil || !result.NotBefore.Equal(now.Add(5*time.Minute)) {
+		t.Fatalf("in-flight read not deferred: %+v %v", result, err)
+	}
+	close(release)
+	// autoNext is written before run's defer removes pending. Wait for both
+	// state transitions, using Changed as a notification and a timer only as
+	// a deadlock watchdog; do not race the in-flight and floor reasons.
+	watchdog := time.NewTimer(3 * time.Second)
+	defer watchdog.Stop()
+	for {
+		s.mu.Lock()
+		until := s.autoNext["codex"]
+		_, pending := s.pending["codex"]
+		s.mu.Unlock()
+		if !pending && until.Equal(now.Add(5*time.Minute)) {
+			break
+		}
+		select {
+		case <-changed:
+		case <-watchdog.C:
+			t.Fatal("member refresh did not finish and establish its floor")
+		}
+	}
+	result, _, err = s.RequestMember(context.Background(), member)
+	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshFloor || result.NotBefore == nil || !result.NotBefore.Equal(now.Add(5*time.Minute)) {
 		t.Fatalf("floor not enforced: %+v %v", result, err)
 	}
 }
