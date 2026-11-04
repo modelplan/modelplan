@@ -214,9 +214,9 @@ test('CKP-MFD-12 scoped subscription shows reported credits and reading age with
 test('CKP-STRIP-05 alert lamp selects the clear, amber and red art through bridge updates',async({page})=>{
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);data.details=null;for(const w of data.projection.rows[0].accounts[0].windows)w.remainingPercent=75;
  const {send,receive}=await open(page,data),lamp=page.locator('[data-caution]');await expect(lamp).not.toHaveClass(/\blit\b/);await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::after').backgroundImage)).toContain('lamp-off-body');
- data.projection.rows[0].accounts[0].windows[0].remainingPercent=35;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bamber\b/);await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::after').backgroundImage)).toContain('lamp-amber-body');
+ data.projection.rows[0].accounts[0].windows[0].remainingPercent=35;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bamber\b/);await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::after').backgroundImage)).toContain('lamp-amber-body');await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::before').backgroundImage)).toContain('lamp-amber-glow');
  data.projection.rows[0].accounts[0].windows[0].remainingPercent=20;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);
- await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::after').backgroundImage)).toContain('lamp-red-body');
+ await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::after').backgroundImage)).toContain('lamp-red-body');await expect.poll(()=>lamp.evaluate(e=>getComputedStyle(e,'::before').backgroundImage)).toContain('lamp-red-glow');
 });
 
 test('CKP-ENG-01 five and six subscription columns show names in user order',async({page})=>{
