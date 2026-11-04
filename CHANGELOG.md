@@ -9,6 +9,9 @@ This draft targets the next CLI release. The tag, release and plugin pins requir
 - Update every installed ModelPlan CLI copy together, including plugin-pinned copies. Stop older CLI processes before starting this version; older and newer copies must not run concurrently against the same cache because their ledger lock protocols do not mutually exclude one another.
   请同时更新所有已安装的 ModelPlan CLI，包括插件锁定的副本。启动此版本前请停止旧 CLI 进程；新旧版本不得同时使用同一缓存，因为两者的账本锁协议无法相互排斥。
 
+- Preserve an existing legacy Claude Keychain permission when the App re-grants the saved-login scope without a new Keychain choice. New grants still start unset, and prior denials remain in force.
+  当 App 在未重新选择钥匙串权限的情况下再次授权已保存登录范围时，保留旧版 Claude 已有的钥匙串权限。新授权仍默认为未设置，既有拒绝仍然有效。
+
 - Give the App richer, consent-aware cockpit details, including available reserve and performance, recent sessions and quota alerts. Missing or uncertain readings stay unknown.
   App 可在授权范围内显示更丰富的驾驶舱详情，包括可用储备与性能、最近会话和额度提醒；缺失或不确定的读数保持未知。
 
