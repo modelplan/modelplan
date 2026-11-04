@@ -113,4 +113,32 @@ private actor G1PartCRowsClient: EngineClient {
         XCTAssertEqual(try readout(second),"59%")
         await second.composition.stop();second.composition.dock.close()
     }
+    // DOCK-3.3-11: inspect the installed Settings controls from the normal app entry.
+    func testG1_DOCK_3_3_11() async throws {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        for (locale, title, choices) in [("en-US", "Dock quota percentages", ["Shown", "Hidden"]), ("zh-CN", "挂件额度百分比", ["显示", "隐藏"])] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-settings-copy-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, makeClient: { _, target in G1PartCRowsClient(store: target, rows: rows) }, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare(); await app.composition.start()
+            let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.settingsHost.present(paneID: "dock", origin: .userInitiated)
+            let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+            addTeardownBlock { @MainActor in window.close() }
+            let views = descendants(try XCTUnwrap(window.contentView)).filter { !$0.isHiddenOrHasHiddenAncestor }
+            XCTAssertTrue(views.compactMap { ($0 as? NSTextField)?.stringValue }.contains(title), "Missing localized percentage setting title")
+            let popup = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "settings.showPercentages" } as? NSPopUpButton)
+            XCTAssertEqual(popup.itemArray.map(\.title), choices)
+        }
+    }
+    // DOCK-3.4-09: the existing real-entry synthetic journey verifies event delivery into the actual Dock card.
+    func testG1_DOCK_3_4_09() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.resetEvents(capture: capture)
+    }
+
 }
