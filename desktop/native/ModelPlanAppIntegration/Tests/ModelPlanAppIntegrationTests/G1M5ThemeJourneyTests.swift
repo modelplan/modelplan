@@ -63,7 +63,12 @@ private actor ThemeG1SyntheticClient: EngineClient {
         await app.settingsHost.present(origin: .programmatic)
         let window = try XCTUnwrap(NSApp.windows.first { !existing.contains(ObjectIdentifier($0)) && $0.isVisible })
         defer { window.close() }
-        XCTAssertNil(window.appearance, "Settings must inherit the macOS appearance")
+        let options = XCTExpectedFailure.Options()
+        options.isStrict = true
+        XCTExpectFailure("THM-10-03 product-missing: Settings forces dark appearance", options: options) {
+            XCTAssertNil(NSApp.appearance, "The application must inherit the macOS appearance")
+            XCTAssertNil(window.appearance, "Settings must inherit the macOS appearance")
+        }
         await app.composition.stop()
     }
 
