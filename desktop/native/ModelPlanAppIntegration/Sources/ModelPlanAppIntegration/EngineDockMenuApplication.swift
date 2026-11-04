@@ -101,7 +101,7 @@ import ModelPlanMenuVerification
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
         // M0's host opts in only when the native interaction port exists.
         if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
-            let clock = { ProcessInfo.processInfo.systemUptime }
+            let clock = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
             interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
                 scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
             interactionBinding?.onActivate = { [weak self] id in self?.activateMember(id) }
