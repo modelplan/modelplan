@@ -8,6 +8,10 @@ import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
 
+@MainActor private final class EngineDockClock {
+    var now: @MainActor () -> Date = { Date() }
+}
+
 /// Normal-entry composition. Construction creates no engine child or native panel when requested.
 public struct EngineMenuRefreshResult {
     public let engineRequestID:WireRequestID
@@ -53,6 +57,12 @@ public struct EngineMenuRefreshResult {
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
             installValidatedUnknown: true)
     }()
+    private let clock: EngineDockClock
+    // Internal injection seam: the production entry retains the system clock.
+    var currentDate: @MainActor () -> Date {
+        get { clock.now }
+        set { clock.now = newValue }
+    }
     private var resetNotifier:EngineResetNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
@@ -69,7 +79,10 @@ public struct EngineMenuRefreshResult {
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
-        self.deadlineWall = deadlineNow
+        let clock = EngineDockClock()
+        clock.now = deadlineNow
+        self.clock = clock
+        self.deadlineWall = { clock.now() }
         let elapsed = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
         self.deadlineElapsed = elapsed
         self.deadlineScheduler = deadlineScheduling ?? DockCommonModeScheduler(clock: elapsed)
@@ -84,7 +97,7 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() })
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         dock.onWillRetire = { [weak self] in
