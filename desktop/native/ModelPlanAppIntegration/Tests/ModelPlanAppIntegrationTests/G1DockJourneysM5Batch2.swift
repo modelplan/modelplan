@@ -150,6 +150,44 @@ private actor G1CRowsClient: EngineClient {
         return app
     }
 
+    func testG1_DOCK_3_1_22() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-ignition-guard-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for (size, diameter) in [(SettingsSize.small, CGFloat(36)), (.medium, 44), (.large, 52)] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks)
+                let button = try XCTUnwrap(dock.registeredConsoleButtonForChecks)
+                XCTAssertEqual(button.width, 34 * diameter / 52, accuracy: 0.0001)
+                XCTAssertEqual(button.height, 34 * diameter / 52, accuracy: 0.0001)
+                let resources = Set(skin.fixedLayers.map(\.resource))
+                XCTAssertTrue(resources.contains("a5-recessed-guard-52x52@3x.png"))
+                XCTAssertTrue(resources.contains("a5-cap-night-idle-44x44@3x.png"))
+                XCTAssertGreaterThanOrEqual(skin.bodyPolygon.count, 3)
+                let hull = CGMutablePath(); hull.addLines(between: skin.bodyPolygon); hull.closeSubpath()
+                let centre = CGPoint(x: button.midX + skin.bounds.minX, y: button.midY + skin.bounds.minY)
+                let radius = button.width / 2
+                var inside = 0, total = 0
+                for x in -40...40 {
+                    for y in -40...40 {
+                        let dx = CGFloat(x) / 40, dy = CGFloat(y) / 40
+                        guard dx * dx + dy * dy <= 1 else { continue }
+                        total += 1
+                        if hull.contains(CGPoint(x: centre.x + dx * radius, y: centre.y + dy * radius)) { inside += 1 }
+                    }
+                }
+                XCTAssertGreaterThan(total, 0)
+                let outsideFraction = 1 - Double(inside) / Double(total)
+                XCTAssertEqual(outsideFraction, 0.4, accuracy: 0.03)
+            }
+        }
+        await app.composition.stop()
+    }
+
     func testG1_DOCK_3_1_23() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-ignition-position-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
