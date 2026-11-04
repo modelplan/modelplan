@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanOfficialDock
@@ -150,6 +151,39 @@ private actor G1CRowsClient: EngineClient {
             makeClient: { _, store in G1CRowsClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
+    }
+
+    func testG1_DOCK_3_2_06() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-mark-provenance-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), view = app.composition.dock.dockView
+        let manifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
+        let root = try DockThirdPartyResources.rootURL()
+        let sourceRecord = try XCTUnwrap(manifest.files["notice-vendors"])
+        let sourceData = try Data(contentsOf: root.appendingPathComponent(sourceRecord.path))
+        func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+        XCTAssertEqual(sourceData.count, sourceRecord.bytes)
+        XCTAssertEqual(digest(sourceData), sourceRecord.sha256.lowercased())
+        let notes = try XCTUnwrap(String(data: sourceData, encoding: .utf8))
+        XCTAssertTrue(notes.localizedCaseInsensitiveContains("trademark"))
+        var vendors = [("openai", "logo-openai"), ("cursor", "logo-cursor"), ("claude", "logo-claude"),
+                       ("kimi", "logo-kimi"), ("copilot", "logo-copilot"), ("opencode", "logo-opencode")]
+        if view.zaiMarkEnabled { vendors.append(("zhipu", "logo-zai-white")) }
+        for (vendor, expected) in vendors {
+            try await client.replaceRows(fixture(vendorKey: vendor))
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks["0123456789abcdef"])
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == reading.subscriptionID })
+            XCTAssertEqual(reading.vendorResourceKey, vendor)
+            XCTAssertEqual(station.glyphs[vendor], expected)
+            let record = try XCTUnwrap(manifest.files[expected])
+            let asset = try Data(contentsOf: root.appendingPathComponent(record.path))
+            XCTAssertEqual(asset.count, record.bytes)
+            XCTAssertEqual(digest(asset), record.sha256.lowercased())
+            XCTAssertTrue(notes.contains(URL(fileURLWithPath: record.path).lastPathComponent))
+        }
+        await app.composition.stop()
     }
 
     func testG1_DOCK_3_2_11() async throws {
