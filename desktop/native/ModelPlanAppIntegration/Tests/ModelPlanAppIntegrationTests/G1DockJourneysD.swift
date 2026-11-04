@@ -173,6 +173,19 @@ private actor G1DEngine: EngineClient {
         try await f.publish()
         XCTAssertEqual(try f.card().sourceAndAge,"未知来源 · 读数时间未知")
     }
+    func testPost429DiagnosticsUseMemberRefreshNotBeforeAndClearIt() async throws {
+        let f=try await fixture()
+        let next=Date(timeIntervalSince1970:floor(f.clock.wall.timeIntervalSince1970)+120)
+        var projection=f.raw["projection"] as! [String:Any], rows=projection["rows"] as! [[String:Any]], accounts=rows[0]["accounts"] as! [[String:Any]]
+        accounts[1].removeValue(forKey:"refreshNotBefore");rows[0]["accounts"]=accounts;projection["rows"]=rows;f.raw["projection"]=projection
+        f.mutateFirst { $0["refreshNotBefore"]=G1DFixture.stamp(next) };try await f.publish()
+        let readers=f.app.currentSettingsContext.readerDiagnostics
+        XCTAssertEqual(readers.count,3)
+        XCTAssertEqual(readers.first?.nextRefresh,next)
+        XCTAssertNil(readers[1].nextRefresh,"No cross-member fallback")
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(f.app.currentSettingsContext.readerDiagnostics.isEmpty)
+    }
     private func quotaSliverFixture() async throws -> G1DFixture {
         let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }
         var projection = f.raw["projection"] as! [String:Any]

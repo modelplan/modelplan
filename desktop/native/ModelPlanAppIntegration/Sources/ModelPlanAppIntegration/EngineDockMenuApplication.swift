@@ -159,7 +159,7 @@ import ModelPlanMenuVerification
             guard let row = admitted[member.id] else { return nil }
             return .init(name: .init(member.name(english: true), member.name(english: false)),
                          source: row.sourceName.isEmpty ? nil : .init(EngineDockContentProvider.sourceName(member.account.route, english: true), EngineDockContentProvider.sourceName(member.account.route, english: false)),
-                         lastRead: row.originalObservedAt, nextRefresh: nil)
+                         lastRead: row.originalObservedAt, nextRefresh: row.sourceName.isEmpty || !member.isStable ? nil : EngineResetTimestampContract.date(member.account.refreshNotBefore))
         }
         guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics else { return }
         lastAboutConnectionReady = ready
