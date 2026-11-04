@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 841abac25c60af0a24102a81d3aa857461e69dc4c1c7e86cb7c225579cd534c8
+// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -134,6 +134,11 @@ export type WirePlan = {
   readonly "name"?: WireName | null;
 };
 
+export type WireProposedResetLink = {
+  readonly "type": "aihot" | "original" | "official";
+  readonly "url": string;
+};
+
 export type WireProposedResetSchedule = {
   readonly "from": string;
   readonly "precision": "window" | "date" | "approximate" | "deadline";
@@ -142,6 +147,7 @@ export type WireProposedResetSchedule = {
 
 export type WireProposedResetSource = {
   readonly "kind": "publication";
+  readonly "links"?: ReadonlyArray<WireProposedResetLink>;
   readonly "publicationId": string;
   readonly "url"?: string;
 };
@@ -1020,6 +1026,29 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "ProposedResetLink": {
+    "additionalProperties": false,
+    "properties": {
+      "type": {
+        "enum": [
+          "aihot",
+          "original",
+          "official"
+        ],
+        "type": "string"
+      },
+      "url": {
+        "maxLength": 2048,
+        "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "url"
+    ],
+    "type": "object"
+  },
   "ProposedResetSchedule": {
     "additionalProperties": false,
     "properties": {
@@ -1056,6 +1085,15 @@ export const definitions: Readonly<Record<string, Schema>> = {
           "publication"
         ],
         "type": "string"
+      },
+      "links": {
+        "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
+        "items": {
+          "$ref": "#/$defs/ProposedResetLink"
+        },
+        "maxItems": 3,
+        "type": "array",
+        "uniqueItems": true
       },
       "publicationId": {
         "pattern": "^[a-f0-9]{24}$",

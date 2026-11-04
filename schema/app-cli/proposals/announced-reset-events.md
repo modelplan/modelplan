@@ -44,14 +44,25 @@ are suppressed. App-owned local acknowledgement and notification deduplication
 are keyed by event ID; the CLI remains stateless. M4 owns presentation, storage,
 clock transitions, and the normal-entry journey test (#697).
 
-A source link is shown only when its host is on the official vendor host list
-used by the source registry; otherwise omit the link and retain the event text.
-The App never fetches it. The review-only test uses synthetic hosts, not a copy
-of the official list. The producer needs a reviewed interface to that list; no
-public registry interface has been established by this proposal. No account
-identifiers, personal quota values, arbitrary source text or local paths belong
-in an event. Rows pick up updates on the existing publication refresh cadence;
-there is no new polling.
+Each event may carry typed source links, admitted by an exact-host policy:
+`aihot` (the AIhot event page, host `aihot.news` only) and `original` (the
+original X post, hosts `x.com`/`twitter.com` only, and only with the exact
+path `/<handle>/status/<digits>`; no query, no fragment). An optional
+`official` link is admitted only on the exact vendor hosts `openai.com`,
+`help.openai.com`, `status.openai.com`, `platform.openai.com`,
+`developers.openai.com`, `anthropic.com`, `www.anthropic.com`,
+`support.anthropic.com`, `status.anthropic.com` and `docs.anthropic.com`.
+Every link must be HTTPS with no userinfo, no non-default port and no
+credential or token-like query parameter; lookalike or suffix hosts are
+rejected. A failing link is omitted while the event and its times stay, and
+an event without an original post carries the AIhot link alone. Display order
+is the client's job (the Chinese UI shows AIhot first; others show the
+original first); the producer publishes the typed links in a stable type
+order. The App never fetches a link, and the identity URL hashed into the
+event ID is never itself a published link. No account identifiers, personal
+quota values, arbitrary source text or local paths belong in an event. Rows
+pick up updates on the existing publication refresh cadence; there is no new
+polling.
 
 The verified publication has public reset records. Personal quota `resetsAt` and
 calendar multiplier windows are not public reset announcements. The future
