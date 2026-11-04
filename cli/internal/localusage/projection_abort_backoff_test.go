@@ -17,6 +17,7 @@ func TestProjectionReducerAbortUsesFailureBackoff(t *testing.T) {
 	one := projectionLine(1, testNow.Add(-time.Hour))
 	fixtureFile(t, path, one)
 	baseline := RefreshProjection(context.Background(), "claude", root, cache, a, testNow, projectionTestReducer)
+	_, opens := projectionCountIO(t)
 	if projectionN(t, baseline) != 1 {
 		t.Fatal("missing baseline")
 	}
@@ -43,9 +44,11 @@ func TestProjectionReducerAbortUsesFailureBackoff(t *testing.T) {
 		t.Fatalf("failure retry at %v; want %v", got.NextAttemptAt, want)
 	}
 	beforeCalls := calls
+	historyAttempts.Delete(cache + "/" + projectionTool)
+	beforeOpens := *opens
 	RefreshProjection(context.Background(), "claude", root, cache, a, at.Add(5*time.Second), fail)
-	if calls != beforeCalls {
-		t.Fatal("retried before failure backoff")
+	if calls != beforeCalls || *opens != beforeOpens {
+		t.Fatal("reopened source after restart before failure backoff")
 	}
 	at = got.NextAttemptAt
 	for _, delay := range []time.Duration{20 * time.Second, 40 * time.Second, time.Minute, time.Minute} {
