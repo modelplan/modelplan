@@ -101,13 +101,64 @@ type RowsSnapshot struct {
 // RowsProjection excludes consent context, which belongs only in Envelope.
 // The standalone desktop projection retains its independent legacy contract.
 type RowsProjection struct {
-	RowsVersion int              `json:"rowsVersion"`
-	Rows        []rows.Row       `json:"rows"`
-	RowsSummary rows.RowsSummary `json:"rowsSummary"`
+	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"forbidden"`
+	RowsVersion int                `json:"rowsVersion"`
+	Rows        []rows.Row         `json:"rows"`
+	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
 }
 
-func Project(value rows.Projection) RowsProjection {
-	return RowsProjection{RowsVersion: value.RowsVersion, Rows: value.Rows, RowsSummary: value.RowsSummary}
+func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool, sourceEnabled ...bool) RowsProjection {
+	expose := len(sourceEnabled) > 0 && sourceEnabled[0]
+	members := len(sourceEnabled) > 1 && sourceEnabled[1]
+	result := project(value, expose, members)
+	if enabled {
+		if events != nil {
+			projected := ProjectResetEventLinks(*events, len(sourceEnabled) > 2 && sourceEnabled[2])
+			result.ResetEvents = &projected
+		}
+	}
+	return result
+}
+
+// ProjectResetEventLinks removes the additive link field for older clients
+// without mutating the shared snapshot.
+func ProjectResetEventLinks(events []rows.ResetEvent, enabled bool) []rows.ResetEvent {
+	if enabled {
+		return events
+	}
+	out := append([]rows.ResetEvent{}, events...)
+	for i := range out {
+		out[i].Source.Links = nil
+	}
+	return out
+}
+
+func Project(value rows.Projection) RowsProjection { return project(value, false, false) }
+
+func project(value rows.Projection, expose, members bool) RowsProjection {
+	result := RowsProjection{RowsVersion: value.RowsVersion, Rows: append([]rows.Row{}, value.Rows...), RowsSummary: value.RowsSummary}
+	if expose && members {
+		return result
+	}
+	for i := range result.Rows {
+		if !members {
+			result.Rows[i].RefreshNotBefore = nil
+		}
+		result.Rows[i].Accounts = append([]rows.Account{}, result.Rows[i].Accounts...)
+		for j := range result.Rows[i].Accounts {
+			account := &result.Rows[i].Accounts[j]
+			if !members {
+				account.RefreshNotBefore = nil
+			}
+			if !expose {
+				account.Windows = append([]rows.Window{}, account.Windows...)
+				for k := range account.Windows {
+					account.Windows[k].Source = nil
+				}
+			}
+		}
+	}
+	return result
 }
 
 type ConsentScope struct {
@@ -166,8 +217,22 @@ type CredentialResult struct {
 	ExpiresAt   *time.Time        `json:"expiresAt,omitempty" null:"coalesced"`
 }
 
+type RefreshMember struct {
+	RowID           string     `json:"rowId"`
+	Route           rows.Route `json:"route"`
+	SubscriptionRef string     `json:"subscriptionRef,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
+	AccountLocator  string     `json:"accountLocator,omitempty" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"forbidden"`
+}
+
+type MemberRefreshResult struct {
+	Outcome   MemberRefreshOutcome `json:"outcome"`
+	NotBefore *time.Time           `json:"notBefore,omitempty" null:"forbidden"`
+	Reason    *MemberRefreshReason `json:"reason,omitempty" null:"forbidden"`
+}
+
 type RefreshRequestParams struct {
-	Scopes []string `json:"scopes,omitempty" schema:"maxItems=128,uniqueItems=true" null:"coalesced"`
+	Member *RefreshMember `json:"member,omitempty" null:"forbidden"`
+	Scopes []string       `json:"scopes,omitempty" schema:"maxItems=128,uniqueItems=true" null:"coalesced"`
 }
 
 type RefreshScheduled struct {
@@ -197,12 +262,20 @@ type HistoryPage struct {
 	NextCursor string        `json:"nextCursor,omitempty" null:"coalesced"`
 }
 
+type RefreshDecision struct {
+	AgoSeconds int64                  `json:"agoSeconds" schema:"minimum=0"`
+	Scope      RefreshDecisionScope   `json:"scope"`
+	Outcome    RefreshDecisionOutcome `json:"outcome"`
+	Reason     RefreshDecisionReason  `json:"reason"`
+}
+
 type Diagnostics struct {
-	ProtocolVersion string      `json:"protocolVersion"`
-	ServerVersion   string      `json:"serverVersion"`
-	UptimeSeconds   int64       `json:"uptimeSeconds"`
-	Scopes          []ScopeDiag `json:"scopes"`
-	LastErrorClass  string      `json:"lastErrorClass,omitempty" null:"coalesced"`
+	RefreshDecisions *[]RefreshDecision `json:"refreshDecisions,omitempty" schema:"maxItems=20" null:"forbidden"`
+	ProtocolVersion  string             `json:"protocolVersion"`
+	ServerVersion    string             `json:"serverVersion"`
+	UptimeSeconds    int64              `json:"uptimeSeconds"`
+	Scopes           []ScopeDiag        `json:"scopes"`
+	LastErrorClass   string             `json:"lastErrorClass,omitempty" null:"coalesced"`
 }
 
 type ScopeDiag struct {

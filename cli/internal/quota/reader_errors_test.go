@@ -139,6 +139,11 @@ func TestNativeLegacyHTTPReaderErrorCodes(t *testing.T) {
 						status = 200
 					}
 					body := `{}`
+					if id == "zai" && code == "schema_changed" {
+						// A non-success envelope is a rejection; malformed quota
+						// data in a successful envelope is a schema failure.
+						body = `{"code":200,"success":true,"data":{}}`
+					}
 					if code == "parse_error" {
 						body = "not JSON synthetic secret"
 					}

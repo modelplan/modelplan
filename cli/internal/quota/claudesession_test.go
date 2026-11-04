@@ -864,3 +864,32 @@ func TestClaudeSessionProductionAdmissionVetoes(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeSessionOwnNewerStatusLineReadingWins(t *testing.T) {
+	transcript := claudeSessionNow.Add(-2 * time.Minute)
+	selected := func(attribution string) ClaudeSessionProjection {
+		return ClaudeSessionProjection{Selected: &ClaudeSessionObservation{ClaudeSessionFields: ClaudeSessionFields{Model: "claude-opus-5-5", Effort: "high"}, SessionKey: "keyed", ObservedAt: transcript, Attribution: attribution, Origin: "cli"}}
+	}
+	apply := func(lineAt time.Time, line, projected string) Harness {
+		account := Account{ObservedAt: lineAt, Harness: &Harness{Model: "claude-opus-5-5", Effort: "medium", Attribution: line}}
+		applyClaudeSessionProjection(&account, selected(projected))
+		return *account.Harness
+	}
+	// After /effort medium the transcript still says high until the next message.
+	if h := apply(claudeSessionNow, "current-thread", "current-thread"); h.Effort != "medium" || h.SessionKey != "keyed" || h.Origin != "cli" || h.Attribution != "current-thread" || !h.ObservedAt.Equal(claudeSessionNow) {
+		t.Fatalf("newer own status-line reading lost: %+v", h)
+	}
+	for _, c := range []struct {
+		at              time.Time
+		line, projected string
+	}{
+		{transcript.Add(-time.Second), "current-thread", "current-thread"}, // older than the transcript
+		{claudeSessionNow, "recent-thread", "current-thread"},              // another session's status line
+		{claudeSessionNow, "", "current-thread"},                           // no caller to compare
+		{claudeSessionNow, "current-thread", "recent-thread"},              // the projection has no caller match
+	} {
+		if h := apply(c.at, c.line, c.projected); h.Effort != "high" {
+			t.Fatalf("%+v: status line replaced the projection: %+v", c, h)
+		}
+	}
+}

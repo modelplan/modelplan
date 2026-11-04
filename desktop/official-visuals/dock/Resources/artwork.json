@@ -1,0 +1,111 @@
+{
+  "SPDX-License-Identifier": "LicenseRef-ModelPlan-Visuals-1.0",
+  "schemaVersion": 1,
+  "files": {
+    "a1-01-bell-wall-44px@2x.webp": {
+      "path": "Nozzle/a1-01-bell-wall-44px@2x.webp",
+      "sha256": "dc7ddb94d5fdf046b023d9d20b39cbaf39d0393623691249b72e1bd2418aae4c",
+      "bytes": 7562
+    },
+    "a1-01-bell-wall-44px@3x.webp": {
+      "path": "Nozzle/a1-01-bell-wall-44px@3x.webp",
+      "sha256": "e8290561ddc4bca7dc5f8deb2bc6e51a4910da06d60a28a112ef9a72b4469ce5",
+      "bytes": 15574
+    },
+    "a1-01-bell-wall-52px@3x.webp": {
+      "path": "Nozzle/a1-01-bell-wall-52px@3x.webp",
+      "sha256": "4a04bdcb9877398d0f18bac44afc7e3475404f95dd6603638f53ddf5aeafd252",
+      "bytes": 20846
+    },
+    "a1-01-bell-wall-64px@2x.webp": {
+      "path": "Nozzle/a1-01-bell-wall-64px@2x.webp",
+      "sha256": "eb5c0d62f46d69fa2b0fac305653490137b5ec5632805e3879add88b237e9884",
+      "bytes": 14418
+    },
+    "a1-02-throat-lip-44px@2x.webp": {
+      "path": "Nozzle/a1-02-throat-lip-44px@2x.webp",
+      "sha256": "35df6cdf3891557095e91399e5b4c681d1adc486a216e5ed9716cf50d9fe0b32",
+      "bytes": 2212
+    },
+    "a1-02-throat-lip-44px@3x.webp": {
+      "path": "Nozzle/a1-02-throat-lip-44px@3x.webp",
+      "sha256": "e2a09417d62bd2817df7d75b2e8e4e9a910b2cbcf63a90cd3148f786d46eb41e",
+      "bytes": 4304
+    },
+    "a1-02-throat-lip-52px@3x.webp": {
+      "path": "Nozzle/a1-02-throat-lip-52px@3x.webp",
+      "sha256": "f8756884bd4d8eb2fdabec038b71296de4d2dc5f381f227eef99013756418665",
+      "bytes": 5684
+    },
+    "a1-02-throat-lip-64px@2x.webp": {
+      "path": "Nozzle/a1-02-throat-lip-64px@2x.webp",
+      "sha256": "480ed668f59c98dd65eb744f6bb89c54d75f78838b192a8928e9bc81f3e3e0fe",
+      "bytes": 4054
+    },
+    "a1-03-deep-centre-44px@2x.webp": {
+      "path": "Nozzle/a1-03-deep-centre-44px@2x.webp",
+      "sha256": "312654fa65b2bcbebc012c6ec76fec4993e01667b8b080e88d1b5406af438187",
+      "bytes": 2456
+    },
+    "a1-03-deep-centre-44px@3x.webp": {
+      "path": "Nozzle/a1-03-deep-centre-44px@3x.webp",
+      "sha256": "9d676ccb4dc455460bf9ebfc5cbc939cf860ea2f7d30d3ce060fe2ca3dd779e2",
+      "bytes": 4864
+    },
+    "a1-03-deep-centre-52px@3x.webp": {
+      "path": "Nozzle/a1-03-deep-centre-52px@3x.webp",
+      "sha256": "85933e802dfe7bc74fd12ad7beabefef7ae799b8c92f779097b7e6488c0cf6de",
+      "bytes": 6566
+    },
+    "a1-03-deep-centre-64px@2x.webp": {
+      "path": "Nozzle/a1-03-deep-centre-64px@2x.webp",
+      "sha256": "6f41b9cb434aeb58cc14b8004aa4a7011d89b941a1407ba1a9f81da8e351200b",
+      "bytes": 4654
+    },
+    "a1-04-exit-lip-44px@2x.webp": {
+      "path": "Nozzle/a1-04-exit-lip-44px@2x.webp",
+      "sha256": "ea9fe7e467ecfb858558342e1510060853ea4b238f0c405b88840e43da564ee7",
+      "bytes": 3410
+    },
+    "a1-04-exit-lip-44px@3x.webp": {
+      "path": "Nozzle/a1-04-exit-lip-44px@3x.webp",
+      "sha256": "8c2037627b32b109f8c2e81eb8b6013a13a4712958252552124cbc13428ef55a",
+      "bytes": 6538
+    },
+    "a1-04-exit-lip-52px@3x.webp": {
+      "path": "Nozzle/a1-04-exit-lip-52px@3x.webp",
+      "sha256": "dec3f4f3d21ae9f72f9571e7f3340642e5fefa36654174ee8163c526698ff9ad",
+      "bytes": 8464
+    },
+    "a1-04-exit-lip-64px@2x.webp": {
+      "path": "Nozzle/a1-04-exit-lip-64px@2x.webp",
+      "sha256": "bfaacdbef39840ed1b7ae34b088a858ff4737a46cbc9669d3fc058f4c15fc08f",
+      "bytes": 6174
+    },
+    "a5-outer-contact-shadow-56x56@3x.png": {
+      "path": "A5/a5-outer-contact-shadow-56x56@3x.png",
+      "sha256": "356b5f05ec46adc88f6fe931a9333e5abe4eb6d83e5a86856a7df19aa250f360",
+      "bytes": 9006
+    },
+    "a5-cap-night-idle-44x44@3x.png": {
+      "path": "A5/a5-cap-night-idle-44x44@3x.png",
+      "sha256": "d62839aa24cf7d136204e6472185ff2cc9c4ef193642aec036fff338b30151ae",
+      "bytes": 21806
+    },
+    "a5-cap-night-pressed-44x44@3x.png": {
+      "path": "A5/a5-cap-night-pressed-44x44@3x.png",
+      "sha256": "51e76c95cf6f752ced63aabb8d88f42cdc8206a409b15bcb5e903fb39309c165",
+      "bytes": 22829
+    },
+    "a5-inner-contact-shadow-52x52@3x.png": {
+      "path": "A5/a5-inner-contact-shadow-52x52@3x.png",
+      "sha256": "703ac253c6e4d1e1e7d6c0e3c2ff2f068935e1b130b62c63acd9a6b57d7185f2",
+      "bytes": 5484
+    },
+    "a5-recessed-guard-52x52@3x.png": {
+      "path": "A5/a5-recessed-guard-52x52@3x.png",
+      "sha256": "5279668bd9273747afe2bccdea6420caf6c03dc5b7c1c55309f7a0e9db6ed8c2",
+      "bytes": 20781
+    }
+  }
+}

@@ -7,3 +7,5 @@ The private producer may consume a reviewed, hash-verified copy of this reader. 
 Run `npm ci --prefix reader && npm test --prefix reader` (Node 24+). Source rebuilds require a full checkout; the packaged plugin uses its bundled runtime.
 
 The verifier accepts optional published selection metadata: top-level `selectionRevision` and nullable per-model `lineageId`, `lineageStatus` (`current`, `older`, `preview`, `retired`) and `defaultSelected`. Historical and partial publications remain valid. These are producer verdicts; the reader validates their types and preserves them without computing a selection. Strict model validation, content hashes and dependency checks still apply.
+
+An effort may carry `provisional: true` (absent otherwise; `false` is rejected): its ability rests on evidence outside the range its cross-source link was fitted on. It belongs to its own model's effort ladder only; the producer already leaves such configurations out of every cross-model lineup, so the reader preserves the flag without changing any lineup. Any other unknown effort field is still rejected.

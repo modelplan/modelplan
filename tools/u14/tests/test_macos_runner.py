@@ -154,6 +154,14 @@ class MacosHarnessTests(unittest.TestCase):
         self.assertIn('if: always()',workflow)
         self.assertIn('/bundle',workflow)
 
+    def test_missing_approved_credential_artifact_stops_before_build(self):
+        work=self.root/'missing-artifact-build';work.mkdir()
+        with mock.patch.object(mac.credential_artifact,'acquire',side_effect=ValueError('approval missing')), \
+                mock.patch.object(mac,'command') as command:
+            with self.assertRaisesRegex(ValueError,'approval missing'):
+                mac.build_app(work)
+            command.assert_not_called()
+
     def test_build_keeps_its_owned_module_cache_writable(self):
         commands=[]
         def build_command(args,cwd,env,timeout,log):
@@ -161,9 +169,13 @@ class MacosHarnessTests(unittest.TestCase):
             if args[0]=='go':
                 Path(args[args.index('-o')+1]).write_bytes(b'synthetic executable')
         work=self.root/'build';work.mkdir()
-        with mock.patch.object(mac,'command',side_effect=build_command), \
+        binding={'environment':{'MODELPLAN_CREDENTIAL_AGENT_ARTIFACT':str(work/'verified-artifact'),
+                                'MODELPLAN_CREDENTIAL_AGENT_SHA256':'b'*64}}
+        with mock.patch.object(mac.credential_artifact,'acquire',return_value=binding), \
+                mock.patch.object(mac,'command',side_effect=build_command), \
                 mock.patch.object(mac,'verify_app'),mock.patch.object(mac,'git',return_value='a'*40), \
-                mock.patch.dict(os.environ,{'GOFLAGS':'-race','GOMODCACHE':'/shared-cache'}):
+                mock.patch.dict(os.environ,{'GOFLAGS':'-race','GOMODCACHE':'/shared-cache',
+                                           'GH_TOKEN':'synthetic-download-auth','GITHUB_TOKEN':'synthetic-download-auth'}):
             mac.build_app(work)
         go_commands=[(args,env) for args,env in commands if args[0]=='go']
         self.assertEqual(len(go_commands),2)
@@ -171,6 +183,12 @@ class MacosHarnessTests(unittest.TestCase):
             self.assertIn('-modcacherw',env['GOFLAGS'].split())
             self.assertEqual(env['GOMODCACHE'],str(work/'go-mod'))
         self.assertEqual({env['GOARCH'] for args,env in go_commands},{'arm64','amd64'})
+        package=next(env for args,env in commands if args[0]=='bash')
+        self.assertEqual(package['MODELPLAN_CREDENTIAL_AGENT_SHA256'],'b'*64)
+        self.assertEqual(package['MODELPLAN_CREDENTIAL_AGENT_ARTIFACT'],str(work/'verified-artifact'))
+        for _,env in commands:
+            self.assertNotIn('GH_TOKEN',env)
+            self.assertNotIn('GITHUB_TOKEN',env)
 
     def test_cleanup_failure_is_separate_from_already_uploaded_scenario_evidence(self):
         import json

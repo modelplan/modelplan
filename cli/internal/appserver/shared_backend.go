@@ -13,13 +13,16 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/detect"
+	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 // SharedConfig adapts the existing production constructors. It owns no parallel
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
+	ResetPublication  func() (*digest.Digest, error)
 	Detect            func() detect.Report
 	Paths             func(consent.Admission) quota.Paths
 	Cleanup           func(string, bool) error
@@ -32,7 +35,8 @@ type SharedBackend struct {
 	once    sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
-	CredentialSink CredentialReceiver
+	CredentialSink  CredentialReceiver
+	RefreshDeadline func(string) (time.Time, bool, bool)
 }
 
 func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
@@ -59,7 +63,11 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	return []string{"rows", "consent", "credentials", "diagnostics"}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1}
+	if b.config.ResetPublication != nil {
+		caps = append(caps, CapabilityResetEvents, CapabilityResetEventLinksV1)
+	}
+	return caps
 }
 func (b *SharedBackend) notify() {
 	select {
@@ -76,7 +84,9 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	err := consent.Publish(fenceOf(stamp), func() error {
+	called := false
+	err := consent.PublishContext(ctx, fenceOf(stamp), func() error {
+		called = true
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -86,7 +96,17 @@ func (b *SharedBackend) Publish(ctx context.Context, stamp Stamp, enqueue func()
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return ProtocolError{wire.CodeConsentChanged}
+		if called {
+			return err
+		}
+		switch {
+		case errors.Is(err, consent.ErrBusy):
+			return ProtocolError{wire.CodeBusy}
+		case errors.Is(err, consent.ErrChanged):
+			return ProtocolError{wire.CodeConsentChanged}
+		default:
+			return err
+		}
 	}
 	return nil
 }
@@ -134,9 +154,11 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		in.Offline = b.config.Offline
 		in.IdentityOff = quota.IdentityOff()
 	}
+	var report quota.Report
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
-		appendReportRows(&in, quota.ReadPermitted(p, in.Now), false)
+		report = quota.ReadPermitted(p, in.Now)
+		appendReportRows(&in, report, false)
 	} else {
 		appendReportRows(&in, quota.ReadDeclared(p, in.Now), true)
 	}
@@ -159,6 +181,17 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 	}
 	projection := rows.Build(in)
+	var resetEvents *[]rows.ResetEvent
+	var publicModels []digest.Model
+	droppedResetConfirmations := 0
+	if !changed && b.config.ResetPublication != nil {
+		if d, err := b.config.ResetPublication(); err == nil && d != nil {
+			publicModels = d.Models
+			events, dropped := resetevents.Project(d, projection, in.Now)
+			droppedResetConfirmations = dropped
+			resetEvents = &events
+		}
+	}
 	facts := wire.ConsentFacts{TextVersion: consent.TextVersion, Scopes: []wire.ConsentScope{}}
 	scopes := []string{}
 	diagnostics := []wire.ScopeDiag{}
@@ -212,6 +245,9 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 		}
 		diagnostics = append(diagnostics, diag)
 	}
+	if !changed {
+		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
+	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
 		if fact.CleanupPending {
@@ -225,7 +261,10 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if changed {
 		health = wire.Health{State: wire.HealthDegraded, Code: "consent_changed"}
 	}
-	return View{Stamp: stampOf(admission.Fence()), Projection: projection, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
+	// Evaluation time is not a displayed fact; keeping it would make every
+	// otherwise identical backend view look changed to rows subscribers.
+	report.EvaluatedAt = time.Time{}
+	return View{QuotaReport: report, PublicModels: publicModels, Stamp: stampOf(admission.Fence()), Projection: projection, ResetEvents: resetEvents, DroppedResetConfirmations: droppedResetConfirmations, Consent: facts, Scopes: scopes, Diagnostics: diagnostics, Health: health}
 }
 
 func (b *SharedBackend) paths(admission consent.Admission) quota.Paths {
@@ -328,7 +367,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					return
 				case <-ticker.C:
 					paths := b.paths(consent.Capture())
-					files := []string{consent.Path(), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
+					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
 					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
 						info, err := os.Stat(file)

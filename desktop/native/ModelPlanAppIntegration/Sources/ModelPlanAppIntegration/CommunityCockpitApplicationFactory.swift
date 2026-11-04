@@ -22,14 +22,15 @@ import ModelPlanSettings
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"a06423b7730a3b158ff61e1d20d85a649301ae58717877eba48b0c2a0dc5aafe",
-        "official":"b0acd07ad0e4f6e5c2fef1e5e70f1413d96c1b81bf6f689ef4b911b448fd9360",
+        "community":"68a39a62421138b355938c10f435ae4521dfe94298005125fcc54b7326c0ca6a",
+        "official":"a70782c421f419167ac29a3e1a6181158fc2c6990cd14a41aa1f4488f5f2bf53",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
+                            cockpitEntryEnabled: Bool? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
@@ -37,12 +38,12 @@ import ModelPlanSettings
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     guard let owner else { throw CockpitBridgeError.unavailable }
@@ -57,6 +58,7 @@ import ModelPlanSettings
                 if let makeConsole { return makeConsole(composition) }
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -68,6 +70,8 @@ import ModelPlanSettings
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
     var pageFailure: (() -> Void)?
+    var anchor: (() -> CGRect?)?
+    let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
@@ -79,7 +83,8 @@ import ModelPlanSettings
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
-        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
@@ -135,6 +140,11 @@ struct CockpitUnavailableNotice {
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
+                case .close:self.owner.coordinator?.requestClose()
+                case .detach,.putBack,.shutterToggle,.scopeSelect:
+                    // The page owns shell controls; the coordinator validates and
+                    // consumes scope selection. An unexpected escape fails closed.
+                    self.hide()
                 }
             }
             activate()
@@ -150,15 +160,16 @@ struct CockpitUnavailableNotice {
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
             if let requestNotice { requestNotice(notice); return }
-            let alert=NSAlert();alert.messageText="Cockpit unavailable / 驾驶舱暂不可用"
+            let english=await owner.settingsStore.snapshot().preferences.language == .english
+            let alert=NSAlert();alert.messageText=english ? "Cockpit unavailable" : "驾驶舱暂不可用"
             alert.informativeText=history
-                ? "History is unavailable in this candidate. Open Settings to check connected tools. / 当前候选版尚无历史窗口，请打开设置查看已连接工具。"
-                : "Check tool access in Settings, or reinstall this candidate if bundled content is missing. / 请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。"
+                ? (english ? "History is unavailable in this candidate. Open Settings to check connected tools." : "当前候选版尚无历史窗口，请打开设置查看已连接工具。")
+                : (english ? "Check tool access in Settings, or reinstall this candidate if bundled content is missing." : "请在设置中检查工具授权；若缺少随附内容，请重新安装候选版。")
             for action in notice.actions {
                 switch action {
-                case .settings:alert.addButton(withTitle:"Open Settings / 打开设置")
-                case .dockReadings:alert.addButton(withTitle:"Dock readings / Dock 读数")
-                case .cancel:alert.addButton(withTitle:"Cancel / 取消")
+                case .settings:alert.addButton(withTitle:english ? "Open Settings" : "打开设置")
+                case .dockReadings:alert.addButton(withTitle:english ? "Cockpit" : "驾驶舱")
+                case .cancel:alert.addButton(withTitle:english ? "Cancel" : "取消")
                 }
             }
             switch alert.runModal() {

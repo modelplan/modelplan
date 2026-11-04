@@ -22,6 +22,7 @@ type WindowSeries struct {
 	Model   string      `json:"model,omitempty"`
 	Now     RatePoint   `json:"now"`
 	Changes []RatePoint `json:"changes"`
+	Next    *RatePoint  `json:"next"`
 }
 
 type WindowGroup struct {
@@ -58,10 +59,33 @@ func publishedRate(d *digest.Digest, match func(*digest.MultiplierWindow) bool, 
 	return r, status
 }
 
+// Billing keeps the producer's short multiplier horizon. Only public windows
+// may supplement it with explicitly expanded calendar intervals.
 func rateTimeline(d *digest.Digest, match func(*digest.MultiplierWindow) bool, now time.Time) WindowSeries {
+	if d == nil {
+		return WindowSeries{Now: RatePoint{At: now.UTC(), Status: "unknown"}, Changes: []RatePoint{}}
+	}
+	pack := *d
+	pack.CalendarIntervals = nil
+	return windowTimeline(&pack, match, now)
+}
+
+func windowTimeline(d *digest.Digest, match func(*digest.MultiplierWindow) bool, now time.Time) WindowSeries {
+	selectedRate := func(at time.Time) (*float64, string) {
+		if inHorizon(d, at) {
+			return publishedRate(d, match, at)
+		}
+		if !d.CalendarFrom.IsZero() && !at.Before(d.CalendarFrom) && at.Before(d.CalendarTo) {
+			r, status := rateAt(d.CalendarIntervals, match, at)
+			if r != nil {
+				return r, status
+			}
+		}
+		return nil, "unknown"
+	}
 	r, s := publishedRate(d, match, now)
 	out := WindowSeries{Now: RatePoint{now.UTC(), r, s}, Changes: []RatePoint{}}
-	if !inHorizon(d, now) {
+	if !inHorizon(d, now) && len(d.CalendarIntervals) == 0 {
 		return out
 	}
 	var bounds []time.Time
@@ -76,18 +100,37 @@ func rateTimeline(d *digest.Digest, match func(*digest.MultiplierWindow) bool, n
 			}
 		}
 	}
+	for i := range d.CalendarIntervals {
+		w := &d.CalendarIntervals[i]
+		if !match(w) {
+			continue
+		}
+		for _, raw := range []string{w.StartsAt, w.EndsAt} {
+			if t, err := time.Parse(time.RFC3339, raw); err == nil && t.After(now) && !t.Before(d.CalendarFrom) && t.Before(d.CalendarTo) {
+				bounds = append(bounds, t.UTC())
+			}
+		}
+	}
 	sort.Slice(bounds, func(i, j int) bool { return bounds[i].Before(bounds[j]) })
 	prev := out.Now
 	for i, t := range bounds {
 		if i > 0 && t.Equal(bounds[i-1]) {
 			continue
 		}
-		r, s := publishedRate(d, match, t)
+		r, s := selectedRate(t)
 		if sameRate(prev.Multiplier, r) && prev.Status == s {
 			continue
 		}
 		prev = RatePoint{t, r, s}
-		out.Changes = append(out.Changes, prev)
+		if out.Next == nil {
+			next := prev
+			out.Next = &next
+		}
+		// Preserve the existing short-horizon changes feed; only next may use
+		// a later, explicitly published calendar boundary.
+		if inHorizon(d, t) {
+			out.Changes = append(out.Changes, prev)
+		}
 	}
 	return out
 }
@@ -101,10 +144,11 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 	if d == nil {
 		return out
 	}
+	intervals := append(append([]digest.MultiplierWindow(nil), d.Multipliers...), d.CalendarIntervals...)
 	// Enumerate concrete scopes, then resolve over every compatible rule. A base
 	// covering several plans must participate in an override naming only one plan.
 	scopes := map[string]WindowGroup{}
-	for _, w := range d.Multipliers {
+	for _, w := range intervals {
 		if f.Provider != "" && !strings.EqualFold(f.Provider, w.Provider) {
 			continue
 		}
@@ -190,8 +234,8 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 		}
 		models, zones := map[string]bool{}, map[string]bool{}
 		qualifications := map[string]bool{}
-		for i := range d.Multipliers {
-			w := &d.Multipliers[i]
+		for i := range intervals {
+			w := &intervals[i]
 			if !scopeMatch(w) {
 				continue
 			}
@@ -252,7 +296,7 @@ func Windows(d *digest.Digest, f WindowFilter, now time.Time) []WindowGroup {
 		g.Series = []WindowSeries{}
 		for _, model := range names {
 			ids := aliases(model)
-			series := rateTimeline(d, func(w *digest.MultiplierWindow) bool {
+			series := windowTimeline(d, func(w *digest.MultiplierWindow) bool {
 				if !scopeMatch(w) {
 					return false
 				}

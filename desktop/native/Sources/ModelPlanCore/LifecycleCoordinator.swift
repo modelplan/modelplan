@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
+/// The lifecycle gate owns pause reasons; each data source supplies its existing stop/resume operations.
+@MainActor public protocol LifecycleStore: AnyObject {
+    func suspend()
+    func resume()
+    func stopAndWait() async
+    func clockOrTimeZoneChanged()
+}
+extension SnapshotStore: LifecycleStore {}
+
 /// Combines independent OS pause reasons. A wake is not an unlock or a user-session return.
 @MainActor public final class LifecycleCoordinator {
     public enum PauseReason: Hashable, Sendable {
-        case systemSleep, screenSleep, screenLocked, sessionInactive, noDisplay, userDisabled
+        case systemSleep, screenSleep, screenLocked, sessionInactive, noDisplay, userDisabled, activity
     }
-    private let store: SnapshotStore
+    private let store: any LifecycleStore
     private var reasons: Set<PauseReason> = []
     private var started = false
     private var stopped = false
@@ -15,7 +24,7 @@ import Foundation
     /// Called after deadline validation on resume, and before work cancellation on pause.
     /// Consumers may hide/re-render, but must never activate another app's focus on resume.
     public var onPresentationChange: ((Bool) -> Void)?
-    public init(store: SnapshotStore) { self.store = store }
+    public init(store: any LifecycleStore) { self.store = store }
     public func start() {
         guard !started, !stopped else { return }
         started = true; reconcile()

@@ -232,6 +232,9 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 			return fail("plan allow-list")
 		}
 	}
+	if !validResetCards(in, a.ResetCards, a.SubscriptionRef) {
+		return fail("reset cards")
+	}
 	if a.Credits != nil {
 		if finite(a.Credits.Balance, 0, 1e15) == nil {
 			return fail("credits balance")
@@ -268,6 +271,24 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 	}
 	seen := map[string]bool{}
 	for _, w := range a.Windows {
+		if w.ModelScope != nil {
+			scope, ok := modelScope(w.ModelScope.Models)
+			if !ok || !reflect.DeepEqual(scope, w.ModelScope) {
+				return fail("model scope")
+			}
+			found := false
+			for _, account := range in.Accounts {
+				for _, raw := range account.Windows {
+					candidate, valid := modelScope(raw.ModelIDs)
+					if valid && reflect.DeepEqual(candidate, w.ModelScope) {
+						found = true
+					}
+				}
+			}
+			if !found {
+				return fail("model scope provenance")
+			}
+		}
 		if !limitKeys[w.LimitKey] || !poolKeys[w.PoolKey] {
 			return fail("window key allow-lists")
 		}
@@ -318,10 +339,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		if w.ObservedAt != nil && w.ObservedAt.After(in.Now) {
 			return fail("future window observation")
 		}
-		var until *time.Time
-		if a.FreshUntil != nil {
-			until = earlier(a.FreshUntil, w.ResetsAt)
-		}
+		until := windowValidUntil(a, w)
 		if !reflect.DeepEqual(until, w.ValidUntil) {
 			return fail("window validity")
 		}

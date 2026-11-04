@@ -2,7 +2,7 @@
 import AppKit
 import CryptoKit
 import XCTest
-import ModelPlanSettings
+@_spi(SettingsAcceptance) import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -23,12 +23,12 @@ private actor RowsEntryClient: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string(request.requestId)) }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-refresh")) }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
-    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic-plugin")) }
     func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
 }
 @MainActor private final class EntrySettingsSurface: SettingsWindowSurface {
@@ -49,6 +49,103 @@ private actor RowsEntryClient: EngineClient {
     func hide() {}
 }
 @MainActor final class EngineRowsEntryTests: XCTestCase {
+    func testPluginResultUsesAcceptedRequestPairAcrossOtherResponsesAndClear() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-plugin-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json")))
+        let plugin = try WireDecoder.decode(WirePluginInstallResult.self, from: Data(contentsOf: captures.appendingPathComponent("WirePluginInstallResult.json")))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false, makeClient: { _, store in RowsEntryClient(store: store, rows: rows) })
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        let controller = app.scopeConsentEntry.controller
+        controller.requestPluginInstall(.codex)
+        guard case .confirmation(let id, _) = controller.pluginPhase else { return XCTFail("Missing user confirmation") }
+        await controller.confirmPluginInstall(id)
+        if case .unverified = controller.pluginPhase {} else { XCTFail("Completion is not a plugin result") }
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: plugin), delivery: context)
+        await app.composition.store.consume(.response(requestID: .string("other"), .pluginInstall(reply)))
+        if case .unverified = controller.pluginPhase {} else { XCTFail("An unrelated result cannot complete this request") }
+        await app.composition.store.consume(.response(requestID: .string("synthetic-plugin"), .pluginInstall(reply)))
+        if case .result(.planned) = controller.pluginPhase {} else { XCTFail("Only the accepted matching pair sets result") }
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        if case .idle = controller.pluginPhase {} else { XCTFail("Clear must withdraw the result synchronously") }
+    }
+    func testUnrelatedStoreEventsDoNotSatisfyConsentReadback() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-readback-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures").standardizedFileURL
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures.appendingPathComponent("WireConsentFacts.json"))) as? [String: Any])
+        var scopes = try XCTUnwrap(object["scopes"] as? [[String: Any]])
+        scopes[0]["route"] = "local_log"; scopes[0]["detected"] = true; scopes[0]["state"] = "unset"; scopes[0]["defaultCheck"] = true
+        scopes[0].removeValue(forKey: "disabledReason"); scopes[0].removeValue(forKey: "keychain"); object["scopes"] = scopes
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: object))
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: captures.appendingPathComponent("WireRowsSnapshot.json")))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false, makeClient: { _, store in RowsEntryClient(store: store, rows: rows) })
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: facts), delivery: context)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        await app.composition.store.consume(.consentChanged(reply))
+        let request = try XCTUnwrap(app.scopeConsentEntry.controller.requestAllow())
+        await app.scopeConsentEntry.controller.confirm(request.id)
+        if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Completion cannot prove consent") }
+        await app.composition.store.consume(.connection(.ready(context)))
+        if case .waitingForFacts = app.scopeConsentEntry.controller.phase {} else { XCTFail("Unrelated snapshot must not count as readback") }
+        await app.composition.store.consume(.consentChanged(reply))
+        if case .idle = app.scopeConsentEntry.controller.phase {} else { XCTFail("A newly accepted consent event closes readback") }
+    }
+    func testScopeConsentIsWiredFromNormalEntryAndClearsBeforeAcknowledgement() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireConsentFacts.json").standardizedFileURL
+        let facts = try WireDecoder.decode(WireConsentFacts.self, from: Data(contentsOf: capture))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile), createsNativePanels: false)
+        let entry = app.scopeConsentEntry
+        XCTAssertTrue(app.settingsHost.scopeConsentEntry === entry)
+        let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "epoch", generation: 1), revision: 1)
+        await app.composition.store.consume(.connection(.ready(context)))
+        await app.composition.store.consume(.context(context))
+        let reply = EngineReply(envelope: try WireEnvelope(sessionId: "synthetic", storeEpoch: "epoch", consentGeneration: 1, data: facts), delivery: context)
+        await app.composition.store.consume(.consentChanged(reply))
+        XCTAssertEqual(entry.controller.facts?.consentTextVersion, facts.consentTextVersion)
+        XCTAssertTrue(entry.controller.isMutationServiceReady)
+        var pageContext=app.settingsHost.application.editor.context
+        pageContext.subscriptions=[.init(id:"synthetic-sub",name:.init("Synthetic subscription","合成订阅"),source:.fresh)]
+        app.settingsHost.application.update(context:pageContext)
+        let window = SettingsWindowController(editor: app.settingsHost.application.editor, scopeConsentEntry: entry)
+        func find(_ view: NSView, _ id: String) -> Bool { view.accessibilityIdentifier() == id || view.subviews.contains { find($0, id) } }
+        XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
+        await window.prepare();window.selectPane("subscriptions")
+        let shown=await window.acceptanceCheckpoint()
+        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue,SettingKey.source.rawValue]
+        let replaced:Set<String>=[SettingKey.detectedReaders.rawValue,SettingKey.optionalReaders.rawValue]
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription controls must remain")
+        XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:replaced),"U8 replaces only the legacy consent rows")
+        XCTAssertFalse(shown.windowVisible,"construction proof must not order a Settings window")
+        func falseEmpty(_ view:NSView) -> Bool {
+            if let text=view as? NSTextField,["No matching settings","没有匹配的设置"].contains(text.stringValue),!text.isHiddenOrHasHiddenAncestor { return true }
+            return view.subviews.contains(where:falseEmpty)
+        }
+        XCTAssertFalse(try XCTUnwrap(window.window?.contentView).subviews.contains(where:falseEmpty),"visible consent controls are not an empty pane")
+        func searchField(_ root:NSView) -> NSSearchField? {
+            (root as? NSSearchField) ?? root.subviews.lazy.compactMap(searchField).first
+        }
+        let search=try XCTUnwrap(searchField(try XCTUnwrap(window.window?.contentView)))
+        search.stringValue="synthetic-sub"
+        window.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:search))
+        let searched=await window.acceptanceCheckpoint()
+        XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 controls must remain searchable by subscription")
+        XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isDisjoint(with:replaced))
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
+        XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
+        XCTAssertFalse(entry.controller.canMutate)
+        XCTAssertTrue(entry.controller.canInspect, "An online engine must allow consent recovery after clear")
+    }
     func testNormalEntryStoreReadsMigratedSettingsAndCoreAfterRestart() async throws {
         let support = FileManager.default.temporaryDirectory.appendingPathComponent("u6-migration-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
@@ -92,8 +189,10 @@ private actor RowsEntryClient: EngineClient {
         let settingsSurface = EntrySettingsSurface()
         var consoleSurface: EntryConsoleSurface?
         var activationCount = 0
+        let settingsStore = try SettingsStore(url: profile.appendingPathComponent("settings.json"))
+        try await settingsStore.update { $0.language = .english }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: try SettingsStore(url: profile.appendingPathComponent("settings.json")), createsNativePanels: false,
+            settingsStore: settingsStore, createsNativePanels: false, cockpitEntryEnabled: true,
             makeClient: { _, store in RowsEntryClient(store: store, rows: fixture) },
             makeSettingsSurface: { _ in settingsSurface },
             makeConsole: { let surface = EntryConsoleSurface($0); consoleSurface = surface; return surface },
@@ -115,6 +214,7 @@ private actor RowsEntryClient: EngineClient {
         app.menuWillOpen(trackedStatus); app.composition.dock.menuWillOpen(trackedDock)
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: trackedDock)
         let retainedButUntrackedDock = app.composition.dock.menu()
+        XCTAssertFalse(trackedDock === retainedButUntrackedDock, "A retained old menu must remain independently scrubbed")
         let unrelated = NSMenu()
         unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
         let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items
@@ -122,6 +222,7 @@ private actor RowsEntryClient: EngineClient {
         retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")
         retainedReading.toolTip = "Engine-only reason"
         retainedReading.representedObject = "Engine-only reason"
+        retainedReading.identifier = NSUserInterfaceItemIdentifier("private-reason")
         XCTAssertTrue(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
         var clearObservedBeforeReturn = false
@@ -138,6 +239,7 @@ private actor RowsEntryClient: EngineClient {
                 XCTAssertNil(retainedReading.attributedTitle)
                 XCTAssertNil(retainedReading.toolTip)
                 XCTAssertNil(retainedReading.representedObject)
+                XCTAssertNil(retainedReading.identifier)
                 XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
                 XCTAssertFalse(app.composition.menuPresentation.detail.contains("Engine-only reason"))
             }
@@ -173,10 +275,12 @@ private actor RowsEntryClient: EngineClient {
         let content = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
         XCTAssertEqual(content.snapshot.inputs.first?.windows.first?.remainingPercent, 73)
         XCTAssertEqual(content.snapshot.inputs.first?.dataState, .fresh)
-        XCTAssertTrue((content.menuStatusLines ?? []).joined().contains("73%"))
+        // macrev2-403-6: model-scoped windows are Other, not the general menu quota.
+        XCTAssertFalse((content.menuStatusLines ?? []).joined().contains("73%"))
         let expired = adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date(timeIntervalSince1970: 1_830_297_600)))
         XCTAssertNil(expired.snapshot.inputs.first?.windows.first?.remainingPercent)
-        XCTAssertEqual(expired.snapshot.presentationRows["codex"]?.reason, "Engine expiry reason")
+        // Member identity rule: a verified subscription ref, not its tool row, keys the card.
+        XCTAssertEqual(expired.snapshot.presentationRows["0123456789abcdef"]?.reason, "Engine expiry reason")
         XCTAssertTrue((expired.menuStatusLines ?? []).joined().contains("Engine expiry reason"))
     }
 
@@ -192,10 +296,14 @@ private actor RowsEntryClient: EngineClient {
         let hash = SHA256.hash(data: helper).map { String(format: "%02x", $0) }.joined()
         try helper.write(to: helpers.appendingPathComponent("modelplan"))
         try Data(hash.utf8).write(to: resources.appendingPathComponent("modelplan.sha256"))
+        var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        for _ in 0..<3 { native.deleteLastPathComponent() }
+        let pin = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: native.appendingPathComponent("consent-cli-pin.json"))) as? [String: Any])
+        let sources = try XCTUnwrap(pin["sourceSHA256ByArchitecture"] as? [String: String])
         let info: [String: Any] = ["CFBundleShortVersionString": "3.2.1", "ModelPlanPublicSource": String(repeating: "a", count: 40),
             "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version,
             "ModelPlanBundledHelperSHA256": hash,
-            "ModelPlanSourceHelperSHA256": try XCTUnwrap(CommunityConsentBundleIdentity.sourceSHA256ByArchitecture.values.first)]
+            "ModelPlanSourceHelperSHA256ByArchitecture": sources]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
         try Data("Synthetic MIT notice".utf8).write(to: resources.appendingPathComponent("LICENSE.txt"))
         try Data("Synthetic dependency notices".utf8).write(to: resources.appendingPathComponent("CLI-THIRD-PARTY-NOTICES.md"))

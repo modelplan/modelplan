@@ -215,9 +215,9 @@ import ModelPlanCore
         XCTAssertTrue(app.editor.connections.snapshot?.tools.allSatisfy { $0.authorization == .noConsent } == true)
         let grants = await wire.grantCount(); XCTAssertEqual(grants, 0)
     }
-    func testRecordedPinned549OutputDecodesThroughTheSameSettingsFactory() async throws {
-        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.49-synthetic", withExtension: "json"))
-        let provenanceURL = try XCTUnwrap(Bundle.module.url(forResource: "consent-v0.5.49-provenance", withExtension: "json"))
+    func testRecordedPinnedOutputDecodesThroughTheSameSettingsFactory() async throws {
+        let fixture = try XCTUnwrap(Bundle.module.url(forResource: "consent-v\(CommunityConsentBundleIdentity.version)-synthetic", withExtension: "json"))
+        let provenanceURL = try XCTUnwrap(Bundle.module.url(forResource: "consent-v\(CommunityConsentBundleIdentity.version)-provenance", withExtension: "json"))
         let provenance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: provenanceURL)) as? [String: Any])
         var native = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<3 { native.deleteLastPathComponent() }

@@ -14,7 +14,7 @@ type ScopeDefinition struct {
 func Definitions() []ScopeDefinition {
 	var out []ScopeDefinition
 	for _, id := range []string{
-		ScopeClaudeLocalHistory, ScopeClaudeAccountUsageSavedLogin,
+		ScopeOpenCodeV2LocalHistory, ScopeClaudeLocalHistory, ScopeClaudeAccountUsageSavedLogin,
 		ScopeCodexLocalHistory, ScopeCodexRuntimeUsage,
 		ScopeCursorLocalHistory, ScopeCursorAccountUsageSavedLogin,
 		ScopeGeminiLocalHistory, ScopeGeminiAccountUsageSavedLogin,
@@ -36,6 +36,9 @@ func Definitions() []ScopeDefinition {
 			d.Class, d.Route = Credential, "saved_login_api"
 		case "account_usage.api_key":
 			d.Class, d.Route = ExplicitKey, "api_key_api"
+		}
+		if id == ScopeOpenCodeV2LocalHistory {
+			d.DefaultCheck = false
 		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
 		out = append(out, d)

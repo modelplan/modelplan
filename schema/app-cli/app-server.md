@@ -235,7 +235,21 @@ type CredentialResult struct { // app -> server; the only message that may carry
 }
 
 type RefreshRequestParams struct {
-	Scopes []string `json:"scopes,omitempty"` // empty = all allowed scopes
+	Scopes []string       `json:"scopes,omitempty"` // legacy form: empty = all allowed scopes
+	Member *RefreshMember `json:"member,omitempty"` // requires memberRefreshV1, mutually exclusive with scopes
+}
+
+type RefreshMember struct {
+	RowID string `json:"rowId"`
+	Route string `json:"route"`
+	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	AccountLocator string `json:"accountLocator,omitempty"`
+}
+
+type MemberRefreshResult struct {
+	Outcome string `json:"outcome"` // started | deferred
+	NotBefore *time.Time `json:"notBefore,omitempty"`
+	Reason *string `json:"reason,omitempty"` // floor | backoff | budget | not_granted | offline
 }
 
 type RefreshScheduled struct { // result; deferral is a normal result, not an error
@@ -308,7 +322,7 @@ public protocol CredentialAgent: Sendable {
 | -32010 | `protocol_mismatch` | The major version differs. The server exits and the app does not restart it |
 | -32011 | `not_initialized` | A method was called before `initialize` |
 | -32012 | `wrong_session` | The `sessionId` does not match the current session |
-| -32013 | `busy` | Over an in-flight or queue cap. Retry later; nothing was started |
+| -32013 | `busy` | Over an in-flight or queue cap, or a sensitive result could not acquire its publication lock within the bounded wait. Retry read-only requests later; no result was published |
 | -32020 | `consent_stale` | `expectGeneration` is older than current. `error.data.consentGeneration` gives the current one |
 | -32021 | `consent_rejected` | An `allow` for an unknown scope or a forbidden access class, or while readers are off. Deny and forget are never rejected for a known or retired scope |
 | -32022 | `request_mismatch` | A known `requestId` arrived with a different payload |
@@ -344,3 +358,51 @@ revoke/reset, positive reading removal, query isolation/cursors/caps/cancellatio
 recording-provider admission and stopped stdout). The U14 bundle records exact
 source/binary/overlay hashes and outcomes. Native agent prompting and signed app
 supervision require their own device evidence; Linux engine checks do not earn it.
+
+### Public reset event capability
+
+The server advertises `resetEvents` when the verified-publication source is
+configured. A client must include that capability in `initialize` to receive
+optional `resetEvents` on the shared rows projection in `rows/subscribe`,
+`rows/changed`, or `cockpit/query`. An omitted field means the verified source
+was unavailable; an empty array means the verified source had no eligible
+records. Older clients never receive the field. This is a public announcement,
+not evidence that any personal quota was reset; acknowledgement and notification
+state belong to the App. The existing publication cache and rows watcher supply
+refresh; no additional fetch is started.
+
+The server also advertises `resetEventLinksV1` when the publication source is
+configured. Clients independently declare it to receive `source.links` on reset
+events in snapshots, change notifications and cockpit details. Without it,
+events are unchanged except that `links` is omitted. Links are derived only
+from the verified record's `url` and `observationUrl`: an HTTPS AIhot page,
+an X or Twitter status post, or a page on an exact approved official host.
+All queries (including empty queries), fragments, userinfo, encoded paths and
+personal or account-like paths are rejected. AIhot paths are single reset article
+slugs; official paths must be public incident, documentation, article, news,
+research, blog, update or release paths. An official citation is admitted
+independently of the original-post slot; a missing original is never substituted. A rejected link does not remove the
+event. Free-form scope remains row-wide; unsupported confirmation references
+are dropped, and the drop count remains internal.
+
+A published schedule with `precision: "deadline"` may have identical `from`
+and `through` timestamps. It represents a point deadline, not an interval or
+a personal quota reset; the event expires at that timestamp. Other schedule
+precisions require `through` strictly after `from`, and reversed ranges are
+invalid for every precision.
+
+
+A client declares `memberRefreshV1` before using the member form. It supplies
+an existing row ID, route and account locator and/or verified subscription
+reference from the current rows. The server matches exactly one member, checks
+the current consent fence, narrows managed readers to the verified profile and
+rechecks the provider-wide budget at execution. Unbound or ambiguous members
+are deferred with `not_granted`. A deferred `budget` without `notBefore`
+means the deadline cannot be established safely. Legacy scope refresh remains
+unchanged. The member result is an object rather than the legacy result array.
+
+With this capability, each row and account with a granted live scope has a
+`refreshNotBefore` property even when its data is fresh. A timestamp is a
+lower bound, including a stable past timestamp when the reader is already due;
+`null` means the deadline or member binding is unknown. The timestamp is not
+permission to bypass the server's admission, in-flight or budget checks.

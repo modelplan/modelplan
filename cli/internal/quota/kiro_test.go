@@ -48,7 +48,8 @@ func TestKiroUsageOverACP(t *testing.T) {
 	if len(ss) != 1 || ss[0].KeyEnv != "" || ss[0].Blocked != "" {
 		t.Fatalf("selection = %+v", ss)
 	}
-	now := time.Now()
+	// Keep the fixture reset in the future relative to the test clock.
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
 	if err := RefreshNative(context.Background(), p, now); err != nil {
 		t.Fatal(err)
 	}

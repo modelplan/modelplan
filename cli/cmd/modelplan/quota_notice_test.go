@@ -104,48 +104,55 @@ func TestHookQuotaThresholdsAndRecovery(t *testing.T) {
 			t.Run(harness+"/"+lang, func(t *testing.T) {
 				h := newQuotaHookTest(t, harness, lang)
 				now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
-				reset := now.Add(time.Hour)
+				reset5, resetW := now.Add(3*time.Hour), now.Add(72*time.Hour)
 				read := func(left float64) {
-					h.reading(harness, now, hookWindow("five_hour", left, reset), hookWindow("weekly", left, reset))
+					h.reading(harness, now, hookWindow("five_hour", left, reset5), hookWindow("weekly", left, resetW))
 				}
-				for _, left := range []float64{90, 15} {
+				line := func(en, zh string) string {
+					if lang == "zh" {
+						return zh
+					}
+					return en
+				}
+				for _, left := range []float64{90, 25} {
 					read(left)
 					if got := h.prompt("thread", now); got != "" {
 						t.Fatalf("%g%% triggered: %s", left, got)
 					}
 				}
-				read(12)
-				want := "5-hour quota: 12% left, resets in 1h.\n\nWeekly quota: 12% left, resets in 1h."
-				if lang == "zh" {
-					want = "5小时额度：剩余12%，1时后重置。\n\n每周额度：剩余12%，1时后重置。"
-				}
+				read(18)
+				want := line("5-hour quota: 18% left, resets in 3h.\n\nWeekly quota: 18% left, resets in 3d.",
+					"5小时额度：剩余18%，3时后重置。\n\n每周额度：剩余18%，3天后重置。")
 				if got := h.prompt("thread", now); got != want {
-					t.Fatalf("low notice:\ngot %s\nwant %s", got, want)
+					t.Fatalf("20%% notice:\ngot %s\nwant %s", got, want)
 				}
-				for _, left := range []float64{12, 0, 90, 12} {
+				for _, left := range []float64{18, 12, 90, 15} {
 					read(left)
 					if got := h.prompt("thread", now); got != "" {
 						t.Fatalf("repeat/correction at %g%%: %s", left, got)
 					}
 				}
+				read(8)
+				want = line("5-hour quota: 8% left, resets in 3h.\n\nWeekly quota: 8% left, resets in 3d.",
+					"5小时额度：剩余8%，3时后重置。\n\n每周额度：剩余8%，3天后重置。")
+				if got := h.prompt("thread", now); got != want {
+					t.Fatalf("10%% notice:\ngot %s\nwant %s", got, want)
+				}
 				if got := h.prompt("other-thread", now); got != want {
 					t.Fatalf("new thread: %s", got)
 				}
 				// An old reading cannot prove a reset just because the boundary passed.
-				now = reset.Add(time.Minute)
+				now = reset5.Add(time.Minute)
 				if got := h.prompt("thread", now); got != "" {
 					t.Fatalf("expired reading triggered reset: %s", got)
 				}
-				reset = now.Add(5 * time.Hour)
+				reset5 = now.Add(5 * time.Hour)
 				read(50)
 				if got := h.prompt("thread", now); got != "" {
 					t.Fatalf("50%% triggered reset: %s", got)
 				}
 				read(96)
-				want = "5-hour window reset: 96% left, resets in 5h.\n\nWeekly window reset: 96% left, resets in 5h."
-				if lang == "zh" {
-					want = "5小时窗口已重置：剩余96%，5时后重置。\n\n每周窗口已重置：剩余96%，5时后重置。"
-				}
+				want = line("5-hour window reset: 96% left, resets in 5h.", "5小时窗口已重置：剩余96%，5时后重置。")
 				if got := h.prompt("thread", now); got != want {
 					t.Fatalf("recovery:\ngot %s\nwant %s", got, want)
 				}
@@ -155,19 +162,82 @@ func TestHookQuotaThresholdsAndRecovery(t *testing.T) {
 				if got := h.prompt("never-low-thread", now); got != "" {
 					t.Fatalf("recovery without prior low: %s", got)
 				}
-				// A later cycle still cannot repeat either line within the same thread.
+				// A new cycle starts the thresholds over; the weekly cycle has had its 20% line.
 				read(12)
-				if got := h.prompt("thread", now); got != "" {
-					t.Fatalf("second low cycle: %s", got)
-				}
-				now = reset.Add(time.Minute)
-				reset = now.Add(5 * time.Hour)
-				read(96)
-				if got := h.prompt("thread", now); got != "" {
-					t.Fatalf("second recovery cycle: %s", got)
+				want = line("5-hour quota: 12% left, resets in 5h.", "5小时额度：剩余12%，5时后重置。")
+				if got := h.prompt("thread", now); got != want {
+					t.Fatalf("second cycle:\ngot %s\nwant %s", got, want)
 				}
 			})
 		}
+	}
+}
+
+func (h quotaHookTest) sessionStart(thread, source string, now time.Time) string {
+	h.t.Helper()
+	var out bytes.Buffer
+	input := publicationJSON(h.t, map[string]string{"session_id": thread, "hook_event_name": "SessionStart", "source": source})
+	if code := adviseHookAt(bytes.NewReader(input), &out, h.style, h.st, nil, common{offline: true}, h.harness, "user-only", "", now); code != 0 {
+		h.t.Fatalf("hook exit %d", code)
+	}
+	if out.Len() == 0 {
+		return ""
+	}
+	var result map[string]any
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		h.t.Fatalf("hook output %s: %v", out.String(), err)
+	}
+	hook, _ := result["hookSpecificOutput"].(map[string]any)
+	if len(result) != 1 || hook["hookEventName"] != "SessionStart" {
+		h.t.Fatalf("session-start output: %s", out.String())
+	}
+	return hook["additionalContext"].(string)
+}
+
+func TestHookResendsTheLowNoticeAfterCompaction(t *testing.T) {
+	for _, harness := range []string{"claude-code", "codex"} {
+		t.Run(harness, func(t *testing.T) {
+			h := newQuotaHookTest(t, harness, "en")
+			now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+			reset5, resetW := now.Add(3*time.Hour), now.Add(72*time.Hour)
+			h.reading(harness, now, hookWindow("five_hour", 70, reset5), hookWindow("weekly", 9, resetW))
+			if got := h.sessionStart("thread", "compact", now); got != "" {
+				t.Fatalf("nothing was sent yet: %s", got)
+			}
+			if got := h.prompt("thread", now); got != "Weekly quota: 9% left, resets in 3d." {
+				t.Fatalf("low notice: %s", got)
+			}
+			later := now.Add(10 * time.Minute)
+			h.reading(harness, later, hookWindow("five_hour", 70, reset5), hookWindow("weekly", 7, resetW))
+			for _, source := range []string{"compact", "resume"} {
+				if got := h.sessionStart("thread", source, later); got != "Weekly quota: 7% left, resets in 2d23h." {
+					t.Fatalf("%s resend: %q", source, got)
+				}
+			}
+			for _, source := range []string{"startup", "clear", ""} {
+				if got := h.sessionStart("thread", source, later); got != "" {
+					t.Fatalf("%s resent: %s", source, got)
+				}
+			}
+			if got := h.sessionStart("other-thread", "compact", later); got != "" {
+				t.Fatalf("another thread: %s", got)
+			}
+			// The resend marks nothing: the next 5% line still comes on a prompt.
+			h.reading(harness, later, hookWindow("five_hour", 70, reset5), hookWindow("weekly", 4, resetW))
+			if got := h.prompt("thread", later); got != "Weekly quota: 4% left, resets in 2d23h." {
+				t.Fatalf("5%% after resend: %s", got)
+			}
+			// A corrected reading no longer holds the notice.
+			h.reading(harness, later, hookWindow("five_hour", 70, reset5), hookWindow("weekly", 40, resetW))
+			if got := h.sessionStart("thread", "compact", later); got != "" {
+				t.Fatalf("stale notice resent: %s", got)
+			}
+			t.Setenv("MODELPLAN_TASK_BRIEF", "off")
+			h.reading(harness, later, hookWindow("five_hour", 70, reset5), hookWindow("weekly", 4, resetW))
+			if got := h.sessionStart("thread", "compact", later); got != "" {
+				t.Fatalf("brief off: %s", got)
+			}
+		})
 	}
 }
 
@@ -245,27 +315,7 @@ func TestHookQuotaDoesNotConsumeMissingBrief(t *testing.T) {
 		t.Fatal(got)
 	}
 	// Supply a synthetic verified publication later, without a network request.
-	f := newPublicationFixture(t, func(doc map[string]json.RawMessage) {
-		data := strings.ReplaceAll(string(doc["data"]), "z-dev", "openai")
-		data = strings.ReplaceAll(data, `"status":"incomplete"`, `"status":""`)
-		doc["data"] = json.RawMessage(data)
-	})
-	if err := os.MkdirAll(filepath.Join(h.st.Dir, "objects"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.st.PutObject(f.objectHash, f.object); err != nil {
-		t.Fatal(err)
-	}
-	p := h.st.ManifestPath(f.id)
-	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(p, f.manifest, 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := h.st.SaveState(store.State{PublicationID: f.id, ManifestHash: publicationHash(f.manifest), Component: "client", ComponentHash: f.objectHash}); err != nil {
-		t.Fatal(err)
-	}
+	h.publish()
 	if got := h.prompt("thread", now); !strings.HasPrefix(got, "ModelPlan task-start brief") || strings.Contains(got, "12%") {
 		t.Fatalf("late brief: %s", got)
 	}
@@ -288,5 +338,69 @@ func TestHookQuotaDoesNotConsumeMissingBrief(t *testing.T) {
 	s := advise.Load(h.st.Dir)
 	if len(s.Briefs) != 2 || len(s.Quotas) != 2 {
 		t.Fatalf("state = %+v", s)
+	}
+}
+
+// publish installs a synthetic verified publication, without a network request.
+func (h quotaHookTest) publish(edits ...string) {
+	t := h.t
+	t.Helper()
+	f := newPublicationFixture(t, func(doc map[string]json.RawMessage) {
+		data := strings.ReplaceAll(string(doc["data"]), "z-dev", "openai")
+		for i := 0; i+1 < len(edits); i += 2 {
+			data = strings.ReplaceAll(data, edits[i], edits[i+1])
+		}
+		data = strings.ReplaceAll(data, `"status":"incomplete"`, `"status":""`)
+		doc["data"] = json.RawMessage(data)
+	})
+	if err := os.MkdirAll(filepath.Join(h.st.Dir, "objects"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.PutObject(f.objectHash, f.object); err != nil {
+		t.Fatal(err)
+	}
+	p := h.st.ManifestPath(f.id)
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, f.manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.st.SaveState(store.State{PublicationID: f.id, ManifestHash: publicationHash(f.manifest), Component: "client", ComponentHash: f.objectHash}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHookLowNoticeNamesTheStepToStarOnlyAboveIt(t *testing.T) {
+	h := newQuotaHookTest(t, "claude-code", "en")
+	// The fixture's two-effort model, in Claude Code and with High published.
+	h.publish(`"codex":["native-z"]`, `"codex":["native-z"],"claude-code":["native-z"]`,
+		`{"effort":"high","label":"High","ability":null,"cost":null`, `{"effort":"high","label":"High","ability":55,"cost":3`)
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	read := func(effort string, left float64) {
+		reset := now.Add(72 * time.Hour)
+		used := 100 - left
+		data := map[string]any{"schemaVersion": 1, "observedAt": now, "sessionKey": quota.SessionKey("thread-" + effort),
+			"harness": map[string]any{"model": "native-z", "effort": effort},
+			"windows": []quota.Window{{Kind: "weekly", UsedPercent: &used, ResetsAt: &reset, ResetMode: "fixed", ObservedAt: now}}}
+		p := filepath.Join(h.st.Dir, "observed", "claude-code.json")
+		if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, publicationJSON(t, data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	notice := func(effort string) string {
+		got := h.prompt("thread-"+effort, now)
+		return got[strings.LastIndex(got, "\n")+1:]
+	}
+	read("high", 9)
+	if got := notice("high"); !strings.HasPrefix(got, "Weekly quota: 9% left, resets in 3d. The effort is above ★: ★") || !strings.HasSuffix(got, "suggest it to the user once.") {
+		t.Fatalf("above ★: %s", got)
+	}
+	read("medium", 9)
+	if got := notice("medium"); got != "Weekly quota: 9% left, resets in 3d." {
+		t.Fatalf("at ★: %s", got)
 	}
 }

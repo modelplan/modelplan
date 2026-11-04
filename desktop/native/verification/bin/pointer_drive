@@ -3,7 +3,7 @@
 # Explicit test-build binary only. This wrapper never compiles or requests TCC.
 set -eu
 if [ "$#" -lt 2 ] || [ "$1" != "--binary" ]; then
-  echo 'usage: pointer_drive --binary <owned-test-build/pointer_drive> --check|--plan <config>' >&2
+  echo 'usage: pointer_drive --binary <owned-test-build/pointer_drive> --check|--plan <config>|--status-menu-plan <config>' >&2
   exit 64
 fi
 binary=$2

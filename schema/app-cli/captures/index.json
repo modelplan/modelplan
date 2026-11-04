@@ -6,6 +6,22 @@
       "type": "RowsAccount",
       "optional": [
         {
+          "field": "resetCards",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "subscriptionRef",
           "omission": true,
           "null": true,
@@ -107,6 +123,14 @@
       ]
     },
     {
+      "file": "RowsModelScope.json",
+      "type": "RowsModelScope",
+      "optional": [],
+      "required": [
+        "models"
+      ]
+    },
+    {
       "file": "RowsName.json",
       "type": "RowsName",
       "optional": [
@@ -177,9 +201,163 @@
       ]
     },
     {
+      "file": "RowsResetCardItem.json",
+      "type": "RowsResetCardItem",
+      "optional": [
+        {
+          "field": "expiresAt",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "file": "RowsResetCardSource.json",
+      "type": "RowsResetCardSource",
+      "optional": [],
+      "required": [
+        "source",
+        "observedAt"
+      ]
+    },
+    {
+      "file": "RowsResetCards.json",
+      "type": "RowsResetCards",
+      "optional": [
+        {
+          "field": "count",
+          "omission": false,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "earliestExpiresAt",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "items",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "state",
+        "truncated",
+        "sources"
+      ]
+    },
+    {
+      "file": "RowsResetEvent.json",
+      "type": "RowsResetEvent",
+      "optional": [
+        {
+          "field": "confirms",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "planIds",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "schedule",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "version",
+        "id",
+        "provider",
+        "rowId",
+        "status",
+        "publishedAt",
+        "expiresAt",
+        "source"
+      ]
+    },
+    {
+      "file": "RowsResetLink.json",
+      "type": "RowsResetLink",
+      "optional": [],
+      "required": [
+        "type",
+        "url"
+      ]
+    },
+    {
+      "file": "RowsResetSchedule.json",
+      "type": "RowsResetSchedule",
+      "optional": [],
+      "required": [
+        "precision",
+        "from",
+        "through"
+      ]
+    },
+    {
+      "file": "RowsResetSource.json",
+      "type": "RowsResetSource",
+      "optional": [
+        {
+          "field": "url",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "links",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "kind",
+        "publicationId"
+      ]
+    },
+    {
       "file": "RowsRow.json",
       "type": "RowsRow",
       "optional": [
+        {
+          "field": "refreshNotBefore",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
         {
           "field": "vendorKey",
           "omission": true,
@@ -258,6 +436,22 @@
       "type": "RowsWindow",
       "optional": [
         {
+          "field": "source",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "modelScope",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "durationSeconds",
           "omission": true,
           "null": true,
@@ -277,8 +471,8 @@
           "field": "resetsAt",
           "omission": true,
           "null": true,
-          "wrongType": true,
-          "strict": false,
+          "wrongType": false,
+          "strict": true,
           "nullPolicy": "coalesced"
         },
         {
@@ -326,12 +520,149 @@
       ]
     },
     {
+      "file": "WireCockpitAlert.json",
+      "type": "WireCockpitAlert",
+      "optional": [],
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "severity",
+        "remainingPercent"
+      ]
+    },
+    {
+      "file": "WireCockpitCredits.json",
+      "type": "WireCockpitCredits",
+      "optional": [
+        {
+          "field": "balance",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "observedAt"
+      ]
+    },
+    {
       "file": "WireCockpitData.json",
       "type": "WireCockpitData",
-      "optional": [],
+      "optional": [
+        {
+          "field": "details",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
       "required": [
         "projection",
         "subscriptions"
+      ]
+    },
+    {
+      "file": "WireCockpitDetails.json",
+      "type": "WireCockpitDetails",
+      "optional": [],
+      "required": [
+        "version",
+        "sources",
+        "subscriptions",
+        "sessions",
+        "sessionCoverage",
+        "resetEvents",
+        "alerts"
+      ]
+    },
+    {
+      "file": "WireCockpitQueryParams.json",
+      "type": "WireCockpitQueryParams",
+      "optional": [
+        {
+          "field": "redBelow",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": []
+    },
+    {
+      "file": "WireCockpitResetCount.json",
+      "type": "WireCockpitResetCount",
+      "optional": [
+        {
+          "field": "count",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "expiresAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "file": "WireCockpitSession.json",
+      "type": "WireCockpitSession",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "effort",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "projectLabel",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "rate",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "sessionRef",
+        "source",
+        "model",
+        "lastObservedAt",
+        "state"
       ]
     },
     {
@@ -341,6 +672,60 @@
       "required": [
         "subscriptionRef",
         "accounts"
+      ]
+    },
+    {
+      "file": "WireCockpitSubscriptionDetails.json",
+      "type": "WireCockpitSubscriptionDetails",
+      "optional": [
+        {
+          "field": "resetCountsTruncated",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "resetCards",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "credits",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "subscriptionRef",
+        "resetCounts",
+        "today"
+      ]
+    },
+    {
+      "file": "WireCockpitToday.json",
+      "type": "WireCockpitToday",
+      "optional": [
+        {
+          "field": "generationTps",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "source",
+        "observedOutputTokens",
+        "bindingBasis"
       ]
     },
     {
@@ -482,6 +867,14 @@
       "file": "WireDiagnostics.json",
       "type": "WireDiagnostics",
       "optional": [
+        {
+          "field": "refreshDecisions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "lastErrorClass",
           "omission": true,
@@ -683,6 +1076,31 @@
       ]
     },
     {
+      "file": "WireMemberRefreshResult.json",
+      "type": "WireMemberRefreshResult",
+      "optional": [
+        {
+          "field": "notBefore",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "reason",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "outcome"
+      ]
+    },
+    {
       "file": "WireNotification.json",
       "type": "WireNotification\u003cWireRowsSnapshot\u003e",
       "optional": [],
@@ -818,9 +1236,54 @@
       ]
     },
     {
+      "file": "WireRefreshDecision.json",
+      "type": "WireRefreshDecision",
+      "optional": [],
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
+      ]
+    },
+    {
+      "file": "WireRefreshMember.json",
+      "type": "WireRefreshMember",
+      "optional": [
+        {
+          "field": "subscriptionRef",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "accountLocator",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "rowId",
+        "route"
+      ]
+    },
+    {
       "file": "WireRefreshRequestParams.json",
       "type": "WireRefreshRequestParams",
       "optional": [
+        {
+          "field": "member",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
         {
           "field": "scopes",
           "omission": true,
@@ -879,7 +1342,16 @@
     {
       "file": "WireRowsProjection.json",
       "type": "WireRowsProjection",
-      "optional": [],
+      "optional": [
+        {
+          "field": "resetEvents",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "rowsVersion",
         "rows",

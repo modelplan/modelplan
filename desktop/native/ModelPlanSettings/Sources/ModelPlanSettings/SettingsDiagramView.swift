@@ -2,6 +2,16 @@
 import AppKit
 import QuartzCore
 
+enum SettingsDiagramWords {
+    static func quotaWindow(_ option: PercentagePin, language: SettingsLanguage) -> String {
+        switch option {
+        case .auto: return language == .english ? "Auto" : "自动"
+        case .fiveHour: return language == .english ? "5h" : "5小时"
+        case .week: return language == .english ? "Weekly" : "每周"
+        }
+    }
+}
+
 /// Neutral line illustrations, drawn independently with system ink. No asset or animation timer.
 @MainActor public final class SettingsDiagramView: NSView {
     public private(set) var input: SettingsDiagramInput
@@ -119,8 +129,7 @@ import QuartzCore
             for (index, option) in PercentagePin.allCases.enumerated() {
                 let x = CGFloat(index) * 32 + 16, selected = pin == option
                 ring(.init(x: x, y: 15), radius: 10, selected: selected)
-                let auto = language == .english ? "Auto" : "自动", week = language == .english ? "W" : "周"
-                label(option == .auto ? auto : option == .fiveHour ? "5h" : week, x: x, selected: selected)
+                label(SettingsDiagramWords.quotaWindow(option, language: language), x: x, selected: selected)
             }
         }
     }

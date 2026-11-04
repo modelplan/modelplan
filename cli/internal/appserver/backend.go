@@ -8,6 +8,8 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
@@ -21,12 +23,16 @@ type Stamp struct {
 // View is immutable after return. The backend owns admission, reader locks,
 // publication fencing and shared budgets; the server never rebuilds permission.
 type View struct {
-	Stamp       Stamp
-	Projection  rows.Projection
-	Scopes      []string
-	Consent     wire.ConsentFacts
-	Diagnostics []wire.ScopeDiag
-	Health      wire.Health
+	QuotaReport               quota.Report
+	PublicModels              []digest.Model
+	Stamp                     Stamp
+	Projection                rows.Projection
+	ResetEvents               *[]rows.ResetEvent
+	DroppedResetConfirmations int
+	Scopes                    []string
+	Consent                   wire.ConsentFacts
+	Diagnostics               []wire.ScopeDiag
+	Health                    wire.Health
 }
 
 type GrantResult struct {
@@ -122,4 +128,55 @@ type sessionContextKey struct{}
 func SessionID(ctx context.Context) string {
 	session, _ := ctx.Value(sessionContextKey{}).(string)
 	return session
+}
+
+// ResetEventsEnabled reports the capability negotiated by the current session.
+// CapabilityResetEvents names the opt-in for public reset event projections.
+const CapabilityResetEvents = "resetEvents"
+
+type resetEventsContextKey struct{}
+
+func ResetEventsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(resetEventsContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityResetEventLinksV1 opts into typed links on reset events.
+const CapabilityResetEventLinksV1 = "resetEventLinksV1"
+
+type resetEventLinksContextKey struct{}
+
+func ResetEventLinksEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(resetEventLinksContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
+const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
+
+type cockpitDetailsContextKey struct{}
+
+func CockpitDetailsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
+	return enabled
+}
+
+// WindowSourcesEnabled reports the negotiated per-window provenance contract.
+const CapabilityWindowSources = "windowSourcesV1"
+
+type windowSourcesContextKey struct{}
+
+func WindowSourcesEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(windowSourcesContextKey{}).(bool)
+	return enabled
+}
+
+// MemberRefreshEnabled reports the negotiated member refresh contract.
+const CapabilityMemberRefresh = "memberRefreshV1"
+
+type memberRefreshContextKey struct{}
+
+func MemberRefreshEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(memberRefreshContextKey{}).(bool)
+	return enabled
 }

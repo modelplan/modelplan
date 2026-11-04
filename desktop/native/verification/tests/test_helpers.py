@@ -16,7 +16,7 @@ class Helpers(unittest.TestCase):
         with self.assertRaises(ValueError):doctor(d|{'activationCall':''})
     def test_launch_uses_budget_not_start_offset(self):
         lease=dict(runID='fixture',epoch='new',notBefore=1000,expiresAt=1900,guardianHeartbeatAt=1019.5,ownerPreempted=False,exclusive=True)
-        c=dict(profile='synthetic',lease=lease,release=lease|dict(m1Released=True,m0DirectedAnnouncementConfirmed=True),requiredSeconds=632,stop=False,argv=['synthetic-app'],binarySHA256='a'*64)
+        c=dict(profile='synthetic',lease=lease,release=lease|dict(m1Released=True,approval='https://example.test/coordinator#issuecomment-1'),requiredSeconds=632,stop=False,argv=['synthetic-app'],binarySHA256='a'*64)
         self.assertTrue(validate(c,1020))
         with self.assertRaises(ValueError):validate(c|{'binarySHA256':''},1020)
         with self.assertRaises(ValueError):validate(c|{'requiredSeconds':881},1020)

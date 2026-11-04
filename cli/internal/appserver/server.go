@@ -22,11 +22,12 @@ import (
 // The core reserves query result space before calling a handler. Private output
 // must carry the admission stamp/scopes; a stale result becomes consent_changed.
 type Handler struct {
-	Timeout    time.Duration
-	Capability string
-	Query      bool
-	Private    bool
-	Handle     func(context.Context, json.RawMessage, Stamp) (Reply, error)
+	Timeout           time.Duration
+	Capability        string
+	ExtraCapabilities []string
+	Query             bool
+	Private           bool
+	Handle            func(context.Context, json.RawMessage, Stamp) (Reply, error)
 }
 
 type Reply struct {
@@ -39,9 +40,11 @@ type Reply struct {
 }
 
 type Config struct {
-	Version  string
-	Backend  Backend
-	Handlers map[string]Handler
+	Version          string
+	Backend          Backend
+	Handlers         map[string]Handler
+	SessionStarted   func()
+	RefreshDecisions func() []wire.RefreshDecision
 	// Shorter durations are for synthetic transport tests; zero uses wire limits.
 	WriteTimeout   time.Duration
 	RequestTimeout time.Duration
@@ -57,6 +60,7 @@ type Server struct {
 	mu                                              sync.Mutex
 	refreshMu                                       sync.Mutex
 	initialized, initializing, subscribed, stopping bool
+	rowsPending                                     bool
 	session                                         string
 	view                                            View
 	sequence                                        uint64
@@ -200,14 +204,17 @@ func (s *Server) isCurrent(stamp Stamp) bool {
 
 // Check the shared store immediately before writing as well as at enqueue, so
 // an external revoke need not wait for its filesystem watcher to drain data.
-func (s *Server) mayEmit(stamp Stamp) bool {
+func (s *Server) mayEmit(stamp Stamp) error {
 	ctx, cancel := context.WithTimeout(s.ctx, s.config.WriteTimeout)
 	defer cancel()
 	if err := s.backend.Publish(ctx, stamp, func() error { return nil }); err != nil {
 		s.scheduleRefresh()
-		return false
+		return err
 	}
-	return s.isCurrent(stamp)
+	if !s.isCurrent(stamp) {
+		return ProtocolError{wire.CodeConsentChanged}
+	}
+	return nil
 }
 func (s *Server) currentStamp() Stamp { s.mu.Lock(); defer s.mu.Unlock(); return s.view.Stamp }
 func (s *Server) errorMessage(id wire.ID, code int) wire.Failure {
@@ -365,7 +372,12 @@ func (s *Server) dispatch(r wire.Request) {
 			s.mu.Lock()
 			v := s.view
 			s.mu.Unlock()
-			return Reply{Stamp: v.Stamp, Data: wire.Diagnostics{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, UptimeSeconds: int64(time.Since(s.started).Seconds()), Scopes: v.Diagnostics}}, nil
+			diag := wire.Diagnostics{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, UptimeSeconds: int64(time.Since(s.started).Seconds()), Scopes: v.Diagnostics}
+			if s.clientCapabilities["refreshDecisionsV1"] && s.config.RefreshDecisions != nil {
+				items := s.config.RefreshDecisions()
+				diag.RefreshDecisions = &items
+			}
+			return Reply{Stamp: v.Stamp, Data: diag}, nil
 		})
 		return
 	}
@@ -438,7 +450,13 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 		s.sendError(r.ID, wire.CodeBusy)
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.WithValue(s.ctx, sessionContextKey{}, s.session), timeout)
+	base := context.WithValue(s.ctx, sessionContextKey{}, s.session)
+	base = context.WithValue(base, memberRefreshContextKey{}, s.clientCapabilities[CapabilityMemberRefresh])
+	base = context.WithValue(base, windowSourcesContextKey{}, s.clientCapabilities[CapabilityWindowSources])
+	base = context.WithValue(base, resetEventsContextKey{}, s.clientCapabilities[CapabilityResetEvents])
+	base = context.WithValue(base, resetEventLinksContextKey{}, s.clientCapabilities[CapabilityResetEventLinksV1])
+	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
+	ctx, cancel := context.WithTimeout(base, timeout)
 	s.active[key] = activeRequest{cancel: cancel}
 	if control {
 		s.controls++
@@ -506,9 +524,9 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.Project(s.view.Projection)}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1])}
 				}
-				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func() { s.sendError(r.ID, wire.CodeConsentChanged) })
+				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
 			})
 			if err != nil {
@@ -580,6 +598,9 @@ func (s *Server) initialize(r wire.Request) {
 		caps := s.capabilities()
 		s.out.controlMessage(success(p.SessionID, r.ID, v.Stamp, nil, wire.InitializeResult{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, Capabilities: caps}))
 		s.out.controlMessage(notification(p.SessionID, "engine/health", v.Stamp, nil, v.Health))
+		if s.config.SessionStarted != nil {
+			s.config.SessionStarted()
+		}
 	}()
 }
 func validSession(id string) bool {
@@ -606,6 +627,7 @@ func (s *Server) capabilities() []string {
 		if handler.Capability != "" {
 			supported = append(supported, handler.Capability)
 		}
+		supported = append(supported, handler.ExtraCapabilities...)
 	}
 	allowed := map[string]bool{}
 	for _, cap := range supported {
@@ -654,13 +676,21 @@ func (s *Server) readView(ctx context.Context) error {
 		s.mu.Unlock()
 		return ProtocolError{wire.CodeConsentChanged}
 	}
-	if reflect.DeepEqual(old, v) {
+	changed := !reflect.DeepEqual(old, v)
+	if !changed && !s.rowsPending {
 		s.mu.Unlock()
 		return nil
 	}
-	s.view = v
-	s.sequence++
+	if changed {
+		s.view = v
+		s.sequence++
+		s.rowsPending = s.subscribed
+	}
 	session, seq, subscribed := s.session, s.sequence, s.subscribed
+	eventsEnabled := s.clientCapabilities[CapabilityResetEvents]
+	sourcesEnabled := s.clientCapabilities[CapabilityWindowSources]
+	membersEnabled := s.clientCapabilities[CapabilityMemberRefresh]
+	linksEnabled := s.clientCapabilities[CapabilityResetEventLinksV1]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -669,15 +699,27 @@ func (s *Server) readView(ctx context.Context) error {
 		}
 	}
 	s.mu.Unlock()
-	if old.Stamp != v.Stamp || !reflect.DeepEqual(old.Consent, v.Consent) {
+	if changed && (old.Stamp != v.Stamp || !reflect.DeepEqual(old.Consent, v.Consent)) {
 		s.out.controlMessage(notification(session, "consent/changed", v.Stamp, nil, v.Consent))
 	}
-	if old.Health != v.Health {
+	if changed && old.Health != v.Health {
 		s.out.controlMessage(notification(session, "engine/health", v.Stamp, nil, v.Health))
 	}
 	if subscribed {
 		if err := s.backend.Publish(ctx, v.Stamp, func() error {
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.Project(v.Projection)}), v.Stamp)
+			s.mu.Lock()
+			if s.sequence == seq {
+				s.rowsPending = false
+			}
+			s.mu.Unlock()
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled)}), v.Stamp, func(error) {
+				s.mu.Lock()
+				if s.sequence == seq {
+					s.rowsPending = true
+				}
+				s.mu.Unlock()
+				s.scheduleRefresh()
+			})
 			return nil
 		}); err != nil {
 			s.scheduleRefresh()

@@ -11,7 +11,10 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 )
 
-type sharedCockpit struct{ backend appserver.Backend }
+type sharedCockpit struct {
+	backend appserver.Backend
+	cache   string
+}
 
 func (s sharedCockpit) AdmitCockpit(ctx context.Context, stamp appserver.Stamp) (queries.CockpitAdmission, error) {
 	view, err := s.backend.Get(ctx)
@@ -38,9 +41,9 @@ func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmissi
 	if view.Stamp != a.Stamp || !slices.Equal(scopes, a.Scopes) {
 		return wire.CockpitData{}, appserver.ProtocolError{Code: wire.CodeConsentChanged}
 	}
-	data := wire.CockpitData{Projection: wire.Project(view.Projection), Subscriptions: []wire.CockpitSubscription{}}
+	data := wire.CockpitData{Projection: wire.ProjectWithEvents(view.Projection, view.ResetEvents, appserver.ResetEventsEnabled(ctx), appserver.WindowSourcesEnabled(ctx), appserver.MemberRefreshEnabled(ctx), appserver.ResetEventLinksEnabled(ctx)), Subscriptions: []wire.CockpitSubscription{}}
 	groups := map[string][]wire.CockpitAccount{}
-	for _, row := range view.Projection.Rows {
+	for _, row := range data.Projection.Rows {
 		for _, account := range row.Accounts {
 			if account.SubscriptionRef != nil {
 				ref := *account.SubscriptionRef
@@ -55,6 +58,13 @@ func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmissi
 	sort.Strings(refs)
 	for _, ref := range refs {
 		data.Subscriptions = append(data.Subscriptions, wire.CockpitSubscription{SubscriptionRef: ref, Accounts: groups[ref]})
+	}
+	if appserver.CockpitDetailsEnabled(ctx) {
+		details, err := s.cockpitDetails(ctx, view, a, groups)
+		if err != nil {
+			return wire.CockpitData{}, err
+		}
+		data.Details = &details
 	}
 	return data, nil
 }

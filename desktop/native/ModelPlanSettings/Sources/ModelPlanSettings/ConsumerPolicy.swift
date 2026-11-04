@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: MIT
 import Foundation
+
+public extension SettingsPreferences {
+    /// Order-derived identities may refer to a different account after any refresh.
+    func withoutUnstableMemberChoices(_ members: [SettingsSubscription]) -> SettingsPreferences {
+        let unstable = Set(members.filter(\.isUnstable).map(\.id))
+        var result = self
+        result.subscriptionSettings = result.subscriptionSettings.filter { !unstable.contains($0.key) }
+        result.subscriptions = .init(order: result.subscriptions.order.filter { !unstable.contains($0) },
+                                     hiddenIDs: result.subscriptions.hiddenIDs.subtracting(unstable))
+        return result
+    }
+}
 import ModelPlanDock
 
 public struct SettingsEnvironment: Sendable {
+    public var v1NormalEntry = false
     public var darkAppearance = false
     public var reduceMotion = false
     public var reduceTransparency = false
@@ -23,7 +36,7 @@ public struct EffectiveSettings: Equatable, Sendable {
     public let opening: OpeningPreference, ignitionSeconds: Double?
     public let redBelow: Int
     public init(_ p: SettingsPreferences, environment e: SettingsEnvironment) {
-        darkAppearance = p.theme == .night || (p.theme == .system && e.darkAppearance)
+        darkAppearance = e.v1NormalEntry || p.theme == .night || (p.theme == .system && e.darkAppearance)
         reduceMotion = p.motion == .on || (p.motion == .system && e.reduceMotion)
         reduceTransparency = p.transparency == .on || (p.transparency == .system && e.reduceTransparency)
         increaseContrast = e.increaseContrast
@@ -34,7 +47,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         showPercentages = p.showPercentages; sliverAlert = p.sliverAlert
         size = p.size; magnification = reduceMotion ? .none : p.magnification
         menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.redBelow
-        opening = p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
+        opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
     public var visibilityPolicy: DockVisibilityPolicy {
@@ -61,8 +74,8 @@ public extension SettingsPreferences {
         // A pin selects a general window, never a model/feature-specific extra quota.
         switch pin {
         case .auto: result.selectedWindowID = nil
-        case .fiveHour: result.selectedWindowID = input.windows.first { $0.period == .fiveHour }?.id
-        case .week: result.selectedWindowID = input.windows.first { $0.period == .week }?.id
+        case .fiveHour: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .fiveHour }?.id
+        case .week: result.selectedWindowID = input.windows.first { $0.isGeneral && $0.period == .week }?.id
         }
         return result
     }

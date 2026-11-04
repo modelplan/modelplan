@@ -34,9 +34,11 @@ final class WindowMessageDiagnosticsTests: XCTestCase {
         "invalid synthetic payload must never enter diagnostics", source: source))
     XCTAssertEqual(controller.rejectedBridgeMessageCount, 1)
     XCTAssertEqual(diagnostics.map(\.rawValue), ["cockpit.bridge.message-rejected"])
-    let load = try controller.bridge.load(.init(theme: .day, locale: .en, profile: .full))
+    let load = try controller.bridge.load(.init(theme: .day, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
     var reply = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
     reply["appearance"] = nil
+    reply["shell"] = nil; reply["redBelow"] = nil
+    reply["appearanceVersion"] = 2; reply["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
     reply["type"] = "ready"
     reply["sequence"] = "1"
     let raw = String(decoding: try JSONSerialization.data(withJSONObject: reply), as: UTF8.self)

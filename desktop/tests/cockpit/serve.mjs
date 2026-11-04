@@ -4,7 +4,7 @@ import { readFile,realpath } from 'node:fs/promises';
 import { resolve,sep,extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root=await realpath(fileURLToPath(new URL('../../cockpit/.tmp/official/',import.meta.url)));
-const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.png':'image/png','.json':'application/json'};
+const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.png':'image/png','.svg':'image/svg+xml','.json':'application/json'};
 const server=createServer(async(req,res)=>{
   try{
     if(req.method!=='GET')throw Error();

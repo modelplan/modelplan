@@ -21,5 +21,6 @@ jobs:
         with:
           node-version: '24'
       - run: node scripts/check-source-policy.mjs
+      - run: node --test scripts/tests/workflow-policy.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund --prefix reader
       - run: npm test --prefix reader

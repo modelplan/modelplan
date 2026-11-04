@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 const source = await readFile(new URL('../../schema/app-cli/app-server.json', import.meta.url));
 const schema = JSON.parse(source), found = new Set();
-const allowed = new Set(['$ref','type','properties','additionalProperties','required','items','enum','anyOf','format','pattern','minimum','maximum','minItems','maxItems','uniqueItems','minLength','maxLength']);
+const allowed = new Set(['$ref','description','type','properties','additionalProperties','required','items','enum','anyOf','format','pattern','minimum','maximum','minItems','maxItems','uniqueItems','minLength','maxLength']);
 function visit(node) {
   for (const key of Object.keys(node)) if (!allowed.has(key)) throw Error('Unmodeled wire-schema keyword: '+key);
   if (node.$ref) {
@@ -17,6 +17,7 @@ function visit(node) {
   for (const value of node.anyOf ?? []) visit(value);
 }
 visit({$ref:'#/$defs/CockpitData'});
+visit({$ref:'#/$defs/CockpitQueryParams'});
 function type(node) {
   if (node.$ref) return 'Wire'+node.$ref.replace('#/$defs/','');
   if (node.anyOf) return node.anyOf.map(type).join(' | ');
