@@ -4,12 +4,14 @@ on:
     paths:
       - 'desktop/native/ModelPlanAppIntegration/**'
       - 'desktop/native/ModelPlanDock/**'
+      - 'desktop/native/ModelPlanCockpitWeb/**'
       - '.github/workflows/dock-host-port.yml'
   push:
     branches: [main]
     paths:
       - 'desktop/native/ModelPlanAppIntegration/**'
       - 'desktop/native/ModelPlanDock/**'
+      - 'desktop/native/ModelPlanCockpitWeb/**'
       - '.github/workflows/dock-host-port.yml'
 permissions:
   contents: read
@@ -24,3 +26,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Host port lifecycle, identity and factory regressions (no GUI)
         run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/dock-host-port --filter '(DockInteractionHostPortTests|ProductionDockFactoryTests)' --jobs 2
+      - name: Silent-engine and cockpit Settings contracts (test-only SPI, no GUI)
+        shell: bash
+        run: |
+          set -o pipefail
+          swift test --package-path desktop/native/ModelPlanAppIntegration \
+            --scratch-path .tmp/cockpit-settings-contract --jobs 2 \
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI \
+            --filter '(CockpitSettingsNormalEntryTests|G1DockJourneysD.testG5SilentEngineRechecksPresentationDeadlinesAndRecovers)' \
+            2>&1 | tee "$RUNNER_TEMP/cockpit-settings-contract.log"
+          python3 - "$RUNNER_TEMP/cockpit-settings-contract.log" <<'PYTEST'
+          import pathlib, re, sys
+          output = pathlib.Path(sys.argv[1]).read_text()
+          for method in (
+              "testCommittedAppearanceReachesActualPageLoadAndLaterMessages",
+              "testG5SilentEngineRechecksPresentationDeadlinesAndRecovers",
+          ):
+              if not re.search(r"Test Case .*" + re.escape(method) + r".* passed", output):
+                  raise SystemExit("Required test did not execute and pass: " + method)
+          PYTEST

@@ -32,7 +32,7 @@ import ModelPlanEngineStore
                 actual.onFailure = { failure in XCTFail("Actual page failure: \(failure)") }
             }
             defer { CommunityCockpitApplicationFactory.verificationPage=previous;page?.discard() }
-            let app=CommunityCockpitApplicationFactory.makeForChecks(configuration:.init(executableURL:root.appendingPathComponent("not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,bundleURL:root,verifiedBundleForChecks:bundle) { config,consumer in
+            let app=CommunityCockpitApplicationFactory.makeForChecks(configuration:.init(executableURL:root.appendingPathComponent("not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,bundleURL:root,cockpitEntryEnabled:true,verifiedBundleForChecks:bundle) { config,consumer in
                 fanout=consumer as? CockpitStoreFanout
                 return ProcessEngineClient(configuration:config,consumer:consumer)
             }
