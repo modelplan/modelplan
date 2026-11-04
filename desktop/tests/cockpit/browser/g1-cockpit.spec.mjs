@@ -96,6 +96,9 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="second"] .qvalue')).toHaveText('65');
  await expect(col.locator('.qcell[data-row="other"] .qvalue')).toHaveText('20');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-more','1');
+ const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt');
+ await expect(label).toBeVisible();await expect(label).toHaveText('5h·mo reset ? +1');
+ await expect(other).toHaveAccessibleName(/5h·5h · 30% left[\s\S]*5h·mo · 20% left/);
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-kind','extra');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
