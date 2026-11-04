@@ -10,6 +10,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -145,6 +146,12 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.fixture = PackageNeutralFixture(Path(self.temp.name))
+
+    def test_candidate_package_declares_macos_15(self):
+        result = self.fixture.run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        info = self.fixture.output / 'ModelPlan Community.app/Contents/Info.plist'
+        self.assertEqual(plistlib.loads(info.read_bytes())['LSMinimumSystemVersion'], '15.0')
 
     def test_current_script_orchestration_orders_identity_before_outer_seal(self):
         inputs = list(self.fixture.archives.iterdir()) + list(self.fixture.artifact.iterdir())

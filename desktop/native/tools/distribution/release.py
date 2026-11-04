@@ -201,7 +201,7 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
         raise ValueError('Invalid approved source/team')
     if info.get('CFBundleIdentifier') != bundle_id or not bundle_id:
         raise ValueError('Candidate bundle ID mismatch')
-    if info.get('LSMinimumSystemVersion') not in ('14.0', '14.0.0'):
+    if info.get('LSMinimumSystemVersion') not in ('15.0', '15.0.0'):
         raise ValueError('Candidate deployment floor mismatch')
     if not re.fullmatch(r'\d+(?:\.\d+){0,2}', info.get('CFBundleVersion', '')):
         raise ValueError('Invalid build version')
@@ -380,7 +380,7 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     ET.SubElement(item, 'title').text = 'ModelPlan ' + info['CFBundleShortVersionString']
     ET.SubElement(item, f'{{{NS}}}version').text = info['CFBundleVersion']
     ET.SubElement(item, f'{{{NS}}}shortVersionString').text = info['CFBundleShortVersionString']
-    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '14.0.0'
+    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '15.0.0'
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
