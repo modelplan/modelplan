@@ -26,9 +26,23 @@ func memberFixture(t *testing.T) (*memoryBackend, func(consent.Admission) quota.
 func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	backend, paths, _, member := memberFixture(t)
 	called := make(chan string, 1)
-	changed := make(chan struct{}, 2)
+	release := make(chan struct{})
+	changed := make(chan struct{}, 1)
 	now := time.Date(2026, time.January, 2, 12, 0, 0, 0, time.UTC)
-	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: func() time.Time { return now }, Changed: func() { changed <- struct{}{} }, Run: func(_ context.Context, _ quota.Paths, scope string, _ time.Time) error { called <- scope; return nil }})
+	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: func() time.Time { return now }, Changed: func() {
+		select {
+		case changed <- struct{}{}:
+		default:
+		}
+	}, Run: func(ctx context.Context, _ quota.Paths, scope string, _ time.Time) error {
+		called <- scope
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}})
 	defer s.Close()
 	result, _, err := s.RequestMember(context.Background(), member)
 	if err != nil || result.Outcome != wire.MemberRefreshStarted {
@@ -42,6 +56,11 @@ func TestMemberRefreshStartsAndDefersFloor(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("member reader did not run")
 	}
+	result, _, err = s.RequestMember(context.Background(), member)
+	if err != nil || result.Outcome != wire.MemberRefreshDeferred || result.Reason == nil || *result.Reason != wire.MemberRefreshBudget || result.NotBefore == nil || !result.NotBefore.Equal(now.Add(5*time.Minute)) {
+		t.Fatalf("in-flight refresh not deferred: %+v %v", result, err)
+	}
+	close(release)
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
 	for {
