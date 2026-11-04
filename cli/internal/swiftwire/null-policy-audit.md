@@ -100,6 +100,7 @@ containers and failure ID retain their required-key checks.
 | rows.ResetEvent.Confirms | coalesced | An absent or null confirmation reference yields no reference; the producer drops confirmations without an eligible reference. |
 | rows.ResetEvent.PlanIDs | coalesced | Absent/null both mean no published structured plan links; no plan is inferred. |
 | rows.ResetEvent.Schedule | coalesced | Absent/null both mean no published schedule. |
+| rows.ResetSource.Links | coalesced | Absent/null both mean no typed source links; only policy-admitted links are published, and a failing candidate is omitted without dropping the event. |
 | rows.ResetSource.URL | coalesced | Absent/null both mean no source link; only producer-approved links can be emitted. |
 | rows.Account.SubscriptionRef | coalesced | [values.go:56](../rows/values.go#L56), `buildAccounts`; `RowsAccount` absent/null both have no subscription reference; present references still validate. |
 | rows.Account.AccountLocator | coalesced | Same projection/decoder: absent/null both have no account locator; present locators still validate. |

@@ -370,10 +370,77 @@ func queryTestBarrier(ctx context.Context,kind string){
 	}
 	return binary
 }
+
+// A revoke commits before cleanup; a busy reader can leave cleanup pending
+// with exit status 1 even though the consent fence has already advanced.
+func validateLateQueryRevoke(raw []byte, exitCode int, before consent.State) (consent.GrantReceipt, error) {
+	var receipt consent.GrantReceipt
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		return receipt, fmt.Errorf("invalid revoke receipt: %w", err)
+	}
+	if receipt.RequestID != "65200000-0000-4000-8000-000000000001" || receipt.StoreEpoch != before.StoreEpoch || !receipt.Committed || receipt.CommittedGeneration == nil || *receipt.CommittedGeneration != before.Generation+1 {
+		return receipt, fmt.Errorf("revoke did not commit the expected fence: %+v", receipt)
+	}
+	switch receipt.Code {
+	case "ok":
+		if exitCode != 0 || len(receipt.CleanupPending) != 0 || receipt.CleanupError != "" {
+			return receipt, fmt.Errorf("inconsistent successful revoke: exit=%d receipt=%+v", exitCode, receipt)
+		}
+	case "cleanup_pending":
+		if exitCode != 1 || receipt.CleanupError != "cleanup_incomplete" || len(receipt.CleanupPending) != 1 || receipt.CleanupPending[0] != consent.ScopeGeminiLocalHistory {
+			return receipt, fmt.Errorf("inconsistent pending revoke: exit=%d receipt=%+v", exitCode, receipt)
+		}
+	default:
+		return receipt, fmt.Errorf("unexpected revoke outcome: exit=%d receipt=%+v", exitCode, receipt)
+	}
+	return receipt, nil
+}
+
+func TestValidateLateQueryRevoke(t *testing.T) {
+	before := consent.State{StoreEpoch: "synthetic-epoch", Generation: 4}
+	next := before.Generation + 1
+	valid := consent.GrantReceipt{RequestID: "65200000-0000-4000-8000-000000000001", StoreEpoch: before.StoreEpoch, Committed: true, CommittedGeneration: &next, Code: "ok"}
+	for _, tc := range []struct {
+		name     string
+		edit     func(*consent.GrantReceipt)
+		exitCode int
+		accept   bool
+	}{
+		{"success", func(*consent.GrantReceipt) {}, 0, true},
+		{"pending", func(r *consent.GrantReceipt) {
+			r.Code = "cleanup_pending"
+			r.CleanupError = "cleanup_incomplete"
+			r.CleanupPending = []string{consent.ScopeGeminiLocalHistory}
+		}, 1, true},
+		{"not committed", func(r *consent.GrantReceipt) { r.Committed = false }, 1, false},
+		{"wrong epoch", func(r *consent.GrantReceipt) { r.StoreEpoch = "different" }, 0, false},
+		{"missing generation", func(r *consent.GrantReceipt) { r.CommittedGeneration = nil }, 0, false},
+		{"wrong scope", func(r *consent.GrantReceipt) {
+			r.Code = "cleanup_pending"
+			r.CleanupError = "cleanup_incomplete"
+			r.CleanupPending = []string{consent.ScopeCursorLocalHistory}
+		}, 1, false},
+		{"success with error exit", func(*consent.GrantReceipt) {}, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			receipt := valid
+			tc.edit(&receipt)
+			raw, err := json.Marshal(receipt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = validateLateQueryRevoke(raw, tc.exitCode, before)
+			if (err == nil) != tc.accept {
+				t.Fatalf("accept=%v error=%v", tc.accept, err)
+			}
+		})
+	}
+}
+
 func TestU3cLateQueriesRealBinary(t *testing.T) {
 	binary := buildDelayedQueryBinary(t)
 	for _, kind := range []string{"history", "cockpit"} {
-		for _, change := range []string{"revoke", "reset", "cancel"} {
+		for _, change := range []string{"revoke", "revoke_pending", "reset", "cancel"} {
 			t.Run(kind+"/"+change, func(t *testing.T) {
 				home := setupQueryHome(t)
 				if err := os.WriteFile(filepath.Join(home, kind+".armed"), nil, 0600); err != nil {
@@ -421,16 +488,70 @@ func TestU3cLateQueriesRealBinary(t *testing.T) {
 					}
 					return
 				}
+				var unlock func()
+				if change == "revoke_pending" {
+					lockDeadline := time.Now().Add(5 * time.Second)
+					for {
+						unlock, err = consent.ReaderLock()
+						if err == nil {
+							break
+						}
+						if time.Now().After(lockDeadline) {
+							t.Fatalf("acquire reader lock: %v", err)
+						}
+						time.Sleep(5 * time.Millisecond)
+					}
+					defer func() {
+						if unlock != nil {
+							unlock()
+						}
+					}()
+				}
 				var cmd *exec.Cmd
-				if change == "revoke" {
+				cleanupPending := false
+				if change == "revoke" || change == "revoke_pending" {
 					request, _ := json.Marshal(consent.Grant{RequestID: "65200000-0000-4000-8000-000000000001", ExpectStoreEpoch: state.StoreEpoch, ExpectGeneration: state.Generation, ConsentTextVersion: consent.TextVersion, Allow: []string{}, Deny: []string{consent.ScopeGeminiLocalHistory}})
 					cmd = exec.Command(binary, "consent", "grant", "--json")
 					cmd.Stdin = strings.NewReader(string(request))
 				} else {
 					cmd = exec.Command(binary, "consent", "reset", "confirmed", "--json")
 				}
-				if raw, err := cmd.CombinedOutput(); err != nil {
-					t.Fatalf("external %s: %v: %s", change, err, raw)
+				raw, runErr := cmd.CombinedOutput()
+				if change == "revoke" || change == "revoke_pending" {
+					exitCode := 0
+					if runErr != nil {
+						exit, ok := runErr.(*exec.ExitError)
+						if !ok {
+							t.Fatalf("external %s: %v", change, runErr)
+						}
+						exitCode = exit.ExitCode()
+					}
+					receipt, err := validateLateQueryRevoke(raw, exitCode, state)
+					if err != nil {
+						t.Fatalf("external %s: %v: %s", change, err, raw)
+					}
+					if change == "revoke_pending" && receipt.Code != "cleanup_pending" {
+						t.Fatalf("held reader lock did not defer cleanup: %s", raw)
+					}
+					cleanupPending = receipt.Code == "cleanup_pending"
+					current, err := consent.Load(consent.Path())
+					if err != nil || current.Generation != *receipt.CommittedGeneration || current.Scopes[consent.ScopeGeminiLocalHistory].Allowed {
+						t.Fatalf("revoke fence not persisted: state=%+v error=%v", current.Fence(), err)
+					}
+					stored, found := current.Requests[consent.ReceiptKey(state.StoreEpoch, receipt.RequestID)]
+					if !found {
+						t.Fatal("committed revoke receipt not persisted")
+					}
+					if change == "revoke_pending" {
+						pending := stored.PendingForget
+						if len(pending) != 1 || pending[0] != consent.ScopeGeminiLocalHistory {
+							t.Fatalf("cleanup obligation not persisted: %v", pending)
+						}
+						unlock()
+						unlock = nil
+					}
+				} else if runErr != nil {
+					t.Fatalf("external %s: %v: %s", change, runErr, raw)
 				}
 				if err := os.WriteFile(filepath.Join(home, kind+".release"), nil, 0600); err != nil {
 					t.Fatal(err)
@@ -442,6 +563,23 @@ func TestU3cLateQueriesRealBinary(t *testing.T) {
 					}
 				case <-time.After(5 * time.Second):
 					t.Fatal("late query did not complete")
+				}
+				if cleanupPending {
+					cleanupDeadline := time.Now().Add(5 * time.Second)
+					for {
+						_ = exec.Command(binary, "consent", "cleanup", "--json").Run()
+						current, err := consent.Load(consent.Path())
+						if err == nil {
+							stored, found := current.Requests[consent.ReceiptKey(state.StoreEpoch, "65200000-0000-4000-8000-000000000001")]
+							if found && len(stored.PendingForget) == 0 {
+								break
+							}
+						}
+						if time.Now().After(cleanupDeadline) {
+							t.Fatalf("committed cleanup did not finish: %v", err)
+						}
+						time.Sleep(10 * time.Millisecond)
+					}
 				}
 				rows := p.call("rows/subscribe", map[string]any{})
 				if _, ok := rows["result"]; !ok {

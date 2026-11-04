@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 export interface Schema {
   readonly $ref?: string;
+  readonly description?: string;
   readonly type?: string;
   readonly properties?: Readonly<Record<string, Schema>>;
   readonly additionalProperties?: boolean;
