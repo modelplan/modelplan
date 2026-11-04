@@ -37,9 +37,11 @@ private actor G1RowsClient: EngineClient {
 
 @MainActor private final class G1DisplayEnvironment {
     let display = DockDisplayArea(id: "g1-display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 900))
+    let second = DockDisplayArea(id: "g1-second", frame: CGRect(x: 1800, y: 0, width: 1200, height: 700), visibleFrame: CGRect(x: 1800, y: 0, width: 1200, height: 700))
+    var pointer = CGPoint(x: 720, y: 450)
     var presence = DockPresence()
     func sample() -> DockEdgeEnvironment {
-        .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: CGPoint(x: 720, y: 450), presence: presence)
+        .init(displays: [display, second], layouts: [], primaryDisplayID: display.id, pointer: pointer, presence: presence)
     }
 }
 
@@ -124,5 +126,28 @@ private actor G1RowsClient: EngineClient {
         let after = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         XCTAssertNil((after["settings"] as? [String: Any])?["g1UnknownSetting"])
         await attempted.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_1_10() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-follow-display-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1DisplayEnvironment()
+        let app = try await open(environment, profile: profile)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.dockPosition(0.35))
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(true))
+        let dock = app.composition.dock
+        dock.refreshPresence()
+        let before = try XCTUnwrap(dock.edgePresentation?.placement)
+        XCTAssertEqual(before.displayID, environment.display.id)
+        XCTAssertEqual(before.alongFraction, 0.35, accuracy: 0.0001)
+        environment.pointer = CGPoint(x: 2400, y: 350)
+        dock.refreshPresence()
+        let after = try XCTUnwrap(dock.edgePresentation?.placement)
+        XCTAssertEqual(after.displayID, environment.second.id)
+        XCTAssertEqual(after.alongFraction, before.alongFraction, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.dockAlongFraction, 0.35, accuracy: 0.0001)
+        await app.composition.stop()
     }
 }
