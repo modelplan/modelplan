@@ -152,6 +152,21 @@ private actor G1CRowsClient: EngineClient {
         return app
     }
 
+    func testG1_DOCK_3_2_11() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-idle-alert-flame-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        XCTAssertTrue(dock.activeWorkingEffectIDs.isEmpty)
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient)
+        try await client.replaceRows(fixture(resetStatus: "announced"))
+        XCTAssertNotNil(dock.dockView.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertTrue(dock.activeWorkingEffectIDs.isEmpty)
+        // TODO(G1): exercise active output and return to idle through the admitted session-activity feed.
+        await app.composition.stop()
+    }
+
     func testG1_DOCK_3_2_07() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-white-marks-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
