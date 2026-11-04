@@ -11,6 +11,10 @@ public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejec
 public struct G1CockpitPageState {
   public let hasPage: Bool, hasWindow: Bool, ready: Bool, disposed: Bool
 }
+/// Resolved CSS only; no subscription key or reading is returned.
+public struct G1QuotaStatusColour {
+  public let row: String, textColour: String, fillColour: String?
+}
 #endif
 
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
@@ -235,6 +239,43 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let result = try await page.evaluateJavaScript(script)
     guard !ending, web === page, page.url == pageURL, bridge.queryTicket == ticket else { return nil }
     return result as? String
+  }
+  /// Reads computed colours only for one currently rendered member. A missing,
+  /// ambiguous or retired page/member returns nil, not an inferred colour.
+  public func g1QuotaStatusColoursForChecks(memberKey: String) async throws -> [G1QuotaStatusColour]? {
+    guard memberKey != "all", CockpitMemberScopes.isValidKey(memberKey), !ending,
+          let ticket = bridge.queryTicket, let page = web, page.url == pageURL else { return nil }
+    let script = """
+    const columns = Array.from(document.querySelectorAll('.ck-eng .ec[data-col]'))
+      .filter(element => element.getAttribute('data-col') === memberKey);
+    if (columns.length !== 1) return null;
+    return JSON.stringify(Array.from(columns[0].querySelectorAll('.qcell[data-row]')).map(cell => {
+      const number = cell.querySelector('.qnum');
+      const lit = cell.querySelector('.qbar i.on');
+      return {row:cell.getAttribute('data-row'), text:number ? getComputedStyle(number).color : null,
+              fill:lit ? getComputedStyle(lit).backgroundColor : null};
+    }));
+    """
+    let raw: String? = try await withCheckedThrowingContinuation { continuation in
+      page.callAsyncJavaScript(script, arguments: ["memberKey": memberKey], in: nil, in: .page) { result in
+        switch result {
+        case .success(let value): continuation.resume(returning: value as? String)
+        case .failure(let error): continuation.resume(throwing: error)
+        }
+      }
+    }
+    guard !ending, web === page, page.url == pageURL, bridge.queryTicket == ticket,
+          let raw, raw.utf8.count <= 2048, let bytes = raw.data(using: .utf8),
+          let entries = try JSONSerialization.jsonObject(with: bytes) as? [[String: Any]], entries.count <= 3 else { return nil }
+    var colours: [G1QuotaStatusColour] = []
+    for entry in entries {
+      guard let row = entry["row"] as? String, ["first", "second", "other"].contains(row),
+            let text = entry["text"] as? String, text.utf8.count <= 64 else { return nil }
+      let fill = entry["fill"] as? String
+      guard fill == nil || fill!.utf8.count <= 64 else { return nil }
+      colours.append(.init(row: row, textColour: text, fillColour: fill))
+    }
+    return colours
   }
   /// `discard` closes the window and removes the WebView synchronously. This
   /// does not claim that the operating system has reaped a WebContent process.

@@ -23,6 +23,8 @@ import XCTest
       appearance: .init(theme: .night, locale: .en, profile: .full))
     let absentDOM = try await page.g1PageGeometryForChecks()
     XCTAssertNil(absentDOM, "No page observation can be invented before a verified page exists")
+    let absentColours = try await page.g1QuotaStatusColoursForChecks(memberKey: "aaaaaaaaaaaaaaaa")
+    XCTAssertNil(absentColours, "No member colour can be invented before a verified page exists")
     let before = page.g1PageStateForChecks
     XCTAssertFalse(before.hasPage); XCTAssertFalse(before.hasWindow); XCTAssertFalse(before.ready); XCTAssertFalse(before.disposed)
     await page.g1CloseAndWaitForTeardown()
