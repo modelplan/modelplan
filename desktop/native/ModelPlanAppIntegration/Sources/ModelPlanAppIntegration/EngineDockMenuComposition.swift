@@ -8,6 +8,10 @@ import ModelPlanCommunityHost
 import ModelPlanSettings
 import ModelPlanDock
 
+@MainActor private final class EngineDockClock {
+    var now: @MainActor () -> Date = { Date() }
+}
+
 /// Normal-entry composition. Construction creates no engine child or native panel when requested.
 public struct EngineMenuRefreshResult {
     public let engineRequestID:WireRequestID
@@ -19,6 +23,12 @@ public struct EngineMenuRefreshResult {
     public let provider: EngineDockMenuProvider
     public let dock: StaticDockPreviewHost
     private let adapter: EngineDockContentProvider
+    private let clock: EngineDockClock
+    // Internal injection seam: the production entry retains the system clock.
+    var currentDate: @MainActor () -> Date {
+        get { clock.now }
+        set { clock.now = newValue }
+    }
     private var resetNotifier:EngineResetNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
@@ -32,6 +42,8 @@ public struct EngineMenuRefreshResult {
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
+        let clock = EngineDockClock()
+        self.clock = clock
         let store: EngineStore
         if let makeClient {
             store = EngineStore(); client = makeClient(configuration, store)
@@ -44,7 +56,7 @@ public struct EngineMenuRefreshResult {
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
         adapter.resetEventState = { [weak store] in EngineRowsEventDecoder.decode(store?.snapshot.rows) }
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels)
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, currentDate: { clock.now() })
         adapter.bindDockMenuTracking(dock)
         dock.setDockContentProvider(adapter)
         provider.dockContentDidChange = { [weak self] in
@@ -52,7 +64,7 @@ public struct EngineMenuRefreshResult {
             self?.dock.refreshDockContent(); self?.menuDidChange?()
         }
     }
-    public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date())) }
+    public var presentedContent: DockContent { adapter.makeContent(.init(snapshot: nil, diagnostics: .init(), now: currentDate())) }
     func setLanguage(_ language:String) { adapter.language=language }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
