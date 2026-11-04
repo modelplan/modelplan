@@ -256,3 +256,16 @@ test('CKP-MFD-11 reported reset count shows compact expiries and all expiries on
  const data=visualFixture().data;data.projection.rows=data.projection.rows.slice(0,1);const detail=data.details.subscriptions[0];detail.resetCards={state:'complete',count:5,truncated:false,sources:[],items:Array.from({length:5},(_,i)=>({id:(i+1).toString(16).padStart(64,'0'),expiresAt:`2026-11-${String(6+i).padStart(2,'0')}T12:00:00Z`}))};
  const {send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();const cards=page.locator('.pg-sub .rc');await expect(cards).toContainText('5');await expect(cards.locator('.rc-exp i:not(.more)')).toHaveCount(4);await expect(cards.locator('.rc-exp .more')).toHaveText('+1');const title=await cards.getAttribute('title');expect(title.split('\n')).toHaveLength(5);detail.resetCards.count=null;detail.resetCards.items=[];expect(await receive(send('display',{data}))).toBe(true);await expect(cards.locator('b')).toHaveText('--');delete detail.resetCards;expect(await receive(send('display',{data}))).toBe(true);await expect(cards).toHaveCount(0);
 });
+
+test('CKP-ENTRY-03 opens on usage with no comparison when publication is absent',async({page})=>{
+ const {send,receive}=await open(page);await expect(page.getByRole('button',{name:'Overview',exact:true})).toHaveAttribute('aria-pressed','true');await expect(page.locator('.pg-overview')).toBeVisible();await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);await expect(page.locator('.fd-strip:not(:disabled)')).toHaveCount(0);
+ await page.getByRole('button',{name:'Subscription',exact:true}).click();await expect(page.locator('.pg-sub')).toBeVisible();expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('.mfd-compare,[data-comparison]')).toHaveCount(0);
+});
+
+test('CKP-MFD-02 four page keys select and light the current page in both languages',async({page})=>{
+ const {send,receive}=await open(page);const buttons=page.locator('.mfd-pk .pk');await expect(buttons).toHaveCount(4);
+ for(const labels of [['Overview','Subscription','Effort','Breakdown'],['总览','订阅','档位','去向']]){
+  for(const [i,label] of labels.entries()){const key=buttons.nth(i);await expect(key).toHaveAttribute('aria-label',label);await key.click();await expect(key).toHaveAttribute('aria-pressed','true');await expect(key).toHaveClass(/\bon\b/);await expect(buttons.locator('.pk-led')).toHaveCount(4);const activeColor=await key.locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor);for(let j=0;j<4;j++)if(i!==j){await expect(buttons.nth(j)).toHaveAttribute('aria-pressed','false');expect(await buttons.nth(j).locator('.pk-led').evaluate(e=>getComputedStyle(e).backgroundColor)).not.toBe(activeColor);}}
+  if(labels[0]==='Overview')expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ }
+});
