@@ -367,8 +367,10 @@ optional verified-cache projection. It contains `contractVersion`,
 model carries `id`, `name`, `developerId`, `recommended`, and `efforts`; each
 effort carries `effort`, `label`, `star`, nullable `ability`, `cost`, and `time`,
 plus optional `multiplier` and `provisional`. Missing values stay absent or null;
-no relative multiplier is calculated. The three-model selection order is pending
-an explicit published ranking contract and this field is not yet delivered.
+no relative multiplier is calculated. The producer uses only current admitted
+readings to select matching vendors, preserves the verified publication model-array
+order, emits at most three models and sets `truncated` when more match. The
+current publication does not contain a global cross-vendor ranking.
 
 ### Public reset event capability
 

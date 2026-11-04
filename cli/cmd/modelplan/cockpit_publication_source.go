@@ -117,3 +117,26 @@ func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, t
 	}
 	return result
 }
+
+// selectCockpitPublication preserves the verified models array's publication
+// order; it does not calculate a cross-vendor score or a synthetic ranking.
+func selectCockpitPublication(d *digest.Digest, projection rows.Projection) *wire.CockpitPublication {
+	if d == nil {
+		return nil
+	}
+	vendors := eligibleCockpitVendors(projection)
+	selected := make([]*digest.Model, 0, 3)
+	truncated := false
+	for i := range d.Models {
+		model := &d.Models[i]
+		if !vendors[model.DeveloperID] {
+			continue
+		}
+		if len(selected) == 3 {
+			truncated = true
+			break
+		}
+		selected = append(selected, model)
+	}
+	return materializeCockpitPublication(d, selected, truncated)
+}
