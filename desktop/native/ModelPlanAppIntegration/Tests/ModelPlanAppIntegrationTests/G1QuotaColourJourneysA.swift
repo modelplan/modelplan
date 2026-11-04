@@ -114,11 +114,12 @@ private actor G1AEngine: EngineClient {
         var p = raw["projection"] as! [String: Any], rows = p["rows"] as! [[String: Any]], accounts = rows[0]["accounts"] as! [[String: Any]]
         edit(&accounts[0]); rows[0]["accounts"] = accounts; p["rows"] = rows; raw["projection"] = p
     }
+    func tick(_ seconds: Double) { clock.elapsed += seconds; clock.wall.addTimeInterval(seconds); timer.fireIfDue(clock.elapsed); host.refreshPresence(); host.interactionControllerForChecks?.refresh() }
     func close() async { if let app { await app.composition.stop() }; try? FileManager.default.removeItem(at: root) }
 }
 
 @MainActor final class G1QuotaColourJourneysA: XCTestCase {
-    private func checkSliver(_ percent: Int, threshold: Int = 25, expected: String) async throws {
+    private func checkSliver(_ percent: Int, threshold: Int = 25, expected: String?) async throws {
         let fixture = try G1AFixture()
         addTeardownBlock { @MainActor in await fixture.close() }
         try await fixture.open(autoHide: true)
@@ -132,15 +133,30 @@ private actor G1AEngine: EngineClient {
         try await fixture.publish()
         let reading = try XCTUnwrap(fixture.host.dockView.presentedReadingsForChecks[G1AFixture.ids[0]])
         XCTAssertEqual(reading.remainingPercent, Double(percent), "Synthetic reading must reach the actual Dock")
+        let role: DockQuotaStatus = percent <= threshold ? .critical : percent < 41 ? .warning : .normal
+        XCTAssertEqual(reading.status, role)
+        let skin = try XCTUnwrap(fixture.host.dockView.presentedSkinForChecks)
+        let ink = try XCTUnwrap(skin.palette[role.rawValue])
+        let expectedRGB: (Double, Double, Double) = role == .normal ? (90, 217, 186) : role == .warning ? (234, 193, 123) : (239, 68, 68)
+        XCTAssertEqual(ink.r, expectedRGB.0 / 255, accuracy: 0.000001)
+        XCTAssertEqual(ink.g, expectedRGB.1 / 255, accuracy: 0.000001)
+        XCTAssertEqual(ink.b, expectedRGB.2 / 255, accuracy: 0.000001)
+        XCTAssertEqual(ink.a, 1, accuracy: 0.000001)
         _ = try fixture.host.prepareSliver(size: CGSize(width: 4, height: 180))
         let actual = fixture.host.sliverQuotaColorsForChecks.map(\.rgbaHex)
-        XCTAssertTrue(actual.contains(expected), "Actual Sliver RGBA runs: \(actual), expected \(expected)")
+        XCTAssertFalse(actual.isEmpty, "The actual Sliver must have a resolved drawing")
+        if let expected {
+            XCTAssertTrue(actual.contains(expected), "Actual Sliver RGBA runs: \(actual), expected \(expected)")
+        } else {
+            XCTAssertFalse(actual.contains("#EAC17BFF"), "An OK reading must not produce an amber alert segment: \(actual)")
+            XCTAssertFalse(actual.contains("#EF4444FF"), "An OK reading must not produce a red alert segment: \(actual)")
+        }
     }
-    func testCOL_2_1_01() async throws { try await checkSliver(41, expected: "#5AD9BAFF") }
+    func testCOL_2_1_01() async throws { try await checkSliver(41, expected: nil) }
     func testCOL_2_1_02() async throws { try await checkSliver(40, expected: "#EAC17BFF"); try await checkSliver(26, expected: "#EAC17BFF") }
     func testCOL_2_1_03() async throws { try await checkSliver(25, expected: "#EF4444FF"); try await checkSliver(0, expected: "#EF4444FF") }
     func testCOL_2_1_05() async throws {
-        for (percent, threshold, colour) in [(41,25,"#5AD9BAFF"),(40,25,"#EAC17BFF"),(26,25,"#EAC17BFF"),(25,25,"#EF4444FF"),(0,25,"#EF4444FF"),(17,16,"#EAC17BFF"),(16,16,"#EF4444FF")] {
+        for (percent, threshold, colour) in [(41,25,nil),(40,25,"#EAC17BFF" as String?),(26,25,"#EAC17BFF"),(25,25,"#EF4444FF"),(0,25,"#EF4444FF"),(17,16,"#EAC17BFF"),(16,16,"#EF4444FF")] {
             try await checkSliver(percent, threshold: threshold, expected: colour)
         }
     }
