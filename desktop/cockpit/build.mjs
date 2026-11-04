@@ -5,9 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { resolve,relative,dirname,sep } from 'node:path';
 import { createHash } from 'node:crypto';
 import { verifyVisualPack } from '../../scripts/check-visual-pack.mjs';
+import { selectBuildEdition } from './internal-visual-boundary.mjs';
 const here=fileURLToPath(new URL('.',import.meta.url)),repo=resolve(here,'../..');
-const args=process.argv.slice(2),official=args.length===1&&args[0]==='--official';
-if(args.length&&!official)throw Error('Usage: node build.mjs [--official]');
+// Internal integration is deliberately unavailable until its independently
+// reviewed helper, trust anchors and exact resource mapping are integrated.
+const official=selectBuildEdition(process.argv.slice(2))==='official';
 execFileSync(process.execPath,[resolve(here,'generate-wire.mjs'),'--check'],{stdio:'inherit'});
 // Copy only this compile's emitted files: a removed source can leave stale JS
 // and declarations in a reused compiler directory. Do not publish that cache.
@@ -24,6 +26,18 @@ for(const file of emitted){
 }
 await cp(resolve(here,'web/index.html'),resolve(output,'index.html'));
 await cp(resolve(here,'prototype'),resolve(output,'prototype'),{recursive:true});
+// Renderer code only. Visual resources are managed separately by their owner.
+const studyModules=[
+  'chart-colours.js','colour-mode.js','empty-bays.js','engine-model.js','engine-view.js','fader-view.js','help-routing.js','i18n.js',
+  'mfd-pages/engine-fmt.js','mfd-pages/fmt.js','mfd-pages/frontier.js','mfd-pages/overview.js','mfd-pages/plans.js',
+  'mfd-pages/public-helpers.js','mfd-pages/scope.js','mfd-pages/tune.js','mfd-pages/where.js',
+  'project-attribution.js','short-label.js','strings/common.js','strings/engine.js','strings/faders.js',
+  'strings/mfd.js','strings/review49.js','window-time.js',
+];
+for(const name of studyModules){
+  const target=resolve(output,'study/rocket-r1',name);await mkdir(dirname(target),{recursive:true});
+  await cp(resolve(here,'study/rocket-r1',name),target);
+}
 const sheets=['theme','style','rocket','cockpit-r5','engine','mfd','faders','shell6','hull-r3'];
 let css=sheets.map(name=>`@import url('./prototype/prototype-${name}.css');`).join('\n')+'\n'+await readFile(resolve(here,'web/cockpit.css'),'utf8');
 const notices=['MIT: cockpit bridge, schema adapter and community layout.'];
@@ -33,6 +47,18 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
+  const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
+  if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');
+  const stripFiles=['close-hover@3x.png','close-normal@3x.png','close-pressed@3x.png','detach-hover@3x.png','detach-normal@3x.png','detach-pressed@3x.png','detach.svg','gear-hover@3x.png','gear-normal@3x.png','gear-pressed@3x.png','lamp-amber-body@3x.png','lamp-amber-glow@3x.png','lamp-amber-pressed-body@3x.png','lamp-amber-pressed-glow@3x.png','lamp-off-body@3x.png','lamp-off-glow@3x.png','lamp-off-pressed-body@3x.png','lamp-off-pressed-glow@3x.png','lamp-red-body@3x.png','lamp-red-glow@3x.png','lamp-red-pressed-body@3x.png','lamp-red-pressed-glow@3x.png','put-back.svg','shutter-material@3x.png','slider-track@3x.png','strip-panel@3x.png','thumb-closed@3x.png','thumb-open@3x.png','wordmark@3x.png'];
+  const policy=JSON.parse(await readFile(resolve(repo,'source-policy.json'),'utf8'));
+  await mkdir(resolve(output,'assets'),{recursive:true});
+  for(const name of stripFiles){
+    const bytes=await readFile(resolve(strip,'assets',name)),expected=policy.reservedVisuals.binaries['desktop/official-visuals/cockpit/strip/assets/'+name];
+    if(!expected||createHash('sha256').update(bytes).digest('hex')!==expected)throw Error('Unapproved cockpit strip resource: '+name);
+    await writeFile(resolve(output,'assets',name),bytes);
+  }
+  await cp(resolve(strip,'SOURCES.md'),resolve(output,'assets/SOURCES.md'));
+  css+='\n'+stripCss.toString('utf8');
   await cp(resolve(assets,'LICENSE.md'),resolve(output,'VISUAL-LICENSE.md'));
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});
