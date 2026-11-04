@@ -77,7 +77,6 @@ private actor SettingsJourneyClient: EngineClient {
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
     func testHiddenWidgetCanBeRestoredFromMenuAndSettingsAcrossRelaunch() async throws {
-        _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("widget-recovery-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -87,7 +86,7 @@ private actor SettingsJourneyClient: EngineClient {
         func makeApp() throws -> EngineDockMenuApplication {
             EngineRowsEntry.make(configuration: config,
                 settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
-                createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
+                createsNativePanels: false, dockEnvironment:normalEntryTestEnvironment, makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
         }
         func select(_ title: String, in menu: NSMenu) throws {
             let item = try XCTUnwrap(menu.items.first { $0.title == title }, "Missing menu item: \(title)")
@@ -95,21 +94,11 @@ private actor SettingsJourneyClient: EngineClient {
             _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
         }
         func waitFor(_ app: EngineDockMenuApplication, shown: Bool) async throws {
-            for _ in 0..<250 {
-                let editor = app.settingsHost.application.editor
-                if editor.snapshot?.preferences.showDock == shown && !editor.isSaving { return }
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            XCTFail("showDock did not become \(shown)")
+            let editor=app.settingsHost.application.editor
+            try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == shown && !editor.isSaving }
         }
         func showFromStatusMenu(_ app: EngineDockMenuApplication) async throws {
-            for _ in 0..<250 {
-                if let menu = app.liveStatusMenu, let item = menu.items.first(where: { $0.title == "Show Quota Widget" }), item.isEnabled {
-                    try select("Show Quota Widget", in: menu); return
-                }
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            XCTFail("Show Quota Widget did not become available")
+            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
         }
         let first = try makeApp(); defer { first.composition.dock.close() }
         await first.prepare(); first.allowDockPresentation()
@@ -142,7 +131,6 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertTrue(reopened.composition.dock.interactionEnvironment().active)
     }
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
-        _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -159,7 +147,7 @@ private actor SettingsJourneyClient: EngineClient {
         func makeApp() throws -> EngineDockMenuApplication {
             EngineRowsEntry.make(configuration: configuration,
                 settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
-                createsNativePanels: false, cockpitEntryEnabled: true,
+                createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment:normalEntryTestEnvironment,
                 makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) },
                 makeConsole: { _ in appearanceConsumer },
                 activateSettings: {})
@@ -227,10 +215,7 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(login.registrations, 0, "Restoring settings must not register an OS service")
         XCTAssertEqual(notifications.requests, 0, "Restoration must not request notification authorization")
         _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
-        for _ in 0..<40 {
-            if editor.context.notificationAuthorization == .authorized { break }
-            try await Task.sleep(for: .milliseconds(25))
-        }
+        try await waitForSettings(editor) { editor.context.notificationAuthorization == .authorized }
         XCTAssertEqual(notifications.requests, 1, "Only explicit opt-in requests notification authorization")
         XCTAssertEqual(editor.context.notificationAuthorization, .authorized)
         _ = try await editor.commit(SettingsB22Edit.notificationConsent(true))
@@ -282,10 +267,8 @@ private actor SettingsJourneyClient: EngineClient {
 
         // The host receives the same committed-placement event its real drag controller produces.
         dock.commitDisplayPlacement?("synthetic-display", .left, 0.3)
-        for _ in 0..<250 {
-            if !editor.isSaving, editor.snapshot?.preferences.dockEdge == .left,
-               editor.snapshot?.preferences.dockDisplayID == "synthetic-display" { break }
-            try await Task.sleep(for: .milliseconds(20))
+        try await waitForSettings(editor) {
+            !editor.isSaving && editor.snapshot?.preferences.dockEdge == .left && editor.snapshot?.preferences.dockDisplayID == "synthetic-display"
         }
         XCTAssertFalse(editor.isSaving, "The placement commit must finish before the next Settings edit")
         XCTAssertEqual(editor.snapshot?.preferences.dockDisplayID, "synthetic-display")
@@ -347,7 +330,7 @@ private actor SettingsJourneyClient: EngineClient {
 
         let unavailable = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile.appendingPathComponent("unavailable"), preferredLanguages: ["en-US"]),
-            createsNativePanels: false, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+            createsNativePanels: false, dockEnvironment:normalEntryTestEnvironment, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
         let unavailableLogin = JourneyLoginService(); unavailableLogin.state = .unavailable
         let unavailableNotifications = JourneyNotificationService(); unavailableNotifications.state = .unavailable
         unavailable.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: unavailableLogin))
@@ -386,7 +369,6 @@ private actor SettingsJourneyClient: EngineClient {
         XCTAssertEqual(try Data(contentsOf: legacyFile), legacyBytes)
     }
     func testFreshChineseNormalEntryShowsChineseDockCardAge() async throws {
-        _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("chinese-card-age-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -399,10 +381,10 @@ private actor SettingsJourneyClient: EngineClient {
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
-        var pointer = CGPoint(x: 700, y: 450)
+        var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["zh-CN"]),
-            createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: pointer) }, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
+            createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: pointer) }, deadlineElapsed:{elapsed}, makeClient: { _, store in SettingsJourneyClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare()
         // Preserve the fresh Chinese language while opening the real interactive surface.
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
@@ -428,7 +410,7 @@ private actor SettingsJourneyClient: EngineClient {
         pointer = CGPoint(x: placement.frame.minX + anchor.midX - dock.dockView.bounds.minX,
             y: placement.frame.maxY - anchor.midY + dock.dockView.bounds.minY)
         nozzle.hoverNozzle("0123456789abcdef")
-        for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(dock.card.isHidden)
         func field(_ view: NSView) -> NSTextField? {
             if let value = view as? NSTextField, value.accessibilityIdentifier() == "dock.card.text.source" { return value }

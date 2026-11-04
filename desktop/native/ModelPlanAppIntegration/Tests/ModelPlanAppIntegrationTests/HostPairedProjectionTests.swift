@@ -33,8 +33,10 @@ private actor PairedSyntheticClient: EngineClient {
 }
 @MainActor private final class DiagnosticSettingsSurface: SettingsWindowSurface {
     var pane: String?
+    private var waiter: CheckedContinuation<Void,Never>?
+    func waitForShow() async { if pane != nil{return};await withCheckedContinuation{waiter=$0} }
     func prepare() async {}
-    func show(paneID: String?) { pane = paneID }
+    func show(paneID: String?) { pane = paneID;waiter?.resume();waiter=nil }
     func hide() {}
 }
 private actor EntrySyntheticClient: EngineClient {
@@ -145,7 +147,7 @@ private actor EntrySyntheticClient: EngineClient {
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
+            dockEnvironment:normalEntryTestEnvironment, deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             activateSettings: {})
         await app.prepare()
@@ -174,7 +176,7 @@ private actor EntrySyntheticClient: EngineClient {
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
+            dockEnvironment:normalEntryTestEnvironment, deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             activateSettings: {})
         await app.prepare(); await app.composition.start()
@@ -239,6 +241,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        var interactionElapsed=0.0
         let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 55)
         let surface = DiagnosticSettingsSurface()
         let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
@@ -247,7 +250,7 @@ private actor EntrySyntheticClient: EngineClient {
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: pointer) },
-            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            deadlineNow: { wall }, deadlineElapsed: { interactionElapsed }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             makeSettingsSurface: { _ in surface },
             activateSettings: {})
@@ -256,7 +259,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(problems.count, 1, "Multiple members from one provider produce one diagnostic line")
         let problem = try XCTUnwrap(problems.first)
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
-        for _ in 0..<250 { if surface.pane == "diagnostics" { break }; try await Task.sleep(for: .milliseconds(20)) }
+        await surface.waitForShow()
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
@@ -267,7 +270,7 @@ private actor EntrySyntheticClient: EngineClient {
         pointer = CGPoint(x: placement.frame.minX + anchor.midX - dockView.bounds.minX,
             y: placement.frame.maxY - anchor.midY + dockView.bounds.minY)
         try XCTUnwrap(app.composition.dock.dockView.nozzleEventDelegate).hoverNozzle(id)
-        for _ in 0..<100 { if !app.composition.dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+        interactionElapsed += 0.251; app.composition.dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(app.composition.dock.card.isHidden)
         let store = try XCTUnwrap(acceptedStore), before = store.snapshot.rows?.sequence
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
@@ -293,7 +296,7 @@ private actor EntrySyntheticClient: EngineClient {
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            dockEnvironment:normalEntryTestEnvironment, deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
             makeClient: { _, store in acceptedStore = store; return EntrySyntheticClient(store: store, rows: snapshot) },
             activateSettings: {})
         await app.prepare(); await app.composition.start()
@@ -315,7 +318,7 @@ private actor EntrySyntheticClient: EngineClient {
         let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
+            dockEnvironment:normalEntryTestEnvironment, deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
             makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         XCTAssertFalse(app.composition.presentedContent.snapshot.inputs.isEmpty)
@@ -335,7 +338,7 @@ private actor EntrySyntheticClient: EngineClient {
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            makeClient: { _, store in acceptedStore = store; return PairedSyntheticClient() }, activateSettings: {})
+            dockEnvironment:normalEntryTestEnvironment, makeClient: { _, store in acceptedStore = store; return PairedSyntheticClient() }, activateSettings: {})
         await app.prepare()
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Loading"))
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
