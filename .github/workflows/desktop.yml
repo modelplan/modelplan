@@ -110,6 +110,17 @@ jobs:
           path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 14
 
+  native-partition:
+    if: ${{ !inputs.mac_ci_probe }}
+    # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
+    # job: a class may run on the ordinary Mac runner only if its source uses no window server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
+      - run: python3 desktop/native/tools/ci/native_test_partition.py check
+
   app-smoke:
     permissions:
       contents: read
