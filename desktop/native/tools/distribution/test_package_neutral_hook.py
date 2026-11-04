@@ -38,6 +38,7 @@ class PackageNeutralFixture:
         visuals.mkdir(parents=True)
         (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
         (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')
+        (self.repo / 'desktop/cockpit').mkdir(parents=True)
         self.archives = root / 'archives'
         self.archives.mkdir()
         sums = []
@@ -93,7 +94,15 @@ elif name == 'xcrun':
         raise SystemExit('unsupported fixture xcrun command')
     split = args.index('-output')
     Path(args[split + 1]).write_bytes(b''.join(Path(p).read_bytes() for p in args[2:split]))
+elif name == 'npm':
+    if args[:2] == ['run', 'build']:
+        bundle = Path(os.environ['PACKAGING_REPO']) / 'desktop/cockpit/.tmp/community'
+        bundle.mkdir(parents=True, exist_ok=True)
+        (bundle / 'index.html').write_text('synthetic community cockpit')
+        (bundle / 'bundle-manifest.json').write_text('synthetic manifest')
 elif name == 'python3':
+    if args and args[0].endswith('/check-bundle-pins.py'):
+        raise SystemExit(int(os.environ.get('PACKAGING_COCKPIT_VERIFY_EXIT', '0')))
     if args and args[0].endswith('/embed_fixed_helper.py'):
         raise SystemExit(int(os.environ.get('PACKAGING_EMBED_EXIT', '0')))
     if args and args[0].endswith('/check_embedded_agent.py'):
@@ -104,7 +113,7 @@ elif name == 'python3':
 # assert the actual shell forwards pins and propagates verifier failures;
 # real universal/signature validation belongs to the canonical U7 tool tests.
 '''
-        for name in ['git', 'swift', 'xcrun', 'codesign', 'python3']:
+        for name in ['git', 'swift', 'xcrun', 'codesign', 'python3', 'npm']:
             command = self.bin / name
             command.write_text(stub)
             command.chmod(0o700)
@@ -122,6 +131,7 @@ elif name == 'python3':
         env = {'PATH': str(self.bin) + ':/usr/bin:/bin', 'HOME': str(self.home),
                'TMPDIR': str(self.root), 'LANG': 'en_US.UTF-8',
                'PACKAGING_COMMAND_LOG': str(self.log), 'PACKAGING_REAL_PYTHON': sys.executable,
+               'PACKAGING_REPO': str(self.repo),
                'MODELPLAN_CREDENTIAL_AGENT_ARTIFACT': str(self.artifact),
                'MODELPLAN_CREDENTIAL_AGENT_SHA256': self.credential_sha}
         for key, value in (environment or {}).items():
@@ -145,6 +155,19 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.fixture = PackageNeutralFixture(Path(self.temp.name))
+
+    def test_package_includes_verified_community_cockpit(self):
+        result = self.fixture.run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        bundle = self.fixture.output / 'ModelPlan Community.app/Contents/Resources/Cockpit'
+        self.assertEqual((bundle / 'index.html').read_text(), 'synthetic community cockpit')
+        commands = self.fixture.commands()
+        self.assertTrue(any(c['command'] == 'python3' and c['args'][0].endswith('check-bundle-pins.py') and '--edition' in c['args'] for c in commands))
+
+    def test_failed_cockpit_pin_prevents_packaging(self):
+        result = self.fixture.run(environment={'PACKAGING_COCKPIT_VERIFY_EXIT': '41'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(c['command'] == 'codesign' for c in self.fixture.commands()))
 
     def test_current_script_orchestration_orders_identity_before_outer_seal(self):
         inputs = list(self.fixture.archives.iterdir()) + list(self.fixture.artifact.iterdir())

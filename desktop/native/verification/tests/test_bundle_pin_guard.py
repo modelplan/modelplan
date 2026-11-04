@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -79,4 +80,12 @@ class BundlePinGuardTests(unittest.TestCase):
             community.rename(moved)
             community.symlink_to(moved, target_is_directory=True)
             with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+
+    def test_special_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            os.mkfifo(root / 'desktop/cockpit/.tmp/community/pipe')
+            with self.assertRaisesRegex(ValueError, 'Special build output'):
                 guard.validate(root, editions=('community',))

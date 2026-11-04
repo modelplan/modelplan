@@ -28,11 +28,14 @@ release publication or secrets are part of this workflow.
   is also installed as the app icon. OFL fonts, each family licence, font manifest
   and notices remain separately under `ThirdParty/fonts`; other public desktop
   third-party notices and licences are included too.
-- The future public `desktop/cockpit/dist` interface expects an `index.html` and
-  locally built resources, with no symlinks. U11 owns its build and runtime bridge.
-  Until U11 lands, `Resources/Cockpit/index.html` is a labelled placeholder and the
-  receipt says `placeholder`. Private porthole art is absent/unsupported. Packaging
-  these resources does not claim that the current native host loads them.
+- `desktop/cockpit/dist` must contain the canonical official build, including its
+  manifest, verified against the native official pin. Missing, altered or linked
+  resources stop candidate packaging; there is no placeholder. The neutral package
+  separately contains the verified community build. Packaging these resources does
+  not enable the cockpit entry or claim native or device acceptance.
+  Before U10 packaging, run `npm ci --prefix desktop/cockpit --ignore-scripts`,
+  `npm run build:official --prefix desktop/cockpit`, and
+  `node desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs official`.
 
 ## Helper sealing contract
 

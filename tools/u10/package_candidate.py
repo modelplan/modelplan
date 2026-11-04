@@ -29,6 +29,7 @@ def module(name, path):
 identity = module('u10_identity', ROOT / 'desktop/native/tools/write-consent-bundle-identity.py')
 release = module('u10_release', ROOT / 'desktop/native/tools/distribution/release.py')
 credential_artifact = module('u10_credential_artifact', ROOT / 'desktop/native/tools/distribution/fetch_credential_artifact.py')
+cockpit_guard = module('u10_cockpit_guard', ROOT / 'desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py')
 BUNDLE_ID = 'ai.modelplan.candidate'
 HELPER_VERSION = identity.VERSION
 
@@ -102,6 +103,9 @@ def seal(app, source, raw_inputs, command=run):
 
 def stage_resources(app, root=ROOT):
     resources = app / 'Contents/Resources'
+    cockpit = root / 'desktop/cockpit/dist'
+    cockpit_guard.validate(root, editions=('official',), bundle_root=cockpit)
+    regular(cockpit / 'index.html')
     visuals = root / 'desktop/official-visuals'
     fonts = root / 'desktop/third-party/fonts'
     copy_tree(visuals, resources / 'OfficialVisuals')
@@ -110,19 +114,14 @@ def stage_resources(app, root=ROOT):
     shutil.copyfile(regular(root / 'desktop/third-party/NOTICES.md'), resources / 'ThirdParty/NOTICES.md')
     shutil.copyfile(regular(visuals / 'icons/icon.icns'), resources / 'ModelPlan.icns')
     shutil.copyfile(regular(visuals / 'LICENSE.md'), resources / 'VISUAL-LICENSE.md')
-    cockpit = root / 'desktop/cockpit/dist'
-    if cockpit.exists():
-        regular(cockpit / 'index.html')
-        copy_tree(cockpit, resources / 'Cockpit')
-        cockpit_state = 'bundled-interface-only'
-    else:
-        (resources / 'Cockpit').mkdir()
-        (resources / 'Cockpit/index.html').write_text(
-            '<!doctype html><meta charset="utf-8"><title>ModelPlan candidate</title>'
-            '<h1>Cockpit unavailable</h1><p>U10 interface placeholder. '
-            'The U11 web bundle and private porthole art are not included. '
-            'This page is not a cockpit acceptance result.</p>\n')
-        cockpit_state = 'placeholder'
+    destination = resources / 'Cockpit'
+    if destination.is_symlink():
+        raise ValueError('Linked Cockpit destination')
+    if destination.exists():
+        shutil.rmtree(destination)
+    copy_tree(cockpit, destination)
+    cockpit_guard.validate(root, editions=('official',), bundle_root=destination)
+    cockpit_state = 'bundled-interface-only'
     # Static resources only; runtime lookup/bridge integration remains with the owning units.
     return {'cockpit': cockpit_state, 'privatePortholeArt': 'unsupported',
             'officialVisuals': artifact(resources / 'OfficialVisuals', allow_tree=True),
@@ -207,6 +206,7 @@ def build(output, candidate_id, build_number):
     pin_path = ROOT / 'desktop/native/consent-cli-pin.json'
     if load_json(pin_path)['version'] != HELPER_VERSION:
         raise ValueError('Candidate helper pin needs a reviewed identity update')
+    cockpit_guard.validate(ROOT, editions=('official',), bundle_root=ROOT / 'desktop/cockpit/dist')
     output.mkdir(parents=True)
     work = output / 'work'
     work.mkdir()

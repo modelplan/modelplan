@@ -31,6 +31,9 @@ if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
 public_source=$(git -C "$repo_root" rev-parse HEAD)
 if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
+npm ci --prefix "$repo_root/desktop/cockpit" --ignore-scripts
+npm run build --prefix "$repo_root/desktop/cockpit"
+python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --edition community
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
@@ -58,6 +61,8 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
+cp -R "$repo_root/desktop/cockpit/.tmp/community" "$app/Contents/Resources/Cockpit"
+python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --edition community --bundle "$app/Contents/Resources/Cockpit"
 # The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
