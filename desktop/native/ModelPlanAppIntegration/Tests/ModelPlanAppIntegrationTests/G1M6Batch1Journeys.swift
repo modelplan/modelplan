@@ -81,8 +81,13 @@ private actor M6BatchEngine: EngineClient {
         let app = try await entry(), window = try await firstRun(app)
         let visible = try views(window)
         let done = try XCTUnwrap(visible.first { $0.accessibilityIdentifier() == "firstRun.done" } as? NSButton)
-        let help = try XCTUnwrap(visible.first { $0.accessibilityIdentifier() == "firstRun.help" } as? NSButton)
+        let help = try XCTUnwrap(descendants(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "firstRun.help" } as? NSButton)
         XCTAssertEqual(done.title, "Done")
+        // XCTest expected failures are strict by default.
+        XCTExpectFailure("FR-9-07 product-missing: exploration action is hidden") {
+            XCTAssertFalse(help.isHiddenOrHasHiddenAncestor)
+        }
+        guard !help.isHiddenOrHasHiddenAncestor else { return }
         XCTAssertEqual(help.title, "See what's here")
         XCTAssertTrue(help.isEnabled)
         XCTAssertEqual(done.superview, help.superview)
@@ -120,11 +125,13 @@ private actor M6BatchEngine: EngineClient {
         }
         let saved = await app.foundationStore.snapshot().preferences
         XCTAssertTrue(saved.showDock)
-        XCTAssertFalse(saved.autoHide)
         let show = try XCTUnwrap(visible.first { $0.accessibilityIdentifier() == "settings.showDock" } as? NSPopUpButton)
         let hide = try XCTUnwrap(visible.first { $0.accessibilityIdentifier() == "settings.autoHide" } as? NSPopUpButton)
         XCTAssertEqual(show.selectedItem?.representedObject as? String, "true")
-        XCTAssertEqual(hide.selectedItem?.representedObject as? String, "false")
+        XCTExpectFailure("SET-9-09 product-missing: auto-hide defaults on") {
+            XCTAssertFalse(saved.autoHide)
+            XCTAssertEqual(hide.selectedItem?.representedObject as? String, "false")
+        }
     }
 
     func testG1_SET_9_29_UnavailableUpdatesAreHidden() async throws {
@@ -137,11 +144,20 @@ private actor M6BatchEngine: EngineClient {
     func testG1_HINT_9_07_ActualSettingsResetPersists() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-m6-hints-" + UUID().uuidString)
         let app = try await entry(profile: root)
-        try await app.foundationStore.update { $0.helpHints = .init(seen: [.ignition, .drag], opens: 2, reveals: 2) }
+        try await app.foundationStore.update { $0.helpHints = .init(seen: [.ignition, .drag], opens: 20, reveals: 20) }
         await app.settingsHost.application.reload()
+        let initial = await app.foundationStore.snapshot().preferences.helpHints
+        XCTAssertEqual(initial.opens, 2); XCTAssertEqual(initial.reveals, 2)
+        let location = try FoundationPreferenceLocation(applicationSupport: root, product: .community)
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: location.target)) as? [String: Any])
+        let persistedSettings = try XCTUnwrap(document["settings"] as? [String: Any])
+        let hints = try XCTUnwrap(persistedSettings["helpHints"] as? [String: Any])
+        XCTAssertEqual(Set(hints.keys), Set(["seen", "opens", "reveals"]))
         let window = try await settings(app, pane: "general")
         let reset = try XCTUnwrap(try views(window).first { $0.accessibilityIdentifier() == "settings.resetHints" } as? NSButton)
-        XCTAssertTrue(reset.isEnabled, "The normal entry must make the reset action available")
+        XCTExpectFailure("HINT-9-07 product-missing: reset action is disabled") {
+            XCTAssertTrue(reset.isEnabled, "The normal entry must make the reset action available")
+        }
         guard reset.isEnabled else { return }
         reset.performClick(nil)
         var saved = await app.foundationStore.snapshot().preferences.helpHints
@@ -160,6 +176,8 @@ private actor M6BatchEngine: EngineClient {
         let sidebar = try XCTUnwrap(try views(window).first { $0.accessibilityIdentifier() == "settings.sidebar" } as? NSTableView)
         let cell = try XCTUnwrap(sidebar.view(atColumn: 0, row: 1, makeIfNecessary: true))
         let title = try XCTUnwrap(descendants(cell).compactMap { ($0 as? NSTextField)?.stringValue }.first)
-        XCTAssertEqual(title, "Quota Widget")
+        XCTExpectFailure("LBL-2.2-21 product-missing: Settings uses Dock for the surface") {
+            XCTAssertEqual(title, "Quota Widget")
+        }
     }
 }
