@@ -122,6 +122,11 @@ jobs:
       SPARKLE_TOOLS_SHA256: ${{ vars.SPARKLE_TOOLS_SHA256 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require candidate CLI to match its pinned release
+        run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --force
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -226,6 +231,11 @@ jobs:
       SPARKLE_TOOLS_SHA256: ${{ vars.SPARKLE_TOOLS_SHA256 }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require candidate CLI to match its pinned release
+        run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --force
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

@@ -202,6 +202,17 @@ func main() {
 			continue
 		}
 		notification, _ := m["method"].(string)
+		if method == "initialize" && m["result"] != nil {
+			data := object(object(m["result"])["data"])
+			switch p.plan.Mode {
+			case "server-too-old":
+				data["serverVersion"] = "0.5.49"
+			case "server-malformed":
+				data["serverVersion"] = "unknown"
+			case "server-supported":
+				data["serverVersion"] = "0.5.52"
+			}
+		}
 		if (p.plan.Mode == "initialize-error-once" || p.plan.Mode == "initialize-unavailable-once") && method == "initialize" {
 			// Keep the ordinary Go child and proxy alive after the injected
 			// failure. Only the first supervised launch fails; its successor
