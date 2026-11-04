@@ -104,6 +104,7 @@ type FailureInput struct {
 // attempts, freshness, discards and locators. SubscriptionRef is an already
 // allocated, verified random local reference; no hash or positional substitute.
 type AccountInput struct {
+	ResetCards *ResetCards
 	// Route is the reviewed read path; never infer it from provider text.
 	Route           Route
 	ToolID          string
@@ -126,6 +127,7 @@ type CreditsInput struct {
 // WindowInput keys/roles/plans may contain raw provider values. The projection
 // applies allow-lists and generic fallbacks before forming any exported field.
 type WindowInput struct {
+	Source WindowSource
 	// ModelIDs is explicit provider scope; nil means plan-wide.
 	ModelIDs         []string
 	Kind             string

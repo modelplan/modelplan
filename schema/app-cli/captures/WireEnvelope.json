@@ -19,13 +19,20 @@
           "expiresAt": "2026-10-31T12:00:00Z",
           "source": {
             "kind": "publication",
-            "publicationId": "0123456789abcdef01234567"
+            "publicationId": "0123456789abcdef01234567",
+            "links": [
+              {
+                "type": "aihot",
+                "url": "https://aihot.news/codex-reset"
+              }
+            ]
           }
         }
       ],
       "rowsVersion": 1,
       "rows": [
         {
+          "refreshNotBefore": "2026-10-29T12:00:00.123456789Z",
           "id": "codex",
           "kind": "tool",
           "order": 1,
@@ -67,6 +74,25 @@
                   "expiresAt": "2026-10-29T12:05:00Z"
                 }
               ],
+              "resetCards": {
+                "state": "complete",
+                "count": 1,
+                "earliestExpiresAt": "2026-10-29T12:00:00Z",
+                "items": [
+                  {
+                    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "expiresAt": "2026-10-29T12:00:00Z"
+                  }
+                ],
+                "truncated": false,
+                "sources": [
+                  {
+                    "source": "codex-account",
+                    "observedAt": "2026-10-29T12:00:00Z"
+                  }
+                ]
+              },
+              "refreshNotBefore": "2026-10-29T12:00:00.123456789Z",
               "route": "saved_login_api",
               "subscriptionRef": "0123456789abcdef",
               "accountLocator": "0123456789abcdef",
@@ -91,6 +117,7 @@
               },
               "windows": [
                 {
+                  "source": "local_history",
                   "modelScope": {
                     "models": [
                       "opus"

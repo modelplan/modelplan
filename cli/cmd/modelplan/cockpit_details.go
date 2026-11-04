@@ -50,6 +50,15 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	for i := range result.Subscriptions {
 		byRef[result.Subscriptions[i].SubscriptionRef] = &result.Subscriptions[i]
 	}
+	// Reuse the exact consent-fenced row facts; do not re-aggregate raw cache
+	// entries or infer availability from the legacy resetCounts array.
+	for _, row := range view.Projection.Rows {
+		for _, account := range row.Accounts {
+			if account.SubscriptionRef != nil && byRef[*account.SubscriptionRef] != nil {
+				byRef[*account.SubscriptionRef].ResetCards = account.ResetCards
+			}
+		}
+	}
 	for _, account := range view.QuotaReport.Accounts {
 		if account.Stale || account.Subscription == nil || account.Subscription.Status != "verified" {
 			continue
@@ -100,12 +109,20 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			return *x.Count < *y.Count
 		})
 		if len(result.Subscriptions[i].ResetCounts) > 64 {
-			result.Subscriptions[i].ResetCounts = result.Subscriptions[i].ResetCounts[:64]
+			out := &result.Subscriptions[i]
+			out.ResetCounts = out.ResetCounts[:64]
+			out.ResetCountsTruncated = true
+			facts := rows.ResetCards{State: rows.ResetCardPartial, Sources: []rows.ResetCardSource{}}
+			if out.ResetCards != nil {
+				facts = *out.ResetCards
+			}
+			facts.State, facts.Truncated = rows.ResetCardPartial, true
+			out.ResetCards = &facts
 		}
 	}
 	if view.ResetEvents != nil {
 		result.Sources = append(result.Sources, "reset-events")
-		result.ResetEvents = append(result.ResetEvents, (*view.ResetEvents)...)
+		result.ResetEvents = append(result.ResetEvents, wire.ProjectResetEventLinks(*view.ResetEvents, appserver.ResetEventLinksEnabled(ctx))...)
 		sort.Slice(result.ResetEvents, func(i, j int) bool { return result.ResetEvents[i].ID < result.ResetEvents[j].ID })
 		if len(result.ResetEvents) > 64 {
 			result.ResetEvents = result.ResetEvents[:64]

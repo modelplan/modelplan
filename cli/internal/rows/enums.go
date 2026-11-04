@@ -194,3 +194,13 @@ func safeRoute(route Route) Route {
 		return RouteUnknown
 	}
 }
+
+type WindowSource string
+
+const (
+	WindowSourceLocalHistory WindowSource = "local_history"
+	WindowSourceRuntime      WindowSource = "runtime"
+	WindowSourceSavedLogin   WindowSource = "saved_login"
+	WindowSourceAPIKey       WindowSource = "api_key"
+	WindowSourceOther        WindowSource = "other"
+)

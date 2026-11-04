@@ -249,6 +249,9 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 			return fail("plan allow-list")
 		}
 	}
+	if !validResetCards(in, a.ResetCards, a.SubscriptionRef) {
+		return fail("reset cards")
+	}
 	if a.Credits != nil {
 		if finite(a.Credits.Balance, 0, 1e15) == nil {
 			return fail("credits balance")
@@ -353,10 +356,7 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		if w.ObservedAt != nil && w.ObservedAt.After(in.Now) {
 			return fail("future window observation")
 		}
-		var until *time.Time
-		if a.FreshUntil != nil {
-			until = earlier(a.FreshUntil, w.ResetsAt)
-		}
+		until := windowValidUntil(a, w)
 		if !reflect.DeepEqual(until, w.ValidUntil) {
 			return fail("window validity")
 		}

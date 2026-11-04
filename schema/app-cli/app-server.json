@@ -68,6 +68,34 @@
         "plan": {
           "$ref": "#/$defs/Plan"
         },
+        "refreshNotBefore": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "route": {
           "enum": [
             "saved_login_api",
@@ -525,12 +553,25 @@
             }
           ]
         },
+        "resetCards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResetCards"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resetCounts": {
           "items": {
             "$ref": "#/$defs/CockpitResetCount"
           },
           "maxItems": 64,
           "type": "array"
+        },
+        "resetCountsTruncated": {
+          "type": "boolean"
         },
         "subscriptionRef": {
           "maxLength": 16,
@@ -985,6 +1026,20 @@
         },
         "protocolVersion": {
           "type": "string"
+        },
+        "refreshDecisions": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RefreshDecision"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxItems": 20
         },
         "scopes": {
           "items": {
@@ -1485,6 +1540,108 @@
       ],
       "type": "object"
     },
+    "MemberRefreshResult": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "started"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reason"
+                  ]
+                },
+                {
+                  "required": [
+                    "notBefore"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "deferred"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "notBefore": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "started",
+            "deferred"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "floor",
+            "backoff",
+            "budget",
+            "not_granted",
+            "offline"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "MemberRefreshResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "consentGeneration": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "data": {
+          "$ref": "#/$defs/MemberRefreshResult"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "storeEpoch": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "storeEpoch",
+        "consentGeneration",
+        "data"
+      ],
+      "type": "object"
+    },
     "ModelScope": {
       "additionalProperties": false,
       "properties": {
@@ -1902,6 +2059,29 @@
       ],
       "type": "object"
     },
+    "ProposedResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "aihot",
+            "original",
+            "official"
+          ],
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
     "ProposedResetSchedule": {
       "additionalProperties": false,
       "properties": {
@@ -1938,6 +2118,15 @@
             "publication"
           ],
           "type": "string"
+        },
+        "links": {
+          "description": "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields.",
+          "items": {
+            "$ref": "#/$defs/ProposedResetLink"
+          },
+          "maxItems": 3,
+          "type": "array",
+          "uniqueItems": true
         },
         "publicationId": {
           "pattern": "^[a-f0-9]{24}$",
@@ -2211,9 +2400,113 @@
       ],
       "type": "object"
     },
-    "RefreshRequestParams": {
+    "RefreshDecision": {
       "additionalProperties": false,
       "properties": {
+        "agoSeconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "not_attempted",
+            "deferred",
+            "failed",
+            "succeeded"
+          ],
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "startup",
+            "wake",
+            "due",
+            "not_granted",
+            "offline",
+            "read_only",
+            "budget",
+            "in_flight",
+            "unavailable",
+            "completed"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "codex.runtime_usage",
+            "codex.local_history",
+            "claude.account_usage.saved_login",
+            "gemini.account_usage.saved_login",
+            "cursor.account_usage.saved_login",
+            "copilot.runtime_usage",
+            "kimi.account_usage.saved_login",
+            "grok.account_usage.saved_login",
+            "kiro.runtime_usage",
+            "antigravity.runtime_usage",
+            "zai.account_usage.api_key",
+            "minimax.account_usage.api_key",
+            "opencodego.account_usage.api_key"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "agoSeconds",
+        "scope",
+        "outcome",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RefreshMember": {
+      "additionalProperties": false,
+      "properties": {
+        "accountLocator": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "route": {
+          "enum": [
+            "saved_login_api",
+            "runtime_rpc",
+            "local_log",
+            "api_key_api",
+            "local_sqlite",
+            "status_line",
+            "browser_session",
+            "manual",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rowId",
+        "route"
+      ],
+      "type": "object"
+    },
+    "RefreshRequestParams": {
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "member",
+          "scopes"
+        ]
+      },
+      "properties": {
+        "member": {
+          "$ref": "#/$defs/RefreshMember"
+        },
         "scopes": {
           "items": {
             "type": "string"
@@ -2617,6 +2910,104 @@
         }
       ]
     },
+    "ResetCardItem": {
+      "additionalProperties": false,
+      "properties": {
+        "expiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
+    "ResetCardSource": {
+      "additionalProperties": false,
+      "properties": {
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "ResetCards": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maximum": 10000,
+          "minimum": 0
+        },
+        "earliestExpiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ResetCardItem"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/ResetCardSource"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "state": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state",
+        "count",
+        "truncated",
+        "sources"
+      ],
+      "type": "object"
+    },
     "ResetEvent": {
       "additionalProperties": false,
       "properties": {
@@ -2686,6 +3077,22 @@
       ],
       "type": "object"
     },
+    "ResetLink": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ],
+      "type": "object"
+    },
     "ResetSchedule": {
       "additionalProperties": false,
       "properties": {
@@ -2713,6 +3120,12 @@
       "properties": {
         "kind": {
           "type": "string"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/ResetLink"
+          },
+          "type": "array"
         },
         "publicationId": {
           "type": "string"
@@ -2772,6 +3185,9 @@
                 },
                 {
                   "$ref": "#/$defs/PublicationResultEnvelope"
+                },
+                {
+                  "$ref": "#/$defs/MemberRefreshResultEnvelope"
                 },
                 {
                   "$ref": "#/$defs/RefreshResultEnvelope"
@@ -2878,6 +3294,24 @@
         },
         "reason": {
           "$ref": "#/$defs/Reason"
+        },
+        "refreshNotBefore": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "state": {
           "enum": [
@@ -3263,6 +3697,23 @@
             "other"
           ],
           "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "local_history",
+                "runtime",
+                "saved_login",
+                "api_key",
+                "other"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "validUntil": {
           "anyOf": [

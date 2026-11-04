@@ -235,7 +235,21 @@ type CredentialResult struct { // app -> server; the only message that may carry
 }
 
 type RefreshRequestParams struct {
-	Scopes []string `json:"scopes,omitempty"` // empty = all allowed scopes
+	Scopes []string       `json:"scopes,omitempty"` // legacy form: empty = all allowed scopes
+	Member *RefreshMember `json:"member,omitempty"` // requires memberRefreshV1, mutually exclusive with scopes
+}
+
+type RefreshMember struct {
+	RowID string `json:"rowId"`
+	Route string `json:"route"`
+	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	AccountLocator string `json:"accountLocator,omitempty"`
+}
+
+type MemberRefreshResult struct {
+	Outcome string `json:"outcome"` // started | deferred
+	NotBefore *time.Time `json:"notBefore,omitempty"`
+	Reason *string `json:"reason,omitempty"` // floor | backoff | budget | not_granted | offline
 }
 
 type RefreshScheduled struct { // result; deferral is a normal result, not an error
@@ -357,15 +371,38 @@ not evidence that any personal quota was reset; acknowledgement and notification
 state belong to the App. The existing publication cache and rows watcher supply
 refresh; no additional fetch is started.
 
-The current public reset record does not provide reviewed structured plan links,
-confirmation references, or an official vendor-host-list interface. Accordingly
-v1 treats unmapped free-form scope as row-wide, drops unlinked confirmations,
-and omits source links while retaining eligible events. The backend computes a
-drop count internally, but does not expose it in responses or diagnostics. The
-publication-side structured links and host interface are separate follow-ups.
+The server also advertises `resetEventLinksV1` when the publication source is
+configured. Clients independently declare it to receive `source.links` on reset
+events in snapshots, change notifications and cockpit details. Without it,
+events are unchanged except that `links` is omitted. Links are derived only
+from the verified record's `url` and `observationUrl`: an HTTPS AIhot page,
+an X or Twitter status post, or a page on an exact approved official host.
+All queries (including empty queries), fragments, userinfo, encoded paths and
+personal or account-like paths are rejected. AIhot paths are single reset article
+slugs; official paths must be public incident, documentation, article, news,
+research, blog, update or release paths. An official citation is admitted
+independently of the original-post slot; a missing original is never substituted. A rejected link does not remove the
+event. Free-form scope remains row-wide; unsupported confirmation references
+are dropped, and the drop count remains internal.
 
 A published schedule with `precision: "deadline"` may have identical `from`
 and `through` timestamps. It represents a point deadline, not an interval or
 a personal quota reset; the event expires at that timestamp. Other schedule
 precisions require `through` strictly after `from`, and reversed ranges are
 invalid for every precision.
+
+
+A client declares `memberRefreshV1` before using the member form. It supplies
+an existing row ID, route and account locator and/or verified subscription
+reference from the current rows. The server matches exactly one member, checks
+the current consent fence, narrows managed readers to the verified profile and
+rechecks the provider-wide budget at execution. Unbound or ambiguous members
+are deferred with `not_granted`. A deferred `budget` without `notBefore`
+means the deadline cannot be established safely. Legacy scope refresh remains
+unchanged. The member result is an object rather than the legacy result array.
+
+With this capability, each row and account with a granted live scope has a
+`refreshNotBefore` property even when its data is fresh. A timestamp is a
+lower bound, including a stable past timestamp when the reader is already due;
+`null` means the deadline or member binding is unknown. The timestamp is not
+permission to bypass the server's admission, in-flight or budget checks.

@@ -5,6 +5,24 @@
   ],
   "subscriptions": [
     {
+      "resetCards": {
+        "state": "complete",
+        "count": 1,
+        "earliestExpiresAt": "2026-10-29T12:00:00Z",
+        "items": [
+          {
+            "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "expiresAt": "2026-10-29T12:00:00Z"
+          }
+        ],
+        "truncated": false,
+        "sources": [
+          {
+            "source": "codex-account",
+            "observedAt": "2026-10-29T12:00:00Z"
+          }
+        ]
+      },
       "subscriptionRef": "0123456789abcdef",
       "resetCounts": [
         {
@@ -52,7 +70,13 @@
       "expiresAt": "2026-10-31T12:00:00Z",
       "source": {
         "kind": "publication",
-        "publicationId": "0123456789abcdef01234567"
+        "publicationId": "0123456789abcdef01234567",
+        "links": [
+          {
+            "type": "aihot",
+            "url": "https://aihot.news/codex-reset"
+          }
+        ]
       }
     }
   ],

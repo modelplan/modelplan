@@ -141,6 +141,16 @@ func ResetEventsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityResetEventLinksV1 opts into typed links on reset events.
+const CapabilityResetEventLinksV1 = "resetEventLinksV1"
+
+type resetEventLinksContextKey struct{}
+
+func ResetEventLinksEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(resetEventLinksContextKey{}).(bool)
+	return enabled
+}
+
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
 
@@ -148,5 +158,25 @@ type cockpitDetailsContextKey struct{}
 
 func CockpitDetailsEnabled(ctx context.Context) bool {
 	enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
+	return enabled
+}
+
+// WindowSourcesEnabled reports the negotiated per-window provenance contract.
+const CapabilityWindowSources = "windowSourcesV1"
+
+type windowSourcesContextKey struct{}
+
+func WindowSourcesEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(windowSourcesContextKey{}).(bool)
+	return enabled
+}
+
+// MemberRefreshEnabled reports the negotiated member refresh contract.
+const CapabilityMemberRefresh = "memberRefreshV1"
+
+type memberRefreshContextKey struct{}
+
+func MemberRefreshEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(memberRefreshContextKey{}).(bool)
 	return enabled
 }

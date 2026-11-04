@@ -22,8 +22,8 @@ import ModelPlanSettings
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"efc4dfa56738720f364531fc481597d35784911c43310c17a85338dc36954290",
-        "official":"b608caa16e59af7bda754730d890cb6a6cdfd297321a268b4485a5d698839dd7",
+        "community":"feeb87046734d189cf7b4e3040f8b62a0fc2b592ea8e7059e7a3338f17479f05",
+        "official":"85a8566ee96d962d074fe4e8e0143f325c0a4b6922ea7050c671e5741d0d1995",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -136,6 +136,11 @@ struct CockpitUnavailableNotice {
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
+                case .close:self.owner.coordinator?.requestClose()
+                case .detach,.putBack,.shutterToggle,.scopeSelect:
+                    // The page owns shell controls; the coordinator validates and
+                    // consumes scope selection. An unexpected escape fails closed.
+                    self.hide()
                 }
             }
             activate()
