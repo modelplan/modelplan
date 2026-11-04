@@ -4,6 +4,7 @@
 import json
 import os
 import re
+import signal
 import sys
 import urllib.error
 import urllib.request
@@ -55,7 +56,11 @@ def staged_prs(issue):
     match = re.search(r'(?im)^##\s+Staged PRs\s*$([\s\S]*?)(?=^##\s|\Z)', issue)
     if not match:
         raise ValueError('issue #470 has no staged-PR section')
-    return {int(n) for n in re.findall(r'(?m)^\s*[-*]\s+\[[ xX]\]\s+#(\d+)\b', match.group(1))}
+    checklist = re.findall(r'(?m)^\s*[-*]\s+\[[ xX]\][^\n]*', issue)
+    linked_bullets = re.findall(r'(?m)^\s*[-*]\s+\[[^\]\n]+\]\([^\n]+', match.group(1))
+    return {int(value) for line in checklist + linked_bullets
+            for pair in re.findall(r'#(\d+)\b|/pull/(\d+)\b', line)
+            for value in pair if value}
 
 
 def warnings(files, body, number, issue):
@@ -80,7 +85,7 @@ def api(path):
         'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
         'User-Agent': 'modelplan-pr-open-lint', 'X-GitHub-Api-Version': '2022-11-28',
     })
-    with urllib.request.urlopen(req, timeout=20) as response:
+    with urllib.request.urlopen(req, timeout=8) as response:
         return json.load(response)
 
 
@@ -90,7 +95,7 @@ def run():
     number = int(event['pull_request']['number'])
     body = event['pull_request'].get('body') or ''
     files = []
-    for page in range(1, 32):
+    for page in range(1, 6):
         batch = api(f'/repos/modelplan/modelplan/pulls/{number}/files?per_page=100&page={page}')
         if not isinstance(batch, list):
             raise ValueError('unexpected PR file response')
@@ -108,10 +113,22 @@ def run():
     return warnings(files, body, number, issue)
 
 
-if __name__ == '__main__':
+def main():
+    def timed_out(_signum, _frame):
+        raise TimeoutError('PR gate lint exceeded its time budget')
+
+    previous = signal.signal(signal.SIGALRM, timed_out)
+    signal.alarm(60)
     try:
         for message in run():
             print('::warning::' + message)
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except Exception:
         print('::warning::Could not complete PR gate lint; verify design IDs and #470 staging manually.')
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+if __name__ == '__main__':
+    main()
     sys.exit(0)

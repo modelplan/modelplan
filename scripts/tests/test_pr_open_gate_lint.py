@@ -3,6 +3,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import contextlib
+import io
 import tempfile
 import unittest
 from unittest import mock
@@ -29,13 +31,22 @@ class GateLintTests(unittest.TestCase):
 
     def test_missing_requirement_id_and_staged_list(self):
         files=[{'filename':'desktop/cockpit/src/main.ts'}]
-        issue='## Staged PRs\n- [ ] #12 staged\n\n## Required before enabling\n- #13 later\n'
-        self.assertEqual(len(lint.warnings(files, 'Implements CKP-ENG-01. Staged under #470.', 12, issue)), 0)
-        self.assertEqual(len(lint.warnings(files, 'Checked SHA-256.', 12, issue)), 1)
-        self.assertEqual(len(lint.warnings(files, 'Staged under #470.', 13, issue)), 2)
-        self.assertEqual(len(lint.warnings(files, 'Implements CKP-ENG-01. See #470.', 13, issue)), 0)
-        self.assertEqual(len(lint.warnings([{'filename':'docs/a.md'}], '', 13, issue)), 0)
-        self.assertEqual(len(lint.warnings(files, 'CKP-ENG-01. Staged under #470.', 12, None)), 1)
+        issue=('## Staged PRs\n'
+               '- [ ] #465 cockpit show/hide toggle and menu anchor\n'
+               '- [ ] #450 cockpit fader publication and engine labels (includes #457)\n'
+               '- [Retain cockpit shell state #466](https://github.com/modelplan/modelplan/pull/466)\n'
+               '\n## Required before enabling (test-first rule)\n'
+               '- [ ] normal-entry → real cockpit window → page tests for staged ID CKP-ENG-01 (#450); CKP-SHELL-01 (#465)\n'
+               '- [ ] independent follow-up (#468)\n'
+               'Prose mentions #999 but is not a checklist.\n')
+        for number in (450, 457, 465, 466, 468):
+            with self.subTest(number=number):
+                self.assertEqual(lint.warnings(files, 'Implements CKP-ENG-01. Staged under #470.', number, issue), [])
+        self.assertEqual(len(lint.warnings(files, 'Checked SHA-256.', 465, issue)), 1)
+        self.assertEqual(len(lint.warnings(files, 'Staged under #470.', 999, issue)), 2)
+        self.assertEqual(len(lint.warnings(files, 'Implements CKP-ENG-01. See #470.', 999, issue)), 0)
+        self.assertEqual(len(lint.warnings([{'filename':'docs/a.md'}], '', 999, issue)), 0)
+        self.assertEqual(len(lint.warnings(files, 'CKP-ENG-01. Staged under #470.', 465, None)), 1)
 
     def test_entry_paginates_and_issue_failure_warns(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -50,6 +61,19 @@ class GateLintTests(unittest.TestCase):
                 raise OSError('synthetic unavailable')
             with mock.patch.dict(os.environ, {'GITHUB_EVENT_PATH': str(event)}), mock.patch.object(lint, 'api', side_effect=fake_api):
                 self.assertEqual(lint.run(), ['Could not check issue #470 staged PRs; verify the staging list manually.'])
+
+    def test_timeout_and_page_limit_are_warnings(self):
+        output = io.StringIO()
+        with mock.patch.object(lint, 'run', side_effect=TimeoutError()), contextlib.redirect_stdout(output):
+            lint.main()
+        self.assertIn('::warning::Could not complete PR gate lint', output.getvalue())
+        with tempfile.TemporaryDirectory() as directory:
+            event = Path(directory) / 'event.json'
+            event.write_text(json.dumps({'pull_request': {'number': 17, 'body': ''}}))
+            with mock.patch.dict(os.environ, {'GITHUB_EVENT_PATH': str(event)}), mock.patch.object(lint, 'api', return_value=[{'filename':'docs/a.md'}] * 100) as request:
+                with self.assertRaisesRegex(ValueError, 'truncated'):
+                    lint.run()
+                self.assertLessEqual(request.call_count, 5)
 
 
 if __name__ == '__main__':
