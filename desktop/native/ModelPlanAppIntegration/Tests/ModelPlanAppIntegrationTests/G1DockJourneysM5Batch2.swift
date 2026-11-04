@@ -56,12 +56,14 @@ private actor G1CRowsClient: EngineClient {
 }
 
 @MainActor private final class G1CDisplayEnvironment {
-    let display = DockDisplayArea(id: "g1-display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1440, height: 850))
+    var display = DockDisplayArea(id: "g1-display", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1440, height: 850))
     let second = DockDisplayArea(id: "g1-second", frame: CGRect(x: 1800, y: 0, width: 1200, height: 700), visibleFrame: CGRect(x: 1800, y: 0, width: 1200, height: 700))
     var pointer = CGPoint(x: 720, y: 450)
     var presence = DockPresence()
+    var primaryConnected = true
+    var includeSecondDisplay = true
     func sample() -> DockEdgeEnvironment {
-        .init(displays: [display, second], layouts: [], primaryDisplayID: display.id, pointer: pointer, presence: presence)
+        .init(displays: primaryConnected ? (includeSecondDisplay ? [display, second] : [display]) : [second], layouts: [], primaryDisplayID: primaryConnected ? display.id : second.id, pointer: pointer, presence: presence)
     }
 }
 
@@ -80,7 +82,7 @@ private actor G1CRowsClient: EngineClient {
 @MainActor final class G1DockJourneysM5Batch2: XCTestCase {
     private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false,
                          five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
-                         resetStatus: String? = nil, newReading: Bool = false, vendorKey: String = "synthetic") throws -> WireRowsSnapshot {
+                         resetStatus: String? = nil, newReading: Bool = false, vendorKey: String = "synthetic", extraMembers: Int = 0) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -115,6 +117,13 @@ private actor G1CRowsClient: EngineClient {
             secondWindows[0]["remainingPercent"] = secondFive; secondWindows[1]["remainingPercent"] = secondWeek
             second["windows"] = secondWindows; accounts.append(second)
         }
+        for index in 0..<extraMembers {
+            var member = accounts[0]
+            let id = String(format: "%016llx", UInt64(index + 2))
+            member["subscriptionRef"] = id; member["accountLocator"] = id
+            var plan = try XCTUnwrap(member["plan"] as? [String: Any]); plan["id"] = "g1-extra-\(index)"; member["plan"] = plan
+            accounts.append(member)
+        }
         rows[0]["accounts"] = accounts
         projection["rows"] = empty ? [] : rows
         if let resetStatus {
@@ -142,15 +151,128 @@ private actor G1CRowsClient: EngineClient {
     private func open(_ environment: G1CDisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1CClock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
         let fixture = try fixture(empty: empty, secondMember: secondMember, resetStatus: resetStatus)
+        if panels && resetStatus != nil { throw XCTSkip("Native-panel fixture must not dispatch system notifications") }
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        #if DEBUG
+        let previousLedger = EngineRowsEntry.isolatedNativeNotificationLedgerForChecks
+        let isolatedLedger = profile.appendingPathComponent("notification-ledger.json")
+        if panels { EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = isolatedLedger }
+        #else
+        if panels { throw XCTSkip("Native-panel tests require an isolated notification ledger") }
+        #endif
         let app = EngineRowsEntry.make(configuration: configuration,
-            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+            settingsStore: settings,
             createsNativePanels: panels, dockEnvironment: { environment.sample() },
             deadlineNow: { Date(timeIntervalSince1970: 1_800_000_000 + (clock?.elapsed ?? 0)) },
             deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1CRowsClient(store: store, rows: fixture) }, activateSettings: {})
+        #if DEBUG
+        EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = previousLedger
+        if panels { XCTAssertEqual(app.composition.nativeNotificationLedgerForChecks, isolatedLedger) }
+        #endif
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
+    }
+
+    func testG1_DOCK_3_1_07() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-t2-scaling-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            var reference: [CGPoint]?
+            for size in [SettingsSize.large, .medium, .small] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let geometry = try XCTUnwrap(dock.resolvedT2CurvatureForChecks)
+                let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks)
+                let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == "0123456789abcdef" })
+                let sourceStation = try XCTUnwrap(geometry.stations.first { $0.subscription?.id == "0123456789abcdef" })
+                let scale = size.nozzleDiameter / 52
+                XCTAssertEqual(station.diameter, size.nozzleDiameter, accuracy: 0.0001)
+                XCTAssertEqual(station.readout.width, 56 * scale, accuracy: 0.0001)
+                XCTAssertEqual(station.readout.height, 16 * scale, accuracy: 0.0001)
+                XCTAssertEqual(station.clock.radius, 28.2 * scale, accuracy: 0.0001)
+                XCTAssertEqual(try XCTUnwrap(dock.registeredConsoleButtonForChecks).width, 34 * scale, accuracy: 0.0001)
+                XCTAssertEqual(geometry.gap, 14 * scale, accuracy: 0.0001)
+                XCTAssertEqual(skin.bodyPolygon, geometry.outline)
+                let normalized = geometry.outline.map { CGPoint(x: ($0.x - sourceStation.centre.x) / scale, y: ($0.y - sourceStation.centre.y) / scale) }
+                if let reference {
+                    XCTAssertEqual(normalized.count, reference.count)
+                    for (actual, expected) in zip(normalized, reference) {
+                        XCTAssertEqual(actual.x, expected.x, accuracy: 0.01)
+                        XCTAssertEqual(actual.y, expected.y, accuracy: 0.01)
+                    }
+                } else { reference = normalized }
+            }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_1_09() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-position-commit-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1CDisplayEnvironment(), clock = G1CClock()
+        let app = try await open(environment, profile: profile, clock: clock, panels: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        let before = try XCTUnwrap(editor.snapshot?.preferences)
+        environment.primaryConnected = false; dock.refreshPresence(); clock.advance(1)
+        XCTAssertEqual(editor.snapshot?.preferences.dockEdge, before.dockEdge)
+        XCTAssertEqual(editor.snapshot?.preferences.dockAlongFraction, before.dockAlongFraction)
+        environment.primaryConnected = true; dock.refreshPresence(); clock.advance(1)
+        XCTAssertEqual(editor.snapshot?.preferences.dockEdge, before.dockEdge)
+        XCTAssertEqual(editor.snapshot?.preferences.dockAlongFraction, before.dockAlongFraction)
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(true))
+        environment.pointer = CGPoint(x: environment.second.frame.midX, y: environment.second.frame.midY)
+        dock.refreshPresence(); clock.advance(1)
+        XCTAssertEqual(editor.snapshot?.preferences.dockEdge, before.dockEdge)
+        XCTAssertEqual(editor.snapshot?.preferences.dockAlongFraction, before.dockAlongFraction)
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(false))
+        environment.pointer = CGPoint(x: 720, y: 450); dock.refreshPresence(); clock.advance(1)
+        let panel = try XCTUnwrap(dock.nativePanel), view = dock.dockView
+        let candidates = stride(from: CGFloat(1), to: view.bounds.width, by: 4).flatMap { x in
+            stride(from: CGFloat(1), to: view.bounds.height, by: 4).map { CGPoint(x: x, y: $0) }
+        }
+        let local = try XCTUnwrap(candidates.first { view.backgroundDragDelegate?.backgroundCanDrag(local: $0) == true })
+        let origin = panel.convertPoint(toScreen: view.convert(local, to: nil)), destination = CGPoint(x: 1, y: 450)
+        func event(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: panel.convertPoint(fromScreen: point), modifierFlags: [], timestamp: clock.elapsed, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+        }
+        environment.pointer = origin; environment.presence.mouseButtonDown = true
+        view.mouseDown(with: try event(.leftMouseDown, at: origin))
+        environment.pointer = destination; view.mouseDragged(with: try event(.leftMouseDragged, at: destination))
+        environment.presence.mouseButtonDown = false; view.mouseUp(with: try event(.leftMouseUp, at: destination))
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .left)
+        XCTAssertEqual(editor.snapshot?.preferences.dockEdge, .left)
+        let savedAlong = try XCTUnwrap(editor.snapshot?.preferences.dockAlongFraction)
+        await app.composition.stop(); dock.close()
+        let reopened = try await open(environment, profile: profile)
+        defer { reopened.composition.dock.close() }
+        XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.dockEdge, .left)
+        XCTAssertEqual(reopened.settingsHost.application.editor.snapshot?.preferences.dockAlongFraction, savedAlong)
+        await reopened.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_14() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-alias-backing-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        for alias in ["ABCD1234", "账户一二"] {
+            _ = try await editor.commit(SettingsB21Edit.alias(.init(subscriptionID: "0123456789abcdef", committed: alias)))
+            XCTAssertEqual(view.presentedReadingsForChecks["0123456789abcdef"]?.alias, alias)
+            let rendered = try XCTUnwrap(view.renderedAliasBackingForChecks["0123456789abcdef"])
+            XCTAssertTrue(rendered.hasDedicatedBacking, "The alias must have its own opaque backing")
+            XCTAssertGreaterThan(rendered.frame.width, 0)
+            XCTAssertGreaterThan(rendered.frame.height, 0)
+        }
+        // TODO(G1): inspect effective visible glyphs at and beyond each length limit.
+        await app.composition.stop()
     }
 
     func testG1_DOCK_3_1_13() async throws {
@@ -186,6 +308,40 @@ private actor G1CRowsClient: EngineClient {
                 }
             }
         }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_16() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-gap-overflow-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1CDisplayEnvironment()
+        environment.includeSecondDisplay = false
+        let app = try await open(environment, profile: profile)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient)
+        try await client.replaceRows(fixture(extraMembers: 6))
+        _ = try await editor.commit(SettingsB20Edit.size(.medium))
+        _ = try await editor.commit(SettingsB21Edit.dockEdge(.bottom))
+        var results: [(CGFloat, Int)] = []
+        for width in [CGFloat(1400), 800, 700] {
+            let frame = CGRect(x: 0, y: 0, width: width, height: 900)
+            environment.display = DockDisplayArea(id: "g1-display", frame: frame, visibleFrame: frame)
+            environment.pointer = CGPoint(x: width / 2, y: 450)
+            dock.refreshPresence(); dock.refreshDockContent()
+            let actual = try XCTUnwrap(dock.resolvedT2GapAndOverflowForChecks)
+            XCTAssertEqual(actual.shownIDs.count + actual.overflowIDs.count, 7)
+            XCTAssertGreaterThanOrEqual(actual.gap, 6 * 44 / 52 - 0.0001)
+            XCTAssertLessThanOrEqual(actual.gap, 14 * 44 / 52 + 0.0001)
+            let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks)
+            for station in skin.stations { XCTAssertEqual(station.diameter, 44, accuracy: 0.0001) }
+            results.append((actual.gap, actual.overflowIDs.count))
+        }
+        XCTAssertEqual(results[0].1, 0)
+        XCTAssertEqual(results[0].0, 14 * 44 / 52, accuracy: 0.0001)
+        XCTAssertEqual(results[1].1, 0)
+        XCTAssertLessThan(results[1].0, results[0].0)
+        XCTAssertGreaterThan(results[2].1, 0)
         await app.composition.stop()
     }
 
