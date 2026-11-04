@@ -120,6 +120,73 @@ private actor G1PartCRowsClient: EngineClient {
         }
         await app.composition.stop()
     }
+    func testG1_DOCK_3_3_09() async throws {
+        let profile=FileManager.default.temporaryDirectory.appendingPathComponent("g1-tightest-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:profile) }
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var projection=try XCTUnwrap(root["projection"] as? [String:Any])
+        var row=try XCTUnwrap((projection["rows"] as? [[String:Any]])?.first)
+        var account=try XCTUnwrap((row["accounts"] as? [[String:Any]])?.first)
+        let original=try XCTUnwrap((account["windows"] as? [[String:Any]])?.first)
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        func snapshot(_ amounts:[Double]) throws -> WireRowsSnapshot {
+            account["windows"]=zip([( "five","session",18000),("week","weekly",604800),("month","monthly",2592000)],amounts).map { spec,amount -> [String:Any] in
+                var window=original;window["id"]=spec.0;window["role"]=spec.1;window["durationSeconds"]=spec.2
+                if amount < 0 { window.removeValue(forKey: "remainingPercent") } else { window["remainingPercent"] = amount };window["limitKey"]="main";window["poolKey"]="main"
+                window["current"]=true;window["validUntil"]="2099-01-01T00:00:00Z";window["resetsAt"]="2099-01-01T00:00:00Z"
+                window.removeValue(forKey:"modelScope");return window
+            }
+            row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        let initial=try snapshot([41,70,70])
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"g1",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:try EngineRowsEntry.makeSettingsStore(applicationSupport:profile,preferredLanguages:["en"]),createsNativePanels:false,makeClient:{_,store in G1PartCRowsClient(store:store,rows:initial)},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);await app.composition.start()
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1PartCRowsClient)
+        try await client.replaceRows(snapshot([-1, -1, -1]))
+        let unavailable = try XCTUnwrap(app.composition.dock.dockView.presentedReadingsForChecks["0123456789abcdef"])
+        XCTAssertNil(unavailable.remainingPercent)
+        XCTAssertEqual(unavailable.readout, "--")
+        XCTAssertEqual(unavailable.status, .unknown)
+        try await client.replaceRows(snapshot([0, 70, 70]))
+        let depleted = try XCTUnwrap(app.composition.dock.dockView.presentedReadingsForChecks["0123456789abcdef"])
+        XCTAssertEqual(depleted.readout, "0%")
+        XCTAssertEqual(depleted.status, .critical)
+        await app.composition.stop()
+    }
+    func testG1_DOCK_3_5_03() async throws {
+        let profile=FileManager.default.temporaryDirectory.appendingPathComponent("g1-tightest-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:profile) }
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root=try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as? [String:Any])
+        var projection=try XCTUnwrap(root["projection"] as? [String:Any])
+        var row=try XCTUnwrap((projection["rows"] as? [[String:Any]])?.first)
+        var account=try XCTUnwrap((row["accounts"] as? [[String:Any]])?.first)
+        let original=try XCTUnwrap((account["windows"] as? [[String:Any]])?.first)
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        func snapshot(_ amounts:[Double]) throws -> WireRowsSnapshot {
+            account["windows"]=zip([( "five","session",18000),("week","weekly",604800),("month","monthly",2592000)],amounts).map { spec,amount -> [String:Any] in
+                var window=original;window["id"]=spec.0;window["role"]=spec.1;window["durationSeconds"]=spec.2
+                window["remainingPercent"]=amount;window["limitKey"]="main";window["poolKey"]="main"
+                window["current"]=true;window["validUntil"]="2099-01-01T00:00:00Z";window["resetsAt"]="2099-01-01T00:00:00Z"
+                window.removeValue(forKey:"modelScope");return window
+            }
+            row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        let initial=try snapshot([41,70,70])
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"g1",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:try EngineRowsEntry.makeSettingsStore(applicationSupport:profile,preferredLanguages:["en"]),createsNativePanels:false,makeClient:{_,store in G1PartCRowsClient(store:store,rows:initial)},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);await app.composition.start()
+        defer { app.composition.dock.close() }
+        let skin = try XCTUnwrap(app.composition.dock.dockView.presentedSkinForChecks)
+        XCTAssertNotNil(app.composition.dock.dockView.presentedImageForChecks)
+        XCTAssertTrue(skin.fixedLayers.contains { $0.resource.hasPrefix("a5-") }, "Normal entry should use the official Dock appearance")
+        await app.composition.stop()
+    }
     // DOCK-3.3-06: observe the actual retained widget's accessibility value,
     // not a separately evaluated projection. The profile survives app recreation.
     func testG1_DOCK_3_3_06() async throws {
