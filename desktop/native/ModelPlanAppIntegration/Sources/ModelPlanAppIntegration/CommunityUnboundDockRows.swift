@@ -6,6 +6,9 @@ import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
 public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale, errorLastGood, error }
+public struct DockWindowObservation: Sendable {
+    public let sourceName: String, observedAt: Date?
+}
 public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
@@ -16,12 +19,13 @@ public struct DockContentRow: Sendable {
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
     public let links: [DockCardLink]
+    public let windowObservations: [String:DockWindowObservation]?
     public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],cardReadingState:DockCardReadingState?=nil) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.links=links
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.links=links;self.windowObservations=windowObservations
         self.cardReadingState = cardReadingState ?? {
             switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
         }()
@@ -29,7 +33,12 @@ public struct DockContentRow: Sendable {
     private func cardAge(at now:Date,english:Bool) -> String {
         CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
-    public func cardSourceAndAge(at now:Date,english:Bool) -> String {
+    public func cardSourceAndAge(at now:Date,english:Bool,selectedWindowID:String?=nil) -> String {
+        if let windowObservations {
+            let fact=selectedWindowID.flatMap { windowObservations[$0] }
+            let source=fact?.sourceName ?? (english ? "Unknown source":"未知来源")
+            return source + " · " + CommunityObservationAge.cardText(observedAt:fact?.observedAt,now:now,english:english)
+        }
         let age = cardAge(at: now, english: english)
         return sourceName.isEmpty ? age : sourceName + " · " + age
     }

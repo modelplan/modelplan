@@ -154,6 +154,25 @@ private actor G1DEngine: EngineClient {
         if id.hasPrefix("DOCK-3.8") { try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden) }
         throw XCTSkip("\(id): SEAM-NEEDED \(reason)")
     }
+    func testPost429HeaderUsesSelectedWindowSourceAndObservation() async throws {
+        let f=try await fixture()
+        f.mutateFirst { account in
+            account["observedAt"]=G1DFixture.stamp(f.clock.wall.addingTimeInterval(-7200))
+            var windows=account["windows"] as! [[String:Any]]
+            windows[0]["source"]="local_history";windows[0]["observedAt"]=G1DFixture.stamp(f.clock.wall.addingTimeInterval(-37*60))
+            windows[1]["source"]="runtime";windows[1]["observedAt"]=G1DFixture.stamp(f.clock.wall.addingTimeInterval(-11*60))
+            account["windows"]=windows
+        }
+        try await f.publish()
+        XCTAssertEqual(try f.card().sourceAndAge,"Local history · 37m ago")
+        _ = try await f.editor.commit(SettingsB20Edit.percentagePin(G1DFixture.ids[0],.week))
+        XCTAssertEqual(try f.card().sourceAndAge,"Tool runtime · 11m ago")
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try f.card().sourceAndAge,"工具运行时 · 11分钟前")
+        f.mutateFirst { account in var windows=account["windows"] as! [[String:Any]];windows[1].removeValue(forKey:"source");windows[1].removeValue(forKey:"observedAt");account["windows"]=windows }
+        try await f.publish()
+        XCTAssertEqual(try f.card().sourceAndAge,"未知来源 · 读数时间未知")
+    }
     private func quotaSliverFixture() async throws -> G1DFixture {
         let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }
         var projection = f.raw["projection"] as! [String:Any]
