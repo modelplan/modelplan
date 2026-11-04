@@ -19,7 +19,6 @@ import AppKit
     private let privacy = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
-    private let engineConsentNotice = NSTextField(wrappingLabelWithString: "")
     private lazy var connectionsView = SettingsConnectionsView(editor: editor, firstRun: true)
     private let loginSubtitle = NSTextField(wrappingLabelWithString: "")
     private let status = NSTextField(wrappingLabelWithString: "")
@@ -27,7 +26,6 @@ import AppKit
     private var baseRevision: UInt64?
     private var touchedLogin = false, touchedReaders = Set<OptionalReaderID>()
     private var active = false, busy = false, pageValid = false
-    private var engineOwnsReaderConsent = false
     private var generation: UInt64 = 0
     private var observer: UUID?
     private var connectionObserver: UUID?
@@ -65,9 +63,6 @@ import AppKit
         if connectionObserver == nil { connectionObserver = editor.connections.observe { [weak self] in self?.refreshEnabled() } }
         await editor.reload()
         guard active, generation == token, !Task.isCancelled else { return }
-        let hasFoundationStore = await editor.store.foundationStatus() != nil
-        guard active, generation == token, !Task.isCancelled else { return }
-        engineOwnsReaderConsent = hasFoundationStore
         if let scopeConsentEntry {
             do {
                 try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
@@ -77,7 +72,7 @@ import AppKit
         }
         refresh()
         connectionsView.followingKeyView = loginButton
-        if scopeConsentEntry != nil || (engineOwnsReaderConsent && !editor.connections.isAvailable) { window?.initialFirstResponder = loginButton }
+        if scopeConsentEntry != nil { window?.initialFirstResponder = loginButton }
         else if editor.connections.isAvailable { window?.initialFirstResponder = connectionsView.firstControl ?? loginButton }
     }
     public func present() async { await prepare(); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
@@ -125,7 +120,7 @@ import AppKit
         window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
         let firstRunScopes = scopePresentation?.container ?? NSStackView()
-        for view in [titleLabel,privacy,subscriptions,firstRunScopes,connectionsView,readerStack,engineConsentNotice,login,status,buttons] {
+        for view in [titleLabel,privacy,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
@@ -155,9 +150,7 @@ import AppKit
             connectionsView.apply(language: language)
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
-            readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable || engineOwnsReaderConsent
-            engineConsentNotice.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable || !engineOwnsReaderConsent
-            engineConsentNotice.stringValue = SettingsWords.text("Reading permissions are managed by the engine. Set them in Connections when available.", "读取权限由引擎管理，可在连接可用时设置。", language)
+            readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
             subscriptions.isHidden = editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
                 ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
@@ -189,7 +182,7 @@ import AppKit
         else { scopeIdle = true }
         let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled
-        for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable && !engineOwnsReaderConsent }
+        for button in readerButtons.values { button.isEnabled = enabled && !editor.connections.isAvailable }
         doneButton.isEnabled = enabled
         helpButton.isEnabled = enabled && !helpButton.isHidden && editor.context.capabilities.helpMapAvailable && editor.onHostRequest != nil
     }
