@@ -3,6 +3,12 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Settings65DataTests: XCTestCase {
+    func testDockQuotaPercentageTitleIsLocalized() throws {
+        let rows = try SettingsCatalogue.rows(preferences: SettingsPreferences(), context: SettingsPageContext(), paneID: "dock")
+        let row = try XCTUnwrap(rows.first { $0.key == .showPercentages })
+        XCTAssertEqual(row.title.english, "Dock quota percentages")
+        XCTAssertEqual(row.title.chinese, "挂件额度百分比")
+    }
     func testConfirmedEightPaneTableAndKnownHomesStayDataDriven() {
         XCTAssertFalse(Settings65Homes.paneCountPending)
         XCTAssertEqual(SettingsStructure.task65.panes.map(\.id), ["general","dock","cockpit","appearance","subscriptions","notifications","privacy","about"])
