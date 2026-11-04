@@ -76,6 +76,23 @@ private actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"])
+        let before = await store.snapshot()
+        var options = OnboardingOptions(preferences: before.preferences)
+        XCTAssertFalse(options.readerConsent[.cursor])
+        options.readerConsent[.cursor] = true
+        let result = try await store.completeFirstRun(options: options, action: .done, host: .popup,
+                                                       capabilities: .init(), expectedRevision: before.revision)
+        XCTAssertTrue(result.snapshot.preferences.onboarding.completed)
+        XCTAssertEqual(result.snapshot.preferences.readerConsent, before.preferences.readerConsent)
+        let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"])
+        let restored = await reopened.snapshot()
+        XCTAssertTrue(restored.preferences.onboarding.completed)
+        XCTAssertEqual(restored.preferences.readerConsent, before.preferences.readerConsent)
+    }
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
@@ -225,9 +242,17 @@ private actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         await editor.reload()
         let beforeDone = try XCTUnwrap(editor.snapshot)
-        let done = try await editor.completeFirstRun(options: .init(preferences: beforeDone.preferences),
+        var checkedOptions = OnboardingOptions(preferences: beforeDone.preferences)
+        XCTAssertFalse(checkedOptions.readerConsent[.cursor], "The synthetic reader starts unchecked")
+        checkedOptions.readerConsent[.cursor] = true
+        let done = try await editor.completeFirstRun(options: checkedOptions,
             action: .done, host: .popup, expectedRevision: beforeDone.revision)
         XCTAssertTrue(done.snapshot.preferences.onboarding.completed)
+        XCTAssertEqual(done.snapshot.preferences.readerConsent, beforeDone.preferences.readerConsent,
+                       "The foundation preference transaction must not persist engine-owned reader consent")
+        let afterDone = await first.foundationStore.snapshot()
+        XCTAssertTrue(afterDone.preferences.onboarding.completed)
+        XCTAssertEqual(afterDone.preferences.readerConsent, beforeDone.preferences.readerConsent)
         XCTAssertEqual(login.registrations, 1, "Completing first run must not repeat an already applied login choice")
         let retiredScope = try XCTUnwrap(firstRun.scopeView)
         firstRun.hide()
