@@ -129,6 +129,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var workingFrameProvider: (any EffectFrameProvider)?
     private var workingInstallationError: Error?
     public private(set) var lastWorkingEffectError: Error?
+    /// Samples the installed driver only; an absent or unobservable effect has no invented frame.
+    public var workingEffectFramesForChecks: [String: Int] { workingDriver?.frameIndicesForChecks ?? [:] }
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }

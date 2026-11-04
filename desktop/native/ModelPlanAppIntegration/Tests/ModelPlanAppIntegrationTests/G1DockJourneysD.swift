@@ -127,7 +127,8 @@ private actor G1DEngine: EngineClient {
         try await publish()
     }
     func tick(_ seconds: Double) { clock.elapsed += seconds; clock.wall.addTimeInterval(seconds); timer.fireIfDue(clock.elapsed); host.refreshPresence(); host.interactionControllerForChecks?.refresh() }
-    func hover(_ id: String = ids[0]) throws {
+    func hover(_ selectedID: String? = nil) throws {
+        let id = selectedID ?? Self.ids[0]
         let placement = try XCTUnwrap(host.edgePresentation?.placement), rect = try XCTUnwrap(host.dockView.interactionAnchor(id))
         pointer = .init(x: placement.frame.minX + rect.midX, y: placement.frame.maxY - rect.midY)
         try XCTUnwrap(host.dockView.nozzleEventDelegate).hoverNozzle(id)
@@ -138,7 +139,7 @@ private actor G1DEngine: EngineClient {
         tick(0); tick(0.151)
         XCTAssertEqual(host.edgePresentation?.state, .expanded)
     }
-    func card(_ id: String = ids[0]) throws -> DockCardContent { try XCTUnwrap(host.cardContent(for: id, at: clock.wall)) }
+    func card(_ selectedID: String? = nil) throws -> DockCardContent { try XCTUnwrap(host.cardContent(for: selectedID ?? Self.ids[0], at: clock.wall)) }
     func close() async { if let app { await app.composition.stop() }; try? FileManager.default.removeItem(at: root) }
 }
 

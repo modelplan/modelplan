@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanEngineClient
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor private final class G1Surface: SettingsWindowSurface {
     var shows = 0
@@ -139,6 +139,17 @@ import ModelPlanEngineClient
         let (driver, view, _) = try working(); defer { driver.stop(); view.dispose() }
         XCTAssertEqual(try XCTUnwrap(driver.cadenceForChecks), 1.0 / 9, accuracy: 0.000001)
         driver.stop(); XCTAssertNil(driver.cadenceForChecks)
+    }
+    func testNormalEntryFrameInspectionDoesNotInstallAnEffectOrOpenAWindow() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-frame-inspection-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root), createsNativePanels: false, activateSettings: {})
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        XCTAssertTrue(dock.workingEffectFramesForChecks.isEmpty)
+        XCTAssertTrue(dock.workingEffectFramesForChecks.isEmpty)
+        XCTAssertTrue(dock.activeWorkingEffectIDs.isEmpty)
+        XCTAssertNil(dock.nativePanel)
     }
     func testMissingStationLayoutHasNoInventedFrames() {
         let host = StaticDockPreviewHost(currentDate: { Date() }, createsNativePanels: false)
