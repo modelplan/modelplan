@@ -118,7 +118,11 @@ func Generate(root string) ([]byte, error) {
 	schedule["properties"].(map[string]any)["precision"].(map[string]any)["type"] = "string"
 	source := overlay.Defs["ProposedResetSource"].(map[string]any)
 	source["properties"].(map[string]any)["kind"] = object{"type": "string", "enum": []string{"publication"}}
+	source["properties"].(map[string]any)["links"].(map[string]any)["description"] = "Present only when the client declares resetEventLinksV1; admitted links come from verified publication URL fields."
 	b.defs["ResetEvent"] = proposed
+	link := overlay.Defs["ProposedResetLink"].(map[string]any)
+	link["properties"].(map[string]any)["type"].(map[string]any)["type"] = "string"
+	b.defs["ProposedResetLink"] = link
 	b.defs["ProposedResetSchedule"] = overlay.Defs["ProposedResetSchedule"]
 	b.defs["ProposedResetSource"] = overlay.Defs["ProposedResetSource"]
 	b.defs["RowsProjection"].(object)["properties"].(object)["resetEvents"] = object{"type": "array", "maxItems": 64, "uniqueItems": true, "items": object{"$ref": "#/$defs/ResetEvent"}}
