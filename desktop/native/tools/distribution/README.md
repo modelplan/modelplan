@@ -15,7 +15,7 @@ Set these nonsecret environment variables:
 | `SPARKLE_TOOLS_URL`, `SPARKLE_TOOLS_SHA256` | Reviewed immutable Sparkle release tar.xz and checksum; no latest download |
 | `MACOS_BETA_FEED_URL` | Dedicated credential-free HTTPS beta appcast file, matching the app's `SUFeedURL` |
 | `MACOS_FEED_URL` | Future stable feed, when known; must be a separate file |
-| `MACOS_UPDATE_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/ModelPlan-beta-universal.zip` |
+| `MACOS_UPDATE_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/ModelPlan-beta-arm64.zip` |
 | `MACOS_RELEASE_NOTES_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/release-notes.html` |
 
 Replace `BUILD` with the candidate's numeric `CFBundleVersion` before dispatch. Publication checks that both URLs match the resulting release assets. Feed separation rejects same-host/port/path aliases, including query-only differences, escaped paths and dot segments. Hosting redirects and aliases must also keep beta and stable files separate.
@@ -38,7 +38,7 @@ New build numbers must exceed every retained version. One-, two- and three-compo
 
 After ad-hoc signing, helper-hash refresh, app resealing and strict signature verification, the job creates a symlink-preserving ZIP with `ditto`. It uploads:
 
-- `ModelPlan-beta-universal.zip` and `appcast-beta.xml` with beta channel, EdDSA signature, archive length, build/display versions and macOS 14.0.0 minimum.
+- `ModelPlan-beta-arm64.zip` and `appcast-beta.xml` with beta channel, EdDSA signature, archive length, build/display versions and macOS 14.0.0 minimum.
 - `RELEASE_NOTES.md` and escaped `release-notes.html`, identifying the build/source and explaining first-open and permission limits.
 - `SHA256SUMS` covering those four files, plus `draft-release.json` with `draft: true` and `prerelease: true`.
 

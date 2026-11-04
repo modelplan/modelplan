@@ -78,6 +78,28 @@ jobs:
             ${{ runner.temp }}/u7-prebuilt-helper/proof.json
             ${{ runner.temp }}/u7-prebuilt-helper/SHA256SUMS
             ${{ runner.temp }}/u7-prebuilt-helper/LICENSE.txt
+      - name: Build a separate Apple silicon helper candidate
+        run: |
+          test "$(uname -m)" = arm64
+          python3 -B desktop/native/ModelPlanCredentialAgent/tools/build_fixed_helper.py --output "$RUNNER_TEMP/u7-arm64-helper"
+          test "$(xcrun lipo -archs "$RUNNER_TEMP/u7-arm64-helper/modelplan-credential-agent")" = arm64
+          codesign --verify --strict "$RUNNER_TEMP/u7-arm64-helper/modelplan-credential-agent"
+          cp LICENSE "$RUNNER_TEMP/u7-arm64-helper/LICENSE.txt"
+          (cd "$RUNNER_TEMP/u7-arm64-helper" && shasum -a 256 modelplan-credential-agent credential-agent.json proof.json LICENSE.txt > SHA256SUMS)
+      - name: Publish the unapproved Apple silicon helper candidate
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: u7-credential-helper-arm64-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          path: |
+            ${{ runner.temp }}/u7-arm64-helper/modelplan-credential-agent
+            ${{ runner.temp }}/u7-arm64-helper/credential-agent.json
+            ${{ runner.temp }}/u7-arm64-helper/proof.json
+            ${{ runner.temp }}/u7-arm64-helper/SHA256SUMS
+            ${{ runner.temp }}/u7-arm64-helper/LICENSE.txt
       - name: Summarize the unapproved candidate identity
         env:
           HELPER_SHA: ${{ steps.pin.outputs.helper_sha256 }}

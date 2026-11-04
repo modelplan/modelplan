@@ -224,9 +224,8 @@ def build(output, candidate_id, build_number):
     raw_inputs = {'arm64': work / 'native/cli-arm64/modelplan_darwin_arm64/modelplan',
                   'x86_64': work / 'native/cli-x86_64/modelplan_darwin_amd64/modelplan'}
     sealed = seal(app, source, raw_inputs)
-    for executable in (app / 'Contents/Helpers/modelplan', app / 'Contents/MacOS/ModelPlanCommunity'):
-        if set(run('xcrun', 'lipo', '-archs', executable).decode().split()) != {'arm64', 'x86_64'}:
-            raise ValueError('App and helper must be universal')
+    for executable in (app / 'Contents/Helpers/modelplan', app / 'Contents/MacOS/ModelPlanCommunity', app / release.CREDENTIAL_HELPER):
+        release.require_arm64(executable)
     # The subprocess cwd is explicit; no global cwd mutation or helper execution.
     subprocess.run(['go', 'run', './internal/releaseguard/cmd', '--binary',
                     str(app / 'Contents/MacOS/ModelPlanCommunity')], cwd=ROOT / 'cli', env=credential_env, check=True)
@@ -241,7 +240,7 @@ def build(output, candidate_id, build_number):
                'bundleIdentifier': BUNDLE_ID, 'helperVersion': HELPER_VERSION,
                'appVersion': load_json(ROOT / 'desktop/package.json')['version'], 'buildNumber': build_number,
                'identity': sealed, 'resources': resources, 'credentialArtifact': binding['approval'], 'signing': 'ad-hoc',
-               'notarized': False, 'published': False, 'intelExecution': 'not-run',
+               'notarized': False, 'published': False, 'intelExecution': 'unsupported',
                'L2': 'not-run', 'L3': 'not-run', 'keychainTwoBuildAcceptance': 'not-run',
                'archive': {'file': archive.name, 'sha256': release.sha256(archive)}}
     manifest = evidence(app, output, ROOT, candidate_id, receipt)

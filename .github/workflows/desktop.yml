@@ -126,7 +126,7 @@ jobs:
       contents: read
       actions: read
     if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    # The actual universal Community bundle, with no secrets, live reader or displayed UI.
+    # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
     continue-on-error: false
@@ -159,7 +159,7 @@ jobs:
         run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
       - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
-      - name: Package the actual universal Community app with unverified consent identity
+      - name: Package the actual Apple silicon Community app with unverified consent identity
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
       - name: Assert packaged production wiring (known baseline failures remain red)
         run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified

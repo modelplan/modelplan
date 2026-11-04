@@ -69,26 +69,26 @@ jobs:
         run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
       - name: Fetch CLI archives from the reviewed native consent pin
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
-      - name: Build universal neutral app (ad-hoc only)
+      - name: Build Apple silicon neutral app (ad-hoc only)
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
       - name: Reject known private SPI in the built release binary
         working-directory: cli
         run: go run ./internal/releaseguard/cmd --binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"
-      - name: Archive checked universal neutral app
+      - name: Archive checked Apple silicon neutral app
         run: |
           mkdir -p "$RUNNER_TEMP/neutral-artifact"
-          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-universal-unsigned.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-arm64-unsigned.zip"
           python3 - <<'PY'
           import hashlib, json, os
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP']) / 'neutral-artifact'
-          archive = root / 'ModelPlan-Community-universal-unsigned.zip'
+          archive = root / 'ModelPlan-Community-arm64-unsigned.zip'
           (root / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
           (root / 'build-receipt.json').write_text(json.dumps({
               'edition': 'community', 'sourceCommit': os.environ['GITHUB_SHA'],
               'signing': 'ad-hoc only, not Developer ID', 'notarized': False,
-              'minimumMacOS': '14.0', 'architectures': ['arm64', 'x86_64'],
-              'intel': 'untested; 3D may stutter', 'updateCandidate': False
+              'minimumMacOS': '14.0', 'architectures': ['arm64'],
+              'intel': 'unsupported', 'updateCandidate': False
           }, indent=2) + '\n')
           PY
       - uses: actions/upload-artifact@v4

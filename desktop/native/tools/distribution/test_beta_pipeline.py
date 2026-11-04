@@ -187,7 +187,7 @@ class DraftPublicationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        archive = self.root / 'ModelPlan-beta-universal.zip'; archive.write_bytes(b'synthetic')
+        archive = self.root / 'ModelPlan-beta-arm64.zip'; archive.write_bytes(b'synthetic')
         base = 'https://github.com/modelplan/modelplan/releases/download/macos-beta-42/'
         xml = release.appcast_bytes({'CFBundleVersion': '42', 'CFBundleShortVersionString': '0.1 beta'},
                                     archive, base64.b64encode(bytes(64)).decode(), base + archive.name,
@@ -210,7 +210,7 @@ class DraftPublicationTests(unittest.TestCase):
         (self.root / 'draft-release.json').write_text(json.dumps(self.metadata))
 
     def write_checksums(self):
-        names = ('ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
+        names = ('ModelPlan-beta-arm64.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
         (self.root / 'SHA256SUMS').write_text(''.join(f'{release.sha256(self.root / name)}  {name}\n' for name in names))
 
     def test_publication_only_creates_draft_prerelease_never_latest_or_overwrites(self):
@@ -259,7 +259,7 @@ class DraftPublicationTests(unittest.TestCase):
         with patch.object(release.subprocess, 'run') as command:
             with self.assertRaisesRegex(ValueError, 'URLs'): release.publish_beta(self.root)
             command.assert_not_called()
-        (self.root / 'ModelPlan-beta-universal.zip').write_bytes(b'tampered')
+        (self.root / 'ModelPlan-beta-arm64.zip').write_bytes(b'tampered')
         # Restore the URLs; the changed archive must still fail the checksum check.
         path.write_bytes(path.read_bytes().replace(b'v42/', b'macos-beta-42/'))
         with patch.object(release.subprocess, 'run') as command:
