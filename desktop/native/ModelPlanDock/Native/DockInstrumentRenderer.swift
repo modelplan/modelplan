@@ -55,7 +55,25 @@ public struct DockInstrumentSkin: Codable, Sendable {
     }
 }
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
-public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool}
+/// Metadata captured by the successful drawing pass, never inferred from pixels.
+public struct DockRenderedTextInspection {
+    public let frame: CGRect
+    public let glyphTransform: CGAffineTransform
+    /// This renderer paints text over the existing face; it paints no dedicated text backing.
+    public let hasDedicatedBacking: Bool
+}
+public struct DockRenderedFaceInspection {
+    public enum Source: String { case suppliedMaterial, bodyPolygon, none }
+    public let source: Source
+    public let pixelSize: CGSize
+    public let fixedResources: [String]
+}
+public struct DockRenderInspection {
+    public let face: DockRenderedFaceInspection
+    public let readouts: [String: DockRenderedTextInspection]
+    public let aliases: [String: DockRenderedTextInspection]
+}
+public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool;public let inspection:DockRenderInspection}
 
 @MainActor public final class DockInstrumentRenderer {
     /// Static material only. Reading text, quotas and vendor identity remain in
@@ -131,8 +149,8 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         }
         // Retain only material/fixed art for a failed data/profile transaction, never old readings.
         guard let backgroundImage = c.makeImage() else { throw DockArtworkError.invalidManifest }
-        var metrics=[DockGlyphMetric]()
-        func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws {
+        var metrics=[DockGlyphMetric](), readouts=[String:DockRenderedTextInspection](), aliases=[String:DockRenderedTextInspection]()
+        @discardableResult func text(_ value:String,_ rect:CGRect,_ recipe:DockTextRecipe,_ color:CGColor) throws -> DockRenderedTextInspection {
             guard recipe.language.map({!$0.isEmpty && $0.utf8.count<=64}) ?? true, value.utf8.count<=1024,recipe.size.isFinite,(1...128).contains(recipe.size),rect.width>0,rect.height>0 else{throw DockArtworkError.invalidManifest}
             let font:CTFont
             if let id=recipe.fontResource {
@@ -166,7 +184,9 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.saveGState();c.clip(to:rect)
             let baseline=rect.midY+(ascent-descent)/2
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
+            let observation = DockRenderedTextInspection(frame: rect, glyphTransform: c.ctm, hasDedicatedBacking: false)
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
+            return observation
         }
         func ring(_ recipe:DockRingRecipe,_ arc:DockQuotaArc?,_ centre:CGPoint) throws {
             guard recipe.radius>0,recipe.width>0,recipe.radius.isFinite,recipe.width.isFinite,
@@ -280,12 +300,13 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             if station.showsReadout != false {
                 let opacity=station.readoutOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try text(reading.readout,station.readout,skin.text,try ink(textColor))
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};readouts[id] = try text(reading.readout,station.readout,skin.text,try ink(textColor))
             }
-            if let alias=reading.alias,let rect=station.aliasRect {try text(alias,rect,skin.aliasText,try ink("alias"))}
+            if let alias=reading.alias,let rect=station.aliasRect {aliases[id] = try text(alias,rect,skin.aliasText,try ink("alias"))}
             if let notice=notices[id] { try drawNotice(notice, station) }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
-        return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false)
+        return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false,
+            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases))
     }
 }

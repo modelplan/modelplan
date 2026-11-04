@@ -5,6 +5,8 @@ import XCTest
 import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanEngineClient
+import ModelPlanCockpitWeb
+import CryptoKit
 @_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor private final class G1Surface: SettingsWindowSurface {
@@ -38,6 +40,41 @@ import ModelPlanEngineClient
         let provider = G1Frames()
         try driver.configure(view: view, skin: skin, readings: [reading], profile: .init(scale: 1), rotation: .init(period: 2), provider: { _ in provider })
         return (driver, view, pool)
+    }
+    func testNormalCockpitRouteCanBeObservedWithoutOpeningWebKitOrAWindow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-headless-cockpit-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func digest(_ data: Data) -> String { SHA256.hash(data:data).map { String(format:"%02x",$0) }.joined() }
+        let resources = root.appendingPathComponent("bundle")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        let html = Data("<html>synthetic</html>".utf8)
+        try html.write(to: resources.appendingPathComponent("index.html"))
+        let manifest = try JSONSerialization.data(withJSONObject: ["schemaVersion":1,"edition":"community","interfaceOnly":true,"files":["index.html":digest(html)]])
+        try manifest.write(to: resources.appendingPathComponent("bundle-manifest.json"))
+        let verified = try VerifiedCockpitBundle(root: resources, manifestSHA256: digest(manifest))
+        let store = try SettingsStore(url: root.appendingPathComponent("profile/settings.json"))
+        _ = try await store.update { $0.theme = .night }
+        var fanout: CockpitStoreFanout?
+        let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, bundleURL: root, verifiedBundleForChecks: verified) { config, consumer in
+            fanout = consumer as? CockpitStoreFanout
+            return ProcessEngineClient(configuration: config, consumer: consumer)
+        }
+        defer { app.composition.dock.close() }
+        XCTAssertNil(app.cockpitStateForChecks)
+        let actual = try XCTUnwrap(fanout)
+        let context = EngineDeliveryContext(sessionID: UUID().uuidString, floor: .init(storeEpoch:"synthetic", generation:1), revision:1)
+        await actual.consume(.context(context))
+        app.showConsole()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while app.cockpitStateForChecks == nil, ContinuousClock.now < deadline { await Task.yield() }
+        let state = try XCTUnwrap(app.cockpitStateForChecks)
+        XCTAssertTrue(state.openRequested)
+        XCTAssertFalse(state.hasWindow); XCTAssertFalse(state.hasWebView)
+        XCTAssertTrue(state.blocked, "A headless inspection must not invent a page-ready receipt")
+        XCTAssertEqual(state.context.storeEpoch, "synthetic")
+        await actual.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:context,nextFloor:nil)))
+        XCTAssertNil(app.cockpitStateForChecks)
     }
     func testFactoryEngineInjectionRetainsActualCockpitFanoutAndPageBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-factory-" + UUID().uuidString)

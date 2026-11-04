@@ -151,6 +151,33 @@ private actor G1DEngine: EngineClient {
         if id.hasPrefix("DOCK-3.8") { try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden) }
         throw XCTSkip("\(id): SEAM-NEEDED \(reason)")
     }
+    func testNormalEntryExposesSuccessfulDrawMetadataAndRetiresItOnClear() async throws {
+        let f = try await fixture()
+        _ = try await f.editor.commit(SettingsB21Edit.alias(.init(subscriptionID: G1DFixture.ids[0], committed: "Alpha")))
+        let view = f.host.dockView
+        let face = try XCTUnwrap(view.renderedFaceMaterialForChecks)
+        XCTAssertEqual(face.source, .suppliedMaterial)
+        XCTAssertGreaterThan(face.pixelSize.width, 0)
+        let readout = try XCTUnwrap(view.renderedReadoutBackingForChecks[G1DFixture.ids[0]])
+        let alias = try XCTUnwrap(view.renderedAliasBackingForChecks[G1DFixture.ids[0]])
+        XCTAssertFalse(readout.hasDedicatedBacking)
+        XCTAssertFalse(alias.hasDedicatedBacking)
+        let transform = try XCTUnwrap(view.renderedReadoutTransformsForChecks[G1DFixture.ids[0]])
+        XCTAssertEqual(transform.b, 0); XCTAssertEqual(transform.c, 0)
+        let gap = try XCTUnwrap(f.host.resolvedT2GapAndOverflowForChecks)
+        XCTAssertGreaterThan(gap.gap, 0)
+        XCTAssertEqual(gap.shownIDs, G1DFixture.ids); XCTAssertTrue(gap.overflowIDs.isEmpty)
+        let curvature = try XCTUnwrap(f.host.resolvedT2CurvatureForChecks)
+        XCTAssertGreaterThan(curvature.radius, 0); XCTAssertEqual(curvature.stations.count, 3)
+        let frame = view.frame
+        _ = view.renderedFaceMaterialForChecks; _ = f.host.resolvedT2CurvatureForChecks
+        XCTAssertEqual(view.frame, frame)
+        _ = try await f.editor.commit(SettingsB21Edit.dockEdge(.left))
+        XCTAssertEqual(f.host.resolvedT2CurvatureForChecks?.input.coordinates.edge, .left)
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(view.renderedReadoutTransformsForChecks.isEmpty)
+        XCTAssertTrue(view.renderedAliasBackingForChecks.isEmpty)
+    }
     func testG1_DOCK_3_6_01() async throws {
         let f = try await fixture(autoHide: true)
         for (size, thickness) in [(SettingsSize.small, 4.0*36/44),(.medium,4),(.large,4.0*52/44)] {
@@ -220,7 +247,14 @@ private actor G1DEngine: EngineClient {
         let f = try await fixture(); let first=G1DFixture.ids[0]
         XCTAssertTrue(try XCTUnwrap(f.host.dockView.nozzleEventDelegate).optionArrow(id:first,keyCode:125))
         try await complete { !f.editor.isSaving && f.editor.snapshot?.preferences.subscriptions.order.first == G1DFixture.ids[1] }
-        XCTExpectFailure("DOCK-3.6-13: normal host does not install the controller's accessibility announcement consumer") { XCTAssertTrue(f.host.orderAnnouncementInstalledForChecks) }
+        XCTAssertTrue(f.host.orderAnnouncementInstalledForChecks)
+        XCTAssertEqual(f.host.dockView.accessibilityValue() as? String, "Synthetic Alpha · Account 1, position 2 of 3")
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertTrue(try XCTUnwrap(f.host.dockView.nozzleEventDelegate).optionArrow(id:first,keyCode:126))
+        try await complete { !f.editor.isSaving && f.editor.snapshot?.preferences.subscriptions.order.first == first }
+        XCTAssertEqual(f.host.dockView.accessibilityValue() as? String, "合成甲 · 账号 1，第 1 项，共 3 项")
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertNil(f.host.dockView.accessibilityValue())
     }
     func testG1_DOCK_3_6_14() async throws {
         let f = try await fixture(); let handler=try XCTUnwrap(f.host.dockView.backgroundDragDelegate), p=try XCTUnwrap(f.host.edgePresentation?.placement)
@@ -308,7 +342,7 @@ private actor G1DEngine: EngineClient {
         XCTAssertNil(f.app.noticeIndicator.notice)
     }
     func testG1_DOCK_3_8_01() async throws { try await seam("DOCK-3.8-01","resolved per-nozzle magnification/lift metadata is absent; stored choice alone is not motion proof") }
-    func testG1_DOCK_3_8_02() async throws { try await seam("DOCK-3.8-02","independent nozzle/readout transform roles are not observable") }
+    func testG1_DOCK_3_8_02() async throws { try await seam("DOCK-3.8-02","readout glyph transforms are exposed; per-nozzle hover/magnification transition still needs observation") }
     func testG1_DOCK_3_8_03() async throws {
         let f = try await fixture(); try f.hover(); f.tick(0.249); XCTAssertTrue(f.host.card.isHidden)
         f.tick(0.002); XCTAssertFalse(f.host.card.isHidden)
@@ -358,9 +392,28 @@ private actor G1DEngine: EngineClient {
         XCTAssertEqual(f.host.dockView.refreshSweepCountForChecks,start+2)
     }
     func testG1_DOCK_3_8_11() async throws {
-        let f = try await fixture();try await f.event();let card=try f.card()
-        XCTAssertTrue(card.rows.contains{$0.id.hasPrefix("reset-event:")})
-        XCTExpectFailure("DOCK-3.8-11: the current card does not expose approved event source links") { XCTAssertFalse(card.links.isEmpty) }
+        let f = try await fixture(); try await f.event(); let card = try f.card()
+        XCTAssertTrue(card.rows.contains { $0.id.hasPrefix("reset-event:") })
+        XCTAssertEqual(card.links.map(\.label), ["Source", "AIHot", "Original source"])
+        XCTAssertTrue(card.rows.first { $0.id.hasPrefix("reset-event:") }?.detail.contains("Scheduled ") == true)
+        XCTAssertEqual(card.links.first?.url.absoluteString, "https://example.test/reset")
+        XCTAssertTrue(try f.card(G1DFixture.ids[2]).links.isEmpty, "An event must not borrow another provider's links")
+        try f.hover(); f.tick(0.25)
+        func buttons(_ view: NSView) -> [NSButton] { (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons) }
+        XCTAssertTrue(buttons(f.host.card).contains { $0.title == "Original source" })
+        _ = try await f.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try f.card().links.map(\.label), ["来源", "AIHot", "原始来源"])
+        var projection = f.raw["projection"] as! [String: Any]
+        var events = projection["resetEvents"] as! [[String: Any]]
+        events[0]["source"] = ["kind":"publication", "publicationId":"0123456789abcdef01234567", "url":"file:///synthetic", "links":[["type":"original", "url":"http://example.test/unsafe"],["type":"original", "url":"https://synthetic:synthetic@example.test/private"],["type":"unknown", "url":"https://example.test/unapproved"]]]
+        projection["resetEvents"] = events; f.raw["projection"] = projection
+        try await f.publish()
+        XCTAssertTrue(try f.card().links.isEmpty, "Only bounded admitted HTTPS source links may reach the card")
+        events[0]["source"] = ["kind":"publication", "publicationId":"0123456789abcdef01234567", "url":"https://example.test/reset", "links":(0..<12).map { ["type":"original", "url":"https://example.test/source-\($0)"] }]
+        projection["resetEvents"] = events; f.raw["projection"] = projection
+        try await f.publish()
+        let bounded = try f.card().links
+        XCTAssertEqual(bounded.count, 8); XCTAssertEqual(Set(bounded.map(\.url)).count, 8)
     }
     func testG1_DOCK_3_8_12() async throws {
         let f = try await fixture();f.mutateFirst{a in var windows=a["windows"] as! [[String:Any]];var extra=windows[0];extra["id"]="scoped";extra["modelScope"]=["models":["synthetic"]];extra["remainingPercent"]=1;windows.append(extra);a["windows"]=windows};try await f.publish()

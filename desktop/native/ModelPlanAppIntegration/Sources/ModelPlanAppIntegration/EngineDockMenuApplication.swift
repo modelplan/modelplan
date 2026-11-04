@@ -5,6 +5,7 @@ import ModelPlanShell
 import ModelPlanEngineClient
 import ModelPlanDock
 import ModelPlanEngineStore
+import ModelPlanCockpitWeb
 import ModelPlanSettings
 #if MODELPLAN_U6_DRIVE
 import ModelPlanMenuVerification
@@ -61,6 +62,8 @@ import ModelPlanMenuVerification
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
+    var inspectCockpitState: (() -> CockpitWindowInspection?)?
+    public var cockpitStateForChecks: CockpitWindowInspection? { inspectCockpitState?() }
     private var firstRunFlow: CommunityConnectionFlow?
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?

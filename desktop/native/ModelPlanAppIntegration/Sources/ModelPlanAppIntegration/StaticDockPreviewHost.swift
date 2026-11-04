@@ -25,6 +25,7 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    var resolvedT2GeometryForChecks: T2Geometry?
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -291,6 +292,14 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var fallbackCardLeaveTask: Task<Void, Never>?
     private var interactionController: DockInteractionController?
     /// The actual installed controller; tests may sample its externally supplied clock.
+    public var resolvedT2GapAndOverflowForChecks: (gap: CGFloat, shownIDs: [String], overflowIDs: [String])? {
+        guard !retired, permitted, interactionView.interactionProjectionAvailable, let value = presentationGeometry.resolvedT2GeometryForChecks else { return nil }
+        return (value.gap, value.shown.map(\.id), value.overflow.map(\.id))
+    }
+    public var resolvedT2CurvatureForChecks: T2Geometry? {
+        guard !retired, permitted, interactionView.interactionProjectionAvailable else { return nil }
+        return presentationGeometry.resolvedT2GeometryForChecks
+    }
     var orderAnnouncementInstalledForChecks: Bool { interactionController?.onOrderAnnouncement != nil }
     var interactionControllerForChecks: DockInteractionController? { interactionController }
     var sliverNoticeMarksForChecks: [DockSliverNoticeMark] { sliver.noticeMarks }
@@ -407,6 +416,22 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             guard let self, let controller, self.interactionController === controller, !self.retired else { return }
             self.renderInteraction(value)
         }
+        controller.onOrderAnnouncement = { [weak self, weak controller] id, position, total in
+            guard let self, let controller, self.interactionController === controller,
+                  self.permitted, !self.retired, controller.isActive,
+                  let input = self.model?.inputs.first(where: { $0.id == id }),
+                  position >= 0, position < total else { return }
+            let current = self.memberSafePreferences.applying(to: input)
+            let name = current.alias ?? current.name
+            let message = self.preferences.language == .english
+                ? "\(name), position \(position + 1) of \(total)"
+                : "\(name)，第 \(position + 1) 项，共 \(total) 项"
+            self.dockView.setAccessibilityValue(message)
+            if self.createsNativePanels {
+                NSAccessibility.post(element: NSApplication.shared, notification: .announcementRequested,
+                    userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            }
+        }
         for view in [dockView] + alternateViews {
             interactionOriginalActions.append((view, view.onAction, view.keyboardNavigationEnabled))
             let events = DockNozzleEvents(controller: controller, edge: { [weak self] in
@@ -456,7 +481,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
     public func uninstallInteraction(_ controller: DockInteractionController) {
         guard interactionController === controller else { return }
-        controller.onPresent = nil
+        controller.onPresent = nil; controller.onOrderAnnouncement = nil
+        dockView.setAccessibilityValue(nil)
         for (index, original) in interactionOriginalActions.enumerated() {
             let (view, action, keyboard) = original
             if index < interactionEvents.count, view.nozzleEventDelegate === interactionEvents[index] {
@@ -1387,6 +1413,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
+                links: model?.presentationRows[id]?.links ?? [],
                 enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }

@@ -191,7 +191,13 @@ public enum EngineDeadlineFacts {
             passSignals.append(signal)
             for event in preferred.map({[$0]}) ?? [] {
                 let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
-                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
+                let formatter = ISO8601DateFormatter()
+                var details = [english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置",
+                               (english ? "Published ":"发布于 ") + formatter.string(from:event.publishedAt)]
+                if let from=event.scheduledFrom, let through=event.scheduledThrough {
+                    details.append((english ? "Scheduled ":"预计时间 ") + formatter.string(from:from) + " -- " + formatter.string(from:through))
+                }
+                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:details.joined(separator:" · ")))
             }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
                account.valueState == .current || account.valueState == .retained,
@@ -240,7 +246,16 @@ public enum EngineDeadlineFacts {
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,cardReadingState:cardState)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,
+                links: preferred?.sourceLinks.map { source in
+                    let label: String
+                    switch source.kind {
+                    case "publication": label=english ? "Source":"来源"
+                    case "aihot": label="AIHot"
+                    default: label=english ? "Original source":"原始来源"
+                    }
+                    return DockCardLink(label:label,url:source.url)
+                } ?? [],cardReadingState:cardState)
         }
         let status: String
         switch value.status {

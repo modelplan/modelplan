@@ -73,6 +73,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var onVisualReset:(()->Void)?
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
+    private var renderedInspection: DockRenderInspection?
+    public var renderedFaceMaterialForChecks: DockRenderedFaceInspection? { failed || community ? nil : renderedInspection?.face }
+    public var renderedReadoutBackingForChecks: [String: DockRenderedTextInspection] { failed || community ? [:] : renderedInspection?.readouts ?? [:] }
+    public var renderedAliasBackingForChecks: [String: DockRenderedTextInspection] { failed || community ? [:] : renderedInspection?.aliases ?? [:] }
+    public var renderedReadoutTransformsForChecks: [String: CGAffineTransform] { renderedReadoutBackingForChecks.mapValues(\.glyphTransform) }
     private var officialRenderer: DockInstrumentRenderer?
     private var refreshSweepTask: Task<Void, Never>?
     private var refreshSweepOriginal: CGImage?
@@ -241,7 +246,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
-            self.officialRenderer=renderer
+            self.officialRenderer=renderer; renderedInspection=result.inspection
             orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size=skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
@@ -260,14 +265,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
-        resetVisuals(); community = false; failed = true
+        resetVisuals(); setAccessibilityValue(nil); community = false; failed = true
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    public func dispose(){setAccessibilityValue(nil);appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    private func resetVisuals(){renderedInspection=nil;cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {

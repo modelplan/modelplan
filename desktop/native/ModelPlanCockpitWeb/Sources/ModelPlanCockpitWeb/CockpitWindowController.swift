@@ -3,6 +3,12 @@ import AppKit
 import ModelPlanWire
 import WebKit
 
+public struct CockpitWindowInspection {
+  public let openRequested: Bool, hasWindow: Bool, hasWebView: Bool
+  public let context: CockpitEngineContext
+  public let blocked: Bool, disposed: Bool
+}
+
 public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, localEncoding }
 
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
@@ -62,6 +68,21 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private let appearance: CockpitAppearance
   public let bridge: CockpitBridgeState
   private var web: WKWebView?
+  private var permitsNativePresentation = true
+  private var openRequested = false
+  public var stateForChecks: CockpitWindowInspection {
+    .init(openRequested: openRequested, hasWindow: window != nil, hasWebView: web != nil,
+          context: bridge.context, blocked: bridge.blocked, disposed: bridge.disposed)
+  }
+  /// Test composition only: keep the real controller/bridge without starting a browser.
+  /// No ready/rendered/clear receipt is fabricated by this constructor.
+  @_spi(DockResourceChecks) public static func withoutWindowForChecks(
+    bundle: VerifiedCockpitBundle, context: CockpitEngineContext, appearance: CockpitAppearance
+  ) -> CockpitWindowController {
+    let page = CockpitWindowController(bundle: bundle, context: context, appearance: appearance)
+    page.permitsNativePresentation = false
+    return page
+  }
   private let proxy = MessageProxy()
   private var observers: [NSObjectProtocol] = []
   private var lastVisibility: CockpitVisibility?
@@ -94,6 +115,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   required init?(coder: NSCoder) { nil }
   public func open() {
+    openRequested = true
+    guard permitsNativePresentation else { return }
     guard web == nil, !bridge.disposed else {
       window?.makeKeyAndOrderFront(nil)
       return
