@@ -151,6 +151,50 @@ private actor G1DEngine: EngineClient {
         if id.hasPrefix("DOCK-3.8") { try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden) }
         throw XCTSkip("\(id): SEAM-NEEDED \(reason)")
     }
+    func testNormalEntryReportsDrawOrderResourceFiltersNozzleMaterialsAndClockDots() async throws {
+        let f = try await fixture(); let view = f.host.dockView, first = G1DFixture.ids[0]
+        var projection = f.raw["projection"] as! [String:Any], rows = projection["rows"] as! [[String:Any]]
+        rows[0]["vendorKey"] = "openai"; projection["rows"] = rows; f.raw["projection"] = projection
+        try await f.publish()
+        let roles = view.renderedLayerRolesForChecks
+        XCTAssertEqual(roles.first?.role, "face.supplied-material")
+        let outer = try XCTUnwrap(roles.firstIndex { $0.subscriptionID == first && $0.role == "quota.outer" })
+        let inner = try XCTUnwrap(roles.firstIndex { $0.subscriptionID == first && $0.role == "quota.inner" })
+        let readout = try XCTUnwrap(roles.firstIndex { $0.subscriptionID == first && $0.role == "readout" })
+        XCTAssertLessThan(outer, inner); XCTAssertLessThan(inner, readout)
+        let resources = view.renderedResourceFiltersForChecks
+        XCTAssertTrue(resources.contains { $0.preservesSourcePixels && $0.interpolationQuality == .high })
+        XCTAssertTrue(resources.contains { $0.fitsVisibleGlyph && $0.interpolationQuality == .none })
+        XCTAssertTrue(resources.contains { $0.subscriptionID == first && !$0.fitsVisibleGlyph })
+        let nozzle = try XCTUnwrap(view.renderedNozzleMaterialForChecks[first])
+        XCTAssertEqual(nozzle.resources.count, 4); XCTAssertNil(nozzle.replacementResource)
+        XCTAssertNotNil(nozzle.caseInk); XCTAssertNotNil(nozzle.radialOverlay)
+        let clock = try XCTUnwrap(view.renderedClockDotsForChecks[first])
+        XCTAssertGreaterThan(clock.positions, 0); XCTAssertGreaterThan(clock.litCentres.count, 0)
+        XCTAssertLessThanOrEqual(clock.litCentres.count, clock.positions)
+        XCTAssertGreaterThan(clock.dotRadius, 0); XCTAssertGreaterThan(clock.backingWidth, 0)
+        let frame = view.frame
+        _ = view.renderedResourceFiltersForChecks; _ = view.renderedClockDotsForChecks
+        XCTAssertEqual(view.frame, frame)
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(view.renderedLayerRolesForChecks.allSatisfy { $0.subscriptionID == nil })
+        XCTAssertTrue(view.renderedResourceFiltersForChecks.allSatisfy { $0.subscriptionID == nil })
+        XCTAssertTrue(view.renderedNozzleMaterialForChecks.isEmpty); XCTAssertTrue(view.renderedClockDotsForChecks.isEmpty)
+    }
+    func testNormalEntryIgnitionInspectionFollowsTheBuildSwitchAndExposesActualGrip() async throws {
+        for enabled in [false, true] {
+            let f = try await fixture(cockpitEnabled:enabled)
+            let ignition = try XCTUnwrap(f.host.ignitionPresentationForChecks)
+            XCTAssertEqual(ignition.enabled, enabled); XCTAssertEqual(ignition.veilVisible, !enabled)
+            XCTAssertTrue(ignition.visible); XCTAssertGreaterThan(ignition.frame.width, 0)
+            let grip = try XCTUnwrap(f.host.resolvedT2GripForChecks)
+            XCTAssertTrue(grip.x.isFinite && grip.y.isFinite)
+            XCTAssertNotEqual(grip, f.host.resolvedT2CurvatureForChecks?.button)
+            await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+            XCTAssertNotNil(f.host.resolvedT2GripForChecks, "The actual empty widget still renders its public grip")
+            XCTAssertTrue(f.host.resolvedT2GapAndOverflowForChecks?.shownIDs.isEmpty == true)
+        }
+    }
     func testNormalEntryExposesSuccessfulDrawMetadataAndRetiresItOnClear() async throws {
         let f = try await fixture()
         _ = try await f.editor.commit(SettingsB21Edit.alias(.init(subscriptionID: G1DFixture.ids[0], committed: "Alpha")))

@@ -77,6 +77,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var renderedFaceMaterialForChecks: DockRenderedFaceInspection? { failed || community ? nil : renderedInspection?.face }
     public var renderedReadoutBackingForChecks: [String: DockRenderedTextInspection] { failed || community ? [:] : renderedInspection?.readouts ?? [:] }
     public var renderedAliasBackingForChecks: [String: DockRenderedTextInspection] { failed || community ? [:] : renderedInspection?.aliases ?? [:] }
+    public var renderedLayerRolesForChecks: [DockRenderedLayerRole] { failed || community ? [] : renderedInspection?.layerRoles ?? [] }
+    public var renderedResourceFiltersForChecks: [DockRenderedResourceFilter] { failed || community ? [] : renderedInspection?.resourceFilters ?? [] }
+    public var renderedNozzleMaterialForChecks: [String:DockRenderedNozzleMaterial] { failed || community ? [:] : renderedInspection?.nozzles ?? [:] }
+    public var renderedClockDotsForChecks: [String:DockRenderedClockDots] { failed || community ? [:] : renderedInspection?.clockDots ?? [:] }
     public var renderedReadoutTransformsForChecks: [String: CGAffineTransform] { renderedReadoutBackingForChecks.mapValues(\.glyphTransform) }
     private var officialRenderer: DockInstrumentRenderer?
     private var refreshSweepTask: Task<Void, Never>?

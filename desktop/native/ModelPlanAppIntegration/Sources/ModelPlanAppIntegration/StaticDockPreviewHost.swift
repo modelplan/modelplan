@@ -132,6 +132,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public private(set) var lastWorkingEffectError: Error?
     /// Samples the installed driver only; an absent or unobservable effect has no invented frame.
     public var workingEffectFramesForChecks: [String: Int] { workingDriver?.frameIndicesForChecks ?? [:] }
+    public var workingEffectFrameBoundsForChecks: [String:CGRect] { workingDriver?.frameBoundsForChecks ?? [:] }
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
@@ -295,6 +296,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var resolvedT2GapAndOverflowForChecks: (gap: CGFloat, shownIDs: [String], overflowIDs: [String])? {
         guard !retired, permitted, interactionView.interactionProjectionAvailable, let value = presentationGeometry.resolvedT2GeometryForChecks else { return nil }
         return (value.gap, value.shown.map(\.id), value.overflow.map(\.id))
+    }
+    /// Registered grip in the same study coordinates as the actual T2 geometry.
+    public var resolvedT2GripForChecks: CGPoint? { resolvedT2CurvatureForChecks?.grip }
+    public var ignitionPresentationForChecks: (enabled: Bool, visible: Bool, frame: CGRect, veilVisible: Bool)? {
+        guard !retired, permitted, presentationGeometry.consoleButton != nil else { return nil }
+        return (consoleButton.isEnabled, !consoleButton.isHiddenOrHasHiddenAncestor,
+                consoleButton.frame, !cockpitVeil.isHiddenOrHasHiddenAncestor)
     }
     public var resolvedT2CurvatureForChecks: T2Geometry? {
         guard !retired, permitted, interactionView.interactionProjectionAvailable else { return nil }

@@ -68,10 +68,30 @@ public struct DockRenderedFaceInspection {
     public let pixelSize: CGSize
     public let fixedResources: [String]
 }
+/// Completed operations in this renderer; supplied material internals remain opaque.
+public struct DockRenderedLayerRole {
+    public let role: String, subscriptionID: String?, resource: String?
+}
+public struct DockRenderedResourceFilter {
+    public let resource: String, subscriptionID: String?
+    public let target: CGRect, interpolationQuality: CGInterpolationQuality
+    public let preservesSourcePixels: Bool, fitsVisibleGlyph: Bool
+}
+public struct DockRenderedNozzleMaterial {
+    public let frame: CGRect, resources: [String], replacementResource: String?
+    public let caseInk: DockInk?, radialOverlay: DockRadialOverlayRecipe?
+}
+public struct DockRenderedClockDots {
+    public let positions: Int, litCentres: [CGPoint]
+    public let radius: CGFloat, dotRadius: CGFloat, backingWidth: CGFloat
+    public let ink: DockInk, backingInk: DockInk
+}
 public struct DockRenderInspection {
     public let face: DockRenderedFaceInspection
     public let readouts: [String: DockRenderedTextInspection]
     public let aliases: [String: DockRenderedTextInspection]
+    public let layerRoles: [DockRenderedLayerRole], resourceFilters: [DockRenderedResourceFilter]
+    public let nozzles: [String: DockRenderedNozzleMaterial], clockDots: [String: DockRenderedClockDots]
 }
 public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool;public let inspection:DockRenderInspection}
 
@@ -103,7 +123,10 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         c.translateBy(x:-skin.bounds.minX,y:-skin.bounds.minY)
         c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
         func ink(_ name:String) throws -> CGColor {guard let v=skin.palette[name],v.valid else{throw DockArtworkError.invalidManifest};return v.cg}
-        func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false,fitVisibleGlyph:Bool = false) throws {
+        var layerRoles = [DockRenderedLayerRole](), resourceFilters = [DockRenderedResourceFilter]()
+        var nozzleMaterials = [String:DockRenderedNozzleMaterial](), clockDots = [String:DockRenderedClockDots]()
+        func role(_ name: String, _ id: String? = nil, resource: String? = nil) { layerRoles.append(.init(role:name,subscriptionID:id,resource:resource)) }
+        func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false,fitVisibleGlyph:Bool = false,role imageRole:String="bitmap",subscriptionID:String?=nil) throws {
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
             let size=Int(ceil(max(rect.width,rect.height)*CGFloat(scale)))
             let image: CGImage
@@ -130,21 +153,24 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             // do not blur them a second time when placing the checked pixels.
             if isVector || fitVisibleGlyph { c.interpolationQuality = .none }
             c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
+            let interpolation = c.interpolationQuality
             c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
+            resourceFilters.append(.init(resource:resource,subscriptionID:subscriptionID,target:target,interpolationQuality:interpolation,preservesSourcePixels:preserveSourcePixels,fitsVisibleGlyph:fitVisibleGlyph))
+            role(imageRole,subscriptionID,resource:resource)
         }
         if let material {
             let backing = try material(skin, scale)
             guard backing.width == width, backing.height == height else { throw DockArtworkError.invalidManifest }
             c.saveGState();c.translateBy(x:skin.bounds.minX,y:skin.bounds.maxY);c.scaleBy(x:1,y:-1)
-            c.draw(backing,in:CGRect(origin:.zero,size:skin.bounds.size));c.restoreGState()
+            c.draw(backing,in:CGRect(origin:.zero,size:skin.bounds.size));c.restoreGState(); role("face.supplied-material")
         } else if !skin.bodyPolygon.isEmpty {
-            c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath()
+            c.addLines(between:skin.bodyPolygon);c.closePath();c.setFillColor(try ink("body"));c.fillPath(); role("face.body-polygon")
         }
         for fixed in skin.fixedLayers {
             let opacity = fixed.opacity ?? 1
             guard opacity.isFinite, (0...1).contains(opacity) else { throw DockArtworkError.invalidManifest }
             c.saveGState(); c.setAlpha(opacity)
-            do { try image(fixed.resource,fixed.rect,preserveSourcePixels:true); c.restoreGState() }
+            do { try image(fixed.resource,fixed.rect,preserveSourcePixels:true,role:"fixed-resource"); c.restoreGState() }
             catch { c.restoreGState(); throw error }
         }
         // Retain only material/fixed art for a failed data/profile transaction, never old readings.
@@ -225,6 +251,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                     if let key=station.eventBackdropKey {c.setFillColor(try ink(key));c.fillEllipse(in:r)}
                     c.setStrokeColor(try ink(palette));c.setLineWidth(stroke);c.strokeEllipse(in:r.insetBy(dx:stroke/2,dy:stroke/2))
                 }
+                role("notice",station.subscriptionID)
         }
         for station in skin.stations {
             guard station.diameter.isFinite,(8...256).contains(station.diameter),station.clock.positions>0,station.clock.positions<=128 else{throw DockArtworkError.invalidManifest}
@@ -236,11 +263,11 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 c.saveGState(); c.setFillColor(try ink(style.fillKey)); c.fillEllipse(in: frame)
                 c.setStrokeColor(try ink(style.strokeKey)); c.setLineWidth(style.strokeWidth); c.setLineDash(phase: 0, lengths: style.dash)
                 c.strokeEllipse(in: frame.insetBy(dx: style.strokeWidth / 2, dy: style.strokeWidth / 2)); c.restoreGState()
-                try text(label, frame, station.placeholderText ?? skin.text, try ink(style.textKey))
+                role("empty-station.backing"); try text(label, frame, station.placeholderText ?? skin.text, try ink(style.textKey)); role("empty-station.label")
                 continue
             }
             if station.replacementResource == nil {
-                for layer in station.layers { try image(layer,frame) }
+                for layer in station.layers { try image(layer,frame,role:"nozzle-resource",subscriptionID:station.subscriptionID) }
                 if let overlay = station.radialOverlay {
                     guard overlay.radius.isFinite, overlay.radius > 0, overlay.radius <= station.diameter,
                           overlay.alphas.count >= 2, overlay.alphas.count <= 128,
@@ -253,60 +280,65 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                     c.drawRadialGradient(gradient, startCenter: station.centre, startRadius: 0,
                                          endCenter: station.centre, endRadius: overlay.radius,
                                          options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-                    c.restoreGState()
+                    c.restoreGState(); role("nozzle.radial-overlay",station.subscriptionID)
                 }
             }
             guard let id=station.subscriptionID,let reading=readings[id] else {
                 if let n=station.overflowCount {
-                    try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text"))
+                    try text("+\(n)",frame,station.placeholderText ?? skin.text,try ink("text")); role("overflow.label")
                     if let key=station.overflowNoticeKey, let notice=notices[key] { try drawNotice(notice, station) }
                 }
-                else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text"))}
+                else if let label=station.placeholderLabel {try text(label,frame,station.placeholderText ?? skin.text,try ink("text")); role("placeholder.label")}
                 continue
             }
-            if let replacement=station.replacementResource {try image(replacement,frame)} else {
+            if let replacement=station.replacementResource {try image(replacement,frame,role:"nozzle-replacement",subscriptionID:id)} else {
             let radius = reading.inner == nil ? (station.singleWindowCaseInnerRadius ?? station.caseInnerRadius) : station.caseInnerRadius
             guard radius.isFinite,radius>=0,radius<station.diameter/2 else{throw DockArtworkError.invalidManifest}
             c.setLineWidth(station.diameter/2-radius);c.setStrokeColor(try ink("case"))
             let rr=(radius+station.diameter/2)/2
-            c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr))
-            try ring(station.outer,reading.outer,station.centre)
-            if reading.inner != nil {try ring(station.inner,reading.inner,station.centre)}
+            c.strokeEllipse(in:CGRect(x:station.centre.x-rr,y:station.centre.y-rr,width:2*rr,height:2*rr)); role("nozzle.case",id)
+            try ring(station.outer,reading.outer,station.centre); role("quota.outer",id)
+            if reading.inner != nil {try ring(station.inner,reading.inner,station.centre); role("quota.inner",id)}
             if station.notchWidth>0 {
                 c.setLineWidth(station.notchWidth);c.setStrokeColor(try ink("notch"))
                 c.move(to:CGPoint(x:station.centre.x,y:station.centre.y-station.diameter/2))
-                c.addLine(to:CGPoint(x:station.centre.x,y:station.centre.y-radius));c.strokePath()
+                c.addLine(to:CGPoint(x:station.centre.x,y:station.centre.y-radius));c.strokePath(); role("nozzle.notch",id)
             }
             if let key=reading.vendorResourceKey,let resource=station.glyphs[key] {
                 let opacity=station.glyphOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true)
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true,role:"vendor-glyph",subscriptionID:id)
             } else if station.fallbackVendorName == true {
-                try text(reading.name, station.glyphRect, skin.aliasText, try ink("text"))
+                try text(reading.name, station.glyphRect, skin.aliasText, try ink("text")); role("vendor-name",id)
             }
             }
+            nozzleMaterials[id] = .init(frame:frame,resources:station.replacementResource.map { [$0] } ?? station.layers,replacementResource:station.replacementResource,caseInk:station.replacementResource == nil ? skin.palette["case"]:nil,radialOverlay:station.replacementResource == nil ? station.radialOverlay:nil)
             if reading.timeLeftFraction != nil {
                 let clock=station.clock,r=clock.radius
                 guard r>0,r.isFinite,clock.dotRadius>0,clock.backWidth>=0 else{throw DockArtworkError.invalidManifest}
                 c.setLineWidth(clock.backWidth);c.setStrokeColor(try ink("clockBack"))
                 c.strokeEllipse(in:CGRect(x:station.centre.x-r,y:station.centre.y-r,width:2*r,height:2*r))
+                role("clock.backing",id)
                 let count=reading.litTimePoints(positions:clock.positions) ?? 0
+                var centres = [CGPoint]()
                 c.setFillColor(try ink("clock"))
                 for i in 0..<count {let a=Double(i)*2 * .pi/Double(clock.positions)
                     let p=CGPoint(x:station.centre.x+sin(a)*r,y:station.centre.y-cos(a)*r)
-                    c.fillEllipse(in:CGRect(x:p.x-clock.dotRadius,y:p.y-clock.dotRadius,width:2*clock.dotRadius,height:2*clock.dotRadius))}
+                    c.fillEllipse(in:CGRect(x:p.x-clock.dotRadius,y:p.y-clock.dotRadius,width:2*clock.dotRadius,height:2*clock.dotRadius));centres.append(p)}
+                if count > 0 { role("clock.dots",id) }
+                clockDots[id] = .init(positions:clock.positions,litCentres:centres,radius:r,dotRadius:clock.dotRadius,backingWidth:clock.backWidth,ink:skin.palette["clock"]!,backingInk:skin.palette["clockBack"]!)
             }
             let textColor=skin.readoutPalette?[reading.status.rawValue] ?? (reading.status == .warning || reading.status == .critical ? reading.status.rawValue : reading.status == .unknown ? "unknown":"text")
             if station.showsReadout != false {
                 let opacity=station.readoutOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
-                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};readouts[id] = try text(reading.readout,station.readout,skin.text,try ink(textColor))
+                c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};readouts[id] = try text(reading.readout,station.readout,skin.text,try ink(textColor)); role("readout",id)
             }
-            if let alias=reading.alias,let rect=station.aliasRect {aliases[id] = try text(alias,rect,skin.aliasText,try ink("alias"))}
+            if let alias=reading.alias,let rect=station.aliasRect {aliases[id] = try text(alias,rect,skin.aliasText,try ink("alias")); role("alias",id)}
             if let notice=notices[id] { try drawNotice(notice, station) }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
         return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false,
-            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases))
+            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases, layerRoles:layerRoles, resourceFilters:resourceFilters, nozzles:nozzleMaterials, clockDots:clockDots))
     }
 }
