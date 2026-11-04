@@ -59,6 +59,7 @@ import ModelPlanSettings
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
+        owner.menuAnchor = { [weak application] in application?.cockpitMenuAnchor }
         return application
     }
 }
@@ -70,6 +71,8 @@ import ModelPlanSettings
     var settings: (() -> Void)?
     var pageFailure: (() -> Void)?
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
+    let shellSession = CockpitShellSession()
+    var menuAnchor: () -> CGRect? = { nil }
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
@@ -80,7 +83,11 @@ import ModelPlanSettings
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
-        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        return makePage(context:context,verified:verified)
+    }
+    func makePage(context: CockpitEngineContext, verified: VerifiedCockpitBundle) -> CockpitWindowController {
+        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
+            shellSession:shellSession,anchor:{ [weak self] in self?.menuAnchor() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)

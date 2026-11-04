@@ -22,6 +22,10 @@ import ModelPlanMenuVerification
     private let appBundleURL: URL
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
+    var cockpitMenuAnchor: CGRect? {
+        guard let button = status?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
     private(set) var liveStatusMenu: NSMenu?
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
