@@ -67,7 +67,7 @@ private actor G1RowsClient: EngineClient {
 }
 
 @MainActor final class G1WidgetSettingsJourneys: XCTestCase {
-    private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false,
+    private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false, thirdMember: Bool = false,
                          five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
                          resetStatus: String? = nil, newReading: Bool = false) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -103,6 +103,12 @@ private actor G1RowsClient: EngineClient {
             secondWindows[0]["remainingPercent"] = secondFive; secondWindows[1]["remainingPercent"] = secondWeek
             second["windows"] = secondWindows; accounts.append(second)
         }
+        if thirdMember {
+            var third = accounts[0]
+            third["subscriptionRef"] = "1111222233334444"; third["accountLocator"] = "1111222233334444"
+            var plan = try XCTUnwrap(third["plan"] as? [String: Any]); plan["id"] = "g1-third"; third["plan"] = plan
+            accounts.append(third)
+        }
         rows[0]["accounts"] = accounts
         projection["rows"] = empty ? [] : rows
         if let resetStatus {
@@ -127,9 +133,9 @@ private actor G1RowsClient: EngineClient {
         root["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
-    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
+    private func open(_ environment: G1DisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, thirdMember: Bool = false, clock: G1Clock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
-        let fixture = try fixture(empty: empty, secondMember: secondMember, resetStatus: resetStatus)
+        let fixture = try fixture(empty: empty, secondMember: secondMember, thirdMember: thirdMember, resetStatus: resetStatus)
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: configuration,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
@@ -471,6 +477,8 @@ private actor G1RowsClient: EngineClient {
     }
 
     func testG1_DOCK_3_2_02() async throws {
+        // TODO(G1): inspect rendered ring continuity and ink, not just the input recipe,
+        // after M2's actual-render inspection interface is available to this target.
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-dual-rings-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
         let app = try await open(G1DisplayEnvironment(), profile: profile)
@@ -602,27 +610,36 @@ private actor G1RowsClient: EngineClient {
     }
 
     func testG1_DOCK_3_3_12() async throws {
+        // TODO(G1): compare renderedStationFramesForChecks with these registered
+        // coordinates after M2's inspection seam and makeForChecks initializer land.
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-t2-pitch-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
-        let app = try await open(G1DisplayEnvironment(), profile: profile, secondMember: true)
+        let app = try await open(G1DisplayEnvironment(), profile: profile, secondMember: true, thirdMember: true)
         defer { app.composition.dock.close() }
         let view = app.composition.dock.dockView
-        let size = try XCTUnwrap(view.appearanceDisplaySize), skin = try XCTUnwrap(view.presentedSkinForChecks)
-        let prefs = try XCTUnwrap(app.settingsHost.application.editor.snapshot?.preferences)
-        let subscriptions = [T2Subscription(id: "0123456789abcdef"), T2Subscription(id: "fedcba9876543210")]
-        let coords = T2EdgeCoordinates(edge: .right, width: size.width, height: size.height, menuBarExclusion: view.appearanceMenuBarExclusion)
-        let geometry = try T2Geometry.make(subscriptions: subscriptions, input: .init(coordinates: coords, diameter: prefs.size.nozzleDiameter, showsPercentages: prefs.showPercentages, along: prefs.dockAlongFraction))
-        XCTAssertEqual(skin.stations.count, geometry.stations.count)
-        for expected in geometry.stations {
-            let id = try XCTUnwrap(expected.subscription?.id)
-            let actual = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
-            XCTAssertEqual(actual.centre.x, expected.centre.x, accuracy: 0.0001)
-            XCTAssertEqual(actual.centre.y, expected.centre.y, accuracy: 0.0001)
-            XCTAssertNotEqual(expected.pitch, 82, accuracy: 0.0001)
+        let editor = app.settingsHost.application.editor
+        let subscriptions = ["0123456789abcdef", "fedcba9876543210", "1111222233334444"].map { T2Subscription(id: $0) }
+        for (edge, geometryEdge) in [(SettingsDockEdge.left, T2Edge.left), (.right, .right), (.bottom, .bottom)] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for settingSize in [SettingsSize.small, .medium, .large] {
+                _ = try await editor.commit(SettingsB20Edit.size(settingSize))
+                let size = try XCTUnwrap(view.appearanceDisplaySize), skin = try XCTUnwrap(view.presentedSkinForChecks)
+                let prefs = try XCTUnwrap(editor.snapshot?.preferences)
+                let coords = T2EdgeCoordinates(edge: geometryEdge, width: size.width, height: size.height, menuBarExclusion: view.appearanceMenuBarExclusion)
+                let geometry = try T2Geometry.make(subscriptions: subscriptions, input: .init(coordinates: coords, diameter: prefs.size.nozzleDiameter, showsPercentages: prefs.showPercentages, along: prefs.dockAlongFraction))
+                XCTAssertEqual(skin.stations.count, 3)
+                for expected in geometry.stations {
+                    let id = try XCTUnwrap(expected.subscription?.id)
+                    let actual = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
+                    XCTAssertEqual(actual.centre.x, expected.centre.x, accuracy: 0.0001)
+                    XCTAssertEqual(actual.centre.y, expected.centre.y, accuracy: 0.0001)
+                    XCTAssertNotEqual(expected.pitch, 82, accuracy: 0.0001)
+                }
+                let expectedBounds = geometry.outline.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
+                    .union(geometry.ignitionBounds.insetBy(dx: -4 * prefs.size.nozzleDiameter / 52, dy: -4 * prefs.size.nozzleDiameter / 52)).integral
+                XCTAssertEqual(skin.bounds, expectedBounds)
+            }
         }
-        let expectedBounds = geometry.outline.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
-            .union(geometry.ignitionBounds.insetBy(dx: -4 * prefs.size.nozzleDiameter / 52, dy: -4 * prefs.size.nozzleDiameter / 52)).integral
-        XCTAssertEqual(skin.bounds, expectedBounds)
         await app.composition.stop()
     }
 
