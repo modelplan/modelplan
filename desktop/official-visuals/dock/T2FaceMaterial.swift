@@ -32,6 +32,7 @@ public struct T2RenderedMaterialInspection {
     /// geometry, so cropping changes neither gradient registration nor noise phase.
     public func render(geometry: T2Geometry, viewport: CGRect, scale: Int) throws -> CGImage {
         renderedMaterialForChecks = nil; renderedLayerRolesForChecks = []
+        var completedLayers: [String] = []
         guard (1...3).contains(scale), !viewport.isEmpty,
               [viewport.minX, viewport.minY, viewport.width, viewport.height].allSatisfy(\.isFinite),
               viewport.width <= 4096, viewport.height <= 4096,
@@ -55,8 +56,9 @@ public struct T2RenderedMaterialInspection {
         outline.closeSubpath(); context.addPath(outline); context.clip()
         let inks: [[CGFloat]] = [[21,29,35], [54,63,68], [38,50,57], [16,27,36], [3,9,17]]
         let colors = inks.map { CGColor(colorSpace: srgb, components: [$0[0]/255, $0[1]/255, $0[2]/255, 1])! }
+        let gradientLocations: [CGFloat] = [0, 0.17, 0.43, 0.74, 1]
         guard let gradient = CGGradient(colorsSpace: srgb, colors: colors as CFArray,
-            locations: [0, 0.17, 0.43, 0.74, 1]) else { throw RenderError.allocation }
+            locations: gradientLocations) else { throw RenderError.allocation }
         let c = geometry.input.coordinates, depth = geometry.freeDepth
         let start: CGPoint, end: CGPoint
         switch c.edge {
@@ -68,6 +70,7 @@ public struct T2RenderedMaterialInspection {
         context.drawLinearGradient(gradient, start: start, end: end,
             options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
         guard let source = context.makeImage() else { throw RenderError.allocation }
+        completedLayers.append("face.gradient")
 
         var samples = [Float](repeating: 0, count: width * height * 4)
         for row in 0..<height {
@@ -108,6 +111,7 @@ public struct T2RenderedMaterialInspection {
         let clip = CIFilter.sourceInCompositing()
         clip.inputImage = blended; clip.backgroundImage = graphic
         let clipped = try checked(clip.outputImage, "sourceInFace")
+        completedLayers.append("face.grain")
         // face-view.js places three quadratic soot fans per station. They use
         // the station mapping, never a second fit to the face contour.
         guard let sootContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
@@ -145,6 +149,7 @@ public struct T2RenderedMaterialInspection {
         let sootOver = CIFilter.sourceOverCompositing()
         sootOver.inputImage = soot; sootOver.backgroundImage = clipped
         let withSoot = try checked(sootOver.outputImage, "sourceOverSoot")
+        completedLayers.append("face.soot")
         guard let wellContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * 4, space: srgb,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw RenderError.allocation }
@@ -158,6 +163,7 @@ public struct T2RenderedMaterialInspection {
         let wellOver = CIFilter.sourceOverCompositing()
         wellOver.inputImage = CIImage(cgImage: wellBitmap); wellOver.backgroundImage = withSoot
         let face = try checked(wellOver.outputImage, "sourceOverWell")
+        completedLayers.append("ignition.well")
         guard let result = compositor.createCGImage(face, from: canvas)
                 ?? softwareCompositor.createCGImage(face, from: canvas) else { throw RenderError.filterRender }
         guard result.width == width, result.height == height else { throw RenderError.filterExtent("renderedBitmap") }
@@ -188,10 +194,11 @@ public struct T2RenderedMaterialInspection {
         final.addPath(inset); final.setFillColor(CGColor(gray: 1, alpha: 28.0/255)); final.drawPath(using: .eoFill)
         final.restoreGState()
         guard let finished = final.makeImage() else { throw RenderError.allocation }
+        completedLayers.append("grip")
         renderedMaterialForChecks = .init(sourceIdentity: String(reflecting: type(of: self)), viewport: viewport,
             pixelSize: .init(width: finished.width, height: finished.height), scale: scale,
-            gradientRGB: inks, gradientLocations: [0, 0.17, 0.43, 0.74, 1], grainOpacity: T2Grain.opacity)
-        renderedLayerRolesForChecks = ["face.gradient", "face.grain", "face.soot", "ignition.well", "grip"]
+            gradientRGB: inks, gradientLocations: gradientLocations, grainOpacity: T2Grain.opacity)
+        renderedLayerRolesForChecks = completedLayers
         return finished
     }
 }

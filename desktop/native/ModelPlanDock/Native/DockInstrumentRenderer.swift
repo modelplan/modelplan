@@ -90,12 +90,28 @@ public struct DockRenderedClockDots {
     public let radius: CGFloat, dotRadius: CGFloat, backingWidth: CGFloat
     public let ink: DockInk, backingInk: DockInk
 }
+/// Successful glyph/text operations; source-RGBA logos have no single invented tint.
+public struct DockRenderedLogoInspection {
+    public enum ColourTreatment: String { case sourceRGBA, paletteText }
+    public let resource: String?, fallbackText: String?
+    public let frame: CGRect, opacity: Double
+    public let colourTreatment: ColourTreatment
+    public let tint: DockInk?
+}
+public struct DockRenderedWidgetValue {
+    public let text: String
+    public let displayedPercent: Double?, remainingPercent: Double?, selectedWindowID: String?
+    public let quotaRole: DockQuotaStatus
+    public let colorRole: String, ink: DockInk
+    public let opacity: Double
+}
 public struct DockRenderInspection {
     public let face: DockRenderedFaceInspection
     public let readouts: [String: DockRenderedTextInspection]
     public let aliases: [String: DockRenderedTextInspection]
     public let layerRoles: [DockRenderedLayerRole], resourceFilters: [DockRenderedResourceFilter]
     public let nozzles: [String: DockRenderedNozzleMaterial], clockDots: [String: DockRenderedClockDots]
+    public let logos: [String: DockRenderedLogoInspection], widgetValues: [String: DockRenderedWidgetValue]
 }
 public struct DockRenderResult {public let image:CGImage;public let backgroundImage:CGImage;public let metrics:[DockGlyphMetric];public let scale:Int;public let effectsRendered:Bool;public let inspection:DockRenderInspection}
 
@@ -135,6 +151,7 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         func ink(_ name:String) throws -> CGColor {guard let v=skin.palette[name],v.valid else{throw DockArtworkError.invalidManifest};return v.cg}
         var layerRoles = [DockRenderedLayerRole](), resourceFilters = [DockRenderedResourceFilter]()
         var nozzleMaterials = [String:DockRenderedNozzleMaterial](), clockDots = [String:DockRenderedClockDots]()
+        var logos = [String:DockRenderedLogoInspection](), widgetValues = [String:DockRenderedWidgetValue]()
         func role(_ name: String, _ id: String? = nil, resource: String? = nil) { layerRoles.append(.init(role:name,subscriptionID:id,resource:resource)) }
         func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false,fitVisibleGlyph:Bool = false,role imageRole:String="bitmap",subscriptionID:String?=nil) throws {
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
@@ -318,8 +335,12 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 let opacity=station.glyphOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                 c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};try image(resource,station.glyphRect,fitVisibleGlyph:true,role:"vendor-glyph",subscriptionID:id)
+                logos[id] = .init(resource:resource,fallbackText:nil,frame:resourceFilters.last?.target ?? station.glyphRect,
+                    opacity:opacity,colourTreatment:.sourceRGBA,tint:nil)
             } else if station.fallbackVendorName == true {
                 try text(reading.name, station.glyphRect, skin.aliasText, try ink("text")); role("vendor-name",id)
+                logos[id] = .init(resource:nil,fallbackText:reading.name,frame:station.glyphRect,opacity:1,
+                    colourTreatment:.paletteText,tint:skin.palette["text"])
             }
             }
             nozzleMaterials[id] = .init(frame:frame,surfaceTransform:c.ctm,resources:station.replacementResource.map { [$0] } ?? station.layers,replacementResource:station.replacementResource,caseInk:station.replacementResource == nil ? skin.palette["case"]:nil,radialOverlay:station.replacementResource == nil ? station.radialOverlay:nil)
@@ -343,12 +364,16 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
                 let opacity=station.readoutOpacity ?? 1
                 guard opacity.isFinite,(0...1).contains(opacity) else{throw DockArtworkError.invalidManifest}
                 c.saveGState();c.setAlpha(opacity);defer{c.restoreGState()};readouts[id] = try text(reading.readout,station.readout,skin.text,try ink(textColor)); role("readout",id)
+                widgetValues[id] = .init(text:reading.readout,
+                    displayedPercent:reading.readout.hasSuffix("%") ? Double(reading.readout.dropLast()):nil,
+                    remainingPercent:reading.remainingPercent,selectedWindowID:reading.selectedWindowID,
+                    quotaRole:reading.status,colorRole:textColor,ink:skin.palette[textColor]!,opacity:opacity)
             }
             if let alias=reading.alias,let rect=station.aliasRect {aliases[id] = try text(alias,rect,skin.aliasText,try ink("alias")); role("alias",id)}
             if let notice=notices[id] { try drawNotice(notice, station) }
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
         return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false,
-            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, materialSourceIdentity: material != nil ? materialSourceIdentity:nil, materialLayerRoles: material != nil ? materialLayerRoles():[], pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases, layerRoles:layerRoles, resourceFilters:resourceFilters, nozzles:nozzleMaterials, clockDots:clockDots))
+            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, materialSourceIdentity: material != nil ? materialSourceIdentity:nil, materialLayerRoles: material != nil ? materialLayerRoles():[], pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases, layerRoles:layerRoles, resourceFilters:resourceFilters, nozzles:nozzleMaterials, clockDots:clockDots, logos:logos, widgetValues:widgetValues))
     }
 }

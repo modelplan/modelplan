@@ -89,10 +89,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// Actual CGContext transform of each successful nozzle pass, not an invented hover transform.
     public var renderedNozzleTransformsForChecks: [String:CGAffineTransform] { renderedNozzleMaterialForChecks.mapValues(\.surfaceTransform) }
     public var renderedClockDotsForChecks: [String:DockRenderedClockDots] { failed || community ? [:] : renderedInspection?.clockDots ?? [:] }
+    public var renderedLogosForChecks: [String:DockRenderedLogoInspection] { failed || community ? [:] : renderedInspection?.logos ?? [:] }
+    public var renderedWidgetValuesForChecks: [String:DockRenderedWidgetValue] { failed || community ? [:] : renderedInspection?.widgetValues ?? [:] }
     public var renderedReadoutTransformsForChecks: [String: CGAffineTransform] { renderedReadoutBackingForChecks.mapValues(\.glyphTransform) }
     private var officialRenderer: DockInstrumentRenderer?
     private var refreshSweepTask: Task<Void, Never>?
     private var refreshSweepOriginal: CGImage?
+    private var refreshSweepOriginalInspection: DockRenderInspection?
     private var refreshSweepGeneration: UInt64 = 0
     @_spi(DockResourceChecks) public private(set) var refreshSweepCountForChecks = 0
     @_spi(DockResourceChecks) public var refreshSweepAnimatingForChecks: Bool { refreshSweepTask != nil }
@@ -284,7 +287,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         needsDisplay = true
     }
     public func dispose(){setAccessibilityValue(nil);appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){renderedInspection=nil;cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    private func resetVisuals(){cancelRefreshSweep();renderedInspection=nil;noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
@@ -295,7 +298,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
               original.width * original.height <= 4_194_304 else { return false }
         refreshSweepCountForChecks += 1
         if reduceMotion { return true }
-        refreshSweepOriginal = original
+        refreshSweepOriginal = original; refreshSweepOriginalInspection = renderedInspection
         refreshSweepGeneration &+= 1
         let token = refreshSweepGeneration, base = readings, notices = self.notices, scale = self.scale
         let started = ProcessInfo.processInfo.systemUptime
@@ -305,7 +308,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
                 guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
                 var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
-                do { self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale).image }
+                do {
+                    let result = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale)
+                    self.image = result.image; self.renderedInspection = result.inspection
+                }
                 catch { break }
                 self.needsDisplay = true
                 if elapsed >= DockRefreshSweep.duration { break }
@@ -318,7 +324,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     private func cancelRefreshSweep() {
         refreshSweepGeneration &+= 1; refreshSweepTask?.cancel(); refreshSweepTask = nil
-        if let original = refreshSweepOriginal { image = original; refreshSweepOriginal = nil; needsDisplay = true }
+        if let original = refreshSweepOriginal {
+            image = original; renderedInspection = refreshSweepOriginalInspection
+            refreshSweepOriginal = nil; needsDisplay = true
+        }
+        refreshSweepOriginalInspection = nil
     }
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
     public override func viewDidHide(){resetVisuals();super.viewDidHide()}

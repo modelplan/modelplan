@@ -6,7 +6,7 @@ import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanWire
 @_spi(DockResourceChecks) import ModelPlanDock
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor private final class G1DClock {
     var wall = Date(timeIntervalSince1970: 1_800_000_000)
@@ -159,6 +159,102 @@ private actor G1DEngine: EngineClient {
         f.host.close()
         XCTAssertNil(T2ProductionAppearance.geometrySourceIdentityForChecks(f.host))
         XCTAssertNil(f.host.dockView.renderedFaceMaterialForChecks)
+    }
+    func testBatch3RenderedWidgetValuesFollowLiveModePinVisibilityAndThreshold() async throws {
+        let f = try await fixture(), id = G1DFixture.ids[0]
+        f.mutateFirst { a in var w=a["windows"] as! [[String:Any]]; w[0]["remainingPercent"]=20; a["windows"]=w }; try await f.publish()
+        var value = try XCTUnwrap(f.host.dockView.renderedWidgetValuesForChecks[id])
+        XCTAssertEqual(value.opacity,1); XCTAssertEqual(value.text,"20%"); XCTAssertEqual(value.displayedPercent,20); XCTAssertEqual(value.remainingPercent,20)
+        XCTAssertEqual(value.quotaRole,.critical); XCTAssertEqual(value.colorRole,"critical")
+        XCTAssertEqual(value.ink.r,239.0/255,accuracy:0.000001)
+        _ = try await f.editor.commit(SettingsB20Edit.redBelow(16))
+        value = try XCTUnwrap(f.host.dockView.renderedWidgetValuesForChecks[id]); XCTAssertEqual(value.quotaRole,.warning)
+        XCTAssertEqual(value.ink.r,234.0/255,accuracy:0.000001)
+        _ = try await f.editor.commit(SettingsB20Edit.percentageMode(.used))
+        value = try XCTUnwrap(f.host.dockView.renderedWidgetValuesForChecks[id]); XCTAssertEqual(value.text,"80%")
+        XCTAssertEqual(value.displayedPercent,80); XCTAssertEqual(value.remainingPercent,20); XCTAssertEqual(value.quotaRole,.warning)
+        _ = try await f.editor.commit(SettingsB20Edit.percentagePin(id,.week))
+        value = try XCTUnwrap(f.host.dockView.renderedWidgetValuesForChecks[id]); XCTAssertEqual(value.text,"30%")
+        XCTAssertEqual(value.selectedWindowID,"week"); XCTAssertEqual(value.quotaRole,.normal); XCTAssertEqual(value.colorRole,"lcdWhite")
+        _ = try await f.editor.commit(SettingsB20Edit.showPercentages(false)); XCTAssertTrue(f.host.dockView.renderedWidgetValuesForChecks.isEmpty)
+        _ = try await f.editor.commit(SettingsB20Edit.showPercentages(true)); XCTAssertNotNil(f.host.dockView.renderedWidgetValuesForChecks[id])
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(f.host.dockView.renderedWidgetValuesForChecks.isEmpty)
+    }
+    func testBatch3RenderedLogosDiscloseOriginalColourTreatmentOrTextFallback() async throws {
+        let f = try await fixture(), id = G1DFixture.ids[0]
+        func vendor(_ key:String) async throws {
+            var p=f.raw["projection"] as! [String:Any], rows=p["rows"] as! [[String:Any]]
+            rows[0]["vendorKey"]=key; p["rows"]=rows; f.raw["projection"]=p; try await f.publish()
+        }
+        try await vendor("openai")
+        var logo = try XCTUnwrap(f.host.dockView.renderedLogosForChecks[id])
+        XCTAssertEqual(logo.resource,"logo-openai"); XCTAssertEqual(logo.colourTreatment,.sourceRGBA)
+        XCTAssertNil(logo.tint); XCTAssertNil(logo.fallbackText); XCTAssertEqual(logo.opacity,1)
+        XCTAssertGreaterThan(logo.frame.width,0)
+        try await vendor("unregistered")
+        logo = try XCTUnwrap(f.host.dockView.renderedLogosForChecks[id])
+        XCTAssertNil(logo.resource); XCTAssertEqual(logo.colourTreatment,.paletteText)
+        XCTAssertNotNil(logo.fallbackText); XCTAssertEqual(logo.tint?.r,1)
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertTrue(f.host.dockView.renderedLogosForChecks.isEmpty)
+    }
+    func testBatch3OverflowPanelInspectionDoesNotCreateAWindow() async throws {
+        let f = try await fixture()
+        XCTAssertNil(f.host.overflowPanelForChecks); XCTAssertNil(f.host.nativePanel)
+        _ = f.host.overflowPanelForChecks; XCTAssertNil(f.host.nativePanel)
+        f.host.close(); XCTAssertNil(f.host.overflowPanelForChecks)
+    }
+    func testBatch3IgnitionObservesSampledHoverAndActualButtonPressWithoutChangingArt() async throws {
+        let f = try await fixture(cockpitEnabled:true)
+        let control = try XCTUnwrap(f.host.ignitionControlForChecks)
+        let place = try XCTUnwrap(f.host.edgePresentation?.placement), rect = control.frame
+        f.pointer = .init(x:place.frame.minX+rect.midX,y:place.frame.maxY-rect.midY); f.tick(0)
+        let before = f.host.dockView.renderedFaceMaterialForChecks?.fixedResources
+        var state = try XCTUnwrap(f.host.ignitionHoverPressForChecks)
+        XCTAssertEqual(state.sampledPointerInside,true); XCTAssertFalse(state.pressed); XCTAssertTrue(state.transparent)
+        XCTAssertFalse(state.hoverArtworkChangeInstalled,"Static idle art is not a hover effect receipt")
+        control.highlight(true); state = try XCTUnwrap(f.host.ignitionHoverPressForChecks); XCTAssertTrue(state.pressed)
+        XCTAssertEqual(f.host.dockView.renderedFaceMaterialForChecks?.fixedResources,before)
+        control.highlight(false); f.pointer = .init(x:-100,y:-100); f.tick(0)
+        XCTAssertEqual(f.host.ignitionHoverPressForChecks?.sampledPointerInside,false)
+        f.host.close(); XCTAssertNil(f.host.ignitionHoverPressForChecks); XCTAssertNil(f.host.ignitionControlForChecks)
+    }
+    func testBatch3NormalEntryAcceptsOnlyCurrentExplicitlyVerifiedSessionActivity() async throws {
+        let f = try await fixture(), id = G1DFixture.ids[0]
+        let delivery = try XCTUnwrap(f.app.composition.store.snapshot.delivery)
+        func activity(_ verified:Bool=true,_ fresh:Bool=true,_ output:Bool=true) -> DockWorkingSignal { .init(subscriptionID:id,bindingVerified:verified,fresh:fresh,observedOutput:output) }
+        XCTAssertFalse(try XCTUnwrap(f.host.dockView.presentedReadingsForChecks[id]).isWorking)
+        try f.app.composition.applySessionActivityForChecks([activity()],delivery:delivery)
+        let current = try XCTUnwrap(f.host.dockView.presentedReadingsForChecks[id]); XCTAssertTrue(current.isWorking); XCTAssertTrue(current.jetEligible)
+        XCTAssertFalse(try XCTUnwrap(f.host.dockView.presentedReadingsForChecks[G1DFixture.ids[1]]).isWorking)
+        for value in [activity(false),activity(true,false),activity(true,true,false)] {
+            try f.app.composition.applySessionActivityForChecks([value],delivery:delivery)
+            XCTAssertFalse(try XCTUnwrap(f.host.dockView.presentedReadingsForChecks[id]).isWorking)
+        }
+        XCTAssertThrowsError(try f.app.composition.applySessionActivityForChecks([activity(),activity()],delivery:delivery))
+        XCTAssertThrowsError(try f.app.composition.applySessionActivityForChecks([.init(subscriptionID:"unknown",bindingVerified:true,fresh:true,observedOutput:true)],delivery:delivery))
+        let other = EngineDeliveryContext(sessionID:"other",floor:delivery.floor,revision:delivery.revision)
+        XCTAssertThrowsError(try f.app.composition.applySessionActivityForChecks([activity()],delivery:other))
+        try f.app.composition.applySessionActivityForChecks([activity()],delivery:delivery)
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:delivery,nextFloor:nil)))
+        XCTAssertTrue(f.host.activeWorkingEffectIDs.isEmpty)
+        XCTAssertThrowsError(try f.app.composition.applySessionActivityForChecks([activity()],delivery:delivery))
+    }
+    func testBatch3RenderedValueTracksTheActualSweepFrameAndRestores() async throws {
+        let f = try await fixture(), id = G1DFixture.ids[0], view = f.host.dockView
+        let original = try XCTUnwrap(view.renderedWidgetValuesForChecks[id])
+        XCTAssertTrue(view.playRefreshSweep(id,reduceMotion:false))
+        let deadline = ContinuousClock.now + .seconds(3)
+        while view.renderedWidgetValuesForChecks[id]?.text == original.text, view.refreshSweepAnimatingForChecks, ContinuousClock.now < deadline { await Task.yield() }
+        let during = try XCTUnwrap(view.renderedWidgetValuesForChecks[id])
+        XCTAssertNotEqual(during.text,original.text,"A rendered value observation must follow the transient bitmap too")
+        XCTAssertLessThan(try XCTUnwrap(during.displayedPercent),try XCTUnwrap(original.displayedPercent))
+        while view.refreshSweepAnimatingForChecks, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertFalse(view.refreshSweepAnimatingForChecks)
+        XCTAssertEqual(view.renderedWidgetValuesForChecks[id]?.text,original.text)
+        XCTAssertTrue(view.playRefreshSweep(id,reduceMotion:true)); XCTAssertFalse(view.refreshSweepAnimatingForChecks)
+        XCTAssertEqual(view.renderedWidgetValuesForChecks[id]?.text,original.text)
     }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }

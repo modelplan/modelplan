@@ -115,6 +115,25 @@ public struct EngineMenuRefreshResult {
             if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
+    #if DEBUG
+    enum SessionActivityInspectionError: Error { case notAdmitted, invalidSignals }
+    /// Synthetic producer boundary for normal-entry checks only. The shipping path is unchanged.
+    /// Explicit producer flags are required; session presence never invents observed output.
+    func applySessionActivityForChecks(_ values: [DockWorkingSignal], delivery: EngineDeliveryContext) throws {
+        guard !deadlineLifecycleSuspended, store.snapshot.delivery == delivery, client.isCurrent(delivery),
+              case .ready(let ready) = store.snapshot.connection, ready == delivery else { throw SessionActivityInspectionError.notAdmitted }
+        let inputs = presentedContent.snapshot.inputs
+        let members = accountMembers.members
+        var ids = Set<String>()
+        guard values.count <= 256, values.allSatisfy({ signal in
+            guard let id = signal.subscriptionID, ids.insert(id).inserted,
+                  members.contains(where: { $0.id == id && $0.isStable && $0.subscriptionRef == id }),
+                  inputs.contains(where: { $0.id == id && $0.dataState == .fresh }) else { return false }
+            return true
+        }) else { throw SessionActivityInspectionError.invalidSignals }
+        try dock.setWorkingSignals(values.filter { $0.bindingVerified && $0.fresh && $0.observedOutput })
+    }
+    #endif
     public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }

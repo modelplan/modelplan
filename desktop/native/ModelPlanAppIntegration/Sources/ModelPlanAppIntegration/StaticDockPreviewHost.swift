@@ -281,6 +281,23 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var rebuildPending = false
     private var inputGeneration: UInt64 = 0, cardGeneration: UInt64 = 0
     private var panel: NSPanel?, cardPanel: NSPanel?
+    private var lastPointerForInspection: CGPoint?
+    /// Existing panel only: reading this never allocates or shows a window.
+    public var overflowPanelForChecks: NSPanel? { retired ? nil : overflowPanel }
+    public var ignitionHoverPressForChecks: (sampledPointerInside: Bool?, pressed: Bool, transparent: Bool, hoverArtworkChangeInstalled: Bool)? {
+        guard !retired, permitted, presentationGeometry.consoleButton != nil else { return nil }
+        let inside: Bool?
+        if let pointer = lastPointerForInspection, let placement = edge.presentation?.placement {
+            let rect = consoleButton.frame
+            let global = CGRect(x:placement.frame.minX+rect.minX,y:placement.frame.maxY-rect.maxY,width:rect.width,height:rect.height)
+            inside = global.contains(pointer)
+        } else { inside = nil }
+        // This control is transparent over static idle material; no hover artwork consumer is installed.
+        return (inside, consoleButton.isHighlighted, consoleButton.isTransparent, false)
+    }
+    #if DEBUG
+    var ignitionControlForChecks: NSButton? { retired || !permitted ? nil : consoleButton }
+    #endif
     private var lastDisplayChoices: [SettingsDisplayChoice] = []
     private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
     private var edgeViews: [DockEdge: DockInstrumentView] = [:]
@@ -978,6 +995,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             native = .init(displays: displays, layouts: [], primaryDisplayID: displays.first?.id,
                            pointer: NSEvent.mouseLocation, presence: presence)
         }
+        lastPointerForInspection = native.pointer
         let displays = native.displays
         let layouts = displays.flatMap { display in
             edgeGeometries.compactMap { orientation, geometry -> DockEdgeLayout? in
