@@ -119,20 +119,47 @@ private actor G1B2Engine: EngineClient {
         for rect in fragments.values.flatMap({ $0 }) {
             XCTAssertTrue(card.bounds.insetBy(dx: -1, dy: -1).contains(rect), "Text fragment lies outside the mounted card")
         }
+        func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
+        let fields = flatten(card).compactMap { $0 as? NSTextField }.filter {
+            !$0.isHiddenOrHasHiddenAncestor && $0.lineBreakMode == .byWordWrapping && !$0.stringValue.isEmpty
+        }
+        XCTAssertFalse(fields.isEmpty, "At least one visible wrapping text field must be measured")
+        for field in fields {
+            let drawing = field.cell?.drawingRect(forBounds: field.bounds) ?? field.bounds
+            let storage = NSTextStorage(attributedString: field.attributedStringValue)
+            let layout = NSLayoutManager(), container = NSTextContainer(size: drawing.size)
+            container.lineFragmentPadding = 0; container.lineBreakMode = field.lineBreakMode
+            container.maximumNumberOfLines = field.maximumNumberOfLines
+            layout.addTextContainer(container); storage.addLayoutManager(layout)
+            layout.enumerateLineFragments(forGlyphRange: layout.glyphRange(for: container)) { _, _, _, glyphs, _ in
+                let range = layout.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+                let line = (storage.string as NSString).substring(with: range).trimmingCharacters(in: .whitespacesAndNewlines)
+                XCTAssertLessThanOrEqual(line.count, 28, "Visible wrapped card lines must stay within the character budget")
+            }
+        }
     }
 
-    // Settings action accessibility only; iconography and cockpit actions remain separate.
-    func testG1_LBL_2_2_04_SettingsActionsHaveAccessibleNames() async throws {
-        let app = try await entry(profile: profile(), preferredLanguages: ["en-US"])
-        await app.presentSettings()
-        let window = try XCTUnwrap(app.settingsHost.currentSurfaceForChecks?.windowForChecks)
-        defer { window.close() }
+    // The Settings portion uses the mounted controls; Dock and cockpit remain separate.
+    func testG1_LBL_2_2_04_SettingsActionsUseSymbolsAndAccessibleNames() async throws {
         func flatten(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(flatten) }
-        let actions = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSButton }
-            .filter { !$0.isHiddenOrHasHiddenAncestor && $0.action != nil }
-        XCTAssertFalse(actions.isEmpty)
-        for action in actions {
-            XCTAssertFalse((action.accessibilityLabel() ?? action.title).isEmpty, "Settings actions must have an accessible name")
+        let symbols = Set("▾▴⤢⤡✕⚡★◀▶⚙⚠↺📌×".map { $0 })
+        for locale in ["en-US", "zh-CN"] {
+            let app = try await entry(profile: profile(), preferredLanguages: [locale])
+            await app.presentSettings()
+            let window = try XCTUnwrap(app.settingsHost.currentSurfaceForChecks?.windowForChecks)
+            defer { window.close() }
+            var checked = 0
+            for pane in SettingsStructure.task65.panes {
+                await app.settingsHost.present(paneID: pane.id, origin: .userInitiated)
+                let actions = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSButton }
+                    .filter { !($0 is NSPopUpButton) && !$0.isHiddenOrHasHiddenAncestor && $0.action != nil }
+                for action in actions {
+                    checked += 1
+                    XCTAssertFalse((action.accessibilityLabel() ?? action.title).isEmpty, "Settings actions must have an accessible name")
+                    XCTAssertTrue(action.image != nil || action.title.contains { symbols.contains($0) }, "Settings action must use a symbol")
+                }
+            }
+            XCTAssertGreaterThan(checked, 0)
         }
     }
 }
