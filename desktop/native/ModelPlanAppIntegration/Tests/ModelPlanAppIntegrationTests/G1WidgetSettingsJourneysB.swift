@@ -141,6 +141,20 @@ private actor G1BRowsClient: EngineClient {
         return app
     }
 
+    func testG1_DOCK_3_1_1_02() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-autohide-default-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1BDisplayEnvironment(), clock = G1BClock()
+        let app = try await open(environment, profile: profile, clock: clock)
+        defer { app.composition.dock.close() }
+        XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.autoHide, false)
+        environment.pointer = CGPoint(x: 720, y: 450)
+        app.composition.dock.refreshPresence()
+        clock.advance(5)
+        XCTAssertEqual(app.composition.dock.edgePresentation?.state, .expanded)
+        await app.composition.stop()
+    }
+
     // TODO(G1): enable only after the normal-entry native-panel path accepts an
     // isolated notification-ledger location; never read a user's live ledger.
     #if G1_ISOLATED_NATIVE_PANEL_ENTRY
