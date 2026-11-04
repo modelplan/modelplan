@@ -4,6 +4,7 @@ import XCTest
 import ModelPlanDock
 import ModelPlanPrimitives
 import ModelPlanSettings
+import ModelPlanEngineClient
 @testable import ModelPlanAppIntegration
 
 @MainActor private final class G1Surface: SettingsWindowSurface {
@@ -38,6 +39,41 @@ import ModelPlanSettings
         try driver.configure(view: view, skin: skin, readings: [reading], profile: .init(scale: 1), rotation: .init(period: 2), provider: { _ in provider })
         return (driver, view, pool)
     }
+    func testFactoryEngineInjectionRetainsActualCockpitFanoutAndPageBoundary() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-factory-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
+        let configuration = EngineClientConfiguration(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:])
+        var fanout: CockpitStoreFanout?, injected: ProcessEngineClient?
+        let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: configuration, settingsStore: store, bundleURL: root) { config, consumer in
+            fanout = consumer as? CockpitStoreFanout
+            let client = ProcessEngineClient(configuration: config, consumer: consumer)
+            injected = client
+            return client
+        }
+        defer { app.composition.dock.close() }
+        let actual = try XCTUnwrap(fanout)
+        XCTAssertTrue(actual.store === app.composition.store)
+        XCTAssertTrue(app.composition.client === injected)
+        let context = EngineDeliveryContext(sessionID: UUID().uuidString, floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
+        await actual.consume(.context(context))
+        XCTAssertEqual(app.composition.store.snapshot.delivery, context)
+        var unavailable = 0
+        actual.cockpit.onUnavailable = { unavailable += 1 }
+        actual.cockpit.open()
+        XCTAssertEqual(unavailable, 1, "The actual production page boundary must reject a synthetic unverified bundle")
+        await actual.consume(.clearPrivateViews(.init(revision: 2, reason: .connectionLost, previous: context, nextFloor: nil)))
+        XCTAssertNil(app.composition.store.snapshot.delivery)
+        XCTAssertFalse(try XCTUnwrap(injected).isCurrent(context), "Construction must not launch or admit an engine session")
+    }
+    func testSliverQuotaRolesAreNotInferredFromNoticeMarksOrPixels() {
+        let sliver = DockSliverView(frame: .init(x: 0, y: 0, width: 4, height: 100))
+        XCTAssertNil(sliver.quotaSegmentColorRolesForChecks)
+        sliver.noticeMarks = []
+        XCTAssertNil(sliver.quotaSegmentColorRolesForChecks, "An empty notice set cannot prove neutral quota segments")
+        sliver.dispose()
+    }
+
     func testSettingsSurfaceReadDoesNotConstructOrPresent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

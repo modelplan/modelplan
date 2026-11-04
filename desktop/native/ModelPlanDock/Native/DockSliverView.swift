@@ -11,6 +11,9 @@ public struct DockSliverNoticeMark: Equatable {
 
 /// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
+    /// The current view receives a bitmap and notice marks, not semantic quota segments.
+    /// nil means unobservable; it must not be interpreted as an empty/all-neutral segment set.
+    public var quotaSegmentColorRolesForChecks: [String: DockQuotaStatus]? { nil }
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public var onNeedsFreshPresentation:(()->Void)?
     public var noticeMarks: [DockSliverNoticeMark] = [] { didSet { if oldValue != noticeMarks { clearPulses(); needsDisplay = true } } }
