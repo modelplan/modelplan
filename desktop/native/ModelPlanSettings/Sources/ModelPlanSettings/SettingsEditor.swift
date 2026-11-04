@@ -166,6 +166,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
         return committed
     }
     @discardableResult public func commit(_ edit: SettingsB22Edit) async throws -> SettingsSnapshot {
+        if case .notificationConsent(true) = edit, context.unavailableControls[.notificationConsent] != nil { throw SettingsEditorError.actionUnavailable }
         let previous = snapshot?.preferences.notifications.optedIn ?? false
         let saved = try await transact(subscriptionID: nil) { try edit.apply(to: &$0) }
         if case .notificationConsent(let enabled) = edit {

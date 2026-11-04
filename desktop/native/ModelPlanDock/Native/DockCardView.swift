@@ -119,6 +119,7 @@ import CryptoKit
         if pinned{
             let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
             let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
+            close.setAccessibilityLabel(value.dismissAccessibilityLabel)
             let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
         }
         arrange(stack,children)

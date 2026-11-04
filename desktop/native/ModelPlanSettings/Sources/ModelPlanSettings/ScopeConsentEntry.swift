@@ -15,7 +15,7 @@ import ModelPlanWire
 
     public init(client: any EngineClient, ready: @escaping @MainActor () -> Bool,
                 makeGrant: (@MainActor (ScopeConsentIntent) throws -> WireConsentGrantParams)? = nil,
-                language: SettingsLanguage = .chinese,buildSigning:ScopeConsentBuildSigning = .current) {
+                language: SettingsLanguage = .english,buildSigning:ScopeConsentBuildSigning = .current) {
         let commands = EngineClientScopeConsentCommands(client: client, ready: ready, makeGrant: makeGrant)
         let controller = ScopeConsentController(commands: commands)
         self.controller = controller

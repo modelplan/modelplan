@@ -94,6 +94,8 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
+    /// Nil is a pre-release value and follows the system under the v1 migration rule.
+    public var followsSystemLanguage: Bool?
     public var opening: OpeningPreference = .hold
     public var beatMilliseconds = 250
     public var showProjectNames = true
@@ -107,7 +109,7 @@ public struct SettingsPreferences: Codable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case theme, size, motion, transparency, percentageMode, showPercentages, redBelow, sliverAlert
         case showDock, autoHide, revealMilliseconds, magnification, showOverFullscreen, followActiveDisplay
-        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, beatMilliseconds, showProjectNames
+        case openAtLogin, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, followsSystemLanguage, opening, beatMilliseconds, showProjectNames
         case notifications, subscriptions, subscriptionSettings, onboarding, dockEdge, dockDisplayID, dockAlongFraction, readerConsent, helpHints
     }
     /// Missing v1 choices adopt defaults; malformed preferences fail closed. Progress recovery is flow-owned.
@@ -128,6 +130,7 @@ public struct SettingsPreferences: Codable, Sendable {
         automaticUpdates = try value(.automaticUpdates, automaticUpdates)
         menuDisplay = try value(.menuDisplay, menuDisplay); openShortcut = try value(.openShortcut, openShortcut)
         dockShortcut = try value(.dockShortcut, dockShortcut); language = try value(.language, language)
+        followsSystemLanguage = try c.decodeIfPresent(Bool.self, forKey: .followsSystemLanguage)
         opening = try value(.opening, opening); beatMilliseconds = try value(.beatMilliseconds, beatMilliseconds)
         showProjectNames = try value(.showProjectNames, showProjectNames); notifications = try value(.notifications, notifications)
         subscriptions = try value(.subscriptions, subscriptions); subscriptionSettings = try value(.subscriptionSettings, subscriptionSettings)
@@ -195,6 +198,9 @@ public actor SettingsStore {
         let opened = try FoundationPreferenceFile.open(location, rowIDMap: rowIDMap, defaultLanguage: defaultLanguage)
         self.url = location.target; self.onboardingDefinition = onboardingDefinition
         self.current = opened.document.settings; self.foundationBacking = opened
+        if let defaultLanguage, current.followsSystemLanguage != false {
+            current.language = defaultLanguage; current.followsSystemLanguage = true
+        }
         current.onboarding.reconcile(in: onboardingDefinition)
     }
     public func foundationStatus() -> FoundationPreferenceStatus? {
