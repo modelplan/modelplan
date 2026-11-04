@@ -150,4 +150,33 @@ private actor G1RowsClient: EngineClient {
         XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.dockAlongFraction, 0.35, accuracy: 0.0001)
         await app.composition.stop()
     }
+
+    func testG1_DOCK_3_1_01() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-edges-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        for (setting, expected) in [(SettingsDockEdge.left, DockEdge.left), (.right, .right), (.bottom, .bottom)] {
+            let app = try await open(G1DisplayEnvironment(), profile: profile)
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.dockEdge(setting))
+            XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, expected)
+            await app.composition.stop(); app.composition.dock.close()
+            let restored = try await open(G1DisplayEnvironment(), profile: profile)
+            XCTAssertEqual(restored.composition.dock.edgePresentation?.placement?.edge, expected)
+            await restored.composition.stop(); restored.composition.dock.close()
+        }
+
+        // Legacy top placement near the left corner must migrate to the closest allowed edge.
+        let legacyProfile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-top-migration-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: legacyProfile) }
+        let directory = legacyProfile.appendingPathComponent("ModelPlan/Native", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let legacy: [String: Any] = ["schemaVersion": 1, "preferences": ["dockEdge": "top", "dockAlongFraction": 0.1]]
+        try JSONSerialization.data(withJSONObject: legacy).write(to: directory.appendingPathComponent("settings-v1.json"))
+        let migrated = try await open(G1DisplayEnvironment(), profile: legacyProfile)
+        XCTAssertEqual(migrated.composition.dock.edgePresentation?.placement?.edge, .left)
+        await migrated.composition.stop(); migrated.composition.dock.close()
+        let reopened = try await open(G1DisplayEnvironment(), profile: legacyProfile)
+        defer { reopened.composition.dock.close() }
+        XCTAssertEqual(reopened.composition.dock.edgePresentation?.placement?.edge, .left)
+        await reopened.composition.stop()
+    }
 }
