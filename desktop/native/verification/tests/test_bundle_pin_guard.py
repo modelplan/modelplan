@@ -63,10 +63,11 @@ class BundlePinGuardTests(unittest.TestCase):
             (community / 'index.html').unlink()
             with self.assertRaises(ValueError):
                 guard.validate(root, editions=('community',))
+            (community / 'index.html').write_bytes(b'public synthetic HTML')
             pins = json.loads(source.read_text())
             pins['community'] = '0' * 64
             source.write_text(json.dumps(pins))
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(ValueError, 'native pin differs'):
                 guard.validate(root, editions=('community',))
 
     def test_community_bundle_root_symlink_is_rejected(self):
