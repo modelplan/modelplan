@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
+
+var cockpitSubscriptionRef = regexp.MustCompile(`^[a-f0-9]{16}$`)
 
 func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, admission queries.CockpitAdmission, groups map[string][]wire.CockpitAccount) (wire.CockpitDetails, error) {
 	result := wire.CockpitDetails{Version: 1, Sources: []string{"quota-reserve", "quota-thresholds"}, Subscriptions: []wire.CockpitSubscriptionDetails{}, Sessions: []wire.CockpitSession{}, SessionCoverage: "unavailable", ResetEvents: []rows.ResetEvent{}, Alerts: []wire.CockpitAlert{}}
@@ -188,7 +191,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	result.SessionCoverage = "local-last-seen"
 	result.Sources = append(result.Sources, "local-history")
 	sort.Strings(result.Sources)
-	for _, today := range cockpitTodayTotals(view.QuotaReport.Accounts, perf) {
+	for _, today := range appserver.CockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
 			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})

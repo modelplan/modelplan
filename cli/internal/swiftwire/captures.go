@@ -24,7 +24,7 @@ func captureRoots() []captureRoot {
 		reflect.TypeFor[wire.RowsSnapshot](), reflect.TypeFor[wire.ConsentScope](), reflect.TypeFor[wire.ConsentFacts](), reflect.TypeFor[wire.ConsentGrantParams](), reflect.TypeFor[wire.ConsentReceipt](),
 		reflect.TypeFor[wire.CredentialRequest](), reflect.TypeFor[wire.CredentialResult](), reflect.TypeFor[wire.RefreshRequestParams](), reflect.TypeFor[wire.RefreshMember](), reflect.TypeFor[wire.MemberRefreshResult](), reflect.TypeFor[wire.RefreshScheduled](), reflect.TypeFor[wire.PluginInstallParams](), reflect.TypeFor[wire.PluginInstallResult](), reflect.TypeFor[wire.PublicationResult](), reflect.TypeFor[wire.PublicationUnits](), reflect.TypeFor[wire.PublicationCapability](), reflect.TypeFor[wire.CockpitQueryParams](), reflect.TypeFor[wire.CockpitData](), reflect.TypeFor[wire.CockpitSubscription](), reflect.TypeFor[wire.CockpitAccount](), reflect.TypeFor[wire.CockpitDetails](), reflect.TypeFor[wire.CockpitSubscriptionDetails](), reflect.TypeFor[wire.CockpitResetCount](), reflect.TypeFor[wire.CockpitCredits](), reflect.TypeFor[wire.CockpitToday](), reflect.TypeFor[wire.CockpitSession](), reflect.TypeFor[wire.CockpitAlert](),
 		reflect.TypeFor[wire.HistoryQueryParams](), reflect.TypeFor[wire.HistoryItem](), reflect.TypeFor[wire.HistoryPage](), reflect.TypeFor[wire.Diagnostics](), reflect.TypeFor[wire.RefreshDecision](), reflect.TypeFor[wire.ScopeDiag](), reflect.TypeFor[wire.Health](),
-		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](),
+		reflect.TypeFor[rows.Text](), reflect.TypeFor[rows.Name](), reflect.TypeFor[rows.Reason](), reflect.TypeFor[rows.NextStep](), reflect.TypeFor[rows.Row](), reflect.TypeFor[rows.ExpiryState](), reflect.TypeFor[rows.AccountToday](),
 		reflect.TypeFor[rows.ResetEvent](), reflect.TypeFor[rows.ResetLink](), reflect.TypeFor[rows.ResetSource](), reflect.TypeFor[rows.ResetSchedule](), reflect.TypeFor[rows.ModelScope](), reflect.TypeFor[rows.ResetCards](), reflect.TypeFor[rows.ResetCardItem](), reflect.TypeFor[rows.ResetCardSource](), reflect.TypeFor[rows.Account](), reflect.TypeFor[rows.Plan](), reflect.TypeFor[rows.Credits](), reflect.TypeFor[rows.Failure](), reflect.TypeFor[rows.Window](), reflect.TypeFor[rows.RowsSummary](), reflect.TypeFor[wire.RowsProjection](),
 	}
 	out := []captureRoot{}
@@ -44,6 +44,10 @@ func captureRoots() []captureRoot {
 }
 func (m *model) seed(t reflect.Type, name string) (reflect.Value, error) {
 	now := time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC)
+	if t == reflect.TypeFor[rows.AccountToday]() {
+		tokens, rate, count := int64(12000), 42.0, 1
+		return reflect.ValueOf(rows.AccountToday{ObservedOutputTokens: &tokens, GenerationTps: &rate, RunningSessions: &count, BindingBasis: "source-wide-current-binding"}), nil
+	}
 	if t == reflect.TypeFor[rows.ResetCardItem]() {
 		return reflect.ValueOf(rows.ResetCardItem{ID: strings.Repeat("a", 64), ExpiresAt: &now}), nil
 	}

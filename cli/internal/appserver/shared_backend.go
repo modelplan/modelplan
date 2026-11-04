@@ -17,6 +17,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // SharedConfig adapts the existing production constructors. It owns no parallel
@@ -63,7 +64,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1, CapabilityAccountTodayV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents, CapabilityResetEventLinksV1)
 	}
@@ -247,6 +248,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	}
 	if !changed {
 		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
+		if !speed.Off() {
+			ledger, ok := speed.LoadPerf(p.Cache)
+			if ok && !ledger.Since.IsZero() {
+				perf := (speed.PerfView{Ledger: ledger, OK: true, Recording: true, Now: in.Now}).Admitted(admission)
+				attachAccountToday(&projection, report.Accounts, perf)
+			}
+		}
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
