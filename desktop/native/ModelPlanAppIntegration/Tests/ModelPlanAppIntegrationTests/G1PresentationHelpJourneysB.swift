@@ -118,12 +118,19 @@ private actor G1BEngine: EngineClient {
     func testG1_LBL_2_2_07_ChineseMenusDoNotLeakEnglish() async throws {
         let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
         let menu = try XCTUnwrap(app.liveStatusMenu)
-        let titles = menu.items.map(\.title) + app.composition.dock.menu().items.map(\.title)
-        let allowed = ["ModelPlan", "ALERT"]
-        for title in titles where !title.isEmpty {
-            let remaining = allowed.reduce(title) { $0.replacingOccurrences(of: $1, with: "") }
-            XCTAssertFalse(remaining.unicodeScalars.contains { (65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value)) }, "Unexpected English in Chinese menu: \(title)")
-        }
+        // The first status row and provider rows contain externally supplied data.
+        // Check the app-owned actions separately, without treating vendor names as UI copy.
+        let expected = ["刷新", "即将推出", "网站", "方法论", "隐私", "检查更新", "说明…", "设置…", "关于", "退出"]
+        let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+        let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
+        XCTAssertGreaterThan(statusTitles.count, 1)
+        XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
+        XCTAssertEqual(Array(statusTitles.dropFirst()), expected)
+        XCTAssertEqual(Array(dockTitles.suffix(3)), ["即将推出", "设置…", "隐藏挂件"])
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
+        let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
+        XCTAssertGreaterThan(english.count, 1)
+        XCTAssertNotEqual(Array(english.dropFirst()), expected, "The check must reject English app-owned actions")
     }
 
     func testG1_LBL_2_2_15_MenuCopyOmitsInternalVocabulary() async throws {
@@ -131,7 +138,11 @@ private actor G1BEngine: EngineClient {
         for language in [SettingsLanguage.english, .chinese] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
             let menu = try XCTUnwrap(app.liveStatusMenu)
-            let copy = (menu.items.map(\.title) + app.composition.dock.menu().items.map(\.title)).joined(separator: " ").lowercased()
+            let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+            let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
+            XCTAssertTrue(statusTitles.contains(language == .english ? "Settings…" : "设置…"))
+            XCTAssertTrue(dockTitles.contains(language == .english ? "Settings…" : "设置…"))
+            let copy = (statusTitles + dockTitles).joined(separator: " ").lowercased()
             for forbidden in ["source scope", "read here", "observation", "fixture", "envelope"] {
                 XCTAssertFalse(copy.contains(forbidden), "Internal term appears in menu: \(forbidden)")
             }
@@ -162,15 +173,16 @@ private actor G1BEngine: EngineClient {
     // The first-run window is not opened; this checks the persisted normal-entry selection.
     func testG1_LBL_2_2_19_FirstRunSelectionFollowsSupportedPreferences() async throws {
         let root = try profile()
-        for (index, preferred) in [["en-US"], ["zh-CN"]].enumerated() {
+        for (index, pair) in [(["en-US"], SettingsLanguage.english), (["zh-CN"], .chinese)].enumerated() {
+            let (preferred, expected) = pair
             let app = try await entry(profile: root.appendingPathComponent(String(index)), preferredLanguages: preferred)
             let editor = app.settingsHost.application.editor
             let snapshot = try XCTUnwrap(editor.snapshot)
-            XCTAssertTrue(SettingsLanguage.allCases.contains(snapshot.preferences.language))
+            XCTAssertEqual(snapshot.preferences.language, expected)
             let result = try await editor.completeFirstRun(options: .init(preferences: snapshot.preferences), action: .done, host: .popup, expectedRevision: snapshot.revision)
             XCTAssertTrue(result.snapshot.preferences.onboarding.completed)
             let saved = await app.foundationStore.snapshot()
-            XCTAssertEqual(saved.preferences.language, snapshot.preferences.language)
+            XCTAssertEqual(saved.preferences.language, expected)
             await app.composition.stop()
         }
     }
