@@ -82,7 +82,8 @@ private actor G1CRowsClient: EngineClient {
 @MainActor final class G1DockJourneysM5Batch2: XCTestCase {
     private func fixture(empty: Bool = false, missingReading: Bool = false, secondMember: Bool = false,
                          five: Double = 41, week: Double = 72, secondFive: Double = 16, secondWeek: Double = 89,
-                         resetStatus: String? = nil, newReading: Bool = false, vendorKey: String = "synthetic", extraMembers: Int = 0) throws -> WireRowsSnapshot {
+                         resetStatus: String? = nil, newReading: Bool = false, vendorKey: String = "synthetic", extraMembers: Int = 0,
+                         fiveResetAfter: TimeInterval? = nil, weekResetAfter: TimeInterval? = nil) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -102,6 +103,9 @@ private actor G1CRowsClient: EngineClient {
         var weekly = windows[0]
         weekly["id"] = "g1-week"; weekly["role"] = "weekly"; weekly["limitKey"] = "weekly"
         weekly["durationSeconds"] = 604800; weekly["remainingPercent"] = missingReading ? nil : week
+        let base = Date(timeIntervalSince1970: 1_800_000_000), formatReset = ISO8601DateFormatter()
+        if let fiveResetAfter { windows[0]["resetsAt"] = formatReset.string(from: base.addingTimeInterval(fiveResetAfter)) }
+        if let weekResetAfter { weekly["resetsAt"] = formatReset.string(from: base.addingTimeInterval(weekResetAfter)) }
         windows = [windows[0], weekly]
         if newReading {
             let observed = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: 1_800_000_000))
@@ -173,6 +177,111 @@ private actor G1CRowsClient: EngineClient {
         #endif
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
+    }
+
+    func testG1_DOCK_3_1_24() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-ignition-art-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        let expected = ["a5-outer-contact-shadow-56x56@3x.png", "a5-cap-night-idle-44x44@3x.png", "a5-inner-contact-shadow-52x52@3x.png", "a5-recessed-guard-52x52@3x.png"]
+        let records = try T2BundledArtwork.records()
+        for name in expected { XCTAssertNotNil(records[name]); XCTAssertFalse(try T2BundledArtwork.data(name).isEmpty) }
+        for theme in [SettingsTheme.day, .night] {
+            _ = try await editor.commit(SettingsB20Edit.theme(theme))
+            for edge in [SettingsDockEdge.left, .right, .bottom] {
+                _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+                let actual = view.renderedResourceFiltersForChecks.filter { expected.contains($0.resource) }
+                XCTAssertEqual(Set(actual.map(\.resource)), Set(expected))
+                XCTAssertTrue(actual.allSatisfy { $0.preservesSourcePixels && !$0.fitsVisibleGlyph })
+            }
+        }
+        // The inspection does not expose downstream colour-filter state.
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_29() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-grip-position-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for size in [SettingsSize.small, .medium, .large] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let geometry = try XCTUnwrap(dock.resolvedT2CurvatureForChecks)
+                let grip = try XCTUnwrap(dock.resolvedT2GripForChecks)
+                let scale = size.nozzleDiameter / 52
+                let arc = geometry.input.ignitionAtEnd ? geometry.start + 18 * scale : geometry.end - 18 * scale
+                let t: CGFloat
+                if arc < geometry.topJoin { t = (arc - geometry.topJoin) / (geometry.topJoin - geometry.start) }
+                else if arc > geometry.bottomJoin { t = (arc - geometry.bottomJoin) / (geometry.end - geometry.bottomJoin) }
+                else { t = 0 }
+                let width = geometry.freeDepth * sqrt(max(0, 1 - t * t))
+                let expected = geometry.point(arc: arc, depth: max(9 * scale, width / 2), onFace: true)
+                XCTAssertEqual(grip.x, expected.x, accuracy: 0.0001)
+                XCTAssertEqual(grip.y, expected.y, accuracy: 0.0001)
+            }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_2_01() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-nozzle-layers-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        let prefixes = ["a1-01-bell-wall", "a1-03-deep-centre", "a1-02-throat-lip", "a1-04-exit-lip"]
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for size in [SettingsSize.small, .medium, .large] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let nozzle = try XCTUnwrap(view.renderedNozzleMaterialForChecks["0123456789abcdef"])
+                XCTAssertNil(nozzle.replacementResource)
+                XCTAssertEqual(nozzle.resources.count, prefixes.count)
+                for (resource, prefix) in zip(nozzle.resources, prefixes) {
+                    XCTAssertTrue(resource.hasPrefix(prefix))
+                    XCTAssertFalse(try T2BundledArtwork.data(resource).isEmpty)
+                    XCTAssertTrue(view.renderedResourceFiltersForChecks.contains { $0.resource == resource && $0.subscriptionID == "0123456789abcdef" })
+                }
+                let ink = try XCTUnwrap(nozzle.caseInk)
+                XCTAssertLessThan(abs(ink.r - ink.g), 0.02); XCTAssertLessThan(abs(ink.g - ink.b), 0.02)
+                XCTAssertNotNil(nozzle.radialOverlay)
+            }
+        }
+        // Working-session admission and downstream colour-filter state remain separate.
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_2_03() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-reset-clock-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let clock = G1CClock(), app = try await open(G1CDisplayEnvironment(), profile: profile, clock: clock)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView, editor = app.settingsHost.application.editor
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), id = "0123456789abcdef"
+        try await client.replaceRows(fixture(fiveResetAfter: 9000, weekResetAfter: 151200))
+        for elapsed in [0.0, 1800.0] {
+            if elapsed > 0 { clock.advance(elapsed); dock.refreshDockContent() }
+            for (pin, duration, deadline) in [(PercentagePin.fiveHour, 18000.0, 9000.0), (.week, 604800.0, 151200.0)] {
+                _ = try await editor.commit(SettingsB20Edit.percentagePin(id, pin))
+                let reading = try XCTUnwrap(view.presentedReadingsForChecks[id])
+                let dots = try XCTUnwrap(view.renderedClockDotsForChecks[id])
+                let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == id })
+                let fraction = max(0, (deadline - elapsed) / duration)
+                XCTAssertEqual(try XCTUnwrap(reading.timeLeftFraction), fraction, accuracy: 0.0001)
+                XCTAssertEqual(dots.litCentres.count, Int(ceil(fraction * Double(dots.positions))))
+                XCTAssertEqual(dots.ink.r, 1, accuracy: 0.0001); XCTAssertEqual(dots.ink.g, 1, accuracy: 0.0001)
+                XCTAssertEqual(dots.ink.b, 1, accuracy: 0.0001); XCTAssertEqual(dots.ink.a, 0.6, accuracy: 0.0001)
+                XCTAssertGreaterThan(dots.backingWidth, 0); XCTAssertLessThan(dots.backingInk.r, 0.1)
+                XCTAssertGreaterThan(dots.radius, station.outer.radius)
+                for point in dots.litCentres { XCTAssertEqual(hypot(point.x - station.centre.x, point.y - station.centre.y), dots.radius, accuracy: 0.0001) }
+            }
+        }
+        await app.composition.stop()
     }
 
     func testG1_DOCK_3_1_07() async throws {
