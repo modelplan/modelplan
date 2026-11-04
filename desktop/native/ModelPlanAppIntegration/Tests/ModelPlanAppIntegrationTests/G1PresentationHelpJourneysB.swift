@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import XCTest
+import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -33,10 +34,10 @@ private actor G1BEngine: EngineClient {
 }
 
 @MainActor final class G1PresentationHelpJourneysB: XCTestCase {
-    private func entry(profile: URL, preferredLanguages: [String]) async throws -> EngineDockMenuApplication {
+    private func entry(profile: URL, preferredLanguages: [String], fixture: WireRowsSnapshot? = nil) async throws -> EngineDockMenuApplication {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
-        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let rows = try fixture ?? WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: preferredLanguages)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
             settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
@@ -51,6 +52,90 @@ private actor G1BEngine: EngineClient {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return root
+    }
+
+    private func quotaFixture() throws -> WireRowsSnapshot {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        var row = try XCTUnwrap(rows.first)
+        var accounts = try XCTUnwrap(row["accounts"] as? [[String: Any]])
+        var account = try XCTUnwrap(accounts.first)
+        let original = try XCTUnwrap((account["windows"] as? [[String: Any]])?.first)
+        row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu"]
+        row["name"] = ["en": "Synthetic", "zh": "合成"]
+        row["expiresAt"] = "2099-01-01T00:00:00Z"
+        account["subscriptionRef"] = "0123456789abcdef"; account["valueState"] = "current"
+        account["observedAt"] = "2026-01-01T00:00:00Z"; account["freshUntil"] = "2099-01-01T00:00:00Z"
+        account["windows"] = [("five", "session", 40.0, 18000), ("weekly", "weekly", 25.0, 604800)].map { id, role, value, duration in
+            var window = original
+            window["id"] = id; window["role"] = role; window["remainingPercent"] = value
+            window["durationSeconds"] = duration; window["current"] = true
+            window["limitKey"] = "main"; window["poolKey"] = "main"
+            window["resetsAt"] = "2099-01-01T00:00:00Z"; window["validUntil"] = "2099-01-01T00:00:00Z"
+            window.removeValue(forKey: "modelScope")
+            return window
+        }
+        accounts = [account]; row["accounts"] = accounts; rows = [row]
+        projection["rows"] = rows; root["projection"] = projection
+        return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+    }
+
+    func testG1_LBL_2_2_09_CardResetTimesAreRelative() async throws {
+        let app = try await entry(profile: profile(), preferredLanguages: ["en"], fixture: quotaFixture())
+        let id = try XCTUnwrap(app.composition.presentedContent.snapshot.inputs.first?.id)
+        let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-01-01T00:00:00Z"))
+        for (language, expectations) in [
+            (SettingsLanguage.english, ["45m", "3h 18m", "3d 5h"]),
+            (.chinese, ["45分", "3小时18分", "3天5小时"])
+        ] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            for (seconds, expected) in zip([2700.0, 11880.0, 277200.0], expectations) {
+                let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: deadline.addingTimeInterval(-seconds)))
+                let detail = try XCTUnwrap(card.rows.first { $0.id == "quota:five" }?.detail)
+                XCTAssertTrue(detail.contains(expected), "Expected relative reset time: \(detail)")
+                XCTAssertFalse(detail.contains("2099"))
+            }
+        }
+    }
+
+    func testG1_LBL_2_2_12_CardQuotaValuesAndBarsMeanRemaining() async throws {
+        let app = try await entry(profile: profile(), preferredLanguages: ["en"], fixture: quotaFixture())
+        let id = try XCTUnwrap(app.composition.presentedContent.snapshot.inputs.first?.id)
+        for language in [SettingsLanguage.english, .chinese] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let card = try XCTUnwrap(app.composition.dock.cardContent(for: id))
+            for (id, value, fraction) in [("quota:five", "40%", 0.4), ("quota:weekly", "25%", 0.25)] {
+                let row = try XCTUnwrap(card.rows.first { $0.id == id })
+                XCTAssertEqual(row.value, value)
+                XCTAssertEqual(try XCTUnwrap(row.remainingFraction), fraction, accuracy: 0.0001)
+            }
+        }
+    }
+
+    func testG1_LBL_2_2_07_ChineseMenusDoNotLeakEnglish() async throws {
+        let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        let titles = menu.items.map(\.title) + app.composition.dock.menu().items.map(\.title)
+        let allowed = ["ModelPlan", "ALERT"]
+        for title in titles where !title.isEmpty {
+            let remaining = allowed.reduce(title) { $0.replacingOccurrences(of: $1, with: "") }
+            XCTAssertFalse(remaining.unicodeScalars.contains { (65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value)) }, "Unexpected English in Chinese menu: \(title)")
+        }
+    }
+
+    func testG1_LBL_2_2_15_MenuCopyOmitsInternalVocabulary() async throws {
+        let app = try await entry(profile: profile(), preferredLanguages: ["en"], fixture: quotaFixture())
+        for language in [SettingsLanguage.english, .chinese] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let menu = try XCTUnwrap(app.liveStatusMenu)
+            let copy = (menu.items.map(\.title) + app.composition.dock.menu().items.map(\.title)).joined(separator: " ").lowercased()
+            for forbidden in ["source scope", "read here", "observation", "fixture", "envelope"] {
+                XCTAssertFalse(copy.contains(forbidden), "Internal term appears in menu: \(forbidden)")
+            }
+        }
     }
 
     // Settings semantic coverage only: visible widget/cockpit locale evidence is a separate gate.
