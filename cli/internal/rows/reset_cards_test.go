@@ -126,18 +126,19 @@ func TestResetCardMergeKeepsEarliestAndFreshestSource(t *testing.T) {
 		}
 	}
 	n1, n2 := len(first), len(second)
-	left := &ResetCards{State: ResetCardComplete, Count: &n1, Items: first, Sources: []ResetCardSource{{Source: ResetCardCodexAccount, ObservedAt: now.Add(-time.Minute)}}}
+	left := &ResetCards{State: ResetCardComplete, Count: &n1, Items: first, Sources: []ResetCardSource{{Source: ResetCardCodexAccount, ObservedAt: now}}}
 	right := &ResetCards{State: ResetCardComplete, Count: &n2, Items: second, Sources: []ResetCardSource{{Source: ResetCardCodexBar, ObservedAt: now}}}
 	got := mergeResetCards([]*ResetCards{left, right})
-	if got.State != ResetCardPartial || !got.Truncated || got.Count == nil || *got.Count != 65 || len(got.Items) != 64 || got.EarliestExpiresAt == nil || !got.EarliestExpiresAt.Equal(now.Add(time.Minute)) || got.Items[0].ID != fmt.Sprintf("%064x", 65) || got.Items[63].ID == fmt.Sprintf("%064x", 1) || got.Sources[0].Source != ResetCardCodexBar {
+	if got.State != ResetCardPartial || !got.Truncated || got.Count == nil || *got.Count != 65 || len(got.Items) != 64 || got.EarliestExpiresAt == nil || !got.EarliestExpiresAt.Equal(now.Add(time.Minute)) || got.Items[0].ID != fmt.Sprintf("%064x", 65) || got.Items[63].ID == fmt.Sprintf("%064x", 1) || got.Sources[0].Source != ResetCardCodexAccount {
 		t.Fatalf("bad merged facts: %+v", got)
 	}
-	// Differing times alone do not make a complete union partial.
+	// Differing observation times cannot establish a complete union.
+	left.Sources[0].ObservedAt = now.Add(-time.Minute)
 	left.Items, right.Items = first[:1], second[:1]
 	n1, n2 = 1, 1
 	got = mergeResetCards([]*ResetCards{left, right})
-	if got.State != ResetCardComplete || got.Count == nil || *got.Count != 2 || got.Sources[0].Source != ResetCardCodexBar {
-		t.Fatalf("different healthy times: %+v", got)
+	if got.State != ResetCardPartial || got.Count != nil || got.EarliestExpiresAt != nil || got.Sources[0].Source != ResetCardCodexBar {
+		t.Fatalf("different observation times: %+v", got)
 	}
 	right.Sources[0].ObservedAt = left.Sources[0].ObservedAt
 	got = mergeResetCards([]*ResetCards{right, left})

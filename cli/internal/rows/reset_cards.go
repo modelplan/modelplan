@@ -73,6 +73,7 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 	items := map[string]ResetCardItem{}
 	sources := map[ResetCardSourceKind]ResetCardSource{}
 	known, complete := false, true
+	var observedAt time.Time
 	for _, set := range sets {
 		if set == nil || set.State == "unknown" {
 			complete = false
@@ -84,6 +85,11 @@ func mergeResetCards(sets []*ResetCards) *ResetCards {
 		}
 		out.Truncated = out.Truncated || set.Truncated
 		for _, source := range set.Sources {
+			if observedAt.IsZero() {
+				observedAt = source.ObservedAt
+			} else if !observedAt.Equal(source.ObservedAt) {
+				complete = false
+			}
 			if old, ok := sources[source.Source]; !ok || source.ObservedAt.After(old.ObservedAt) {
 				sources[source.Source] = source
 			}
