@@ -223,6 +223,7 @@ private actor G1BRowsClient: EngineClient {
         let app = try await open(G1BDisplayEnvironment(), profile: profile)
         defer { app.composition.dock.close() }
         let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        let client = try XCTUnwrap(app.composition.client as? G1BRowsClient)
         for edge in [SettingsDockEdge.left, .right, .bottom] {
             _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
             for (size, diameter) in [(SettingsSize.small, CGFloat(36)), (.medium, 44), (.large, 52)] {
@@ -231,6 +232,13 @@ private actor G1BRowsClient: EngineClient {
                 XCTAssertEqual(station.readout.width, 56 * diameter / 52, accuracy: 0.0001)
                 XCTAssertEqual(station.readout.height, 16 * diameter / 52, accuracy: 0.0001)
                 XCTAssertGreaterThan(station.eventRect.width, 0, "The event slot remains reserved without an event")
+                XCTAssertNil(view.presentedNoticesForChecks["0123456789abcdef"])
+                try await client.replaceRows(fixture(resetStatus: "announced"))
+                XCTAssertNotNil(view.presentedNoticesForChecks["0123456789abcdef"])
+                let withEvent = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+                XCTAssertEqual(withEvent.readout, station.readout)
+                XCTAssertEqual(withEvent.eventRect, station.eventRect)
+                try await client.replaceRows(fixture())
             }
         }
         await app.composition.stop()
