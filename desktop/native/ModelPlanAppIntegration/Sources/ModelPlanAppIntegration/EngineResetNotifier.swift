@@ -70,7 +70,7 @@ import ModelPlanSettings
             consumer.observeAuthorization(authorization == .authorized ? .authorized : authorization == .provisional ? .provisional : .denied)
         }
         let snapshot=await settings.snapshot()
-        guard isCurrent(event,composition),consumer.delivery(for:notice,snapshot:snapshot,now:Date()) != nil else { return }
+        guard isCurrent(event,composition),consumer.delivery(for:notice,snapshot:snapshot,now:composition.currentDate()) != nil else { return }
         do {
             if let deliveryOverride { try await deliveryOverride(notice.episodeID) }
             else {
@@ -81,7 +81,7 @@ import ModelPlanSettings
                 try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier:"reset-"+event.rowID+"-"+notice.episodeID,content:content,trigger:nil))
             }
             // Record only accepted delivery; Settings owns pruning and the bounded ledger.
-            consumer.recordAccepted(notice,snapshot:snapshot,now:Date())
+            consumer.recordAccepted(notice,snapshot:snapshot,now:composition.currentDate())
             try FileManager.default.createDirectory(at:cacheURL.deletingLastPathComponent(),withIntermediateDirectories:true)
             try JSONEncoder().encode(consumer.policy.ledger).write(to:cacheURL,options:.atomic)
         } catch { /* A failed delivery does not create a ledger entry. */ }
