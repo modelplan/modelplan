@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT
+name: PR-open gate lint
+on:
+  pull_request:
+    types: [opened, edited, synchronize, ready_for_review]
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+jobs:
+  gate-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test lint rules
+        run: python3 -m unittest discover -s scripts/tests -p test_pr_open_gate_lint.py -v
+      - name: Warn on missing design IDs or unlisted staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git show "$BASE_SHA:scripts/pr_open_gate_lint.py" > "$RUNNER_TEMP/pr_open_gate_lint.py" 2>/dev/null; then
+            python3 "$RUNNER_TEMP/pr_open_gate_lint.py"
+          else
+            echo '::warning::PR-open lint is not yet present on the base branch; verify design IDs and #470 staging manually.'
+          fi
