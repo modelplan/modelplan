@@ -11,7 +11,7 @@ import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,str
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
 import {plans} from '../study/rocket-r1/mfd-pages/plans.js';
-import {relativeMoment,tok} from '../study/rocket-r1/mfd-pages/fmt.js';
+import {relativeMoment,tok,until} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {tune} from '../study/rocket-r1/mfd-pages/tune.js';
 import {where} from '../study/rocket-r1/mfd-pages/where.js';
 import '../study/rocket-r1/strings/mfd.js';
@@ -94,6 +94,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   if(selected===2)for(const e of page.querySelectorAll<HTMLElement>('.mp-empty'))e.textContent=locale==='en'?'Data unavailable':'暂无数据';
   if(selected===3)for(const e of page.querySelectorAll<HTMLElement>('.mp-empty'))e.textContent=locale==='en'?'Data unavailable':'暂无数据';
   if(selected===1&&selectedId){const index=Number(selectedId.slice('member'.length)),entry=d.members[index];if(!entry?.account.observedAt){const source=page.querySelector<HTMLElement>('.sp-sub .src');if(source)source.textContent=locale==='en'?'Reading time unknown':'读数时间未知';}}
+  // Reset-card facts are personal observations, joined only by a verified reference.
+  if(selected===1&&selectedId&&uiSubTab==='now'){const index=Number(selectedId.slice('member'.length)),entry=d.members[index],ref=entry?.account.subscriptionRef,verified=ref!=null&&data?.subscriptions.some(s=>s.subscriptionRef===ref),matches=verified?data?.details?.subscriptions.filter(s=>s.subscriptionRef===ref)??[]:[],cards=matches.length===1?matches[0].resetCards:null;if(cards&&cards.state!=='unknown'){const items=(cards.items??[]).flatMap(item=>item.expiresAt&&Number.isFinite(Date.parse(item.expiresAt))?[Date.parse(item.expiresAt)]:[]).sort((a,b)=>a-b),line=node('div','rc'),expiries=node('span','rc-exp');line.append(node('span','lbl',t('mfd.cards')),node('b','',cards.count===null?'--':t('mfd.cardsN',{n:cards.count})));for(const [i,time] of items.slice(0,4).entries()){if(i)expiries.append(node('s','','·'));expiries.append(node('i','',until(time,{now:d.now,lang:locale})));}if(items.length>4)expiries.append(node('i','more','+'+(items.length-4)));line.append(expiries);if(items.length)line.title=items.map(time=>relativeMoment(time,{now:d.now,lang:locale},true)).join('\n');page.append(line);}}
   // The prototype's credits chart assumes 30-day history. Show only an
   // actual reported balance instead of fabricating that history or a zero.
   if(selected===1&&selectedId){const index=Number(selectedId.slice('member'.length)),entry=d.members[index],credits=entry?prototypeEngineSupplement(entry.account,data??undefined).reserveCredits:null;if(credits?.balance!==null&&credits?.balance!==undefined&&['credits','points'].includes(credits.unit)){const line=node('div','cr-l');line.append(node('span','lbl',locale==='en'?'Credits':'点数'),node('b','cr-bal',formatCredits(credits.balance,locale)));const ref=entry?.account.subscriptionRef,verified=ref!=null&&data?.subscriptions.some(s=>s.subscriptionRef===ref),matches=verified?data?.details?.subscriptions.filter(s=>s.subscriptionRef===ref)??[]:[],observed=matches.length===1?matches[0].credits?.observedAt:null;line.append(node('em','',observed&&Number.isFinite(Date.parse(observed))?t('mfd.creditsRead',{t:relativeMoment(Date.parse(observed),{now:d.now,lang:locale})}):locale==='en'?'Reading time unknown':'读数时间未知'));page.append(line);}}
