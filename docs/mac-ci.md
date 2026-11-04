@@ -36,6 +36,19 @@ label, so GUI jobs serialize without cancelling pending checks. Other jobs can
 use both ordinary `modelplan-mac` instances. This label is a routing capability,
 not permission to approve system prompts or access real user data.
 
+The native suite runs as two parallel legs. `task: native` keeps the GUI
+label and runs everything that may need a window server. `task: native-headless`
+uses the ordinary label and runs the app-integration XCTest classes listed in
+`desktop/native/tools/ci/native-test-partition.json`, plus the pure contract,
+logic and packaging-binary checks. The list is opt-in: a new class runs on the
+GUI leg until it is added. `native_test_partition.py check` (Linux and both Mac
+legs) refuses a listed class whose source uses window-server APIs or builds a
+Dock/entry factory without `createsNativePanels: false`. Each leg derives its
+share from the same `swift test list`, runs it with one shared selector
+(`--filter` on one leg, `--skip` on the other) and then verifies from the XCTest
+log that it executed exactly its share. Only skips named in `allowedSkips`, each
+tied to one leg, are accepted, so a test cannot pass by skipping on the wrong leg.
+
 The desktop workflow's `mac_ci_probe=true` dispatch runs only a probe. Its
 `mac_ci_probe_mode` selects `cli` or `gui`. The owner can use this narrow dispatch
 to validate the runner without changing the general switch or launching all
