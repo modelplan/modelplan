@@ -141,6 +141,101 @@ private actor G1BRowsClient: EngineClient {
         return app
     }
 
+    func testG1_DOCK_3_1_04() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-screen-visible-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        _ = NSApplication.shared
+        guard !NSScreen.screens.isEmpty else { throw XCTSkip("No native display available") }
+        let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
+        let rows = try fixture()
+        let app = EngineRowsEntry.make(configuration: configuration,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+            createsNativePanels: false, makeClient: { _, store in G1BRowsClient(store: store, rows: rows) }, activateSettings: {})
+        defer { app.composition.dock.close() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.dockEdge(edge))
+            let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+            let screen = try XCTUnwrap(NSScreen.screens.enumerated().first { index, screen in
+                let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                return (number?.stringValue ?? "session.\(index)") == placement.displayID
+            }?.element)
+            XCTAssertTrue(screen.visibleFrame.contains(placement.frame), "The painted Dock must remain in NSScreen.visibleFrame")
+            XCTAssertTrue(screen.visibleFrame.contains(placement.sliverFrame))
+            XCTAssertTrue(screen.visibleFrame.contains(placement.wakeFrame))
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_08() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-dock-sizes-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1BDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        XCTAssertEqual(editor.snapshot?.preferences.size, .medium)
+        XCTAssertEqual(try XCTUnwrap(view.requestedNozzleDiameter), 44, accuracy: 0.0001)
+        for (size, diameter) in [(SettingsSize.small, CGFloat(36)), (.medium, 44), (.large, 52)] {
+            _ = try await editor.commit(SettingsB20Edit.size(size))
+            XCTAssertEqual(try XCTUnwrap(view.requestedNozzleDiameter), diameter, accuracy: 0.0001)
+            let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+            XCTAssertEqual(station.diameter, diameter, accuracy: 0.0001)
+        }
+        XCTAssertEqual(SettingsSize.allCases.count, 3)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_1_05() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-follow-default-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1BDisplayEnvironment()
+        let app = try await open(environment, profile: profile)
+        defer { app.composition.dock.close() }
+        XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.followActiveDisplay, false)
+        XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.displayID, environment.display.id)
+        environment.pointer = CGPoint(x: environment.second.frame.midX, y: environment.second.frame.midY)
+        app.composition.dock.refreshPresence()
+        XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.displayID, environment.display.id)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_1_12() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-first-widget-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1BDisplayEnvironment(), clock = G1BClock()
+        let app = try await open(environment, profile: profile, clock: clock)
+        defer { app.composition.dock.close() }
+        let preferences = try XCTUnwrap(app.settingsHost.application.editor.snapshot?.preferences)
+        XCTAssertTrue(preferences.showDock)
+        XCTAssertFalse(preferences.autoHide)
+        environment.pointer = CGPoint(x: 720, y: 450)
+        app.composition.dock.refreshPresence(); clock.advance(5)
+        let presentation = try XCTUnwrap(app.composition.dock.edgePresentation)
+        XCTAssertEqual(presentation.state, .expanded)
+        XCTAssertEqual(presentation.placement?.displayID, environment.display.id)
+        XCTAssertEqual(presentation.placement?.edge, .right)
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_12() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-readout-box-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1BDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for (size, diameter) in [(SettingsSize.small, CGFloat(36)), (.medium, 44), (.large, 52)] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let station = try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID == "0123456789abcdef" })
+                XCTAssertEqual(station.readout.width, 56 * diameter / 52, accuracy: 0.0001)
+                XCTAssertEqual(station.readout.height, 16 * diameter / 52, accuracy: 0.0001)
+                XCTAssertGreaterThan(station.eventRect.width, 0, "The event slot remains reserved without an event")
+            }
+        }
+        await app.composition.stop()
+    }
+
     func testG1_DOCK_3_1_1_02() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-autohide-default-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
