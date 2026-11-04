@@ -6,6 +6,20 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 This draft targets the next CLI release. The tag, release and plugin pins require separate approval and published artifacts.
 
+### Pending integration (not yet included)
+
+These candidate notes apply only if the named changes merge and are included in the release candidate.
+以下候选说明仅在对应变更合并并纳入发布候选版本后适用。
+
+- **#461 — reader request budget:** prevent a guarded reader stage from making extra HTTP requests through transport retries; connection failures remain bounded and existing provider limits apply.
+  **#461 — 读取器请求预算：**防止受保护的读取阶段因传输层重试而发出额外 HTTP 请求；连接失败保持有界，并继续遵守现有提供方限制。
+- **#457 and #450 — cockpit publication:** when negotiated, verified cached publication model and effort facts can reach cockpit details and the App faders; missing or unverified data remains unavailable.
+  **#457 与 #450 — 驾驶舱发布数据：**在完成协商后，已验证缓存中的模型与档位数据可进入驾驶舱详情和 App 推子；缺失或未验证的数据仍显示为不可用。
+- **#467 — test reliability:** synchronize the member-refresh regression test so it checks in-flight deferral and the completed-read floor deterministically. This is a test change; it does not change CLI refresh behavior.
+  **#467 — 测试可靠性：**同步单成员刷新的回归测试，稳定验证读取进行中的延迟与读取完成后的最短间隔。此项仅修改测试，不改变 CLI 刷新行为。
+
+### Included changes
+
 - Update every installed ModelPlan CLI copy together, including plugin-pinned copies. Stop older CLI processes before starting this version; older and newer copies must not run concurrently against the same cache because their ledger lock protocols do not mutually exclude one another.
   请同时更新所有已安装的 ModelPlan CLI，包括插件锁定的副本。启动此版本前请停止旧 CLI 进程；新旧版本不得同时使用同一缓存，因为两者的账本锁协议无法相互排斥。
 
