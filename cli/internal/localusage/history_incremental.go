@@ -774,6 +774,24 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	}
 	if projection != nil {
 		if !projection.finish(&s, now) {
+			if ctx.Err() == nil && historyAdmission(tool, a) == "" {
+				gate.Failures = min(gate.Failures+1, 4)
+				gate.Next = now.Add(min(time.Duration(1<<gate.Failures)*floor, time.Minute)).UTC()
+				// Commit only the fixed scheduling metadata, never the aborted
+				// projection or its cursor. Honor the same revocation fence as
+				// a successful cache publication.
+				saveGate := func() error {
+					if !historySave(gatePath, gate) {
+						return errors.New("history gate unavailable")
+					}
+					return nil
+				}
+				if a.Publish != nil {
+					_ = a.Publish(saveGate)
+				} else {
+					_ = saveGate()
+				}
+			}
 			r := ReadHistoryCache(cache, tool, a, now)
 			r.Availability = "partial"
 			return r
