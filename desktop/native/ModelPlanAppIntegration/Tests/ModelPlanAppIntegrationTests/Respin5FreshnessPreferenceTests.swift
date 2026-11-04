@@ -115,7 +115,9 @@ import ModelPlanShell
         }
     }
     func testBoundAgeFollowsTheSelectedAccountWithoutUsingReportTime() throws {
-        let now = Date()
+        // The fixture serializes whole seconds; use the same precision for the
+        // age boundaries so formatting cannot move an observation forward.
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
         var first = account("codex",ref:"shared",remaining:75,observed:now.addingTimeInterval(-120),now:now)
         var windows = try XCTUnwrap(first["windows"] as? [[String:Any]])
         windows[0]["kind"] = "five_hour"; first["windows"] = windows
