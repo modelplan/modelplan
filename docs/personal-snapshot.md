@@ -59,7 +59,7 @@ One entry per harness that reported a model (`claude-code`, `codex`):
 - `model`: `{harnessId, id, name, developerId}`. `id`, `name` and `developerId` are the publication's and are empty when the model is not listed there;
 - `effort` and `recommended`: `{key, label, star}` for the effort in use (the harness default counts as ★) and the ★ effort. Both are `null` when the model is not listed, and `effort` is `null` too when the harness reported an effort the publication does not list (a key newer than the publication is unknown, not ★). The ★ fallback in `effort` is kept for older clients only;
 - `effortStatus` (CLI 0.5.27+): `reported` when the harness reported an effort, `unreported` when it did not (then `effort` is only the ★ fallback). A client draws an effort marker as the user's own only when it is `reported`;
-- `vsRecommended`: `{abilityDelta, costRatio}` of the effort in use against ★, or `null` at ★;
+- `vsRecommended`: `{abilityDelta, costRatio}` of the effort in use against ★, or `null` at ★ or when the effort in use is unknown;
 - `speed`: `""` for standard, else the mode (`fast`, …);
 - `headroom`, `deciding`, `pool`: the quota verdict of the session's account for the allowance it draws from;
 - `workloadRate` (CLI 0.5.27+): the one speed reading per engine. `{source, window: "recent7d", scope: "all-configurations", configCount, value, status, n, min, lastAt, freshness}`: the generation rate of all the harness's configurations in the recent 7 days, as the ratio of their summed eligible output tokens and generation time. It describes what this user's mix produced, unreported efforts included; it is not a plan's speed and moves when the mix changes;
