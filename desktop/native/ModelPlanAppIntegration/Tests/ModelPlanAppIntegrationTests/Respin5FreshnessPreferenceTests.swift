@@ -18,10 +18,10 @@ import ModelPlanShell
         func readConsentJSON() async throws -> CommandResult { XCTFail("No consent read"); throw TransportError.launchFailed }
         func grantConsentJSON(_ data: Data) async throws -> CommandResult { XCTFail("No grant"); throw TransportError.launchFailed }
     }
-    private func dock() -> StaticDockPreviewHost {
+    private func dock(currentDate: @escaping @MainActor () -> Date = { Date() }) -> StaticDockPreviewHost {
         ProductionDockFactory.community(createsNativePanels: false, nativeEnvironment: {
             .init(displays: [.init(id: "synthetic", frame: .init(x: 0,y: 0,width: 1600,height: 1000), visibleFrame: .init(x: 0,y: 0,width: 1600,height: 960))], layouts: [], primaryDisplayID: "synthetic", pointer: .init(x: 800,y: 500))
-        }, elapsedClock: { 0 }, edgeScheduling: Scheduler())
+        }, elapsedClock: { 0 }, edgeScheduling: Scheduler(), currentDate: currentDate)
     }
     private func account(_ source: String, ref: String?, remaining: Double, observed: Date?, now: Date) -> [String: Any] {
         let format = ISO8601DateFormatter()
@@ -54,7 +54,8 @@ import ModelPlanShell
     private func descendants(_ root: NSView) -> [NSView] { [root]+root.subviews.flatMap(descendants) }
     func testActualProductionCardsShowOriginalBoundAndUnboundAccountAgeInHours() async throws {
         for source in ["codex","claude-code"] { for bound in [true,false] {
-            let now = Date(), host = dock(); defer { host.close() }
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let host = dock(currentDate: { now }); defer { host.close() }
             let application = try app(host); await application.reload()
             let snapshot = try joined([account(source,ref:bound ? "sub-a":nil,remaining:75,observed:now.addingTimeInterval(-7200),now:now)],now:now)
             host.render(snapshot:snapshot,diagnostics:ready); host.setPresentationAllowed(true)
