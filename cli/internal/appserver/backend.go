@@ -141,6 +141,16 @@ func ResetEventsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityResetEventLinksV1 opts into typed links on reset events.
+const CapabilityResetEventLinksV1 = "resetEventLinksV1"
+
+type resetEventLinksContextKey struct{}
+
+func ResetEventLinksEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(resetEventLinksContextKey{}).(bool)
+	return enabled
+}
+
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
 
