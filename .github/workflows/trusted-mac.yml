@@ -171,7 +171,7 @@ jobs:
         python3 "$partition" plan --package app-integration --leg headless --list "$RUNNER_TEMP/app-integration-list.txt" --args "$RUNNER_TEMP/app-integration-args.txt"
         selection=()
         while IFS= read -r argument; do selection+=("$argument"); done < "$RUNNER_TEMP/app-integration-args.txt"
-        swift test --package-path "$pkg" --scratch-path "$scratch" --jobs 2 --skip-build "${selection[@]}" 2>&1 | tee "$RUNNER_TEMP/app-integration-headless.log"
+        swift test --parallel --num-workers 2 --verbose --package-path "$pkg" --scratch-path "$scratch" --jobs 2 --skip-build "${selection[@]}" 2>&1 | tee "$RUNNER_TEMP/app-integration-headless.log"
         # Exactly this leg's share ran, nothing else, and every skip is an allowed one.
         python3 "$partition" verify --package app-integration --leg headless --list "$RUNNER_TEMP/app-integration-list.txt" --log "$RUNNER_TEMP/app-integration-headless.log"
     - name: Build the integrated Community entry without launching or packaging

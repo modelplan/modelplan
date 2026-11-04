@@ -105,3 +105,13 @@ class CheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ParallelWorkflowTests(unittest.TestCase):
+    def test_only_headless_xctests_run_parallel_and_keep_verification(self):
+        workflow = (ROOT / '.github/workflows/trusted-mac.yml').read_text()
+        gui = workflow.split('App integration tests, GUI leg', 1)[1].split('    - name:', 1)[0]
+        headless = workflow.split('App integration tests, headless leg', 1)[1].split('    - name:', 1)[0]
+        self.assertNotIn('--parallel', gui)
+        self.assertIn('swift test --parallel --num-workers 2 --verbose', headless)
+        self.assertIn('"${selection[@]}"', headless)
+        self.assertIn('"$partition" verify --package app-integration --leg headless', headless)
