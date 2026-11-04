@@ -33,8 +33,8 @@ private actor M6BatchEngine: EngineClient {
 
 /// These window journeys require the admitted GUI CI runner; no actual account is used.
 @MainActor final class G1M6Batch1Journeys: XCTestCase {
-    private func entry(automaticLaunch: Bool = false) async throws -> EngineDockMenuApplication {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-m6-batch-" + UUID().uuidString)
+    private func entry(automaticLaunch: Bool = false, profile: URL? = nil) async throws -> EngineDockMenuApplication {
+        let root = profile ?? FileManager.default.temporaryDirectory.appendingPathComponent("g1-m6-batch-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -132,5 +132,34 @@ private actor M6BatchEngine: EngineClient {
         XCTAssertFalse(try views(window).contains { $0.accessibilityIdentifier() == "settings.automaticUpdates" })
         await app.settingsHost.present(paneID: "about", origin: .userInitiated)
         XCTAssertFalse(try views(window).contains { $0.accessibilityIdentifier() == "settings.updateStatus" })
+    }
+
+    func testG1_HINT_9_07_ActualSettingsResetPersists() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-m6-hints-" + UUID().uuidString)
+        let app = try await entry(profile: root)
+        try await app.foundationStore.update { $0.helpHints = .init(seen: [.ignition, .drag], opens: 2, reveals: 2) }
+        await app.settingsHost.application.reload()
+        let window = try await settings(app, pane: "general")
+        let reset = try XCTUnwrap(try views(window).first { $0.accessibilityIdentifier() == "settings.resetHints" } as? NSButton)
+        XCTAssertTrue(reset.isEnabled, "The normal entry must make the reset action available")
+        guard reset.isEnabled else { return }
+        reset.performClick(nil)
+        var saved = await app.foundationStore.snapshot().preferences.helpHints
+        for _ in 0..<300 where saved != .init() {
+            try await Task.sleep(for: .milliseconds(10))
+            saved = await app.foundationStore.snapshot().preferences.helpHints
+        }
+        XCTAssertEqual(saved, .init())
+        let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en-US"])
+        let restored = await reopened.snapshot().preferences.helpHints
+        XCTAssertEqual(restored, .init())
+    }
+
+    func testG1_LBL_2_2_21_ActualSettingsSurfaceName() async throws {
+        let app = try await entry(), window = try await settings(app, pane: "dock")
+        let sidebar = try XCTUnwrap(try views(window).first { $0.accessibilityIdentifier() == "settings.sidebar" } as? NSTableView)
+        let cell = try XCTUnwrap(sidebar.view(atColumn: 0, row: 1, makeIfNecessary: true))
+        let title = try XCTUnwrap(descendants(cell).compactMap { ($0 as? NSTextField)?.stringValue }.first)
+        XCTAssertEqual(title, "Quota Widget")
     }
 }
