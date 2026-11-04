@@ -125,12 +125,14 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
     }
     func show() {
+        if wantsVisible { hide(); return }
         wantsVisible=true
         guard showTask == nil else { return }
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
-            guard !Task.isCancelled,wantsVisible else { showTask=nil;return }
+            guard !Task.isCancelled else { return }
+            guard wantsVisible else { showTask=nil;return }
             let theme:CockpitAppearance.Theme
             switch snapshot.preferences.theme {
             case .day:theme = .day

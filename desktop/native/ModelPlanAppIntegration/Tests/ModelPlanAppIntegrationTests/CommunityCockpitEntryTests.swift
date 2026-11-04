@@ -123,6 +123,42 @@ final class CommunityCockpitEntryTests:XCTestCase {
         page.outsidePress(CGPoint(x:anchor.maxX+40,y:anchor.midY),eventType:.leftMouseDown)
         XCTAssertTrue(page.bridge.disposed)
     }
+    @MainActor func testNormalEntryDockAndMenuToggleRestoresDetachedShell() async throws {
+        let (owner,bundle,context,anchor)=try shellFixture()
+        let client=RouteClient()
+        var pages:[CockpitWindowController]=[]
+        let coordinator=EngineCockpitCoordinator { context in
+            let page=owner.makePage(context:context,verified:bundle);pages.append(page);return page
+        }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let delivery=EngineDeliveryContext(sessionID:"s-"+context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:context.storeEpoch,generation:context.generation),revision:1)
+        await coordinator.consume(.context(delivery))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:owner.settingsStore,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 1 { break }; await Task.yield() }
+        let first=try XCTUnwrap(pages.first)
+        let window=try XCTUnwrap(first.window)
+        first.setAttached(false);first.toggleShutter()
+        let origin=CGPoint(x:window.frame.minX-20,y:window.frame.minY-20)
+        window.setFrameOrigin(origin)
+        _=app.perform(NSSelectorFromString("showConsoleMenu"))
+        XCTAssertTrue(first.bridge.disposed)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        for _ in 0..<100 { if pages.count == 2 { break }; await Task.yield() }
+        XCTAssertEqual(pages.count,2)
+        let second=try XCTUnwrap(pages.last)
+        let reopened=try XCTUnwrap(second.window)
+        XCTAssertTrue(owner.shellSession.detached);XCTAssertTrue(owner.shellSession.shutterClosed)
+        XCTAssertEqual(reopened.frame.origin.x,origin.x,accuracy:1)
+        XCTAssertEqual(reopened.frame.origin.y,origin.y,accuracy:1)
+        let fit=try XCTUnwrap(CockpitShellLayout.fit(usable:try XCTUnwrap(NSScreen.main).visibleFrame,anchor:anchor,shutterClosed:true))
+        XCTAssertEqual(reopened.frame.height,fit.frame.height,accuracy:1)
+        second.discard();await coordinator.shutdown();await app.composition.stop()
+    }
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
@@ -159,6 +195,30 @@ final class CommunityCockpitEntryTests:XCTestCase {
         _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
         XCTAssertEqual(surface.shows,2)
         await app.composition.stop()
+    }
+    @MainActor func testNormalEntryRapidDockMenuToggleRetainsShellSession() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("shell-toggle-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.shellSession.detached=true;owner.shellSession.shutterClosed=true
+        let origin=CGPoint(x:123,y:456);owner.shellSession.remember(origin,arrangement:"synthetic")
+        let client=RouteClient();var surface:SharedEngineCockpitConsole?
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:settings,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                let value=SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+                surface=value;return value
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        _=app.perform(NSSelectorFromString("showConsoleMenu"))
+        XCTAssertFalse(try XCTUnwrap(surface).wantsVisible)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        XCTAssertTrue(owner.shellSession.detached);XCTAssertTrue(owner.shellSession.shutterClosed)
+        XCTAssertEqual(owner.shellSession.origin(for:"synthetic"),origin)
+        surface?.hide();await app.composition.stop()
     }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {
