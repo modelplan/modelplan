@@ -39,7 +39,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    func testG1_CKP_SHELL_18() async throws {
+    private func withLivePage(_ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -76,21 +76,92 @@ private extension EngineDeliveryContext {
         await app.prepare()
         await app.composition.start()
         let coordinator = try XCTUnwrap(fanout?.cockpit)
+        XCTAssertNil(coordinator.g1LivePageForChecks, "No cockpit page is prewarmed before the normal opening action")
         app.showConsole()
         let limit = ContinuousClock.now.advanced(by: .seconds(10))
         while coordinator.g1LivePageForChecks?.g1PageStateForChecks.ready != true && ContinuousClock.now < limit {
             try await Task.sleep(for: .milliseconds(20))
         }
         let page = try XCTUnwrap(coordinator.g1LivePageForChecks)
-        XCTAssertTrue(page.g1PageStateForChecks.hasWindow)
-        XCTAssertTrue(page.g1PageStateForChecks.hasPage)
-        XCTAssertTrue(page.g1PageStateForChecks.ready)
-        let geometry = try await page.g1PageGeometryForChecks()
-        XCTAssertNotNil(geometry, "The live verified page must answer its read-only DOM observation")
+        try await exercise(app, coordinator, page)
         await page.g1CloseAndWaitForTeardown()
-        XCTAssertTrue(page.g1PageStateForChecks.disposed)
-        XCTAssertFalse(page.g1PageStateForChecks.hasPage)
-        XCTAssertFalse(page.g1PageStateForChecks.hasWindow)
+    }
+    private func geometry(_ page: CockpitWindowController) async throws -> [String: Any] {
+        let observation = try await page.g1PageGeometryForChecks()
+        let raw = try XCTUnwrap(observation)
+        return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+    }
+    private func dimension(_ facts: [String: Any], _ element: String, _ axis: String) throws -> Double {
+        let rect = try XCTUnwrap(facts[element] as? [String: Any], "Missing actual element: " + element)
+        return try XCTUnwrap((rect[axis] as? NSNumber)?.doubleValue)
+    }
+    func testG1_CKP_SHELL_18() async throws {
+        try await withLivePage { _, _, page in
+            XCTAssertTrue(page.g1PageStateForChecks.hasWindow)
+            XCTAssertTrue(page.g1PageStateForChecks.hasPage)
+            XCTAssertTrue(page.g1PageStateForChecks.ready)
+            let facts = try await self.geometry(page)
+            XCTAssertNotNil(facts["root"], "The real verified page must expose its cockpit root")
+        }
+    }
+    func testG1_CKP_SHELL_06_currentDisplayClamps() async throws {
+        try await withLivePage { _, _, page in
+            let window = try XCTUnwrap(page.window)
+            let visible = try XCTUnwrap(window.screen?.visibleFrame)
+            XCTAssertGreaterThanOrEqual(window.frame.minX, visible.minX - 1)
+            XCTAssertLessThanOrEqual(window.frame.maxX, visible.maxX + 1)
+            XCTAssertGreaterThanOrEqual(window.frame.minY, visible.minY - 1)
+            XCTAssertLessThanOrEqual(window.frame.maxY, visible.maxY + 1)
+        }
+    }
+    func testG1_CKP_SHELL_07_currentScreenProfile() async throws {
+        try await withLivePage { _, _, page in
+            let screen = try XCTUnwrap(page.window?.screen)
+            let height = screen.visibleFrame.height
+            let expected: Double = height - 66 >= 890 ? 877 : (height - 66 < 640 ? 609 : 627)
+            let facts = try await self.geometry(page)
+            XCTAssertEqual(try self.dimension(facts, "root", "height"), expected, accuracy: 1)
+        }
+    }
+    func testG1_CKP_SHELL_09_actualRegistration() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            XCTAssertEqual(try self.dimension(facts, "root", "width"), 620, accuracy: 1)
+            XCTAssertEqual(try self.dimension(facts, "engine", "width"), 588, accuracy: 1)
+            XCTAssertEqual(try self.dimension(facts, "deck", "width"), 588, accuracy: 1)
+            XCTAssertEqual(try self.dimension(facts, "tape", "width"), 588, accuracy: 1)
+        }
+    }
+    func testG1_CKP_SHELL_10_actualModuleAllocation() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            let rootHeight = try self.dimension(facts, "root", "height")
+            let tall = rootHeight > 700
+            XCTAssertEqual(try self.dimension(facts, "engine", "height"), 226, accuracy: 1)
+            XCTAssertEqual(try self.dimension(facts, "deck", "height"), tall ? 257 : 217, accuracy: 1)
+            XCTAssertEqual(try self.dimension(facts, "tape", "height"), tall ? 94 : 58, accuracy: 1)
+        }
+    }
+    func testG1_CKP_SHELL_12_baseReserve() async throws {
+        try await withLivePage { _, _, page in
+            let facts = try await self.geometry(page)
+            let rootHeight = try self.dimension(facts, "root", "height")
+            let contentHeight = try XCTUnwrap(page.window?.contentView?.bounds.height)
+            XCTAssertEqual(Double(contentHeight) - rootHeight, 34, accuracy: 1)
+        }
+    }
+    func testG1_CKP_SHELL_20_closeRetiresActualPage() async throws {
+        try await withLivePage { _, coordinator, page in
+            page.requestClose()
+            let limit = ContinuousClock.now.advanced(by: .seconds(3))
+            while !page.g1PageStateForChecks.disposed && ContinuousClock.now < limit {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertTrue(page.g1PageStateForChecks.disposed)
+            XCTAssertFalse(page.g1PageStateForChecks.hasPage)
+            XCTAssertFalse(page.g1PageStateForChecks.hasWindow)
+            XCTAssertNil(coordinator.g1LivePageForChecks)
+        }
     }
 }
 #endif

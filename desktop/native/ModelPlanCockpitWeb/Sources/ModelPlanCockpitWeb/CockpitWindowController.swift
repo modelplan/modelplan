@@ -229,8 +229,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         const r = element.getBoundingClientRect();
         return {x:r.x, y:r.y, width:r.width, height:r.height};
       };
-      return JSON.stringify({field:rect('.ck-field'), canopy:rect('.ck-port'),
-        hud:rect('.hud'), deck:rect('.ck-deck'), tape:rect('.ck-tape'),
+      return JSON.stringify({root:rect('#cockpit'), field:rect('.ck-field'), canopy:rect('.ck-port'),
+        hud:rect('.hud'), engine:rect('.ck-eng'), deck:rect('.ck-deck'), tape:rect('.ck-tape'),
         shutterClosed:document.querySelector('[data-shutter]')?.getAttribute('aria-pressed') === 'true',
         reduceMotion:document.documentElement.dataset.reduceMotion === 'true',
         reduceTransparency:document.documentElement.dataset.reduceTransparency === 'true'});
