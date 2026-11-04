@@ -26,6 +26,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    if: ${{ !inputs.mac_ci_probe }}
+    runs-on: ubuntu-latest
+    outputs:
+      web_only: ${{ steps.classify.outputs.web_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test PR diff classifier
+        run: python3 -m unittest discover -s scripts/tests -p test_ci_web_only.py -v
+      - name: Classify PR changes
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          web_only=false
+          if [ "$EVENT_NAME" = pull_request ] && git show "$BASE_SHA:scripts/ci_web_only.py" > "$RUNNER_TEMP/ci_web_only.py" 2>/dev/null; then
+            result=$(python3 "$RUNNER_TEMP/ci_web_only.py" "$BASE_SHA" "$HEAD_SHA") || result=false
+            if [ "$result" = true ]; then web_only=true; fi
+          fi
+          echo "web_only=$web_only" >> "$GITHUB_OUTPUT"
+          if [ "$web_only" = true ]; then
+            echo 'Web-only PR: desktop Mac jobs are skipped; Linux web and bundle-pin checks run.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Not confirmed web-only: desktop Mac job conditions are unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+  cockpit-bundle-pins:
+    needs: changes
+    if: ${{ needs.changes.outputs.web_only == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify both native cockpit bundle pins on Linux
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py || {
+            echo '::error::Cockpit bundle differs from native pins. Update the native bundle pins; the PR will then run Mac checks.'
+            exit 1
+          }
   app:
     if: ${{ !inputs.mac_ci_probe }}
     runs-on: ubuntu-latest
@@ -77,7 +127,8 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   macos:
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: changes
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && needs.changes.outputs.web_only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
     runs-on: macos-latest
     defaults:
@@ -114,7 +165,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: changes
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && needs.changes.outputs.web_only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     # The actual universal Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -162,7 +214,8 @@ jobs:
 
   native:
     name: native (${{ matrix.os }})
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: changes
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && needs.changes.outputs.web_only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     strategy:
       fail-fast: false
       matrix:
