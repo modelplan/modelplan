@@ -120,6 +120,10 @@ enum SettingsWords {
     public private(set) var selectedPaneID = "general"
     public private(set) var errorMessage: String?
     public let searchField = NSSearchField()
+    #if DEBUG
+    /// The same sanitized payload supplied to the diagnostic-copy port.
+    public var diagnosticPayloadForChecks: String { editor.context.about.diagnosticText }
+    #endif
     private let sidebar = NSTableView()
     private let glass = NSVisualEffectView()
     private let stack = NSStackView()
