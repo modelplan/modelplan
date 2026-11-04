@@ -23,13 +23,16 @@ private actor G1DEngine: EngineClient {
     let context = EngineDeliveryContext(sessionID: "g1-d", floor: .init(storeEpoch: "g1-d", generation: 1), revision: 1)
     var rows: WireRowsSnapshot
     var requests: [String] = []
+    private var silent = false
+    func stopFrames() { silent = true }
+    func stageRestartRows(_ value:WireRowsSnapshot) { rows=value }
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     nonisolated func isCurrent(_ value: EngineDeliveryContext) -> Bool { value.sessionID == "g1-d" && value.revision == 1 }
     func supportsCapability(_ value: String) async -> Bool { value == "memberRefreshV1" }
     func start() async throws -> EngineDeliveryContext { requests.append("start"); await store.consume(.connection(.ready(context))); await store.consume(.context(context)); return context }
     func stop() async { requests.append("stop") }
-    func retry() async throws -> EngineDeliveryContext { try await start() }
-    func deliver(_ value: WireRowsSnapshot) async throws { rows = value; await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: value), delivery: context), invalidRowCount: 0)) }
+    func retry() async throws -> EngineDeliveryContext { silent=false; requests.append("retry"); return try await start() }
+    func deliver(_ value: WireRowsSnapshot) async throws { guard !silent else { return }; rows = value; await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: value), delivery: context), invalidRowCount: 0)) }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { requests.append("rows"); try await deliver(rows); return .init(requestID: .string("rows")) }
     func consent(timeout: Duration?) throws -> EngineRequestCompletion { requests.append("consent"); throw EngineClientError.unsupportedCapability }
     func grant(_ value: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -153,6 +156,49 @@ private actor G1DEngine: EngineClient {
         let f = try await fixture(); XCTAssertNotNil(f.host.edgePresentation)
         if id.hasPrefix("DOCK-3.8") { try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden) }
         throw XCTSkip("\(id): SEAM-NEEDED \(reason)")
+    }
+    func testG5SilentEngineRechecksPresentationDeadlinesAndRecovers() async throws {
+        let f=try G1DFixture();addTeardownBlock { @MainActor in await f.close() }
+        func bound(_ seconds:Double) {
+            var projection=f.raw["projection"] as! [String:Any], rows=projection["rows"] as! [[String:Any]]
+            let until=G1DFixture.stamp(f.clock.wall.addingTimeInterval(seconds))
+            for r in rows.indices {
+                rows[r]["expiresAt"]=until
+                var accounts=rows[r]["accounts"] as! [[String:Any]]
+                for a in accounts.indices {
+                    accounts[a]["freshUntil"]=until;accounts[a]["observedAt"]=G1DFixture.stamp(f.clock.wall)
+                    var windows=accounts[a]["windows"] as! [[String:Any]]
+                    for w in windows.indices { windows[w]["validUntil"]=until;windows[w]["observedAt"]=G1DFixture.stamp(f.clock.wall) }
+                    accounts[a]["windows"]=windows
+                }
+                rows[r]["accounts"]=accounts
+            }
+            projection["rows"]=rows;f.raw["projection"]=projection
+        }
+        bound(180);try await f.open()
+        let id=G1DFixture.ids[0], view=f.host.dockView
+        let initial=try XCTUnwrap(view.presentedReadingsForChecks[id]?.timeLeftFraction)
+        await f.engine.stopFrames()
+        let sequence=f.app.composition.store.snapshot.rows?.sequence
+        func advanceWithoutInput(_ seconds:Double) {
+            f.clock.wall.addTimeInterval(seconds);f.clock.elapsed += seconds
+            f.timer.fireIfDue(f.clock.elapsed) // No hover, menu opening, refreshPresence or new rows frame.
+        }
+        advanceWithoutInput(61)
+        let later=try XCTUnwrap(view.presentedReadingsForChecks[id]?.timeLeftFraction)
+        XCTAssertLessThan(later,initial,"The actual rendered countdown must advance without any engine frame or input")
+        XCTAssertEqual(f.app.composition.store.snapshot.rows?.sequence,sequence)
+        advanceWithoutInput(120)
+        XCTAssertEqual(view.presentedReadingsForChecks[id]?.dataState,.stale)
+        XCTAssertNil(view.presentedReadingsForChecks[id]?.remainingPercent)
+        XCTAssertTrue(try f.card().stateLabel.hasPrefix("Stale"))
+        bound(300);f.mutateFirst { account in var windows=account["windows"] as! [[String:Any]];windows[0]["remainingPercent"]=23.0;account["windows"]=windows }
+        f.raw["sequence"]=((f.raw["sequence"] as? Int) ?? 1)+1
+        await f.engine.stageRestartRows(try f.decode())
+        _ = try await f.app.composition.client.retry()
+        _ = try await f.app.composition.client.subscribeRows(timeout:nil)
+        XCTAssertEqual(view.presentedReadingsForChecks[id]?.dataState,.fresh)
+        XCTAssertEqual(view.presentedReadingsForChecks[id]?.remainingPercent,23,"Recovery must use the new frame, never relabel the old 41%")
     }
     private func quotaSliverFixture() async throws -> G1DFixture {
         let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }

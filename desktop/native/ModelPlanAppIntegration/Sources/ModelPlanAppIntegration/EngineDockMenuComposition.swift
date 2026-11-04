@@ -51,7 +51,13 @@ public struct EngineMenuRefreshResult {
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
-            installValidatedUnknown: true)
+            installValidatedUnknown: true, presentationInterval: 60, refreshPresentation: { [weak self] now in
+                guard let self else { return }
+                if !self.refreshCurrentPresentation(at:now) {
+                    self.pairedProjection.invalidate()
+                    if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+                }
+            })
     }()
     private var resetNotifier:EngineResetNotifier?
     private var resetScratch:URL?
@@ -119,22 +125,22 @@ public struct EngineMenuRefreshResult {
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
-        // A locale change does not replace the accepted delivery. Reproject
-        // atomically only if the existing cache and source are still current,
-        // preserving an open card without retaining stale source data.
-        if !deadlineLifecycleSuspended, !pairedProjection.isProjecting {
-            let now = deadlineWall(), token = pairedProjection.generation
-            if admittedCache.isAdmissible(at: now),
-               let candidate = try? pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now)),
-               candidate.sourceToken == token, pairedProjection.isCurrent(token) {
-                admittedCache.install(candidate.value, evaluatedAt: now)
-                dock.refreshDockContent(); menuDidChange?()
-                return
-            }
-        }
+        if refreshCurrentPresentation(at:deadlineWall()) { return }
         pairedProjection.invalidate()
         if pairedProjection.isProjecting { pendingProjectionReplacement = true; return }
         if !deadlineLifecycleSuspended { deadlineDriver.replace() }
+    }
+    /// Re-evaluate only the current admitted source inside its original validity interval.
+    /// Countdown/age ticks and locale changes use the same atomic path; neither renews source freshness.
+    private func refreshCurrentPresentation(at now:Date) -> Bool {
+        guard !deadlineLifecycleSuspended, !pairedProjection.isProjecting else { return false }
+        let token=pairedProjection.generation
+        guard admittedCache.isAdmissible(at:now),
+              let candidate=try? pairedProjection.make(.init(snapshot:nil,diagnostics:.init(),now:now)),
+              candidate.sourceToken == token, pairedProjection.isCurrent(token) else { return false }
+        admittedCache.install(candidate.value,evaluatedAt:now)
+        dock.refreshDockContent();menuDidChange?()
+        return true
     }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
