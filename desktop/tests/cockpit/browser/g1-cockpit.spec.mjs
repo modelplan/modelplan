@@ -147,3 +147,16 @@ test('CKP-STRIP-01 cockpit strip exposes one ordered row of its required control
  await expect(page.locator('.ck-head .wordmark')).toHaveText('ModelPlan');
  await expect(page.locator('.ck-head [data-help],.ck-head button[aria-label="Help"]')).toHaveCount(0);
 });
+
+test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geometry',async({page})=>{
+ await open(page);const all=page.locator('.ek-all'),vendor=page.locator('.eng-keys .ek[data-sub]').first();
+ await expect(all).toHaveAttribute('aria-pressed','true');await expect(vendor).toHaveAttribute('aria-pressed','false');
+ const underline=all.locator('.bl'),vendorLine=vendor.locator('.bl');const active=await underline.evaluate(e=>({opacity:Number(getComputedStyle(e).opacity),color:getComputedStyle(e).backgroundColor,height:e.getBoundingClientRect().height}));
+ const rgb=active.color.match(/\d+/g).slice(0,3).map(Number);expect(Math.max(...rgb)-Math.min(...rgb)).toBeLessThan(30);
+ expect(active.height).toBeCloseTo((await vendorLine.boundingBox()).height,0);
+ await page.getByRole('button',{name:'Subscription',exact:true}).click();await vendor.click();
+ await expect(all).toHaveAttribute('aria-pressed','false');await expect(vendor).toHaveAttribute('aria-pressed','true');await expect(page.locator('.sp-h')).toBeVisible();
+ expect(Number(await underline.evaluate(e=>getComputedStyle(e).opacity))).toBeLessThan(active.opacity);
+ await all.click();await expect(all).toHaveAttribute('aria-pressed','true');await expect(page.locator('.sa-list')).toBeVisible();
+});
+
