@@ -47,3 +47,6 @@ html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash
 #cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}
 html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}}
+/* Keep inactive MFD page labels legible against night-mode key faces. */
+html[data-theme="night"] #cockpit .mfd-pk .pk:not(.on)>span{color:#a1aab3}
+html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}

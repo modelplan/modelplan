@@ -17,7 +17,8 @@ import {where} from '../study/rocket-r1/mfd-pages/where.js';
 import '../study/rocket-r1/strings/mfd.js';
 type Locale='en'|'zh-CN';
 const node=<K extends keyof HTMLElementTagNameMap>(tag:K,cls?:string,text?:string):HTMLElementTagNameMap[K]=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;};
-const pages=[{id:'overview',en:'Overview',zh:'总览'},{id:'plans',en:'Subscription',zh:'订阅'},{id:'tune',en:'Effort',zh:'档位'},{id:'where',en:'Breakdown',zh:'去向'}] as const;
+const cockpitPageRegistry=Object.freeze([Object.freeze({module:overview,en:'Overview',zh:'总览'}),Object.freeze({module:plans,en:'Subscription',zh:'订阅'}),Object.freeze({module:tune,en:'Effort',zh:'档位'}),Object.freeze({module:where,en:'Breakdown',zh:'去向'})]);
+export const cockpitPageIds=Object.freeze(cockpitPageRegistry.map(p=>p.module.id));
 export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boolean,fixture:PrototypeDetailsFixture=unavailablePrototypeDetailsFixture(),redBelow:()=>number=()=>effectiveRedBelow(undefined)){
  const scale=root.querySelector<HTMLElement>('.fd-scale')!,channels=root.querySelector<HTMLElement>('.fd-chs')!,mfd=root.querySelector<HTMLElement>('.dk-mfd')!;
  let details=fixture;fixture=unavailablePrototypeDetailsFixture();
@@ -63,7 +64,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);
- const modules=[overview,plans,tune,where];let uiWhere='proj',uiTime='today',uiDays=30,uiChart='bars',uiStack=true,uiSubTab='now';
+ const pages=cockpitPageRegistry,modules=pages.map(p=>p.module);let uiWhere='proj',uiTime='today',uiDays=30,uiChart='bars',uiStack=true,uiSubTab='now';
  const buttons=pages.map((item,i)=>{const b=node('button','pk'),caption=node('span'),led=node('i','pk-led');b.type='button';b.dataset.mfd='page:'+modules[i].id;b.dataset.mat='part';b.append(caption,led);b.onclick=e=>{if(!e.isTrusted)return;selected=i;paint();};bar.append(b);return {b,caption};});
  mfd.replaceChildren(bar,screen,footer);
  // Public projection only: v1.1 charts, rankings and full session lists are
