@@ -288,6 +288,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var cardPresentedRevision: UInt64?, cardPresentedGeneration: UInt64?
     private var fallbackCardLeaveTask: Task<Void, Never>?
     private var interactionController: DockInteractionController?
+    /// The actual installed controller; tests may sample its externally supplied clock.
+    var orderAnnouncementInstalledForChecks: Bool { interactionController?.onOrderAnnouncement != nil }
+    var interactionControllerForChecks: DockInteractionController? { interactionController }
+    var sliverNoticeMarksForChecks: [DockSliverNoticeMark] { sliver.noticeMarks }
+    var sliverQuotaColorsForChecks: [DockSliverResolvedColorSegment] { sliver.quotaSegmentColorRolesForChecks }
     var interactionBindingInstalled: Bool { interactionController != nil }
     var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
     private var interactionEvents: [DockNozzleEvents] = []

@@ -84,7 +84,10 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: deadlineNow)
+        // An explicitly injected elapsed clock drives the real edge controller too.
+        // The nil/default production path retains its existing scheduler and clock.
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment,
+            elapsedClock: deadlineElapsed, edgeScheduling: deadlineElapsed.map { DockCommonModeScheduler(clock: $0) }, currentDate: deadlineNow)
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         dock.onWillRetire = { [weak self] in

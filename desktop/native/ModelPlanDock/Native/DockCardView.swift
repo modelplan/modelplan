@@ -19,6 +19,7 @@ import CryptoKit
     public init(){}
 }
 @MainActor private final class DockCardBar:NSView {
+    let segmentCount = 10
     var fraction:Double?,on:NSColor,track:NSColor
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.remainingFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.remainingFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
     required init?(coder:NSCoder){fatalError()}
@@ -31,9 +32,9 @@ import CryptoKit
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
     }
     override func draw(_ dirtyRect:NSRect){
-        let gap:CGFloat=2,w=max(0,(bounds.width-9*gap)/10)
-        for i in 0..<10{let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height);track.setFill();r.fill()
-            if let fraction{let fill=max(0,min(1,fraction*10-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
+        let gap:CGFloat=2,w=max(0,(bounds.width-CGFloat(segmentCount-1)*gap)/CGFloat(segmentCount))
+        for i in 0..<segmentCount{let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height);track.setFill();r.fill()
+            if let fraction{let fill=max(0,min(1,fraction*Double(segmentCount)-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
     }
 }
 @MainActor public final class DockCardView:NSView {
@@ -52,6 +53,7 @@ import CryptoKit
     }
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
+    public var quotaBarSegmentCountsForChecks: [String: Int] { bars.mapValues(\.segmentCount) }
     /// TextKit fragments of currently mounted text, in card-local coordinates.
     /// Unlaid-out fields have no observed fragments; this getter does not force layout.
     public var renderedLineFragmentsForChecks: [String: [CGRect]] {
