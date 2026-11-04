@@ -128,7 +128,7 @@ import CryptoKit
         context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1)); context.fill(.init(x: 0, y: 10, width: 4, height: 10))
         try sliver.apply(image: try XCTUnwrap(context.makeImage()), logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
         let frame = sliver.frame, bytes = sliver.retainedBytes
-        let segments = sliver.quotaSegmentColorRolesForChecks
+        let segments = sliver.rasterColorRunsForChecks
         // AppKit colour-matches supplied images. Inspect the actual resolved channels,
         // while keeping the exact RGBA available to a controlled-profile acceptance test.
         let rgb = segments.map { segment -> [Int] in
@@ -141,9 +141,10 @@ import CryptoKit
         XCTAssertEqual(segments.first?.from, 0); XCTAssertEqual(segments.last?.through, 1)
         XCTAssertTrue(segments.allSatisfy { $0.remainingPercent == nil && $0.quotaRole == nil })
         XCTAssertEqual(sliver.frame, frame); XCTAssertEqual(sliver.retainedBytes, bytes)
-        XCTAssertEqual(sliver.quotaSegmentColorRolesForChecks, segments, "Inspection must not alter drawing state")
+        XCTAssertEqual(sliver.rasterColorRunsForChecks, segments, "Inspection must not alter drawing state")
+        XCTAssertTrue(sliver.quotaSegmentColorRolesForChecks.isEmpty, "Pixels alone must not create member quota facts")
         try sliver.apply(image: nil, logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
-        XCTAssertFalse(sliver.quotaSegmentColorRolesForChecks.isEmpty, "The neutral metal also has observable colours")
+        XCTAssertFalse(sliver.rasterColorRunsForChecks.isEmpty, "The neutral metal also has observable colours")
     }
     func testSettingsSurfaceReadDoesNotConstructOrPresent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-" + UUID().uuidString)

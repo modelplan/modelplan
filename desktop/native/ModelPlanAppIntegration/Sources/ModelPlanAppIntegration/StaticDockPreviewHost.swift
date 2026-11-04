@@ -1299,6 +1299,27 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
+    private func quotaReadingsForSliver() -> [DockSliverQuotaInput] {
+        guard preferences.sliverAlert, let model else { return [] }
+        let inputs = Dictionary(uniqueKeysWithValues:model.inputs.map { ($0.id,$0) })
+        guard let order = try? memberSafePreferences.presentedSubscriptionIDs(model.inputs.map(\.id)) else { return [] }
+        let view = interactionView
+        func ink(_ role:DockQuotaStatus) -> DockInk {
+            if let supplied = view.quotaInk(for:role) { return supplied }
+            let fallback:NSColor
+            switch role { case .normal: fallback = .systemGreen; case .warning: fallback = .systemYellow; case .critical: fallback = .systemRed; case .unknown: fallback = .secondaryLabelColor }
+            guard let rgb=fallback.usingColorSpace(.sRGB) else { return DockInk(0.5,0.5,0.5) }
+            return DockInk(Double(rgb.redComponent),Double(rgb.greenComponent),Double(rgb.blueComponent),Double(rgb.alphaComponent))
+        }
+        let now = currentDate()
+        return order.compactMap { id in
+            guard let input = inputs[id] else { return nil }
+            // The model already withholds unproven values; evaluate expiry/selection again at presentation time.
+            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:Double(preferences.redBelow))
+            let role = reading?.status ?? .unknown
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:ink(role))
+        }
+    }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
     func prepareSliver(size: CGSize) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
@@ -1315,7 +1336,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             sliver.noticeMarks = marks.values.sorted { $0.position == $1.position ? $0.notice.key.subscriptionID < $1.notice.key.subscriptionID : $0.position < $1.position }
             let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
-                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language))
+                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language), quotaReadings:quotaReadingsForSliver())
             sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
