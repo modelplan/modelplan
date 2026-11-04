@@ -279,7 +279,12 @@ public enum EngineDeadlineFacts {
             passSignals.append(signal)
             for event in preferred.map({[$0]}) ?? [] {
                 let label=event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置")
-                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置"))
+                let eventLinks=event.orderedLinks(english:!language.lowercased().hasPrefix("zh")).map { link -> DockCardLink in
+                    let label:String
+                    switch link.kind { case .aihot: label="AIhot"; case .original: label=english ? "Original post":"原文"; case .official: label=english ? "Official":"官方" }
+                    return .init(label:label,url:link.url)
+                }
+                reserve.append(.init(id:"reset-event:"+event.id+":"+event.status,kind:.notice,label:label,value:"",detail:english ? "Public status does not confirm a personal quota reset":"公开状态不代表个人额度已重置",links:eventLinks))
             }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
                account.valueState == .current || account.valueState == .retained,

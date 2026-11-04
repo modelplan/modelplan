@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import ModelPlanDock
 import ModelPlanSettings
@@ -231,20 +232,45 @@ private actor S4RowsClient: EngineClient {
         guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         let provider=EngineDockContentProvider(source:entry.composition.provider)
         provider.resetEventState = { entry.composition.rowEvents }
+        let cardView=DockCardView(frame:.zero)
+        defer { cardView.dispose() }
+        var opened:[URL]=[]
+        cardView.onOpenURL = { opened.append($0) }
+        func descendants(_ view:NSView) -> [NSView] {
+            let children=(view as? NSStackView)?.arrangedSubviews ?? view.subviews
+            return [view]+children.flatMap(descendants)
+        }
+        func checkCard(_ expected:[String]) throws {
+            guard let card=try entry.composition.dock.cardContent(for:"0123456789abcdef") else { throw Failure(description:"reset card missing") }
+            try cardView.apply(card,pinned:false)
+            let views=descendants(cardView)
+            let icons=views.filter{$0.accessibilityIdentifier() == "dock.card.reset-source-icon"}
+            let buttons=views.compactMap{$0 as? NSButton}.filter { $0.accessibilityIdentifier()?.contains(".source.") == true }
+            try require(icons.count == (expected.isEmpty ? 0:1),"one shared source icon is required")
+            try require(buttons.map(\.title) == expected,"source buttons must preserve the localized order")
+            try require(buttons.allSatisfy{$0.accessibilityLabel() == $0.title},"each source must have an accessible label")
+            if let button=buttons.first { opened.removeAll();button.performClick(nil);try require(opened.count == 1,"source action must remain available") }
+        }
         func kinds(_ english:Bool) -> [EngineResetSourceLink.Kind] {
             provider.language = english ? "en" : "zh-CN"
             return provider.makeContentAndDeadline(.init(snapshot:nil,diagnostics:.init(),now:clock)).resetEventLinks["0123456789abcdef"]?.map(\.kind) ?? []
         }
         try require(kinds(true) == [.original,.aihot,.official],"English must prefer the original post and retain the official source")
         try require(kinds(false) == [.aihot,.original,.official],"Chinese must prefer AIhot and retain the official source")
+        try await settings.update { $0.language = .english };await entry.prepare()
+        try checkCard(["Original post","AIhot","Official"])
+        try await settings.update { $0.language = .chinese };await entry.prepare()
+        try checkCard(["AIhot","原文","官方"])
         provider.language = "ja"
         try require(provider.makeContentAndDeadline(.init(snapshot:nil,diagnostics:.init(),now:clock)).resetEventLinks["0123456789abcdef"]?.map(\.kind) == [.original,.aihot,.official],"other languages must prefer the original post")
         try await client.replaceRows(rows([aihot,official]))
         try require(kinds(true) == [.aihot,.official] && kinds(false) == [.aihot,.official],"AIhot and official sources must remain without an original")
         try await client.replaceRows(rows([aihot]))
         try require(kinds(true) == [.aihot] && kinds(false) == [.aihot],"an AIhot-only source must remain visible")
+        try checkCard(["AIhot"])
         try await client.replaceRows(rows(nil))
         try require(kinds(true).isEmpty && kinds(false).isEmpty,"an unnegotiated client must not invent source links")
+        try checkCard([])
         await entry.composition.stop()
     }
 
