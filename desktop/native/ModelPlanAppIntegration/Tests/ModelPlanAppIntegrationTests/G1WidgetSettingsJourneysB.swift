@@ -130,13 +130,26 @@ private actor G1BRowsClient: EngineClient {
     private func open(_ environment: G1BDisplayEnvironment, profile: URL, empty: Bool = false, secondMember: Bool = false, clock: G1BClock? = nil, panels: Bool = false, resetStatus: String? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
         let fixture = try fixture(empty: empty, secondMember: secondMember, resetStatus: resetStatus)
+        if panels && resetStatus != nil { throw XCTSkip("Native-panel fixture must not dispatch system notifications") }
         let configuration = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"), applicationVersion: "g1", allowedEnvironment: [:], offline: true, readOnly: true)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        #if DEBUG
+        let previousLedger = EngineRowsEntry.isolatedNativeNotificationLedgerForChecks
+        let isolatedLedger = profile.appendingPathComponent("notification-ledger.json")
+        if panels { EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = isolatedLedger }
+        #else
+        if panels { throw XCTSkip("Native-panel tests require an isolated notification ledger") }
+        #endif
         let app = EngineRowsEntry.make(configuration: configuration,
-            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+            settingsStore: settings,
             createsNativePanels: panels, dockEnvironment: { environment.sample() },
             deadlineNow: { Date(timeIntervalSince1970: 1_800_000_000 + (clock?.elapsed ?? 0)) },
             deadlineElapsed: clock.map { clock in { clock.elapsed } }, deadlineScheduling: clock,
             makeClient: { _, store in G1BRowsClient(store: store, rows: fixture) }, activateSettings: {})
+        #if DEBUG
+        EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = previousLedger
+        if panels { XCTAssertEqual(app.composition.nativeNotificationLedgerForChecks, isolatedLedger) }
+        #endif
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         return app
     }
@@ -258,9 +271,6 @@ private actor G1BRowsClient: EngineClient {
         await app.composition.stop()
     }
 
-    // TODO(G1): enable only after the normal-entry native-panel path accepts an
-    // isolated notification-ledger location; never read a user's live ledger.
-    #if G1_ISOLATED_NATIVE_PANEL_ENTRY
     func testG1_DOCK_3_1_03() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-no-floating-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -335,10 +345,6 @@ private actor G1BRowsClient: EngineClient {
         }
         await app.composition.stop()
     }
-    #endif
-
-    // TODO(G1): enable after M2's quotaSegmentColorRolesForChecks seam lands.
-    #if G1_SLIVER_COLOUR_SEAM
     func testG1_DOCK_3_1_1_03() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-sliver-alert-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -364,5 +370,4 @@ private actor G1BRowsClient: EngineClient {
         }
         await app.composition.stop()
     }
-    #endif
 }

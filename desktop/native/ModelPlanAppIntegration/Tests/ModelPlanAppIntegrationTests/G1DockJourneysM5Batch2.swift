@@ -153,6 +153,62 @@ private actor G1CRowsClient: EngineClient {
         return app
     }
 
+    func testG1_DOCK_3_1_13() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-readout-backing-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile)
+        defer { app.composition.dock.close() }
+        let client = try XCTUnwrap(app.composition.client as? G1CRowsClient), view = app.composition.dock.dockView
+        for remaining in [41.0, 25.0, 0.0] {
+            try await client.replaceRows(fixture(five: remaining))
+            XCTAssertEqual(view.presentedReadingsForChecks["0123456789abcdef"]?.readout, "\(Int(remaining))%")
+            let actual = try XCTUnwrap(view.renderedReadoutBackingForChecks["0123456789abcdef"])
+            XCTAssertFalse(actual.hasDedicatedBacking)
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_15() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-upright-readout-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor, view = app.composition.dock.dockView
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for size in [SettingsSize.small, .medium, .large] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                for id in ["0123456789abcdef", "fedcba9876543210"] {
+                    let transform = try XCTUnwrap(view.renderedReadoutTransformsForChecks[id])
+                    XCTAssertEqual(transform.b, 0, accuracy: 0.000001)
+                    XCTAssertEqual(transform.c, 0, accuracy: 0.000001)
+                    XCTAssertGreaterThan(transform.a, 0)
+                }
+            }
+        }
+        await app.composition.stop()
+    }
+
+    func testG1_DOCK_3_1_17() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-curvature-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let app = try await open(G1CDisplayEnvironment(), profile: profile, secondMember: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, editor = app.settingsHost.application.editor
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(edge))
+            for size in [SettingsSize.small, .medium, .large] {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let actual = try XCTUnwrap(dock.resolvedT2CurvatureForChecks)
+                XCTAssertGreaterThan(actual.sliceAngle, 0)
+                XCTAssertLessThanOrEqual(actual.sliceAngle, 16 * .pi / 180 + 0.000001)
+                let sagitta = actual.radius * (1 - cos(actual.sliceAngle / 2))
+                XCTAssertLessThanOrEqual(sagitta, 8 * size.nozzleDiameter / 52 + 0.000001)
+            }
+        }
+        await app.composition.stop()
+    }
+
     func testG1_DOCK_3_2_06() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-mark-provenance-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
