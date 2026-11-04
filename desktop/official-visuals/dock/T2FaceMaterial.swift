@@ -7,7 +7,17 @@ import CoreImage.CIFilterBuiltins
 
 /// DOCK-3.1-10/-11/-20: native face material, soot and clipped ignition well.
 /// Instruments, the grip and ignition remain later layers.
+public struct T2RenderedMaterialInspection {
+    public let sourceIdentity: String
+    public let viewport: CGRect, pixelSize: CGSize
+    public let scale: Int
+    public let gradientRGB: [[CGFloat]], gradientLocations: [CGFloat]
+    public let grainOpacity: Double
+}
 @MainActor public final class T2FaceMaterial {
+    /// Receipts for the last completed render only. Failed renders expose no stale receipt.
+    public private(set) var renderedMaterialForChecks: T2RenderedMaterialInspection?
+    public private(set) var renderedLayerRolesForChecks: [String] = []
     public enum RenderError: Error { case invalidViewport, allocation, filterStage(String), filterExtent(String), filterRender }
     private let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
     private let linear = CGColorSpace(name: CGColorSpace.linearSRGB)!
@@ -21,6 +31,7 @@ import CoreImage.CIFilterBuiltins
     /// The viewport is expressed in the same top-left study coordinates as the
     /// geometry, so cropping changes neither gradient registration nor noise phase.
     public func render(geometry: T2Geometry, viewport: CGRect, scale: Int) throws -> CGImage {
+        renderedMaterialForChecks = nil; renderedLayerRolesForChecks = []
         guard (1...3).contains(scale), !viewport.isEmpty,
               [viewport.minX, viewport.minY, viewport.width, viewport.height].allSatisfy(\.isFinite),
               viewport.width <= 4096, viewport.height <= 4096,
@@ -177,6 +188,10 @@ import CoreImage.CIFilterBuiltins
         final.addPath(inset); final.setFillColor(CGColor(gray: 1, alpha: 28.0/255)); final.drawPath(using: .eoFill)
         final.restoreGState()
         guard let finished = final.makeImage() else { throw RenderError.allocation }
+        renderedMaterialForChecks = .init(sourceIdentity: String(reflecting: type(of: self)), viewport: viewport,
+            pixelSize: .init(width: finished.width, height: finished.height), scale: scale,
+            gradientRGB: inks, gradientLocations: [0, 0.17, 0.43, 0.74, 1], grainOpacity: T2Grain.opacity)
+        renderedLayerRolesForChecks = ["face.gradient", "face.grain", "face.soot", "ignition.well", "grip"]
         return finished
     }
 }

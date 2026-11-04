@@ -28,6 +28,7 @@ public struct StaticDockGeometry {
     /// Normalized along-axis member pitch ranges registered by the active appearance.
     public var quotaPitchRanges: [String:ClosedRange<Double>] = [:]
     var resolvedT2GeometryForChecks: T2Geometry?
+    var geometrySourceIdentityForChecks: String?
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -300,6 +301,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         return (value.gap, value.shown.map(\.id), value.overflow.map(\.id))
     }
     /// Registered grip in the same study coordinates as the actual T2 geometry.
+    public var geometrySourceIdentityForChecks: String? {
+        resolvedT2CurvatureForChecks == nil ? nil : presentationGeometry.geometrySourceIdentityForChecks
+    }
     public var resolvedT2GripForChecks: CGPoint? { resolvedT2CurvatureForChecks?.grip }
     public var ignitionPresentationForChecks: (enabled: Bool, visible: Bool, frame: CGRect, veilVisible: Bool)? {
         guard !retired, permitted, presentationGeometry.consoleButton != nil else { return nil }

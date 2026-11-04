@@ -65,6 +65,8 @@ public struct DockRenderedTextInspection {
 public struct DockRenderedFaceInspection {
     public enum Source: String { case suppliedMaterial, bodyPolygon, none }
     public let source: Source
+    public let materialSourceIdentity: String?
+    public let materialLayerRoles: [String]
     public let pixelSize: CGSize
     public let fixedResources: [String]
 }
@@ -104,7 +106,13 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
     private let resources:DockArtworkStore
     private let supplementalResources:DockArtworkStore?
     private let material:Material?
-    public init(resources:DockArtworkStore, supplementalResources:DockArtworkStore? = nil, material:Material? = nil){self.resources=resources;self.supplementalResources=supplementalResources;self.material=material}
+    private let materialSourceIdentity: String?
+    private let materialLayerRoles: @MainActor () -> [String]
+    public init(resources:DockArtworkStore, supplementalResources:DockArtworkStore? = nil, materialSourceIdentity: String? = nil,
+                materialLayerRoles: @escaping @MainActor () -> [String] = { [] }, material:Material? = nil) {
+        self.resources=resources;self.supplementalResources=supplementalResources;self.material=material
+        self.materialSourceIdentity=materialSourceIdentity;self.materialLayerRoles=materialLayerRoles
+    }
     public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int) throws -> DockRenderResult {
         func finite(_ p:CGPoint)->Bool{p.x.isFinite && p.y.isFinite && abs(p.x)<=1_000_000 && abs(p.y)<=1_000_000}
         func finiteRect(_ r:CGRect)->Bool{finite(r.origin) && r.width.isFinite && r.height.isFinite && r.width>0 && r.height>0 && r.width<=4096 && r.height<=4096}
@@ -341,6 +349,6 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
         }
         guard let result=c.makeImage() else{throw DockArtworkError.invalidManifest}
         return DockRenderResult(image:result,backgroundImage:backgroundImage,metrics:metrics,scale:scale,effectsRendered:false,
-            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases, layerRoles:layerRoles, resourceFilters:resourceFilters, nozzles:nozzleMaterials, clockDots:clockDots))
+            inspection: .init(face: .init(source: material != nil ? .suppliedMaterial : skin.bodyPolygon.isEmpty ? .none : .bodyPolygon, materialSourceIdentity: material != nil ? materialSourceIdentity:nil, materialLayerRoles: material != nil ? materialLayerRoles():[], pixelSize: .init(width: width, height: height), fixedResources: skin.fixedLayers.map(\.resource)), readouts: readouts, aliases: aliases, layerRoles:layerRoles, resourceFilters:resourceFilters, nozzles:nozzleMaterials, clockDots:clockDots))
     }
 }

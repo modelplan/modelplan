@@ -147,6 +147,19 @@ private actor G1DEngine: EngineClient {
 }
 
 @MainActor final class G1DockJourneysD: XCTestCase {
+    func testBatch3NormalEntryReportsActualMaterialAndGeometrySources() async throws {
+        let f = try await fixture()
+        let face = try XCTUnwrap(f.host.dockView.renderedFaceMaterialForChecks)
+        XCTAssertEqual(face.materialSourceIdentity, "ModelPlanOfficialDock.T2FaceMaterial")
+        XCTAssertEqual(face.materialLayerRoles, ["face.gradient", "face.grain", "face.soot", "ignition.well", "grip"])
+        XCTAssertEqual(T2ProductionAppearance.geometrySourceIdentityForChecks(f.host), "ModelPlanOfficialDock.T2Geometry")
+        let before = f.host.dockView.frame
+        _ = T2ProductionAppearance.geometrySourceIdentityForChecks(f.host)
+        XCTAssertEqual(f.host.dockView.frame, before)
+        f.host.close()
+        XCTAssertNil(T2ProductionAppearance.geometrySourceIdentityForChecks(f.host))
+        XCTAssertNil(f.host.dockView.renderedFaceMaterialForChecks)
+    }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }
     private func seam(_ id: String, _ reason: String) async throws {

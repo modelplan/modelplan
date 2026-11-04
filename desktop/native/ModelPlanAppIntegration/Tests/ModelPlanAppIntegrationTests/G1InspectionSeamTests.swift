@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanOfficialDock
 import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanEngineClient
@@ -23,6 +24,23 @@ import CryptoKit
     }
 }
 @MainActor final class G1InspectionSeamTests: XCTestCase {
+    func testFaceMaterialReportsOnlyCompletedRenderRecipeWithoutRetainingPixels() throws {
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: .init(coordinates: .init(edge: .right, width: 300, height: 400, menuBarExclusion: 26)))
+        let material = T2FaceMaterial(), viewport = CGRect(x: 200, y: 100, width: 100, height: 220)
+        XCTAssertNil(material.renderedMaterialForChecks); XCTAssertTrue(material.renderedLayerRolesForChecks.isEmpty)
+        let image = try material.render(geometry: geometry, viewport: viewport, scale: 1)
+        let receipt = try XCTUnwrap(material.renderedMaterialForChecks)
+        XCTAssertEqual(receipt.sourceIdentity, "ModelPlanOfficialDock.T2FaceMaterial")
+        XCTAssertEqual(receipt.viewport, viewport); XCTAssertEqual(receipt.pixelSize, CGSize(width:100,height:220))
+        XCTAssertEqual(receipt.gradientRGB, [[21,29,35],[54,63,68],[38,50,57],[16,27,36],[3,9,17]])
+        XCTAssertEqual(receipt.gradientLocations, [0,0.17,0.43,0.74,1]); XCTAssertEqual(receipt.grainOpacity,0.018)
+        XCTAssertEqual(material.renderedLayerRolesForChecks, ["face.gradient","face.grain","face.soot","ignition.well","grip"])
+        let bytes = image.dataProvider?.data as Data?
+        _ = material.renderedMaterialForChecks; _ = material.renderedLayerRolesForChecks
+        XCTAssertEqual(image.dataProvider?.data as Data?, bytes)
+        XCTAssertThrowsError(try material.render(geometry: geometry, viewport: .zero, scale: 1))
+        XCTAssertNil(material.renderedMaterialForChecks); XCTAssertTrue(material.renderedLayerRolesForChecks.isEmpty)
+    }
     private func working() throws -> (DockWorkingEffects, DockInstrumentView, EffectResourcePool) {
         let palette = Dictionary(uniqueKeysWithValues: ["body","case","track","notch","clockBack","clock","text","unknown","normal","warning","critical","alias","noticeAmber","noticeBlue","noticeWhite"].map { ($0, DockInk(0.5,0.5,0.5)) })
         let inks = try JSONSerialization.jsonObject(with: JSONEncoder().encode(palette))

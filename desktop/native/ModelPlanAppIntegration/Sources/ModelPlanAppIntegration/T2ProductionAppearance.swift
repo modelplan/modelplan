@@ -8,6 +8,9 @@ import ModelPlanSettings
 
 /// Connects verified artwork and the registered T2 geometry to the production host.
 @MainActor enum T2ProductionAppearance {
+    static func geometrySourceIdentityForChecks(_ host: StaticDockPreviewHost) -> String? {
+        host.geometrySourceIdentityForChecks
+    }
     enum Failure: Error { case missingDisplay }
     static func apply(_ view: DockInstrumentView, _ rows: [DockInstrumentReading], _ preferences: SettingsPreferences) throws -> StaticDockGeometry {
         guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw Failure.missingDisplay }
@@ -27,7 +30,9 @@ import ModelPlanSettings
         let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
         let vendor = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: vendorManifest)
         let material = T2FaceMaterial()
-        let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in
+        let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor,
+            materialSourceIdentity: String(reflecting: type(of: material)),
+            materialLayerRoles: { material.renderedLayerRolesForChecks }) { supplied, scale in
             try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
         var notices = view.appearanceNotices
@@ -39,6 +44,7 @@ import ModelPlanSettings
         var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
         result.resolvedT2GeometryForChecks = geometry
+        result.geometrySourceIdentityForChecks = String(reflecting: type(of: geometry))
         let horizontal = edge == .bottom || edge == .top
         for station in geometry.stations {
             let position = horizontal ? station.centre.x : station.centre.y
