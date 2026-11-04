@@ -22,12 +22,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.ok(!Object.keys(manifest.files).some(name=>name.includes('session-state')));
     assert.doesNotMatch(readFileSync(root+'cockpit.css','utf8'),/--session-|session-transition-flash|[.]session-state/);
     for(const [name,hash]of Object.entries(manifest.files))assert.equal(digest(readFileSync(root+name)),hash,name);
-    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css'))){
-      const css=readFileSync(root+name,'utf8');
-      const cursor='#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}';
-      if(name==='cockpit.css')assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');
-      assert.doesNotMatch(css.replace(cursor,''),/\binfinite\b/i,name);
-    }
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');

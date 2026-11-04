@@ -151,9 +151,9 @@ test('display update preserves focus on the Engine All control',async({page})=>{
  expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]').first()).not.toBeFocused();
 });
 test('display removal of a focused subscription does not focus another member',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data),selected=page.getByRole('button',{name:/^Codex · Shortcut key 1$/});await selected.focus();await expect(selected).toBeFocused();
+ const data=dataFor(),{send,receive}=await open(page,data),selected=page.getByRole('button',{name:'Codex',exact:true});await selected.focus();await expect(selected).toBeFocused();
  const row=structuredClone(data.projection.rows[0]);row.id='tool-replacement';row.name={en:'Replacement',zh:'替代'};row.accounts[0].subscriptionRef=null;data.projection.rows=[row];
- expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:/^Replacement · Shortcut key 1$/})).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);await expect(page.getByRole('button',{name:'Replacement',exact:true})).not.toBeFocused();expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 function twoVerified(){
  const data=dataFor(),row=data.projection.rows[0],a=row.accounts[0],b=structuredClone(a),ref='fedcba9876543210';b.subscriptionRef=ref;b.plan.name={en:'Plan B',zh:'方案 B'};

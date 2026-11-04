@@ -23,6 +23,7 @@
 #cockpit .dk-mfd{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--row-h,18px) minmax(0,1fr) var(--row-h,18px);row-gap:var(--key-gap,4px);height:var(--console-h,217px);padding:0;background:none;box-shadow:none;overflow:hidden}
 .u11-engine-table{display:grid;grid-template-rows:26px minmax(0,1fr);grid-auto-rows:var(--row-h,18px);row-gap:var(--key-gap,4px);height:100%;width:100%;min-width:0}
 .s6-page[hidden]{display:none!important}.ck-eng .eng-led{cursor:pointer}
+.ck-eng .eng-keys:is([data-slots='5'],[data-slots='6']) .ek-name{display:none}
 #cockpit .s6-brand-mark::before,#cockpit .s6-brand-mark::after{content:none}
 /* The help labels do not intercept the cockpit's controls. */
 .help-map.annot{position:fixed;inset:0;z-index:10010;pointer-events:none}
@@ -33,20 +34,3 @@
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 :root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
-
-/* Bounded caution blink; hidden, closed and reduced-motion surfaces stay still. */
-@keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
-#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
-html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
-@media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
-
-/* Running cursor uses a compositor-only blink; inactive and reduced-motion views are static. */
-.ck-tape .t-time{position:relative;padding-right:10px}
-.ck-tape .t-cur{position:absolute;right:0;top:2.5px;width:6px;height:11px;background:currentColor;opacity:1}
-@keyframes cockpit-running-cursor{50%{opacity:0}}
-#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}
-html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}
-@media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .ck-tape .t-cur{animation:none!important}}
-/* Keep inactive MFD page labels legible against night-mode key faces. */
-html[data-theme="night"] #cockpit .mfd-pk .pk:not(.on)>span{color:#a1aab3}
-html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
