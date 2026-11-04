@@ -31,7 +31,7 @@ import ModelPlanEngineClient
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
         #if DEBUG
-        let isolatedLedger = createsNativePanels ? nil : isolatedNativeNotificationLedgerForChecks
+        let isolatedLedger = isolatedNativeNotificationLedgerForChecks
         #else
         let isolatedLedger: URL? = nil
         #endif

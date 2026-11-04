@@ -44,6 +44,8 @@ public struct DockEffectRotation: Equatable, Sendable {
         }
         return result
     }
+    /// Current layer frames in the station parent's local coordinates; retired consumers are absent.
+    public var frameBoundsForChecks: [String:CGRect] { consumers.mapValues { $0.layer.presentation()?.frame ?? $0.layer.frame } }
     public var rotationRecipesForChecks: [String: DockEffectRotation] { motionByID }
     /// Current attachment state, not a historical event log. Retired IDs are absent.
     public var animationLifecycleForChecks: [String: Bool] { consumers.mapValues { $0.layer.superlayer != nil } }

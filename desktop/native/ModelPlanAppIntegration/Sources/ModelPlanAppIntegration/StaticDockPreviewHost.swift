@@ -25,6 +25,8 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    /// Normalized along-axis member pitch ranges registered by the active appearance.
+    public var quotaPitchRanges: [String:ClosedRange<Double>] = [:]
     var resolvedT2GeometryForChecks: T2Geometry?
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
@@ -132,6 +134,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public private(set) var lastWorkingEffectError: Error?
     /// Samples the installed driver only; an absent or unobservable effect has no invented frame.
     public var workingEffectFramesForChecks: [String: Int] { workingDriver?.frameIndicesForChecks ?? [:] }
+    public var workingEffectFrameBoundsForChecks: [String:CGRect] { workingDriver?.frameBoundsForChecks ?? [:] }
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
@@ -295,6 +298,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var resolvedT2GapAndOverflowForChecks: (gap: CGFloat, shownIDs: [String], overflowIDs: [String])? {
         guard !retired, permitted, interactionView.interactionProjectionAvailable, let value = presentationGeometry.resolvedT2GeometryForChecks else { return nil }
         return (value.gap, value.shown.map(\.id), value.overflow.map(\.id))
+    }
+    /// Registered grip in the same study coordinates as the actual T2 geometry.
+    public var resolvedT2GripForChecks: CGPoint? { resolvedT2CurvatureForChecks?.grip }
+    public var ignitionPresentationForChecks: (enabled: Bool, visible: Bool, frame: CGRect, veilVisible: Bool)? {
+        guard !retired, permitted, presentationGeometry.consoleButton != nil else { return nil }
+        return (consoleButton.isEnabled, !consoleButton.isHiddenOrHasHiddenAncestor,
+                consoleButton.frame, !cockpitVeil.isHiddenOrHasHiddenAncestor)
     }
     public var resolvedT2CurvatureForChecks: T2Geometry? {
         guard !retired, permitted, interactionView.interactionProjectionAvailable else { return nil }
@@ -1291,6 +1301,29 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
+    private func quotaReadingsForSliver() -> [DockSliverQuotaInput] {
+        guard preferences.sliverAlert, let model else { return [] }
+        let inputs = Dictionary(uniqueKeysWithValues:model.inputs.map { ($0.id,$0) })
+        guard let order = try? memberSafePreferences.presentedSubscriptionIDs(model.inputs.map(\.id)) else { return [] }
+        let view = interactionView
+        let pitches = presentationGeometry.quotaPitchRanges
+        func ink(_ role:DockQuotaStatus) -> DockInk {
+            if let supplied = view.quotaInk(for:role) { return supplied }
+            let fallback:NSColor
+            switch role { case .warning: fallback = .systemYellow; case .critical: fallback = .systemRed; case .normal,.unknown: fallback = .secondaryLabelColor }
+            guard let rgb=fallback.usingColorSpace(.sRGB) else { return DockInk(0.5,0.5,0.5) }
+            return DockInk(Double(rgb.redComponent),Double(rgb.greenComponent),Double(rgb.blueComponent),Double(rgb.alphaComponent))
+        }
+        let now = currentDate()
+        return order.compactMap { id in
+            guard let input = inputs[id], let pitch=pitches[id] else { return nil }
+            // The model already withholds unproven values; evaluate expiry/selection again at presentation time.
+            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:Double(preferences.redBelow))
+            let status = reading?.status ?? .unknown
+            let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
+        }
+    }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
     func prepareSliver(size: CGSize) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
@@ -1307,7 +1340,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             sliver.noticeMarks = marks.values.sorted { $0.position == $1.position ? $0.notice.key.subscriptionID < $1.notice.key.subscriptionID : $0.position < $1.position }
             let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
-                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language))
+                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language), quotaReadings:quotaReadingsForSliver())
             sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }

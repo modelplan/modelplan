@@ -76,6 +76,21 @@ import CryptoKit
         await actual.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:context,nextFloor:nil)))
         XCTAssertNil(app.cockpitStateForChecks)
     }
+    func testWindowAndDetachedEntryBothUseTheIsolatedNotificationLedgerBeforePresentation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-window-ledger-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let ledger = root.appendingPathComponent("isolated/notifications.json")
+        let previous = EngineRowsEntry.isolatedNativeNotificationLedgerForChecks
+        EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = ledger
+        defer { EngineRowsEntry.isolatedNativeNotificationLedgerForChecks = previous }
+        for native in [false, true] {
+            let app = EngineRowsEntry.make(configuration:.init(executableURL:root.appendingPathComponent("not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent(native ? "window-profile":"detached-profile")),createsNativePanels:native,activateSettings:{})
+            XCTAssertEqual(app.composition.nativeNotificationLedgerForChecks, ledger)
+            XCTAssertNil(app.composition.dock.nativePanel, "Construction must not present a window")
+            await app.composition.stop()
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath:ledger.path), "No event was delivered, so no ledger write is needed")
+    }
     func testFactoryEngineInjectionRetainsActualCockpitFanoutAndPageBoundary() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-factory-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -113,7 +128,7 @@ import CryptoKit
         context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1)); context.fill(.init(x: 0, y: 10, width: 4, height: 10))
         try sliver.apply(image: try XCTUnwrap(context.makeImage()), logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
         let frame = sliver.frame, bytes = sliver.retainedBytes
-        let segments = sliver.quotaSegmentColorRolesForChecks
+        let segments = sliver.rasterColorRunsForChecks
         // AppKit colour-matches supplied images. Inspect the actual resolved channels,
         // while keeping the exact RGBA available to a controlled-profile acceptance test.
         let rgb = segments.map { segment -> [Int] in
@@ -126,9 +141,10 @@ import CryptoKit
         XCTAssertEqual(segments.first?.from, 0); XCTAssertEqual(segments.last?.through, 1)
         XCTAssertTrue(segments.allSatisfy { $0.remainingPercent == nil && $0.quotaRole == nil })
         XCTAssertEqual(sliver.frame, frame); XCTAssertEqual(sliver.retainedBytes, bytes)
-        XCTAssertEqual(sliver.quotaSegmentColorRolesForChecks, segments, "Inspection must not alter drawing state")
+        XCTAssertEqual(sliver.rasterColorRunsForChecks, segments, "Inspection must not alter drawing state")
+        XCTAssertTrue(sliver.quotaSegmentColorRolesForChecks.isEmpty, "Pixels alone must not create member quota facts")
         try sliver.apply(image: nil, logicalSize: .init(width: 4, height: 20), scale: 1, accessibilityLabel: "Synthetic")
-        XCTAssertFalse(sliver.quotaSegmentColorRolesForChecks.isEmpty, "The neutral metal also has observable colours")
+        XCTAssertFalse(sliver.rasterColorRunsForChecks.isEmpty, "The neutral metal also has observable colours")
     }
     func testSettingsSurfaceReadDoesNotConstructOrPresent() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-" + UUID().uuidString)
@@ -161,6 +177,8 @@ import CryptoKit
         XCTAssertEqual(driver.frameIndicesForChecks["sub"], 0)
         XCTAssertEqual(driver.frameIndicesForChecks["sub"], 0)
         XCTAssertEqual(pool.activeLeaseCount, leases)
+        XCTAssertEqual(driver.frameBoundsForChecks["sub"], CGRect(x:0,y:0,width:24,height:24))
+        driver.stop(); XCTAssertTrue(driver.frameBoundsForChecks.isEmpty)
     }
     func testRotationRecipeIsTheConfiguredRecipe() throws {
         let (driver, view, _) = try working(); defer { driver.stop(); view.dispose() }
@@ -185,6 +203,7 @@ import CryptoKit
         let dock = app.composition.dock
         XCTAssertTrue(dock.workingEffectFramesForChecks.isEmpty)
         XCTAssertTrue(dock.workingEffectFramesForChecks.isEmpty)
+        XCTAssertTrue(dock.workingEffectFrameBoundsForChecks.isEmpty)
         XCTAssertTrue(dock.activeWorkingEffectIDs.isEmpty)
         XCTAssertNil(dock.nativePanel)
     }
