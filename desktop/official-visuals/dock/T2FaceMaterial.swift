@@ -21,7 +21,7 @@ public struct T2RenderedMaterialInspection {
     public enum RenderError: Error { case invalidViewport, allocation, filterStage(String), filterExtent(String), filterRender }
     private let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
     private let linear = CGColorSpace(name: CGColorSpace.linearSRGB)!
-    private let grain = T2Grain()
+    private static let grainRasters = T2GrainRasterCache()
     private lazy var compositor = CIContext(options: [.workingColorSpace: linear, .outputColorSpace: srgb])
     // Headless runners may not have a usable accelerated renderer. Retain a
     // bounded Core Image CPU fallback rather than substituting different art.
@@ -72,16 +72,7 @@ public struct T2RenderedMaterialInspection {
         guard let source = context.makeImage() else { throw RenderError.allocation }
         completedLayers.append("face.gradient")
 
-        var samples = [Float](repeating: 0, count: width * height * 4)
-        for row in 0..<height {
-            for column in 0..<width {
-                let x = Double(viewport.minX) + (Double(column) + 0.5) / Double(scale)
-                let y = Double(viewport.minY) + (Double(row) + 0.5) / Double(scale)
-                let channels = grain.channels(x: x, y: y), offset = (row * width + column) * 4
-                for channel in 0..<4 { samples[offset + channel] = Float(channels[channel]) }
-            }
-        }
-        let bytes = samples.withUnsafeBytes { Data($0) }
+        let bytes = Self.grainRasters.raster(viewport: viewport, scale: scale)
         let noise = CIImage(bitmapData: bytes, bytesPerRow: width * 16,
             size: CGSize(width: width, height: height), format: .RGBAf, colorSpace: linear)
         // feColorMatrix(saturate=0), feFuncA(slope=.018), then the study's

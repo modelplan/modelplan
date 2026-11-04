@@ -337,6 +337,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var sliverQuotaColorsForChecks: [DockSliverResolvedColorSegment] { sliver.quotaSegmentColorRolesForChecks }
     var interactionBindingInstalled: Bool { interactionController != nil }
     var interactionControllerRunning: Bool { interactionController?.isRunning ?? false }
+    /// Read-only access for driving the existing controller with an injected clock.
     private var interactionEvents: [DockNozzleEvents] = []
     private var interactionHoverRevision: UInt64 = 0
     private var interactionHoveredID: String?
