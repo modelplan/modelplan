@@ -355,6 +355,33 @@ private actor G1CRowsClient: EngineClient {
         await app.composition.stop()
     }
 
+    func testG1_DOCK_3_1_1_06() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-snap-default-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let environment = G1CDisplayEnvironment(), clock = G1CClock()
+        environment.includeSecondDisplay = false
+        let app = try await open(environment, profile: profile, clock: clock, panels: true)
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView, panel = try XCTUnwrap(dock.nativePanel)
+        let candidates = stride(from: CGFloat(1), to: view.bounds.width, by: 4).flatMap { x in
+            stride(from: CGFloat(1), to: view.bounds.height, by: 4).map { CGPoint(x: x, y: $0) }
+        }
+        let local = try XCTUnwrap(candidates.first { view.backgroundDragDelegate?.backgroundCanDrag(local: $0) == true })
+        let origin = panel.convertPoint(toScreen: view.convert(local, to: nil)), destination = CGPoint(x: 1, y: 450)
+        func event(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: panel.convertPoint(fromScreen: point), modifierFlags: [], timestamp: clock.elapsed, windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+        }
+        environment.pointer = origin; environment.presence.mouseButtonDown = true
+        view.mouseDown(with: try event(.leftMouseDown, at: origin))
+        environment.pointer = destination; view.mouseDragged(with: try event(.leftMouseDragged, at: destination))
+        XCTAssertEqual(dock.edgePresentation?.snapPreview?.edge, .left)
+        environment.presence.mouseButtonDown = false; view.mouseUp(with: try event(.leftMouseUp, at: destination))
+        for _ in 0..<100 { await Task.yield() }
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .left)
+        // TODO(G1): observe the user-facing settings catalogue to rule out a snap toggle.
+        await app.composition.stop()
+    }
+
     func testG1_DOCK_3_1_1_09() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-position-commit-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
