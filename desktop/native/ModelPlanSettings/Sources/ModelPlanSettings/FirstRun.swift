@@ -57,6 +57,21 @@ public struct FirstRunCommit: Sendable {
     public let effects: [FirstRunEffect]
     public let login: LoginChoiceCommit
 }
+
+enum FirstRunSaveError {
+    static func message(_ error: Error, language: SettingsLanguage) -> String {
+        if (error as? SettingsError) == .staleRevision || (error as? FoundationPreferenceError) == .externalChange {
+            return SettingsText("Settings changed. Review these choices and try again.", "设置已更改，请检查这些选项后重试。").value(language)
+        }
+        if (error as? FoundationPreferenceError) == .busy {
+            return SettingsText("Settings are busy. Try again.", "设置正在使用中，请重试。").value(language)
+        }
+        if (error as? FoundationPreferenceError) == .engineOwnedConsent {
+            return SettingsText("Reader permissions are managed by the engine. Use Connections to change them.", "读取权限由引擎管理，请在连接中更改。").value(language)
+        }
+        return SettingsText("Could not save. Your choices are kept here; check the settings storage.", "无法保存。此处保留了你的选择，请检查设置存储。").value(language)
+    }
+}
 public extension SettingsStore {
     func commitOpenAtLogin(_ enabled: Bool, capabilities: SettingsCapabilities, expectedRevision: UInt64) throws -> LoginChoiceCommit {
         let saved = try update(expectedRevision: expectedRevision) { $0.openAtLogin = enabled }
@@ -66,8 +81,12 @@ public extension SettingsStore {
     func completeFirstRun(options: OnboardingOptions, action: FirstRunAction, host: FirstRunHost,
                           capabilities: SettingsCapabilities, expectedRevision: UInt64) throws -> FirstRunCommit {
         guard onboardingDefinition == .task65 else { throw SettingsError.invalidPreference }
+        let engineOwnsReaderConsent = foundationStatus() != nil
         let saved = try update(expectedRevision: expectedRevision) { p in
+            let priorConsent = p.readerConsent
             options.apply(to: &p)
+            // The foundation document must never grant or persist engine consent.
+            if engineOwnsReaderConsent { p.readerConsent = priorConsent }
             p.onboarding = OnboardingState(definition: .task65)
             p.onboarding.next(in: .task65)
         }
