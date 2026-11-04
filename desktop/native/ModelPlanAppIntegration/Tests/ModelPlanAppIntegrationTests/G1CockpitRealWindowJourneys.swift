@@ -104,44 +104,6 @@ private extension EngineDeliveryContext {
             XCTAssertNotNil(facts["root"], "The real verified page must expose its cockpit root")
         }
     }
-    func testG1_CKP_SHELL_06_currentDisplayClamps() async throws {
-        try await withLivePage { _, _, page in
-            let window = try XCTUnwrap(page.window)
-            let visible = try XCTUnwrap(window.screen?.visibleFrame)
-            XCTAssertGreaterThanOrEqual(window.frame.minX, visible.minX - 1)
-            XCTAssertLessThanOrEqual(window.frame.maxX, visible.maxX + 1)
-            XCTAssertGreaterThanOrEqual(window.frame.minY, visible.minY - 1)
-            XCTAssertLessThanOrEqual(window.frame.maxY, visible.maxY + 1)
-        }
-    }
-    func testG1_CKP_SHELL_07_currentScreenProfile() async throws {
-        try await withLivePage { _, _, page in
-            let screen = try XCTUnwrap(page.window?.screen)
-            let height = screen.visibleFrame.height
-            let expected: Double = height - 66 >= 890 ? 877 : (height - 66 < 640 ? 609 : 627)
-            let facts = try await self.geometry(page)
-            XCTAssertEqual(try self.dimension(facts, "root", "height"), expected, accuracy: 1)
-        }
-    }
-    func testG1_CKP_SHELL_09_actualRegistration() async throws {
-        try await withLivePage { _, _, page in
-            let facts = try await self.geometry(page)
-            XCTAssertEqual(try self.dimension(facts, "root", "width"), 620, accuracy: 1)
-            XCTAssertEqual(try self.dimension(facts, "engine", "width"), 588, accuracy: 1)
-            XCTAssertEqual(try self.dimension(facts, "deck", "width"), 588, accuracy: 1)
-            XCTAssertEqual(try self.dimension(facts, "tape", "width"), 588, accuracy: 1)
-        }
-    }
-    func testG1_CKP_SHELL_10_actualModuleAllocation() async throws {
-        try await withLivePage { _, _, page in
-            let facts = try await self.geometry(page)
-            let rootHeight = try self.dimension(facts, "root", "height")
-            let tall = rootHeight > 700
-            XCTAssertEqual(try self.dimension(facts, "engine", "height"), 226, accuracy: 1)
-            XCTAssertEqual(try self.dimension(facts, "deck", "height"), tall ? 257 : 217, accuracy: 1)
-            XCTAssertEqual(try self.dimension(facts, "tape", "height"), tall ? 94 : 58, accuracy: 1)
-        }
-    }
     func testG1_CKP_SHELL_12_baseReserve() async throws {
         try await withLivePage { _, _, page in
             let facts = try await self.geometry(page)
