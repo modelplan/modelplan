@@ -146,6 +146,27 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(surface.shows,2)
         await app.composition.stop()
     }
+    // #403 normal-entry journey: use the actual menu actions with a synthetic
+    // console/client, without opening a panel or launching an engine process.
+    @MainActor func testStatusAndDockMenusOpenSameEnabledConsole() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("s6-menu-journey-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+        let client=RouteClient(),surface=ConsoleRouteProbe();var constructions=0,clients=0
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in clients += 1;return client},makeConsole:{_ in constructions += 1;return surface},activateSettings:{})
+        await app.prepare();app.composition.dock.setPresentationAllowed(true);app.renderMenu()
+        let status=try XCTUnwrap(app.liveStatusMenu)
+        let statusIndex=try XCTUnwrap(status.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(status.items[statusIndex].isEnabled)
+        status.performActionForItem(at:statusIndex)
+        let dock=app.composition.dock.menu()
+        let dockIndex=try XCTUnwrap(dock.items.firstIndex { $0.title == "Open Cockpit" })
+        XCTAssertTrue(dock.items[dockIndex].isEnabled)
+        dock.performActionForItem(at:dockIndex)
+        XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
+        await app.composition.stop()
+    }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-switch-"+UUID().uuidString)
