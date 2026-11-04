@@ -361,9 +361,7 @@ import ModelPlanMenuVerification
                 case .revealDock: composition.dock.setPresentationAllowed(true)
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
                 case .openCockpit: showConsole()
-                case .latchOptionHelp:
-                    helpMapUnavailable = requestHelpMap?() != true
-                    renderMenu()
+                case .latchOptionHelp: showHelp()
                 case .closeFirstRunPopup: break
                 }
             }
@@ -479,7 +477,7 @@ import ModelPlanMenuVerification
         }
         menuItems += [
             .init(title: nil),
-            .init(title: label("Help…", "说明…")),
+            .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
             .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
@@ -493,9 +491,7 @@ import ModelPlanMenuVerification
             noticeIndicator.autoresizingMask = [.minXMargin, .minYMargin]
             if noticeIndicator.superview !== button { button.addSubview(noticeIndicator) }
         }
-        status?.button?.title = composition.menuPresentation.title + (showFeedback == nil ? "" : " !")
-        status?.button?.toolTip = detail
-        status?.button?.setAccessibilityHelp(detail)
+        if let button = status?.button { applyStatusContent(to: button, detail: detail) }
         dockHelp?.refresh()
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
@@ -514,6 +510,18 @@ import ModelPlanMenuVerification
     }
     public func menuWillOpen(_ menu: NSMenu) {
         // renderMenu keeps this menu current; never overwrite its first action with a reader diagnostic.
+    }
+    /// Shared by the native status item and detached presentation checks.
+    /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
+    func applyStatusContent(to button: NSButton, detail: String) {
+        button.title = composition.menuPresentation.title
+        button.toolTip = detail
+        button.setAccessibilityHelp(detail)
+    }
+    private func showHelp() {
+        guard !terminating, !lifecyclePaused else { return }
+        helpMapUnavailable = requestHelpMap?() != true
+        renderMenu()
     }
     private func showFeedbackText(_ language: SettingsLanguage) -> String? {
         switch showFeedback {
