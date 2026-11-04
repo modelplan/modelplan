@@ -6,6 +6,13 @@ import QuartzCore
 
 public enum CockpitWindowFailure: String { case pageAPIUnavailable, messageRejected, javascriptFailed, navigationFailed, provisionalNavigationFailed, contentTerminated, clearDeadline, deadlineReceiptTimeout, visibilityReceiptTimeout, appearanceWaitTimeout, deadlineConvergence, localEncoding }
 
+#if DEBUG
+/// Read-only lifecycle facts; never contains page text or private readings.
+public struct G1CockpitPageState {
+  public let hasPage: Bool, hasWindow: Bool, ready: Bool, disposed: Bool
+}
+#endif
+
 // WebKit's module CORS fetch requires NSHTTPURLResponse header fields, even
 // for a custom scheme. Only public, hash-pinned static files use this response;
 // private DTOs never have a scheme route. No credentialed CORS is enabled.
@@ -201,6 +208,37 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
+  #endif
+  #if DEBUG
+  /// Reports only controller-owned live objects and acknowledged bridge state.
+  public var g1PageStateForChecks: G1CockpitPageState {
+    .init(hasPage: web != nil, hasWindow: window != nil, ready: bridge.ready, disposed: bridge.disposed)
+  }
+  /// Fixed structural facts only; no page text, identifiers or readings leave the page.
+  public func g1PageGeometryForChecks() async throws -> String? {
+    guard !ending, let ticket = bridge.queryTicket, let page = web, page.url == pageURL else { return nil }
+    let script = """
+    (() => {
+      const rect = (selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const r = element.getBoundingClientRect();
+        return {x:r.x, y:r.y, width:r.width, height:r.height};
+      };
+      return JSON.stringify({field:rect('.ck-field'), canopy:rect('.ck-port'),
+        hud:rect('.hud'), deck:rect('.ck-deck'), tape:rect('.ck-tape'),
+        shutterClosed:document.querySelector('[data-shutter]')?.getAttribute('aria-pressed') === 'true',
+        reduceMotion:document.documentElement.dataset.reduceMotion === 'true',
+        reduceTransparency:document.documentElement.dataset.reduceTransparency === 'true'});
+    })()
+    """
+    let result = try await page.evaluateJavaScript(script)
+    guard !ending, web === page, page.url == pageURL, bridge.queryTicket == ticket else { return nil }
+    return result as? String
+  }
+  /// `discard` closes the window and removes the WebView synchronously. This
+  /// does not claim that the operating system has reaped a WebContent process.
+  public func g1CloseAndWaitForTeardown() async { discard() }
   #endif
   public var queryTicket: CockpitQueryTicket? { bridge.queryTicket }
   private var pageURL: URL {

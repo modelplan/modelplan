@@ -41,6 +41,10 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var client: (any EngineClient)? { ownedClient ?? borrowedClient }
   private var delivery: EngineDeliveryContext?
   private var page: (any CockpitPageSurface)?
+  #if DEBUG
+  /// The actual live page only; never manufactures a preview or opens a window.
+  public var g1LivePageForChecks: CockpitWindowController? { page as? CockpitWindowController }
+  #endif
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
   private var scopeMembers = Set<String>()
