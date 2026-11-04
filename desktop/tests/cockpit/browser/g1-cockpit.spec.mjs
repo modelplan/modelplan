@@ -161,16 +161,16 @@ test('CKP-ENG-04 All and vendor keys share scope and the neutral underline geome
 });
 
 
-test('CKP-ENG-05 shortcut digits are visible and described for hover, focus, and Option help',async({page})=>{
+test('CKP-ENG-05 shortcuts appear in tooltip, accessible name and Option help without visible digits',async({page})=>{
  const {send,receive}=await open(page);const all=page.locator('.ek-all'),keys=page.locator('.eng-keys .ek[data-sub]');
  for(const [key,n] of [[all,0],...[...(await keys.all())].map((e,i)=>[e,i+1])]){
-  await expect(key.locator('.ki')).toHaveText(String(n));await expect(key).toHaveAttribute('title',new RegExp(`\\b${n}\\b`));await expect(key).toHaveAttribute('aria-description',new RegExp(`\\b${n}\\b`));
+  await expect(key.locator('.ki')).toHaveCount(0);await expect(key).toHaveAttribute('title',new RegExp(`\\b${n}\\b`));await expect(key).toHaveAccessibleName(new RegExp(`\\b${n}\\b`));if(n)await expect(key.locator('.ek-name')).toHaveAttribute('title',new RegExp(`\\b${n}\\b`));
   await key.focus();await expect(key).toBeFocused();
  }
  await page.keyboard.press('1');await expect(keys.first()).toHaveAttribute('aria-pressed','true');await page.keyboard.press('0');await expect(all).toHaveAttribute('aria-pressed','true');
  expect(await receive(send('visibility',{visible:true,occluded:false,key:false}))).toBe(true);const before=await page.evaluate(()=>window.__g1Messages.length);await page.keyboard.press('1');expect(await page.evaluate(()=>window.__g1Messages.length)).toBe(before);await expect(all).toHaveAttribute('aria-pressed','true');expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
  await page.keyboard.down('Alt');await expect(page.locator('#help-map')).toContainText('0');await expect(page.locator('#help-map')).toContainText('1–6');await page.keyboard.up('Alt');
- expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(all).toHaveAttribute('aria-description',/0/);await expect(keys.first()).toHaveAttribute('aria-description',/1/);
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);for(const [key,n] of [[all,0],...[...(await keys.all())].map((e,i)=>[e,i+1])]){await expect(key).toHaveAccessibleName(new RegExp(`快捷键 ${n}`));await expect(key).toHaveAttribute('title',new RegExp(`快捷键 ${n}`));await expect(key.locator('.ki')).toHaveCount(0);}
 });
 
 test('CKP-MFD-10 subscription header and quota windows use delivered reading and relative reset',async({page})=>{
@@ -294,8 +294,8 @@ test('CKP-MFD-04 the built page keys follow one read-only internal page registry
  await open(page);const inspection=await page.evaluate(async()=>{const m=await import('/src/prototype-deck.js');return {ids:m.cockpitPageIds,frozen:Object.isFrozen(m.cockpitPageIds)};});expect(inspection.frozen).toBe(true);const registry=inspection.ids;const keys=await page.locator('.mfd-pk .pk').evaluateAll(nodes=>nodes.map(n=>n.dataset.mfd));expect(keys).toEqual(registry.map(id=>'page:'+id));expect(registry).toEqual(['overview','sub','tune','where']);
 });
 
-test('CKP-MOT-06 visible non-digit text and well nesting respect the v1 budget',async({page})=>{
- const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length&&!e.closest('.ki')).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}
+test('CKP-MOT-06 visible text and well nesting respect the v1 budget',async({page})=>{
+ const {send,receive}=await open(page);const inspect=()=>page.locator('#cockpit').evaluate(root=>{const nodes=[...root.querySelectorAll('*')];const small=nodes.filter(e=>!e.children.length&&e.textContent.trim()&&e.getClientRects().length).map(e=>({text:e.textContent.trim(),size:parseFloat(getComputedStyle(e).fontSize)})).filter(x=>x.size>0&&x.size<10);const depths=nodes.filter(e=>e.getAttribute('data-mat')==='well').map(e=>{let depth=1;for(let p=e.parentElement;p&&p!==root;p=p.parentElement)if(p.getAttribute('data-mat')==='well')depth++;return depth;});return {small,depths,legends:root.querySelectorAll('legend').length};});for(const tier of ['tall','compact'])for(const locale of ['en','zh-CN']){expect(await receive(send('shell',{...shell,tier}))).toBe(true);expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);const audit=await inspect();expect(audit.small).toEqual([]);expect(Math.max(0,...audit.depths)).toBeLessThanOrEqual(2);expect(audit.legends).toBe(0);}
 });
 
 test('CKP-MOT-03 Reduce Motion keeps running cursors static without shifting controls',async({page})=>{
