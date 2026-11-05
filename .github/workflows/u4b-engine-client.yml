@@ -26,8 +26,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: u4b-engine-client-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: u4b-engine-client-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   transport:
     strategy:

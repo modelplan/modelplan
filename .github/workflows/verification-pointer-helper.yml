@@ -16,8 +16,9 @@ on:
       - 'desktop/native/verification/StatusMenu/**'
       - '.github/workflows/verification-pointer-helper.yml'
 concurrency:
-  group: verification-pointer-helper-${{ github.event.pull_request.number || github.ref }}
+  group: verification-pointer-helper-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 jobs:

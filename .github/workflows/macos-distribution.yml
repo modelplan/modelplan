@@ -26,7 +26,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: macos-distribution-${{ github.event.pull_request.number || github.ref }}
+  group: macos-distribution-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

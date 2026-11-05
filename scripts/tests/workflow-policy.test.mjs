@@ -72,21 +72,22 @@ test("both workflow extensions are checked", () => {
 });
 
 test("macOS workflows on pull_request/push cancel superseded PR heads but never main or release runs", () => {
-  const group = "concurrency:\n  group: dist-${{ github.event.pull_request.number || github.ref }}\n";
-  // compliant: cancel-in-progress is the pull_request-only expression
+  const group = "concurrency:\n  group: dist-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}\n";
+  // compliant: PR heads share the pr-N group and cancel the superseded run
   assert.deepEqual(macConcurrencyProblems(`on:\n  pull_request:\n  push:\n${group}  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    runs-on: macos-latest\n`), []);
-  // compliant: literal true with a per-commit sha fallback (main/tag runs each get their own group)
-  assert.deepEqual(macConcurrencyProblems(`on:\n  pull_request:\n  push:\n${group.replace("|| github.ref", "|| github.sha")}  cancel-in-progress: true\njobs:\n  a:\n    runs-on: macos-latest\n`), []);
   // matrix os and trusted-mac callers count as macOS starters
-  assert.deepEqual(macConcurrencyProblems(`on: pull_request\nconcurrency:\n  group: g-\${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    runs-on: \${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n`), []);
-  assert.deepEqual(macConcurrencyProblems(`on: pull_request\nconcurrency:\n  group: g-\${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0\n`), []);
-  // violations: no group at all, or literal false (superseded PR runs queue)
+  assert.deepEqual(macConcurrencyProblems(`on: pull_request\n${group}  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    runs-on: \${{ matrix.os }}\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-latest]\n`), []);
+  assert.deepEqual(macConcurrencyProblems(`on: pull_request\n${group}  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0\n`), []);
+  // violations: no group at all, the queueing literal false, the cancelling literal true (either group
+  // shape — a ref group cancels main runs; a sha group collides with a same-commit dispatch), and a
+  // group without the unique run-id fallback
   for (const bad of ["on:\n  pull_request:\n  push:\njobs:\n  a:\n    runs-on: macos-latest\n",
-                     `on:\n  pull_request:\n  push:\n${group}  cancel-in-progress: false\njobs:\n  a:\n    runs-on: macos-latest\n`]) {
+                     `on:\n  pull_request:\n  push:\n${group}  cancel-in-progress: false\njobs:\n  a:\n    runs-on: macos-latest\n`,
+                     `on:\n  pull_request:\n  push:\n${group}  cancel-in-progress: true\njobs:\n  a:\n    runs-on: macos-latest\n`,
+                     "on:\n  pull_request:\n  push:\nconcurrency:\n  group: dist-${{ github.event.pull_request.number || github.sha }}\n  cancel-in-progress: true\njobs:\n  a:\n    runs-on: macos-latest\n",
+                     "on:\n  pull_request:\n  push:\nconcurrency:\n  group: dist-${{ github.event.pull_request.number || github.ref }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    runs-on: macos-latest\n"]) {
     assert.ok(macConcurrencyProblems(bad).length > 0, bad);
   }
-  // violation: literal true with a ref-keyed group cancels main runs (main shares refs/heads/main)
-  assert.ok(macConcurrencyProblems(`on:\n  pull_request:\n  push:\n${group}  cancel-in-progress: true\njobs:\n  a:\n    runs-on: macos-latest\n`).length > 0);
 });
 
 test("non-macOS and non-PR/push workflows are outside the concurrency rule", () => {
@@ -125,5 +126,21 @@ test("every macOS workflow in this repository draft-guards its jobs and keeps a 
     if (!/\.(ya?ml)$/.test(f)) continue;
     const text = fs.readFileSync(new URL(f, dir), "utf8");
     assert.deepEqual(draftGuardProblems(text), [], f);
+  }
+});
+
+test("macrev2-579-3 regressions: quoted on-keys, dynamic fromJSON matrices and reversed draft guards", () => {
+  // a quoted "on" key must not escape the concurrency or draft checks
+  const quoted = `"on":\n  pull_request:\n  push:\njobs:\n  a:\n    runs-on: macos-latest\n`;
+  assert.ok(macConcurrencyProblems(quoted).length > 0, "quoted on key escaped the concurrency check");
+  assert.ok(draftGuardProblems(quoted).length > 0, "quoted on key escaped the draft check");
+  // a dynamic fromJSON matrix is a macOS starter even without a literal macos runs-on
+  const dyn = `on:\n  pull_request:\n  push:\nconcurrency:\n  group: g-\${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\njobs:\n  a:\n    strategy:\n      matrix:\n        os: \${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '[\"ubuntu-latest\"]' || '[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: \${{ matrix.os }}\n`;
+  assert.deepEqual(macConcurrencyProblems(dyn), []);
+  // reversed polarity: runs only on drafts, and the OR form is always true on pull_request events
+  const rev1 = `on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    if: github.event.pull_request.draft\n    runs-on: macos-latest\n`;
+  const rev2 = `on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    if: github.event_name == 'pull_request' || !github.event.pull_request.draft\n    runs-on: macos-latest\n`;
+  for (const bad of [rev1, rev2]) {
+    assert.ok(draftGuardProblems(bad).some((p) => p.includes("macOS job a")), bad);
   }
 });

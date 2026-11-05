@@ -25,8 +25,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: u4-swift-wire-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: u4-swift-wire-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   generated-contract:
     runs-on: ubuntu-24.04

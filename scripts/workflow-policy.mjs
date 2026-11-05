@@ -42,18 +42,21 @@ export function workflowProblems(text, path = "") {
   return [...problems];
 }
 
-// macOS hosted-runner capacity (11-05): every workflow that starts macOS jobs on pull_request/push
-// must keep a concurrency group keyed on the workflow + PR number/ref so a newer head cancels the
-// superseded run instead of queueing it behind it in the hosted macOS queue. Main and release runs
-// are never cancelled: either cancel-in-progress is the pull_request-only expression, or it is a
-// literal true with a group that falls back to a per-commit `github.sha` (so main/tag runs each get
-// their own group and nothing cancels them). Workflows triggered only by workflow_dispatch or
-// workflow_call are out of scope.
+// macOS hosted-runner capacity (11-05, R6a/R8a; shape fixed per MACREV2 review of #579 at 0a3a4594,
+// findings macrev2-579-1/2): every workflow that starts macOS jobs on pull_request/push must key its
+// concurrency group on the workflow + PR number and cancel only pull_request heads. A non-PR run
+// (main push, tag, candidate/manual dispatch) gets the run's own id in the group, so protected runs
+// are alone in their group: GitHub can neither cancel them nor silently replace a queued one. The
+// per-commit `github.sha` fallback is NOT accepted: a workflow_dispatch on the same commit shares
+// the push run's group, and a ref-keyed group with cancel-in-progress:false still drops queued
+// protected runs (GitHub keeps a single pending invocation). Workflows triggered only by
+// workflow_dispatch or workflow_call are out of scope.
 const CANCEL_PR_ONLY = /\$\{\{\s*github\.event_name\s*==\s*'pull_request'\s*\}\}/;
+const PR_GROUP = "github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id";
 
 function topLevelBlock(text, key) {
   const lines = text.split("\n");
-  const start = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
+  const start = lines.findIndex((l) => new RegExp(`^["']?${key}["']?:`).test(l));
   if (start === -1) return null;
   const end = lines.findIndex((l, i) => i > start && /^[A-Za-z_"'-]+:/.test(l));
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
@@ -62,6 +65,7 @@ function topLevelBlock(text, key) {
 function runsMacos(text) {
   if (/^\s*runs-on:.*macos/m.test(text)) return true;
   if (/^\s*(?:os|platform):\s*\[[^\]]*macos/m.test(text)) return true;
+  if (/^\s*os:\s*\$\{\{\s*fromJSON\(/m.test(text)) return true;   // dynamic matrix (notices/u4b/u6 collapse pattern)
   if (/uses:.*workflows\/trusted-mac\.yml/.test(text)) return true;
   return false;
 }
@@ -77,13 +81,11 @@ export function macConcurrencyProblems(text) {
   }
   const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
   const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
-  if (!groupLine.includes("github.event.pull_request.number")) {
-    problems.push("concurrency group must be keyed on the PR number (or per-commit sha for main/release)");
+  if (!groupLine.includes(PR_GROUP)) {
+    problems.push('concurrency group must be "<workflow>-${{ github.event.pull_request.number && format(\'pr-{0}\', github.event.pull_request.number) || github.run_id }}": only PR heads share a group and every protected (main/tag/dispatch) run is unique, so it can neither be cancelled nor queued away');
   }
-  const prOnly = CANCEL_PR_ONLY.test(cancelLine);
-  const shaScoped = /cancel-in-progress:\s*true\s*$/.test(cancelLine) && groupLine.includes("|| github.sha");
-  if (!prOnly && !shaScoped) {
-    problems.push("cancel-in-progress must be true only for pull_request heads (main and release runs are never cancelled)");
+  if (!CANCEL_PR_ONLY.test(cancelLine)) {
+    problems.push("cancel-in-progress must be exactly the pull_request-only expression (main and release runs are never cancelled and never queued behind each other)");
   }
   return problems;
 }
@@ -110,7 +112,8 @@ function jobBlocks(text) {
   return jobs;
 }
 
-const DRAFT_IF = /github\.event\.pull_request\.draft/;
+const STANDARD_GUARD = "github.event_name != 'pull_request' || !github.event.pull_request.draft";
+const DISPATCH_OR_NOT_DRAFT = "github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft";
 const DISPATCH_ONLY_IF = /^\s*if:.*github\.event_name\s*==\s*'workflow_dispatch'/;  // a dispatch-only gate (extra owner conditions after it are fine)
 
 function jobRunsMacos(lines) {
@@ -120,8 +123,12 @@ function jobRunsMacos(lines) {
 }
 
 function jobDraftGuarded(lines) {
-  return lines.some((l) => /^\s*if:.*github\.event\.pull_request\.draft/.test(l))   // draft guard in the job if
-    || lines.some((l) => /^\s*os:.*github\.event\.pull_request\.draft/.test(l))     // matrix collapses on drafts
+  // Meaning, not the presence of "draft" text: `github.event_name == 'pull_request' ||
+  // !github.event.pull_request.draft` is always true on pull_request events (it would run drafts),
+  // and a bare `if: github.event.pull_request.draft` runs ONLY drafts — both are rejections.
+  return lines.some((l) => l.includes(STANDARD_GUARD))                              // the standard guard, also inside a larger conjunction
+    || lines.some((l) => l.includes(DISPATCH_OR_NOT_DRAFT))                         // dispatch-or-ready (u14-macos shape)
+    || lines.some((l) => /^\s*os:.*github\.event\.pull_request\.draft/.test(l))     // matrix collapses to ubuntu on drafts
     || lines.some((l) => DISPATCH_ONLY_IF.test(l));                                  // dispatch-only job
 }
 
