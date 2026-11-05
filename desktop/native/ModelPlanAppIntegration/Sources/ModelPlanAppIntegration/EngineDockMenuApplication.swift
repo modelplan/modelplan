@@ -486,6 +486,7 @@ import ModelPlanMenuVerification
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
+        LivePrivateMenus.scrubItems(menu)
         component.replace(with: menuItems)
         liveStatusMenu = menu
         if let status { component.attach(to: status) }
