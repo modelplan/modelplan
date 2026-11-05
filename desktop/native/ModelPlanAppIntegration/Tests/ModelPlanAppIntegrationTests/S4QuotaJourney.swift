@@ -235,7 +235,7 @@ private actor S4RowsClient: EngineClient {
         entry.composition.dock.setPresentationAllowed(true)
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
         entry.composition.dock.acknowledgeDockReveal()
-        try require(entry.noticeIndicator.notice != nil, "revealing Dock only acknowledges strip dots")
+        try require(entry.noticeIndicator.notice == nil, "opening the widget must clear the menu-bar indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }

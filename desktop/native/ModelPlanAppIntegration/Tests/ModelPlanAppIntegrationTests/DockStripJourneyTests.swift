@@ -185,7 +185,7 @@ private actor DockStripEngine: EngineClient {
         XCTAssertEqual(fixture.host.dockView.presentedNoticesForChecks[member]?.key.kind, .resetAnnounced)
     }
 
-    func testRevealAcknowledgesStripWithoutClearingTheMenuOrQuotaSegments() throws {
+    func testRevealAcknowledgesOneShotDotsWithoutClearingQuotaSegmentsOrFaceNotice() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var signal = DockSubscriptionSignal(id: "member")
         signal.dataState = .fresh; signal.alert = .warning
@@ -198,13 +198,18 @@ private actor DockStripEngine: EngineClient {
         try state.acknowledge(.dockRevealed, signals: [signal], at: now)
         let revealed = try state.project([signal], stationBySubscription: stations, at: now)
         XCTAssertTrue(revealed.dots.isEmpty)
-        XCTAssertEqual(revealed.menuNotice, before.menuNotice)
+        XCTAssertNil(revealed.menuNotice, "MENU-06 clears the menu-bar dot when the widget opens")
+        XCTAssertNotNil(DockNoticeProjection.selected(for: signal, at: now))
         XCTAssertEqual(revealed.segments, before.segments)
         var unacknowledged = DockAttentionState()
         let expired = try unacknowledged.project([signal], stationBySubscription: stations, at: now.addingTimeInterval(60))
         XCTAssertTrue(expired.dots.isEmpty)
         XCTAssertNil(expired.menuNotice)
-        try state.acknowledge(.cockpitOpening, signals: [signal], at: now)
-        XCTAssertNil(try state.project([signal], stationBySubscription: stations, at: now).menuNotice)
+        var cockpit = DockAttentionState()
+        try cockpit.acknowledge(.cockpitOpening, signals: [signal], at: now)
+        let cockpitOpened = try cockpit.project([signal], stationBySubscription: stations, at: now)
+        XCTAssertNil(cockpitOpened.menuNotice)
+        XCTAssertEqual(cockpitOpened.dots, before.dots)
+        XCTAssertEqual(cockpitOpened.segments, before.segments)
     }
 }
