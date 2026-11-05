@@ -27,6 +27,28 @@ public struct DockInteractionPresentation:Equatable,Sendable {
     public private(set) var isActive = false
     private var pendingOrders=[UUID:(DockOrderRequest,Bool)]()
     public init(clock:@escaping ()->TimeInterval,scheduler:any DockEdgeScheduling,read:@escaping ()->DockInteractionEnvironment){self.clock=clock;self.scheduler=scheduler;self.read=read}
+    #if DEBUG && MODELPLAN_E2E_JOURNEY
+    private var journeyTimeFloor:TimeInterval?
+    /// Advance only this controller's dwell clock; never activate a row or present a card directly.
+    public func advanceJourneyHoverDwell(for id:String)->Bool {
+        let env=ProcessInfo.processInfo.environment
+        guard env["MODELPLAN_APP_SMOKE"] == "1",env["MODELPLAN_E2E_JOURNEY"] == "1",running else{return false}
+        let input=read()
+        guard input.active,input.parentExpanded,input.hoveredID == id,input.catalogue.contains(id) else{return false}
+        if cards.visibility.subscriptionID == id{return true}
+        let now=currentTime()
+        guard let due=cards.nextDeadline,due-now<=DockCardInteraction.entryDwell else{return false}
+        journeyTimeFloor=max(now,due)
+        refresh()
+        return cards.visibility.subscriptionID == id
+    }
+    #endif
+    private func currentTime()->TimeInterval {
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        if let journeyTimeFloor{return max(clock(),journeyTimeFloor)}
+        #endif
+        return clock()
+    }
     public var hasCapture:Bool{gesture.source != nil}
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(){
@@ -47,7 +69,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             if let retiredHover, env.hoveredID != retiredHover.id || env.hoverEventRevision != retiredHover.event { self.retiredHover = nil }
             let hover = retiredHover == nil && gesture.preview == nil ? env.hoveredID : nil
             let previousCard = cards.visibility.subscriptionID
-            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:clock())
+            try cards.step(catalogue:env.catalogue,hoveredID:hover,insideShared:env.insideShared,parentOwnsHide:env.parentOwnsHide,parentExpanded:env.parentExpanded,menuActuallyOpen:env.menuActuallyOpen,at:currentTime())
             if previousCard != nil, cards.visibility.subscriptionID == nil, env.insideShared == false, let id = env.hoveredID {
                 retiredHover = (id, env.hoverEventRevision)
             }
@@ -56,7 +78,7 @@ public struct DockInteractionPresentation:Equatable,Sendable {
             if let content{guard content.subscriptionID==id else{throw DockLogicError.invalidCatalogue};try content.validate()}
             publish(.init(card:cards.visibility,content:content,reorder:gesture.preview,overflowIDs:overflowOpen ? try env.preferences.orderedIDs(in:env.catalogue).filter{env.overflowIDs.contains($0)}:[]))
             guard running,generation==token else{return}
-            let due = cards.nextDeadline ?? (cards.visibility.subscriptionID != nil ? clock() + 0.15 : nil)
+            let due = cards.nextDeadline ?? (cards.visibility.subscriptionID != nil ? currentTime() + 0.15 : nil)
             if let due{scheduler.arm(at:due){[weak self] in guard let self,self.running,self.generation==token else{return};self.refresh()}}
         }catch{stop();onFailure?(error)}
     }
