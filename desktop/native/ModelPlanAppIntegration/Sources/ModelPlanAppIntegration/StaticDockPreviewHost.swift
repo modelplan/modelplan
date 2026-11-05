@@ -61,6 +61,49 @@ public struct StaticDockGeometry {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+@MainActor private final class DockIgnitionButton: NSButton {
+    var onHelpFocusChanged: (() -> Void)?
+    private var keyboardFocused = false
+    private var assistiveFocused = false
+
+    private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
+    var hasHelpFocus: Bool { canPresentHelp && (keyboardFocused || assistiveFocused) }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        updateHelpFocus(keyboard: canPresentHelp)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        updateHelpFocus(keyboard: false)
+        return true
+    }
+
+    override func setAccessibilityFocused(_ focused: Bool) {
+        super.setAccessibilityFocused(focused)
+        updateHelpFocus(assistive: focused && canPresentHelp)
+    }
+
+    override func viewDidHide() {
+        clearHelpFocus()
+        super.viewDidHide()
+    }
+
+    func clearHelpFocus() {
+        setAccessibilityHelp(nil)
+        updateHelpFocus(keyboard: false, assistive: false)
+    }
+
+    private func updateHelpFocus(keyboard: Bool? = nil, assistive: Bool? = nil) {
+        let wasFocused = keyboardFocused || assistiveFocused
+        if let keyboard { keyboardFocused = keyboard }
+        if let assistive { assistiveFocused = assistive }
+        if wasFocused != (keyboardFocused || assistiveFocused) { onHelpFocusChanged?() }
+    }
+}
+
 public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
 struct DockHelpInteraction: Equatable {
@@ -84,7 +127,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
-    public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
+    public var cockpitEntryEnabled = true {
+        didSet {
+            consoleButton.isEnabled = cockpitEntryEnabled
+            cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
+            guard oldValue != cockpitEntryEnabled else { return }
+            if let presentation = edge.presentation { publishDockHelpSurface(presentation) }
+            if !cockpitEntryEnabled { consoleButton.clearHelpFocus() }
+        }
+    }
     public var showSettings: (() -> Void)?
     public var requestHideDock:(() -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
@@ -537,7 +588,7 @@ struct DockHelpInteraction: Equatable {
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
-    private let consoleButton = NSButton(frame: .zero)
+    private let consoleButton = DockIgnitionButton(frame: .zero)
     private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
@@ -570,6 +621,8 @@ struct DockHelpInteraction: Equatable {
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.setAccessibilityIdentifier("dock.ignition")
+        consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
         cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
@@ -1160,8 +1213,12 @@ struct DockHelpInteraction: Equatable {
                                   visible: view.visibleRect, contains: regions.contains)
     }
     private func withdrawDockHelpSurface() {
-        guard lastDockHelpSurface != nil else { return }
+        guard lastDockHelpSurface != nil else {
+            if !permitted || retired { consoleButton.clearHelpFocus() }
+            return
+        }
         lastDockHelpSurface = nil; dockHelpInputGeneration = nil
+        consoleButton.clearHelpFocus()
         publishDockHelpInteraction()
         dockHelpSurfaceDidChange?(nil)
     }
@@ -1204,11 +1261,25 @@ struct DockHelpInteraction: Equatable {
         _ text: String?, for interaction: DockHelpInteraction, on surface: DockHelpSurface
     ) -> Bool {
         guard isCurrentDockHelpSurface(surface), !surface.dragging, interaction.source == .keyboard,
-              currentDockHelpInteraction == interaction, interactionController?.hasCapture != true else { return false }
+              currentDockHelpInteraction == interaction, focusedDockHelpAnchorID == interaction.anchor.id else { return false }
+        if interaction.anchor.id == "dock.ignition" {
+            consoleButton.setAccessibilityHelp(text)
+            return true
+        }
         return interactionView.setFocusedHelpExplanation(text, for: interaction.anchor.id)
     }
 
-    var focusedDockHelpAnchorID: String? { interactionView.focusedHelpAnchorID }
+    var focusedDockHelpAnchorID: String? {
+        guard permitted, !retired, edge.presentation?.state == .expanded, edge.presentation?.moving != true,
+              interactionController?.hasCapture != true else { return nil }
+        return consoleButton.hasHelpFocus ? "dock.ignition" : interactionView.focusedHelpAnchorID
+    }
+
+    private func clearDockHelpAccessibilityExplanation() {
+        consoleButton.setAccessibilityHelp(nil)
+        dockView.clearFocusedHelpExplanation()
+        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
+    }
 
     private func publishDockHelpInteraction() {
         let next: DockHelpInteraction?
@@ -1223,8 +1294,11 @@ struct DockHelpInteraction: Equatable {
                 let targetID = view.helpAnchorID(atLocal: local)
                 let anchor = surface.mapAnchors.first { $0.visible && $0.id == targetID }
                     ?? surface.mapAnchors.first {
-                        $0.visible && $0.rect.contains(pointer) &&
-                            ["dock.ignition", "dock.move", "dock.card"].contains($0.id)
+                        guard $0.visible, $0.rect.contains(pointer) else { return false }
+                        if $0.id == "dock.ignition" {
+                            return consoleButton.isEnabled && !consoleButton.isHiddenOrHasHiddenAncestor
+                        }
+                        return $0.id == "dock.move" || $0.id == "dock.card"
                     }
                 next = anchor.map { .init(anchor: $0, source: .pointer) }
             } else { next = nil }
@@ -1232,8 +1306,7 @@ struct DockHelpInteraction: Equatable {
         // A fresh focus visit gets a new receipt, but repeated samples of one visit stay silent.
         guard next?.anchor != currentDockHelpInteraction?.anchor ||
                 next?.source != currentDockHelpInteraction?.source else { return }
-        dockView.clearFocusedHelpExplanation()
-        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
+        clearDockHelpAccessibilityExplanation()
         currentDockHelpInteraction = next
         dockHelpInteractionDidChange?(next)
     }
@@ -1310,8 +1383,7 @@ struct DockHelpInteraction: Equatable {
                                    visible: true, dragging: value.moving, anchors: anchors)
         next.mapAnchors = mapAnchors
         guard next != previous else { return }
-        dockView.clearFocusedHelpExplanation()
-        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
+        clearDockHelpAccessibilityExplanation()
         lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
         dockHelpSurfaceDidChange?(next)
     }
