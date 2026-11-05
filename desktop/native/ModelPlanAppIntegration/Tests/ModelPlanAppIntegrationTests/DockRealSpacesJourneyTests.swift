@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 #if MODELPLAN_DOCK_NATIVE_JOURNEY && MODELPLAN_DOCK_REAL_SPACES_JOURNEY
 import AppKit
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanShell
 import ModelPlanSettings
 import XCTest
 @testable import ModelPlanAppIntegration
@@ -12,7 +13,7 @@ import XCTest
         var count = 0
     }
 
-    private func makeProfile(displayID: String, edge: SettingsDockEdge) async throws
+    private func makeProfile(displayID: String, edge: SettingsDockEdge, declaredQuotas: [Int] = []) async throws
         -> (EngineDockMenuApplication, SettingsStore, URL) {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: executable.path))
@@ -38,6 +39,19 @@ import XCTest
             throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Temporary consent initialization failed"])
         }
 
+        if !declaredQuotas.isEmpty {
+            let directory = root.appendingPathComponent(".config/modelplan")
+            let now = Date(), iso = ISO8601DateFormatter()
+            let ids = declaredQuotas.indices.map { "synthetic-d05-\($0)" }
+            let plans = ids.map { ["planId": $0] }
+            let windows: [[String: Any]] = zip(ids, declaredQuotas).map { id, remaining in
+                ["planId": id, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+                 "observedAt": iso.string(from: now.addingTimeInterval(-15)),
+                 "resetAt": iso.string(from: now.addingTimeInterval(7_200))]
+            }
+            try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "plans": plans, "windows": windows])
+                .write(to: directory.appendingPathComponent("local.json"), options: .atomic)
+        }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update {
             $0.autoHide = false
@@ -66,6 +80,104 @@ import XCTest
 
     private func announce(_ scenario: String, _ instruction: String) {
         FileHandle.standardOutput.write(Data((scenario + ": " + instruction + "\n").utf8))
+    }
+
+    @MainActor private final class PointerEvents {
+        var down = 0, drag = 0, up = 0
+    }
+
+    func testD05PhysicalMixedScaleStrongSnap() async throws { try await exerciseMixedScale(mode: 1) }
+    func testD05PhysicalMixedScaleAlwaysAttached() async throws { try await exerciseMixedScale(mode: 2) }
+
+    private func exerciseMixedScale(mode: Int) async throws {
+        _ = NSApplication.shared
+        let topology = DockDisplayTopology.system()
+        let source = try XCTUnwrap(topology.displays.first { $0.backingScale == 2 }, "D-05 needs a real 2x display")
+        let destination = try XCTUnwrap(topology.displays.first {
+            $0.backingScale == 1 && !$0.frame.intersects(source.frame)
+        }, "D-05 needs a separate, non-mirrored 1x display")
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        UserDefaults.standard.register(defaults: [modeKey: mode])
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        guard UserDefaults.standard.integer(forKey: modeKey) == mode else {
+            return XCTFail("An explicit setting overrides the isolated test mode")
+        }
+
+        let (app, store, storedURL) = try await makeProfile(displayID: source.id, edge: .right, declaredQuotas: [72, 53, 38])
+        await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel as? PulseDockPanel)
+        func instrument(in root: NSView) -> DockInstrumentView? {
+            if let view = root as? DockInstrumentView { return view }
+            return root.subviews.lazy.compactMap { instrument(in: $0) }.first
+        }
+        func currentInstrument() -> DockInstrumentView? {
+            panel.contentView.flatMap { instrument(in: $0) }
+        }
+        func assertPixels(scale: Int, line: UInt = #line) throws {
+            let view = try XCTUnwrap(currentInstrument(), line: line)
+            let raster = try XCTUnwrap(view.renderedPixelSize, line: line)
+            XCTAssertEqual(panel.backingScaleFactor, CGFloat(scale), line: line)
+            XCTAssertEqual(raster.width, ceil(view.bounds.width * CGFloat(scale)), line: line)
+            XCTAssertEqual(raster.height, ceil(view.bounds.height * CGFloat(scale)), line: line)
+        }
+        let ready = try await wait(.seconds(5)) {
+            guard let view = currentInstrument() else { return false }
+            let values = Set(view.presentedReadingsForChecks.values.compactMap(\.remainingPercent))
+            return panel.isVisible && panel.occlusionState.contains(.visible) &&
+                dock.edgePresentation?.placement?.displayID == source.id && values == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("The real App must paint all three readings on the 2x display") }
+        try assertPixels(scale: 2)
+        let original = await store.snapshot()
+        let originalBytes = try Data(contentsOf: storedURL)
+
+        let events = PointerEvents()
+        let previousInput = panel.receivedInput
+        panel.receivedInput = { type, _ in
+            switch type {
+            case .leftMouseDown: events.down += 1
+            case .leftMouseDragged: events.drag += 1
+            case .leftMouseUp: events.up += 1
+            default: break
+            }
+        }
+        defer { panel.receivedInput = previousInput }
+        announce("D-05 mode \(mode)", "Capture the 2x baseline, then drag the widget body to the 1x display and keep holding")
+        let carried = try await wait(.seconds(45)) {
+            events.down > 0 && events.drag > 0 && dock.edgePresentation?.moving == true &&
+                dock.edgePresentation?.placement?.displayID == destination.id &&
+                panel.backingScaleFactor == 1 && panel.isVisible && panel.occlusionState.contains(.visible)
+        }
+        guard carried else { return XCTFail("The native panel never carried to the 1x display while pressed") }
+        try assertPixels(scale: 1)
+        XCTAssertEqual(panel.level, .statusBar)
+        XCTAssertTrue(destination.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame))
+        XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes)
+
+        announce("D-05 mode \(mode)", "Capture the held 1x widget, then release near the 1x display's bottom usable edge")
+        let released = try await wait(.seconds(45)) {
+            events.up > 0 && dock.edgePresentation?.moving == false &&
+                dock.edgePresentation?.placement?.displayID == destination.id &&
+                app.settingsHost.application.editor.snapshot?.preferences.dockDisplayID == destination.id
+        }
+        guard released else { return XCTFail("The native release did not save the actual 1x destination") }
+        try assertPixels(scale: 1)
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.revision, original.revision + 1)
+        XCTAssertEqual(saved.preferences.dockEdge, .bottom)
+        XCTAssertEqual(panel.level, .floating)
+        XCTAssertEqual(panel.frame.minY, destination.visibleFrame.minY, accuracy: 1)
+        XCTAssertTrue(panel.isVisible && panel.occlusionState.contains(.visible))
+        let savedBytes = try Data(contentsOf: storedURL)
+        announce("D-05 mode \(mode)", "Capture the settled 1x crop at 100 percent within five seconds")
+        try await Task.sleep(for: .seconds(5))
+        XCTAssertEqual(try Data(contentsOf: storedURL), savedBytes)
     }
 
     @MainActor private final class LifecycleEvents {
