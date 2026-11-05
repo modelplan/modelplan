@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -415,11 +415,13 @@ private actor S4RowsClient: EngineClient {
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
-        await entry.prepare();await entry.composition.start()
+        await entry.prepare();entry.allowDockPresentation();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
         try require(reading.remainingPercent == 12,"the tightest plan-wide reading must include the monthly window")
+        let rendered = entry.composition.dock.dockView.presentedReadingsForChecks[input.id]
+        try require(rendered?.selectedWindowID == "month" && rendered?.readout == "12%","normal Dock must paint the selected monthly value")
         try require(input.windows.first(where:{$0.id == "month"})?.isGeneral == true,"a plan-wide monthly window must be general")
         try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
         try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
