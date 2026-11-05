@@ -329,6 +329,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var interactionPreviewOrder: [String]?
     private var interactionOriginalActions: [(DockInstrumentView, ((DockInstrumentAction) -> Void)?, Bool)] = []
     private let overflowTray = DockOverflowTrayView(frame: .zero)
+    var detachedOverflowForChecks: DockOverflowTrayView? { createsNativePanels ? nil : overflowTray }
     private let overflowScroll = NSScrollView(frame: .zero)
     private var overflowPanel: NSPanel?
     private var interactionView: DockInstrumentView {

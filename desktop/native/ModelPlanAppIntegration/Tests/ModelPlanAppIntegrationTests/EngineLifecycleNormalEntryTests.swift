@@ -656,6 +656,66 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertEqual(try expanded(app).frame, saved, "An unavailable cockpit releases the presentation gate")
     }
 
+    func testD18OverflowRowsKeepAccessibleActionsAcrossReopening() async throws {
+        let topology = Topology()
+        let (rows, ids) = try aliasedRows(memberCount: 30)
+        let app = try await make(profile(), topology: topology, rows: rows) {
+            $0.dockEdge = .right
+            $0.autoHide = false
+            $0.motion = .on
+            for (index, id) in ids.enumerated() { $0.subscriptionSettings[id] = .init(alias: "Alias \(index)") }
+        }
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock, instrument = dock.dockView
+        let tray = try XCTUnwrap(dock.detachedOverflowForChecks)
+        func toggle() throws {
+            let node = try XCTUnwrap((instrument.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+                .first { $0.accessibilityIdentifier() == "dock.overflow" })
+            XCTAssertEqual(node.accessibilityLabel(), "More subscriptions")
+            XCTAssertTrue(node.accessibilityPerformPress())
+        }
+        func row(_ id: String, in root: NSView) -> NSView? {
+            if root.accessibilityIdentifier() == "dock.overflow." + id { return root }
+            return root.subviews.lazy.compactMap { row(id, in: $0) }.first
+        }
+
+        let before = dock.interactionEnvironment()
+        var order = try before.preferences.orderedIDs(in: before.catalogue)
+        let target = try XCTUnwrap(order.last)
+        XCTAssertTrue(before.overflowIDs.contains(target))
+        try toggle()
+        let first = try XCTUnwrap(row(target, in: tray))
+        XCTAssertFalse(try XCTUnwrap(first.accessibilityLabel()).isEmpty)
+        XCTAssertFalse(try XCTUnwrap(first.accessibilityHelp()).isEmpty)
+        XCTAssertTrue(first.acceptsFirstResponder, "Overflow must preserve keyboard focus after the initial closed state")
+        XCTAssertTrue(first.accessibilityPerformPress(), "An overflow row must retain its accessibility action")
+
+        let index = try XCTUnwrap(order.firstIndex(of: target))
+        XCTAssertGreaterThan(index, 0)
+        order.swapAt(index, index - 1)
+        let optionUp = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.option],
+            timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
+            isARepeat: false, keyCode: 126))
+        first.keyDown(with: optionUp)
+        let editor = app.settingsHost.application.editor
+        let deadline = ContinuousClock.now + .seconds(2)
+        while editor.snapshot?.preferences.subscriptions.order != order && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let saved = await editor.store.snapshot()
+        XCTAssertEqual(saved.preferences.subscriptions.order, order)
+        XCTAssertTrue((instrument.accessibilityValue() as? String)?.hasSuffix("position \(index) of \(ids.count)") == true)
+
+        try toggle()
+        XCTAssertNil(row(target, in: tray))
+        XCTAssertFalse(first.accessibilityPerformPress(), "Retired controls cannot still act")
+        try toggle()
+        let reopened = try XCTUnwrap(row(target, in: tray))
+        XCTAssertTrue(reopened.acceptsFirstResponder)
+        XCTAssertTrue(reopened.accessibilityPerformPress())
+    }
+
     func testD17FollowSamplesPreserveSavedPlace() async throws {
         let topology = Topology()
         topology.joined = true
