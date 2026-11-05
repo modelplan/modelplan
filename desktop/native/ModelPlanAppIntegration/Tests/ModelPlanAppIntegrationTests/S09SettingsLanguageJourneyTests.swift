@@ -11,6 +11,24 @@ import ModelPlanWire
     private func containsHan(_ text: String) -> Bool {
         text.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
     }
+    private func expectedOption(_ raw: String, key: SettingKey, chinese: Bool) -> String? {
+        if raw == "system" { return chinese ? "跟随系统" : key == .theme ? "System" : "Follow system" }
+        if raw == "true" { return chinese ? (key == .showPercentages ? "显示" : "开启") : (key == .showPercentages ? "Shown" : "On") }
+        if raw == "false" { return chinese ? (key == .showPercentages ? "隐藏" : "关闭") : (key == .showPercentages ? "Hidden" : "Off") }
+        if raw == "primary", key == .dockDisplay { return chinese ? "主显示器" : "Primary display" }
+        let words: [String: (String, String)] = [
+            "day": ("Day", "白天"), "night": ("Night", "夜间"), "on": ("On", "开启"),
+            "remaining": ("Remaining", "剩余"), "used": ("Used", "已用"),
+            "auto": ("Auto (tightest)", "自动（最紧的）"), "5h": ("5h", "5小时"), "week": ("Weekly", "每周"),
+            "right": ("Right", "右侧"), "left": ("Left", "左侧"), "bottom": ("Bottom", "底部"),
+            "none": ("None", "无"), "subtle": ("Subtle", "轻微"), "strong": ("Strong", "明显"),
+            "icon": ("Icon only", "仅图标"), "tightest": ("Tightest percentage", "最紧的百分比"),
+            "twoWindows": ("Two windows", "两个窗口"), "zh-CN": ("Simplified Chinese", "简体中文"), "en": ("English", "英语"),
+            "hold": ("Hold to ignite", "按住点火"), "quick": ("Always quick", "始终快速打开")
+        ]
+        guard let pair = words[raw] else { return nil }
+        return chinese ? pair.1 : pair.0
+    }
 
     func testS09NormalSettingsRowCopyUsesOneLanguageOnEveryPane() async throws {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -25,13 +43,19 @@ import ModelPlanWire
                 dockEnvironment: normalEntryTestEnvironment,
                 makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
             await app.prepare()
+            var context = app.settingsHost.application.editor.context
+            context.subscriptions = [
+                .init(id: "s09-first", name: .init("First sample", "示例一")),
+                .init(id: "s09-second", name: .init("Second sample", "示例二"))
+            ]
+            app.settingsHost.application.update(context: context)
             defer { app.composition.dock.close() }
             let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
             await app.settingsHost.present(paneID: "general", origin: .userInitiated)
             let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
             defer { window.close() }
             let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
-            var checked = 0
+            var checked = 0, checkedOptions = 0
             for pane in SettingsStructure.task65.panes {
                 controller.selectPane(pane.id)
                 XCTAssertEqual(controller.selectedPaneID, pane.id)
@@ -52,10 +76,19 @@ import ModelPlanWire
                         XCTAssertFalse(copy.localizedCaseInsensitiveContains("backend"), "Internal backend terminology is not user-facing copy")
                         XCTAssertFalse(copy.localizedCaseInsensitiveContains("engine-owned"), "Internal ownership terminology is not user-facing copy")
                     }
+                    for popup in row.choices.values where !popup.isHiddenOrHasHiddenAncestor {
+                        for item in popup.itemArray {
+                            guard let raw = item.representedObject as? String,
+                                  let expected = expectedOption(raw, key: row.key, chinese: locale != "en") else { continue }
+                            XCTAssertEqual(item.title, expected, "The visible option must use the selected language: \(row.key.rawValue)")
+                            checkedOptions += 1
+                        }
+                    }
                     checked += 1
                 }
             }
             XCTAssertGreaterThan(checked, 0, "The normal Settings window must supply rows to inspect")
+            XCTAssertGreaterThan(checkedOptions, 0, "The normal Settings window must supply localized options to inspect")
             await app.composition.stop()
         }
     }
