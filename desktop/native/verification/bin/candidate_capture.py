@@ -12,6 +12,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +65,48 @@ def _validate_observation(obs, pid):
     return obs
 
 
+class NativeAdapter:
+    """Native OS-backed adapter; no permission prompt or application launch."""
+    def __init__(self, executable, *, swift='/usr/bin/swift', runner=subprocess.run):
+        self.executable = str(Path(executable).resolve(strict=True))
+        self.swift = swift
+        self.runner = runner
+        self.script = str(Path(__file__).with_name('candidate_capture_adapter.swift'))
+
+    def _run(self, args):
+        try:
+            result = self.runner(args, capture_output=True, text=True, timeout=20, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('native capture unavailable') from exc
+        if result.returncode != 0 or len(result.stdout) > 1048576:
+            raise ValueError('native capture unavailable: permission or observation')
+        return result.stdout
+
+    def observe(self, pid):
+        try:
+            return json.loads(self._run([self.swift, self.script, 'inspect', str(pid), self.executable]))
+        except (ValueError, json.JSONDecodeError) as exc:
+            raise ValueError('native capture unavailable: permission or observation') from exc
+
+    def capture(self, pid, kind, ident, rect, path):
+        if kind == 'window' and type(ident) is int and ident > 0:
+            args = ['/usr/sbin/screencapture', '-x', '-o', '-l', str(ident), str(path)]
+        elif kind == 'menuBar' and ident is None:
+            values = [rect[k] for k in ('x', 'y', 'width', 'height')]
+            if any(int(v) != v for v in values):
+                raise ValueError('fractional crop unsupported')
+            region = ','.join(str(int(v)) for v in values)
+            args = ['/usr/sbin/screencapture', '-x', '-R', region, str(path)]
+        else:
+            raise ValueError('unsupported capture')
+        self._run(args)
+        try:
+            size = json.loads(self._run([self.swift, self.script, 'check-image', str(path)]))
+            return size['width'], size['height']
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValueError('capture unavailable: blank or invalid image') from exc
+
+
 def capture(adapter, *, pid, source_sha, package_sha256, scratch_parent, batch, name):
     """Publish one native-scale observation, or leave no capture on failure.
 
@@ -92,6 +135,8 @@ def capture(adapter, *, pid, source_sha, package_sha256, scratch_parent, batch, 
         operations = [('window', w['id'], w['frame'], 'window-%d.png' % w['id']) for w in first['windows']]
         operations.append(('menuBar', None, first['cropFrame'], 'status-menu-bar.png'))
         for kind, ident, rect, filename in operations:
+            if _validate_observation(adapter.observe(pid), pid) != first:
+                raise ValueError('candidate geometry changed before capture')
             output = stage / filename
             dimensions = adapter.capture(pid, kind, ident, rect, output)
             if output.is_symlink() or not output.is_file() or output.stat().st_size == 0:

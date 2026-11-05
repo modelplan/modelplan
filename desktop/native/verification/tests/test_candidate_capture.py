@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
 import json
+import subprocess
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,7 +38,7 @@ class Fake:
         path.write_bytes(b'synthetic image')
         if self.fail:
             raise RuntimeError('synthetic failure')
-        return (frame['width'] * 2, frame['height'] * 2)
+        return (frame['width'] * self.state['scale'], frame['height'] * self.state['scale'])
 
 
 class CaptureTests(unittest.TestCase):
@@ -60,6 +62,10 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(json.loads((self.batch / 'v01' / 'receipt.json').read_text()), receipt)
         self.assertEqual(len(receipt['capturePaths']), 2)
         self.assertFalse(list(self.scratch.iterdir()))
+    def test_one_x_receipt(self):
+        self.fake.state['scale'] = 1
+        self.assertEqual(self.run_capture()['displayScale'], 1)
+
     def test_other_app_window_rejected(self):
         self.fake.state['windows'][0]['ownerPID'] = 43
         with self.assertRaisesRegex(ValueError, 'non-candidate'):
@@ -91,6 +97,34 @@ class CaptureTests(unittest.TestCase):
         self.fake.state['neighbourFrames'] = []
         with self.assertRaisesRegex(ValueError, 'neighbour'):
             self.run_capture()
+
+
+class NativeAdapterTests(unittest.TestCase):
+    def test_commands_use_only_window_id_and_bounded_menu_crop(self):
+        calls = []
+        def run(args, **_kwargs):
+            calls.append(args)
+            if 'check-image' in args:
+                return SimpleNamespace(returncode=0, stdout='{"width": 120, "height": 48}')
+            return SimpleNamespace(returncode=0, stdout='')
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / 'app'
+            binary.touch()
+            adapter = module.NativeAdapter(binary, runner=run)
+            adapter.capture(42, 'window', 7, rect(0, 0, 50, 50), Path(temp) / 'window.png')
+            adapter.capture(42, 'menuBar', None, rect(870, 0, 60, 24), Path(temp) / 'bar.png')
+        self.assertEqual(calls[0][1:5], ['-x', '-o', '-l', '7'])
+        self.assertEqual(calls[2][1:4], ['-x', '-R', '870,0,60,24'])
+
+    def test_capture_timeout_is_bounded_refusal(self):
+        def run(args, **_kwargs):
+            raise subprocess.TimeoutExpired(args, 20)
+        with tempfile.TemporaryDirectory() as temp:
+            binary = Path(temp) / 'app'
+            binary.touch()
+            adapter = module.NativeAdapter(binary, runner=run)
+            with self.assertRaisesRegex(ValueError, 'unavailable'):
+                adapter.capture(42, 'window', 7, rect(0, 0, 10, 10), Path(temp) / 'x.png')
 
 
 if __name__ == '__main__':
