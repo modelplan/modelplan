@@ -142,7 +142,7 @@ private actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("quota-settings-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let snapshot = try rows(weekly: 25, secondWeekly: 16)
+        let snapshot = try rows(weekly: 25, secondWeekly: 20)
         func start() async throws -> EngineDockMenuApplication {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -160,7 +160,7 @@ private actor EntrySyntheticClient: EngineClient {
         for key in [SettingKey.redBelow, .showPercentages, .percentageMode, .percentagePin] {
             XCTAssertEqual(rows.first { $0.key == key }?.availability, .available, key.rawValue)
         }
-        XCTAssertEqual(rows.first { $0.key == .redBelow }?.value, .choice("25", options: ["10", "16", "20", "25"]))
+        XCTAssertEqual(original.preferences.redBelow, 25)
 
         let view = app.composition.dock.dockView
         let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
@@ -168,9 +168,9 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(try reading(first).readout, "25%")
         XCTAssertEqual(try reading(first).status, .critical)
         XCTAssertNotNil(view.helpReadoutAnchor(first))
-        _ = try await editor.commit(SettingsB20Edit.redBelow(16))
+        _ = try await editor.commit(SettingsB20Edit.redBelow(20))
         XCTAssertEqual(try reading(first).status, .warning)
-        XCTAssertEqual(try reading(second).readout, "16%")
+        XCTAssertEqual(try reading(second).readout, "20%")
         XCTAssertEqual(try reading(second).status, .critical)
         _ = try await editor.commit(SettingsB20Edit.percentagePin(first, .fiveHour))
         XCTAssertEqual(try reading(first).selectedWindowID, "session:18000:main:main")
@@ -179,7 +179,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(try reading(first).readout, "25%")
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
         XCTAssertEqual(try reading(first).readout, "75%")
-        XCTAssertEqual(try reading(second).readout, "84%")
+        XCTAssertEqual(try reading(second).readout, "80%")
         XCTAssertEqual(try reading(second).status, .critical, "the threshold still applies to remaining quota")
         _ = try await editor.commit(SettingsB20Edit.showPercentages(false))
         XCTAssertNil(view.helpReadoutAnchor(first))
@@ -190,11 +190,24 @@ private actor EntrySyntheticClient: EngineClient {
 
         let relaunched = try await start()
         let restored = try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot)
-        XCTAssertEqual(restored.preferences.redBelow, 16)
+        XCTAssertEqual(restored.preferences.redBelow, 20)
         let restoredReadings = relaunched.composition.dock.dockView.presentedReadingsForChecks
         XCTAssertEqual(restoredReadings[first]?.status, .warning)
         XCTAssertEqual(restoredReadings[second]?.status, .critical)
         XCTAssertEqual(restoredReadings[first]?.readout, "75%")
+
+        await relaunched.composition.stop()
+        // A prerelease profile can contain 16 even though the current editor no longer offers it.
+        let existing = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let seeded = try await existing.update { $0.redBelow = 16 }
+        let legacy = try await start()
+        let committed = try XCTUnwrap(legacy.composition.latestSettings)
+        XCTAssertEqual(committed.snapshot.preferences.redBelow, 16)
+        XCTAssertEqual(committed.snapshot.revision, seeded.revision, "Opening the widget must not rewrite legacy settings")
+        let shown = legacy.composition.dock.dockView.presentedReadingsForChecks
+        let effective = committed.effective.redBelow
+        XCTAssertEqual(shown[first]?.status, effective >= 25 ? .critical : .warning)
+        XCTAssertEqual(shown[second]?.status, effective >= 20 ? .critical : .warning)
     }
 
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
