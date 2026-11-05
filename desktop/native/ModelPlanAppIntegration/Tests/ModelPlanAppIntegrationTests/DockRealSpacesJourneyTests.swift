@@ -74,14 +74,17 @@ import XCTest
         ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
     }
 
-    private func makeDeviceApplication(root: URL, executable: URL, store: SettingsStore) -> EngineDockMenuApplication {
+    private func makeDeviceApplication(root: URL, executable: URL, store: SettingsStore,
+                                       registerTeardown: Bool = true) -> EngineDockMenuApplication {
         EngineRowsEntry.nativeJourneyProfile = root
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-dock-device",
             allowedEnvironment: deviceEnvironment(root), offline: true, readOnly: true), settingsStore: store,
             createsNativePanels: true, bundleURL: root.appendingPathComponent("Synthetic.app"), activateSettings: {})
-        addTeardownBlock { @MainActor in
-            await app.stopNativeDockJourney()
-            EngineRowsEntry.nativeJourneyProfile = nil
+        if registerTeardown {
+            addTeardownBlock { @MainActor in
+                await app.stopNativeDockJourney()
+                EngineRowsEntry.nativeJourneyProfile = nil
+            }
         }
 
         return app
@@ -447,6 +450,187 @@ import XCTest
             XCTAssertEqual(try Data(contentsOf: storedURL), savedBytes, role)
             announce("D-06", "The relaunched widget is visible on \(role). Capture its restored placement.")
             try await Task.sleep(for: .seconds(5))
+        }
+    }
+
+    func testD07PhysicalEdgeMatrixStrongSnap() async throws { try await exercisePhysicalEdgeMatrix(mode: 1) }
+    func testD07PhysicalEdgeMatrixAlwaysAttached() async throws { try await exercisePhysicalEdgeMatrix(mode: 2) }
+
+    private enum EdgeTargetFailure: Error {
+        case wrongStartPlacement, pointerDidNotReachTarget
+    }
+
+    private enum EdgeStation: String, CaseIterable {
+        case low, midpoint, high
+
+        func contains(_ point: CGFloat, from min: CGFloat, to max: CGFloat) -> Bool {
+            switch self {
+            case .low: return (min + 4...min + 20).contains(point)
+            case .midpoint: return abs(point - (min + max) / 2) <= 16
+            case .high: return (max - 20...max - 4).contains(point)
+            }
+        }
+    }
+
+    private func exercisePhysicalEdgeMatrix(mode: Int) async throws {
+        _ = NSApplication.shared
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        UserDefaults.standard.register(defaults: [modeKey: mode])
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        guard UserDefaults.standard.integer(forKey: modeKey) == mode else {
+            return XCTFail("An explicit setting overrides the isolated test mode")
+        }
+        let displays = DockDisplayTopology.system().displays.sorted {
+            $0.frame.minX == $1.frame.minX ? $0.frame.minY < $1.frame.minY : $0.frame.minX < $1.frame.minX
+        }
+        guard displays.count >= 3, displays.indices.allSatisfy({ index in
+            displays[..<index].allSatisfy { !$0.frame.intersects(displays[index].frame) }
+        }) else { return XCTFail("D-07 needs at least three non-mirrored displays") }
+        for (index, display) in displays.enumerated() {
+            announce("D-07 display \(index + 1)", "\(display.name ?? "Display") at \(display.frame)")
+        }
+        let route = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D07_ROUTE"] ?? ""
+        let indices = route.split(separator: ":", omittingEmptySubsequences: false).compactMap { Int($0) }
+        guard indices.count == 2, indices[0] != indices[1],
+              indices.allSatisfy({ (1...displays.count).contains($0) }) else {
+            return XCTFail("Set MODELPLAN_DOCK_D07_ROUTE to source:destination using the numbered displays")
+        }
+        let source = displays[indices[0] - 1], destination = displays[indices[1] - 1]
+        let label = "D-07 mode \(mode) route \(route)"
+        let (_, _, storedURL) = try await makeProfile(displayID: source.id, edge: .right, declaredQuotas: [72, 53, 38])
+        let root = storedURL.deletingLastPathComponent().deletingLastPathComponent()
+        let executable = try reviewedExecutable()
+        let edges: [(DockEdge, SettingsDockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        var results: [(String, Bool)] = []
+
+        func withNativePanel<T>(store: SettingsStore,
+                                _ action: (EngineDockMenuApplication, PulseDockPanel) async throws -> T) async throws -> T {
+            let app = makeDeviceApplication(root: root, executable: executable, store: store, registerTeardown: false)
+            do {
+                await app.prepare()
+                app.allowDockPresentation()
+                await app.composition.start()
+                let host = app.composition.dock
+                let panel = try XCTUnwrap(host.nativePanel as? PulseDockPanel)
+                let ready = try await wait(.seconds(10)) {
+                    panel.isVisible && Set(host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent))
+                        == [72, 53, 38]
+                }
+                _ = try XCTUnwrap(ready ? panel : nil, "The native widget and three readings must appear")
+                let value = try await action(app, panel)
+                await app.stopNativeDockJourney()
+                return value
+            } catch {
+                await app.stopNativeDockJourney()
+                throw error
+            }
+        }
+
+        func verifyTarget(edge: DockEdge, setting: SettingsDockEdge, station: EdgeStation) async throws -> Bool {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let before = try await store.update {
+                $0.dockDisplayID = source.id
+                $0.dockEdge = .right
+                $0.dockAlongFraction = 0.5
+            }
+            let originalBytes = try Data(contentsOf: storedURL)
+            let usable = destination.usableFrame
+            let horizontal = edge == .bottom
+            let lo = horizontal ? usable.minX : usable.minY
+            let hi = horizontal ? usable.maxX : usable.maxY
+            let axis: (CGPoint) -> CGFloat = { horizontal ? $0.x : $0.y }
+            func inTarget(_ point: CGPoint) -> Bool {
+                guard destination.frame.contains(point), station.contains(axis(point), from: lo, to: hi) else { return false }
+                switch edge {
+                case .left: return (usable.minX...usable.minX + 4).contains(point.x)
+                case .right: return (usable.maxX - 4...usable.maxX).contains(point.x)
+                case .bottom: return (usable.minY...usable.minY + 4).contains(point.y)
+                case .top: return false
+                }
+            }
+            let dropped = try await withNativePanel(store: store) { app, panel in
+                let host = app.composition.dock
+                let start = try XCTUnwrap(host.edgePresentation?.placement)
+                guard start.displayID == source.id, start.edge == .right else {
+                    throw EdgeTargetFailure.wrongStartPlacement
+                }
+                let previous = panel.receivedInput
+                var pressOnSource = false
+                var releasedAt: CGPoint?
+                panel.receivedInput = { type, event in
+                    previous?(type, event)
+                    if type == .leftMouseDown { pressOnSource = source.frame.contains(NSEvent.mouseLocation) }
+                    if type == .leftMouseUp { releasedAt = NSEvent.mouseLocation }
+                }
+                defer { panel.receivedInput = previous }
+                announce(label, "\(edge) \(station.rawValue): drag from source, aim within 4 pt of the destination rail, and hold")
+                let held = try await wait(.seconds(35)) {
+                    pressOnSource && releasedAt == nil && host.edgePresentation?.moving == true &&
+                        host.edgePresentation?.placement?.displayID == destination.id &&
+                        panel.isVisible && inTarget(NSEvent.mouseLocation)
+                }
+                let unchanged = try Data(contentsOf: storedURL) == originalBytes
+                guard held else { throw EdgeTargetFailure.pointerDidNotReachTarget }
+                announce(label, "Release now")
+                let editor = app.settingsHost.application.editor
+                let settled = try await wait(.seconds(8)) {
+                    releasedAt != nil && host.edgePresentation?.moving == false && panel.isVisible &&
+                        editor.snapshot?.preferences.dockDisplayID == destination.id && !editor.isSaving
+                }
+                let release = try XCTUnwrap(settled ? releasedAt : nil, "The target release did not settle")
+                let landing = try XCTUnwrap(host.edgePresentation?.placement)
+                let saved = await store.snapshot()
+                let layout = landing.layout
+                let length = horizontal ? layout.expandedSize.width : layout.expandedSize.height
+                let lowAnchor = lo + 24 + max(layout.alongAnchor, layout.sliverLength / 2)
+                let highAnchor = hi - 24 - max(length - layout.alongAnchor, layout.sliverLength / 2)
+                let expected = (max(lowAnchor, min(highAnchor, axis(release))) - lo) / (hi - lo)
+                let frame = panel.frame
+                let frameStart = horizontal ? frame.minX : frame.minY
+                let frameEnd = horizontal ? frame.maxX : frame.maxY
+                let crossDistance: CGFloat = edge == .left ? frame.minX - usable.minX :
+                    edge == .right ? usable.maxX - frame.maxX : frame.minY - usable.minY
+                let savedCorrectly = unchanged && inTarget(release) && landing.displayID == destination.id &&
+                    landing.edge == edge && saved.revision == before.revision + 1 &&
+                    saved.preferences.dockDisplayID == destination.id && saved.preferences.dockEdge == setting &&
+                    abs(saved.preferences.dockAlongFraction - expected) <= 0.002
+                let panelCorrectlyPlaced = usable.insetBy(dx: -1, dy: -1).contains(frame) &&
+                    abs(crossDistance) <= 1 && frameStart >= lo + 23 && frameEnd <= hi - 23
+                if !savedCorrectly || !panelCorrectlyPlaced {
+                    announce(label, "Release \(release), edge \(landing.edge), frame \(frame), fraction \(saved.preferences.dockAlongFraction) (expected \(expected)), revision \(before.revision) → \(saved.revision)")
+                }
+                return (savedCorrectly && panelCorrectlyPlaced, frame, saved.preferences.dockAlongFraction)
+            }
+            let bytesAfter = try Data(contentsOf: storedURL)
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let restored = try await withNativePanel(store: reopened) { app, panel in
+                let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+                let frame = panel.frame
+                let matches = placement.displayID == destination.id && placement.edge == edge &&
+                    abs(placement.alongFraction - dropped.2) <= 0.002 &&
+                    abs(frame.minX - dropped.1.minX) <= 1 && abs(frame.minY - dropped.1.minY) <= 1 &&
+                    abs(frame.width - dropped.1.width) <= 1 && abs(frame.height - dropped.1.height) <= 1
+                return matches
+            }
+            let restoredBytes = try Data(contentsOf: storedURL)
+            return dropped.0 && restored && restoredBytes == bytesAfter
+        }
+
+        for (edge, setting) in edges {
+            for station in EdgeStation.allCases {
+                let target = "\(edge) \(station.rawValue)"
+                do {
+                    results.append((target, try await verifyTarget(edge: edge, setting: setting, station: station)))
+                } catch {
+                    announce(label, "\(target) error: \(error)")
+                    results.append((target, false))
+                }
+            }
+        }
+        for (target, passed) in results {
+            announce(label, "\(passed ? "PASS" : "FAIL") \(target)")
+            XCTAssertTrue(passed, "\(label): \(target)")
         }
     }
 
