@@ -11,7 +11,7 @@ import ModelPlanWire
         [view] + view.subviews.flatMap(descendants)
     }
 
-    func testS06StatusMenuEscapeReturnsFocusAfterTheRealHelpMap() async throws {
+    func testS06StatusMenuUserDismissalsReturnFocusAfterTheRealHelpMap() async throws {
         // Do not construct a window until the normal entry can isolate its notification ledger.
         throw XCTSkip("S-06 SEAM-NEEDED: EngineRowsEntry.isolatedResetNotificationLedger")
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g312-" + UUID().uuidString)
@@ -38,21 +38,25 @@ import ModelPlanWire
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertNotNil(app.composition.dock.currentDockHelpSurface)
-        let item = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.accessibilityIdentifier() == "status.help" })
-        XCTAssertTrue(item.isEnabled)
-        _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
-        let requestID = try XCTUnwrap(app.statusHelpRequestID)
-        let layers = NSApplication.shared.windows.filter { $0.isVisible }.flatMap { window in
-            window.contentView.map(descendants) ?? []
-        }.compactMap { $0 as? HelpUILayerView }
-        let map = try XCTUnwrap(layers.first { $0.input?.map.mode == .latched })
-        XCTAssertEqual(app.statusHelpRequestID, requestID)
-        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
-        for _ in 0..<100 where app.statusHelpRequestID != nil {
-            try await Task.sleep(for: .milliseconds(10))
+        for reason in [HelpUIDismissReason.escape, .pointer] {
+            let item = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.accessibilityIdentifier() == "status.help" })
+            XCTAssertTrue(item.isEnabled)
+            _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
+            let requestID = try XCTUnwrap(app.statusHelpRequestID)
+            let layers = NSApplication.shared.windows.filter { $0.isVisible }.flatMap { window in
+                window.contentView.map(descendants) ?? []
+            }.compactMap { $0 as? HelpUILayerView }
+            let map = try XCTUnwrap(layers.first { $0.input?.map.mode == .latched })
+            app.statusHelpDidDismiss(UUID())
+            XCTAssertEqual(app.statusHelpRequestID, requestID, "A stale dismissal cannot retire this map")
+            // Exercise the actual map action; physical Escape/outside pointer input is a device gate.
+            map.onAction?(.dismissMap(reason: reason, returnFocusID: nil))
+            for _ in 0..<100 where app.statusHelpRequestID != nil {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertNil(app.statusHelpRequestID, "The real status-menu request must be retired")
+            XCTAssertTrue(app.statusHelpButtonFocused, "A user dismissal must restore status-item focus")
         }
-        XCTAssertNil(app.statusHelpRequestID, "The same real status-menu request must be retired")
-        XCTAssertTrue(app.statusHelpButtonFocused, "Escape must restore focus to the status item")
         await app.composition.stop()
     }
 }
