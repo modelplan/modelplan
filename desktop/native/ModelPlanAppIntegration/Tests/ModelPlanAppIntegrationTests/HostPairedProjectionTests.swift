@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanCore
@@ -65,7 +66,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -97,6 +98,7 @@ private actor EntrySyntheticClient: EngineClient {
         session.removeValue(forKey: "modelScope"); session["current"] = true
         session["observedAt"] = "2026-12-01T00:00:00Z"
         session["validUntil"] = "2027-01-01T00:00:00Z"; session["resetsAt"] = "2027-01-01T00:00:00Z"
+        if let fiveHour { session["remainingPercent"] = fiveHour }
         var week = session
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
         week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
@@ -329,6 +331,48 @@ private actor EntrySyntheticClient: EngineClient {
         late()
         XCTAssertTrue(app.composition.presentedContent.snapshot.inputs.isEmpty)
         await app.composition.stop()
+    }
+
+    func testV17StatusButtonUsesCommittedModeAndAdmittedRemainingQuota() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-display-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try rows(weekly: 15, fiveHour: 9)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+
+        let button = NSButton(), icon = NSImage(size: .init(width: 16, height: 16))
+        EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
+        let editor = app.settingsHost.application.editor
+        func assertStatus(_ expected: String, line: UInt = #line) {
+            app.applyStatusContent(to: button, detail: "")
+            XCTAssertEqual(button.title, expected, line: line)
+            XCTAssertTrue(button.image?.isTemplate == true, line: line)
+        }
+        _ = try await editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        assertStatus("9%")
+        _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
+        _ = try await editor.commit(SettingsB20Edit.percentagePin("aaaaaaaaaaaaaaaa", .week))
+        assertStatus("9%")
+        _ = try await editor.commit(SettingsB21Edit.menuDisplay(.twoWindows))
+        assertStatus("5h 9% Week 15%")
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        assertStatus("5h 9% 周 15%")
+        _ = try await editor.commit(SettingsB21Edit.menuDisplay(.icon))
+        assertStatus("")
+        _ = try await editor.commit(SettingsB21Edit.menuDisplay(.tightest))
+        assertStatus("9%")
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        await app.composition.store.consume(.clearPrivateViews(.init(revision: delivery.revision + 1,
+            reason: .generationAdvanced, previous: delivery, nextFloor: nil)))
+        assertStatus("")
     }
 
     func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
