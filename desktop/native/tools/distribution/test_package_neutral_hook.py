@@ -241,9 +241,6 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertEqual(self.fixture.commands()[-1]['command'], 'python3')
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 class AppleSiliconPackageTests(unittest.TestCase):
     def test_neutral_package_builds_and_embeds_only_arm64(self):
         with tempfile.TemporaryDirectory() as root:
@@ -268,3 +265,7 @@ class AppleSiliconPackageTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('exactly arm64', result.stderr)
                 self.assertFalse(any(c['command'] == 'codesign' for c in fixture.commands()))
+
+
+if __name__ == '__main__':
+    unittest.main()
