@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 @MainActor final class StatusHelpMenuTests: XCTestCase {

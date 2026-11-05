@@ -241,8 +241,8 @@ private actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let snapshot = try rows(weekly: 75)
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
+        let snapshot = try rows(weekly: 75, resetID: "synthetic-dock-help")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
@@ -256,12 +256,14 @@ private actor EntrySyntheticClient: EngineClient {
         let station = try XCTUnwrap(skin.stations.first(where: { $0.subscriptionID == id }))
         let center = CGPoint(x: station.centre.x - skin.bounds.minX, y: station.centre.y - skin.bounds.minY)
         let number = try XCTUnwrap(view.helpReadoutAnchor(id))
+        let event = try XCTUnwrap(view.helpNoticeAnchor(id))
         let ring = try XCTUnwrap([0.0, .pi / 2, .pi, .pi * 1.5].map { angle in
             CGPoint(x: center.x + cos(angle) * station.outer.radius, y: center.y + sin(angle) * station.outer.radius)
-        }.first { view.isPainted(atLocal: $0) && !number.contains($0) })
+        }.first { view.isPainted(atLocal: $0) && !number.contains($0) && !event.contains($0) })
         XCTAssertEqual(view.helpAnchorID(atLocal: center), "dock.nozzle." + id)
         XCTAssertEqual(view.helpAnchorID(atLocal: ring), "dock.rings." + id)
         XCTAssertEqual(view.helpAnchorID(atLocal: CGPoint(x: number.midX, y: number.midY)), "dock.number." + id)
+        XCTAssertEqual(view.helpAnchorID(atLocal: CGPoint(x: event.midX, y: event.midY)), "dock.notice." + id)
         XCTAssertNil(view.helpAnchorID(atLocal: CGPoint(x: view.bounds.maxX + 1, y: view.bounds.maxY + 1)))
 
         let nodes = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
@@ -271,12 +273,29 @@ private actor EntrySyntheticClient: EngineClient {
         subscription.setAccessibilityFocused(false)
         XCTAssertNil(view.focusedHelpAnchorID)
 
+        let notice = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.notice." + id })
+        notice.setAccessibilityFocused(true)
+        XCTAssertEqual(view.focusedHelpAnchorID, "dock.notice." + id)
+        notice.setAccessibilityFocused(false)
+        XCTAssertNil(view.focusedHelpAnchorID)
+
+        let nozzleEvents = try XCTUnwrap(view.nozzleEventDelegate)
+        XCTAssertTrue(nozzleEvents.beginNozzle(id: id, local: ring))
+        nozzleEvents.moveNozzle(local: CGPoint(x: ring.x + 12, y: ring.y + 12))
+        XCTAssertNil(view.helpAnchorID(atLocal: ring))
+        nozzleEvents.cancelNozzle()
+        XCTAssertEqual(view.helpAnchorID(atLocal: ring), "dock.rings." + id)
+
         let grip = try XCTUnwrap(view.registeredGripRects.first)
         XCTAssertEqual(view.helpAnchorID(atLocal: CGPoint(x: grip.midX, y: grip.midY)), "dock.grip.0")
         let gripNode = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.grip.0" })
         gripNode.setAccessibilityFocused(true)
         XCTAssertEqual(view.focusedHelpAnchorID, "dock.grip.0")
         gripNode.setAccessibilityFocused(false)
+        XCTAssertNil(view.focusedHelpAnchorID)
+
+        app.composition.dock.close()
+        XCTAssertNil(view.helpAnchorID(atLocal: ring))
         XCTAssertNil(view.focusedHelpAnchorID)
     }
 

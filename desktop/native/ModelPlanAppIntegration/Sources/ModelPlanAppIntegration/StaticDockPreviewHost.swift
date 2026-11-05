@@ -498,6 +498,7 @@ struct DockHelpInteraction: Equatable {
     }
 
     private func renderInteraction(_ value: DockInteractionPresentation) {
+        defer { publishDockHelpInteraction() }
         guard permitted, !retired else { dismissCard(); overflowPanel?.orderOut(nil); return }
         let preview = value.reorder?.order
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
@@ -1198,15 +1199,21 @@ struct DockHelpInteraction: Equatable {
     }
     private func publishDockHelpInteraction() {
         let next: DockHelpInteraction?
-        if let surface = currentDockHelpSurface, !surface.dragging {
+        if let surface = currentDockHelpSurface, !surface.dragging,
+           interactionController?.hasCapture != true, let panel {
             let view = interactionView
-            let focused = view.focusedGripIndex.map { "dock.grip.\($0)" } ??
-                view.keyboardTargetID.map { "dock.nozzle." + $0 }
-            if let focused, let anchor = surface.mapAnchors.first(where: { $0.id == focused }) {
+            if let focused = view.focusedHelpAnchorID,
+               let anchor = surface.mapAnchors.first(where: { $0.id == focused && $0.visible }) {
                 next = .init(anchor: anchor, source: .keyboard)
-            } else if let pointer = environment().pointer,
-                      let anchor = surface.mapAnchors.first(where: { $0.visible && $0.rect.contains(pointer) }) {
-                next = .init(anchor: anchor, source: .pointer)
+            } else if let pointer = environment().pointer {
+                let local = view.convert(panel.convertPoint(fromScreen: pointer), from: nil)
+                let targetID = view.helpAnchorID(atLocal: local)
+                let anchor = surface.mapAnchors.first { $0.visible && $0.id == targetID }
+                    ?? surface.mapAnchors.first {
+                        $0.visible && $0.rect.contains(pointer) &&
+                            ["dock.ignition", "dock.move", "dock.card"].contains($0.id)
+                    }
+                next = anchor.map { .init(anchor: $0, source: .pointer) }
             } else { next = nil }
         } else { next = nil }
         guard next != currentDockHelpInteraction else { return }
@@ -1261,6 +1268,8 @@ struct DockHelpInteraction: Equatable {
         for input in model?.inputs ?? [] {
             if let local = view.interactionAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.nozzle." + input.id, region: .nozzle, rect: rect, visible: true))
+            }
+            if let local = view.helpRingsAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.rings." + input.id, region: .rings, rect: rect, visible: true))
             }
             if let local = view.helpReadoutAnchor(input.id), let rect = screenRect(local) {

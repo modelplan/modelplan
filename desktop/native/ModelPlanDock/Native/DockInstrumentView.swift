@@ -52,7 +52,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     private var hoveredGripIndex: Int?
     private var gripOutline: CAShapeLayer?
-    public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
+    @_spi(DockResourceChecks) public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
 
     public func registerGripRects(_ rects: [CGRect]) {
         let valid = rects.filter { !$0.isEmpty && bounds.contains($0) && isPainted(atLocal: CGPoint(x: $0.midX, y: $0.midY)) }
@@ -99,22 +99,58 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,
-              let station = skin.stations.first(where: { $0.subscriptionID == id }), station.showsReadout != false else { return nil }
+              let station = skin.stations.first(where: { $0.subscriptionID == id }),
+              station.showsReadout != false, (station.readoutOpacity ?? 1) > 0 else { return nil }
         return station.readout.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
     }
     public func helpNoticeAnchor(_ id: String) -> CGRect? {
-        guard !community, !failed, let skin, notices[id] != nil,
+        guard !community, !failed, let skin, let notice = notices[id],
               let station = skin.stations.first(where: { $0.subscriptionID == id }) else { return nil }
-        return station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+        let diameter = (notice.shape == .solid ? station.eventSolidDiameter : station.eventHollowDiameter) ?? station.eventRect.width / 2
+        let outline = notice.shape == .solid && station.eventOutlineKey != nil ? (station.eventSolidOutlineWidth ?? 0) : 0
+        let radius = diameter / 2 + outline
+        return CGRect(x: station.eventRect.midX - skin.bounds.minX - radius,
+                      y: station.eventRect.midY - skin.bounds.minY - radius, width: 2 * radius, height: 2 * radius)
     }
+    private var focusedNoticeID: String? {
+        didSet { if focusedNoticeID != oldValue { onHelpFocusChanged?() } }
+    }
+
     public var focusedHelpAnchorID: String? {
-        focusedGripIndex.map { "dock.grip.\($0)" } ?? keyboardTargetID.map { "dock.nozzle." + $0 }
+        if let index = focusedGripIndex { return "dock.grip.\(index)" }
+        if let id = focusedNoticeID, helpNoticeAnchor(id) != nil { return "dock.notice." + id }
+        guard let id = keyboardTargetID else { return nil }
+        return (helpRingsAnchor(id) == nil ? "dock.nozzle." : "dock.rings.") + id
+    }
+
+    public func helpRingsAnchor(_ id: String) -> CGRect? {
+        guard !failed, !community, let skin,
+              let station = skin.stations.first(where: { $0.subscriptionID == id }),
+              station.replacementResource == nil, readings[id] != nil else { return nil }
+        let radius = max(station.outer.radius + station.outer.width / 2, station.inner.radius + station.inner.width / 2)
+        return CGRect(x: station.centre.x - skin.bounds.minX - radius,
+                      y: station.centre.y - skin.bounds.minY - radius,
+                      width: 2 * radius, height: 2 * radius)
     }
 
     public func helpAnchorID(atLocal point: CGPoint) -> String? {
-        guard isPainted(atLocal: point) else { return nil }
-        if let grip = registeredGripRects.firstIndex(where: { $0.contains(point) }) { return "dock.grip.\(grip)" }
-        return orderedIDs.first(where: { interactionAnchor($0)?.contains(point) == true }).map { "dock.nozzle." + $0 }
+        guard isPainted(atLocal: point), !community, let skin,
+              nozzleEventDelegate?.hasCapture != true, backgroundDragDelegate?.isBackgroundMoving != true else { return nil }
+        // The renderer paints the dot above the readout, then the quota rings above the nozzle.
+        for station in skin.stations.reversed() {
+            guard let id = station.subscriptionID, let reading = readings[id] else { continue }
+            if let rect = helpNoticeAnchor(id), hypot(point.x - rect.midX, point.y - rect.midY) <= rect.width / 2 { return "dock.notice." + id }
+            if helpReadoutAnchor(id)?.contains(point) == true { return "dock.number." + id }
+            let distance = hypot(point.x + skin.bounds.minX - station.centre.x,
+                                 point.y + skin.bounds.minY - station.centre.y)
+            if station.replacementResource == nil,
+               abs(distance - station.outer.radius) <= station.outer.width / 2 ||
+               (reading.inner != nil && abs(distance - station.inner.radius) <= station.inner.width / 2) {
+                return "dock.rings." + id
+            }
+            if distance <= station.diameter / 2 { return "dock.nozzle." + id }
+        }
+        return registeredGripRects.firstIndex(where: { $0.contains(point) }).map { "dock.grip.\($0)" }
     }
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
@@ -257,7 +293,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
-        keyboardTargetID = nil; focusedGripIndex = nil; nozzleEventDelegate?.hoverNozzle(nil)
+        keyboardTargetID = nil; focusedGripIndex = nil; focusedNoticeID = nil; nozzleEventDelegate?.hoverNozzle(nil)
         return true
     }
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
@@ -351,7 +387,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if let original = refreshSweepOriginal { image = original; refreshSweepOriginal = nil; needsDisplay = true }
     }
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){focusedGripIndex=nil;resetVisuals();super.viewDidHide()}
+    public override func viewDidHide(){focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}
@@ -437,8 +473,17 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             }
             node.focus = { [weak self, weak node] focused in
                 guard let self, let node, self.nodes[key] === node else { return }
+                if case .notice(let id) = action {
+                    if focused {
+                        self.focusedGripIndex = nil
+                        self.keyboardTargetID = nil
+                        self.nozzleEventDelegate?.hoverNozzle(nil)
+                        self.focusedNoticeID = id
+                    } else if self.focusedNoticeID == id { self.focusedNoticeID = nil }
+                    return
+                }
                 guard case .subscription(let id) = action else { return }
-                if focused { self.focusedGripIndex = nil; self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
+                if focused { self.focusedNoticeID = nil; self.focusedGripIndex = nil; self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
                 else if self.keyboardTargetID == id { self.keyboardTargetID = nil; self.nozzleEventDelegate?.hoverNozzle(nil) }
             }
             nodes[key]=node;children.append(node);used.insert(key)
@@ -487,6 +532,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             node.focus = { [weak self, weak node] focused in
                 guard let self, let node, self.nodes[key] === node else { return }
                 if focused {
+                    self.focusedNoticeID = nil
                     self.keyboardTargetID = nil
                     self.nozzleEventDelegate?.hoverNozzle(nil)
                     self.focusedGripIndex = index
@@ -497,6 +543,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             used.insert(key)
         }
         nodes=nodes.filter{used.contains($0.key)}
+        if let id = focusedNoticeID, !used.contains("notice." + id) { focusedNoticeID = nil }
         if let id=keyboardTargetID, !used.contains("subscription." + id) { keyboardTargetID=nil;nozzleEventDelegate?.hoverNozzle(nil) }
         setAccessibilityChildren(children)
     }
@@ -550,6 +597,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let backward = event.modifierFlags.contains(.shift)
             let next = focusedGripIndex.map { $0 + (backward ? -1 : 1) } ?? (backward ? registeredGripRects.count - 1 : 0)
             if registeredGripRects.indices.contains(next) {
+                focusedNoticeID = nil
                 keyboardTargetID = nil
                 nozzleEventDelegate?.hoverNozzle(nil)
                 focusedGripIndex = next
