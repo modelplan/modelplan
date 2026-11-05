@@ -36,6 +36,12 @@ import ModelPlanWire
             XCTAssertTrue(titles.contains(locale == "en" ? "Hidden" : "隐藏"))
             let sliver = try XCTUnwrap(settingsRows.first { $0.key == .sliverAlert })
             XCTAssertEqual(sliver.titleLabel.stringValue, locale == "en" ? "Strip alerts" : "隐藏条提示")
+            let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+            controller.selectPane("position")
+            let positionRows = descendants(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsNativeRow }
+            let widget = try XCTUnwrap(positionRows.first { $0.key == .showDock })
+            XCTAssertFalse(widget.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(widget.titleLabel.stringValue, locale == "en" ? "Show Quota Widget" : "显示额度挂件")
             await app.composition.stop()
         }
     }
