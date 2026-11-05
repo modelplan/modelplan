@@ -154,9 +154,9 @@ import AppKit
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
-            subscriptions.isHidden = editor.connections.isAvailable
+            subscriptions.isHidden = scopeConsentEntry == nil && editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
-                ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
+                ? SettingsWords.text("No subscriptions found", "未检测到订阅", language)
                 : SettingsWords.text("Subscriptions detected", "已检测到的订阅", language) + "\n" + page.subscriptions.map { [$0.name.value(language),$0.plan].filter { !$0.isEmpty }.joined(separator: " · ") }.joined(separator: "\n")
             for id in OptionalReaderID.allCases {
                 guard let reader = page.readers.first(where: { $0.id.rawValue == id.rawValue }) else { continue }
