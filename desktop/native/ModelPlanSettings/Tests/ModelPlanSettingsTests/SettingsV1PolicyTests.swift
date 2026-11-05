@@ -8,6 +8,21 @@ import XCTest
 }
 
 final class SettingsV1PolicyTests: XCTestCase {
+    func testHintAvailabilityUsesTheConfiguredDisconnectedReasonOnly() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        func resetRow() throws -> SettingsRow {
+            try XCTUnwrap(SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .resetHints })
+        }
+        XCTAssertEqual(try resetRow().availability, .serviceUnavailable)
+        XCTAssertEqual(context.unavailableControls[.resetHints], SettingsPageContext.hintsDisconnectedReason)
+        context.capabilities.helpMapAvailable = true
+        XCTAssertEqual(try resetRow().availability, .available)
+        let otherReason = SettingsText("Temporarily unavailable.", "暂不可用。")
+        context.unavailableControls[.resetHints] = otherReason
+        let row = try resetRow()
+        XCTAssertEqual(row.availability, .serviceUnavailable)
+        XCTAssertEqual(row.subtitle, otherReason)
+    }
     func testV1HidesRefreshHistoryUntilAProducerSuppliesIt() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let missing = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
