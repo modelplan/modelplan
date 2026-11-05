@@ -374,7 +374,7 @@ private actor G1DEngine: EngineClient {
     private func seam(_ id: String, _ reason: String) async throws {
         let f = try await fixture(); XCTAssertNotNil(f.host.edgePresentation)
         if id.hasPrefix("DOCK-3.8") { try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden) }
-        throw XCTSkip("\(id): SEAM-NEEDED \(reason)")
+        throw XCTSkip("\(id) SEAM-NEEDED: \(reason)")
     }
     private func quotaSliverFixture() async throws -> G1DFixture {
         let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }
@@ -859,7 +859,7 @@ private actor G1DEngine: EngineClient {
     func testG1_DOCK_3_8_09() async throws {
         let f = try await fixture();let card=try f.card()
         XCTAssertFalse(card.rows.contains { ["today", "rate", "sessions"].contains($0.id) }, "Missing source statistics must not become invented numbers")
-        throw XCTSkip("DOCK-3.8-09: SEAM-NEEDED RowsAccount carries no today/rate/session inputs for the positive journey; negative unknown state only")
+        throw XCTSkip("DOCK-3.8-09 SEAM-NEEDED: RowsAccount carries no today/rate/session inputs for the positive journey; negative unknown state only")
     }
     func testG1_DOCK_3_8_10() async throws {
         let f = try await fixture();try await complete{f.app.memberRefreshAdapter != nil}

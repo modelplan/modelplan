@@ -26,6 +26,11 @@ MANIFEST = Path(__file__).with_name("native-test-partition.json")
 LEGS = ("gui", "headless")
 CLASS_RE = re.compile(r"\bclass\s+(\w+)\s*:\s*XCTestCase\b")
 CASE_RE = re.compile(r"Test Case '-\[(\w+)\.(\w+) (\w+)\]' (passed|failed|skipped)")
+SKIP_DETAIL_RE = re.compile(r"-\[(\w+)\.(\w+) (\w+)\]\s*:\s*Test skipped - ([^\r\n]+)")
+G1_SEAM_REASON_RE = re.compile(r"(?P<id>[A-Z]+[-0-9.]+) (?:waits for G1RenderedSnapshot|SEAM-NEEDED: .+)")
+# Fixed review budget: 3 currently retained G1 seam cases + 5 expansion margin.
+# Never derive or increase this cap from the incoming log or source test count.
+G1_SEAM_SKIP_CAP = 8
 
 
 class PartitionError(Exception):
@@ -160,14 +165,27 @@ def verify(pkg: dict, expected: list[str], log: str, leg: str) -> list[str]:
         errors.append(f"expected on the {leg} leg but not executed: {test_id}")
     for test_id in sorted(set(executed) - set(expected)):
         errors.append(f"executed on the {leg} leg but belongs to the other leg or is excluded: {test_id}")
+    # Match XCTest's own case-qualified detail, not an unrelated marker elsewhere in the log.
+    reasons: dict[str, set[str]] = {}
+    for module, name, method, message in SKIP_DETAIL_RE.findall(log):
+        reasons.setdefault(f"{module}.{name}/{method}", set()).add(message)
+    g1_ids: list[str] = []
     allowed = pkg.get("allowedSkips", {})
     for test_id, status in sorted(executed.items()):
         if status == "failed":
             errors.append(f"failed: {test_id}")
         if status == "skipped":
+            messages = reasons.get(test_id, set())
+            match = G1_SEAM_REASON_RE.fullmatch(next(iter(messages))) if len(messages) == 1 else None
+            if match:
+                g1_ids.append(match["id"])
+                continue  # Still a skipped outcome; it is never promoted to passed.
             rule = allowed.get(test_id.split(".", 1)[1])
             if not rule or rule["leg"] != leg:
                 errors.append(f"skipped without an allowed-skip entry for the {leg} leg: {test_id}")
+    print(f"G1 seam skips: {len(g1_ids)} ({', '.join(sorted(g1_ids)) or 'none'})")
+    if len(g1_ids) > G1_SEAM_SKIP_CAP:
+        errors.append(f"G1 seam skip cap exceeded: {len(g1_ids)} > {G1_SEAM_SKIP_CAP}")
     return errors
 
 
@@ -204,11 +222,14 @@ def main(argv: list[str] | None = None) -> int:
             ns.args.write_text("".join(a + "\n" for a in args))
             print(json.dumps({"leg": ns.leg, **summary}))
             return 0
-        errors = verify(pkg, expected, ns.log.read_text(errors="replace"), ns.leg)
+        observed = ns.log.read_text(errors="replace")
+        errors = verify(pkg, expected, observed, ns.leg)
         if errors:
             print("\n".join(errors), file=sys.stderr)
             return 1
-        print(f"{ns.leg} leg executed exactly its {len(expected)} of {summary['suite']} tests")
+        outcomes = [status for _, _, _, status in CASE_RE.findall(observed)]
+        print(f"{ns.leg} leg reported exactly its {len(expected)} of {summary['suite']} tests "
+              f"({outcomes.count('passed')} passed, {outcomes.count('skipped')} skipped)")
         return 0
     except PartitionError as error:
         print(f"partition: {error}", file=sys.stderr)

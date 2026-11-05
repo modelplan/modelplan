@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: MIT
+import contextlib
+import io
 import tempfile
+from unittest.mock import patch
 import unittest
 from pathlib import Path
 
@@ -49,9 +52,73 @@ class PlanTests(unittest.TestCase):
             partition.listed_ids("Build complete!\n", "Mod")
 
 
+def seam_log(test_id, message, status="skipped"):
+    label = test_id.replace("/", " ")
+    return (f"Test Case '-[{label}]' started.\n"
+            f"Synthetic.swift:12: -[{label}] : Test skipped - {message}\n"
+            f"Test Case '-[{label}]' {status} (0.001 seconds).")
+
+
 class VerifyTests(unittest.TestCase):
     def setUp(self):
         _, self.expected, _ = partition.plan(PKG, LISTED, "headless")
+
+    def test_agreed_g1_messages_pass_without_a_per_test_entry(self):
+        for message in ("DOCK-3.8-09 waits for G1RenderedSnapshot",
+                        "DOCK-3.6-07 SEAM-NEEDED: cockpit not wired"):
+            with self.subTest(message=message), contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(partition.verify(PKG, ["Mod.Fast/testA"],
+                    seam_log("Mod.Fast/testA", message), "headless"), [])
+                self.assertIn("G1 seam skips: 1 (" + message.split(" ", 1)[0] + ")", output.getvalue())
+
+    def test_random_or_malformed_skip_still_needs_its_entry(self):
+        for message in ("not ready", "DOCK-3.8-09: SEAM-NEEDED something",
+                        "DOCK-3.8-09 waits for G1RenderedSnapshot extra"):
+            with self.subTest(message=message):
+                errors = partition.verify(PKG, ["Mod.Fast/testA"],
+                    seam_log("Mod.Fast/testA", message), "headless")
+                self.assertTrue(any("skipped without an allowed-skip entry" in e for e in errors))
+
+    def test_g1_message_is_bound_to_the_same_skipped_case(self):
+        text = seam_log("Mod.Fast/testA", "DOCK-3.8-09 waits for G1RenderedSnapshot", "passed")
+        text += "\n" + seam_log("Mod.Fast/testB", "unapproved reason")
+        errors = partition.verify(PKG, ["Mod.Fast/testA", "Mod.Fast/testB"], text, "headless")
+        self.assertTrue(any("testB" in e and "allowed-skip" in e for e in errors))
+
+    def test_conflicting_skip_details_do_not_get_a_blanket_exception(self):
+        text = seam_log("Mod.Fast/testA", "DOCK-3.8-09 waits for G1RenderedSnapshot")
+        text += "\nSynthetic.swift:13: -[Mod.Fast testA] : Test skipped - unapproved reason"
+        errors = partition.verify(PKG, ["Mod.Fast/testA"], text, "headless")
+        self.assertTrue(any("skipped without an allowed-skip entry" in e for e in errors))
+
+    def test_cap_counts_cases_not_unique_requirement_ids_and_includes_boundary(self):
+        ids = [f"Mod.Fast/testSeam{i}" for i in range(9)]
+        text = lambda cases: "\n".join(seam_log(i, "DOCK-3.8-09 waits for G1RenderedSnapshot") for i in cases)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(partition.verify(PKG, ids[:8], text(ids[:8]), "headless"), [])
+            self.assertTrue(any("cap exceeded: 9 > 8" in e for e in partition.verify(PKG, ids, text(ids), "headless")))
+
+    def test_g1_skip_cap_trips_even_for_per_test_allowed_cases(self):
+        # Current baseline 3 + fixed margin 5 = cap 8; the ninth is never silently accepted.
+        ids = [f"Mod.Fast/testSeam{i}" for i in range(9)]
+        pkg = {**PKG, "allowedSkips": {i.split(".", 1)[1]: {"leg": "headless", "reason": "synthetic"} for i in ids}}
+        text = "\n".join(seam_log(i, f"DOCK-3.8-{n:02d} waits for G1RenderedSnapshot") for n, i in enumerate(ids))
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            errors = partition.verify(pkg, ids, text, "headless")
+        self.assertTrue(any("G1 seam skip cap exceeded: 9 > 8" in e for e in errors))
+        self.assertIn("G1 seam skips: 9 (", output.getvalue())
+
+    def test_cli_counts_g1_as_skipped_never_as_passed(self):
+        pkg = {**PKG, "allowedSkips": {}}
+        with tempfile.TemporaryDirectory() as tmp:
+            listed = Path(tmp) / "listed.txt"; observed = Path(tmp) / "observed.log"
+            listed.write_text("Mod.Fast/testA\nMod.Window/testC\n")
+            observed.write_text(seam_log("Mod.Fast/testA", "DOCK-3.8-09 waits for G1RenderedSnapshot"))
+            with patch.object(partition, "load_manifest", return_value={"packages": {"p": pkg}}), contextlib.redirect_stdout(io.StringIO()) as output:
+                code = partition.main(["verify", "--package", "p", "--leg", "headless", "--list", str(listed), "--log", str(observed)])
+            self.assertEqual(code, 0)
+            self.assertIn("G1 seam skips: 1 (DOCK-3.8-09)", output.getvalue())
+            self.assertIn("0 passed, 1 skipped", output.getvalue())
 
     def test_exact_execution_passes(self):
         text = log([("Mod.Fast/testA", "passed"), ("Mod.Fast/testEnvGated", "skipped")])

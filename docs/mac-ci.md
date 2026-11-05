@@ -46,8 +46,16 @@ legs) refuses a listed class whose source uses window-server APIs or builds a
 Dock/entry factory without `createsNativePanels: false`. Each leg derives its
 share from the same `swift test list`, runs it with one shared selector
 (`--filter` on one leg, `--skip` on the other) and then verifies from the XCTest
-log that it executed exactly its share. Only skips named in `allowedSkips`, each
-tied to one leg, are accepted, so a test cannot pass by skipping on the wrong leg.
+log that it reported exactly its share. Ordinary skips require a per-test `allowedSkips`
+entry tied to that leg. The shared G1 seam exception accepts only an XCTest skip detail
+attached to that same case and matching
+`^[A-Z]+[-0-9.]+ (waits for G1RenderedSnapshot|SEAM-NEEDED: .+)$`.
+Each verification prints `G1 seam skips: N (IDs…)`; those cases remain skipped, never passed.
+The fixed cap is 8 per verified package/leg run: the current 3 G1 Dock seam cases plus a
+margin of 5. Exceeding it fails verification, even if a case also has an allowedSkips entry;
+the cap never grows automatically from source or log counts. All other skip reasons retain
+the existing per-test rule. Expected/executed set equality and failed/duplicate-case checks
+still apply to every case, including G1 skips.
 
 The desktop workflow's `mac_ci_probe=true` dispatch runs only a probe. Its
 `mac_ci_probe_mode` selects `cli` or `gui`. The owner can use this narrow dispatch
