@@ -117,12 +117,25 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             packaging.copy_tree(folder, self.root / 'copied')
 
+    def synthetic_cockpit(self, public):
+        cockpit = public / 'desktop/cockpit/dist'
+        cockpit.mkdir(parents=True)
+        body = b'synthetic official cockpit'
+        (cockpit / 'index.html').write_bytes(body)
+        manifest = json.dumps({'schemaVersion': 1, 'edition': 'official', 'interfaceOnly': True,
+                               'files': {'index.html': hashlib.sha256(body).hexdigest()}}).encode()
+        (cockpit / 'bundle-manifest.json').write_bytes(manifest)
+        source = public / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({'community': 'a' * 64, 'official': hashlib.sha256(manifest).hexdigest()}))
+        return cockpit
+
     def test_missing_cockpit_dist_fails_before_other_staging(self):
         import shutil
         public = self.root / 'empty-public'
-        shutil.copytree(ROOT / 'desktop/official-visuals', public / 'desktop/official-visuals')
-        shutil.copytree(ROOT / 'desktop/third-party', public / 'desktop/third-party')
-        with self.assertRaises((ValueError, FileNotFoundError)):
+        cockpit = self.synthetic_cockpit(public)
+        shutil.rmtree(cockpit)
+        with self.assertRaisesRegex(ValueError, 'Missing or linked canonical bundle'):
             packaging.stage_resources(self.app, public)
         self.assertFalse((self.app / 'Contents/Resources/Cockpit').exists())
 
@@ -158,13 +171,12 @@ class PackagingTests(unittest.TestCase):
 
     def test_modified_official_bundle_is_rejected_before_replacing_community(self):
         public = self.root / 'public'
-        cockpit = public / 'desktop/cockpit/dist'
-        cockpit.mkdir(parents=True)
-        (cockpit / 'index.html').write_text('unverified')
+        cockpit = self.synthetic_cockpit(public)
+        (cockpit / 'index.html').write_text('tampered')
         old = self.app / 'Contents/Resources/Cockpit'
         old.mkdir()
         (old / 'index.html').write_text('community still here')
-        with self.assertRaises((ValueError, FileNotFoundError)):
+        with self.assertRaisesRegex(ValueError, 'Undeclared or changed canonical output'):
             packaging.stage_resources(self.app, public)
         self.assertEqual((old / 'index.html').read_text(), 'community still here')
 
