@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: MIT
+name: G4 idle harness smoke
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/tools/idle-cost/**'
+      - '.github/workflows/g4-idle-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/tools/idle-cost/**'
+      - '.github/workflows/g4-idle-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check reducer and refusal cases
+        run: python3 -m unittest discover -s desktop/native/tools/idle-cost -p 'test_*.py' -v
+      - name: Sample owned synthetic child for three minutes
+        run: python3 desktop/native/tools/idle-cost/idle_cost.py --synthetic-smoke --output "$RUNNER_TEMP/idle-smoke.json"
+      - name: Verify this smoke cannot claim a G4 pass
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'idle-smoke.json').read_text())
+          assert report['mode'] == 'synthetic-smoke'
+          assert report['sample_count'] == 4 and report['elapsed_seconds'] >= 180
+          assert report['acceptance'] is False and report['status'] == 'NOT_RUN'
+          PY
