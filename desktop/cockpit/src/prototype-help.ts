@@ -9,7 +9,6 @@ const notes:ReadonlyArray<readonly [string,string,string]>=[
  ['[data-caution]','Alert lamp: indicates current alerts.','注意灯：显示当前提醒状态。'],
  ['[data-settings]','Settings: adjust preferences or show hints again in its window.','设置：在独立窗口调整偏好或重新显示提示。'],
  ['[data-detach]','Detach','分离窗口'],['[data-close]','Close: end the local Try and close the Cockpit.','关闭：结束本地试档并收起驾驶舱。'],
- ['.eng-krow','Engine shortcuts: 0 = All; 1–6 = visible subscriptions.','引擎快捷键：0 = 全部；1–6 = 当前显示的订阅。'],
  ['.lb-t,.qrow-t,.qaverage','Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution','今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属'],
  ['.t-live','Generation speed in the last 60 seconds; at least 5 eligible samples; -- means unavailable','近 60 秒生成速度：合格请求至少 5 个样本；-- 表示不可用'],
  ['.lb-first','5h: only five-hour quota appears here; a blank means none exists.','5小时：这一行只放 5 小时额度，空白表示没有此额度。'],
