@@ -7,6 +7,9 @@ import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+#if MODELPLAN_DOCK_NATIVE_JOURNEY
+import ModelPlanShell
+#endif
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
@@ -139,6 +142,72 @@ private actor EntrySyntheticClient: EngineClient {
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertFalse(paired.isCurrent(second.sourceToken))
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD11EscapeDiscardsNativeNozzleReorderBeforeRelease() async throws {
+        _ = NSApplication.shared
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-escape-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await settings.update { $0.autoHide = false; $0.dockEdge = .bottom }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 75, secondWeekly: 55)
+        EngineRowsEntry.nativeJourneyProfile = root
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: true,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel as? PulseDockPanel)
+        let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+        let controller = try XCTUnwrap(dock.interactionControllerForChecks)
+        let first = try XCTUnwrap(view.interactionAnchor("aaaaaaaaaaaaaaaa"))
+        let second = try XCTUnwrap(view.interactionAnchor("bbbbbbbbbbbbbbbb"))
+        let before = await settings.snapshot()
+        let frame = panel.frame
+        let down = panel.convertPoint(toScreen: view.convert(CGPoint(x: first.midX, y: first.midY), to: nil))
+        let destination = panel.convertPoint(toScreen: view.convert(CGPoint(x: second.midX, y: second.midY), to: nil))
+        var pointer = down
+        panel.pointerLocation = { pointer }
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws {
+            pointer = point
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: panel.convertPoint(fromScreen: point),
+                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+            panel.sendEvent(event)
+        }
+        // Establish capture after the ordinary arrival guard, without bypassing pointer routing.
+        let deadline = ContinuousClock.now + .seconds(2)
+        while !controller.hasCapture && ContinuousClock.now < deadline {
+            try mouse(.leftMouseDown, at: down)
+            if !controller.hasCapture {
+                try mouse(.leftMouseUp, at: down)
+                try await Task.sleep(for: .milliseconds(25))
+            }
+        }
+        XCTAssertTrue(controller.hasCapture)
+        try mouse(.leftMouseDragged, at: destination)
+        XCTAssertNotNil(controller.presentation?.reorder)
+        XCTAssertEqual(panel.frame, frame)
+
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+            characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        panel.sendEvent(escape)
+        XCTAssertFalse(controller.hasCapture)
+        XCTAssertNil(controller.presentation?.reorder)
+        try mouse(.leftMouseUp, at: destination)
+        XCTAssertEqual(panel.frame, frame)
+        XCTAssertFalse(app.settingsHost.application.editor.isSaving)
+        let after = await settings.snapshot()
+        XCTAssertEqual(after.revision, before.revision)
+    }
+    #endif
+
     func testD18NormalOptionArrowsSaveAndAnnounceWithEitherReduceMotionSource() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-keyboard-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
