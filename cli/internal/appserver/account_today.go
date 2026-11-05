@@ -40,7 +40,7 @@ func nextAccountTodayDeadline(paths quota.Paths, admission consent.Admission, no
 		// than an hour ago. Its expiry is another time-only invalidation.
 		for _, account := range quota.ReadPermitted(paths, now).Accounts {
 			if account.Subscription != nil && account.Subscription.Status == "verified" && !account.Subscription.ObservedAt.IsZero() {
-				add(account.Subscription.ObservedAt.Add(time.Hour + time.Nanosecond))
+				add(account.Subscription.ObservedAt.Add(quota.ObservationFreshness + time.Nanosecond))
 			}
 		}
 	}

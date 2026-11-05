@@ -3,7 +3,6 @@ package appserver
 
 import (
 	"regexp"
-	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
@@ -41,7 +40,7 @@ func CockpitTodayTotals(accounts []quota.Account, view speed.PerfView) []Cockpit
 		}
 		c := bySource[account.Source]
 		b := account.Subscription
-		if account.Stale || b == nil || b.Status != "verified" || !cockpitSubscriptionRef.MatchString(b.Ref) || b.ObservedAt.IsZero() || b.ObservedAt.After(view.Now) || view.Now.Sub(b.ObservedAt) > time.Hour {
+		if account.Stale || b == nil || b.Status != "verified" || !cockpitSubscriptionRef.MatchString(b.Ref) || b.ObservedAt.IsZero() || b.ObservedAt.After(view.Now) || view.Now.Sub(b.ObservedAt) > quota.ObservationFreshness {
 			c.ambiguous = true
 		} else if c.ref != "" && c.ref != b.Ref {
 			c.ambiguous = true
