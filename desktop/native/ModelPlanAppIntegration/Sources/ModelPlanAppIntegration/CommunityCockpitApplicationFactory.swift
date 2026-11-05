@@ -39,6 +39,37 @@ import ModelPlanDock
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
+        makeComposed(configuration: configuration, settingsStore: settingsStore,
+            createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled,
+            dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed,
+            deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface,
+            makeConsole: makeConsole, activateSettings: activateSettings)
+    }
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    /// Replace only the client and verified bundle; keep the real owner, coordinator, page and fanout.
+    static func makeForChecks(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
+                              bundleURL: URL, verifiedBundleForChecks: VerifiedCockpitBundle,
+                              makeEngineClient: @escaping @MainActor (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient)
+        -> EngineDockMenuApplication {
+        makeComposed(configuration: configuration, settingsStore: settingsStore, createsNativePanels: false,
+            bundleURL: bundleURL, cockpitEntryEnabled: true, activateSettings: {},
+            engineClientOverride: makeEngineClient, verifiedBundleForChecks: verifiedBundleForChecks)
+    }
+    #endif
+
+    private static func makeComposed(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
+                                     createsNativePanels: Bool, bundleURL: URL, cockpitEntryEnabled: Bool?,
+                                     dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                                     deadlineNow: @escaping @MainActor () -> Date = { Date() },
+                                     deadlineElapsed: (() -> TimeInterval)? = nil,
+                                     deadlineScheduling: (any DockEdgeScheduling)? = nil,
+                                     makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
+                                     makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
+                                     makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                                     activateSettings: @escaping @MainActor () -> Void,
+                                     engineClientOverride: (@MainActor (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient)? = nil,
+                                     verifiedBundleForChecks: VerifiedCockpitBundle? = nil) -> EngineDockMenuApplication {
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
@@ -46,6 +77,9 @@ import ModelPlanDock
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
+        #if MODELPLAN_TEST_ONLY_SPI
+        owner.verifiedBundleForChecks = verifiedBundleForChecks
+        #endif
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
             createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
@@ -54,12 +88,20 @@ import ModelPlanDock
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
                 owner.coordinator=coordinator
-                let client=ProcessEngineClient(configuration:configuration,consumer:CockpitStoreFanout(store:store,cockpit:coordinator))
+                let fanout = CockpitStoreFanout(store: store, cockpit: coordinator)
+                let client: any EngineClient
+                if let engineClientOverride { client = engineClientOverride(configuration, fanout) }
+                else { client = ProcessEngineClient(configuration: configuration, consumer: fanout) }
                 coordinator.bind(client:client) // borrowed; hiding cockpit must not stop Dock/Settings.
                 return client
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
+                #if MODELPLAN_TEST_ONLY_SPI
+                if verifiedBundleForChecks != nil {
+                    return SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { false }, activate: {})
+                }
+                #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
@@ -76,9 +118,21 @@ import ModelPlanDock
     var pageFailure: (() -> Void)?
     var anchor: (() -> CGRect?)?
     let shell = CockpitShellSession()
+    #if MODELPLAN_TEST_ONLY_SPI
+    var verifiedBundleForChecks: VerifiedCockpitBundle?
+    #endif
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
+        #if MODELPLAN_TEST_ONLY_SPI
+        if let verifiedBundleForChecks {
+            let page = CockpitWindowController(bundle: verifiedBundleForChecks, context: context, appearance: appearance,
+                                               shellSession: shell, anchor: { [weak self] in self?.anchor?() })
+            page.onFailure = { [weak self] _ in self?.pageFailure?() }
+            CommunityCockpitApplicationFactory.verificationPage?(page)
+            return page
+        }
+        #endif
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
               CommunityConsentBundleIdentity.matches(bundle:bundle) else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")

@@ -220,6 +220,13 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   required init?(coder: NSCoder) { nil }
   public func open() {
+    #if MODELPLAN_TEST_ONLY_SPI
+    if verificationNoWindowDelivery != nil {
+      guard !bridge.disposed else { return }
+      publishInitialLoad()
+      return
+    }
+    #endif
     closeTask?.cancel(); closeTask = nil
     guard web == nil, !bridge.disposed else {
       window?.alphaValue = 1
@@ -505,6 +512,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       fail()
       return
     }
+    publishInitialLoad()
+  }
+  private func publishInitialLoad() {
     guard let shell = currentShell else { fail(); return }
     do { send(try bridge.load(appearance, shell: shell), bootstrap: true) } catch { fail() }
   }
