@@ -129,6 +129,7 @@ import CryptoKit
         for id in Array(bars.keys) where !usedBars.contains(id){bars.removeValue(forKey:id)?.setAccessibilityElement(false)}
         labels=labels.filter{usedLabels.contains($0.key)};groups=groups.filter{usedGroups.contains($0.key)}
         frame.size=CGSize(width:style.width,height:max(40,stack.fittingSize.height+2*style.padding))
+        layoutSubtreeIfNeeded()
         setAccessibilityElement(true);needsDisplay=true
     }
     private func current(_ value:DockCardContent,token:UInt64)->Bool{
