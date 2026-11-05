@@ -30,7 +30,11 @@ import ModelPlanWire
         try await exercise(native: true)
     }
 
-    private func exercise(native: Bool) async throws {
+    func testD16NormalEntryArrivalTrackingAndCockpitWithdrawal() async throws {
+        try await exercise(native: false, verifyContext: true)
+    }
+
+    private func exercise(native: Bool, verifyContext: Bool = false) async throws {
         let binary = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary))
         let display: DockDisplayArea
@@ -115,6 +119,50 @@ import ModelPlanWire
                 try await Task.sleep(for: .milliseconds(10))
             }
             XCTAssertEqual(dock.edgePresentation?.state, expected)
+        }
+        if verifyContext {
+            try await waitForSurface(.sliver)
+            let initial = try XCTUnwrap(dock.edgePresentation?.placement)
+            let strip = try dock.prepareSliver(size: initial.sliverFrame.size)
+            XCTAssertTrue(strip.accessibilityPerformPress())
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+            let member = try XCTUnwrap(dock.dockView.presentedReadingsForChecks.keys.first)
+            let permits = try XCTUnwrap(dock.dockView.permitsAction)
+            XCTAssertFalse(permits(.subscription(member), .pointer), "Arrival must reject an immediate pointer click")
+            XCTAssertTrue(permits(.subscription(member), .accessibility), "Explicit accessibility remains available")
+            move(to: CGPoint(x: initial.wakeFrame.midX, y: initial.wakeFrame.midY))
+            try await Task.sleep(for: .milliseconds(320))
+            XCTAssertTrue(permits(.subscription(member), .pointer), "The pointer gate must reopen after arrival")
+
+            let menu = dock.menu(), menuDelegate = try XCTUnwrap(menu.delegate as? DockSliverMenu)
+            menuDelegate.menuWillOpen(menu)
+            XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen)
+            move(to: outside)
+            try await Task.sleep(for: .milliseconds(650))
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "An open context menu holds the panel past the hide grace")
+            app.showConsole()
+            XCTAssertNil(dock.edgePresentation?.paintedFrame, "Cockpit opening synchronously withdraws the Dock")
+            XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "Withdrawal retires the previous context menu")
+            menuDelegate.menuWillOpen(menu)
+            XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "Late tracking cannot reattach while suppressed")
+
+            let opened = ContinuousClock.now + .seconds(2)
+            while !page.visible && ContinuousClock.now < opened { try await Task.sleep(for: .milliseconds(5)) }
+            XCTAssertTrue(page.visible)
+            XCTAssertNil(dock.edgePresentation?.paintedFrame)
+            cockpit.requestClose()
+            XCTAssertFalse(page.visible)
+            XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Closing with the pointer outside restores the strip")
+            menuDelegate.menuDidClose(menu)
+            menuDelegate.menuWillOpen(menu)
+            XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "The retired menu cannot reattach on the restored strip")
+            XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+            let restored = dock.menu(), restoredDelegate = try XCTUnwrap(restored.delegate as? DockSliverMenu)
+            restoredDelegate.menuWillOpen(restored)
+            XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen, "The current strip can still acquire menu tracking")
+            restoredDelegate.menuDidClose(restored)
+            XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen)
+            return
         }
         for size in SettingsSize.allCases {
             _ = try await editor.commit(SettingsB20Edit.size(size))
