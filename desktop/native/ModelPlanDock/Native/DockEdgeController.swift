@@ -181,6 +181,9 @@ public struct DockEdgePresentation:Equatable,Sendable {
         prepareDragDisplay?(display)
         guard drag != nil, running else { return }
         let env = environment()
+        // Topology can change while the destination artwork is prepared. Keep
+        // the verified carry until the next pointer event has a current target.
+        guard PulsePanelDrag.display(at: global, in: env.displays) == display else { return }
         let carried = transaction.carry(pointer: global, display: display, layouts: env.layouts)
         do {
             guard let placement = try resolve(preference: carried.0, environment: env, pointer: global) else { return }
@@ -212,6 +215,10 @@ public struct DockEdgePresentation:Equatable,Sendable {
         guard drag != nil, running else { return }
         do {
             let env = environment()
+            guard PulsePanelDrag.display(at: global, in: env.displays) == display else {
+                cancelBackgroundMove()
+                return
+            }
             let intent = transaction.release(pointer: global, display: display, layouts: env.layouts)
             guard let destination = try resolve(preference: intent, environment: env, pointer: global) else {
                 cancelBackgroundMove(); return
