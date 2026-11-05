@@ -23,6 +23,7 @@ import ModelPlanMenuVerification
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
+    let applicationMenu = NSMenu()
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
     public let cockpitEntryEnabled: Bool

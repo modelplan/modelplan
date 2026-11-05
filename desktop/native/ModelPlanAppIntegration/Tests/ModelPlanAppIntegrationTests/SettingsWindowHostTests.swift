@@ -127,7 +127,7 @@ import ModelPlanEngineClient
         XCTAssertEqual(builds, 1); XCTAssertEqual(surface.shown.count, 2)
     }
 
-    func testNormalEntrySettingsMenuShortcutAndWidgetActionShareTheWindow() async throws {
+    func testNormalEntrySettingsMenuAndWidgetActionShareTheWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -158,6 +158,29 @@ import ModelPlanEngineClient
         await fulfillment(of: [widgetShown], timeout: 2)
         XCTAssertEqual(builds, 1)
         XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntryApplicationMenuDispatchesCommandComma() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-key-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let surface = TestSettingsSurface()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, makeSettingsSurface: { _ in surface }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.stopLifecycle(); await app.composition.stop() }
+        await app.prepare()
+        let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: 0, windowNumber: 0, context: nil, characters: ",", charactersIgnoringModifiers: ",",
+            isARepeat: false, keyCode: 43))
+        let command = try XCTUnwrap(app.applicationMenu.items.first?.submenu?.items.first)
+        XCTAssertEqual(command.title, "Settings…")
+        XCTAssertTrue(command.target === app.settingsHost)
+        let shown = expectation(description: "Command-comma opened the shared Settings host")
+        surface.onShow = { shown.fulfill() }
+        XCTAssertTrue(app.applicationMenu.performKeyEquivalent(with: key))
+        await fulfillment(of: [shown], timeout: 2)
+        XCTAssertEqual(surface.shown.count, 1)
     }
 
     func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
