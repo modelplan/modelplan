@@ -128,6 +128,13 @@ private actor V05SyntheticClient: EngineClient {
             XCTAssertGreaterThanOrEqual(visibleBounds.width + 1, reserveLabel.intrinsicContentSize.width,
                                         "The reserve label must not be clipped horizontally")
             XCTAssertEqual(texts.filter { $0 == "123" }.count, 1, "The synthetic rounded reserve must be shown exactly once")
+            let reserveValue = try XCTUnwrap(fields.first { $0.stringValue == "123" })
+            let valueBounds = reserveValue.convert(reserveValue.bounds, to: dock.card).intersection(dock.card.bounds)
+            XCTAssertGreaterThan(valueBounds.height, 0, "The reserve value must have visible height inside the card")
+            XCTAssertGreaterThanOrEqual(valueBounds.width + 1, reserveValue.intrinsicContentSize.width,
+                                        "The reserve value must not be clipped horizontally")
+            XCTAssertTrue(visibleBounds.intersection(valueBounds).isEmpty,
+                          "The reserve label and value must not overlap")
             XCTAssertFalse(texts.contains { $0.contains("≈") }, "The integer policy does not use an approximation marker")
             for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
             if let evidence {
