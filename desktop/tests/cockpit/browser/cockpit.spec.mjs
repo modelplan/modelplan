@@ -157,7 +157,7 @@ test('fixed keyboard-reachable actions have current context; reduced motion has 
   const event=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
   expect(event.action).toBe('openSettings');expect(event.generation).toBe('41');
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
-  const subscription=page.getByRole('button',{name:'Codex',exact:true});await expect(subscription).toBeVisible();await subscription.focus();await page.keyboard.press('Enter');
+  const subscription=page.getByRole('button',{name:'Codex · Shortcut key 1',exact:true});await expect(subscription).toBeVisible();await subscription.focus();await page.keyboard.press('Enter');
   const scopeEvent=await page.evaluate(()=>window.__events.filter(e=>e.type==='action').at(-1));
   expect(scopeEvent.action).toBe('scopeSelect');expect(scopeEvent.key).toBe(sample().projection.rows[0].accounts[0].subscriptionRef);expect(scopeEvent.generation).toBe('41');
   expect(await page.locator('svg,canvas,img').count()).toBe(0);
