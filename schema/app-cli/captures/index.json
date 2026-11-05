@@ -559,6 +559,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "coalesced"
+        },
+        {
+          "field": "history",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
         }
       ],
       "required": [
@@ -581,6 +589,100 @@
       ]
     },
     {
+      "file": "WireCockpitEntityRanking.json",
+      "type": "WireCockpitEntityRanking",
+      "optional": [],
+      "required": [
+        "measure",
+        "attribution",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
+      "file": "WireCockpitEntityWindow.json",
+      "type": "WireCockpitEntityWindow",
+      "optional": [],
+      "required": [
+        "entities",
+        "totalObservedOutputTokens",
+        "top"
+      ]
+    },
+    {
+      "file": "WireCockpitHistory.json",
+      "type": "WireCockpitHistory",
+      "optional": [
+        {
+          "field": "recordingSince",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "version",
+        "sources",
+        "coverage",
+        "subscriptions",
+        "models",
+        "tools"
+      ]
+    },
+    {
+      "file": "WireCockpitHistorySums.json",
+      "type": "WireCockpitHistorySums",
+      "optional": [
+        {
+          "field": "inputTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheReadTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheWriteTokens",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cacheHitRatio",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "generationTps",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "outputTokens",
+        "observedRequests",
+        "eligibleRequests"
+      ]
+    },
+    {
       "file": "WireCockpitQueryParams.json",
       "type": "WireCockpitQueryParams",
       "optional": [
@@ -594,6 +696,17 @@
         }
       ],
       "required": []
+    },
+    {
+      "file": "WireCockpitRankedEntity.json",
+      "type": "WireCockpitRankedEntity",
+      "optional": [],
+      "required": [
+        "name",
+        "observedRequests",
+        "observedOutputTokens",
+        "share"
+      ]
     },
     {
       "file": "WireCockpitResetCount.json",
@@ -666,6 +779,17 @@
       ]
     },
     {
+      "file": "WireCockpitSourceHistory.json",
+      "type": "WireCockpitSourceHistory",
+      "optional": [],
+      "required": [
+        "source",
+        "bindingBasis",
+        "recent7d",
+        "recent30d"
+      ]
+    },
+    {
       "file": "WireCockpitSubscription.json",
       "type": "WireCockpitSubscription",
       "optional": [],
@@ -707,6 +831,15 @@
         "subscriptionRef",
         "resetCounts",
         "today"
+      ]
+    },
+    {
+      "file": "WireCockpitSubscriptionHistory.json",
+      "type": "WireCockpitSubscriptionHistory",
+      "optional": [],
+      "required": [
+        "subscriptionRef",
+        "sources"
       ]
     },
     {

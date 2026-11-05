@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
+// Schema SHA-256: 32c73212bcf529bc86d320ed68d99b93e575eb1dbd7e476e0541b65891602028
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -39,6 +39,7 @@ export type WireCockpitCredits = {
 
 export type WireCockpitData = {
   readonly "details"?: WireCockpitDetails | null;
+  readonly "history"?: WireCockpitHistory | null;
   readonly "projection": WireRowsProjection;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscription>;
 };
@@ -53,8 +54,49 @@ export type WireCockpitDetails = {
   readonly "version": number;
 };
 
+export type WireCockpitEntityRanking = {
+  readonly "attribution": string;
+  readonly "measure": string;
+  readonly "recent30d": WireCockpitEntityWindow;
+  readonly "recent7d": WireCockpitEntityWindow;
+};
+
+export type WireCockpitEntityWindow = {
+  readonly "entities": number;
+  readonly "top": ReadonlyArray<WireCockpitRankedEntity>;
+  readonly "totalObservedOutputTokens": number;
+};
+
+export type WireCockpitHistory = {
+  readonly "coverage": string;
+  readonly "models": WireCockpitEntityRanking;
+  readonly "recordingSince": string | null;
+  readonly "sources": ReadonlyArray<string>;
+  readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionHistory>;
+  readonly "tools": WireCockpitEntityRanking;
+  readonly "version": number;
+};
+
+export type WireCockpitHistorySums = {
+  readonly "cacheHitRatio": number | null;
+  readonly "cacheReadTokens": number | null;
+  readonly "cacheWriteTokens": number | null;
+  readonly "eligibleRequests": number;
+  readonly "generationTps": number | null;
+  readonly "inputTokens": number | null;
+  readonly "observedRequests": number;
+  readonly "outputTokens": number;
+};
+
 export type WireCockpitQueryParams = {
   readonly "redBelow"?: 10 | 16 | 20 | 25;
+};
+
+export type WireCockpitRankedEntity = {
+  readonly "name": string;
+  readonly "observedOutputTokens": number;
+  readonly "observedRequests": number;
+  readonly "share": number;
 };
 
 export type WireCockpitResetCount = {
@@ -75,6 +117,13 @@ export type WireCockpitSession = {
   readonly "subscriptionRef": string | null;
 };
 
+export type WireCockpitSourceHistory = {
+  readonly "bindingBasis": string;
+  readonly "recent30d": WireCockpitHistorySums;
+  readonly "recent7d": WireCockpitHistorySums;
+  readonly "source": string;
+};
+
 export type WireCockpitSubscription = {
   readonly "accounts": ReadonlyArray<WireCockpitAccount>;
   readonly "subscriptionRef": string;
@@ -87,6 +136,11 @@ export type WireCockpitSubscriptionDetails = {
   readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
   readonly "today": ReadonlyArray<WireCockpitToday>;
+};
+
+export type WireCockpitSubscriptionHistory = {
+  readonly "sources": ReadonlyArray<WireCockpitSourceHistory>;
+  readonly "subscriptionRef": string;
 };
 
 export type WireCockpitToday = {
@@ -470,6 +524,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "history": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CockpitHistory"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "projection": {
         "$ref": "#/$defs/RowsProjection"
       },
@@ -545,6 +609,184 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "CockpitEntityRanking": {
+    "additionalProperties": false,
+    "properties": {
+      "attribution": {
+        "type": "string"
+      },
+      "measure": {
+        "type": "string"
+      },
+      "recent30d": {
+        "$ref": "#/$defs/CockpitEntityWindow"
+      },
+      "recent7d": {
+        "$ref": "#/$defs/CockpitEntityWindow"
+      }
+    },
+    "required": [
+      "measure",
+      "attribution",
+      "recent7d",
+      "recent30d"
+    ],
+    "type": "object"
+  },
+  "CockpitEntityWindow": {
+    "additionalProperties": false,
+    "properties": {
+      "entities": {
+        "type": "integer"
+      },
+      "top": {
+        "items": {
+          "$ref": "#/$defs/CockpitRankedEntity"
+        },
+        "maxItems": 10,
+        "type": "array"
+      },
+      "totalObservedOutputTokens": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "entities",
+      "totalObservedOutputTokens",
+      "top"
+    ],
+    "type": "object"
+  },
+  "CockpitHistory": {
+    "additionalProperties": false,
+    "properties": {
+      "coverage": {
+        "type": "string"
+      },
+      "models": {
+        "$ref": "#/$defs/CockpitEntityRanking"
+      },
+      "recordingSince": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sources": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 4,
+        "type": "array",
+        "uniqueItems": true
+      },
+      "subscriptions": {
+        "items": {
+          "$ref": "#/$defs/CockpitSubscriptionHistory"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
+      "tools": {
+        "$ref": "#/$defs/CockpitEntityRanking"
+      },
+      "version": {
+        "maximum": 1,
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "version",
+      "sources",
+      "coverage",
+      "recordingSince",
+      "subscriptions",
+      "models",
+      "tools"
+    ],
+    "type": "object"
+  },
+  "CockpitHistorySums": {
+    "additionalProperties": false,
+    "properties": {
+      "cacheHitRatio": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cacheReadTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cacheWriteTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "eligibleRequests": {
+        "type": "integer"
+      },
+      "generationTps": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "inputTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "observedRequests": {
+        "type": "integer"
+      },
+      "outputTokens": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "inputTokens",
+      "outputTokens",
+      "cacheReadTokens",
+      "cacheWriteTokens",
+      "cacheHitRatio",
+      "generationTps",
+      "observedRequests",
+      "eligibleRequests"
+    ],
+    "type": "object"
+  },
   "CockpitQueryParams": {
     "additionalProperties": false,
     "properties": {
@@ -559,6 +801,30 @@ export const definitions: Readonly<Record<string, Schema>> = {
       }
     },
     "required": [],
+    "type": "object"
+  },
+  "CockpitRankedEntity": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string"
+      },
+      "observedOutputTokens": {
+        "type": "integer"
+      },
+      "observedRequests": {
+        "type": "integer"
+      },
+      "share": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "name",
+      "observedRequests",
+      "observedOutputTokens",
+      "share"
+    ],
     "type": "object"
   },
   "CockpitResetCount": {
@@ -673,6 +939,30 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "CockpitSourceHistory": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingBasis": {
+        "type": "string"
+      },
+      "recent30d": {
+        "$ref": "#/$defs/CockpitHistorySums"
+      },
+      "recent7d": {
+        "$ref": "#/$defs/CockpitHistorySums"
+      },
+      "source": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "bindingBasis",
+      "recent7d",
+      "recent30d"
+    ],
+    "type": "object"
+  },
   "CockpitSubscription": {
     "additionalProperties": false,
     "properties": {
@@ -745,6 +1035,28 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "resetCounts",
       "credits",
       "today"
+    ],
+    "type": "object"
+  },
+  "CockpitSubscriptionHistory": {
+    "additionalProperties": false,
+    "properties": {
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/CockpitSourceHistory"
+        },
+        "maxItems": 4,
+        "type": "array"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "subscriptionRef",
+      "sources"
     ],
     "type": "object"
   },
