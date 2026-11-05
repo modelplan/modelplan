@@ -302,6 +302,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
     private var permitted = false, retired = false, retiring = false, rendering = false
     private weak var trackedDockMenu: NSMenu?
+    private var dockMenuGeneration: UInt64 = 0
     private var menuOpen: Bool { trackedDockMenu != nil }
     private var lifecycleSuspended = false
     private var sliverPrepared = false
@@ -1085,12 +1086,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             publishDockHelpSurface(value)
             if !rendering { bindInteractionInput(); interactionController?.refresh() }
         }
+        // A withdrawn surface must not accept late tracking from its old menus.
+        if value.paintedFrame == nil {
+            dockMenuGeneration &+= 1
+            retireTrackedDockMenu()
+        }
         // Native panels and the no-window construction checks share this actual input binding.
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
             attentionWasExpanded = false; pointerSurface.stop()
-            retireTrackedDockMenu()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil {
@@ -1327,8 +1332,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let component = DockSliverMenu(labels: [:], handlers: [:])
         component.owner = self
         let menu = component.menu
+        let generation = dockMenuGeneration
         component.onMenuActuallyOpen = { [weak self, weak menu] open in
-            guard let self, let menu else { return }
+            guard let self, let menu, self.dockMenuGeneration == generation else { return }
             if open { self.menuWillOpen(menu) }
             else { self.menuDidClose(menu) }
         }
@@ -1369,7 +1375,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         return menu
     }
     public func menuWillOpen(_ menu: NSMenu) {
-        guard permitted, !retired, !retiring, ownsDockMenu(menu) else { return }
+        guard permitted, !retired, !retiring, edge.presentation?.paintedFrame != nil, ownsDockMenu(menu) else { return }
         trackedDockMenu = menu
         edge.refresh()
     }
