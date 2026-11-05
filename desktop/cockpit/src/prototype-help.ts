@@ -4,9 +4,9 @@
 import {leaderAnchor,routeLeader} from '../study/rocket-r1/help-routing.js';
 type Locale='en'|'zh-CN';
 const notes:ReadonlyArray<readonly [string,string,string]>=[
- ['.ck-port','Window: click to open the 3D launch field.','悬窗：点击打开 3D 发射场。'],
+ ['.ck-port','Window: the field view is unavailable.','悬窗：场景视图暂不可用。'],
  ['[data-shutter]','Window shutter: drag or press to fold or expand the Window.','悬窗开关：拖动或按一下，收起或展开。'],
- ['[data-caution]','Alert lamp: press for all alerts and to stop flashing.','注意灯：按一下查看全部提醒并停止闪烁。'],
+ ['[data-caution]','Alert lamp: indicates current alerts.','注意灯：显示当前提醒状态。'],
  ['[data-settings]','Settings: adjust preferences or show hints again in its window.','设置：在独立窗口调整偏好或重新显示提示。'],
  ['[data-detach]','Detach','分离窗口'],['[data-close]','Close: end the local Try and close the Cockpit.','关闭：结束本地试档并收起驾驶舱。'],
  ['.eng-krow','Engine shortcuts: 0 = All; 1–6 = visible subscriptions.','引擎快捷键：0 = 全部；1–6 = 当前显示的订阅。'],
@@ -17,7 +17,7 @@ const notes:ReadonlyArray<readonly [string,string,string]>=[
  ['.lb-other','Other: remaining periods and scoped quotas; +N means more.','其他：其他周期和专项额度，+N 表示还有更多。'],
  ['.dk-fad','Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.','推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。'],
  ['.mfd-pk','Main screen: page keys change pages; bottom keys select or return.','公共屏：页键切页，底键选项或返回原页。'],
- ['.ck-tape','Session record: running sessions come first; press a row for details.','会话记录：运行中的在前，按一行查看详情。'],
+ ['.ck-tape','Running sessions first, then last seen; -- means speed unavailable.','运行中的会话在前，其后为最近观察；-- 表示速率不可用。'],
  ['.ck-base .bz-line','Flame: this subscription is working now; it does not mean an alert.','火焰：表示这个订阅正在用，不表示额度告警。'],
 ];
 export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActive:()=>boolean,isAttached:()=>boolean){

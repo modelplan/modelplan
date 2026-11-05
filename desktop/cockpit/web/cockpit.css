@@ -40,6 +40,9 @@
 html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
 @media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
 
+/* Three 16px rows fit within the fixed compact strip without scrolling. */
+[data-profile="compact"] #cockpit .ck-tape{padding-top:2px;padding-bottom:2px}
+
 /* Preserve room for localized session status and the running cursor. */
 .ck-tape .t-observed{grid-template-columns:6px 84px 64px 42px minmax(0,1fr) 44px 78px}
 /* Running cursor uses a compositor-only blink; inactive and reduced-motion views are static. */
