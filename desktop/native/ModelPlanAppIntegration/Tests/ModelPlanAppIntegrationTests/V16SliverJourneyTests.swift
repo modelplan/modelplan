@@ -86,6 +86,10 @@ private actor V16SyntheticClient: EngineClient {
                 let presentation = try XCTUnwrap(dock.edgePresentation)
                 XCTAssertEqual(presentation.state, .sliver, "Auto-hide must collapse at the normal entry")
                 let placement = try XCTUnwrap(presentation.placement)
+                let expectedEdge: DockEdge = edge == .left ? .left : edge == .right ? .right : .bottom
+                XCTAssertEqual(placement.edge, expectedEdge, "The presented sliver must use the requested edge")
+                // Do not interpret a side placement's dimensions as a bottom placement.
+                guard placement.edge == expectedEdge else { continue }
                 let thickness = edge == .bottom ? placement.sliverFrame.height : placement.sliverFrame.width
                 XCTAssertEqual(thickness, expected, accuracy: 0.001, "Incorrect sliver thickness for \(size) on \(edge)")
                 let hull = try XCTUnwrap(dock.dockView.registeredHullBounds)
