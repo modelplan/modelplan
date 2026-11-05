@@ -67,3 +67,9 @@ class IdleCostTests(unittest.TestCase):
             output = Path(directory) / 'receipt.json'; output.write_text('preserve')
             with self.assertRaises(FileExistsError): idle.synthetic_smoke(output)
             self.assertEqual(output.read_text(), 'preserve')
+
+    def test_unavailable_wakeups_are_unknown(self):
+        with patch.object(idle.platform, 'system', return_value='Linux'):
+            self.assertIsNone(idle.wakeups_for(42))
+        with patch.object(idle.platform, 'system', return_value='Darwin'), patch.object(idle.ctypes, 'CDLL', side_effect=OSError):
+            self.assertIsNone(idle.wakeups_for(42))

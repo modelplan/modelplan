@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: MIT
 """Synthetic-only G4 measurement primitives. Installed-app admission is not implemented."""
 import argparse
+import ctypes
 import json
 import math
 import os
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -59,6 +61,25 @@ def delta(first, last):
     return {'cpu_seconds': cpu, 'memory_growth_bytes': max(0, last['rss_bytes'] - first['rss_bytes'])}
 
 
+def wakeups_for(pid):
+    # macOS rusage_info_v0 exposes per-process idle and interrupt wakeups to
+    # an unprivileged process when the OS permits it. Unavailable is not zero.
+    if platform.system() != 'Darwin':
+        return None
+    class Usage(ctypes.Structure):
+        _fields_ = [('uuid', ctypes.c_ubyte * 16)] + [(field, ctypes.c_uint64) for field in
+                   ('user', 'system', 'idle', 'interrupt', 'pageins', 'wired', 'rss', 'footprint', 'birth', 'exit')]
+    try:
+        library = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+        library.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+        usage = Usage()
+        if library.proc_pid_rusage(pid, 0, ctypes.byref(usage)) != 0:
+            return None
+        return usage.idle + usage.interrupt
+    except (OSError, AttributeError):
+        return None
+
+
 def ps_sample(pid):
     result = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'lstart=', '-o', 'time=', '-o', 'rss='],
                             capture_output=True, text=True, timeout=5, check=True, env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
@@ -66,7 +87,7 @@ def ps_sample(pid):
     if len(parts) != 7 or not parts[-1].isdigit():
         raise ValueError('missing or malformed process observation')
     return {'pid': pid, 'start': ' '.join(parts[:5]), 'cpu_seconds': cpu_seconds(parts[5]),
-            'rss_bytes': int(parts[6]) * 1024}
+            'rss_bytes': int(parts[6]) * 1024, 'wakeups': wakeups_for(pid)}
 
 
 def synthetic_smoke(output):
@@ -90,7 +111,10 @@ def synthetic_smoke(output):
                 try: worker.wait(timeout=5)
                 except subprocess.TimeoutExpired: worker.kill(); worker.wait()
         # Thresholds and request diagnostics must come from owner-approved app sources.
-        values.update(network_requests=None, wakeups=None)
+        first_wakeups, last_wakeups = samples[0].get('wakeups'), samples[-1].get('wakeups')
+        wakeups = (last_wakeups - first_wakeups if valid_number(first_wakeups) and valid_number(last_wakeups)
+                   and last_wakeups >= first_wakeups else None)
+        values.update(network_requests=None, wakeups=wakeups)
         measurements = assess(values, {})
         result = {'schema_version': 1, 'mode': 'synthetic-smoke', 'acceptance': False,
                   'elapsed_seconds': elapsed, 'sample_interval_seconds': 60, 'sample_count': len(samples),
