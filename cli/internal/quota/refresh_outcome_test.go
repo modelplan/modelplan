@@ -107,3 +107,42 @@ func TestCodexRuntimeAvailabilityUsesWindowObservation(t *testing.T) {
 		t.Fatal("valid fresh window unavailable")
 	}
 }
+
+// A provider name does not bind local logs to a runtime account. In particular,
+// a fresh local fallback may not silently rejuvenate an unrelated stale runtime.
+func TestStaleRuntimeAndUnboundFreshLocalRemainSeparate(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	now := time.Now().UTC()
+	old := now.Add(-3 * time.Hour)
+	usedRuntime, usedLocal := 80.0, 30.0
+	snap := &accountSnap{SchemaVersion: 1, Status: "ok", ObservedAt: old, SubscriptionRef: "0123456789abcdef", Windows: []Window{{Kind: "weekly", UsedPercent: &usedRuntime, ObservedAt: old}}}
+	if err := save(cache, snap); err != nil {
+		t.Fatal(err)
+	}
+	report := Report{Accounts: []Account{{Source: "codex", ObservedAt: now, Windows: []Window{{Kind: "weekly", UsedPercent: &usedLocal, ObservedAt: now}}}}}
+	applyAccount(&report, cache, now)
+	if len(report.Accounts) != 2 {
+		t.Fatalf("unbound sources merged: %+v", report.Accounts)
+	}
+	var runtime, local *Account
+	for i := range report.Accounts {
+		a := &report.Accounts[i]
+		if a.Via == "codex-account" {
+			runtime = a
+		} else if a.Source == "codex" {
+			local = a
+		}
+	}
+	if runtime == nil || local == nil {
+		t.Fatal("separate local and runtime accounts required")
+	}
+	Evaluate(runtime, now)
+	Evaluate(local, now)
+	if !runtime.Stale || !runtime.ObservedAt.Equal(old) || len(runtime.Windows) != 1 || *runtime.Windows[0].UsedPercent != usedRuntime {
+		t.Fatal("stale runtime reading was overwritten")
+	}
+	if local.Stale || !local.ObservedAt.Equal(now) || len(local.Windows) != 1 || *local.Windows[0].UsedPercent != usedLocal {
+		t.Fatal("fresh local reading was lost")
+	}
+}
