@@ -35,7 +35,7 @@ import ModelPlanWire
             XCTAssertTrue(titles.contains(locale == "en" ? "Shown" : "显示"))
             XCTAssertTrue(titles.contains(locale == "en" ? "Hidden" : "隐藏"))
             let sliver = try XCTUnwrap(settingsRows.first { $0.key == .sliverAlert })
-            XCTAssertEqual(sliver.titleLabel.stringValue, locale == "en" ? "Sliver alerts" : "隐藏条提示")
+            XCTAssertEqual(sliver.titleLabel.stringValue, locale == "en" ? "Strip alerts" : "隐藏条提示")
             await app.composition.stop()
         }
     }
