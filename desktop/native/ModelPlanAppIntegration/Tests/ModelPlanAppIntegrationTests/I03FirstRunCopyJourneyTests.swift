@@ -65,6 +65,11 @@ import ModelPlanWire
             let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
             defer { window.close() }
             let views = descendants(try XCTUnwrap(window.contentView))
+            let visibleCopy = views.compactMap { $0 as? NSTextField }
+                .filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
+            let internalTerm = locale == "en" ? "engine" : "引擎"
+            XCTAssertFalse(visibleCopy.contains { $0.localizedCaseInsensitiveContains(internalTerm) },
+                           "The first-run surface must not expose internal implementation names")
             let privacy = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.privacy" } as? NSTextField)
             let recommendation = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.publicRecommendation" } as? NSTextField)
             XCTAssertFalse(privacy.isHiddenOrHasHiddenAncestor)
