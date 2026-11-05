@@ -48,6 +48,9 @@ done
 		t.Fatal(err)
 	}
 	t.Setenv("MODELPLAN_CODEX", codex)
+	// Detection is independent of the runtime executable override. Make the
+	// synthetic tool visible even on CI hosts without Codex installed.
+	t.Setenv("PATH", filepath.Dir(codex)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	setResponse := func(used int) {
 		t.Helper()
 		b, err := json.Marshal(map[string]any{"rateLimits": map[string]any{"planType": "plus", "secondary": map[string]any{"usedPercent": used, "windowDurationMins": 10080, "resetsAt": time.Now().Add(24 * time.Hour).Unix()}}})
