@@ -100,6 +100,12 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertEqual(recorded.first?.allow, ["two.runtime"])
         XCTAssertTrue(window.isVisible, "RPC completion alone does not prove accepted consent")
         try await publishFacts() // An unchanged accepted snapshot is not the grant result.
+        let pendingStatus = try XCTUnwrap(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "firstRun.status" } as? NSTextField)
+        XCTAssertFalse(pendingStatus.isHiddenOrHasHiddenAncestor)
+        XCTAssertEqual(pendingStatus.stringValue, "Waiting for reading permissions to be confirmed.")
+        XCTAssertEqual(pendingStatus.textColor, .secondaryLabelColor, "Waiting is informational, not an error")
+        let firstRunController = try XCTUnwrap(window.windowController as? SettingsFirstRunController)
+        XCTAssertNil(firstRunController.errorMessage)
         XCTAssertFalse(try button("firstRun.done").isEnabled, "An unresolved grant cannot be resubmitted")
         XCTAssertFalse(try button("scope.allow.one.local").isEnabled)
         window.close()
