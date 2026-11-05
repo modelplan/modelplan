@@ -45,6 +45,14 @@ func readerFixtureClient(t *testing.T, srv *httptest.Server, hosts ...string) *h
 	if next == nil {
 		next = http.DefaultTransport
 	}
+	if transport, ok := next.(*http.Transport); ok {
+		clone := transport.Clone()
+		clone.DisableKeepAlives = true
+		clone.ForceAttemptHTTP2 = false
+		clone.Protocols = new(http.Protocols)
+		clone.Protocols.SetHTTP1(true)
+		next = clone
+	}
 	client := *base
 	client.Transport = readerFixtureRoundTripper(func(req *http.Request) (*http.Response, error) {
 		allowed := false
@@ -69,6 +77,7 @@ func readerFixtureClient(t *testing.T, srv *httptest.Server, hosts ...string) *h
 type readerFixtureRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f readerFixtureRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (readerFixtureRoundTripper) ReaderSingleAttempt()                                {}
 
 func TestAccountUsageProductionTransportRejectsOffHost(t *testing.T) {
 	for _, tc := range []struct {

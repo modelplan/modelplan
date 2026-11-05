@@ -223,10 +223,24 @@ public enum EngineDeadlineFacts {
                     }
                 }
             }
+            let cardState: DockCardReadingState
+            if row.consent != .allowed && row.consent != .implicit && row.consent != .notRequired {
+                cardState = .error
+            } else if row.state == .pending {
+                cardState = .loading
+            } else if row.state == .failed {
+                cardState = account.valueState == .retained && account.observedAt != nil ? .errorLastGood : .error
+            } else if row.state == .stale || account.valueState == .retained ||
+                        (date(row.expiresAt).map { context.now >= $0 } ?? false) ||
+                        (date(account.freshUntil).map { context.now >= $0 } ?? false) {
+                cardState = .stale
+            } else {
+                cardState = input.dataState == .fresh ? .ok : .error
+            }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? (english ? "Check reading permissions in Settings" : "在设置检查读取权限"),
+                nextStep: message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,cardReadingState:cardState)
         }
         let status: String
         switch value.status {
@@ -254,7 +268,7 @@ public enum EngineDeadlineFacts {
     }
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
         let row=member.row, account=member.account
-        if row.consent == .denied { return .denied }
+        guard row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired else { return .denied }
         if row.state == .off { return .readerDisabled }
         if row.state == .stale || account.valueState == .retained { return .stale }
         if row.state == .fresh && account.valueState == .current {
@@ -308,6 +322,9 @@ public enum EngineDeadlineFacts {
         }
     }
     private func sourceName(_ route:RowsRoute) -> String {
+        Self.sourceName(route, english: english)
+    }
+    static func sourceName(_ route: RowsRoute, english: Bool) -> String {
         switch route {
         case .savedLoginApi:return english ? "Saved sign-in":"已有登录"
         case .runtimeRpc:return english ? "Tool runtime":"工具运行时"
