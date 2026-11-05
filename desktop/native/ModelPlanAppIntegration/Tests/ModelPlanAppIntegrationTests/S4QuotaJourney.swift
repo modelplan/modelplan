@@ -396,6 +396,7 @@ private actor S4RowsClient: EngineClient {
         var account=(row["accounts"] as! [[String:Any]])[0]
         account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
         let original=(account["windows"] as! [[String:Any]])[0]
+        let clock = Date(timeIntervalSince1970: 1_800_000_000)
         func window(_ id:String,_ role:String,_ remaining:Double,_ duration:Int) -> [String:Any] {
             var w=original;w["id"]=id;w["role"]=role;w["remainingPercent"]=remaining;w["durationSeconds"]=duration
             w.removeValue(forKey:"modelScope")
@@ -407,25 +408,31 @@ private actor S4RowsClient: EngineClient {
         var scopedWeekly=window("model","weekly",2,604800);scopedWeekly["modelScope"]=["models":["opus"]]
         var special=window("review","weekly",1,604800);special["limitKey"]="code_review";special["poolKey"]="code_review"
         var unknown=window("unknown","session",3,18000);unknown["limitKey"]="other";unknown["poolKey"]="other"
-        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",80,2592000)]
+        var five = window("five", "session", 63, 18000)
+        five["resetsAt"] = ISO8601DateFormatter().string(from: clock.addingTimeInterval(2 * 3600 + 14 * 60))
+        five["validUntil"] = five["resetsAt"]
+        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),five,window("month","monthly",80,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
         defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
-        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,deadlineNow:{clock},makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
-        let reading=try DockInstrumentProjection.evaluate(input,now:Date())
+        let reading=try DockInstrumentProjection.evaluate(input,now:clock)
         try require(reading.remainingPercent == 24,"restricted and special-pool windows must not determine the general tightest")
         try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
         try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
-        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
+        let resetDetail = card.rows.first { $0.id == "quota:five" }?.detail
+        // The copy test owns capitalization. This journey verifies the reported interval.
+        try require(resetDetail?.caseInsensitiveCompare("resets in 2h 14m") == .orderedSame,
+                    "expected the reported 2h 14m interval, got \(resetDetail ?? "<missing>")")
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
@@ -441,7 +448,7 @@ private actor S4RowsClient: EngineClient {
             try await store.update { $0.subscriptionSettings[input.id] = .init(percentagePin:pin) }
             await entry.prepare()
             guard let preferences=entry.composition.dock.currentMenuBarPreferences else { throw Failure(description:"normal Dock lost Settings") }
-            let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:Date())
+            let pinned=try DockInstrumentProjection.evaluate(preferences.applying(to:input),now:clock)
             try require(pinned.remainingPercent == expected,"member-keyed window pin must select its semantic role")
             try require(pinned.outer?.windowID == "five" && pinned.inner?.windowID == "weekly","pin must not swap ring roles")
         }
@@ -457,14 +464,14 @@ private actor S4RowsClient: EngineClient {
             let snapshot=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
             try await synthetic.replaceRows(snapshot)
             guard let next=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"member disappeared on refresh") }
-            let reading=try DockInstrumentProjection.evaluate(next,now:Date())
+            let reading=try DockInstrumentProjection.evaluate(next,now:clock)
             try require(reading.remainingPercent == 24 && reading.outer?.windowID == "general-five" && reading.inner?.windowID == "general-week","general role selection must not depend on order or include model, named or future pools")
         }
         account["windows"]=[scopedFive,namedPool,future];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let restrictedOnly=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         try await synthetic.replaceRows(restrictedOnly)
         guard let only=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"restricted-only member disappeared") }
-        let restrictedReading=try DockInstrumentProjection.evaluate(only,now:Date())
+        let restrictedReading=try DockInstrumentProjection.evaluate(only,now:clock)
         try require(restrictedReading.remainingPercent == nil && restrictedReading.inner == nil && restrictedReading.outer == nil,"restricted-only accounts must not invent general rings")
         await entry.composition.stop()
     }
