@@ -379,7 +379,6 @@ import ModelPlanMenuVerification
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        NSApp.appearance = NSAppearance(named: .darkAqua)
         if accessibilityObserver == nil {
             accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -412,6 +411,7 @@ import ModelPlanMenuVerification
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     func renderMenu() {
+        guard !terminating else { return }
         let language = composition.latestSettings?.effective.language ?? .english
         let component: DockStatusMenu
         if let current = statusMenuComponent { component = current }
@@ -576,14 +576,19 @@ import ModelPlanMenuVerification
             await composition.refresh()
         }
     }
-    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminating else { return .terminateLater }
-        terminating = true; settings.editor.onHostRequest = nil
+    private func retireApplicationSurfaces() {
+        settings.editor.onHostRequest = nil
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
+    }
+
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminating else { return .terminateLater }
+        terminating = true
+        retireApplicationSurfaces()
         Task {
             if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
             else { await composition.stop() }
@@ -592,6 +597,18 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func stopNativeDockJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        retireApplicationSurfaces()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+        dockHelp = nil
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()

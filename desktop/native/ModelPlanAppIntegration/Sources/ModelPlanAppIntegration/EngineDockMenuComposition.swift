@@ -125,7 +125,11 @@ public struct EngineMenuRefreshResult {
             if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
-    public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
+    public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
+
+    private func presentedContent(at now: Date) -> DockContent {
+        admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+    }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
@@ -192,8 +196,37 @@ public struct EngineMenuRefreshResult {
         return fallback
     }
     public var menuPresentation: CommunityMenuBarPresentation {
-        let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
+        let now = deadlineWall()
+        let content = presentedContent(at: now)
+        let detail = (content.menuStatusLines ?? []).joined(separator: " · ")
+        return .init(title: statusQuotaTitle(content.snapshot.inputs, at: now),
+                     detail: detail.isEmpty ? fallbackStatusText : detail)
+    }
+
+    private func statusQuotaTitle(_ inputs: [DockInstrumentInput], at now: Date) -> String {
+        guard let preferences = latestSettings?.snapshot.preferences,
+              let ordered = try? preferences.presentedSubscriptionIDs(inputs.map(\.id)) else { return "" }
+        let visible = Set(ordered)
+        func tightest(_ period: DockQuotaPeriod? = nil) -> String? {
+            inputs.compactMap { input -> (remaining: Double, text: String)? in
+                guard visible.contains(input.id) else { return nil }
+                var quota = input
+                if let period { quota.windows = quota.windows.filter { $0.period == period } }
+                quota.selectedWindowID = nil
+                quota.showUsedPercent = false
+                guard let reading = try? DockInstrumentProjection.evaluate(quota, now: now),
+                      let remaining = reading.remainingPercent else { return nil }
+                return (remaining, reading.readout)
+            }.min { $0.remaining < $1.remaining }?.text
+        }
+        switch preferences.menuDisplay {
+        case .icon: return ""
+        case .tightest: return tightest() ?? ""
+        case .twoWindows:
+            let week = preferences.language == .chinese ? "周" : "Week"
+            return [tightest(.fiveHour).map { "5h " + $0 }, tightest(.week).map { week + " " + $0 }]
+                .compactMap { $0 }.joined(separator: " ")
+        }
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
