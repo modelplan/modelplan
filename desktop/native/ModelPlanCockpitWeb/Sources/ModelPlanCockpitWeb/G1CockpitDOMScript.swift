@@ -24,6 +24,7 @@
         const read=(n,path,depth,opacityVisible=true)=>{
           if(++count>2048||depth>32)return null;
           const s=getComputedStyle(n),r=n.getBoundingClientRect(),p=n.parentElement?.getBoundingClientRect();
+          const paintedOpacity=opacityVisible&&Number(s.opacity)>0;
           const sensitive=(n.tagName==='INPUT'||n.tagName==='TEXTAREA')&&(/password|secret|token|api.?key/i.test([n.type,n.id,n.name,n.autocomplete].join(' ')));
           let text=Array.from(n.childNodes).filter(x=>x.nodeType===Node.TEXT_NODE).map(x=>x.textContent).join('').trim();
           if(n.tagName==='INPUT'||n.tagName==='TEXTAREA')text=sensitive?null:(n.tagName==='TEXTAREA'||['text','search','email','url','tel','number','date','time'].includes(n.type)?n.value:null);

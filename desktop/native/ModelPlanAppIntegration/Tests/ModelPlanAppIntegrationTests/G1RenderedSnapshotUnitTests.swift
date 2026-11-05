@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import JavaScriptCore
+@testable import ModelPlanCockpitWeb
 import ModelPlanPrimitives
 import XCTest
 
@@ -10,6 +12,35 @@ import XCTest
 }
 
 @MainActor final class G1RenderedSnapshotUnitTests: XCTestCase {
+  func testDOMObservationExecutesVisibleRootAndInheritsZeroOpacity() throws {
+    let context = try XCTUnwrap(JSContext())
+    var failure: String?
+    context.exceptionHandler = { _, error in failure = error?.toString() }
+    context.evaluateScript(#"""
+      function node(id, opacity, children=[]) {
+        return {tagName:'DIV',id,className:'',classList:[],childNodes:[],children,parentElement:null,opacity,
+          getBoundingClientRect(){return {x:0,y:0,width:20,height:20,right:20,bottom:20,left:0,top:0}},
+          getAnimations(){return []},hasAttribute(){return false},getAttribute(){return null},matches(){return false}};
+      }
+      const root=node('visible','1',[node('transparent','0',[node('transparent-child','1')])]);
+      globalThis.document={createElement:()=>({getContext:()=>null,style:{}}),querySelector:()=>root,body:root};
+      globalThis.getComputedStyle=n=>({backgroundColor:'rgb(0, 0, 0)',color:'rgb(255, 255, 255)',
+        filter:'none',backdropFilter:'none',boxShadow:'none',backgroundImage:'none',opacity:n.opacity,
+        display:'block',visibility:'visible',position:'static',isolation:'auto',mixBlendMode:'normal',transform:'none',zIndex:'auto'});
+      globalThis.Node={TEXT_NODE:3};globalThis.innerWidth=100;globalThis.innerHeight=100;globalThis.devicePixelRatio=1;
+      globalThis.performance={timeOrigin:0,now:()=>1};
+      """#)
+    let result = context.evaluateScript(G1CockpitDOMScript.source)?.toString()
+    XCTAssertNil(failure, "The shipped observer must execute for a visible root")
+    let json = try XCTUnwrap(result?.data(using: .utf8))
+    let value = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+    let tree = try XCTUnwrap(value["tree"] as? [String: Any])
+    XCTAssertEqual(tree["visible"] as? Bool, true)
+    let hidden = try XCTUnwrap((tree["children"] as? [[String: Any]])?.first)
+    XCTAssertEqual(hidden["visible"] as? Bool, false)
+    let descendant = try XCTUnwrap((hidden["children"] as? [[String: Any]])?.first)
+    XCTAssertEqual(descendant["visible"] as? Bool, false)
+  }
   func testContractMappingDoesNotRelabelLocalOrCssFramesAsScreenCoordinates() {
     var node = G1RenderedElement("observed", role: "AXButton")
     node.frame = .init(x: 10, y: 20, width: 30, height: 40)

@@ -170,7 +170,7 @@ actor G1WindowClient: EngineClient {
     let src = web.appendingPathComponent("src")
     try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
     let html = Data(
-      "<html><body style='margin:0;background:rgb(255,255,255)'><div class='ck' style='background:rgb(255,255,255);width:240px;height:120px'><span id='g1-cockpit-label' style='color:color(srgb 0.0666666667 0.1333333333 0.2)'>G1 cockpit painted marker</span><button id='g1-cockpit-disabled' disabled>Unavailable</button><input id='g1-password' type='password' value='synthetic-secret'></div></body></html>"
+      "<html><body style='margin:0;background:rgb(255,255,255)'><div class='ck' style='background:rgb(255,255,255);width:240px;height:120px'><span id='g1-cockpit-label' style='color:color(srgb 0.0666666667 0.1333333333 0.2)'>G1 cockpit painted marker</span><button id='g1-cockpit-disabled' disabled>Unavailable</button><input id='g1-password' type='password' value='synthetic-secret'><div id='g1-transparent' style='opacity:0'><span id='g1-transparent-child'>Not painted</span></div></div></body></html>"
         .utf8)
     // The actual WebKit fixture acknowledges API readiness and real DOM clear only.
     // It never claims a rendered/display receipt or supplies private query data.
@@ -220,6 +220,9 @@ actor G1WindowClient: EngineClient {
     XCTAssertEqual(exported.contrastToParent, node.contrastAgainstParent)
     XCTAssertNil(exported.frame, "Unmapped CSS coordinates are not screen points")
     XCTAssertEqual(facade.find("g1-cockpit-disabled")?.interaction,.disabled)
+    XCTAssertEqual(snapshot.element("cockpit.dom")?.visible, true)
+    XCTAssertEqual(snapshot.element("g1-transparent")?.visible, false)
+    XCTAssertEqual(snapshot.element("g1-transparent-child")?.visible, false)
     XCTAssertEqual(node.ink?.hex, "#112233FF")
     XCTAssertGreaterThan(try XCTUnwrap(node.frame).width, 0)
     XCTAssertGreaterThan(try XCTUnwrap(node.contrastAgainstParent), 10)

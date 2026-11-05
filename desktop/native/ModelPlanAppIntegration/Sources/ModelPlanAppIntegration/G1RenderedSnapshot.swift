@@ -413,7 +413,7 @@
           let layout = view.renderedReadoutBackingForChecks[id]
         else { continue }
         var node = G1RenderedElement("dock.readout." + id, role: "text")
-        node.frame = drawn(layout.frame, layout.glyphTransform)
+        node.frame = drawn(layout.frame, layout.frameTransform)
         node.text = value.text
         node.ink = .color(value.ink)
         node.visible = root.visible
@@ -436,7 +436,7 @@
       }
       for (id, alias) in view.renderedAliasBackingForChecks.sorted(by: { $0.key < $1.key }) {
         var node = G1RenderedElement("dock.alias." + id, role: "text")
-        node.frame = drawn(alias.frame, alias.glyphTransform)
+        node.frame = drawn(alias.frame, alias.frameTransform)
         node.text = alias.text
         node.ink = .color(alias.ink)
         node.visible = root.visible

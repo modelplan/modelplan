@@ -111,18 +111,23 @@
       let host = app.composition.dock
       host.refreshPresence()
       guard let place = host.edgePresentation?.placement else { return }
-      let local = point.map { CGPoint(x: $0.x - place.frame.minX, y: place.frame.maxY - $0.y) }
-      if let local, host.dockView.bounds.contains(local) {
-        let location = host.dockView.convert(local, to: nil)
+      let view = host.g1SnapshotInstrumentView
+      let local = point.map { point in
+        if let window = view.window { return view.convert(window.convertPoint(fromScreen: point), from: nil) }
+        return CGPoint(x: point.x - place.frame.minX + view.bounds.minX,
+          y: place.frame.maxY - point.y + view.bounds.minY)
+      }
+      if let local, view.bounds.contains(local) {
+        let location = view.convert(local, to: nil)
         if let event = NSEvent.mouseEvent(
           with: .mouseMoved, location: location, modifierFlags: [], timestamp: elapsed,
-          windowNumber: host.dockView.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
+          windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0,
           clickCount: 0, pressure: 0)
         {
-          host.dockView.mouseMoved(with: event)
+          view.mouseMoved(with: event)
         }
       } else {
-        host.dockView.nozzleEventDelegate?.hoverNozzle(nil)
+        view.nozzleEventDelegate?.hoverNozzle(nil)
       }
       host.interactionControllerForChecks?.refresh()
       app.g1RefreshObservationSources?()

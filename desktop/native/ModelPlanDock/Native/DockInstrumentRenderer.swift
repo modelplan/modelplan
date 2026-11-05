@@ -62,6 +62,10 @@ public struct DockRenderedTextInspection {
     public internal(set) var ink=DockInk(0,0,0,0)
     #endif
     public let frame: CGRect
+    #if DEBUG
+    /// Transform paired with the parent-space clip rectangle, before CoreText baseline/flip.
+    public internal(set) var frameTransform = CGAffineTransform.identity
+    #endif
     public let glyphTransform: CGAffineTransform
     /// This renderer paints text over the existing face; it paints no dedicated text backing.
     public let hasDedicatedBacking: Bool
@@ -253,11 +257,15 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             var ascent:CGFloat=0,descent:CGFloat=0,leading:CGFloat=0
             let advance=CTLineGetTypographicBounds(line,&ascent,&descent,&leading)
             metrics.append(DockGlyphMetric(text:value,font:CTFontCopyPostScriptName(font) as String,advance:advance,ascent:ascent,descent:descent,runFonts:Array(Set(runFonts)).sorted()))
+            #if DEBUG
+            let frameTransform=c.ctm
+            #endif
             c.saveGState();c.clip(to:rect)
             let baseline=rect.midY+(ascent-descent)/2
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
             var observation = DockRenderedTextInspection(frame:rect,glyphTransform:c.ctm,hasDedicatedBacking:false)
             #if DEBUG
+            observation.frameTransform=frameTransform
             let channels=color.components!
             observation.text=value;observation.ink = .init(Double(channels[0]),Double(channels[1]),Double(channels[2]),Double(channels[3]))
             #endif

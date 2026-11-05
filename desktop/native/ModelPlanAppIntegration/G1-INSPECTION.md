@@ -43,6 +43,10 @@ state. Native rectangles use points and report their parent flip basis. Screen-s
 roots are explicit. Web rectangles are actual viewport CSS-pixel client bounds; page zoom
 and device pixel ratio are reported separately. Raster rectangles use the completed drawing
 transform and backing scale, including transformed nozzle/readout passes.
+Text clip rectangles are paired with the pre-baseline `frameTransform`; the CoreText
+`glyphTransform` is recorded separately and must not be applied to that parent-space clip.
+Controlled pointer input uses the currently displayed edge instrument after topology recovery,
+including the same displayed view for leave events.
 
 The native tree is a synchronous main-actor read. Web data is the last completed current
 layout capture, with its own capture timestamp/generation. Readback is enabled only by the

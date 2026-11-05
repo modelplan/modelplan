@@ -279,6 +279,23 @@ private actor G1DEngine: EngineClient {
         await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
         XCTAssertNil(f.app.composition.renderedSnapshotForChecks().element("dock.readout."+id))
     }
+    func testGenericSnapshotTextFramesUseTheRenderersParentClipBasis() async throws {
+        let f=try await fixture(), id=G1DFixture.ids[0]
+        _ = try await f.editor.commit(SettingsB21Edit.alias(.init(subscriptionID:id,committed:"Alpha")))
+        let view=f.host.g1SnapshotInstrumentView
+        let readout=try XCTUnwrap(view.renderedReadoutBackingForChecks[id])
+        let alias=try XCTUnwrap(view.renderedAliasBackingForChecks[id])
+        let tree=f.app.composition.renderedSnapshotForChecks()
+        let bounds=try XCTUnwrap(view.presentedSkinForChecks).bounds
+        for (name,clip) in [("readout",readout.frame),("alias",alias.frame)] {
+            let actual=try XCTUnwrap(tree.element("dock."+name+"."+id)?.frame)
+            let expected=clip.offsetBy(dx:-bounds.minX,dy:-bounds.minY)
+            XCTAssertEqual(actual.minX,expected.minX,accuracy:0.00000001)
+            XCTAssertEqual(actual.minY,expected.minY,accuracy:0.00000001)
+            XCTAssertEqual(actual.width,expected.width,accuracy:0.00000001)
+            XCTAssertEqual(actual.height,expected.height,accuracy:0.00000001)
+        }
+    }
     func testGenericSnapshotCardReadsPaintedTextInkAndBackground() async throws {
         let f=try await fixture();try f.hover();f.tick(0.251)
         let card=f.host.card;card.layoutSubtreeIfNeeded()
@@ -329,6 +346,28 @@ private actor G1DEngine: EngineClient {
         let before=controls.elapsed;f.app.advanceClock(by:-1);XCTAssertEqual(controls.elapsed,before)
         try controls.setVerifiedSessionActivity([],delivery:delivery)
         XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().element("dock.nozzle."+id)?.attributes["workingInput"],"false")
+    }
+    func testGenericSnapshotPointerTargetsDisplayedAlternateAfterTopologyRecovery() async throws {
+        let f=try G1DFixture();addTeardownBlock{@MainActor in await f.close()}
+        _ = try await f.store.update{p in p.autoHide=false;p.motion = .on;for _ in 0..<16{p.onboarding.next()}}
+        let neighbour=DockDisplayArea(id:"neighbour",frame:.init(x:1440,y:0,width:1200,height:900),visibleFrame:.init(x:1440,y:80,width:1200,height:820))
+        let controls=G1InspectionControls(now:f.clock.wall,displays:f.displays+[neighbour],notificationLedgerURL:f.root.appendingPathComponent("isolated-ledger.json"))
+        let rows=try f.decode()
+        f.app=try EngineRowsEntry.makeForG1Checks(configuration:.init(executableURL:f.root.appendingPathComponent("not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:f.store,
+            controls:controls,bundleURL:f.root.appendingPathComponent("Synthetic.app")){_,consumer in G1WindowClient(consumer,rows:rows)}
+        await f.app.prepare();f.app.allowDockPresentation();await f.app.composition.start();f.app.advanceClock(by:0.5)
+        let place=try XCTUnwrap(f.host.edgePresentation?.placement)
+        let view=f.host.g1SnapshotInstrumentView,id=G1DFixture.ids[0]
+        XCTAssertEqual(f.editor.snapshot?.preferences.dockEdge,.right)
+        XCTAssertNotEqual(place.edge,.right,"The adjacent display forces recovery away from the saved edge")
+        XCTAssertFalse(view === f.host.dockView,"Use a genuinely different rendered instrument")
+        let anchor=try XCTUnwrap(view.interactionAnchor(id))
+        f.app.movePointer(to:.init(x:place.frame.minX+anchor.midX-view.bounds.minX,y:place.frame.maxY-anchor.midY+view.bounds.minY))
+        f.app.advanceClock(by:0.251)
+        XCTAssertFalse(f.host.card.isHidden,"Controlled hover must reach the displayed alternate view's owner")
+        XCTAssertTrue(try XCTUnwrap(f.app.renderedSnapshotForChecks().find("dock.card.text.name")?.text).contains("Synthetic Alpha"))
+        f.app.movePointer(to:.init(x:-5000,y:-5000));f.app.advanceClock(by:0.251)
+        XCTAssertTrue(f.host.card.isHidden,"Exit must be dispatched through the same displayed view")
     }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }

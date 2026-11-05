@@ -41,15 +41,15 @@ import CryptoKit
         XCTAssertThrowsError(try material.render(geometry: geometry, viewport: .zero, scale: 1))
         XCTAssertNil(material.renderedMaterialForChecks); XCTAssertTrue(material.renderedLayerRolesForChecks.isEmpty)
     }
-    private func working() throws -> (DockWorkingEffects, DockInstrumentView, EffectResourcePool) {
+    private func working(alias: String? = nil) throws -> (DockWorkingEffects, DockInstrumentView, EffectResourcePool) {
         let palette = Dictionary(uniqueKeysWithValues: ["body","case","track","notch","clockBack","clock","text","unknown","normal","warning","critical","alias","noticeAmber","noticeBlue","noticeWhite"].map { ($0, DockInk(0.5,0.5,0.5)) })
         let inks = try JSONSerialization.jsonObject(with: JSONEncoder().encode(palette))
         let json: [String: Any] = ["schemaVersion":1,"bounds":[[0,0],[96,96]],"bodyPolygon":[[0,0],[96,0],[96,96],[0,96]],"fixedLayers":[],"palette":inks,
             "text":["size":11,"weight":400],"aliasText":["size":10,"weight":400],
-            "stations":[["subscriptionID":"sub","centre":[48,30],"diameter":24,"readout":[[20,50],[56,16]],"eventRect":[[64,52],[12,12]],"glyphRect":[[36,18],[24,24]],"layers":[],"glyphs":[:],"outer":["radius":10,"width":2,"minimumVisibleFraction":0,"opacity":1],"inner":["radius":7,"width":1,"minimumVisibleFraction":0,"opacity":1],"clock":["radius":14,"dotRadius":0.5,"backWidth":1,"positions":10],"notchWidth":1,"caseInnerRadius":5]]]
+            "stations":[["subscriptionID":"sub","centre":[48,30],"diameter":24,"readout":[[20,50],[56,16]],"aliasRect":[[10,20],[30,14]],"eventRect":[[64,52],[12,12]],"glyphRect":[[36,18],[24,24]],"layers":[],"glyphs":[:],"outer":["radius":10,"width":2,"minimumVisibleFraction":0,"opacity":1],"inner":["radius":7,"width":1,"minimumVisibleFraction":0,"opacity":1],"clock":["radius":14,"dotRadius":0.5,"backWidth":1,"positions":10],"notchWidth":1,"caseInnerRadius":5]]]
         let skin = try JSONDecoder().decode(DockInstrumentSkin.self, from: JSONSerialization.data(withJSONObject: json))
         var input = DockInstrumentInput(id: "sub", name: "Synthetic", windows: [.init(id: "quota", period: .fiveHour, label: "5h", remainingPercent: 70, resetsAt: Date().addingTimeInterval(3600), durationSeconds: 18000)])
-        input.dataState = .fresh; input.working = DockWorkingSignal(subscriptionID: "sub", bindingVerified: true, fresh: true, observedOutput: true)
+        input.alias = alias; input.dataState = .fresh; input.working = DockWorkingSignal(subscriptionID: "sub", bindingVerified: true, fresh: true, observedOutput: true)
         let reading = try DockInstrumentProjection.evaluate(input, now: Date())
         let resources = try DockArtworkStore(root: FileManager.default.temporaryDirectory, manifest: .init(files: [:]))
         let view = DockInstrumentView(frame: skin.bounds)
@@ -58,6 +58,17 @@ import CryptoKit
         let provider = G1Frames()
         try driver.configure(view: view, skin: skin, readings: [reading], profile: .init(scale: 1), rotation: .init(period: 2), provider: { _ in provider })
         return (driver, view, pool)
+    }
+    func testRenderedTextClipAndTransformShareKnownParentCoordinates() throws {
+        let (_,view,_) = try working(alias:"Synthetic alias")
+        defer { view.dispose() }
+        let readout = try XCTUnwrap(view.renderedReadoutBackingForChecks["sub"])
+        let alias = try XCTUnwrap(view.renderedAliasBackingForChecks["sub"])
+        XCTAssertEqual(readout.frame,CGRect(x:20,y:50,width:56,height:16))
+        XCTAssertEqual(alias.frame,CGRect(x:10,y:20,width:30,height:14))
+        XCTAssertEqual(G1SnapshotReader.rasterRect(readout.frame,transform:readout.frameTransform,scale:1,pixelHeight:96),CGRect(x:20,y:50,width:56,height:16))
+        XCTAssertEqual(G1SnapshotReader.rasterRect(alias.frame,transform:alias.frameTransform,scale:1,pixelHeight:96),CGRect(x:10,y:20,width:30,height:14))
+        XCTAssertNotEqual(readout.frameTransform,readout.glyphTransform,"The CoreText glyph basis is separately recorded")
     }
     func testNormalCockpitRouteCanBeObservedWithoutOpeningWebKitOrAWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-headless-cockpit-" + UUID().uuidString)
