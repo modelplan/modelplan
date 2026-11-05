@@ -8,6 +8,43 @@ import ModelPlanWire
 
 @MainActor final class S11SettingsLabelsJourneyTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    func testNormalSettingsKeepsThresholdAndPersistsPercentageBasis() async throws {
+        for threshold in [25, 16] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s11-numbers-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+            let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+            let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            if threshold == 16 { _ = try await store.update { $0.redBelow = 16 } }
+            let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+            await app.prepare()
+            defer { app.composition.dock.close() }
+            let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.settingsHost.present(paneID: "dock", origin: .userInitiated)
+            let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+            defer { window.close() }
+            let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+            let critical = try XCTUnwrap(controller.choice(key: .redBelow))
+            XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["10", "16", "20", "25"])
+            XCTAssertEqual(critical.selectedItem?.representedObject as? String, String(threshold))
+            let basis = try XCTUnwrap(controller.choice(key: .percentageMode))
+            XCTAssertTrue(basis.isEnabled)
+            XCTAssertEqual(basis.selectedItem?.representedObject as? String, "remaining")
+            let used = try XCTUnwrap(basis.itemArray.firstIndex { ($0.representedObject as? String) == "used" })
+            basis.selectItem(at: used)
+            XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(basis.action), to: basis.target, from: basis))
+            await controller.waitForPendingSave()
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let saved = await reopened.snapshot()
+            XCTAssertEqual(saved.preferences.redBelow, threshold)
+            XCTAssertEqual(saved.preferences.percentageMode, .used)
+            await app.composition.stop()
+        }
+    }
     func testNormalSettingsUsesWidgetPercentageLabelsInBothLanguages() async throws {
         for locale in ["en", "zh-CN"] {
             let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s11-labels-" + UUID().uuidString)
