@@ -38,12 +38,24 @@ import XCTest
             XCTAssertEqual(first.document.settings.dockEdge, .right)
             XCTAssertEqual(first.document.settings.dockDisplayID, "synthetic-display")
             XCTAssertEqual(first.document.settings.dockAlongFraction, 0.5)
-            XCTAssertEqual(records, ["Legacy floating placement migrated to right edge"])
+            XCTAssertEqual(records, ["Settings migration completed"])
             let reopened = try File.open(f.location, hooks: hooks)
             XCTAssertEqual(reopened.document.settings.dockDisplayID, "synthetic-display")
             XCTAssertEqual(records.count, 1, "Reopening must not emit a second migration log")
             try f.unchanged()
         }
+    }
+    func testD19DoesNotLogFreshDefaultsOrFailedPublication() throws {
+        var records: [String] = []
+        let fresh = try Fixture()
+        _ = try File.open(fresh.location, hooks: .init(onMigrationLog: { records.append($0) }))
+        XCTAssertTrue(records.isEmpty)
+        let failed = try Fixture()
+        try failed.legacy("Beta07/settings-v1.json", #"{"schemaVersion":1,"preferences":{"dockEdge":"floating"}}"#)
+        struct SyntheticFailure: Error {}
+        XCTAssertThrowsError(try File.open(failed.location, hooks: .init(beforePublish: { throw SyntheticFailure() },
+            onMigrationLog: { records.append($0) })))
+        XCTAssertTrue(records.isEmpty, "A failed publish must not claim successful migration")
     }
     func testCoexistingLegacyFilesSelectSettingsAsOneGroupAndCoreIndependently() async throws {
         for product in [FoundationSettingsMigration.ProductIdentity.official, .community] {
