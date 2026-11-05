@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+import AppKit
+import XCTest
+import ModelPlanEngineClient
+import ModelPlanWire
+@testable import ModelPlanSettings
+@testable import ModelPlanAppIntegration
+
+@MainActor final class S11SettingsLabelsJourneyTests: XCTestCase {
+    private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    func testNormalSettingsUsesWidgetPercentageLabelsInBothLanguages() async throws {
+        for locale in ["en", "zh-CN"] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s11-labels-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+            let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+            let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
+            let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+            await app.prepare()
+            defer { app.composition.dock.close() }
+            let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.settingsHost.present(paneID: "rings", origin: .userInitiated)
+            let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+            defer { window.close() }
+            let settingsRows = descendants(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsNativeRow }
+            let percentage = try XCTUnwrap(settingsRows.first { $0.key == .showPercentages })
+            XCTAssertFalse(percentage.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(percentage.titleLabel.stringValue, locale == "en" ? "Quota Widget percentages" : "额度挂件百分比")
+            let choice = try XCTUnwrap(percentage.choices[""])
+            let titles = choice.itemArray.map(\.title)
+            XCTAssertTrue(titles.contains(locale == "en" ? "Shown" : "显示"))
+            XCTAssertTrue(titles.contains(locale == "en" ? "Hidden" : "隐藏"))
+            let sliver = try XCTUnwrap(settingsRows.first { $0.key == .sliverAlert })
+            XCTAssertEqual(sliver.titleLabel.stringValue, locale == "en" ? "Sliver alerts" : "隐藏条提示")
+            await app.composition.stop()
+        }
+    }
+}
