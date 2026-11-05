@@ -33,6 +33,7 @@
           }
         ],
         "credits": {
+          "unit": "money",
           "balance": 42.5,
           "observedAt": "2026-10-29T12:00:00.123456789Z"
         },

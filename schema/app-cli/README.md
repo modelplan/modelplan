@@ -270,3 +270,12 @@ An absent deadline means the member-refresh capability or live grant is absent;
 `null` means the grant exists but the deadline or account binding is unknown.
 A timestamp in the past means the reader is already due. Every request still
 rechecks the provider-wide floor, backoff, budget, and current consent.
+
+### Cockpit credit units
+
+`cockpitCreditUnitsV1` is an additive initialize capability used with
+`cockpitDetailsV1`. Only a client declaring both can receive the optional
+`details.subscriptions[].credits.unit` field. `credits` and `money` mean the
+selected admitted balance observation explicitly reported that unit; absence
+means unknown. The balance and unit are selected from the same observation.
+A unit does not establish a currency, drawing state, billing total or history.
