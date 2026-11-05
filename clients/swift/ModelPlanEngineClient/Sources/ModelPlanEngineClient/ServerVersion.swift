@@ -9,7 +9,8 @@ func meetsMinimumServerVersion(_ actual: String, minimum: String) -> Bool {
         guard !sections.isEmpty, sections.count <= 2 else { return nil }
         if sections.count == 2 {
             let metadata = sections[1]
-            guard !metadata.isEmpty, metadata.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 46 }) else { return nil }
+            guard !metadata.isEmpty, metadata.split(separator: ".", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty }),
+                  metadata.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45 || $0 == 46 }) else { return nil }
         }
         let components = sections[0].split(separator: ".", omittingEmptySubsequences: false)
         guard components.count == 3 else { return nil }

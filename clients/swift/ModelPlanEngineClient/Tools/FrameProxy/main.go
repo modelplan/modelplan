@@ -209,6 +209,8 @@ func main() {
 				data["serverVersion"] = "0.5.49"
 			case "server-malformed":
 				data["serverVersion"] = "unknown"
+			case "server-malformed-metadata":
+				data["serverVersion"] = "0.5.52+a..b"
 			case "server-supported":
 				data["serverVersion"] = "0.5.52"
 			}

@@ -297,7 +297,7 @@ extension RealBinaryTests {
     }
 
     func testMinimumCLIVersionAtRealHandshake() async throws {
-        for (mode, accepted) in [("server-too-old", false), ("server-malformed", false), ("server-supported", true)] {
+        for (mode, accepted) in [("server-too-old", false), ("server-malformed", false), ("server-malformed-metadata", false), ("server-supported", true)] {
             let binary = try binary(); let home = try home(); let probe = EventProbe()
             try cli(binary, home: home, arguments: ["consent", "init", "--json"])
             let executable = try proxy(home, binary: binary, mode: mode)
