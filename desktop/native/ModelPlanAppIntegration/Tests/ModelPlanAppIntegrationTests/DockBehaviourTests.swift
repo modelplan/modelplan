@@ -258,7 +258,7 @@ import ModelPlanSettings
         }
     }
 
-    func testPlacementProducerReportsActualSeamRecoveryAndClearsOnTopologyAndClose() async throws {
+    func testPlacementProducerKeepsInnerEdgeAndClearsOnTopologyAndClose() async throws {
         let url = try temporaryURL(), store = try SettingsStore(url: url)
         try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right; $0.autoHide = true }
         let persisted = try Data(contentsOf: url)
@@ -275,11 +275,11 @@ import ModelPlanSettings
         var facts: [(DockEdgePlacement?, Bool)] = []
         f.host.onPlacementObserved = { facts.append(($0, $1)) }
         await f.start()
-        let left = try XCTUnwrap(f.host.edgePresentation?.placement)
-        XCTAssertEqual(left.displayID, "main"); XCTAssertEqual(left.edge, .left)
-        XCTAssertEqual(facts.last?.0, left); XCTAssertEqual(facts.last?.1, true)
+        let right = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(right.displayID, "main"); XCTAssertEqual(right.edge, .right)
+        XCTAssertEqual(facts.last?.0, right); XCTAssertEqual(facts.last?.1, false)
         let panel = try f.panel(); XCTAssertTrue(panel.isVisible)
-        XCTAssertEqual(panel.frame, left.sliverFrame)
+        XCTAssertEqual(panel.frame, right.sliverFrame)
         let count = facts.count
         f.host.refreshPresence()
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -294,11 +294,11 @@ import ModelPlanSettings
         XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false); XCTAssertFalse(panel.isVisible)
         f.inputs.displays = [.init(id: "main", frame: CGRect(x: 0, y: 0, width: 1200, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1200, height: 850)), adjacent]
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        XCTAssertEqual(facts.last?.0?.edge, .left); XCTAssertEqual(facts.last?.1, true)
+        XCTAssertEqual(facts.last?.0?.edge, .right); XCTAssertEqual(facts.last?.1, false)
         f.host.close(); XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false)
         XCTAssertFalse(panel.isVisible); XCTAssertNil(f.host.nativePanel)
         XCTAssertEqual(try Data(contentsOf: url), persisted, "fallback and observations must never overwrite saved right intent")
-        print("placement-producer saved=right effective=left recovery=true restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
+        print("placement-producer saved=right effective=right recovery=false restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
     }
 
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
