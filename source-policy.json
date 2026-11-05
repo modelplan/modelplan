@@ -45,6 +45,10 @@
     "licenseFile": "desktop/official-visuals/LICENSE.md",
     "licenseText": "LICENSES/LicenseRef-ModelPlan-Visuals-1.0.txt",
     "binaries": {
+      "desktop/official-visuals/icons/previews/tray-outline-dark-1x.png": "edaf5333a3e798b21748db7017626570ad6bf3ca3d013b48856f2667bf42c034",
+      "desktop/official-visuals/icons/previews/tray-outline-dark-2x.png": "df93f36900ca50ca8f0f18f256bc9bbe34a8927ba7ed31cd6a9fcce3d8772e6e",
+      "desktop/official-visuals/icons/previews/tray-outline-light-1x.png": "420aa449ec8962d1b8345bd2473111294170ee4f756c38945bd4b29632e88344",
+      "desktop/official-visuals/icons/previews/tray-outline-light-2x.png": "29b7c2771a57e94ec2c7a42273c8a7e8b8734ee26657aea9033c1df9e8d74fb3",
       "desktop/official-visuals/icons/tray-outline.png": "4cca64d77f4a3d80e33b37398a1ef2502619f8107263d819ff86ad8ba19d1e6e",
       "desktop/official-visuals/icons/tray-outline@2x.png": "44355868b3f7a30bb828d62d1ab3a276d86bddbb2b8e4c9dc45633dcf42d3da8",
       "desktop/official-visuals/cockpit/strip/assets/close-hover@3x.png": "26b831ff4bf6ca443cfb5df9a5bd8576ecf31b944820ed88f5710312f3de21cc",

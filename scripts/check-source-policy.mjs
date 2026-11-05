@@ -105,6 +105,14 @@ for (const p of tracked) {
   assert.ok(spdxReserved.test(text), `reserved visual must carry SPDX-License-Identifier: ${reserved.license}: ${p}`);
   assert.ok(!/SPDX-License-Identifier"?:\s*"?MIT\b/.test(text), `reserved visual must not carry an MIT header: ${p}`);
 }
+// Native status templates are explicit packaged copies of the reviewed reserved rasters.
+for (const [packaged, canonical] of [
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray.png", "desktop/official-visuals/icons/tray-outline.png"],
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray@2x.png", "desktop/official-visuals/icons/tray-outline@2x.png"],
+]) {
+  assert.ok(tracked.includes(packaged) && tracked.includes(canonical), `missing native tray copy: ${packaged}`);
+  assert.deepEqual(await read(packaged), await read(canonical), `native tray copy differs: ${packaged}`);
+}
 // The community build never reads the reserved prefix: only build.mjs's --official branch names it.
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
