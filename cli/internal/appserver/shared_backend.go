@@ -158,7 +158,21 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
-		appendReportRows(&in, report, false)
+		projectionReport := report
+		if admission.Allows("codex", consent.Local) {
+			// The generic native adapter can report the ungranted runtime
+			// route as off even when local history is independently allowed.
+			// Do not turn that route-specific status into a tool-wide veto.
+			sources := make([]quota.SourceStatus, 0, len(report.Sources))
+			for _, source := range report.Sources {
+				if source.Source == "native:codex" && source.Status == "off" && source.Reason == "reader-consent-or-privacy" {
+					continue
+				}
+				sources = append(sources, source)
+			}
+			projectionReport.Sources = sources
+		}
+		appendReportRows(&in, projectionReport, false)
 	} else {
 		appendReportRows(&in, quota.ReadDeclared(p, in.Now), true)
 	}
@@ -180,6 +194,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 				// reader registry. Its absence from that registry is not a veto of
 				// the separately admitted runtime or local-history routes.
 				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
+					continue
+				}
+				// A denied generic runtime route must not veto the independently
+				// admitted local-history route. ReadPermitted still checks each
+				// scope and the row builder enforces tool denial and cleanup.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows("codex", consent.Local) {
 					continue
 				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
