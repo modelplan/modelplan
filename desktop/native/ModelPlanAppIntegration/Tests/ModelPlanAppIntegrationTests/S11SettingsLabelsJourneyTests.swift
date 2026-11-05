@@ -60,9 +60,11 @@ import ModelPlanWire
             await app.prepare()
             defer { app.composition.dock.close() }
             let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
-            await app.settingsHost.present(paneID: "rings", origin: .userInitiated)
+            await app.settingsHost.present(paneID: "dock", origin: .userInitiated)
             let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
             defer { window.close() }
+            let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+            XCTAssertEqual(controller.selectedPaneID, "dock")
             let settingsRows = descendants(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsNativeRow }
             let percentage = try XCTUnwrap(settingsRows.first { $0.key == .showPercentages })
             XCTAssertFalse(percentage.isHiddenOrHasHiddenAncestor)
@@ -73,8 +75,7 @@ import ModelPlanWire
             XCTAssertTrue(titles.contains(locale == "en" ? "Hidden" : "隐藏"))
             let sliver = try XCTUnwrap(settingsRows.first { $0.key == .sliverAlert })
             XCTAssertEqual(sliver.titleLabel.stringValue, locale == "en" ? "Strip alerts" : "隐藏条提示")
-            let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
-            controller.selectPane("position")
+            controller.selectPane("dock")
             let positionRows = descendants(try XCTUnwrap(window.contentView)).compactMap { $0 as? SettingsNativeRow }
             let widget = try XCTUnwrap(positionRows.first { $0.key == .showDock })
             XCTAssertFalse(widget.isHiddenOrHasHiddenAncestor)
