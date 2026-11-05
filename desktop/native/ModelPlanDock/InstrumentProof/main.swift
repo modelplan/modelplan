@@ -506,8 +506,8 @@ struct NativeFailure:Error {let message:String}
     try require(interaction.presentation?.card == .hidden && interactionScheduler.deadline==0.25,"native card controller arms250ms once")
     let retiredCardTimer=interactionScheduler.saved[0]
     interactionTime=0.25;interactionScheduler.fire();try require(interaction.presentation?.card == .hover("a"),"deadline revalidates current hover/content")
-    interaction.click("a");interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
-    try require(interaction.presentation?.card == .pinned("a"),"native cockpit suppression retains pin model")
+    interactionTime=10;interactionEnv.parentExpanded=false;interactionEnv.insideShared=false;interaction.refresh()
+    try require(interaction.presentation?.card == .hidden,"native cockpit suppression withdraws the card")
     interactionEnv.catalogue=["b","c"];interaction.refresh();try require(interaction.presentation?.card == .hidden,"removed card target retired")
     interaction.stop();let stoppedCardPaints=interactionPaints;retiredCardTimer()
     try require(interactionPaints==stoppedCardPaints && interactionScheduler.pending==nil,"old hover callback cannot reopen stopped card")
@@ -556,11 +556,11 @@ struct NativeFailure:Error {let message:String}
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
     let cardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[.init(id:"extra",kind:.extraQuota,label:"Full extra name",value:"0%",remainingFraction:0,tone:.critical)])
     let templateBrand=NSImage(size:NSSize(width:20,height:20));templateBrand.isTemplate=true
-    try cardSurface.apply(cardContent,pinned:true,brandImage:templateBrand);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
+    try cardSurface.apply(cardContent,brandImage:templateBrand);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
     let cardHeader=(cardSurface.subviews.first as! NSStackView).arrangedSubviews.first as! NSStackView
     try require((cardHeader.arrangedSubviews.first as? NSImageView)?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
     let unsafeCardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
-    do{try cardSurface.apply(unsafeCardContent,pinned:true);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
+    do{try cardSurface.apply(unsafeCardContent);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
     cardSurface.dispose()
     let traySurface=DockOverflowTrayView(frame:CGRect(x:0,y:0,width:160,height:80))
     try traySurface.apply([.init(id:"a",label:"Synthetic",value:"--",dragHelp:"Synthetic drag help")]);try require(!traySurface.subviews.isEmpty,"neutral overflow tray is available without official source")
