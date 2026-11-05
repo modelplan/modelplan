@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanCore
@@ -65,7 +66,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -92,6 +93,7 @@ private actor EntrySyntheticClient: EngineClient {
         account["valueState"] = "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
+        if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": "unknown"] }
         session["id"] = "session:18000:main:main"; session["role"] = "session"
         session["durationSeconds"] = 18000; session["limitKey"] = "main"; session["poolKey"] = "main"
         session.removeValue(forKey: "modelScope"); session["current"] = true
@@ -234,6 +236,58 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 75, reserveBalance: 19_613.9573653333)
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        var pointer = CGPoint(x: 700, y: 450)
+        var elapsed = 0.0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+
+        let dock = app.composition.dock, view = dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + nozzle.midX - view.bounds.minX,
+            y: placement.frame.maxY - nozzle.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+
+        func field(_ root: NSView, id: String) -> NSTextField? {
+            if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + id { return field }
+            return root.subviews.lazy.compactMap { field($0, id: id) }.first
+        }
+        func assertVisible(_ field: NSTextField, text: String) throws {
+            XCTAssertEqual(field.stringValue, text)
+            XCTAssertFalse(field.isHiddenOrHasHiddenAncestor)
+            let font = try XCTUnwrap(field.font)
+            let glyphs = (text as NSString).size(withAttributes: [.font: font])
+            let visible = dock.card.convert(field.visibleRect, from: field).intersection(dock.card.bounds)
+            XCTAssertGreaterThanOrEqual(visible.width, floor(glyphs.width), "\(text) needs visible horizontal space")
+            XCTAssertGreaterThanOrEqual(visible.height, floor(glyphs.height), "\(text) needs visible vertical space")
+        }
+        for (language, title) in [(SettingsLanguage.english, "Reserve"), (.chinese, "储备")] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let name = try XCTUnwrap(field(dock.card, id: "row.credits.label"))
+            let value = try XCTUnwrap(field(dock.card, id: "row.credits.value"))
+            try assertVisible(name, text: title)
+            try assertVisible(value, text: "19,614")
+            XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
+                dock.card.convert(value.bounds, from: value).minX)
+        }
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
