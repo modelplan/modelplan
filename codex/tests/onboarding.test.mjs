@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -190,11 +190,17 @@ test('a failing CLI run is recorded as a failure, never as a working hook', asyn
   assert.doesNotMatch(text, /设置完整/);
   await writeFile(own, script(pin.version, 'exit 0'));
   hook(h);
+  // The ago text rounds the heartbeat's mtime against the real clock, so an exact "0分前" flips
+  // to "1分前" after a 30 s stall. Park the heartbeat whole seconds in the middle of the hour
+  // bucket: "2时前" holds until the render trails the mtime write by 30 minutes.
+  const beat = new Date(Math.floor((Date.now() - 2 * 3600000) / 1000) * 1000);
+  await utimes(join(h, '.cache/modelplan-codex/hook-ran'), beat, beat);
+  await utimes(join(h, '.cache/modelplan-codex/hook-ok'), beat, beat);
   const ok = await setupStatus({ home: h, find: () => own });
   assert.equal(ok.hook.result, 'ok');
   assert.ok(ok.hook.lastSuccess);
   assert.match(renderQuota({ status: 'unavailable' }, 'zh', { status: 'ok', events: [] }, { cli: ok.cli, hook: ok.hook, advice: { status: 'ok' }, adviceEvents: 0 }),
-    /设置完整：CLI [\d.]+ · 钩子 0分前在本机运行（任一对话）· 提醒计算正常，当前没有需要提醒的事/);
+    /设置完整：CLI [\d.]+ · 钩子 2时前在本机运行（任一对话）· 提醒计算正常，当前没有需要提醒的事/);
   await rm(h, { recursive: true });
 });
 

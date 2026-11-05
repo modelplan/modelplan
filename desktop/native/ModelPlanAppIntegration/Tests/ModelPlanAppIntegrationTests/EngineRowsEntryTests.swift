@@ -9,13 +9,17 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 private actor RowsEntryClient: EngineClient {
-    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool {
+        context.sessionID == "synthetic-entry" && context.floor.storeEpoch == "synthetic-entry" &&
+            context.floor.generation == 1 && context.revision == 1
+    }
     let store: EngineStore
     let rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
         return context
     }
@@ -122,7 +126,7 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertTrue(try XCTUnwrap(window.window?.contentView).subviews.contains { find($0, "settings.scopeConsent") })
         await window.prepare();window.selectPane("subscriptions")
         let shown=await window.acceptanceCheckpoint()
-        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue,SettingKey.source.rawValue]
+        let retained:Set<String>=[SettingKey.visible.rawValue,SettingKey.alias.rawValue]
         let replaced:Set<String>=[SettingKey.detectedReaders.rawValue,SettingKey.optionalReaders.rawValue]
         XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 per-subscription controls must remain")
         XCTAssertTrue(Set(shown.settings?.visibleKeys ?? []).isDisjoint(with:replaced),"U8 replaces only the legacy consent rows")
@@ -141,6 +145,10 @@ private actor RowsEntryClient: EngineClient {
         let searched=await window.acceptanceCheckpoint()
         XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isSuperset(of:retained),"SET-9-16 controls must remain searchable by subscription")
         XCTAssertTrue(Set(searched.settings?.visibleKeys ?? []).isDisjoint(with:replaced))
+        search.stringValue=""; window.controlTextDidChange(Notification(name:NSControl.textDidChangeNotification,object:search))
+        window.selectPane("diagnostics")
+        let diagnostics=await window.acceptanceCheckpoint()
+        XCTAssertTrue(Set(diagnostics.settings?.visibleKeys ?? []).contains(SettingKey.source.rawValue), "Source information moved to Diagnostics")
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertNil(entry.controller.facts, "Private UI must clear on the accepted delivery turn")
         XCTAssertFalse(entry.controller.canMutate)
@@ -199,14 +207,23 @@ private actor RowsEntryClient: EngineClient {
             activateSettings: { activationCount += 1 })
         XCTAssertNotNil(app.composition.dock.showSettings, "Normal Dock Settings must not be a nil action")
         XCTAssertNotNil(app.composition.dock.showConsole, "Normal Dock Console must not be a nil action")
-        await app.prepare(); await app.composition.start()
+        await app.prepare()
+        XCTAssertTrue(app.dockHelpInstalled, "normal entry installs the real Help presenter and Dock binding")
+        await app.composition.start()
         app.composition.dock.showSettings?(); await settingsSurface.waitForShow()
         XCTAssertEqual(settingsSurface.shown, 1); XCTAssertEqual(activationCount, 1)
         app.composition.dock.showConsole?(); XCTAssertEqual(consoleSurface?.shown, 1)
         XCTAssertEqual(consoleSurface?.lastRows, ["codex"])
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        XCTAssertTrue(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title.contains("Engine-only reason") })
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("Engine-only reason"))
+        let settingsSnapshot = try XCTUnwrap(app.settingsHost.application.editor.snapshot)
+        let settingsRows = try SettingsCatalogue.rows(preferences: settingsSnapshot.preferences,
+            context: app.settingsHost.application.editor.context, paneID: nil)
+        guard case .subscriptions(let sources) = try XCTUnwrap(settingsRows.first { $0.key == .source }).value else {
+            return XCTFail("Settings must expose subscription source status")
+        }
+        XCTAssertTrue(sources.contains { $0.id == "0123456789abcdef" })
         XCTAssertNil(app.composition.dock.nativePanel)
         // Simulate tracking while retaining the actual instances that were already displayed.
         let trackedStatus = try XCTUnwrap(app.liveStatusMenu)
@@ -217,6 +234,12 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertFalse(trackedDock === retainedButUntrackedDock, "A retained old menu must remain independently scrubbed")
         let unrelated = NSMenu()
         unrelated.addItem(withTitle: "Unrelated synthetic title", action: nil, keyEquivalent: "")
+        XCTAssertFalse(trackedStatus.items.contains { $0.title.contains("Engine-only reason") })
+        XCTAssertFalse(trackedDock.items.contains { $0.title.contains("Engine-only reason") })
+        // Defense in depth: retained owned menu items must still be scrubbed if a stale item exists.
+        for menu in [trackedStatus, trackedDock, retainedButUntrackedDock] {
+            menu.addItem(withTitle: "Engine-only reason", action: nil, keyEquivalent: "")
+        }
         let retainedItems = trackedStatus.items + trackedDock.items + retainedButUntrackedDock.items
         let retainedReading = try XCTUnwrap(retainedItems.first { $0.title.contains("Engine-only reason") })
         retainedReading.attributedTitle = NSAttributedString(string: "Engine-only reason")

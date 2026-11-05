@@ -165,7 +165,7 @@ import AppKit
             if !sub.plan.isEmpty { label(.init(sub.plan, sub.plan)) }
             let visible = !(editor.snapshot?.preferences.subscriptions.hiddenIDs.contains(sub.reference) ?? false)
             let known = editor.context.subscriptions.contains { $0.id == sub.reference }
-            let toggle = button(visible ? .init("Visible in Dock and Cockpit", "在挂件与驾驶舱显示") : .init("Hidden in Dock and Cockpit", "在挂件与驾驶舱隐藏"),
+            let toggle = button(visible ? .init("Visible in Quota Widget and Cockpit", "在额度挂件与驾驶舱显示") : .init("Hidden in Quota Widget and Cockpit", "在额度挂件与驾驶舱隐藏"),
                 id: "connections.visibility." + sub.reference,
                 enabled: known && !editor.isSaving && !preferenceSaving && !controller.isBusy) { [weak self] in
                 guard let self, !self.preferenceSaving else { return }

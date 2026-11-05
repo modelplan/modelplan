@@ -110,6 +110,17 @@ jobs:
           path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
           retention-days: 14
 
+  native-partition:
+    if: ${{ !inputs.mac_ci_probe }}
+    # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
+    # job: a class may run on the ordinary Mac runner only if its source uses no window server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
+      - run: python3 desktop/native/tools/ci/native_test_partition.py check
+
   app-smoke:
     permissions:
       contents: read
@@ -168,14 +179,22 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@ef0957b0182c28ef26a7e3ff22e9734b43816c02
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: native
       os: ${{ matrix.os }}
 
+  native-headless:
+    name: native-headless (macos-latest)
+    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    with:
+      task: native-headless
+      os: macos-latest
+
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cce044fa9f2f2b48b21693e2b85744a9b1fe2584
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest

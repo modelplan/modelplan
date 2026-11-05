@@ -34,7 +34,7 @@ import ModelPlanSettings
             elapsedClock: { elapsed }, edgeScheduling: DockWakeScheduler())
             defer { host.close() }
             let store = try SettingsStore(url: folder.appendingPathComponent("settings.json"))
-            try await store.update { $0.size = size; $0.dockEdge = edge }
+            try await store.update { $0.size = size; $0.dockEdge = edge; $0.autoHide = true }
             let c = SettingsApplicationCoordinator(store: store) { host.apply($0) }
             await c.reload(); host.setPresentationAllowed(true)
             let placement = try XCTUnwrap(host.edgePresentation?.placement)

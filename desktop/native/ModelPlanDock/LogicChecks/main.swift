@@ -108,11 +108,16 @@ do {
         }
         for protection in 0..<4 {
             var state = DockVisibilityState(), input = DockPresence(); input.pointer = .outside; input.recordedLocks = [.drag,.menu,.keyboard]
-            switch protection {case 0:input.mouseButtonDown=true;case 1:input.menuActuallyOpen=true;case 2:input.ignitionHeld=true;default:input.cardPinned=true}
+            switch protection {case 0:input.mouseButtonDown=true;case 1:input.menuActuallyOpen=true;case 2:input.ignitionHeld=true;default:input.cardFocused=true}
             _ = try state.step(input, at: 0, intent: .reveal); _ = try state.step(input, at: 1)
             try expect(try state.step(input, at: 10).state == .expanded, "genuine protection remains")
-            input.mouseButtonDown=false;input.menuActuallyOpen=false;input.ignitionHeld=false;input.cardPinned=false
-            try expect(try state.step(input, at: 11).forcedHide, "release permits overdue stale recovery")
+            input.mouseButtonDown=false;input.menuActuallyOpen=false;input.ignitionHeld=false;input.cardFocused=false
+            if protection == 3 {
+                try expect(try state.step(input, at: 11).state == .expanded, "focus release starts a new leave grace")
+                try expect(try state.step(input, at: 13.1).forcedHide, "stale locks recover after the post-focus grace")
+            } else {
+                try expect(try state.step(input, at: 11).forcedHide, "release permits overdue stale recovery")
+            }
         }
     }
     try test("visibility: suppression, lifecycle and invalid clock/config") {
@@ -455,13 +460,20 @@ do {
         try card.step(catalogue:["a","b"],hoveredID:"a",insideShared:true,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:0.25)
         try expect(card.visibility == .hover("a"),"entry deadline shows scoped card")
         try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:true,menuActuallyOpen:false,at:1)
-        try expect(card.visibility == .hover("a") && card.nextDeadline==nil,"auto-hide Dock owns500ms corridor decision, no competing card leave timer")
-        try card.click("a",at:1);try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
-        try expect(card.visibility == .pinned("a"),"cockpit suppression does not unpin")
+        try expect(card.visibility == .hover("a") && card.nextDeadline==1.25,"card owns its bounded leave grace even with an expanded widget")
+        try card.step(catalogue:["a","b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:20)
+        try expect(card.visibility == .hidden,"parent suppression closes the hover card")
         try card.step(catalogue:["b"],hoveredID:nil,insideShared:false,parentOwnsHide:true,parentExpanded:false,menuActuallyOpen:false,at:21)
         try expect(card.visibility == .hidden,"removed subscription cannot retain a card")
     }
-    try test("B08 independent card:leave/menu protection/click toggle without a repeat loop"){
+    try test("refresh sweep preserves the admitted endpoint and honors Reduce Motion") {
+        try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: false) == 0, "starts empty")
+        try expect(abs((DockRefreshSweep.fraction(elapsed: 0.3, target: 0.75, reduceMotion: false) ?? 0) - 0.65625) < 0.000001, "cubic ease-out midpoint")
+        try expect(DockRefreshSweep.fraction(elapsed: 0.6, target: 0.75, reduceMotion: false) == 0.75, "ends at admitted value")
+        try expect(DockRefreshSweep.fraction(elapsed: 0, target: 0.75, reduceMotion: true) == 0.75, "Reduce Motion is static")
+        try expect(DockRefreshSweep.fraction(elapsed: 0, target: .nan, reduceMotion: false) == nil, "invalid values are rejected")
+    }
+    try test("B08 independent card:leave and menu protection without a repeat loop"){
         var card=DockCardInteraction()
         try card.step(catalogue:["a"],hoveredID:"a",insideShared:true,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:0)
         try card.step(catalogue:["a"],hoveredID:"a",insideShared:true,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:0.25)
@@ -471,9 +483,8 @@ do {
         try expect(card.nextDeadline==6.25,"standalone retains existing250ms leave grace")
         try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:6.25)
         try expect(card.visibility == .hidden,"standalone leave hides")
-        try card.click("a",at:7);try card.click("a",at:8)
-        try expect(card.visibility == .hidden,"same pinned click toggles closed")
-        try rejects(.invalidTime){try card.click("a",at:7)}
+        card.dismiss();try expect(card.visibility == .hidden,"dismiss closes the card")
+        try rejects(.invalidTime){try card.step(catalogue:["a"],hoveredID:nil,insideShared:false,parentOwnsHide:false,parentExpanded:true,menuActuallyOpen:false,at:1)}
     }
     try test("B08 nozzle:along threshold,canonical preview,RM and single host order request"){
         let prefs=DockSubscriptionPreferences(order:["missing","a","b","c","d"]),catalogue=["a","b","c","d"]
