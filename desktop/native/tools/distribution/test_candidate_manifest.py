@@ -13,15 +13,23 @@ class CandidateManifestTests(unittest.TestCase):
             root = Path(d)
             archive, info, manifest = root / 'app.zip', root / 'Info.plist', root / 'manifest.json'
             archive.write_bytes(b'synthetic package')
-            info.write_bytes(plistlib.dumps({'ModelPlanCockpitEntryEnabled': True}))
+            metadata = {'ModelPlanCockpitEntryEnabled': True, 'CFBundleExecutable': 'ModelPlanCommunity',
+                        'CFBundleIdentifier': 'org.modelplan.community.swift.scaffold', 'LSMinimumSystemVersion': '15.0'}
+            info.write_bytes(plistlib.dumps(metadata))
             sha = 'a' * 40
-            manifest.write_text(json.dumps(create(archive, info, sha)))
+            manifest.write_text(json.dumps(create(archive, info, sha, 'c' * 40, '123', '2')))
             verify(archive, manifest, sha)
             with self.assertRaises(ValueError):
                 verify(archive, manifest, 'b' * 40)
             archive.write_bytes(b'changed')
             with self.assertRaises(ValueError):
                 verify(archive, manifest, sha)
-            info.write_bytes(plistlib.dumps({'ModelPlanCockpitEntryEnabled': False}))
+            metadata['CFBundleExecutable'] = 'other'
+            info.write_bytes(plistlib.dumps(metadata))
             with self.assertRaises(ValueError):
-                create(archive, info, sha)
+                create(archive, info, sha, 'c' * 40, '123', '2')
+            metadata['CFBundleExecutable'] = 'ModelPlanCommunity'
+            metadata['ModelPlanCockpitEntryEnabled'] = False
+            info.write_bytes(plistlib.dumps(metadata))
+            with self.assertRaises(ValueError):
+                create(archive, info, sha, 'c' * 40, '123', '2')

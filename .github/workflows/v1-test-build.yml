@@ -6,13 +6,20 @@ on:
         description: 'Same-repository PR head ref, e.g. refs/pull/123/head'
         type: string
         required: true
+      expected_sha:
+        description: 'Exact 40-character PR head SHA'
+        type: string
+        required: true
   schedule:
     - cron: '17 3 * * *'
 permissions:
   contents: read
+concurrency:
+  group: v1-test-${{ github.event_name == 'schedule' && 'main' || inputs.pr_head }}
+  cancel-in-progress: false
 jobs:
   build:
-    if: github.repository == 'modelplan/modelplan'
+    if: github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main'
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:
@@ -21,12 +28,20 @@ jobs:
       pull-requests: read
     outputs:
       source: ${{ steps.source.outputs.sha }}
+      pr_number: ${{ steps.source.outputs.pr_number }}
     steps:
+      - name: Checkout reviewed control tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: control
+          persist-credentials: false
       - name: Resolve immutable source
         id: source
         env:
           EVENT: ${{ github.event_name }}
           PR_HEAD: ${{ inputs.pr_head }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
           SCHEDULED_SHA: ${{ github.sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -37,17 +52,11 @@ jobs:
             [[ "$PR_HEAD" =~ ^refs/pull/([1-9][0-9]*)/head$ ]]
             number="${BASH_REMATCH[1]}"
             pr=$(gh api "repos/modelplan/modelplan/pulls/$number")
-            echo "$pr" | jq -e '.state == "open" and .base.ref == "main" and .head.repo.full_name == "modelplan/modelplan"' >/dev/null
-            sha=$(echo "$pr" | jq -r '.head.sha')
+            sha=$(printf '%s' "$pr" | python3 control/desktop/native/tools/distribution/candidate_source.py "$EXPECTED_SHA")
+            echo "pr_number=$number" >> "$GITHUB_OUTPUT"
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - name: Checkout reviewed control tools
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: control
-          persist-credentials: false
       - name: Checkout exact candidate source
         uses: actions/checkout@v4
         with:
@@ -93,28 +102,82 @@ jobs:
           npm run build --prefix subject/desktop/cockpit
       - name: Build ad-hoc test app through neutral packaging
         run: bash subject/desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/candidate" --test-build
-      - name: Independently check output and archive
-        env:
-          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+      - name: Archive untrusted build output
         run: |
-          set -euo pipefail
-          app="$RUNNER_TEMP/candidate/ModelPlan Community.app"
-          python3 control/desktop/native/tools/distribution/check_app_architectures.py --app "$app" --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$MODELPLAN_CREDENTIAL_AGENT_SHA256"
-          python3 control/desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --repo subject --edition community --bundle "$app/Contents/Resources/Cockpit"
-          codesign --verify --deep --strict "$app"
-          (cd subject/cli && go run ./internal/releaseguard/cmd --binary "$app/Contents/MacOS/ModelPlanCommunity")
-          mkdir "$RUNNER_TEMP/output"
-          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/output/ModelPlan-Community-test.zip"
-          python3 control/desktop/native/tools/distribution/candidate_manifest.py create --source "$SOURCE_SHA" --archive "$RUNNER_TEMP/output/ModelPlan-Community-test.zip" --info "$app/Contents/Info.plist" --manifest "$RUNNER_TEMP/output/manifest.json"
+          mkdir "$RUNNER_TEMP/raw-output"
+          ditto -c -k --keepParent "$RUNNER_TEMP/candidate/ModelPlan Community.app" "$RUNNER_TEMP/raw-output/untrusted.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: modelplan-v1-test-${{ steps.source.outputs.sha }}
+          name: unvalidated-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/raw-output/untrusted.zip
+          if-no-files-found: error
+          retention-days: 1
+  validate:
+    needs: build
+    if: github.repository == 'modelplan/modelplan' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout admitted main workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: control
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: unvalidated-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: raw-output
+      - name: Reject a PR head that advanced during the build
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.build.outputs.pr_number }}
+          SOURCE_SHA: ${{ needs.build.outputs.source }}
+        run: |
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          pr=$(gh api "repos/modelplan/modelplan/pulls/$PR_NUMBER")
+          printf '%s' "$pr" | python3 control/desktop/native/tools/distribution/candidate_source.py "$SOURCE_SHA" >/dev/null
+      - name: Independently validate and issue receipt
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.source }}
+          CONTROL_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C control rev-parse HEAD)" = "$CONTROL_SHA"
+          archive="$GITHUB_WORKSPACE/raw-output/untrusted.zip"
+          python3 control/desktop/native/tools/distribution/candidate_archive.py "$archive"
+          mkdir "$RUNNER_TEMP/unpacked"
+          ditto -x -k "$archive" "$RUNNER_TEMP/unpacked"
+          app="$RUNNER_TEMP/unpacked/ModelPlan Community.app"
+          helper_sha=$(python3 -c 'import json; print(json.load(open("control/desktop/native/credential-agent-artifact-pin.json"))["sha256"])')
+          python3 control/desktop/native/tools/distribution/check_app_architectures.py --app "$app" --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$helper_sha"
+          python3 control/desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --repo control --edition community --bundle "$app/Contents/Resources/Cockpit"
+          codesign --verify --deep --strict "$app"
+          LC_ALL=C codesign -dv "$app" 2>&1 | grep -Fx "Signature=adhoc"
+          (cd control/cli && go run ./internal/releaseguard/cmd --binary "$app/Contents/MacOS/ModelPlanCommunity")
+          mkdir "$RUNNER_TEMP/output"
+          cp "$archive" "$RUNNER_TEMP/output/ModelPlan-Community-test.zip"
+          python3 control/desktop/native/tools/distribution/candidate_manifest.py create --source "$SOURCE_SHA" --control "$CONTROL_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --archive "$RUNNER_TEMP/output/ModelPlan-Community-test.zip" --info "$app/Contents/Info.plist" --manifest "$RUNNER_TEMP/output/manifest.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modelplan-v1-test-${{ needs.build.outputs.source }}
           path: ${{ runner.temp }}/output/
           if-no-files-found: error
           retention-days: 7
   draft-prerelease:
     if: github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan'
-    needs: build
+    needs: [build, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
