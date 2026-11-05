@@ -22,6 +22,9 @@ class SyntheticPorts:
         return result
 
     def isolation(self, config): return self.call("isolation", {"enforced": True})
+    def start_monitor(self, config, isolation): return self.call("monitor-start", {"stopsOnHit": True})
+    def check_monitor(self, monitor): return self.call("monitor-check", {"status": "clear"})
+    def stop_monitor(self, monitor): return self.call("monitor-stop", {"status": "clear"})
     def admit(self, config, isolation): return self.call("booking", {"admitted": True})
     def start_guardian(self, config, admission): return self.call("guardian", object())
     def launch(self, config, isolation, admission, guardian): return self.call("launch", object())
@@ -41,7 +44,7 @@ class CandidateFlowTests(unittest.TestCase):
     def test_synthetic_ports_cover_order_and_receipt(self):
         ports = SyntheticPorts()
         result = candidate_flow.run(self.config, ports)
-        self.assertEqual(ports.calls, ["isolation", "booking", "guardian", "launch", "capture", "close", "cleanup", "finish"])
+        self.assertEqual(ports.calls, ["isolation", "monitor-start", "booking", "guardian", "monitor-check", "launch", "monitor-check", "capture", "monitor-check", "close", "cleanup", "finish", "monitor-stop"])
         self.assertEqual(result["outcome"], "pass")
         self.assertEqual(result["candidateSHA256"], self.config["archiveSHA256"])
 
@@ -51,7 +54,7 @@ class CandidateFlowTests(unittest.TestCase):
                 ports = SyntheticPorts(failure)
                 result = candidate_flow.run(self.config, ports)
                 self.assertEqual(result["outcome"], "not-run")
-                self.assertEqual(ports.calls[-3:], ["close", "cleanup", "finish"])
+                self.assertEqual(ports.calls[-4:], ["close", "cleanup", "finish", "monitor-stop"])
 
     def test_guardian_lost_after_launch_uses_independent_recovery(self):
         class GuardianLost(SyntheticPorts):
@@ -61,14 +64,14 @@ class CandidateFlowTests(unittest.TestCase):
         ports = GuardianLost()
         result = candidate_flow.run(self.config, ports)
         self.assertEqual(result["outcome"], "not-run")
-        self.assertEqual(ports.calls[-4:], ["guardian-lost", "close", "cleanup", "finish"])
+        self.assertEqual(ports.calls[-5:], ["guardian-lost", "close", "cleanup", "finish", "monitor-stop"])
 
     def test_rejected_admission_never_finishes_a_booking(self):
         class Refused(SyntheticPorts):
             def admit(self, config, isolation): return self.call("booking", {"admitted": False})
         ports = Refused()
         self.assertEqual(candidate_flow.run(self.config, ports)["outcome"], "not-run")
-        self.assertEqual(ports.calls, ["isolation", "booking"])
+        self.assertEqual(ports.calls, ["isolation", "monitor-start", "booking", "monitor-stop"])
 
     def test_no_booking_finish_if_closure_or_cleanup_is_unconfirmed(self):
         for failure in ("close", "cleanup"):
@@ -81,6 +84,33 @@ class CandidateFlowTests(unittest.TestCase):
         result = candidate_flow.run(self.config)
         self.assertEqual(result["outcome"], "not-run")
         self.assertEqual(result["errors"][0]["phase"], "isolation")
+
+    def test_isolation_allow_requires_actual_named_enforced_guards(self):
+        ports = candidate_flow.ExistingAdmissionPorts()
+        for receipt in ({"verdict": "refuse"}, {"verdict": "allow", "guards": {}},
+                        {"verdict": "allow", "guards": {"syntheticInputs": "enforced", "providerNetwork": "not-enforced"}}):
+            with patch.object(candidate_flow.candidate_isolation, "isolation_receipt", return_value=receipt):
+                with self.assertRaisesRegex(RuntimeError, "not enforced"):
+                    ports.isolation(self.config)
+
+    def test_monitor_hit_after_launch_stops_before_capture_and_is_recorded(self):
+        class Hit(SyntheticPorts):
+            def check_monitor(self, monitor):
+                self.calls.append("monitor-check")
+                return {"status": "hit" if "launch" in self.calls else "clear"}
+            def stop_monitor(self, monitor): return self.call("monitor-stop", {"status": "hit"})
+        ports = Hit(); result = candidate_flow.run(self.config, ports)
+        self.assertNotIn("capture", ports.calls)
+        self.assertEqual(ports.calls[-4:], ["close", "cleanup", "finish", "monitor-stop"])
+        self.assertEqual(result["keychainMonitor"]["status"], "hit")
+        self.assertEqual(result["outcome"], "not-run")
+
+    def test_monitor_without_enforced_stop_cannot_start_booking(self):
+        class Unsafe(SyntheticPorts):
+            def start_monitor(self, config, isolation): return self.call("monitor-start", {"stopsOnHit": False})
+        ports = Unsafe(); result = candidate_flow.run(self.config, ports)
+        self.assertNotIn("booking", ports.calls)
+        self.assertEqual(result["outcome"], "not-run")
 
     def test_bad_archive_or_source_never_reaches_ports(self):
         ports = SyntheticPorts()
