@@ -256,40 +256,71 @@ private actor S4RowsClient: EngineClient {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-events-"+UUID().uuidString)
         defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
-        try await store.update { $0.language = .english; $0.notifications.optedIn = true }
-        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
-        entry.composition.currentDate = { clock }
-        var deliveries:[String]=[]
-        entry.composition.setResetNotificationDelivery { deliveries.append($0) }
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true; $0.notifications.kinds = [.official] }
+        let ledger = directory.appendingPathComponent("isolated-reset-notifications.json")
+        func makeEntry(_ snapshot: WireRowsSnapshot) -> EngineDockMenuApplication {
+            let application = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"),
+                applicationVersion: "s4", allowedEnvironment: [:], offline: true, readOnly: true),
+                settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: true,
+                makeClient: { _, store in S4RowsClient(store: store, rows: snapshot) },
+                isolatedResetNotificationLedger: ledger, activateSettings: {})
+            application.composition.currentDate = { clock }
+            return application
+        }
+        let entry = makeEntry(rows)
+        var deliveries: [String] = []
+        var titles: [String] = []
+        entry.composition.setResetNotificationDelivery { id, title in
+            deliveries.append(id)
+            titles.append(title)
+        }
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard case .available(let decoded)=entry.composition.rowEvents else { throw Failure(description:"normal entry must admit the explicit reset event fixture") }
         try require(decoded.count == 1 && decoded[0].rowID == "codex" && decoded[0].status == "announced", "normal entry must preserve the fixture event and its row")
         for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id+":announced"],"normal entry must deliver one notification for the event episode")
+        try require(deliveries == [decoded[0].id],"normal entry must deliver one notification for the event episode")
+        try require(titles == ["Official extra reset"], "normal entry must use the official reset notification title")
+        try require(FileManager.default.fileExists(atPath: ledger.path), "normal entry must persist the event to the isolated ledger")
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         try await synthetic.replaceRows(rows)
         try await Task.sleep(for:.milliseconds(50))
-        try require(deliveries == [decoded[0].id+":announced"],"a repeated event must not produce a second notification")
+        try require(deliveries == [decoded[0].id],"a repeated event must not produce a second notification")
         let cacheURL=directory.appendingPathComponent("notification-cache.json")
         var replay:[String]=[]
         let firstNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
-        firstNotifier.deliveryOverride={ replay.append($0) };firstNotifier.start()
+        firstNotifier.deliveryOverride={ id, _ in replay.append(id) };firstNotifier.start()
         for _ in 0..<100 where replay.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(replay == [decoded[0].id+":announced"],"fresh notification cache must admit one event")
+        try require(replay == [decoded[0].id],"fresh notification cache must admit one event")
         firstNotifier.stop()
         let secondNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
-        secondNotifier.deliveryOverride={ replay.append($0) };secondNotifier.start()
+        secondNotifier.deliveryOverride={ id, _ in replay.append(id) };secondNotifier.start()
         try await Task.sleep(for:.milliseconds(50))
         try require(replay.count == 1,"restored Settings notification ledger must deduplicate across notifier restart")
         secondNotifier.stop()
+        let legacyURL = directory.appendingPathComponent("legacy-reset-notifications.json")
+        var legacyPreferences = (await store.snapshot()).preferences
+        legacyPreferences.notifications.kinds = [.reset]
+        var legacyPolicy = NotificationPolicy(authorization: .authorized)
+        legacyPolicy.recordDelivered(.init(kind: .reset, subscriptionID: decoded[0].rowID,
+            episodeID: decoded[0].id + ":announced", beganAt: decoded[0].publishedAt, expiresAt: decoded[0].expiresAt),
+            preferences: legacyPreferences, now: clock)
+        try JSONEncoder().encode(legacyPolicy.ledger).write(to: legacyURL)
+        let legacyNotifier = try EngineResetNotifier(composition: entry.composition, settings: store,
+            cacheURL: legacyURL, deliverToSystem: false)
+        var legacyDeliveries = 0
+        legacyNotifier.deliveryOverride = { _, _ in legacyDeliveries += 1 }
+        legacyNotifier.start()
+        try await Task.sleep(for: .milliseconds(50))
+        legacyNotifier.stop()
+        try require(legacyDeliveries == 0, "the old status-suffixed ledger must still suppress a duplicate")
         let corruptURL=directory.appendingPathComponent("corrupt-reset-notifications.json")
         let corrupt=Data("{broken".utf8);try corrupt.write(to:corruptURL)
         var recoveredDeliveries:[String]=[]
         let recovered=try EngineResetNotifier.recovering(composition:entry.composition,settings:store,cacheURL:corruptURL,deliverToSystem:false)
-        recovered.deliveryOverride={ recoveredDeliveries.append($0) };recovered.start()
+        recovered.deliveryOverride={ id, _ in recoveredDeliveries.append(id) };recovered.start()
         for _ in 0..<100 where recoveredDeliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(recoveredDeliveries == [decoded[0].id+":announced"],"a quarantined corrupt ledger must not disable reset delivery")
+        try require(recoveredDeliveries == [decoded[0].id],"a quarantined corrupt ledger must not disable reset delivery")
         let quarantined=try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)
             .filter { $0.lastPathComponent.hasPrefix("corrupt-reset-notifications.json.corrupt-") }
         try require(quarantined.count == 1 && (try Data(contentsOf:quarantined[0])) == corrupt,"recovery must retain the exact corrupt bytes in one quarantine file")
@@ -335,8 +366,26 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(confirmed)
         guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:confirmationClock) else { throw Failure(description:"linked confirmation was not projected") }
         try require(notice.key.kind == .resetConfirmed && notice.shape == .solid,"linked confirmation must project the solid confirmed notice")
-        for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
+        try await Task.sleep(for: .milliseconds(50))
+        try require(deliveries.count == 1,"confirmation must not notify again for the same official reset event")
+        let relaunched = makeEntry(confirmed)
+        defer { relaunched.composition.dock.close() }
+        var relaunchedTitles: [String] = []
+        relaunched.composition.setResetNotificationDelivery { _, title in relaunchedTitles.append(title) }
+        await relaunched.prepare(); await relaunched.composition.start()
+        try await Task.sleep(for: .milliseconds(50))
+        try require(relaunchedTitles.isEmpty, "the same event must stay deduplicated after normal-entry relaunch")
+        try await store.update { $0.language = .chinese }
+        var separateEvent = superseded
+        separateEvent["id"] = "synthetic-separate-official-reset"
+        projection["resetEvents"] = [superseded, events[0], separateEvent]; data["projection"] = projection
+        let withSeparateEvent = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        guard let relaunchedClient = relaunched.composition.client as? S4RowsClient else { throw Failure(description: "relaunch lost fixture client") }
+        try await relaunchedClient.replaceRows(withSeparateEvent)
+        for _ in 0..<100 where relaunchedTitles.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        try require(relaunchedTitles == ["官方额外重置"], "a different event must still notify in the current language")
+        await relaunched.composition.stop()
+        projection["resetEvents"] = [superseded, events[0]]; data["projection"] = projection
         try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
         let beforeExpiry=clock
         clock=confirmationExpiry.addingTimeInterval(-1)
@@ -386,6 +435,27 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(absent)
         try require(entry.composition.rowEvents == .absentFromSchema,"omitted event list must remain unsupported")
         try require(entry.composition.menuPresentation.title.isEmpty,"missing events must clear the menu dot")
+
+        // A different event arriving after the original announcement's deadline
+        // must not evict the already-notified identity before a late confirmation.
+        clock = clock.addingTimeInterval(7200)
+        var intervening = superseded
+        intervening["id"] = "synthetic-intervening-reset"
+        intervening["publishedAt"] = formatter.string(from: clock.addingTimeInterval(-10))
+        intervening["expiresAt"] = formatter.string(from: clock.addingTimeInterval(3600))
+        intervening["schedule"] = ["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        projection["resetEvents"] = [intervening]; data["projection"] = projection
+        try await synthetic.replaceRows(WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data)))
+        for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        try require(deliveries == [decoded[0].id, "synthetic-intervening-reset"], "the intervening event must be recorded")
+        var lateConfirmation = linked
+        lateConfirmation["publishedAt"] = formatter.string(from: clock.addingTimeInterval(-1))
+        lateConfirmation["expiresAt"] = formatter.string(from: clock.addingTimeInterval(3600))
+        lateConfirmation.removeValue(forKey: "schedule")
+        projection["resetEvents"] = [lateConfirmation]; data["projection"] = projection
+        try await synthetic.replaceRows(WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data)))
+        try await Task.sleep(for: .milliseconds(50))
+        try require(deliveries.count == 2, "a late confirmation must stay deduplicated after announcement expiry")
         await entry.composition.stop()
     }
     static func roles(capture:URL) async throws {
