@@ -91,7 +91,14 @@ private actor G316Engine: EngineClient {
                 let image = NSImage(size: canvas.bounds.size); image.addRepresentation(bitmap)
                 image.lockFocus()
                 NSColor.systemRed.setStroke()
-                for (rect, _) in offenders { let path = NSBezierPath(rect: rect); path.lineWidth = 2; path.stroke() }
+                for (rect, _) in offenders {
+                    // NSImage's drawing coordinates are unflipped even when the
+                    // document view is flipped. Both rectangles are in points;
+                    // the bitmap representation supplies its backing scale.
+                    let y = canvas.isFlipped ? canvas.bounds.maxY - rect.maxY : rect.minY - canvas.bounds.minY
+                    let imageRect = NSRect(x: rect.minX - canvas.bounds.minX, y: y, width: rect.width, height: rect.height)
+                    let path = NSBezierPath(rect: imageRect); path.lineWidth = 2; path.stroke()
+                }
                 image.unlockFocus()
                 let tiff = try XCTUnwrap(image.tiffRepresentation)
                 let png = try XCTUnwrap(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
