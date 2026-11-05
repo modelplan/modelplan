@@ -126,6 +126,9 @@ done
 						}
 						for _, w := range a.Windows {
 							if w.RemainingPercent != nil && *w.RemainingPercent == 70 && w.ObservedAt != nil && w.ObservedAt.After(old) && w.Source != nil && *w.Source == rows.WindowSourceRuntime {
+								if row.State != rows.StateFresh {
+									t.Fatalf("fresh runtime window has row state %q and reason %q", row.State, row.Reason.Code)
+								}
 								return
 							}
 						}

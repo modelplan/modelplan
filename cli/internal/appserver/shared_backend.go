@@ -176,6 +176,12 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed {
 		if selections, err := quota.SelectionsWithAdmission(p, admission); err == nil {
 			for _, selected := range selections {
+				// Codex has a dedicated runtime reader outside the generic native
+				// reader registry. Its absence from that registry is not a veto of
+				// the separately admitted runtime or local-history routes.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
+					continue
+				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
 			}
 		}
