@@ -82,11 +82,13 @@ func TestCockpitCreditUnitsRealBinary(t *testing.T) {
 				return s.Credits, client
 			}
 		}
-		t.Fatal("verified synthetic subscription absent")
 		return nil, client
 	}
 	setUnit("credits")
 	old, _ := query([]string{"rows", "cockpit", "cockpitDetailsV1"})
+	if old == nil || old["balance"] != 3.5 {
+		t.Fatalf("legacy subscription or balance absent: %+v", old)
+	}
 	if _, ok := old["unit"]; ok {
 		t.Fatal("legacy received unit field")
 	}
