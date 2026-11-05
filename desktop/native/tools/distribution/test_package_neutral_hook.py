@@ -96,6 +96,8 @@ elif name == 'xcrun':
     split = args.index('-output')
     Path(args[split + 1]).write_bytes(b''.join(Path(p).read_bytes() for p in args[2:split]))
 elif name == 'python3':
+    if args and args[0].endswith('/check_app_architectures.py'):
+        raise SystemExit(0)
     if args and args[0].endswith('/embed_fixed_helper.py'):
         raise SystemExit(int(os.environ.get('PACKAGING_EMBED_EXIT', '0')))
     if args and args[0].endswith('/check_embedded_agent.py'):
@@ -169,7 +171,7 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertIn('--single', final['args'])
         self.assertEqual(final['args'][final['args'].index('--expected-sha256') + 1], self.fixture.credential_sha)
         embed_args = commands[embed]['args']
-        self.assertIn('--arm64', embed_args)
+        self.assertIn('--universal', embed_args)
         self.assertEqual(embed_args[embed_args.index('--expected-sha256') + 1], self.fixture.credential_sha)
         self.assertTrue(all(not c['args'][0].endswith('/build_fixed_helper.py') for c in commands if c['command'] == 'python3'))
         self.assertTrue(all('credential-agent' not in target for _, target in seals))
@@ -253,7 +255,9 @@ class AppleSiliconPackageTests(unittest.TestCase):
             self.assertEqual(len(builds), 1)
             self.assertIn('arm64-apple-macosx14.0', builds[0]['args'])
             embed = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/embed_fixed_helper.py'))
-            self.assertIn('--arm64', embed['args'])
+            self.assertIn('--universal', embed['args'])
+            check = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/check_app_architectures.py'))
+            self.assertEqual(check['args'][check['args'].index('--approved-helper-sha256') + 1], fixture.credential_sha)
             self.assertFalse(any(c['command'] == 'xcrun' and c['args'][:2] == ['lipo', '-create'] for c in commands))
 
     def test_intel_or_universal_executable_stops_before_app_seal(self):

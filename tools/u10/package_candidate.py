@@ -224,8 +224,7 @@ def build(output, candidate_id, build_number):
     raw_inputs = {'arm64': work / 'native/cli-arm64/modelplan_darwin_arm64/modelplan',
                   'x86_64': work / 'native/cli-x86_64/modelplan_darwin_amd64/modelplan'}
     sealed = seal(app, source, raw_inputs)
-    for executable in (app / 'Contents/Helpers/modelplan', app / 'Contents/MacOS/ModelPlanCommunity', app / release.CREDENTIAL_HELPER):
-        release.require_arm64(executable)
+    release.check_bundle_architectures(app, app / 'Contents/MacOS/ModelPlanCommunity')
     # The subprocess cwd is explicit; no global cwd mutation or helper execution.
     subprocess.run(['go', 'run', './internal/releaseguard/cmd', '--binary',
                     str(app / 'Contents/MacOS/ModelPlanCommunity')], cwd=ROOT / 'cli', env=credential_env, check=True)

@@ -390,7 +390,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_each_bundled_executable_rejects_a_universal_slice(self):
-        for relative in ('Contents/MacOS/ModelPlan', 'Contents/Helpers/modelplan', 'Contents/Helpers/modelplan-credential-agent'):
+        for relative in ('Contents/MacOS/ModelPlan', 'Contents/Helpers/modelplan'):
             def inspect(*args, input=None):
                 if args[:3] == ('xcrun', 'lipo', '-archs'):
                     return b'arm64 x86_64' if args[3].endswith(relative) else b'arm64'

@@ -97,12 +97,14 @@ cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VIS
 cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-TRADEMARKS.md"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
-    --expected-sha256 "$credential_sha" --arm64 "$app"
+    --expected-sha256 "$credential_sha" --universal "$app"
 # Refuse malformed, Intel or universal executables before sealing the app.
-for executable in "$app/Contents/MacOS/ModelPlanCommunity" "$app/Contents/Helpers/modelplan" "$app/Contents/Helpers/modelplan-credential-agent"; do
+for executable in "$app/Contents/MacOS/ModelPlanCommunity" "$app/Contents/Helpers/modelplan"; do
     architecture=$(xcrun lipo -archs "$executable")
     if [ "$architecture" != arm64 ]; then echo 'Bundled executable must contain exactly arm64' >&2; exit 1; fi
 done
+python3 "$native_root/tools/distribution/check_app_architectures.py" --app "$app" \
+    --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$credential_sha"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \

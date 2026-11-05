@@ -211,8 +211,7 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     helper = app / 'Contents/Helpers/modelplan'
     if sha256(helper) != (resource / 'modelplan.sha256').read_text().strip():
         raise ValueError('Candidate bundled CLI hash mismatch')
-    for executable in (helper, app / 'Contents/MacOS' / info['CFBundleExecutable'], app / CREDENTIAL_HELPER):
-        require_arm64(executable)
+    check_bundle_architectures(app, app / 'Contents/MacOS' / info['CFBundleExecutable'])
     if info.get('SUFeedURL') != https_url(feed if feed is not None else os.environ['MACOS_FEED_URL']):
         raise ValueError('Candidate feed channel mismatch')
     public_key = base64.b64decode(info.get('SUPublicEDKey', ''), validate=True)
@@ -242,6 +241,17 @@ def check_credential_pin(app):
         raise ValueError('Approved credential helper SHA is missing')
     checker.require_expected_sha(pin, expected)
     checker.check_pair(Path(app), Path(app), pin)
+
+
+def check_bundle_architectures(app, main):
+    # Exemption is permitted only for the exact independently approved helper bytes.
+    check_credential_pin(app)
+    approved = json.loads(CREDENTIAL_PIN_FILE.read_text())['sha256']
+    path = ROOT / 'desktop/native/tools/distribution/check_app_architectures.py'
+    spec = importlib.util.spec_from_file_location('release_architectures', path)
+    module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+    module.validate(app, main, app / 'Contents/Helpers/modelplan', approved,
+                    lambda executable: run('xcrun', 'lipo', '-archs', str(executable)).decode().split())
 
 
 def sign_nested(app, codesign):
