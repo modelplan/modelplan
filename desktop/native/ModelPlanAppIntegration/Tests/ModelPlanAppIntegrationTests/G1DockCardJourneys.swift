@@ -104,9 +104,8 @@ private actor G1CardRowsClient: EngineClient {
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         let host = app.composition.dock
         do {
-            // Current main opens via its normal subscription action. #429 changes
-            // that interaction; hover/focus coverage needs its normal-entry seam.
-            host.dockView.onAction?(.subscription(memberID))
+            // Exercise the production controller's hover dwell and host callback.
+            try presentSyntheticHostCard(host, id: memberID)
             XCTAssertFalse(host.card.isHidden, "normal entry must present an actual card for the admitted member")
             try await check(host, app)
             await app.composition.stop(); host.close()
