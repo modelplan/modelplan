@@ -1051,6 +1051,107 @@ import XCTest
         }
     }
 
+    func testD18PhysicalVoiceOverReordersFace() async throws { try await exerciseVoiceOverReorder(overflow: false) }
+    func testD18PhysicalVoiceOverReordersOverflow() async throws { try await exerciseVoiceOverReorder(overflow: true) }
+
+    private func exerciseVoiceOverReorder(overflow: Bool) async throws {
+        let application = NSApplication.shared
+        let systemOnly = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D18_MOTION"] == "system"
+        guard NSWorkspace.shared.accessibilityDisplayShouldReduceMotion == systemOnly else {
+            return XCTFail(systemOnly ? "Enable macOS Reduce Motion for the system-only run" :
+                            "Turn macOS Reduce Motion off for the app-only run")
+        }
+        let main = try XCTUnwrap(DockDisplayTopology.system().main)
+        let quotas = overflow ? Array(40..<70) : [72, 53, 38]
+        let (app, store, storedURL) = try await makeProfile(displayID: main.id, edge: .bottom, declaredQuotas: quotas)
+        _ = try await store.update { $0.motion = systemOnly ? .system : .on }
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        let host = app.composition.dock
+        let panel = try XCTUnwrap(host.nativePanel)
+        let ready = try await wait(.seconds(15)) {
+            panel.isVisible && host.edgePresentation?.placement?.edge == .bottom &&
+                host.interactionControllerRunning && host.interactionEnvironment().catalogue.count == quotas.count
+        }
+        guard ready else { return XCTFail("The native panel did not present the synthetic subscriptions") }
+        XCTAssertTrue(host.interactionEnvironment().reducedMotion)
+        let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+        let initial = host.interactionEnvironment()
+        let ordered = try initial.preferences.orderedIDs(in: initial.catalogue)
+        let before = await store.snapshot()
+        let oldBytes = try Data(contentsOf: storedURL)
+        let beforeFrame = panel.frame
+        let children = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+        XCTAssertFalse(children.isEmpty)
+        for child in children { XCTAssertFalse(try XCTUnwrap(child.accessibilityLabel()).isEmpty) }
+
+        func findTray(in view: NSView?) -> DockOverflowTrayView? {
+            guard let view, !view.isHiddenOrHasHiddenAncestor else { return nil }
+            if let tray = view as? DockOverflowTrayView { return tray }
+            return view.subviews.lazy.compactMap { findTray(in: $0) }.first
+        }
+        func visibleTray() -> DockOverflowTrayView? {
+            application.windows.lazy.filter(\.isVisible).compactMap { findTray(in: $0.contentView) }.first
+        }
+        func findRow(_ id: String, in view: NSView) -> NSView? {
+            if view.accessibilityIdentifier() == "dock.overflow." + id { return view }
+            return view.subviews.lazy.compactMap { findRow(id, in: $0) }.first
+        }
+
+        let id: String
+        let offset: Int
+        if overflow {
+            XCTAssertFalse(view.interactionOverflowIDs.isEmpty)
+            let trigger = try XCTUnwrap(children.first { $0.accessibilityIdentifier() == "dock.overflow" })
+            announce("D-18", "Use VoiceOver to find \(trigger.accessibilityLabel() ?? "More subscriptions") and open it.")
+            guard try await wait(.seconds(45), until: { visibleTray() != nil }) else {
+                return XCTFail("VoiceOver did not open the native overflow tray")
+            }
+            id = try XCTUnwrap(ordered.last { view.interactionOverflowIDs.contains($0) })
+            offset = -1
+            let tray = try XCTUnwrap(visibleTray())
+            let row = try XCTUnwrap(findRow(id, in: tray))
+            let label = try XCTUnwrap(row.accessibilityLabel())
+            XCTAssertFalse(label.isEmpty)
+            XCTAssertFalse(try XCTUnwrap(row.accessibilityHelp()).isEmpty)
+            announce("D-18", "Focus the overflow row \(label) with VoiceOver and record its speech.")
+            guard try await wait(.seconds(45), until: {
+                tray.keyboardTargetID == id || row.window?.firstResponder === row
+            }) else { return XCTFail("The physical overflow focus did not reach the keyboard route") }
+        } else {
+            id = try XCTUnwrap(view.interactionTargets(edge: .bottom).first?.id)
+            offset = 1
+            let node = try XCTUnwrap(children.first { $0.accessibilityIdentifier() == "dock.subscription." + id })
+            let label = try XCTUnwrap(node.accessibilityLabel())
+            announce("D-18", "Use VoiceOver to focus \(label), value \(node.accessibilityValue() as? String ?? ""). Record the announcement.")
+            guard try await wait(.seconds(45), until: { view.keyboardTargetID == id && node.isAccessibilityFocused() }) else {
+                return XCTFail("VoiceOver focus did not reach the native face nozzle")
+            }
+        }
+        let oldIndex = try XCTUnwrap(ordered.firstIndex(of: id))
+        let newIndex = oldIndex + offset
+        guard ordered.indices.contains(newIndex) else { return XCTFail("Choose a nozzle with an adjacent subscription") }
+        var expected = ordered
+        expected.swapAt(oldIndex, newIndex)
+        let direction = offset > 0 ? "Right" : "Left"
+        announce("D-18", "Press physical Option-\(direction) once. Capture the widget and VoiceOver speech.")
+        let editor = app.settingsHost.application.editor
+        let committed = try await wait(.seconds(25)) {
+            editor.snapshot?.preferences.subscriptions.order == expected && !editor.isSaving
+        }
+        guard committed else { return XCTFail("Physical Option-\(direction) did not persist the order") }
+        let after = await store.snapshot()
+        XCTAssertEqual(after.revision, before.revision + 1)
+        XCTAssertEqual(after.preferences.subscriptions.order, expected)
+        XCTAssertNotEqual(try Data(contentsOf: storedURL), oldBytes)
+        XCTAssertTrue((view.accessibilityValue() as? String)?.hasSuffix("position \(newIndex + 1) of \(ordered.count)") == true)
+        XCTAssertTrue(host.interactionEnvironment().reducedMotion)
+        XCTAssertEqual(panel.frame, beforeFrame)
+        XCTAssertNil(host.interactionControllerForChecks?.presentation?.reorder, "A keyboard commit must not retain a drag pose")
+        try await Task.sleep(for: .seconds(5))
+    }
+
     func testD12NativeFullscreenResolutionAndWakeKeepSavedPlace() async throws {
         _ = NSApplication.shared
         let main = try XCTUnwrap(DockDisplayTopology.system().main)
