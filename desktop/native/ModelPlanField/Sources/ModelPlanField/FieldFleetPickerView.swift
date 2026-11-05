@@ -12,7 +12,7 @@ public struct FieldPickerChange: Sendable {
 }
 
 /// Neutral native controls only. The existing owner supplies the A surface/comparison view,
-/// persistence and FieldCoordinator. Construction never mounts a field or creates WebGL.
+/// persistence. Construction never mounts a field or creates WebGL.
 @MainActor public final class FieldFleetPickerView: NSView {
     public private(set) var state: FieldFleetPicker?
     public private(set) var presentation: FieldPickerPresentation?

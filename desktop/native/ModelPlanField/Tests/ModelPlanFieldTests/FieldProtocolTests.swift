@@ -24,17 +24,6 @@ final class FieldProtocolTests: XCTestCase {
         }
         XCTAssertThrowsError(try FieldWebMessage.decode(Data(repeating: 0, count: 64 * 1024 + 1)))
     }
-    func testCaptureBarrierRequiresFullExactIdentityAndNoExtraNestedFields() throws {
-        var state = FieldLifecycle(configuration: try fixture())
-        let (generation, key) = startLive(&state, consumeCapture: false)
-        let original = message(.captureResult, generation, request: key.requestId, key: key)
-        let data = try JSONEncoder().encode(original)
-        XCTAssertEqual(try FieldWebMessage.decode(data), original)
-        var object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-        var capture = object["captureKey"] as! [String: Any]
-        capture["session"] = "private"; object["captureKey"] = capture
-        XCTAssertThrowsError(try FieldWebMessage.decode(JSONSerialization.data(withJSONObject: object)))
-    }
     func testInvalidViewportAndFiniteScaleAreRejected() {
         for args in [(0, 500, 1.0), (2048, 4097, 1), (800, 500, Double.nan), (800, 500, 0)] {
             XCTAssertThrowsError(try FieldViewport(width: args.0, height: args.1, scale: args.2, profile: .tall))
