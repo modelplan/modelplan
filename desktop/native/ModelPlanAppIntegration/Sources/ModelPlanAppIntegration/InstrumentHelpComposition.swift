@@ -3,6 +3,12 @@ import AppKit
 import ModelPlanInstruments
 import ModelPlanSettings
 
+@MainActor func selectHelpOverlay<Overlay: HintOverlayPresenting>(
+    _ overlay: Overlay, factory: (@MainActor (Overlay) -> any HintOverlayPresenting)?
+) -> any HintOverlayPresenting {
+    factory?(overlay) ?? overlay
+}
+
 /// Copy and a current overlay-local anchor supplied by the app's selected appearance package.
 /// No private wording, material, geometry or nine-kind admission policy is duplicated here.
 public struct HelpHintContent: Equatable, Sendable {
@@ -159,7 +165,8 @@ public struct HelpHintContent: Equatable, Sendable {
                                 recipeProvider: HelpUIRecipeProvider? = nil,
                                 scheduler: (any HintDeadlineScheduling)? = nil,
                                 uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-                                visibility: (@MainActor (HelpUILayerView, CGRect) -> Bool)? = nil) async -> InstrumentHelpComposition {
+                                visibility: (@MainActor (HelpUILayerView, CGRect) -> Bool)? = nil,
+                                overlayFactory: (@MainActor (InstrumentHelpOverlay) -> any HintOverlayPresenting)? = nil) async -> InstrumentHelpComposition {
         let connection = HelpSettingsReceiptConnection()
         let observer = application.editor.observeCommittedEdits(onFailure: { failure in connection.failed(failure) }) {
             edit in await connection.receive(edit)
@@ -167,8 +174,9 @@ public struct HelpHintContent: Equatable, Sendable {
         if application.editor.snapshot == nil { await application.reload() }
         let layer = HelpUILayerView(recipeProvider: recipeProvider, elapsed: uptime)
         let overlay = InstrumentHelpOverlay(layer: layer, visibility: visibility)
+        let routedOverlay = selectHelpOverlay(overlay, factory: overlayFactory)
         let host = await HintExecutionHost.restored(persistence: application.editor.store,
-            scheduler: scheduler ?? HintCommonModeScheduler(uptime: uptime), overlay: overlay, uptime: uptime)
+            scheduler: scheduler ?? HintCommonModeScheduler(uptime: uptime), overlay: routedOverlay, uptime: uptime)
         let composition = InstrumentHelpComposition(application: application, host: host, overlay: overlay, uptime: uptime, observer: observer)
         // Do not expose a live surface until the startup receipt boundary has been applied.
         await connection.connect(composition)
