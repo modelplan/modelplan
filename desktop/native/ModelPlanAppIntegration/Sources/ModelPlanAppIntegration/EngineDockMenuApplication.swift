@@ -592,6 +592,20 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func stopNativeDockJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
+        interactionBinding?.stop()
+        firstRunFlow?.dispose()
+        dockHelp?.suspend()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()
