@@ -146,7 +146,7 @@ func (l *Ledger) find(a *quota.Account, w quota.Window) *Cycle {
 	for i := range l.Cycles {
 		c := &l.Cycles[i]
 		d := c.ResetsAt.Sub(*w.ResetsAt)
-		if c.Source == a.Source && c.Limit == w.Limit && c.Kind == w.Kind && c.WindowMinutes == w.WindowMinutes && d < 2*time.Minute && d > -2*time.Minute {
+		if c.Source == a.Source && c.Plan == a.Plan && c.Limit == w.Limit && c.Kind == w.Kind && c.WindowMinutes == w.WindowMinutes && d < 2*time.Minute && d > -2*time.Minute {
 			return c
 		}
 	}
