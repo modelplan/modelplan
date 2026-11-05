@@ -251,7 +251,27 @@ private actor M6BatchEngine: EngineClient {
     func testG1_MOT_2_3_02_InteractionFeedback() throws { throw XCTSkip("MOT-2.3-02 seam-needed: DockInteractionController actual presentation feedback receipts") }
     func testG1_MOT_2_3_03_ReduceMotionPresentation() throws { throw XCTSkip("MOT-2.3-03 seam-needed: DockInstrumentView active animation roles and timings") }
     func testG1_MOT_2_3_04_AppAndSystemMotion() throws { throw XCTSkip("MOT-2.3-04 seam-needed: DockInstrumentView actual motion and fade receipts") }
-    func testG1_MOT_2_3_08_HiddenMotion() throws { throw XCTSkip("MOT-2.3-08 seam-needed: DockInstrumentView active animation roles and pause state") }
+    func testG1_MOT_2_3_08_HiddenMotion() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "MOT-2.3-08 waits for G1RenderedSnapshot")
+        let app = try await entry()
+        app.allowDockPresentation()
+        app.advanceClock(by: 3)
+        let settled = app.renderedSnapshotForChecks()
+        let roles: [G1Role] = [.dock, .ring, .segment, .flame, .sliver]
+        let settledElements = roles.flatMap { settled.all(role: $0) }
+        XCTAssertFalse(settledElements.isEmpty, "A missing surface cannot prove the motion policy")
+        for element in settledElements {
+            XCTAssertNil(element.transition, "A settled surface must not keep animating: \(element.id)")
+            XCTAssertFalse(element.layerRoles.contains { $0.lowercased().contains("shimmer") || $0.lowercased().contains("skeleton") })
+        }
+        try await app.settingsHost.application.editor.commit(SettingsB21Edit.showDock(false))
+        app.advanceClock(by: 3)
+        let hidden = app.renderedSnapshotForChecks()
+        XCTAssertFalse(hidden.dock.visible)
+        for element in roles.flatMap({ hidden.all(role: $0) }) {
+            XCTAssertNil(element.transition, "Hidden Dock animation must pause: \(element.id)")
+        }
+    }
     func testG1_LBL_2_2_01_StripControls() throws { throw XCTSkip("LBL-2.2-01 seam-needed: cockpit page readback for strip control symbols and frames; M3") }
     func testG1_LBL_2_2_03_ToggleStates() throws { throw XCTSkip("LBL-2.2-03 seam-needed: cockpit page readback for toggle labels, active state and frames; M3") }
     func testG1_LBL_2_2_05_LocalizedVisibleStrings() throws { throw XCTSkip("LBL-2.2-05 seam-needed: cockpit page readback for rendered localized strings; M3") }
