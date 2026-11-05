@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
 import AppKit
+import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanWire
 import XCTest
@@ -55,6 +56,16 @@ import XCTest
     }
 
     func testD24RealReaderFailureAddsOnlyOneLocalizedDiagnosticsAction() async throws {
+        try await exerciseReaderMenu(physical: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD24PhysicalLocalizedStatusMenuAndSettingsShortcut() async throws {
+        try await exerciseReaderMenu(physical: true)
+    }
+    #endif
+
+    private func exerciseReaderMenu(physical: Bool) async throws {
         let (root, helper, environment) = try sandbox()
         let failed = root.appendingPathComponent("simulate-reader-failure")
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
@@ -91,29 +102,81 @@ import XCTest
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let surface = TestSettingsSurface()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical {
+            _ = try await settings.update { $0.onboarding.next() }
+            EngineRowsEntry.isolatesD24NativeServices = true
+        }
+        #endif
+        let readDisplay: (@MainActor () -> DockEdgeEnvironment)?
+        let makeSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
+        if physical {
+            readDisplay = nil
+            makeSurface = nil
+        } else {
+            readDisplay = normalEntryTestEnvironment
+            makeSurface = { _ in surface }
+        }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-d24",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
-            createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
-            dockEnvironment: normalEntryTestEnvironment, makeSettingsSurface: { _ in surface }, activateSettings: {})
-        addTeardownBlock { @MainActor in await app.composition.stop() }
-        await app.prepare()
-        app.allowDockPresentation()
-        let delivery = try await app.composition.client.start()
-        _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+            createsNativePanels: physical, bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
+            dockEnvironment: readDisplay, makeSettingsSurface: makeSurface, activateSettings: {
+                if physical { NSApplication.shared.activate() }
+            })
         func row() -> RowsRow? {
             app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }
         }
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
+        if physical {
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            let application = NSApplication.shared
+            let oldMenu = application.mainMenu, oldAppearance = application.appearance
+            let oldPolicy = application.activationPolicy()
+            addTeardownBlock { @MainActor in
+                await app.stopD24NativeJourney()
+                application.mainMenu = oldMenu
+                application.appearance = oldAppearance
+                application.setActivationPolicy(oldPolicy)
+                EngineRowsEntry.isolatesD24NativeServices = false
+            }
+            app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: application))
+            guard try await wait(.seconds(12), until: {
+                app.isD24StatusItemVisible && !app.lifecyclePaused && row()?.state == .fresh
+            }) else { return XCTFail("The normal application launch did not publish a healthy native status menu") }
+            XCTAssertNil(app.loginServiceAdapter)
+            XCTAssertNil(app.notificationAuthorizationService)
+            #endif
+        } else {
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            _ = try await app.composition.client.start()
+            _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+        }
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
         XCTAssertEqual(row()?.state, .fresh)
         XCTAssertEqual(row()?.accounts.first?.windows.first?.remainingPercent, 75)
         let editor = app.settingsHost.application.editor
         let english = try items().map(\.title)
         XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"])
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical {
+            try await capturePhysicalMenu(app, prompt: "Healthy English menu. Open, capture, then dismiss.")
+            try await capturePhysicalShortcut(app, title: "Settings")
+        }
+        #endif
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try items().map(\.title)
         XCTAssertEqual(chinese, ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"])
+
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical {
+            try await capturePhysicalMenu(app, prompt: "Healthy Chinese menu. Open, capture, then dismiss.")
+            try await capturePhysicalShortcut(app, title: "设置")
+        }
+        #endif
 
         // Backdate the synthetic fixture and reservation to exercise a second
         // real reader call without changing the production refresh interval.
@@ -140,17 +203,33 @@ import XCTest
         let zhProblem = failedRow.name.zh + "：读取失败 · 查看…"
         XCTAssertEqual(try items().filter { $0.title == zhProblem }.count, 1)
         XCTAssertEqual(try items().filter { $0.title != zhProblem }.map(\.title), chinese)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical { try await capturePhysicalMenu(app, prompt: "Failed Chinese menu. Open, capture, then dismiss.") }
+        #endif
         _ = try await editor.commit(SettingsB21Edit.language(.english))
         let enProblem = failedRow.name.en + ": Couldn't read · Details…"
         XCTAssertEqual(try items().filter { $0.title == enProblem }.count, 1)
         XCTAssertEqual(try items().filter { $0.title != enProblem }.map(\.title), english)
-        let menu = try XCTUnwrap(app.liveStatusMenu)
-        let index = try XCTUnwrap(menu.items.firstIndex { $0.title == enProblem })
-        let shown = expectation(description: "The problem opens Settings Diagnostics")
-        surface.onShow = { shown.fulfill() }
-        menu.performActionForItem(at: index)
-        await fulfillment(of: [shown], timeout: 2)
-        XCTAssertEqual(surface.shown, ["diagnostics"])
+        if physical {
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            try await capturePhysicalMenu(app, prompt: "Failed English menu. Capture it, then select the reader problem.")
+            let window = try await waitForPhysicalSettings(title: "Settings")
+            XCTAssertTrue(containsText("Reader status", in: window.contentView))
+            announce("Capture the Settings Diagnostics pane, then close Settings.")
+            guard try await wait(.seconds(45), until: { !window.isVisible }) else {
+                return XCTFail("Settings Diagnostics remained open")
+            }
+            #endif
+        } else {
+            let menu = try XCTUnwrap(app.liveStatusMenu)
+            let index = try XCTUnwrap(menu.items.firstIndex { $0.title == enProblem })
+            let shown = expectation(description: "The problem opens Settings Diagnostics")
+            surface.onShow = { shown.fulfill() }
+            menu.performActionForItem(at: index)
+            await fulfillment(of: [shown], timeout: 2)
+            XCTAssertEqual(surface.shown, ["diagnostics"])
+
+        }
 
         try makeDue(failure, seconds: 3_600)
         try FileManager.default.removeItem(at: failed)
@@ -162,8 +241,68 @@ import XCTest
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
         XCTAssertEqual(row()?.state, .fresh)
         XCTAssertEqual(try items().map(\.title), english)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical { try await capturePhysicalMenu(app, prompt: "Recovered English menu. Open, capture, then dismiss.") }
+        #endif
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical { try await capturePhysicalMenu(app, prompt: "Recovered Chinese menu. Open, capture, then dismiss.") }
+        #endif
     }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    private func announce(_ prompt: String) {
+        FileHandle.standardOutput.write(Data(("D-24: " + prompt + "\n").utf8))
+    }
+
+    private func wait(_ duration: Duration, until predicate: () -> Bool) async throws -> Bool {
+        let deadline = ContinuousClock.now + duration
+        while !predicate() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        return predicate()
+    }
+
+    private func capturePhysicalMenu(_ app: EngineDockMenuApplication, prompt: String) async throws {
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        var began = false, ended = false
+        let start = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+            object: menu, queue: .main) { _ in MainActor.assumeIsolated { began = true } }
+        let stop = NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification,
+            object: menu, queue: .main) { _ in MainActor.assumeIsolated { if began { ended = true } } }
+        defer { NotificationCenter.default.removeObserver(start); NotificationCenter.default.removeObserver(stop) }
+        announce(prompt)
+        let tracked = try await wait(.seconds(45)) { began && ended && !app.isD24StatusMenuTracking }
+        _ = try XCTUnwrap(tracked ? menu : nil, "No complete physical status-menu tracking cycle")
+    }
+
+    private func waitForPhysicalSettings(title: String) async throws -> NSWindow {
+        var window: NSWindow?
+        let opened = try await wait(.seconds(30)) {
+            window = NSApplication.shared.windows.first { $0.isVisible && $0.isKeyWindow && $0.title == title }
+            return window != nil
+        }
+        return try XCTUnwrap(opened ? window : nil, "No key native Settings window opened")
+    }
+
+    private func capturePhysicalShortcut(_ app: EngineDockMenuApplication, title: String) async throws {
+        XCTAssertFalse(app.isD24StatusMenuTracking)
+        XCTAssertFalse(NSApplication.shared.windows.contains { $0.isVisible && $0.title == title })
+        NSApplication.shared.activate()
+        guard try await wait(.seconds(5), until: { NSApplication.shared.isActive }) else {
+            return XCTFail("The synthetic app must be active before the physical shortcut")
+        }
+        announce("With the status menu closed, press physical Command-comma.")
+        let window = try await waitForPhysicalSettings(title: title)
+        XCTAssertFalse(app.isD24StatusMenuTracking)
+        announce("Capture the Settings window, then close it.")
+        guard try await wait(.seconds(45), until: { !window.isVisible }) else { return XCTFail("Close Settings to continue") }
+    }
+
+    private func containsText(_ expected: String, in view: NSView?) -> Bool {
+        guard let view, !view.isHiddenOrHasHiddenAncestor else { return false }
+        if (view as? NSTextField)?.stringValue == expected { return true }
+        return view.subviews.contains { containsText(expected, in: $0) }
+    }
+    #endif
 }
 #endif

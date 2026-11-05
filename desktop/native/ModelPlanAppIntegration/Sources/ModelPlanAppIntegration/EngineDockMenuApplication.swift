@@ -421,7 +421,11 @@ import ModelPlanMenuVerification
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if !EngineRowsEntry.isolatesD24NativeServices { status?.autosaveName = "ModelPlanCommunity.StatusItem" }
+        #else
         status?.autosaveName = "ModelPlanCommunity.StatusItem"
+        #endif
         status?.isVisible = true
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
@@ -622,6 +626,26 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var isD24StatusMenuTracking: Bool { statusMenuComponent?.isActuallyOpen == true }
+    var isD24StatusItemVisible: Bool { status?.button?.window?.isVisible == true && status?.isVisible == true }
+
+    func stopD24NativeJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
+        if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver) }
+        statusMenuComponent?.dispose()
+        interactionBinding?.stop()
+        firstRunFlow?.dispose()
+        settingsHost.suspend()
+        dockHelp?.suspend()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()
