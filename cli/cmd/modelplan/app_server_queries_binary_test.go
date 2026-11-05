@@ -38,9 +38,12 @@ func startQueryBinary(t *testing.T, binary string) *queryBinary {
 	return startQueryBinaryCaps(t, binary, []string{"rows", "consent", "history", "cockpit", "refresh", "publication"})
 }
 func startQueryBinaryCaps(t *testing.T, binary string, capabilities []string) *queryBinary {
+	return startQueryBinaryCapsArgs(t, binary, capabilities)
+}
+func startQueryBinaryCapsArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	cmd := exec.CommandContext(ctx, binary, "app-server")
+	cmd := exec.CommandContext(ctx, binary, append([]string{"app-server"}, args...)...)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

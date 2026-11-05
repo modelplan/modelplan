@@ -377,6 +377,7 @@ func grantError(err error) error {
 }
 
 type fileStamp struct {
+	path           string
 	size, modified int64
 	exists         bool
 }
@@ -387,14 +388,34 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
+			var codexStamps []fileStamp
+			var nextCodexCheck time.Time
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case <-ticker.C:
-					paths := b.paths(consent.Capture())
+				case now := <-ticker.C:
+					admission := consent.Capture()
+					paths := b.paths(admission)
+					tool, decided := admission.State().Tools["codex"]
+					localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
+					if !localAllowed || paths.CodexHome == "" {
+						codexStamps = nil
+						nextCodexCheck = time.Time{}
+					} else if !now.Before(nextCodexCheck) {
+						// Stat only the same bounded recent rollouts used by the local
+						// reader. Never read their contents or inspect them without
+						// local admission; coalesce metadata checks to once a second.
+						codexStamps = nil
+						for _, file := range quota.RecentRollouts(paths.CodexHome, 8) {
+							if info, err := os.Stat(file); err == nil {
+								codexStamps = append(codexStamps, fileStamp{path: file, size: info.Size(), modified: info.ModTime().UnixNano(), exists: true})
+							}
+						}
+						nextCodexCheck = now.Add(time.Second)
+					}
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
-					current := make([]fileStamp, 0, len(files))
+					current := make([]fileStamp, 0, len(files)+len(codexStamps))
 					for _, file := range files {
 						info, err := os.Stat(file)
 						stamp := fileStamp{}
@@ -403,6 +424,7 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						}
 						current = append(current, stamp)
 					}
+					current = append(current, codexStamps...)
 					if !reflect.DeepEqual(last, current) {
 						last = current
 						b.notify()
