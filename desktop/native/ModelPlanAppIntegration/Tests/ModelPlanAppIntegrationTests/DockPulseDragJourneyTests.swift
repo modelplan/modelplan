@@ -135,6 +135,45 @@ import ModelPlanSettings
             }
         }
     }
+    func testD11NozzleDragThresholdSeparatesReorderFromRefresh() throws {
+        let controller = DockInteractionController(clock: { 0 }, scheduler: DragSchedule()) {
+            .init(catalogue: ["a", "b"], preferences: .init(),
+                targets: [.init(id: "a", along: 0), .init(id: "b", along: 10)])
+        }
+        var refreshes: [String] = []
+        var orders: [DockOrderRequest] = []
+        controller.onActivate = { refreshes.append($0) }
+        controller.onOrderRequest = { orders.append($0) }
+        controller.start()
+        defer { controller.stop() }
+
+        for distance in [4.0, 5.0] {
+            XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
+            controller.moveNozzle(along: distance)
+            XCTAssertNil(controller.presentation?.reorder)
+            controller.endNozzle(insideMain: true, overSameSource: true)
+            XCTAssertTrue(refreshes.isEmpty, "a short drag must not become a ring click")
+            XCTAssertTrue(orders.isEmpty)
+        }
+
+        XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
+        controller.moveNozzle(along: 6)
+        XCTAssertEqual(controller.presentation?.reorder?.order, ["b", "a"])
+        controller.cancelNozzle()
+        XCTAssertNil(controller.presentation?.reorder)
+        XCTAssertTrue(orders.isEmpty, "Escape must leave the order unchanged")
+
+        XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
+        controller.moveNozzle(along: 6)
+        controller.endNozzle(insideMain: false, overSameSource: false)
+        XCTAssertTrue(orders.isEmpty, "release outside the widget must leave the order unchanged")
+        XCTAssertTrue(refreshes.isEmpty)
+
+        XCTAssertTrue(controller.beginNozzle(id: "a", along: 0))
+        controller.endNozzle(insideMain: true, overSameSource: true)
+        XCTAssertEqual(refreshes, ["a"], "a stationary ring click still refreshes the member")
+    }
+
     func testD09DisappearingDragDestinationCannotJumpOrSaveFallback() throws {
         let topology = DragTopology()
         var clock = 0.0
