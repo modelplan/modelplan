@@ -8,6 +8,43 @@ import ModelPlanWire
 
 @MainActor final class I03FirstRunCopyJourneyTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    func testNormalFirstRunWithNoSubscriptionsShowsEmptyStateAndCanFinish() async throws {
+        for locale in ["en", "zh-CN"] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("i03-empty-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+            var document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+            var projection = try XCTUnwrap(document["projection"] as? [String: Any])
+            projection["rows"] = []; projection["resetEvents"] = []
+            document["projection"] = projection
+            let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: document))
+            let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
+            let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+            await app.prepare(); await app.composition.start()
+            defer { app.composition.dock.close() }
+            let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.restoreFirstRunIfNeeded()
+            let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+            defer { window.close() }
+            let views = descendants(try XCTUnwrap(window.contentView))
+            let expected = locale == "en" ? "No subscriptions found" : "未检测到订阅"
+            XCTAssertTrue(views.compactMap { $0 as? NSTextField }.contains {
+                !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == expected
+            })
+            let done = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.done" } as? NSButton)
+            XCTAssertTrue(done.isEnabled); done.performClick(nil)
+            var snapshot = await store.snapshot()
+            for _ in 0..<200 where !snapshot.preferences.onboarding.completed {
+                try await Task.sleep(for: .milliseconds(10)); snapshot = await store.snapshot()
+            }
+            XCTAssertTrue(snapshot.preferences.onboarding.completed)
+            await app.composition.stop()
+        }
+    }
     func testNormalFirstRunShowsPrivacyAndPublicRecommendationInBothLanguages() async throws {
         for locale in ["en", "zh-CN"] {
             let profile = FileManager.default.temporaryDirectory.appendingPathComponent("i03-first-run-" + UUID().uuidString)
