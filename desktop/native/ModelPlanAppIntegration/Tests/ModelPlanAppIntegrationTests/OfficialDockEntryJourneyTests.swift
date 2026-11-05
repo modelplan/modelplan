@@ -8,12 +8,11 @@ import ModelPlanSettings
 
 @MainActor final class OfficialDockEntryJourneyTests: XCTestCase {
     func testNormalEmptyEntryUsesStudyQuestionMarkAndOpensSettings() async throws {
-        _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("official-dock-empty-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english; $0.autoHide = false }
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, dockEnvironment:normalEntryTestEnvironment, activateSettings:{})
         await app.prepare(); app.allowDockPresentation()
         let dock = app.composition.dock; defer { dock.close() }
         XCTAssertNil(dock.lastAppearanceError)
@@ -38,12 +37,11 @@ import ModelPlanSettings
     }
 
     func testNormalEngineRowsEntryPresentsOfficialDockHull() async throws {
-        _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("official-dock-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let app = EngineRowsEntry.make(
             configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: try SettingsStore(url: root.appendingPathComponent("settings.json")), createsNativePanels: false)
+            settingsStore: try SettingsStore(url: root.appendingPathComponent("settings.json")), createsNativePanels: false, dockEnvironment:normalEntryTestEnvironment, activateSettings:{})
         await app.prepare()
         defer { app.composition.dock.close() }
         XCTAssertNil(app.composition.dock.lastAppearanceError, "Official appearance failed: \(String(describing: app.composition.dock.lastAppearanceError))")

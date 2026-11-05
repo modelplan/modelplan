@@ -35,7 +35,7 @@ jobs:
         os:
         - ubuntu-latest
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cce044fa9f2f2b48b21693e2b85744a9b1fe2584
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: transport
       os: ${{ matrix.os }}
