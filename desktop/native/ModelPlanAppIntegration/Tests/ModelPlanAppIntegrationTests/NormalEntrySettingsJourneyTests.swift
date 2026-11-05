@@ -76,6 +76,28 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testV17NormalEntryDefaultsToTightestAndRetainsExplicitMenuChoice() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v17-settings-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+            activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.menuDisplay, .tightest,
+                       "A fresh normal entry must select the tightest reading")
+        for choice in [MenuDisplay.icon, .twoWindows, .tightest] {
+            _ = try await store.update { $0.menuDisplay = choice }
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let saved = await reopened.snapshot()
+            XCTAssertEqual(saved.preferences.menuDisplay, choice, "Explicit choices must survive reopening")
+        }
+    }
+
     func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
