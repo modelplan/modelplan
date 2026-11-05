@@ -90,6 +90,18 @@ import ModelPlanWire
             XCTAssertFalse(done.isHiddenOrHasHiddenAncestor); XCTAssertFalse(help.isHiddenOrHasHiddenAncestor)
             XCTAssertEqual(done.title, locale == "en" ? "Done" : "完成")
             XCTAssertEqual(help.title, locale == "en" ? "See what's here" : "看看都有什么")
+            let buttons = try XCTUnwrap(done.superview as? NSStackView)
+            XCTAssertTrue(help.superview === buttons)
+            XCTAssertEqual(buttons.orientation, .horizontal)
+            let doneIndex = try XCTUnwrap(buttons.arrangedSubviews.firstIndex(of: done))
+            let helpIndex = try XCTUnwrap(buttons.arrangedSubviews.firstIndex(of: help))
+            XCTAssertEqual(helpIndex, doneIndex + 1, "The exploration link must sit next to Done")
+            let login = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.login" } as? NSButton)
+            let loginBlock = try XCTUnwrap(login.superview as? NSStackView)
+            let page = try XCTUnwrap(buttons.superview as? NSStackView)
+            let loginIndex = try XCTUnwrap(page.arrangedSubviews.firstIndex(of: loginBlock))
+            let buttonsIndex = try XCTUnwrap(page.arrangedSubviews.firstIndex(of: buttons))
+            XCTAssertLessThan(loginIndex, buttonsIndex, "The login choice must precede Done")
             await app.composition.stop()
         }
     }
