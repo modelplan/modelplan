@@ -16,6 +16,10 @@ import (
 
 type u14RecordingTransport struct{}
 
+// This offline fixture returns one synthetic response and never uses a network
+// transport or retries. It satisfies the reader guard's reviewed seam.
+func (u14RecordingTransport) ReaderSingleAttempt() {}
+
 func u14HTTPClient() *http.Client {
 	return &http.Client{Timeout: nativeTimeout, Transport: u14RecordingTransport{}}
 }

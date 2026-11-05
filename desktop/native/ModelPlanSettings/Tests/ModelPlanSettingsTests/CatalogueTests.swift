@@ -6,6 +6,7 @@ import XCTest
 final class CatalogueTests: XCTestCase {
     private func context() -> SettingsPageContext {
         var c = SettingsPageContext()
+        c.refreshHistory = [] // A connected producer with no attempts yet.
         c.subscriptions = [
             .init(id: "one", name: .init("Provider", "厂家"), plan: "Basic", vendor: "vendor", modelNames: ["Model Alpha"], toolNames: ["Tool A"], source: .fresh),
             .init(id: "two", name: .init("Provider", "厂家"), plan: "Plus", vendor: "vendor", modelNames: ["Model Beta"], source: .stale),
@@ -84,8 +85,9 @@ final class CatalogueTests: XCTestCase {
         c.about.appVersion = "secretToken"; XCTAssertEqual(c.about.version, "unknown")
         c.about.appVersion = "0.5.38-beta.1"; XCTAssertEqual(c.about.version, "0.5.38-beta.1")
         c.about.appVersion = "/Users/private/account@example.com"
+        let diagnostics = try SettingsCatalogue.rows(preferences: p, context: c, paneID: "diagnostics")
+        XCTAssertEqual(diagnostics.first { $0.key == .diagnostics }?.value, .text(text))
         let rows = try SettingsCatalogue.rows(preferences: p, context: c, pane: .about)
-        XCTAssertEqual(rows.first { $0.key == .diagnostics }?.value, .text(text))
         XCTAssertEqual(rows.first { $0.key == .feedback }?.value, .link(SettingsAbout.feedbackURL))
         XCTAssertEqual(rows.first { $0.key == .architecture }?.value, .text(SettingsAbout.intelNote.chinese))
     }
