@@ -39,3 +39,15 @@ test('S8 unitless detail balance does not become labelled credits on the normal 
  await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
  await expect(page.locator('.pg-sub .cr-bal')).toHaveCount(0);
 });
+
+test('C-08 C-12 admitted credit units show verified balance and never relabel money',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ data.projection.rows=data.projection.rows.slice(0,1);data.details.subscriptions=data.details.subscriptions.slice(0,1);
+ const detail=data.details.subscriptions[0];detail.credits={balance:19613.957,observedAt:'2026-11-03T11:55:00Z',unit:'credits'};
+ for(const raw of [send('load',{appearance,shell,redBelow:25}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.eng-keys .ek[data-sub]').first().click();
+ const balance=page.locator('.pg-sub .cr-bal');await expect(balance).toHaveText('19,614');
+ detail.credits.unit='money';expect(await receive(send('display',{data}))).toBe(true);await expect(balance).toHaveCount(0);
+ delete detail.credits.unit;expect(await receive(send('display',{data}))).toBe(true);await expect(balance).toHaveCount(0);
+});
