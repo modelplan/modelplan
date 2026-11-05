@@ -17,6 +17,7 @@
     {
       "kind": "five_hour",
       "usedPercent": 39,
+      "windowMinutes": 300,
       "resetsAt": "2026-10-14T10:42:00Z",
       "resetMode": "fixed",
       "observedAt": "2026-10-14T09:58:00Z",
@@ -32,6 +33,7 @@
     {
       "kind": "weekly",
       "usedPercent": 41,
+      "windowMinutes": 10080,
       "resetsAt": "2026-10-17T14:00:00Z",
       "resetMode": "fixed",
       "observedAt": "2026-10-14T09:58:00Z",
