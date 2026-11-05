@@ -26,6 +26,27 @@ private actor G316Engine: EngineClient {
 
 @MainActor final class G3SettingsRowMeasurementTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    // Look through wrappers, but don't mistake a member label alongside its
+    // control, or a standalone empty-state readout, for a note below a control.
+    private func nestedNotesBelowControls(_ root: NSView) -> [NSTextField] {
+        func containsControl(_ view: NSView) -> Bool {
+            descendants(view).contains { !$0.isHiddenOrHasHiddenAncestor &&
+                ($0 is SettingsOwnedControl || ($0 is NSControl && !($0 is NSTextField))) }
+        }
+        var found: [NSTextField] = []
+        for stack in descendants(root).compactMap({ $0 as? NSStackView })
+        where stack.orientation == .vertical && !stack.isHiddenOrHasHiddenAncestor {
+            var earlierControl = false
+            for child in stack.arrangedSubviews where !child.isHiddenOrHasHiddenAncestor {
+                if containsControl(child) { earlierControl = true; continue }
+                guard earlierControl else { continue }
+                found += descendants(child).compactMap { $0 as? NSTextField }.filter {
+                    !$0.isHiddenOrHasHiddenAncestor && !$0.stringValue.isEmpty
+                }
+            }
+        }
+        return found
+    }
     private func centreOffset(label: NSView, control: NSView, in parent: NSView) -> CGFloat {
         control.convert(control.bounds, to: parent).midY - label.convert(label.bounds, to: parent).midY
     }
@@ -40,6 +61,20 @@ private actor G316Engine: EngineClient {
         control.setFrameOrigin(.init(x: 100, y: 13))
         XCTAssertEqual(line.frame, original, "Moving a child must not require moving its parent")
         XCTAssertGreaterThan(abs(centreOffset(label: label, control: control, in: line)), 1)
+    }
+
+    func testNestedNoteOracleDistinguishesMemberLabelsAndEmptyReadouts() {
+        let member = NSStackView(views: [NSTextField(labelWithString: "Member"), NSButton(title: "Choice", target: nil, action: nil)])
+        member.orientation = .horizontal
+        let wrapper = NSStackView(views: [NSTextField(labelWithString: "Unavailable")])
+        let controls = NSStackView(views: [member, wrapper])
+        controls.orientation = .vertical
+        XCTAssertEqual(nestedNotesBelowControls(controls).map(\.stringValue), ["Unavailable"])
+        wrapper.isHidden = true
+        XCTAssertTrue(nestedNotesBelowControls(controls).isEmpty)
+        let readout = NSStackView(views: [NSTextField(labelWithString: "No subscriptions")])
+        readout.orientation = .vertical
+        XCTAssertTrue(nestedNotesBelowControls(readout).isEmpty)
     }
 
     func testG3_16_SettingsRowsMeasureActualBands() async throws {
@@ -113,9 +148,8 @@ private actor G316Engine: EngineClient {
                             offenders.append((.zero, "\(pane.id).\(row.key.rawValue): unexpected content in title stack"))
                         }
                     } else { offenders.append((.zero, "\(pane.id).\(row.key.rawValue): missing title stack")) }
-                    let visible = row.controls.arrangedSubviews.filter { !$0.isHiddenOrHasHiddenAncestor }
-                    if visible.count > 1 && visible.contains(where: { $0 is NSTextField }) {
-                        offenders.append((.zero, "\(pane.id).\(row.key.rawValue): text beneath control"))
+                    for note in nestedNotesBelowControls(row.controls) {
+                        offenders.append((note.convert(note.bounds, to: canvas), "\(pane.id).\(row.key.rawValue): text beneath control"))
                     }
                     for line in descendants(row.controls).compactMap({ $0 as? NSStackView }) where line.orientation == .horizontal && !line.isHiddenOrHasHiddenAncestor {
                         let children = line.arrangedSubviews.filter { !$0.isHiddenOrHasHiddenAncestor }
