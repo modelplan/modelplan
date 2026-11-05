@@ -62,6 +62,13 @@ import ModelPlanMenuVerification
     private let makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
+    #if DEBUG
+    var g1CockpitSnapshotSource:(()->G1RenderedElement)?
+    var g1ConfigureNativeCockpit:((Bool)->Void)?
+    var g1BindInspectionControls:((G1InspectionControls)->Void)?
+    var g1RefreshObservationSources:(()->Void)?
+    var g1InspectionClockDidChange:(()->Void)?
+    #endif
     var inspectCockpitState: (() -> CockpitWindowInspection?)?
     public var cockpitStateForChecks: CockpitWindowInspection? { inspectCockpitState?() }
     private var firstRunFlow: CommunityConnectionFlow?
@@ -97,6 +104,9 @@ import ModelPlanMenuVerification
         var environment = SettingsEnvironment(); environment.v1NormalEntry = true
         settings = SettingsApplicationCoordinator(store: settingsStore, context: contextSource.make(engineReady: false), environment: environment) { composition.applySettings($0) }
         super.init()
+        #if DEBUG
+        composition.g1SnapshotReader = { [weak self] in self?.g1ReadRenderedSnapshotForChecks() }
+        #endif
         showSettingsObserver = settings.editor.observeChanges { [weak self] in
             guard let self, !self.terminating, self.liveStatusMenu != nil else { return }
             self.renderMenu()

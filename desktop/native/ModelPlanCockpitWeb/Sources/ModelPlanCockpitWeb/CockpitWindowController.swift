@@ -82,6 +82,25 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   private var snapGuide: NSPanel?
   public let bridge: CockpitBridgeState
   private var web: WKWebView?
+  #if DEBUG
+  public var g1InspectionEnabledForChecks=false
+  public var g1ClockForChecks:(()->UInt64)?
+  public var g1ArmForChecks:((UInt64,@escaping @MainActor ()->Void)->()->Void)?
+  private var g1OpenTransitionActive=false
+  public private(set) var g1RenderedDOMForChecks:Data?
+  public private(set) var g1DOMCaptureGenerationForChecks:UInt64=0
+  private var g1InspectionEpoch:UInt64=0
+  private var g1InspectionRequest:UUID?
+  private var g1InspectionInputMonitor:Any?
+  public var g1BundleIdentityForChecks:String? {bundle.g1ManifestIdentityForChecks}
+  public var g1ShellMetadataForChecks:[String:String] {
+    var value=["transitionPhase":ending ? "discarded":closeTask != nil ? "closing":g1OpenTransitionActive ? "opening":web == nil ? "unopened":bridge.ready ? "open":"loading",
+               "scope":scope,"shutterClosed":String(shellSession.shutterClosed),"detached":String(shellSession.detached),"hasSnapGuide":String(snapGuide?.isVisible ?? false),"webInspectionEnabled":String(g1InspectionEnabledForChecks),"webInspectionPending":String(g1InspectionRequest != nil)]
+    if let web{value["webPageZoom"]=String(Double(web.pageZoom))}
+    if let layout{value["profile"]=layout.profile.rawValue;value["rootHeight"]=String(Double(layout.rootHeight));value["scale"]=String(Double(layout.scale))}
+    return value
+  }
+  #endif
   private var permitsNativePresentation = true
   private var openRequested = false
   public var stateForChecks: CockpitWindowInspection {
@@ -141,11 +160,17 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     #if MODELPLAN_TEST_ONLY_SPI
     if let clock = verificationNoWindowClock { return clock() }
     #endif
+    #if DEBUG
+    if let clock=g1ClockForChecks{return clock()}
+    #endif
     return Self.wallClockMilliseconds()
   }
   private func armDeadline(_ delay: UInt64, _ fire: @escaping @MainActor () -> Void) -> () -> Void {
     #if MODELPLAN_TEST_ONLY_SPI
     if let arm = verificationNoWindowArm { return arm(delay, fire) }
+    #endif
+    #if DEBUG
+    if let arm=g1ArmForChecks{return arm(delay,fire)}
     #endif
     return Self.armTimer(delay, fire)
   }
@@ -322,6 +347,16 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     freshnessObservers.append((center, clock))
     applyLayout()
     installOutsideMonitors()
+    #if DEBUG
+    if g1InspectionEnabledForChecks {
+      g1InspectionInputMonitor=NSEvent.addLocalMonitorForEvents(matching:[.mouseMoved,.leftMouseDown,.leftMouseUp,.leftMouseDragged,.keyDown,.keyUp]) { [weak self] event in
+        MainActor.assumeIsolated {
+          if let self,event.window === self.window {self.g1CollectRenderedDOM()}
+          return event
+        }
+      }
+    }
+    #endif
     observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in self?.cancelDrag(); self?.applyLayout() }
     })
@@ -329,13 +364,23 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     panel.alphaValue = appearance.reduceMotion ? 1 : 0
     panel.makeKeyAndOrderFront(nil)
     if !appearance.reduceMotion {
+      #if DEBUG
+      g1OpenTransitionActive=true
+      NSAnimationContext.runAnimationGroup({ context in context.duration=0.18;panel.animator().alphaValue=1 },completionHandler:{ [weak self] in
+        Task { @MainActor in self?.g1OpenTransitionActive=false }
+      })
+      #else
       NSAnimationContext.runAnimationGroup { context in context.duration = 0.18; panel.animator().alphaValue = 1 }
+      #endif
     }
     #if MODELPLAN_TEST_ONLY_SPI
       verificationDidOpen?(view, panel)
     #endif
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
+    #if DEBUG
+    g1InvalidateRenderedDOM()
+    #endif
     guard visibilityFence.isConfirmedVisible else {
       // Do not retain hidden snapshots; request fresh data after show is accepted.
       refreshAfterHiddenDisplay = true; return
@@ -353,6 +398,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   /// Hide synchronously before yielding; acknowledge only after clear receipt
   /// or complete view disposal. An unknown floor remains blocked after receipt.
   public func clearPrivateViews(adopting context: CockpitEngineContext? = nil) async {
+    #if DEBUG
+    g1InvalidateRenderedDOM()
+    #endif
     freshnessDriver.hide(); freshnessDriver.invalidate(); bridge.cancelDeadlineReports(); visibilityFence.invalidate()
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
     receiptWatchdog.cancel(); renderWatchdog.cancel()
@@ -403,7 +451,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }, completed: { [weak self] result in
       guard let self else { return }
       switch result {
-      case .accepted: onAccepted?()
+      case .accepted:
+        onAccepted?()
+        #if DEBUG
+        if !clear {self.g1CollectRenderedDOM()}
+        #endif
       case .missing: self.fail(.pageAPIUnavailable)
       case .rejected: self.fail(.messageRejected)
       case .failed: self.fail(.javascriptFailed)
@@ -460,6 +512,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         else if let id = bridge.currentDeadlineTrigger, bridge.isCurrentDisplay(id) { receiptWatchdog.wait(for: id) }
         if let reason = pendingFreshnessReason { sendFreshnessTick(reason) }
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
+        #if DEBUG
+        g1CollectRenderedDOM()
+        #endif
         onRendered?()
       case .deadlinePending(let id):
         if receiptWatchdog.currentID != id { receiptWatchdog.wait(for: id) }
@@ -471,6 +526,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       catch { /* Reject without logging private message bodies. */ }
   }
   private func suspendForHiddenPage() {
+    #if DEBUG
+    g1InvalidateRenderedDOM()
+    #endif
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
     appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel(); orderedDelivery.invalidate()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
@@ -742,8 +800,14 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     discard()
   }
   public func discard() {
+    #if DEBUG
+    g1InvalidateRenderedDOM()
+    #endif
     guard !ending else { return }
     ending = true
+    #if DEBUG
+    if let monitor=g1InspectionInputMonitor{NSEvent.removeMonitor(monitor)};g1InspectionInputMonitor=nil
+    #endif
     freshnessDriver.retire(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     orderedDelivery.invalidate(); refreshAfterHiddenDisplay = false; appearanceGate.invalidate(); appearanceWatchdog.cancel()
     visibilityFence.invalidate(); visibilityTimeout?.cancel(); visibilityTimeout = nil
@@ -800,3 +864,34 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   override func cancelOperation(_ sender: Any?) { event?(.cancelled, .zero) }
   override func keyDown(with event: NSEvent) { if event.keyCode == 53 { self.event?(.cancelled, .zero) } else { super.keyDown(with: event) } }
 }
+
+#if DEBUG
+extension CockpitWindowController {
+  public func g1RefreshObservationForChecks(){g1CollectRenderedDOM()}
+  public func g1NotifyClockChangeForChecks(){freshnessDriver.notify(.clockChange)}
+  private func g1InvalidateRenderedDOM() {
+    g1InspectionEpoch &+= 1;g1RenderedDOMForChecks=nil;g1InspectionRequest=nil
+  }
+  private func g1CollectRenderedDOM() {
+    guard g1InspectionEnabledForChecks,!ending,!bridge.hasPendingDisplay,let web,!web.isHidden,window?.isVisible == true else{return}
+    g1RenderedDOMForChecks=nil
+    let epoch=g1InspectionEpoch,request=UUID(),context=bridge.context
+    g1InspectionRequest=request
+    let script="await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return " + G1CockpitDOMScript.source
+    web.callAsyncJavaScript(script,arguments:[:],in:nil,in:.page) { [weak self,weak web] result in
+      let observed:String?
+      if case .success(let value)=result {observed=value as? String}else{observed=nil}
+      Task { @MainActor in
+        guard let self,let web,self.web === web,!self.ending,!web.isHidden,self.window?.isVisible == true,
+              self.g1InspectionEpoch == epoch,self.g1InspectionRequest == request,self.bridge.context == context else{return}
+        self.g1InspectionRequest=nil
+        guard let raw=observed,raw.utf8.count<=4*1024*1024,
+              let data=raw.data(using:.utf8),(try? JSONSerialization.jsonObject(with:data)) != nil else {
+          self.g1RenderedDOMForChecks=nil;return
+        }
+        self.g1RenderedDOMForChecks=data;self.g1DOMCaptureGenerationForChecks &+= 1
+      }
+    }
+  }
+}
+#endif

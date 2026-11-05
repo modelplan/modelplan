@@ -18,6 +18,9 @@ public struct EngineMenuRefreshResult {
     public let scheduled:[WireRefreshScheduled]
 }
 @MainActor public final class EngineDockMenuComposition {
+    #if DEBUG
+    var g1SnapshotReader:(()->G1RenderedSnapshot?)?
+    #endif
     public let store: EngineStore
     public let client: any EngineClient
     public let provider: EngineDockMenuProvider

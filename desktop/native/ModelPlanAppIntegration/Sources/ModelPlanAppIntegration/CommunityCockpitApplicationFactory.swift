@@ -46,15 +46,21 @@ import ModelPlanDock
     }
 
     /// Internal constructor seam: only the engine changes; owner, page factory and fanout remain real.
+    #if DEBUG
     static func makeForChecks(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                               bundleURL: URL, createsNativePanels: Bool = false,
                               cockpitEntryEnabled: Bool = true,
                               verifiedBundleForChecks: VerifiedCockpitBundle? = nil,
+                              dockEnvironment:(@MainActor ()->DockEdgeEnvironment)? = nil,
+                              deadlineNow:@escaping @MainActor ()->Date = {Date()},
+                              deadlineElapsed:(()->TimeInterval)? = nil,deadlineScheduling:(any DockEdgeScheduling)? = nil,
                               makeEngineClient: @escaping @MainActor (EngineClientConfiguration, any EngineClientEventConsumer) -> any EngineClient) -> EngineDockMenuApplication {
         makeComposed(configuration: configuration, settingsStore: settingsStore,
             createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled,
+            dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             activateSettings: {}, engineClientOverride: makeEngineClient, verifiedBundleForChecks: verifiedBundleForChecks)
     }
+    #endif
 
     private static func makeComposed(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -97,6 +103,13 @@ import ModelPlanDock
                 if owner.inspectsWithoutWindow { return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ false },activate:{}) }
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        #if DEBUG
+        application.g1InspectionClockDidChange = { [weak owner] in owner?.pageForChecks?.g1NotifyClockChangeForChecks() }
+        application.g1RefreshObservationSources = { [weak owner] in owner?.pageForChecks?.g1RefreshObservationForChecks() }
+        application.g1BindInspectionControls = { [weak owner] controls in owner?.g1Controls=controls }
+        application.g1ConfigureNativeCockpit = { [weak owner] allowed in owner?.inspectsWithoutWindow = !allowed }
+        application.g1CockpitSnapshotSource = { [weak owner] in G1SnapshotReader.cockpit(owner?.pageForChecks,scope:owner?.coordinator?.selectedScope) }
+        #endif
         application.inspectCockpitState = { [weak owner] in owner?.pageForChecks?.stateForChecks }
         owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
@@ -115,15 +128,28 @@ import ModelPlanDock
     var pageFailure: (() -> Void)?
     var anchor: (() -> CGRect?)?
     let shell = CockpitShellSession()
+    #if DEBUG
+    weak var g1Controls:G1InspectionControls?
+    private func g1Configure(_ page:CockpitWindowController) {
+        guard let controls=g1Controls else{return}
+        page.g1InspectionEnabledForChecks=true
+        page.g1ClockForChecks={ [weak controls] in controls?.unixMilliseconds ?? 0 }
+        page.g1ArmForChecks={ [weak controls] delay,fire in controls?.armCockpit(delay,fire) ?? {} }
+    }
+    #endif
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
-        if inspectsWithoutWindow, let verifiedBundleForChecks {
-            let page = CockpitWindowController.withoutWindowForChecks(bundle: verifiedBundleForChecks, context: context, appearance: appearance)
+        #if DEBUG
+        if let verifiedBundleForChecks {
+            let page = inspectsWithoutWindow
+                ? CockpitWindowController.withoutWindowForChecks(bundle:verifiedBundleForChecks,context:context,appearance:appearance,shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
+                : CockpitWindowController(bundle:verifiedBundleForChecks,context:context,appearance:appearance,shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
             page.onFailure = { [weak self] _ in self?.pageFailure?() }
-            pageForChecks = page
+            pageForChecks = page;g1Configure(page)
             return page
         }
+        #endif
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
               CommunityConsentBundleIdentity.matches(bundle:bundle) else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
@@ -136,6 +162,9 @@ import ModelPlanDock
             ? CockpitWindowController.withoutWindowForChecks(bundle:verified,context:context,appearance:appearance,shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
             : CockpitWindowController(bundle:verified,context:context,appearance:appearance,shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         pageForChecks = page
+        #if DEBUG
+        g1Configure(page)
+        #endif
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)

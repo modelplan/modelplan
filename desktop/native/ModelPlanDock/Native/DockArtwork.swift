@@ -45,6 +45,9 @@ public struct DockResourceManifest: Codable, Sendable {
         return (url,data)
     }
     public func checkedURL(_ id:String) throws -> URL {try checkedResource(id).0}
+    #if DEBUG
+    func g1ResourceIdentity(_ id:String)->String? {manifest.files[id].map{"sha256:"+$0.sha256.lowercased()}}
+    #endif
     public func isVectorResource(_ id:String) -> Bool? {
         manifest.files[id].map { $0.path.lowercased().hasSuffix(".svg") }
     }

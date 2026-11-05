@@ -57,7 +57,10 @@ public struct DockInstrumentSkin: Codable, Sendable {
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
 /// Metadata captured by the successful drawing pass, never inferred from pixels.
 public struct DockRenderedTextInspection {
-    public let text: String, ink: DockInk
+    #if DEBUG
+    public internal(set) var text=""
+    public internal(set) var ink=DockInk(0,0,0,0)
+    #endif
     public let frame: CGRect
     public let glyphTransform: CGAffineTransform
     /// This renderer paints text over the existing face; it paints no dedicated text backing.
@@ -76,6 +79,10 @@ public struct DockRenderedLayerRole {
     public let role: String, subscriptionID: String?, resource: String?
 }
 public struct DockRenderedResourceFilter {
+    #if DEBUG
+    public internal(set) var sourceIdentity:String?
+    public internal(set) var drawingTransform=CGAffineTransform.identity
+    #endif
     public let resource: String, subscriptionID: String?
     public let target: CGRect, interpolationQuality: CGInterpolationQuality
     public let preservesSourcePixels: Bool, fitsVisibleGlyph: Bool
@@ -158,9 +165,15 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             guard rect.minX.isFinite,rect.minY.isFinite,rect.width>0,rect.height>0,rect.width<=4096,rect.height<=4096 else{throw DockArtworkError.invalidManifest}
             let size=Int(ceil(max(rect.width,rect.height)*CGFloat(scale)))
             let image: CGImage
+            #if DEBUG
+            var observedSource=resources
+            #endif
             do { image = try fitVisibleGlyph ? resources.fittedGlyph(resource,targetPixelSize:max(1,size)) : resources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels) }
             catch DockArtworkError.missingResource {
                 guard let supplementalResources else { throw DockArtworkError.missingResource(resource) }
+                #if DEBUG
+                observedSource=supplementalResources
+                #endif
                 image = try fitVisibleGlyph ? supplementalResources.fittedGlyph(resource,targetPixelSize:max(1,size)) : supplementalResources.image(resource,maximumPixelSize:max(1,size),preserveSourcePixels:preserveSourcePixels)
             }
             // Static SVG marks retain their intrinsic aspect ratio in the square
@@ -183,7 +196,12 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.translateBy(x:target.minX,y:target.maxY);c.scaleBy(x:1,y:-1)
             let interpolation = c.interpolationQuality
             c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
-            resourceFilters.append(.init(resource:resource,subscriptionID:subscriptionID,target:target,interpolationQuality:interpolation,preservesSourcePixels:preserveSourcePixels,fitsVisibleGlyph:fitVisibleGlyph))
+            var observation=DockRenderedResourceFilter(resource:resource,subscriptionID:subscriptionID,target:target,interpolationQuality:interpolation,preservesSourcePixels:preserveSourcePixels,fitsVisibleGlyph:fitVisibleGlyph)
+            #if DEBUG
+            observation.sourceIdentity=observedSource.g1ResourceIdentity(resource)
+            observation.drawingTransform=c.ctm
+            #endif
+            resourceFilters.append(observation)
             role(imageRole,subscriptionID,resource:resource)
         }
         if let material {
@@ -238,8 +256,11 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.saveGState();c.clip(to:rect)
             let baseline=rect.midY+(ascent-descent)/2
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
-            let channels = color.components!
-            let observation = DockRenderedTextInspection(text:value,ink:.init(Double(channels[0]),Double(channels[1]),Double(channels[2]),Double(channels[3])),frame: rect, glyphTransform: c.ctm, hasDedicatedBacking: false)
+            var observation = DockRenderedTextInspection(frame:rect,glyphTransform:c.ctm,hasDedicatedBacking:false)
+            #if DEBUG
+            let channels=color.components!
+            observation.text=value;observation.ink = .init(Double(channels[0]),Double(channels[1]),Double(channels[2]),Double(channels[3]))
+            #endif
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
             return observation
         }

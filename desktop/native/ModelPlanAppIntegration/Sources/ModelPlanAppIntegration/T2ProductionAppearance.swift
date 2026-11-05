@@ -11,6 +11,17 @@ import ModelPlanSettings
     static func geometrySourceIdentityForChecks(_ host: StaticDockPreviewHost) -> String? {
         host.geometrySourceIdentityForChecks
     }
+    #if DEBUG
+    private final class MaterialObservation:NSObject {
+        let value:T2RenderedMaterialInspection
+        init(_ value:T2RenderedMaterialInspection){self.value=value}
+    }
+    private static let g1Materials=NSMapTable<DockInstrumentView,MaterialObservation>.weakToStrongObjects()
+    static func materialObservationForSnapshot(_ view:DockInstrumentView)->T2RenderedMaterialInspection? {
+        guard view.renderedFaceMaterialForChecks?.materialSourceIdentity == "ModelPlanOfficialDock.T2FaceMaterial" else{return nil}
+        return g1Materials.object(forKey:view)?.value
+    }
+    #endif
     enum Failure: Error { case missingDisplay }
     static func apply(_ view: DockInstrumentView, _ rows: [DockInstrumentReading], _ preferences: SettingsPreferences) throws -> StaticDockGeometry {
         guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw Failure.missingDisplay }
@@ -40,6 +51,10 @@ import ModelPlanSettings
             notices["__t2_overflow_notice__"] = notice
         }
         try view.applyOfficial(skin: skin, rows: rows, notices: notices, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
+        #if DEBUG
+        if let receipt=material.renderedMaterialForChecks {g1Materials.setObject(MaterialObservation(receipt),forKey:view)}
+        else {g1Materials.removeObject(forKey:view)}
+        #endif
         let button = try geometry.consoleButtonRect(in: skin.bounds)
         var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))

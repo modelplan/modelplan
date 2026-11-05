@@ -20,6 +20,9 @@ public final class VerifiedCockpitBundle {
   private let rootFD: Int32
   private let files: [String: String]
   public let edition: String
+  #if DEBUG
+  public private(set) var g1ManifestIdentityForChecks:String?
+  #endif
   private static let fileLimit = 8 * 1024 * 1024
   static func digest(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -85,6 +88,9 @@ public final class VerifiedCockpitBundle {
       self.rootFD = fd
       self.files = manifest.files
       self.edition = manifest.edition
+      #if DEBUG
+      self.g1ManifestIdentityForChecks=manifestSHA256
+      #endif
     } catch {
       close(fd)
       throw error

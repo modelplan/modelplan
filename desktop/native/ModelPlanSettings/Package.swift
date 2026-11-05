@@ -15,6 +15,7 @@ let package = Package(
     targets: [
         .target(name: "ModelPlanSettings", dependencies: [
             .product(name: "ModelPlanDock", package: "ModelPlanNative"),
+            .product(name: "ModelPlanPrimitives", package: "ModelPlanNative"),
             .product(name: "ModelPlanWire", package: "ModelPlanWire"),
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
         ]),

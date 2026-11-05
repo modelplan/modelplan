@@ -258,30 +258,54 @@ private actor G1DEngine: EngineClient {
     }
     func testGenericSnapshotDockReadsActualRenderedValueAndRetiresItOnClear() async throws {
         let f=try await fixture(), id=G1DFixture.ids[0]
-        let snapshot=f.app.renderedSnapshotForChecks()
+        let snapshot=f.app.composition.renderedSnapshotForChecks()
         let readout=try XCTUnwrap(snapshot.element("dock.readout."+id))
         XCTAssertEqual(readout.text,"41%");XCTAssertEqual(readout.attributes["remainingPercent"],"41.0")
         XCTAssertEqual(readout.ink?.hex,"#E9EDF0FF")
         XCTAssertEqual(snapshot.element("dock.face")?.assetSource,"ModelPlanOfficialDock.T2FaceMaterial")
+        XCTAssertEqual(snapshot.element("dock.resource.0")?.attributes["assetDigest"]?.hasPrefix("sha256:"),true)
         XCTAssertGreaterThan(try XCTUnwrap(readout.frame).width,0)
         let count=f.host.dockView.refreshSweepCountForChecks, before=f.host.dockView.frame
-        _=f.app.renderedSnapshotForChecks();XCTAssertEqual(f.host.dockView.frame,before)
+        _=f.app.composition.renderedSnapshotForChecks();XCTAssertEqual(f.host.dockView.frame,before)
         XCTAssertEqual(f.host.dockView.refreshSweepCountForChecks,count)
         await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
-        XCTAssertNil(f.app.renderedSnapshotForChecks().element("dock.readout."+id))
+        XCTAssertNil(f.app.composition.renderedSnapshotForChecks().element("dock.readout."+id))
     }
     func testGenericSnapshotCardReadsPaintedTextInkAndBackground() async throws {
         let f=try await fixture();try f.hover();f.tick(0.251)
         let card=f.host.card;card.layoutSubtreeIfNeeded()
         let bitmap=try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in:card.bounds));card.cacheDisplay(in:card.bounds,to:bitmap)
-        let snapshot=f.app.renderedSnapshotForChecks()
+        let snapshot=f.app.composition.renderedSnapshotForChecks()
         let name=try XCTUnwrap(snapshot.element("dock.card.text.name"))
         XCTAssertTrue(try XCTUnwrap(name.text).contains("Synthetic Alpha"));XCTAssertNotNil(name.ink)
         XCTAssertNotNil(snapshot.element("card")?.fill)
         XCTAssertGreaterThan(try XCTUnwrap(name.contrastAgainstParent),1)
         XCTAssertEqual(snapshot.element("card")?.attributes["paintEvidence"],"completed-native-draw")
         f.host.setPresentationAllowed(false)
-        XCTAssertNil(f.app.renderedSnapshotForChecks().element("dock.card.text.name"))
+        XCTAssertNil(f.app.composition.renderedSnapshotForChecks().element("dock.card.text.name"))
+    }
+    func testGenericSnapshotControlsDriveRealHoverClockAndAdmittedSessionInput() async throws {
+        let f=try G1DFixture();addTeardownBlock{@MainActor in await f.close()}
+        _ = try await f.store.update{p in p.autoHide=false;p.motion = .on;for _ in 0..<16{p.onboarding.next()}}
+        let controls=G1InspectionControls(now:f.clock.wall,displays:f.displays,notificationLedgerURL:f.root.appendingPathComponent("isolated-ledger.json"))
+        let rows=try f.decode()
+        f.app=try EngineRowsEntry.makeForG1Checks(configuration:.init(executableURL:f.root.appendingPathComponent("not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:f.store,
+            controls:controls,bundleURL:f.root.appendingPathComponent("Synthetic.app")){_,consumer in G1WindowClient(consumer,rows:rows)}
+        await f.app.prepare();f.app.allowDockPresentation();await f.app.composition.start()
+        let id=G1DFixture.ids[0],delivery=try XCTUnwrap(f.app.composition.store.snapshot.delivery)
+        try controls.setVerifiedSessionActivity([.init(subscriptionID:id,bindingVerified:true,fresh:true,observedOutput:true)],delivery:delivery)
+        XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().element("dock.nozzle."+id)?.attributes["workingInput"],"true")
+        let place=try XCTUnwrap(f.host.edgePresentation?.placement),anchor=try XCTUnwrap(f.host.dockView.interactionAnchor(id))
+        try controls.setPointer(.init(x:place.frame.minX+anchor.midX,y:place.frame.maxY-anchor.midY))
+        try controls.advance(by:0.251)
+        XCTAssertFalse(f.host.card.isHidden,"Controlled input must traverse the actual nozzle hover and dwell reducer")
+        XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().capturedAt,controls.now)
+        XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().element("card")?.attributes["hidden"],"false")
+        XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().root.attributes["notificationLedgerIdentity"]?.count,64)
+        XCTAssertThrowsError(try controls.setVerifiedSessionActivity([.init(subscriptionID:"unbound",bindingVerified:true,fresh:true,observedOutput:true)],delivery:delivery))
+        let before=controls.elapsed;XCTAssertThrowsError(try controls.advance(by:-1));XCTAssertEqual(controls.elapsed,before)
+        try controls.setVerifiedSessionActivity([],delivery:delivery)
+        XCTAssertEqual(f.app.composition.renderedSnapshotForChecks().element("dock.nozzle."+id)?.attributes["workingInput"],"false")
     }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }

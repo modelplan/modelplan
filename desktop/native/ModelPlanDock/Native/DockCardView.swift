@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import CryptoKit
+#if DEBUG
+import ModelPlanPrimitives
+#endif
 
 @MainActor private final class DockCardButton:NSButton {
     var invoke:(()->Void)?,focusChanged:(()->Void)?
@@ -19,12 +22,18 @@ import CryptoKit
     public init(){}
 }
 @MainActor private final class DockCardBar:NSView {
+    #if DEBUG
+    var g1DrawnPaints:[G1NativePaint]=[]
+    #endif
     let segmentCount = 10
     var fraction:Double?,on:NSColor,track:NSColor
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.remainingFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.remainingFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
     required init?(coder:NSCoder){fatalError()}
     override var intrinsicContentSize:NSSize{NSSize(width:96,height:10)}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
+        #if DEBUG
+        g1DrawnPaints=[]
+        #endif
         let changed=fraction != row.remainingFraction
         fraction=row.remainingFraction;self.on=on;self.track=track
         setAccessibilityLabel(row.label);setAccessibilityValue(fraction.map{NSNumber(value:$0*100)})
@@ -32,9 +41,22 @@ import CryptoKit
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
     }
     override func draw(_ dirtyRect:NSRect){
+        #if DEBUG
+        var paints:[G1NativePaint]=[]
+        #endif
         let gap:CGFloat=2,w=max(0,(bounds.width-CGFloat(segmentCount-1)*gap)/CGFloat(segmentCount))
         for i in 0..<segmentCount{let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height);track.setFill();r.fill()
-            if let fraction{let fill=max(0,min(1,fraction*Double(segmentCount)-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
+            #if DEBUG
+            paints.append(.init(role:"bar-track",frame:r,color:track.usingColorSpace(.sRGB) ?? track))
+            #endif
+            if let fraction{let fill=max(0,min(1,fraction*Double(segmentCount)-Double(i)));on.setFill();let filled=CGRect(x:r.minX,y:0,width:w*fill,height:r.height);filled.fill()
+                #if DEBUG
+                paints.append(.init(role:"bar-fill",frame:filled,color:on.usingColorSpace(.sRGB) ?? on))
+                #endif
+            }}
+        #if DEBUG
+        g1DrawnPaints=paints
+        #endif
     }
 }
 public struct DockCardMaterialInspection {
@@ -43,6 +65,12 @@ public struct DockCardMaterialInspection {
     public let lcdWindow: CGRect?
 }
 @MainActor public final class DockCardView:NSView {
+    #if DEBUG
+    public private(set) var g1DrawnPaints:[G1NativePaint]=[]
+    #endif
+    #if DEBUG
+    public override func viewDidChangeEffectiveAppearance(){super.viewDidChangeEffectiveAppearance();g1DrawnPaints=[]}
+    #endif
     public var onEnter:((String,UInt64)->Void)?,onDismiss:(()->Void)?,onOpenURL:((URL)->Void)?
     public var permitsAction:((String,UInt64)->Bool)?
     public var onFocusChange:(()->Void)?
@@ -97,6 +125,9 @@ public struct DockCardMaterialInspection {
         }
     }
     public func apply(_ value:DockCardContent,style:DockCardStyle? = nil,brandImage:NSImage?=nil,enterDisabledReason:String?=nil)throws{
+        #if DEBUG
+        g1DrawnPaints=[]
+        #endif
         let replacing=content?.subscriptionID != value.subscriptionID
         generation &+= 1;content=nil
         if replacing { clear() }
@@ -169,9 +200,22 @@ public struct DockCardMaterialInspection {
         return generation==token && content==value
     }
     private func clear(){
+        #if DEBUG
+        g1DrawnPaints=[]
+        #endif
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         arrange(stack,[]);buttons.removeAll();bars.removeAll();labels.removeAll();groups.removeAll()
     }
-    public override func draw(_ dirtyRect:NSRect){style.background.setFill();bounds.fill()}
+    public override func draw(_ dirtyRect:NSRect){
+        style.background.setFill();bounds.fill()
+        #if DEBUG
+        g1DrawnPaints=[.init(role:"background-fill",frame:bounds,color:style.background.usingColorSpace(.sRGB) ?? style.background)]
+        #endif
+    }
     public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onFocusChange=nil;permitsAction=nil}
 }
+
+#if DEBUG
+extension DockCardBar:G1NativePaintObserving {}
+extension DockCardView:G1NativePaintObserving {}
+#endif

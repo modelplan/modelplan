@@ -92,6 +92,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public var renderedLogosForChecks: [String:DockRenderedLogoInspection] { failed || community ? [:] : renderedInspection?.logos ?? [:] }
     public var renderedWidgetValuesForChecks: [String:DockRenderedWidgetValue] { failed || community ? [:] : renderedInspection?.widgetValues ?? [:] }
     public var renderedReadoutTransformsForChecks: [String: CGAffineTransform] { renderedReadoutBackingForChecks.mapValues(\.glyphTransform) }
+    #if DEBUG
+    public var g1RenderObservation:(receipt:DockRenderInspection,scale:Int)? {
+        guard !failed,!community,let renderedInspection else{return nil};return (renderedInspection,scale)
+    }
+    #endif
     private var officialRenderer: DockInstrumentRenderer?
     private var refreshSweepTask: Task<Void, Never>?
     private var refreshSweepOriginal: CGImage?

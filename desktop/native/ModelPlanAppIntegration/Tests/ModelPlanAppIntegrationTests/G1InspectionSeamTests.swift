@@ -91,6 +91,9 @@ import CryptoKit
         XCTAssertFalse(state.hasWindow); XCTAssertFalse(state.hasWebView)
         XCTAssertTrue(state.blocked, "A headless inspection must not invent a page-ready receipt")
         XCTAssertEqual(state.context.storeEpoch, "synthetic")
+        let observed=try XCTUnwrap(app.composition.renderedSnapshotForChecks().element("cockpit"))
+        XCTAssertEqual(observed.attributes["selectedScope"],"all")
+        XCTAssertNotNil(observed.unavailable["webTree"],"Headless shell state must not fabricate a drawn web tree")
         await actual.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:context,nextFloor:nil)))
         XCTAssertNil(app.cockpitStateForChecks)
     }

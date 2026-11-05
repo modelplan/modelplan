@@ -30,6 +30,11 @@ public extension SettingsWindowSurface {
         controller.window?.makeKeyAndOrderFront(nil)
     }
     func hide() { controller.window?.orderOut(nil) }
+    #if DEBUG
+    var renderedRootForG1Checks:NSView? {controller.window?.contentView}
+    var renderedWindowForG1Checks:NSWindow? {controller.window}
+    var renderedPaneForG1Checks:String {controller.selectedPaneID}
+    #endif
 }
 
 /// Retain one per app. All Settings entry points share the existing application editor and one lazy window.
@@ -114,3 +119,11 @@ public extension SettingsWindowSurface {
         surface?.hide()
     }
 }
+
+#if DEBUG
+extension SettingsWindowHost {
+    var renderedRootForG1Checks:NSView? {(surface as? NativeSettingsWindowSurface)?.renderedRootForG1Checks}
+    var renderedWindowForG1Checks:NSWindow? {(surface as? NativeSettingsWindowSurface)?.renderedWindowForG1Checks}
+    var renderedPaneForG1Checks:String? {(surface as? NativeSettingsWindowSurface)?.renderedPaneForG1Checks}
+}
+#endif

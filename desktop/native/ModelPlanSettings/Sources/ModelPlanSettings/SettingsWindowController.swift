@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+#if DEBUG
+import ModelPlanPrimitives
+#endif
 
 enum SettingsWords {
     static func text(_ en: String, _ zh: String, _ language: SettingsLanguage) -> String { language == .english ? en : zh }
@@ -46,9 +49,20 @@ enum SettingsWords {
 
 @MainActor private final class SettingsBackground: NSView {
     override var isFlipped: Bool { true }
-    override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); bounds.fill() }
+    #if DEBUG
+    var g1DrawnPaints:[G1NativePaint]=[]
+    #endif
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill(); bounds.fill()
+        #if DEBUG
+        g1DrawnPaints=[.init(role:"background-fill",frame:bounds,color:NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? .windowBackgroundColor)]
+        #endif
+    }
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance(); needsDisplay = true
+        #if DEBUG
+        g1DrawnPaints=[]
+        #endif
     }
 }
 
@@ -482,3 +496,7 @@ enum SettingsWords {
     /// Wait for the accepted transaction and its UI acknowledgment, not just its store receipt.
     func waitForPendingSave() async { await pendingSaveTask?.value }
 }
+
+#if DEBUG
+extension SettingsBackground:G1NativePaintObserving {}
+#endif

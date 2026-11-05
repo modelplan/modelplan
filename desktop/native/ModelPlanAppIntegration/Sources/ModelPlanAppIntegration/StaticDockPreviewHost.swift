@@ -1647,3 +1647,76 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
     }
     public func cancelPanelMove() { edge.cancelBackgroundMove() }
 }
+
+#if DEBUG
+extension StaticDockPreviewHost {
+    var g1SnapshotInstrumentView:DockInstrumentView {interactionView}
+    /// Internal adapter: every consumer still reads the single composition tree.
+    func g1AppendHostObservations(to root:inout G1RenderedElement) {
+        var canvas=root;canvas.identifier="dock.canvas";canvas.role="raster-surface"
+        canvas.attributes["zOrderSpace"]="bitmap-paint-order"
+        root.children=[canvas];root.frame=container.frame
+        if let panel{root.frame=panel.frame;root.coordinateSpace="screen";root.visible=panel.isVisible;root.attributes["windowLevel"]=String(panel.level.rawValue)}
+        root.attributes["renderer"]=String(reflecting:type(of:container))
+        if let state=edge.presentation?.state{root.animationPhase=String(describing:state)}
+        root.attributes["hasPointerCapture"]=String(interactionController?.hasCapture ?? false)
+        for index in root.children[0].children.indices {
+            if let id=root.children[0].children[index].attributes["subscriptionID"] {
+                if interactionController?.isRunning == true {
+                    root.children[0].children[index].interaction.hover=(interactionHoveredID == id)
+                    root.children[0].children[index].unavailable.removeValue(forKey:"hover")
+                } else {root.children[0].children[index].unavailable["hover"]="No running interaction owner"}
+            }
+        }
+        if !retired,permitted,presentationGeometry.consoleButton != nil {
+            var button=G1SnapshotReader.native(consoleButton,id:"dock.ignition",order:container.subviews.firstIndex(of:consoleButton) ?? 0)
+            button.interaction.hover=ignitionHoverPressForChecks?.sampledPointerInside
+            button.attributes["hoverArtworkChangeInstalled"]="false"
+            button.attributes["transparent"]=String(consoleButton.isTransparent)
+            button.unavailable.removeValue(forKey:"hover");root.children.append(button)
+            var veil=G1SnapshotReader.native(cockpitVeil,id:"dock.ignition.veil",order:container.subviews.firstIndex(of:cockpitVeil) ?? 0)
+            veil.layerRoles=["disabled-ignition-veil"];veil.attributes["masksToBounds"]=String(cockpitVeil.layer?.masksToBounds ?? false)
+            veil.attributes["cornerRadius"]=cockpitVeil.layer.map{String(Double($0.cornerRadius))};root.children.append(veil)
+        }
+        if let geometry=resolvedT2CurvatureForChecks {
+            var grip=G1RenderedElement("dock.grip",role:"geometry")
+            grip.attributes=["x":String(Double(geometry.grip.x)),"y":String(Double(geometry.grip.y)),"gap":String(Double(geometry.gap)),"radius":String(Double(geometry.radius))]
+            grip.unavailable["frame"]="Geometry registers a grip point, not an independent native grip view"
+            root.children.append(grip)
+        }
+        if lastWorkingEffectError != nil {root.unavailable["workingEffects"]="Current working-effect installation failed; no animation receipt is inferred"}
+        for id in activeWorkingEffectIDs.sorted() {
+            var effect=G1RenderedElement("dock.effect."+id,role:"working-effect")
+            effect.frame=interactionView.workingLayerParents[id]?.frame
+            effect.animationPhase=workingEffectFramesForChecks[id].map{"frame:\($0)"} ?? "active"
+            if workingEffectFramesForChecks[id] == nil {effect.unavailable["frameIndex"]="Active effect has no discrete frame receipt"}
+            effect.assetSource=workingFrameProvider.map{$0.identifier+"@"+$0.revision}
+            effect.effects=["pooled-frame"]
+            effect.attributes=["rotating":String(rotatingWorkingEffectIDs.contains(id)),"animating":String(animatingWorkingEffectIDs.contains(id))]
+            effect.attributes["cadenceSeconds"]=workingDriver?.cadenceForChecks.map{String($0)}
+            effect.attributes["attached"]=workingDriver?.animationLifecycleForChecks[id].map{String($0)}
+            if let recipe=workingDriver?.rotationRecipesForChecks[id]{effect.attributes["rotationPeriodSeconds"]=String(recipe.period);effect.attributes["rotationDirection"]=String(describing:recipe.direction)}
+            root.children.append(effect)
+        }
+        var strip=G1SnapshotReader.native(sliver,id:"dock.sliver");strip.attributes["evidence"]="current-sliver-raster"
+        for (index,value) in sliver.quotaSegmentColorRolesForChecks.enumerated() {
+            var segment=G1RenderedElement("dock.sliver.quota.\(index)",role:"quota-segment")
+            segment.attributes=["from":String(value.from),"through":String(value.through),"rgbaHex":value.rgbaHex,"opacity":String(value.opacity)]
+            if let ink=G1RenderedColor.fromHex(value.rgbaHex){segment.fill = .init(ink.r,ink.g,ink.b,ink.a*value.opacity)}
+            segment.attributes["subscriptionID"]=value.subscriptionID
+            segment.attributes["remainingPercent"]=value.remainingPercent.map{String($0)}
+            segment.attributes["quotaRole"]=value.quotaRole?.rawValue
+            segment.unavailable["frame"]="Pitch interval is clipped to the actual sliver alpha; use from/through with the parent raster"
+            strip.children.append(segment)
+        };root.children.append(strip)
+        if let preview=outlinePanel,let content=preview.contentView {
+            var node=G1SnapshotReader.native(content,id:"dock.movePreview");node.frame=preview.frame;node.coordinateSpace="screen";node.visible=preview.isVisible
+            root.children.append(node)
+        }
+        if let panel=overflowPanel,let content=panel.contentView {
+            var overflow=G1SnapshotReader.native(content,id:"dock.overflow");overflow.frame=panel.frame;overflow.coordinateSpace="screen"
+            overflow.visible=panel.isVisible;root.children.append(overflow)
+        } else {var overflow=G1RenderedElement("dock.overflow",role:"overflow");overflow.visible=false;overflow.unavailable["surface"]="No overflow panel exists";root.children.append(overflow)}
+    }
+}
+#endif
