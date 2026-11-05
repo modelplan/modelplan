@@ -57,7 +57,8 @@ private actor V18SyntheticClient: EngineClient {
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"
         account["lastFailure"] = NSNull(); account["credits"] = ["balance": 123.45, "unit": "unknown"]
         windows[0].removeValue(forKey: "modelScope"); windows[0]["current"] = true
-        windows[0]["observedAt"] = "2026-12-01T00:00:00Z"; windows[0]["validUntil"] = "2028-12-01T00:00:00Z"
+        // A current window expires at the earlier of the account deadline and its reset.
+        windows[0]["observedAt"] = "2026-12-01T00:00:00Z"; windows[0]["validUntil"] = "2027-01-01T02:14:00Z"
         windows[0]["resetsAt"] = "2027-01-01T02:14:00Z"; windows[0]["remainingPercent"] = 42.0
         account["windows"] = [windows[0]]; row["accounts"] = [account]; rows[0] = row
         projection["rows"] = rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
