@@ -26,6 +26,21 @@ private actor G316Engine: EngineClient {
 
 @MainActor final class G3SettingsRowMeasurementTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    private func centreOffset(label: NSView, control: NSView, in parent: NSView) -> CGFloat {
+        control.convert(control.bounds, to: parent).midY - label.convert(label.bounds, to: parent).midY
+    }
+
+    func testFrameOracleDetectsAChildMovedInsideAnUnchangedContainer() {
+        let line = NSView(frame: .init(x: 0, y: 0, width: 200, height: 40))
+        let label = NSView(frame: .init(x: 0, y: 10, width: 80, height: 20))
+        let control = NSView(frame: .init(x: 100, y: 10, width: 80, height: 20))
+        line.addSubview(label); line.addSubview(control)
+        XCTAssertEqual(centreOffset(label: label, control: control, in: line), 0, accuracy: 0.01)
+        let original = line.frame
+        control.setFrameOrigin(.init(x: 100, y: 13))
+        XCTAssertEqual(line.frame, original, "Moving a child must not require moving its parent")
+        XCTAssertGreaterThan(abs(centreOffset(label: label, control: control, in: line)), 1)
+    }
 
     func testG3_16_SettingsRowsMeasureActualBands() async throws {
         let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -34,6 +49,7 @@ private actor G316Engine: EngineClient {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         var allOffenders = [String]()
         var totalRows = 0
+        var nestedControls = 0
         for locale in ["en", "zh-CN"] {
             let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g316-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
@@ -41,6 +57,12 @@ private actor G316Engine: EngineClient {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: [locale])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), makeClient: { _, _ in G316Engine() }, activateSettings: {})
             await app.prepare()
+            var context = app.settingsHost.application.editor.context
+            context.subscriptions = [
+                .init(id: "g316-first", name: .init("First sample", "示例一")),
+                .init(id: "g316-second", name: .init("Second sample", "示例二"))
+            ]
+            app.settingsHost.application.update(context: context)
             let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
             await app.settingsHost.present(paneID: "general", origin: .userInitiated)
             let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
@@ -95,6 +117,17 @@ private actor G316Engine: EngineClient {
                     if visible.count > 1 && visible.contains(where: { $0 is NSTextField }) {
                         offenders.append((.zero, "\(pane.id).\(row.key.rawValue): text beneath control"))
                     }
+                    for line in descendants(row.controls).compactMap({ $0 as? NSStackView }) where line.orientation == .horizontal && !line.isHiddenOrHasHiddenAncestor {
+                        let children = line.arrangedSubviews.filter { !$0.isHiddenOrHasHiddenAncestor }
+                        guard let label = children.first(where: { $0 is NSTextField && !($0 is SettingsOwnedControl) }) else { continue }
+                        for control in children where control is SettingsOwnedControl {
+                            nestedControls += 1
+                            let childOffset = centreOffset(label: label, control: control, in: line)
+                            let detail = "G3-16 locale=\(locale) pane=\(pane.id) row=\(row.key.rawValue) nested-control-offset=\(String(format: "%.2f", childOffset))"
+                            print(detail); measurements.append(detail)
+                            if abs(childOffset) > 1 { offenders.append((control.convert(control.bounds, to: canvas), detail)) }
+                        }
+                    }
                 }
                 let attachment = XCTAttachment(string: measurements.joined(separator: "\n"))
                 attachment.name = "G3-16 \(locale) \(pane.id) frame offsets"
@@ -139,6 +172,7 @@ private actor G316Engine: EngineClient {
             await app.composition.stop()
         }
         XCTAssertGreaterThan(totalRows, 0, "The measurement must inspect real Settings rows")
+        XCTAssertGreaterThanOrEqual(nestedControls, 2, "The synthetic subscriptions must populate nested controls")
         XCTAssertTrue(allOffenders.isEmpty, allOffenders.joined(separator: "; "))
     }
 }
