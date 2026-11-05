@@ -2,14 +2,57 @@
 package appserver
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 )
+
+func TestCodexLocalStampsIncludeOlderOwnThread(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "sessions", "2026", "11", "05")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(dir, "rollout-own-thread.jsonl")
+	if err := os.WriteFile(own, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(own, base, base); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 8; i++ {
+		p := filepath.Join(dir, fmt.Sprintf("rollout-recent-%d.jsonl", i))
+		if err := os.WriteFile(p, []byte("recent"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := &SharedBackend{config: SharedConfig{Paths: func(consent.Admission) quota.Paths { return quota.Paths{CodexHome: root, CodexThread: "thread"} }}}
+	admission := consent.NewAdmission(consent.Empty(), consent.Automatic)
+	before := b.codexLocalStamps(admission)
+	found := false
+	for _, stamp := range before {
+		if stamp.path == own {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("older own thread is absent from watched files")
+	}
+	if err := os.WriteFile(own, []byte("updated own thread"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	after := b.codexLocalStamps(admission)
+	if reflect.DeepEqual(before, after) {
+		t.Fatal("own thread update did not change stamps")
+	}
+}
 
 func TestCodexLocalChangeRespectsConsent(t *testing.T) {
 	root := t.TempDir()

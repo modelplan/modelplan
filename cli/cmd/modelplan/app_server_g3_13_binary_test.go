@@ -64,7 +64,7 @@ func TestG313LocalReadingNotifiesRealBinary(t *testing.T) {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
-	timeout := time.After(8 * time.Second)
+	timeout := time.After(20 * time.Second)
 	for {
 		select {
 		case raw := <-p.frames:

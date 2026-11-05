@@ -372,7 +372,7 @@ func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFil
 	if paths.CodexHome == "" {
 		return nil
 	}
-	files := quota.RecentRollouts(paths.CodexHome, 8)
+	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
 	sort.Strings(files)
 	stamps := make([]localFileStamp, 0, len(files))
 	for _, file := range files {
