@@ -7,7 +7,7 @@ import ModelPlanSettings
 import XCTest
 @testable import ModelPlanAppIntegration
 
-/// Operator-driven. Run only during an admitted two-display, two-Space session.
+/// Operator-driven. Run only during an admitted native session with the required display arrangement.
 @MainActor final class DockRealSpacesJourneyTests: XCTestCase {
     @MainActor private final class SpaceEvents {
         var count = 0
@@ -16,12 +16,11 @@ import XCTest
     private func makeProfile(displayID: String, edge: SettingsDockEdge, declaredQuotas: [Int] = [],
                              autoHide: Bool = false, along: Double = 0.62) async throws
         -> (EngineDockMenuApplication, SettingsStore, URL) {
-        let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: executable.path))
+        let executable = try reviewedExecutable()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-device-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try FileManager.default.removeItem(at: root) }
-        let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+        let environment = deviceEnvironment(root)
         let seed = Process()
         seed.executableURL = executable
         seed.arguments = ["consent", "init", "--json"]
@@ -61,16 +60,31 @@ import XCTest
             $0.dockEdge = edge
             $0.dockAlongFraction = along
         }
+        return (makeDeviceApplication(root: root, executable: executable, store: store), store,
+                root.appendingPathComponent("ModelPlan/settings.json"))
+    }
+
+    private func reviewedExecutable() throws -> URL {
+        let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: executable.path))
+        return executable
+    }
+
+    private func deviceEnvironment(_ root: URL) -> [String: String] {
+        ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+    }
+
+    private func makeDeviceApplication(root: URL, executable: URL, store: SettingsStore) -> EngineDockMenuApplication {
         EngineRowsEntry.nativeJourneyProfile = root
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-dock-device",
-            allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: store,
+            allowedEnvironment: deviceEnvironment(root), offline: true, readOnly: true), settingsStore: store,
             createsNativePanels: true, bundleURL: root.appendingPathComponent("Synthetic.app"), activateSettings: {})
         addTeardownBlock { @MainActor in
             await app.stopNativeDockJourney()
             EngineRowsEntry.nativeJourneyProfile = nil
         }
 
-        return (app, store, root.appendingPathComponent("ModelPlan/settings.json"))
+        return app
     }
 
     private func wait(_ duration: Duration, until condition: () -> Bool) async throws -> Bool {
@@ -304,6 +318,136 @@ import XCTest
         var screens = 0
         var sleeps = 0
         var wakes = 0
+    }
+
+    func testD06PhysicalStrongSnapDropsSaveOnceAndRestore() async throws { try await exercisePhysicalDrops(mode: 1) }
+    func testD06PhysicalAlwaysAttachedDropsSaveOnceAndRestore() async throws { try await exercisePhysicalDrops(mode: 2) }
+
+    private func exercisePhysicalDrops(mode: Int) async throws {
+        _ = NSApplication.shared
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        UserDefaults.standard.register(defaults: [modeKey: mode])
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        guard UserDefaults.standard.integer(forKey: modeKey) == mode else {
+            return XCTFail("An explicit setting overrides the isolated test mode")
+        }
+        let topology = DockDisplayTopology.system()
+        let a = try XCTUnwrap(topology.main)
+        guard a.visibleFrame.minY > a.frame.minY else {
+            return XCTFail("D-06 requires the macOS Dock at A/bottom")
+        }
+        let b = try XCTUnwrap(topology.displays.first { candidate in
+            abs(candidate.frame.minX - a.frame.maxX) <= 1 &&
+                min(a.frame.maxY, candidate.frame.maxY) - max(a.frame.minY, candidate.frame.minY) > 0 &&
+                abs(candidate.usableFrame.minX - candidate.frame.minX) <= 1
+        }, "D-06 requires B on A's right with an unreserved shared edge")
+        let c = try XCTUnwrap(topology.displays.first {
+            $0.id != a.id && $0.id != b.id && !$0.frame.intersects(a.frame) && !$0.frame.intersects(b.frame)
+        }, "D-06 requires a third, non-mirrored display")
+        let quotas = [72, 53, 38]
+        var (app, store, storedURL) = try await makeProfile(displayID: a.id, edge: .right, declaredQuotas: quotas)
+        let root = storedURL.deletingLastPathComponent().deletingLastPathComponent()
+        let executable = try reviewedExecutable()
+
+        func start(_ application: EngineDockMenuApplication) async throws -> PulseDockPanel {
+            await application.prepare()
+            application.allowDockPresentation()
+            await application.composition.start()
+            let host = application.composition.dock
+            let panel = try XCTUnwrap(host.nativePanel as? PulseDockPanel)
+            let ready = try await wait(.seconds(10)) {
+                let values = host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent).sorted(by: >)
+                return panel.isVisible && values == quotas.map(Double.init)
+            }
+            return try XCTUnwrap(ready ? panel : nil, "The real widget and synthetic readings must be visible")
+        }
+
+        func drop(_ application: EngineDockMenuApplication, panel: PulseDockPanel, destination: DockDisplayArea,
+                  edge: DockEdge, role: String, originalBytes: Data) async throws -> DockEdgePlacement {
+            let host = application.composition.dock
+            let events = PointerEvents()
+            let previous = panel.receivedInput
+            panel.receivedInput = { type, event in
+                previous?(type, event)
+                switch type {
+                case .leftMouseDown: events.down += 1
+                case .leftMouseDragged: events.drag += 1
+                case .leftMouseUp: events.up += 1
+                default: break
+                }
+            }
+            defer { panel.receivedInput = previous }
+            announce("D-06", "Drag the widget body to \(role), near the edge midpoint. Keep holding until prompted.")
+            let held = try await wait(.seconds(45)) {
+                guard events.down > 0, events.drag > 0, events.up == 0,
+                      host.edgePresentation?.moving == true, panel.isVisible,
+                      let candidate = host.edgePresentation?.placement,
+                      candidate.displayID == destination.id, candidate.edge == edge else { return false }
+                let cursor = NSEvent.mouseLocation
+                let usable = destination.usableFrame
+                guard destination.frame.contains(cursor) else { return false }
+                if edge == .left {
+                    let sharedMiddle = (max(a.frame.minY, b.frame.minY) + min(a.frame.maxY, b.frame.maxY)) / 2
+                    return abs(cursor.x - usable.minX) <= 24 && abs(cursor.y - sharedMiddle) <= 80 &&
+                        abs(panel.frame.minX - usable.minX) <= 1
+                }
+                return abs(cursor.y - usable.minY) <= 24 && abs(cursor.x - usable.midX) <= 80 &&
+                    abs(panel.frame.minY - usable.minY) <= 1
+            }
+            _ = try XCTUnwrap(held ? panel : nil, "No held native placement reached \(role)")
+            XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes, role)
+            announce("D-06", "Release on \(role) and capture the settled widget.")
+            let editor = application.settingsHost.application.editor
+            let released = try await wait(.seconds(20)) {
+                events.up == 1 && host.edgePresentation?.moving == false && panel.isVisible &&
+                    editor.snapshot?.preferences.dockDisplayID == destination.id && !editor.isSaving
+            }
+            return try XCTUnwrap(released ? host.edgePresentation?.placement : nil, "No completed release at \(role)")
+        }
+
+        var panel = try await start(app)
+        XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.displayID, a.id)
+        XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, .right)
+        let targets: [(DockDisplayArea, DockEdge, SettingsDockEdge, String)] = [
+            (b, .left, .left, "B's left inner edge"),
+            (c, .bottom, .bottom, "C's bottom edge"),
+            (a, .bottom, .bottom, "A's bottom edge above the macOS Dock"),
+        ]
+        for (destination, edge, savedEdge, role) in targets {
+            let before = await store.snapshot()
+            let originalBytes = try Data(contentsOf: storedURL)
+            let landed = try await drop(app, panel: panel, destination: destination, edge: edge,
+                                        role: role, originalBytes: originalBytes)
+            XCTAssertEqual(landed.displayID, destination.id, role)
+            XCTAssertEqual(landed.edge, edge, role)
+            XCTAssertTrue(destination.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame), role)
+            if edge == .bottom { XCTAssertEqual(panel.frame.minY, destination.visibleFrame.minY, accuracy: 1, role) }
+            let saved = await store.snapshot()
+            XCTAssertEqual(saved.revision, before.revision + 1, role)
+            XCTAssertEqual(saved.preferences.dockDisplayID, destination.id, role)
+            XCTAssertEqual(saved.preferences.dockEdge, savedEdge, role)
+            XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001, role)
+            let savedBytes = try Data(contentsOf: storedURL)
+            let settledFrame = panel.frame
+            try await Task.sleep(for: .seconds(4))
+
+            await app.stopNativeDockJourney()
+            store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            app = makeDeviceApplication(root: root, executable: executable, store: store)
+            panel = try await start(app)
+            let restored = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+            XCTAssertEqual(restored.displayID, landed.displayID, role)
+            XCTAssertEqual(restored.edge, landed.edge, role)
+            XCTAssertEqual(restored.alongFraction, landed.alongFraction, accuracy: 0.0001, role)
+            XCTAssertEqual(panel.frame.minX, settledFrame.minX, accuracy: 1, role)
+            XCTAssertEqual(panel.frame.minY, settledFrame.minY, accuracy: 1, role)
+            XCTAssertEqual(panel.frame.width, settledFrame.width, accuracy: 1, role)
+            XCTAssertEqual(panel.frame.height, settledFrame.height, accuracy: 1, role)
+            XCTAssertEqual(try Data(contentsOf: storedURL), savedBytes, role)
+            announce("D-06", "The relaunched widget is visible on \(role). Capture its restored placement.")
+            try await Task.sleep(for: .seconds(5))
+        }
     }
 
     func testD08PhysicalInnerStripWakesWithoutCrossingDisplays() async throws {
