@@ -74,7 +74,7 @@ private actor DockStripEngine: EngineClient {
                 a["windows"] = [0,1].map { number -> [String: Any] in
                     var w = window; w["id"] = number == 0 ? "short" : "week"; w["role"] = number == 0 ? "session" : "weekly"
                     w["durationSeconds"] = number == 0 ? 18000 : 604800; w["limitKey"] = number == 0 ? "five_hour" : "weekly"; w["poolKey"] = "main"
-                    w["remainingPercent"] = number == 0 ? [41,26,0][index] : [70,60,50][index]
+                    w["remainingPercent"] = number == 0 ? [51,50,25][index] : [70,60,50][index]
                     w["current"] = true; w["observedAt"] = Self.stamp(clock.wall.addingTimeInterval(-60)); w["validUntil"] = "2099-01-01T00:00:00Z"
                     w["resetsAt"] = Self.stamp(clock.wall.addingTimeInterval(number == 0 ? 8040 : 86400)); w["validUntil"] = w["resetsAt"]; w.removeValue(forKey:"modelScope")
                     return w
@@ -108,37 +108,77 @@ private actor DockStripEngine: EngineClient {
     func testNormalEntryPaintsOnlyAffectedQuotaPitches() async throws {
         let fixture = try DockStripFixture()
         addTeardownBlock { @MainActor in await fixture.close() }
+        let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        fixture.displays = [.init(id: "primary", frame: frame, visibleFrame: frame)]
+        _ = try await fixture.store.update { $0.dockEdge = .bottom; $0.redBelow = 17 }
         try await fixture.open(autoHide: true)
+        XCTAssertEqual(fixture.app.composition.latestSettings?.effective.redBelow, 25)
+        let stored = await fixture.store.snapshot()
+        XCTAssertEqual(stored.preferences.redBelow, 17)
         XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
-        let size = try XCTUnwrap(fixture.host.edgePresentation?.placement).sliverFrame.size
+        let placement = try XCTUnwrap(fixture.host.edgePresentation?.placement)
+        XCTAssertEqual(placement.edge, .bottom)
+        let size = placement.sliverFrame.size
         let view = try fixture.host.prepareSliver(size: size)
-        func pixels() throws -> Data {
+        XCTAssertGreaterThan(view.bounds.width, view.bounds.height)
+        func capture() throws -> NSBitmapImageRep {
             let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: bitmap)
-            return try XCTUnwrap(bitmap.tiffRepresentation)
+            return bitmap
         }
-        let withAlerts = try pixels()
+        func color(in bitmap: NSBitmapImageRep, at fraction: Double) throws -> NSColor {
+            let x = min(bitmap.pixelsWide - 1, Int(fraction * Double(bitmap.pixelsWide)))
+            return try XCTUnwrap(bitmap.colorAt(x: x, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.sRGB))
+        }
+        let withAlerts = try capture()
+        let segments = view.quotaSegmentColorRolesForChecks
         XCTAssertTrue(SettingsPreferences().sliverAlert)
-        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 26, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 50, 25])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, .warning, .critical])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.opacity), [0, 0.18, 0.18])
+        XCTAssertEqual(segments.map(\.subscriptionID), DockStripFixture.ids.map(Optional.some))
+        XCTAssertTrue(view.layer?.animationKeys()?.isEmpty ?? true)
         XCTAssertTrue(view.accessibilityPerformPress())
         XCTAssertEqual(fixture.host.edgePresentation?.state, .expanded)
         _ = try fixture.host.prepareSliver(size: size)
-        XCTAssertEqual(try pixels(), withAlerts, "Reveal leaves persistent quota alerts painted")
+        let deadline = ContinuousClock.now + .seconds(2)
+        while fixture.host.edgePresentation?.state != .sliver, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
+        XCTAssertEqual(try capture().tiffRepresentation, withAlerts.tiffRepresentation, "Reveal leaves persistent quota alerts painted")
         fixture.mutateFirstRowAccount(at: 1) { account in
             var windows = account["windows"] as! [[String: Any]]
-            windows[0]["remainingPercent"] = 42
+            windows[0]["remainingPercent"] = 51
             account["windows"] = windows
         }
         try await fixture.publish()
         _ = try fixture.host.prepareSliver(size: size)
-        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 42, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 51, 25])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, nil, .critical])
         _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
         _ = try fixture.host.prepareSliver(size: size)
         XCTAssertTrue(view.quotaSegmentColorRolesForChecks.isEmpty)
-        XCTAssertNotEqual(try pixels(), withAlerts, "Disabling quota alerts must remove actual painted segments")
+        let neutral = try capture()
+        XCTAssertNotEqual(neutral.tiffRepresentation, withAlerts.tiffRepresentation)
+        XCTAssertEqual(segments.count, 3)
+        guard segments.count == 3 else { return }
+        for (index, segment) in segments.enumerated() {
+            let fraction = (segment.from + segment.through) / 2
+            let base = try color(in: neutral, at: fraction)
+            let painted = try color(in: withAlerts, at: fraction)
+            let channels = [base.redComponent, base.greenComponent, base.blueComponent]
+            XCTAssertLessThan(try XCTUnwrap(channels.max()) - XCTUnwrap(channels.min()), 0.08)
+            switch index {
+            case 0: XCTAssertEqual(painted, base, "The healthy pitch keeps the neutral body")
+            case 1:
+                XCTAssertGreaterThan(painted.redComponent, base.redComponent + 0.05)
+                XCTAssertGreaterThan(painted.greenComponent, base.greenComponent + 0.05)
+            default:
+                XCTAssertGreaterThan(painted.redComponent, base.redComponent + 0.05)
+                XCTAssertGreaterThan(painted.redComponent, painted.greenComponent + 0.10)
+            }
+        }
     }
 
     func testOfficialResetAnnouncementCannotRefillThePersonalRing() async throws {
