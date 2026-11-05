@@ -76,3 +76,23 @@ test('S6: selecting a member lights its slot and clears All',async({page})=>{
  expect(member.find(key=>key.scope===target.scope)?.pressed,'S6: selected member slot lit').toBe('true');
  expect(member.filter(key=>key.scope!==target.scope&&key.pressed==='true'),'S6: no other slot lit').toHaveLength(0);
 });
+
+// Named skip (gap record, CKP-ENG-05): the owner-restored shortcut digits are
+// visible on the keys ("Codex1") but the accessible name (aria-label="Codex")
+// overrides the visible text and the tooltip (title="Codex") omits the digit,
+// and the Option help map carries no engine-keys caption at all. The registry
+// keeps the digits "also present in tooltips, accessible names and Option help".
+// Unskip when the keys expose the digit in accessible name and tooltip and help
+// explains the shortcut keys.
+test.fixme('S6: shortcut digits are present in tooltips, accessible names and Option help',async({page})=>{
+ const {send,receive}=await open(page);
+ expect(await receive(send('display',{data:rowsWith(page,['codex','claude','cursor','gemini','qwen','minimax'])}))).toBe(true);
+ for(const key of await keys(page))expect(key.label,'S6: accessible name carries the digit on '+key.label).toMatch(/\d/);
+ const tooltips=await page.evaluate(()=>[...document.querySelectorAll('.eng-keys button')].map(b=>b.getAttribute('title')??b.getAttribute('aria-label')??''));
+ for(const tip of tooltips)expect(tip,'S6: tooltip carries the shortcut digit').toMatch(/\d/);
+ await page.keyboard.down('Alt');
+ await expect(page.locator('#help-map')).toBeVisible();
+ const captions=await page.evaluate(()=>[...document.querySelectorAll('#help-map [data-target]')].map(el=>el.getAttribute('data-target')+' :: '+el.textContent));
+ await page.keyboard.up('Alt');
+ expect(captions.some(text=>/eng-keys|\.ek/.test(text)),'S6: Option help explains the shortcut keys; captions: '+JSON.stringify(captions)).toBe(true);
+});

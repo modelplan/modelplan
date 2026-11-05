@@ -50,3 +50,14 @@ test('S20: replacing the member set does not carry the previous private figures'
  const lingering=await page.evaluate(()=>['CODEX','CLAUDE','CURSOR','GEMINI'].filter(text=>document.querySelector('#cockpit').textContent.includes(text)));
  expect(lingering,'S20: previous member identities are withdrawn').toEqual([]);
 });
+
+test('S20: clear does not steal focus from an unrelated surviving control',async({page})=>{
+ const {send,receive}=await open(page);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ // The screen keys are cockpit chrome, unrelated to the withdrawn readings.
+ const overviewKey=page.locator('.mfd-pk button',{hasText:'Overview'}).first();
+ await overviewKey.focus();
+ await expect(overviewKey).toBeFocused();
+ expect(await receive(send('clear',{generation:'42',viewRevision:'4'})),'S20: clear accepted').toBe(true);
+ await expect(overviewKey,'S20: unrelated focus is not stolen by clear').toBeFocused();
+});
