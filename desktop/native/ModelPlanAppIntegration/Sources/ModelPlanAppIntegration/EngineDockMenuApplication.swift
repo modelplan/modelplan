@@ -23,7 +23,25 @@ import ModelPlanMenuVerification
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
-    let applicationMenu = NSMenu()
+    private lazy var applicationSettingsItem: NSMenuItem = {
+        let item = settingsHost.menuItem(title: "Settings…")
+        item.isEnabled = false
+        item.keyEquivalent = ""
+        return item
+    }()
+    private let applicationQuitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    private(set) lazy var applicationMenu: NSMenu = {
+        let root = NSMenu()
+        let application = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(applicationSettingsItem)
+        submenu.addItem(.separator())
+        submenu.addItem(applicationQuitItem)
+        application.submenu = submenu
+        root.addItem(application)
+        return root
+    }()
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
     public let cockpitEntryEnabled: Bool
@@ -380,6 +398,7 @@ import ModelPlanMenuVerification
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.mainMenu = applicationMenu
         NSApp.appearance = NSAppearance(named: .darkAqua)
         if accessibilityObserver == nil {
             accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -432,6 +451,12 @@ import ModelPlanMenuVerification
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
+        let settingsTitle = label("Settings…", "设置…")
+        let quitTitle = label("Quit", "退出")
+        applicationSettingsItem.title = settingsTitle
+        applicationSettingsItem.isEnabled = available && !terminating
+        applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
+        applicationQuitItem.title = quitTitle
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: lifecyclePaused || terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         let showTitle: String
@@ -480,9 +505,9 @@ import ModelPlanMenuVerification
         menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
-            .init(title: label("Settings…", "设置…"), keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
-            .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
+            .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
         component.replace(with: menuItems)
         liveStatusMenu = menu
@@ -576,6 +601,8 @@ import ModelPlanMenuVerification
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
+        applicationSettingsItem.isEnabled = false
+        applicationSettingsItem.keyEquivalent = ""
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }

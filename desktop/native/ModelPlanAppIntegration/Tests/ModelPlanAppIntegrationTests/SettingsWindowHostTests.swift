@@ -181,6 +181,22 @@ import ModelPlanEngineClient
         XCTAssertTrue(app.applicationMenu.performKeyEquivalent(with: key))
         await fulfillment(of: [shown], timeout: 2)
         XCTAssertEqual(surface.shown.count, 1)
+
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(command.title, "设置…")
+        let localized = expectation(description: "Localized application command still opens the same host")
+        surface.onShow = { localized.fulfill() }
+        XCTAssertTrue(app.applicationMenu.performKeyEquivalent(with: key))
+        await fulfillment(of: [localized], timeout: 2)
+
+        surface.onShow = { XCTFail("Paused Command-comma reopened Settings") }
+        app.setActivityPaused(true)
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+                           displayIDs: { [1] }, onConsole: { false }, displaysAsleep: { _ in false })
+        XCTAssertTrue(app.lifecyclePaused)
+        XCTAssertFalse(command.isEnabled)
+        XCTAssertFalse(app.applicationMenu.performKeyEquivalent(with: key))
+        XCTAssertEqual(surface.shown.count, 2)
     }
 
     func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
