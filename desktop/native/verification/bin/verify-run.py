@@ -176,6 +176,15 @@ title: n.isNil() ? null : ObjC.unwrap(n)}); } JSON.stringify(out);"""
         return time.time()
 
 
+def release_arguments(ctx):
+    """The release authority differs by host role: MacCI (V1) releases on the coordinator GO
+    comment; the dev Mac (M1) releases only on M1's own approval comment (release.py refuses a
+    coordinator GO there). Both are https URLs the lane verified before releasing."""
+    if ctx.get('host') == 'macci':
+        return ['--coordinator-go', str(ctx.get('go') or '')]
+    return ['--approval', str(ctx.get('approval') or '')]
+
+
 class Session:
     """One booked, guardian-supervised launch of the prepared candidate (SKILL.md section 1 sequence)."""
 
@@ -237,7 +246,7 @@ class Session:
                 raise StopRun('guardian-did-not-start')
             time.sleep(0.2)
         self.tool('release.py', '--lane', lane, '--host', ctx['host'], '--id', self.booking, '--lease',
-                  paths['leasePath'], '--coordinator-go', ctx['go'], '--output', paths['releasePath'])
+                  paths['leasePath'], *release_arguments(ctx), '--output', paths['releasePath'])
         self.procs['run'] = subprocess.Popen(
             [sys.executable, str(BIN / 'packaged_candidate.py'), 'run', '--registry', str(self.registry),
              '--receipt', str(local / 'candidate-receipt.json')],
@@ -373,14 +382,24 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
         outcome, reason = 'NOT-RUN', str(error)
     except StopRun as error:
         if error.isolation:
-            for png in folder.rglob('*.png'):
-                png.unlink()
+            purge_captures(folder)
         restore(changed, actions, records)
         write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', str(error))
         raise
     restore(changed, actions, records)
     write_receipt(folder, ident, ctx, segment, records, outcome, reason)
     return outcome, reason
+
+
+def purge_captures(folder):
+    """An isolation stop deletes everything this ID captured — images, AX trees, probe reports,
+    plans and drive outputs — not only the PNGs: account data was found in one of them. Only the
+    receipt, written afterwards, survives."""
+    for path in sorted(folder.iterdir()):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def restore(changed, actions, records):
@@ -447,6 +466,7 @@ def execute(manifest, *, lane, layout, ids, out, artifacts_dir, scratch_parent, 
     host_state = next((c.get('systemState') for c in receipt['checks'] if c['id'] == 'PF-11'), None) or {}
     ctx = dict(lane=lane, layout=layout, sha=sha, profile=profile if profile in preflight.PROFILES else 'synthetic',
                batch=slug((manifest or {}).get('batch', 'batch')), go=(manifest or {}).get('coordinatorGo'),
+               approval=(manifest or {}).get('approval'),
                host=preflight.LANE_HOST.get(lane), steps=receipt.get('steps', {}), work=str(work),
                scratchParent=str(scratch_parent), tools=str(work), markers=account_markers(),
                displays=host_state.get('displays') or [], baseline=receipt.get('systemBaseline') or {})

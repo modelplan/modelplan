@@ -524,7 +524,7 @@ def manifest_checks(results, host, manifest):
           scope='batch')
 
 
-def validate_manifest(manifest):
+def validate_manifest(manifest, lane=None):
     problems = []
     if not isinstance(manifest, dict):
         return ['manifest must be an object']
@@ -537,6 +537,9 @@ def validate_manifest(manifest):
         problems.append('artifacts must map release/test/verify to {name, digest}')
     if not str(manifest.get('coordinatorGo', '')).startswith('https://github.com/'):
         problems.append('coordinatorGo must be the GitHub URL of the coordinator GO comment')
+    if lane == 'M1' and not str(manifest.get('approval', '')).startswith('https://'):
+        # M1 releases on its own approval comment (release.py refuses a coordinator GO on dev-mac).
+        problems.append('an M1 batch needs approval: the https URL of the coordinator OK comment')
     if not isinstance(manifest.get('prs', []), list):
         problems.append('prs must be a list')
     return problems
@@ -546,7 +549,7 @@ def run(manifest, *, lane, layout, ids, artifacts_dir, work, scratch_parent, hos
         control_ref='origin/main', layouts=None):
     host = host or Host()
     results = []
-    problems = validate_manifest(manifest)
+    problems = validate_manifest(manifest, lane)
     profile = manifest.get('profile') if isinstance(manifest, dict) else None
     receipt = dict(schemaVersion=1, lane=lane, layout=layout, profile=profile,
                    expectedSHA=manifest.get('integrationSHA') if isinstance(manifest, dict) else None,

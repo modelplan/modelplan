@@ -152,6 +152,18 @@ class VerifyRunTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('ISOLATION-FAIL-account-data-on-screen', lines['D-01'])
         self.assertEqual(list(self.out.rglob('*.png')), [])
+        # the account data was found in an AX tree, so everything the segment captured goes:
+        # images, AX trees and probe reports; only the receipt (written after the purge) remains
+        self.assertEqual([p.name for p in (self.out / 'D-01').iterdir()], ['receipt.json'])
+        self.assertEqual(list((self.out / 'D-01').rglob('ax-tree.json')), [])
+
+    def test_release_arguments_match_the_host_role(self):
+        go = 'https://github.com/modelplan/modelplan/issues/570#issuecomment-1'
+        self.assertEqual(verify_run.release_arguments(dict(host='macci', go=go)), ['--coordinator-go', go])
+        approval = 'https://github.com/modelplan/modelplan/issues/570#issuecomment-2'
+        self.assertEqual(verify_run.release_arguments(dict(host='dev-mac', approval=approval)), ['--approval', approval])
+        for ctx in (dict(host='dev-mac', go=go), dict(host='dev-mac')):  # a GO never releases on the dev Mac
+            self.assertEqual(verify_run.release_arguments(ctx), ['--approval', str(ctx.get('approval') or '')])
 
     def test_missing_appearance_grant_is_not_run_and_still_restored_list(self):
         _, lines, _ = self.go(ids=('V-01',), actions=FakeActions(appearance=False))

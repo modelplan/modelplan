@@ -26,7 +26,8 @@ makes that ID `NOT-RUN reason=...` and the run goes on with the next ID.
   "integrationSHA": "<40 hex>", "tree": "<40 hex>",
   "prs": [{"pr": 551, "head": "<40 hex>", "ids": ["D-01", "V-01"]}],
   "artifacts": {"release": {"name": "native-app-unverified-<integrationSHA>", "digest": "sha256:<64 hex>"}},
-  "coordinatorGo": "https://github.com/OWNER/REPO/issues/N#issuecomment-ID"
+  "coordinatorGo": "https://github.com/OWNER/REPO/issues/N#issuecomment-ID",
+  "approval": "https://github.com/OWNER/REPO/issues/N#issuecomment-ID"
 }
 ```
 
@@ -37,8 +38,11 @@ makes that ID `NOT-RUN reason=...` and the run goes on with the next ID.
   `gh api repos/modelplan/modelplan/actions/artifacts/<artifact id>/zip > ARTIFACTS/<name>.zip`.
   The GitHub digest covers that archive. Inside it, `BUILD.txt` (#551 format: `sourceSHA=`, `runID=`,
   `runAttempt=`, optional `flavour=`, then `<sha256>  ModelPlan-Community-native.zip`) covers the inner zip.
-- One coordinator GO URL covers the whole batch; every segment's `release.py --coordinator-go` uses it.
-  The lane still opens the comment once and confirms it is the coordinator's GO for this batch.
+- One coordinator GO URL covers the whole batch; every MacCI segment's `release.py --coordinator-go`
+  uses it. The lane still opens the comment once and confirms it is the coordinator's GO for this batch.
+  An M1 batch (dev Mac) instead carries `approval`, the https URL of the coordinator's OK comment, and
+  releases with `release.py --approval`: `release.py` refuses a coordinator GO on the dev Mac, so a
+  mixed-up argument can never release there.
 - `profile` is `synthetic` or `real` (below). Preflight records it in `preflight.json`.
 
 ## Preflight (`bin/preflight.py`, PF-01..PF-12)

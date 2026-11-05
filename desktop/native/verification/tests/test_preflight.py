@@ -50,6 +50,18 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(receipt['accepted'], ['D-01', 'V-01'])
         self.assertIn('release', receipt['apps'])
 
+    def test_an_m1_batch_needs_the_approval_url_a_v1_batch_does_not(self):
+        receipt = self.run_preflight(lane='M1')  # the manifest carries no approval URL
+        self.assertEqual(receipt['outcome'], 'FAIL')
+        detail = receipt['checks'][0]['detail']
+        self.assertIn('an M1 batch needs approval', detail)
+        with_approval = manifest(write_artifact(self.artifacts, NAME))
+        with_approval['approval'] = 'https://github.com/modelplan/modelplan/issues/570#issuecomment-2'
+        receipt = self.run_preflight(lane='M1', manifest=with_approval)
+        self.assertNotIn('an M1 batch needs approval', ' '.join(c.get('detail', '') for c in receipt['checks']))
+        receipt = self.run_preflight(lane='V1')  # V1 releases on the coordinator GO alone
+        self.assertNotIn('an M1 batch needs approval', ' '.join(c.get('detail', '') for c in receipt['checks']))
+
     def test_legacy_tauri_artifact_and_any_dmg_are_refused(self):
         digest = write_artifact(self.artifacts, preflight.LEGACY_TAURI)
         receipt = self.run_preflight(digest, manifest=manifest(digest, name=preflight.LEGACY_TAURI))
@@ -185,8 +197,14 @@ class PreflightTests(unittest.TestCase):
                                             dict(x=1512, y=0, width=1920, height=1080, scale=1, main=False)])]
         for host in cases:
             self.assertIn('PF-11', self.failed(self.run_preflight(digest, host=host)))
-        receipt = self.run_preflight(digest, lane='M1', host=FakeHost(digest, environ={'MODELPLAN_VERIFICATION_HOST': 'dev-mac'}))
+        receipt = self.run_preflight(digest, lane='M1', host=FakeHost(digest, environ={'MODELPLAN_VERIFICATION_HOST': 'dev-mac'}),
+                                     manifest=self.m1_manifest(digest))
         self.assertEqual(self.failed(receipt), [])
+
+    def m1_manifest(self, digest):
+        m = manifest(digest)
+        m['approval'] = 'https://github.com/modelplan/modelplan/issues/570#issuecomment-3'
+        return m
 
     def test_abc_layout_arrangement(self):
         digest = write_artifact(self.artifacts, NAME)
@@ -195,11 +213,13 @@ class PreflightTests(unittest.TestCase):
         c = dict(x=-1600, y=-900, width=1600, height=900, scale=1, main=False)
         env = {'MODELPLAN_VERIFICATION_HOST': 'dev-mac'}
         good = FakeHost(digest, displays=[a, b, c], environ=env)
-        check = [x for x in self.run_preflight(digest, lane='M1', layout='abc', host=good)['checks'] if x['id'] == 'PF-11'][0]
+        check = [x for x in self.run_preflight(digest, lane='M1', layout='abc', host=good,
+                                               manifest=self.m1_manifest(digest))['checks'] if x['id'] == 'PF-11'][0]
         self.assertEqual(check['status'], 'PASS', check['detail'])
         for displays in ([a, b, c | dict(scale=2)], [a, b | dict(x=-1920), c], [a, b]):
             host = FakeHost(digest, displays=displays, environ=env)
-            self.assertIn('PF-11', self.failed(self.run_preflight(digest, lane='M1', layout='abc', host=host)))
+            self.assertIn('PF-11', self.failed(self.run_preflight(digest, lane='M1', layout='abc', host=host,
+                                                                  manifest=self.m1_manifest(digest))))
 
     def test_clean_state(self):
         digest = write_artifact(self.artifacts, NAME)
