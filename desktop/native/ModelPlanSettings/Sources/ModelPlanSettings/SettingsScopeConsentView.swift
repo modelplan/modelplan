@@ -22,11 +22,12 @@ import ModelPlanWire
     private let controller: ScopeConsentController
     private var language: SettingsLanguage
     private let buildSigning:ScopeConsentBuildSigning
+    private let firstRun: Bool
     private var observer: UUID?
     private var buttons: [NSButton] = []
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
-                buildSigning:ScopeConsentBuildSigning = .current) {
-        self.controller = controller; self.language = language;self.buildSigning=buildSigning; super.init(frame: .zero)
+                buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false) {
+        self.controller = controller; self.language = language; self.buildSigning = buildSigning; self.firstRun = firstRun; super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
@@ -84,6 +85,7 @@ import ModelPlanWire
         }
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
+        if firstRun { renderFirstRun(); return }
         label(.init("Reading permissions", "读取权限"))
         switch controller.notice {
         case .none: break
@@ -168,6 +170,45 @@ import ModelPlanWire
             }
             addArrangedSubview(button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) })
             addArrangedSubview(synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() })
+        }
+    }
+
+    private func renderFirstRun() {
+        label(.init("Reading permissions", "读取权限"))
+        guard let facts = controller.facts else {
+            label(.init("Reading permissions are not ready yet.", "读取权限信息尚未就绪。")); return
+        }
+        let scopes = facts.scopes.filter { controller.isFirstRunVisible($0) }
+        let selectAll = synchronousButton(.init("Select all standard readers", "全选标准读取器"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in
+            self?.controller.selectAll()
+        }
+        addArrangedSubview(selectAll)
+        for scope in scopes {
+            let id = scope.scope
+            let selected = controller.selectedIDs.contains(id)
+            let control = synchronousButton(scopeTitle(scope), id: "scope.allow." + id, enabled: controller.canChoose(id)) { [weak self] in
+                self?.controller.choose(id, selected: !selected)
+            }
+            control.setButtonType(.switch)
+            control.state = selected || controller.isAllowed(id) ? .on : .off
+            addArrangedSubview(control)
+        }
+        if case .waitingForFacts = controller.phase {
+            label(.init("Checking whether your reading choices were saved.", "正在核验读取选项是否已保存。"))
+            addArrangedSubview(button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in
+                await self?.controller.inspectConsent()
+            })
+            return
+        }
+        switch controller.notice {
+        case .outcomeUnknown, .committedAwaitingFacts, .waitingForFacts:
+            label(.init("Checking whether your reading choices were saved.", "正在核验读取选项是否已保存。"))
+            addArrangedSubview(button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in
+                await self?.controller.inspectConsent()
+            })
+        case .requestFailed:
+            label(.init("The reading choices could not be saved. Check the connection and try again.", "无法保存读取选项，请检查连接后重试。"))
+        default: break
         }
     }
 }

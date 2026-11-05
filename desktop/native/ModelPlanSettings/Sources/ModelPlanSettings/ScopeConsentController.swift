@@ -14,6 +14,7 @@ public enum ScopePluginPhase: Sendable {
     case idle, confirmation(id: UUID, tool: WirePluginTool), sending, unverified, result(WirePluginInstallStatus)
 }
 public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedAwaitingFacts, requestFailed, checking, waitingForFacts, cleanupPending }
+public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, submitted, unavailable, outcomeUnknown }
 /// Transient UI choices over already-accepted facts. No persistence or protocol acceptance logic.
 @MainActor public final class ScopeConsentController {
     public private(set) var facts: WireConsentFacts?
@@ -106,8 +107,16 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
     public func canChoose(_ id: String) -> Bool {
         guard canMutate, let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
+        if firstRunExplicitSelection && !Self.firstRunRoute(scope.route) { return false }
         return scope.route.isKnown && scope.route != .knownUnknown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
     }
+    private static func firstRunRoute(_ route: RowsRoute) -> Bool {
+        switch route {
+        case .localLog, .localSqlite, .runtimeRpc, .savedLoginApi, .browserSession: return true
+        default: return false
+        }
+    }
+    public func isFirstRunVisible(_ scope: WireConsentScope) -> Bool { Self.firstRunRoute(scope.route) }
     @discardableResult public func requestRevoke(_ id: String) -> ScopeConsentConfirmation? {
         requestTightening(id, mutation: .revoke(scope: id))
     }
@@ -202,8 +211,25 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
     }
     public func selectAll() {
         guard canMutate else { return }
-        selectedIDs = Set(facts?.scopes.filter { $0.route != .browserSession && canChoose($0.scope) }.map(\.scope) ?? [])
+        let standard = Set(facts?.scopes.filter { $0.route != .browserSession && canChoose($0.scope) }.map(\.scope) ?? [])
+        if firstRunExplicitSelection {
+            let browser = Set(facts?.scopes.filter { $0.route == .browserSession && selectedIDs.contains($0.scope) }.map(\.scope) ?? [])
+            selectedIDs = standard.union(browser)
+        } else { selectedIDs = standard }
         phase = .idle; changed()
+    }
+    /// Done is the explicit first-run gesture; accepted facts remain the sole source of authorization truth.
+    public func submitFirstRunSelection() async -> FirstRunConsentSubmission {
+        guard firstRunExplicitSelection else { return .unavailable }
+        if selectedIDs.isEmpty { return .noSelection }
+        guard selectedIDs.allSatisfy({ canChoose($0) }), let confirmation = requestAllow() else { return .unavailable }
+        await confirm(confirmation.id)
+        guard lastIntentRequestID == confirmation.intent.requestID else { return .unavailable }
+        switch notice {
+        case .requestFailed: return .unavailable
+        case .outcomeUnknown, .committedAwaitingFacts: return .outcomeUnknown
+        default: return .submitted
+        }
     }
     @discardableResult public func requestAllow() -> ScopeConsentConfirmation? {
         let eligible = selectedIDs.filter { canChoose($0) }.sorted()

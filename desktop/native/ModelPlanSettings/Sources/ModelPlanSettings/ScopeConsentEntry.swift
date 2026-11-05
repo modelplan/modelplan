@@ -27,7 +27,7 @@ import ModelPlanWire
     public func makeFirstRunView(language:SettingsLanguage) throws -> SettingsScopeConsentView {
         if let firstRunView { firstRunView.apply(language:language);return firstRunView }
         guard controller.beginFirstRunDraft() else { throw PresentationError.mutationInProgress }
-        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning)
+        let view=SettingsScopeConsentView(controller:controller,language:language,buildSigning:buildSigning,firstRun:true)
         firstRunView=view;return view
     }
     /// Close only that presentation. Current accepted permissions remain available

@@ -31,6 +31,15 @@ import AppKit
     private var observer: UUID?
     private var connectionObserver: UUID?
     private var saveTask: Task<Void, Never>?
+    private struct PendingConsent {
+        let action: FirstRunAction
+        let options: OnboardingOptions
+        let revision: UInt64
+        let generation: UInt64
+        let scopes: Set<String>
+    }
+    private var pendingConsent: PendingConsent?
+    private var consentSubmitted = false
 
     public init(editor: SettingsEditor, host: FirstRunHost = .popup, scopeConsentEntry: ScopeConsentEntry? = nil) {
         self.editor = editor; self.host = host; self.scopeConsentEntry = scopeConsentEntry
@@ -68,7 +77,7 @@ import AppKit
             do {
                 try scopePresentation?.prepare(language: editor.snapshot?.preferences.language ?? .english)
                 scopeUnavailable = false; errorMessage = nil
-                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.refreshEnabled() } }
+                if scopeObserver == nil { scopeObserver = scopeConsentEntry.controller.observe { [weak self] in self?.consentChanged() } }
             } catch { scopeUnavailable = true }
         }
         refresh()
@@ -79,6 +88,7 @@ import AppKit
     public func present() async { await prepare(); showWindow(nil); window?.makeKeyAndOrderFront(nil) }
     public func suspend() {
         active = false; pageValid = false; generation &+= 1
+        pendingConsent = nil; consentSubmitted = false; busy = false
         if let observer { editor.removeChangeObserver(observer); self.observer = nil }
         if let connectionObserver { editor.connections.removeObserver(connectionObserver); self.connectionObserver = nil }
         connectionsView.suspend()
@@ -203,6 +213,45 @@ import AppKit
     private func finish(_ action: FirstRunAction) {
         guard active, pageValid, !busy, !editor.isSaving, let options, let revision = baseRevision else { return }
         busy = true; errorMessage = nil; refreshEnabled(); let expectedGeneration = generation
+        if let controller = scopeConsentEntry?.controller, !controller.selectedIDs.isEmpty {
+            let pending = PendingConsent(action: action, options: options, revision: revision,
+                                         generation: expectedGeneration, scopes: controller.selectedIDs)
+            pendingConsent = pending
+            consentSubmitted = false
+            saveTask = Task { @MainActor [weak self] in
+                let result = await controller.submitFirstRunSelection()
+                guard let self, self.active, self.generation == expectedGeneration else { return }
+                switch result {
+                case .submitted, .outcomeUnknown:
+                    self.consentSubmitted = true
+                    self.consentChanged()
+                case .unavailable, .noSelection:
+                    self.pendingConsent = nil; self.busy = false
+                    self.errorMessage = SettingsWords.text("Reading permissions could not be confirmed. Check the selected readers.", "无法确认读取权限，请检查所选读取器。", self.editor.snapshot?.preferences.language ?? .chinese)
+                    self.refresh()
+                }
+            }
+            return
+        }
+        saveFirstRun(action, options: options, revision: revision, generation: expectedGeneration)
+    }
+    private func consentChanged() {
+        guard let pending = pendingConsent, let controller = scopeConsentEntry?.controller else { refreshEnabled(); return }
+        guard consentSubmitted else { refreshEnabled(); return }
+        if case .requestFailed = controller.notice {
+            pendingConsent = nil; consentSubmitted = false; busy = false
+            errorMessage = SettingsWords.text("Reading permission was not accepted. Check the selected readers.", "读取权限未获接受，请检查所选读取器。", editor.snapshot?.preferences.language ?? .chinese)
+            refresh(); return
+        }
+        if pending.scopes.allSatisfy({ controller.isAllowed($0) }) {
+            pendingConsent = nil; consentSubmitted = false
+            saveFirstRun(pending.action, options: pending.options, revision: pending.revision, generation: pending.generation)
+        } else {
+            errorMessage = SettingsWords.text("Waiting for reading permissions to be confirmed.", "正在等待读取权限确认。", editor.snapshot?.preferences.language ?? .chinese)
+            refresh()
+        }
+    }
+    private func saveFirstRun(_ action: FirstRunAction, options: OnboardingOptions, revision: UInt64, generation expectedGeneration: UInt64) {
         saveTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.busy = false; self.refresh() }
