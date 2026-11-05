@@ -52,6 +52,20 @@ import ModelPlanMenuVerification
     private var helpMapUnavailable = false
     /// The presentation boundary remains replaceable for synthetic, window-free tests.
     var requestHelpMap: (() -> Bool)?
+    private(set) var statusHelpRequestID: UUID?
+    var statusHelpButtonFocused: Bool {
+        guard let button = status?.button else { return false }
+        return button.window?.firstResponder === button
+    }
+    func statusHelpDidDismiss(_ requestID: UUID) {
+        guard statusHelpRequestID == requestID else { return }
+        statusHelpRequestID = nil
+        guard !terminating, !lifecyclePaused, let item = status, item.isVisible,
+              let button = item.button, let window = button.window, window.isVisible,
+              !button.isHiddenOrHasHiddenAncestor else { return }
+        _ = window.makeFirstResponder(button)
+        button.setAccessibilityFocused(true)
+    }
     private var dockHelpSetupInProgress = false
     #if MODELPLAN_U6_DRIVE
     private var driveGuard: U6DriveGuard?
@@ -331,6 +345,7 @@ import ModelPlanMenuVerification
         lifecyclePaused = true
         // Scrub before Dock suspension: its callbacks may synchronously rebuild the status menu.
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
+        statusHelpRequestID = nil
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         renderMenu()
@@ -481,7 +496,8 @@ import ModelPlanMenuVerification
         }
         menuItems += [
             .init(title: nil),
-            .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
+            .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
+                  action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
@@ -522,9 +538,11 @@ import ModelPlanMenuVerification
         button.toolTip = detail
         button.setAccessibilityHelp(detail)
     }
-    private func showHelp() {
+    private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
+        statusHelpRequestID = fromStatusMenu ? UUID() : nil
         helpMapUnavailable = requestHelpMap?() != true
+        if helpMapUnavailable { statusHelpRequestID = nil }
         renderMenu()
     }
     private func showFeedbackText(_ language: SettingsLanguage) -> String? {

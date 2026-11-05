@@ -49,6 +49,14 @@ import ModelPlanDock
         defer { app.composition.dock.close() }
         let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
         XCTAssertEqual(help.accessibilityIdentifier(), "status.help")
+        app.requestHelpMap = { true }
+        try invoke("Help…", on: app)
+        let request = try XCTUnwrap(app.statusHelpRequestID)
+        app.statusHelpDidDismiss(UUID())
+        XCTAssertEqual(app.statusHelpRequestID, request)
+        app.statusHelpDidDismiss(request)
+        XCTAssertNil(app.statusHelpRequestID)
+        XCTAssertFalse(app.statusHelpButtonFocused, "A detached view cannot report native status focus")
     }
 
     func testS10NormalEntryRegistersThePaintedGripAsADragTarget() async throws {
@@ -61,6 +69,14 @@ import ModelPlanDock
         let point = CGPoint(x: grip.boundingBox.midX, y: grip.boundingBox.midY)
         XCTAssertTrue(view.isPainted(atLocal: point))
         XCTAssertTrue(view.backgroundDragDelegate?.backgroundCanDrag(local: point) == true)
+        let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, characters: "\t",
+            charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
+        view.keyDown(with: key)
+        XCTAssertEqual(view.focusedGripIndex, 0)
+        XCTAssertEqual(view.emphasizedGripFrameForChecks, grip.boundingBox)
+        _ = view.resignFirstResponder()
+        XCTAssertNil(view.emphasizedGripFrameForChecks)
     }
 
     func testHelpMenuRequestsExistingMapAndReportsFailureInBothLanguages() async throws {

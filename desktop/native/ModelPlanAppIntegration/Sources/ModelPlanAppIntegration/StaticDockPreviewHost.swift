@@ -63,6 +63,12 @@ public struct StaticDockGeometry {
 
 public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
+struct DockHelpInteraction: Equatable {
+    enum Source: Equatable { case pointer, keyboard }
+    let anchor: DockRequestedHelpAnchor
+    let source: Source
+}
+
 /// Interactive native Dock companion shared by production and explicit self-tests.
 /// The static instrument renderer does not disable native panels, edge/hide, drag/drop or menus.
 /// Working effects/entrance, global hooks, reader activation and services are separate owners.
@@ -163,6 +169,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var dockHelpSurfaceDidChange: ((DockHelpSurface?) -> Void)? {
         didSet { dockHelpSurfaceDidChange?(lastDockHelpSurface) }
     }
+    private(set) var currentDockHelpInteraction: DockHelpInteraction?
+    var dockHelpInteractionDidChange: ((DockHelpInteraction?) -> Void)?
     private var lastDockHelpSurface: DockHelpSurface?
     private var dockHelpInputGeneration: UInt64?
     var currentDockHelpSurface: DockHelpSurface? {
@@ -590,6 +598,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
     private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
@@ -1058,6 +1067,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             // presumed outside because the pointer may be over a separate card.
             self.edge.refresh()
             self.interactionController?.refresh()
+            self.publishDockHelpInteraction()
         }
         return surface
     }
@@ -1150,6 +1160,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func withdrawDockHelpSurface() {
         guard lastDockHelpSurface != nil else { return }
         lastDockHelpSurface = nil; dockHelpInputGeneration = nil
+        publishDockHelpInteraction()
         dockHelpSurfaceDidChange?(nil)
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
@@ -1185,6 +1196,24 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
     }
+    private func publishDockHelpInteraction() {
+        let next: DockHelpInteraction?
+        if let surface = currentDockHelpSurface, !surface.dragging {
+            let view = interactionView
+            let focused = view.focusedGripIndex.map { "dock.grip.\($0)" } ??
+                view.keyboardTargetID.map { "dock.nozzle." + $0 }
+            if let focused, let anchor = surface.mapAnchors.first(where: { $0.id == focused }) {
+                next = .init(anchor: anchor, source: .keyboard)
+            } else if let pointer = environment().pointer,
+                      let anchor = surface.mapAnchors.first(where: { $0.visible && $0.rect.contains(pointer) }) {
+                next = .init(anchor: anchor, source: .pointer)
+            } else { next = nil }
+        } else { next = nil }
+        guard next != currentDockHelpInteraction else { return }
+        currentDockHelpInteraction = next
+        dockHelpInteractionDidChange?(next)
+    }
+
     private func publishDockHelpSurface(_ value: DockEdgePresentation) {
         guard createsNativePanels, !retired, !retiring, permitted, preferences.showDock, value.state == .expanded,
               let panel, panel.isVisible, !panel.isMiniaturized, panel.alphaValue > 0,
@@ -1192,6 +1221,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
         let view = edgeViews[orientation] ?? dockView
         guard view.window === panel, !view.isHiddenOrHasHiddenAncestor else { withdrawDockHelpSurface(); return }
+        defer { publishDockHelpInteraction() }
         let current = edgeGeometries[orientation] ?? geometry
         func screenRect(_ rect: CGRect) -> CGRect? {
             guard !rect.isNull, !rect.isInfinite, rect.width > 0, rect.height > 0,
@@ -1202,6 +1232,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return global
         }
         var anchors: [FirstUseHintKind: CGRect] = [:]
+        if let hull = view.registeredHullBounds, let global = screenRect(hull) {
+            anchors[.findWidget] = global
+        }
         if let id = model?.inputs.first(where: { view.interactionAnchor($0.id) != nil })?.id,
            let local = view.interactionAnchor(id), let global = screenRect(local) {
             anchors[.ringRefresh] = global
@@ -1218,6 +1251,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             anchors[.drag] = global
         }
         var mapAnchors: [DockRequestedHelpAnchor] = []
+        for (index, rect) in view.registeredGripRects.enumerated() {
+            if let global = screenRect(rect) {
+                mapAnchors.append(.init(id: "dock.grip.\(index)", region: .dockMove, rect: global, visible: true))
+            }
+        }
         if let grip = anchors[.drag] { mapAnchors.append(.init(id: "dock.move", region: .dockMove, rect: grip, visible: true)) }
         if let ignition = anchors[.ignition] { mapAnchors.append(.init(id: "dock.ignition", region: .ignition, rect: ignition, visible: true)) }
         for input in model?.inputs ?? [] {

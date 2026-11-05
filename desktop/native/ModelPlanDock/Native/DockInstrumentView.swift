@@ -42,7 +42,46 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
-    public var keyboardTargetID:String?
+    public var keyboardTargetID: String? {
+        didSet { if keyboardTargetID != oldValue { onHelpFocusChanged?() } }
+    }
+    public var onHelpFocusChanged: (() -> Void)?
+    public private(set) var registeredGripRects: [CGRect] = []
+    public private(set) var focusedGripIndex: Int? {
+        didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); onHelpFocusChanged?() } }
+    }
+    private var hoveredGripIndex: Int?
+    private var gripOutline: CAShapeLayer?
+    public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
+
+    public func registerGripRects(_ rects: [CGRect]) {
+        let valid = rects.filter { !$0.isEmpty && bounds.contains($0) && isPainted(atLocal: CGPoint(x: $0.midX, y: $0.midY)) }
+        guard registeredGripRects != valid else { return }
+        registeredGripRects = valid
+        hoveredGripIndex = nil
+        focusedGripIndex = nil
+        updateGripEmphasis()
+        refreshNodes()
+    }
+
+    private func updateGripEmphasis() {
+        guard let index = focusedGripIndex ?? hoveredGripIndex, registeredGripRects.indices.contains(index) else {
+            gripOutline?.removeFromSuperlayer()
+            gripOutline = nil
+            return
+        }
+        let outline = gripOutline ?? CAShapeLayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.frame = bounds
+        outline.path = CGPath(roundedRect: registeredGripRects[index], cornerWidth: 3, cornerHeight: 3, transform: nil)
+        outline.fillColor = NSColor.clear.cgColor
+        outline.strokeColor = NSColor.systemOrange.cgColor
+        outline.lineWidth = 2
+        if outline.superlayer == nil { layer?.addSublayer(outline) }
+        gripOutline = outline
+        CATransaction.commit()
+    }
     public var interactionProjectionAvailable: Bool { !community && !failed && skin != nil }
     /// Registered local geometry, never a second layout or an input window.
     public func interactionTargets(edge: DockEdge) -> [DockReorderTarget] {
@@ -192,7 +231,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             excluded.append(station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
             if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)) }
         }
-        return DockBackgroundDragRegions(body: path, excludedControls: excluded, bodyHitTest: bodyHitTest)
+        return DockBackgroundDragRegions(body: path, grips: registeredGripRects.map { CGPath(rect: $0, transform: nil) },
+                                         excludedControls: excluded, bodyHitTest: bodyHitTest)
     }
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
@@ -208,7 +248,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
-        keyboardTargetID = nil; nozzleEventDelegate?.hoverNozzle(nil)
+        keyboardTargetID = nil; focusedGripIndex = nil; nozzleEventDelegate?.hoverNozzle(nil)
         return true
     }
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
@@ -216,7 +256,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        resetVisuals();registerGripRects([]);officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -258,14 +298,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
-        resetVisuals(); community = false; failed = true
+        resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; community = false; failed = true
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    public func dispose(){onHelpFocusChanged=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    private func resetVisuals(){hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
@@ -302,7 +342,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if let original = refreshSweepOriginal { image = original; refreshSweepOriginal = nil; needsDisplay = true }
     }
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){resetVisuals();super.viewDidHide()}
+    public override func viewDidHide(){focusedGripIndex=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}
@@ -389,7 +429,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             node.focus = { [weak self, weak node] focused in
                 guard let self, let node, self.nodes[key] === node else { return }
                 guard case .subscription(let id) = action else { return }
-                if focused { self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
+                if focused { self.focusedGripIndex = nil; self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
                 else if self.keyboardTargetID == id { self.keyboardTargetID = nil; self.nozzleEventDelegate?.hoverNozzle(nil) }
             }
             nodes[key]=node;children.append(node);used.insert(key)
@@ -427,6 +467,26 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let label=locale.hasPrefix("zh") ? "更多订阅":"More subscriptions"
             append("overflow",label,String(more.overflowCount ?? 0),label,CGRect(x:more.centre.x-more.diameter/2-origin.x,y:more.centre.y-more.diameter/2-origin.y,width:more.diameter,height:more.diameter),.overflow)
         }
+        for (index, rect) in registeredGripRects.enumerated() {
+            let key = "grip.\(index)"
+            let node = nodes[key] ?? DockInstrumentAXNode()
+            node.setAccessibilityRole(.group)
+            node.setAccessibilityParent(self)
+            node.setAccessibilityIdentifier("dock." + key)
+            node.setAccessibilityLabel(locale.hasPrefix("zh") ? "移动额度挂件" : "Move Quota Widget")
+            node.setAccessibilityFrameInParentSpace(rect)
+            node.focus = { [weak self, weak node] focused in
+                guard let self, let node, self.nodes[key] === node else { return }
+                if focused {
+                    self.keyboardTargetID = nil
+                    self.nozzleEventDelegate?.hoverNozzle(nil)
+                    self.focusedGripIndex = index
+                } else if self.focusedGripIndex == index { self.focusedGripIndex = nil }
+            }
+            nodes[key] = node
+            children.append(node)
+            used.insert(key)
+        }
         nodes=nodes.filter{used.contains($0.key)}
         if let id=keyboardTargetID, !used.contains("subscription." + id) { keyboardTargetID=nil;nozzleEventDelegate?.hoverNozzle(nil) }
         setAccessibilityChildren(children)
@@ -453,10 +513,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public override func mouseMoved(with event:NSEvent){
         let p=convert(event.locationInWindow,from:nil)
+        let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
+        if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){nozzleEventDelegate?.hoverNozzle(nil)}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil)}
     public override func mouseDragged(with event:NSEvent){
         if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
         guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
@@ -475,6 +537,17 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
     public override func keyDown(with event:NSEvent){
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
+        if modifiers.isEmpty, event.keyCode == 48, keyboardNavigationEnabled, !registeredGripRects.isEmpty {
+            let backward = event.modifierFlags.contains(.shift)
+            let next = focusedGripIndex.map { $0 + (backward ? -1 : 1) } ?? (backward ? registeredGripRects.count - 1 : 0)
+            if registeredGripRects.indices.contains(next) {
+                keyboardTargetID = nil
+                nozzleEventDelegate?.hoverNozzle(nil)
+                focusedGripIndex = next
+                return
+            }
+            focusedGripIndex = nil
+        }
         if modifiers == .option,let id=keyboardTargetID,nozzleEventDelegate?.optionArrow(id:id,keyCode:event.keyCode)==true{return}
         if modifiers.isEmpty, let id=keyboardTargetID, let index=orderedIDs.firstIndex(of:id), [123,124,125,126].contains(event.keyCode) {
             let delta = event.keyCode == 123 || event.keyCode == 126 ? -1 : 1
