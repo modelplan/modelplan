@@ -11,6 +11,8 @@ from pathlib import Path
 import secrets
 import shutil
 import tempfile
+import time
+import process_scan
 
 PREFIX = "modelplan-candidate-"
 MARKER = ".modelplan-owned-run.json"
@@ -68,3 +70,38 @@ def cleanup(registry, *, parent, run_id, epoch, subject_closed):
         raise RuntimeError("safe directory removal unavailable")
     shutil.rmtree(root)
     return {"runID": run_id, "epoch": epoch, "cleaned": not root.exists()}
+
+
+def cleanup_registered(registry, reservation, *, parent, run_id, epoch, subject_closed, lookup, scan,
+                       launcher_wait=5.0, clock=time.monotonic, sleep=time.sleep):
+    """Require the exact run's direct launcher to be gone and its recorded scope empty.
+
+    LaunchServices has delayed launches and is not supported by this check.
+    The normal guardian must already have stopped the registered subject.
+    """
+    if subject_closed is not True or not isinstance(reservation, dict):
+        raise ValueError("subject closure and reservation required")
+    if reservation.get("launchMode") != "direct" or reservation.get("state") not in ("running", "launching"):
+        raise ValueError("only direct scoped subjects can be cleaned")
+    scope = reservation.get("scan")
+    launcher = reservation.get("launcher")
+    if not process_scan.valid_scope(scope) or not isinstance(launcher, dict):
+        raise ValueError("valid launcher identity and process scope required")
+    keys = ("pid", "startSeconds", "startMicroseconds")
+    if any(type(launcher.get(key)) is not int for key in keys) or launcher["pid"] <= 0:
+        raise ValueError("invalid launcher identity")
+    deadline = clock() + launcher_wait
+    while True:
+        current = lookup(launcher["pid"])
+        if current is None or any(current.get(key) != launcher[key] for key in keys):
+            break
+        if clock() >= deadline:
+            raise ValueError("launcher still running")
+        sleep(0.05)
+    root = Path(registry.get("root", "")).resolve()
+    prefix = scope.get("prefix")
+    if not prefix or not Path(prefix).resolve().is_relative_to(root):
+        raise ValueError("process scope is outside candidate scratch")
+    if scan(scope):
+        raise ValueError("candidate process scope is not empty")
+    return cleanup(registry, parent=parent, run_id=run_id, epoch=epoch, subject_closed=True)
