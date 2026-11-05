@@ -4,6 +4,13 @@ The real `CommunityApplicationFactory.makeDelegate` supplies `CommunityMenuBarPr
 
 Selection uses `CommunityDockSnapshot` and `DockInstrumentProjection`, then takes the minimum original remaining percentage before formatting the title as a rounded integer percentage. The menu keeps the full Dock readout for that same row. Unknown, expired, future-observed and failed readings are excluded by those existing Dock rules. No current reading means icon only. The disabled first menu item names the selected row and percentage, or offers Settings when there is no reading. The image stays template mode and text has no custom level colour.
 
+The normal `EngineRowsEntry` status item reads committed menu-display preferences
+and the currently admitted Dock projection. Icon mode leaves the title empty.
+Tightest mode displays the lowest remaining percentage across visible members.
+Two-window mode displays the available five-hour and weekly minima. An expired
+or missing value leaves no number for that period, and an empty title keeps the
+icon. These modes always report remaining quota.
+
 `Resources/tray.png` is an unchanged bundle copy of `desktop/src-tauri/icons/tray.png`, retaining its historical MIT grant. `ModelPlanAppIntegration_ModelPlanAppIntegration.bundle` must be next to CLI-built executables or inside `Contents/Resources` in a packaged app. The public neutral packager and hosted native-runtime artifact copy it explicitly. App lookup uses packaged resources first and does not depend on a build-checkout fallback. External app assemblers must include the same resource bundle.
 
 Checks construct the actual factory with synthetic transports and in-memory buttons only. They do not create a system status item, open a window, or start the app/helper/provider.

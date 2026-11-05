@@ -125,7 +125,11 @@ public struct EngineMenuRefreshResult {
             if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
-    public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
+    public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
+
+    private func presentedContent(at now: Date) -> DockContent {
+        admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+    }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
@@ -193,14 +197,14 @@ public struct EngineMenuRefreshResult {
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let now = deadlineWall()
-        let content = admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+        let content = presentedContent(at: now)
         let detail = (content.menuStatusLines ?? []).joined(separator: " · ")
         return .init(title: statusQuotaTitle(content.snapshot.inputs, at: now),
                      detail: detail.isEmpty ? fallbackStatusText : detail)
     }
 
     private func statusQuotaTitle(_ inputs: [DockInstrumentInput], at now: Date) -> String {
-        guard let preferences = latestSettings?.snapshot.preferences, preferences.menuDisplay != .icon,
+        guard let preferences = latestSettings?.snapshot.preferences,
               let ordered = try? preferences.presentedSubscriptionIDs(inputs.map(\.id)) else { return "" }
         let visible = Set(ordered)
         func tightest(_ period: DockQuotaPeriod? = nil) -> String? {
