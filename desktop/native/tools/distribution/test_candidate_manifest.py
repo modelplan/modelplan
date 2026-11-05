@@ -32,7 +32,7 @@ class CandidateManifestTests(unittest.TestCase):
             sha = 'a' * 40
             manifest.write_text(json.dumps(create(archive, info, sha, 'c' * 40, '123', '2', cli_pin)))
             verify(archive, manifest, sha)
-            self.assertEqual(json.loads(manifest.read_text())['cliSource'], 'reviewed-release')
+            self.assertEqual(json.loads(manifest.read_text())['cliSource'], 'declared-reviewed-release')
             self.assertEqual(json.loads(manifest.read_text())['cliVersion'], '0.0.1')
             helper.write_bytes(b'forged')
             with self.assertRaises(ValueError):

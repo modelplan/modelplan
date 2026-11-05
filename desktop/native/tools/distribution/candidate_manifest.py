@@ -40,7 +40,7 @@ def create(archive, info, source, control, run_id, attempt, cli_pin):
         raise ValueError('candidate cockpit entry must be enabled')
     return {'sourceSHA': source, 'packageSHA256': hashlib.sha256(archive.read_bytes()).hexdigest(),
             'cockpitEntryEnabled': enabled, 'controlSHA': control, 'workflowRunID': run_id, 'workflowAttempt': attempt,
-            'cliSource': 'reviewed-release', 'cliVersion': version, 'cliSHA256': cli_digest}
+            'cliSource': 'declared-reviewed-release', 'cliVersion': version, 'cliSHA256': cli_digest}
 
 
 def verify(archive, manifest, expected):
@@ -53,7 +53,7 @@ def verify(archive, manifest, expected):
         not re.fullmatch(r'[1-9][0-9]*', value['workflowRunID']) or
         not re.fullmatch(r'[1-9][0-9]*', value['workflowAttempt'])):
         raise ValueError('invalid validation provenance')
-    if (value['cliSource'] != 'reviewed-release' or
+    if (value['cliSource'] != 'declared-reviewed-release' or
         not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value['cliVersion']) or
         not re.fullmatch(r'[0-9a-f]{64}', value['cliSHA256'])):
         raise ValueError('invalid CLI receipt')
