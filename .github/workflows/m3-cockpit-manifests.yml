@@ -1,0 +1,43 @@
+name: Cockpit canonical manifest evidence
+on:
+  pull_request:
+    paths:
+      - 'desktop/cockpit/**'
+      - 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
+      - 'desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py'
+      - '.github/workflows/m3-cockpit-manifests.yml'
+permissions:
+  contents: read
+jobs:
+  canonical-manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/cockpit/package-lock.json
+      - run: npm ci --prefix desktop/cockpit --ignore-scripts
+      - name: Build both canonical cockpit editions
+        run: |
+          npm run build --prefix desktop/cockpit
+          npm run build:official --prefix desktop/cockpit
+      - name: Record exact head and manifest digests
+        run: |
+          mkdir -p "$RUNNER_TEMP/cockpit-manifests"
+          git rev-parse HEAD > "$RUNNER_TEMP/cockpit-manifests/subject.txt"
+          cp desktop/cockpit/.tmp/community/bundle-manifest.json "$RUNNER_TEMP/cockpit-manifests/community.json"
+          cp desktop/cockpit/.tmp/official/bundle-manifest.json "$RUNNER_TEMP/cockpit-manifests/official.json"
+          (cd "$RUNNER_TEMP/cockpit-manifests" && sha256sum community.json official.json > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cockpit-manifests-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/cockpit-manifests/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Check native bundle pins
+        run: python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
