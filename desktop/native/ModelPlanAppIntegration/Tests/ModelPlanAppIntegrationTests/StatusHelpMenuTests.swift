@@ -3,6 +3,7 @@ import AppKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
+import ModelPlanDock
 @testable import ModelPlanAppIntegration
 
 @MainActor final class StatusHelpMenuTests: XCTestCase {
@@ -10,7 +11,7 @@ import ModelPlanEngineClient
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, activateSettings: {})
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
         await app.prepare()
         return app
     }
@@ -43,6 +44,25 @@ import ModelPlanEngineClient
         let saved = await app.foundationStore.snapshot()
         XCTAssertFalse(saved.preferences.showDock, "Failed Show must not pretend to reveal the widget")
     }
+    func testS06HelpHasAStableMenuActionIdentifier() async throws {
+        let app = try await application()
+        defer { app.composition.dock.close() }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        XCTAssertEqual(help.accessibilityIdentifier(), "status.help")
+    }
+
+    func testS10NormalEntryRegistersThePaintedGripAsADragTarget() async throws {
+        let app = try await application()
+        defer { app.composition.dock.close() }
+        app.allowDockPresentation()
+        let view = app.composition.dock.dockView
+        let regions = try XCTUnwrap(view.registeredDragRegions(excluding: []))
+        let grip = try XCTUnwrap(regions.grips.first, "The painted grip needs an explicit event target")
+        let point = CGPoint(x: grip.boundingBox.midX, y: grip.boundingBox.midY)
+        XCTAssertTrue(view.isPainted(atLocal: point))
+        XCTAssertTrue(view.backgroundDragDelegate?.backgroundCanDrag(local: point) == true)
+    }
+
     func testHelpMenuRequestsExistingMapAndReportsFailureInBothLanguages() async throws {
         for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."), ("zh-CN", "说明…", "说明暂不可用，请在额度挂件可见时重试。")] {
             let app = try await application(language: language)
