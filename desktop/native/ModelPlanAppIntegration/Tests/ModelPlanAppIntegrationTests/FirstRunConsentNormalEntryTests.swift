@@ -42,8 +42,8 @@ private actor FirstRunConsentEngine: EngineClient {
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireConsentFacts.json").standardizedFileURL
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
         let base = try XCTUnwrap((object["scopes"] as? [[String: Any]])?.first)
-        var scopes = [("one.local", "local_log"), ("two.runtime", "runtime_rpc"), ("three.browser", "browser_session"), ("four.key", "api_key_api"), ("five.status", "status_line")].map { id, route in
-            var scope = base; scope["scope"] = id; scope["tool"] = "codex"; scope["route"] = route
+        var scopes = [("one.local", "local_log", "codex"), ("two.runtime", "runtime_rpc", "claude"), ("three.browser", "browser_session", "cursor"), ("four.key", "api_key_api", "codex"), ("five.status", "status_line", "codex")].map { id, route, tool in
+            var scope = base; scope["scope"] = id; scope["tool"] = tool; scope["route"] = route
             scope["state"] = "unset"; scope["detected"] = true; scope["retired"] = false
             scope["defaultCheck"] = true; scope["cleanupPending"] = false
             scope.removeValue(forKey: "disabledReason"); scope.removeValue(forKey: "keychain")
@@ -61,6 +61,13 @@ private actor FirstRunConsentEngine: EngineClient {
             await app.composition.store.consume(.consentChanged(.init(envelope: try .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch, consentGeneration: delivery.floor.generation, data: facts()), delivery: delivery)))
         }
         try await publishFacts()
+        var context = app.settingsHost.application.editor.context
+        context.subscriptions = [
+            .init(id: "first", name: .init("First plan", "第一项")),
+            .init(id: "second", name: .init("Second plan", "第二项")),
+            .init(id: "third", name: .init("Browser plan", "浏览器项"))
+        ]
+        app.settingsHost.application.update(context: context)
         let existing = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         await app.restoreFirstRunIfNeeded()
         let window = try XCTUnwrap(NSApplication.shared.windows.first { !existing.contains(ObjectIdentifier($0)) && $0.isVisible })
@@ -70,6 +77,10 @@ private actor FirstRunConsentEngine: EngineClient {
             try XCTUnwrap(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == id } as? NSButton)
         }
         XCTAssertTrue(app.scopeConsentEntry.controller.selectedIDs.isEmpty)
+        let summary = try XCTUnwrap(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "firstRun.subscriptions" } as? NSTextField)
+        XCTAssertFalse(summary.isHiddenOrHasHiddenAncestor)
+        for name in ["First plan", "Second plan", "Browser plan"] { XCTAssertTrue(summary.stringValue.contains(name)) }
+        for id in ["one.local", "two.runtime", "three.browser"] { XCTAssertEqual(try button("scope.allow." + id).state, .off) }
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.allow.four.key" })
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.allow.five.status" })
         try button("scope.selectAll").performClick(nil)
@@ -91,5 +102,16 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertTrue(app.scopeConsentEntry.controller.isAllowed("two.runtime"))
         XCTAssertFalse(app.scopeConsentEntry.controller.isAllowed("one.local"))
         XCTAssertFalse(app.scopeConsentEntry.controller.isAllowed("three.browser"))
+        for _ in 0..<200 where window.isVisible { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(window.isVisible)
+        await app.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+        let settings = app.scopeConsentEntry.view
+        XCTAssertTrue(settings.window?.isVisible == true)
+        XCTAssertFalse(settings.isHiddenOrHasHiddenAncestor)
+        for (id, expected) in [("one.local", false), ("two.runtime", true), ("three.browser", false)] {
+            let state = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.state." + id } as? NSTextField)
+            XCTAssertEqual(state.stringValue == "Allowed", expected, "Settings must show the accepted scope decision")
+        }
+        settings.window?.close()
     }
 }
