@@ -65,6 +65,11 @@ import ModelPlanWire
                 for row in visibleRows {
                     let title = row.titleLabel.stringValue
                     let subtitle = row.subtitle.stringValue
+                    if row.key == .readerDetails {
+                        XCTAssertEqual(subtitle, locale == "en"
+                            ? "Sources, last reads and next refresh times for permitted readers."
+                            : "已授权读取器的来源、上次读取和下次刷新时间。")
+                    }
                     XCTAssertFalse(title.isEmpty, "Every rendered Settings row needs a title")
                     if locale == "en" {
                         XCTAssertFalse(containsHan(title), "English Settings title contains Chinese: \(row.key.rawValue)")
