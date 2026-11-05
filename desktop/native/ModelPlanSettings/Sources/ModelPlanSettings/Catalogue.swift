@@ -114,6 +114,7 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
 public struct SettingsPageContext: Sendable {
+    static let hintsDisconnectedReason = SettingsText("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     /// True only for the shipping normal-entry v1 surface.
     public var v1NormalEntry = false
     public var unavailableControls: [SettingKey: SettingsText] = [:]
@@ -134,7 +135,7 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.automaticUpdates] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
-        unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
+        unavailableControls[.resetHints] = Self.hintsDisconnectedReason
     }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
@@ -295,8 +296,7 @@ public enum SettingsCatalogue {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
     private static func unavailableReason(_ k: SettingKey, _ c: SettingsPageContext) -> SettingsText? {
-        let disconnected = SettingsText("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
-        if k == .resetHints, c.capabilities.helpMapAvailable, c.unavailableControls[k] == disconnected { return nil }
+        if k == .resetHints, c.capabilities.helpMapAvailable, c.unavailableControls[k] == SettingsPageContext.hintsDisconnectedReason { return nil }
         return c.unavailableControls[k]
     }
     private static func availability(_ k: SettingKey, _ c: SettingsPageContext) -> SettingAvailability {
