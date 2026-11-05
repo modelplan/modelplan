@@ -62,6 +62,22 @@ import ModelPlanEngineClient
         }
     }
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testNativeJourneyCleanupRetiresTheStatusMenu() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-teardown-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        app.renderMenu()
+        let retired = try XCTUnwrap(app.liveStatusMenu)
+        XCTAssertFalse(retired.items.isEmpty)
+        await app.stopNativeDockJourney()
+        XCTAssertNil(app.liveStatusMenu)
+        XCTAssertTrue(retired.items.isEmpty)
+    }
+
     func testS14NormalLaunchDoesNotOverrideSystemAppearance() async throws {
         let application = NSApplication.shared
         let previousAppearance = application.appearance
