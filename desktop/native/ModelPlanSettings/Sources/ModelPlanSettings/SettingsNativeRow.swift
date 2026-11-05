@@ -249,7 +249,7 @@ import AppKit
             }
         }
         if values.isEmpty {
-            if key == .percentagePin { readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language) }
+            if key == .percentagePin { readout.stringValue = SettingsWords.text("No subscriptions found", "未检测到订阅", language) }
             else if key == .captureHiding { readout.stringValue = SettingsWords.text("Unavailable", "不可用", language) }
             else if key == .retention { readout.stringValue = SettingsWords.text("Sessions: 35 days\nDaily totals: 371 days\nManaged by the CLI", "会话：35 天\n每日汇总：371 天\n由 CLI 管理", language) }
             else if key == .clearCLI { readout.stringValue = SettingsWords.text("Unavailable; CLI-owned data", "不可用：CLI 管理的数据", language) }
@@ -335,7 +335,7 @@ import AppKit
         }
         if subs.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
-            readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language)
+            readout.stringValue = SettingsWords.text("No subscriptions found", "未检测到订阅", language)
         } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
     }
     private func configureOrder(_ p: SettingsPreferences, context: SettingsPageContext, enabled: Bool, language: SettingsLanguage,
