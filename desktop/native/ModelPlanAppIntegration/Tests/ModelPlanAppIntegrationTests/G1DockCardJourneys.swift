@@ -52,6 +52,7 @@ private actor G1CardRowsClient: EngineClient {
     private let memberID = "aaaaaaaaaaaaaaaa"
 
     private func snapshot(credits: [String: Any]? = nil, includeScoped: Bool = false, includeResetEvent: Bool = false,
+                          includeResetCards: Bool = false, rowState: String = "fresh", refreshFloor: Bool = false, eventStatus: String = "announced",
                           missingPercentage: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -83,18 +84,25 @@ private actor G1CardRowsClient: EngineClient {
         }
         row["id"] = "codex"; row["name"] = ["en": "Synthetic Tool", "zh": "Synthetic Tool"]
         row["vendorKey"] = "codex"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu"]
-        row["state"] = "fresh"; row["expiresAt"] = deadline; row["stateAfterExpiry"] = NSNull()
+        row["state"] = rowState; row["expiresAt"] = deadline; row["stateAfterExpiry"] = NSNull()
         row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
         account["subscriptionRef"] = memberID; account["valueState"] = "current"
         account["observedAt"] = observed; account["freshUntil"] = deadline
         account["plan"] = ["id": "synthetic-plan", "name": ["en": "Synthetic Plan", "zh": "Synthetic Plan"]]
         account["windows"] = windows
         if let credits { account["credits"] = credits } else { account.removeValue(forKey: "credits") }
-        account.removeValue(forKey: "resetCards"); row["accounts"] = [account]
+        if includeResetCards {
+            var cards = try XCTUnwrap(account["resetCards"] as? [String: Any])
+            cards["count"] = 2; cards["earliestExpiresAt"] = "2099-01-01T00:00:00Z"
+            account["resetCards"] = cards
+        } else { account.removeValue(forKey: "resetCards") }
+        if refreshFloor { account["refreshNotBefore"] = deadline } else { account.removeValue(forKey: "refreshNotBefore") }
+        row["accounts"] = [account]
         projection["rows"] = [row]
         if includeResetEvent {
             var event = try XCTUnwrap((projection["resetEvents"] as? [[String: Any]])?.first)
-            event["publishedAt"] = observed; event["expiresAt"] = deadline
+            event["publishedAt"] = observed; event["expiresAt"] = deadline; event["status"] = eventStatus
+            event["schedule"] = ["precision": "window", "from": observed, "through": deadline]
             projection["resetEvents"] = [event]
         } else { projection.removeValue(forKey: "resetEvents") }
         root["projection"] = projection
@@ -107,14 +115,15 @@ private actor G1CardRowsClient: EngineClient {
     }
 
     private func withRenderedCard(credits: [String: Any]? = nil, includeScoped: Bool = false, includeResetEvent: Bool = false,
+                                  includeResetCards: Bool = false, rowState: String = "fresh", refreshFloor: Bool = false, eventStatus: String = "announced", reduceMotion: Bool = false,
                                   missingPercentage: Bool = false, presentCard: Bool = true,
                                   check: (StaticDockPreviewHost, EngineDockMenuApplication) async throws -> Void) async throws {
         _ = NSApplication.shared
-        let rows = try snapshot(credits: credits, includeScoped: includeScoped, includeResetEvent: includeResetEvent, missingPercentage: missingPercentage)
+        let rows = try snapshot(credits: credits, includeScoped: includeScoped, includeResetEvent: includeResetEvent, includeResetCards: includeResetCards, rowState: rowState, refreshFloor: refreshFloor, eventStatus: eventStatus, missingPercentage: missingPercentage)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-card-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        try await store.update { $0.language = .english; $0.showDock = true; $0.autoHide = false }
+        try await store.update { $0.language = .english; $0.showDock = true; $0.autoHide = false; if reduceMotion { $0.motion = .on } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"),
             applicationVersion: "g1-synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
             settingsStore: store, createsNativePanels: false,
@@ -193,6 +202,10 @@ private actor G1CardRowsClient: EngineClient {
             app.advanceClock(by: 0.001)
             let card = try XCTUnwrap(app.renderedSnapshotForChecks().card)
             XCTAssertTrue(card.visible)
+            let dock = app.renderedSnapshotForChecks().dock.frame
+            let gap = max(card.frame.minX - dock.maxX, dock.minX - card.frame.maxX,
+                          card.frame.minY - dock.maxY, dock.minY - card.frame.maxY)
+            XCTAssertEqual(gap, 12, accuracy: 1)
             app.movePointer(to: CGPoint(x: card.frame.midX, y: card.frame.midY))
             app.advanceClock(by: 0.3)
             XCTAssertTrue(app.renderedSnapshotForChecks().card?.visible == true)
@@ -225,6 +238,14 @@ private actor G1CardRowsClient: EngineClient {
         try await withRenderedCard(credits: ["balance": 19614, "unit": "synthetic-unknown"]) { _, app in
             XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.label")?.text, "Reserve")
         }
+        try await withRenderedCard(includeResetCards: true) { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            let options = XCTExpectedFailure.Options(); options.isStrict = true
+            XCTExpectFailure("DOCK-3.8-08 product-missing: reset card facts, M2 follow-up 0fb3e12d", options: options) {
+                XCTAssertEqual(rendered.find("dock.card.text.row.reset-cards.value")?.text, "2")
+                XCTAssertEqual(rendered.find("dock.card.text.row.reset-cards.detail")?.text, "Earliest expiry: 2099-01-01T00:00:00Z")
+            }
+        }
     }
 
     func test_DOCK_3_8_12_snapshotScopedWindow() async throws {
@@ -253,6 +274,16 @@ private actor G1CardRowsClient: EngineClient {
             XCTAssertFalse(app.renderedSnapshotForChecks().card?.visible == true)
             XCTAssertEqual(host.dockView.refreshSweepCountForChecks, 1)
         }
+        try await withRenderedCard(refreshFloor: true, reduceMotion: true, presentCard: false) { host, app in
+            let client = try XCTUnwrap(app.composition.client as? G1CardRowsClient)
+            for _ in 0..<100 where app.memberRefreshAdapter == nil { try await Task.sleep(for: .milliseconds(10)) }
+            host.dockView.onAction?(.subscription(memberID))
+            try await Task.sleep(for: .milliseconds(50))
+            let calls = await client.requestCount()
+            XCTAssertEqual(calls, 0, "Refresh floor must suppress requests")
+            XCTAssertFalse(host.dockView.refreshSweepAnimatingForChecks, "Reduce Motion must use a static indication")
+            XCTAssertFalse(app.renderedSnapshotForChecks().card?.visible == true)
+        }
     }
 
     func test_DOCK_3_8_11_announcedResetDetails() async throws {
@@ -265,7 +296,15 @@ private actor G1CardRowsClient: EngineClient {
             let options = XCTExpectedFailure.Options(); options.isStrict = true
             XCTExpectFailure("DOCK-3.8-11 product-missing: reset timing and source link", options: options) {
                 XCTAssertTrue(rendered.all(role: .control).contains { $0.text == "Source · Original" })
+                let detail = rendered.find(prefix + ".detail")?.text ?? ""
+                XCTAssertTrue(detail.contains(String(Calendar.current.component(.year, from: Date()))), "The announced reset must show reported timing")
             }
+        }
+        try await withRenderedCard(includeResetEvent: true, eventStatus: "confirmed") { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            let prefix = "dock.card.text.row.reset-event:synthetic-reset:confirmed"
+            XCTAssertEqual(rendered.find(prefix + ".label")?.text, "Public reset confirmed")
+            XCTAssertEqual(rendered.find(prefix + ".detail")?.text, "Public status does not confirm a personal quota reset")
         }
     }
 
@@ -276,7 +315,9 @@ private actor G1CardRowsClient: EngineClient {
             let heading = try XCTUnwrap(rendered.find("dock.card.text.name")?.text)
             XCTAssertTrue(heading.contains("Synthetic Tool"))
             XCTAssertTrue(heading.contains("Synthetic Plan"))
-            XCTAssertFalse(try XCTUnwrap(rendered.find("dock.card.text.source")?.text).isEmpty)
+            let source = try XCTUnwrap(rendered.find("dock.card.text.source")?.text)
+            XCTAssertTrue(source.contains("Saved sign-in"))
+            XCTAssertTrue(source.contains("ago") || source.contains("just now"))
             XCTAssertNil(rendered.find("dock.card.text.state"))
             func hasImage(_ element: G1Element) -> Bool {
                 element.imageSource != nil || element.children.contains(where: hasImage)
@@ -287,6 +328,11 @@ private actor G1CardRowsClient: EngineClient {
             XCTExpectFailure("DOCK-3.8-05 product-missing: card glyph", options: options) {
                 XCTAssertTrue(hasImage(card), "The rendered card header must have a glyph")
             }
+        }
+        try await withRenderedCard(rowState: "stale") { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            XCTAssertFalse(try XCTUnwrap(rendered.find("dock.card.text.state")?.text).isEmpty,
+                           "A nonhealthy reading needs its own visible status")
         }
     }
 
@@ -311,7 +357,9 @@ private actor G1CardRowsClient: EngineClient {
             XCTAssertEqual(rendered.find("dock.card.text.row.quota:five.value")?.text, "--")
             XCTAssertNil(rendered.find("dock.card.text.row.credits.value"))
             XCTAssertNil(rendered.find("dock.card.text.state"))
-            XCTAssertFalse(try XCTUnwrap(rendered.find("dock.card.text.source")?.text).isEmpty)
+            let source = try XCTUnwrap(rendered.find("dock.card.text.source")?.text)
+            XCTAssertTrue(source.contains("Saved sign-in"))
+            XCTAssertTrue(source.contains("ago") || source.contains("just now"))
         }
     }
 }
