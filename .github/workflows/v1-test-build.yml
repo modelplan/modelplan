@@ -168,7 +168,7 @@ jobs:
           (cd control/cli && go run ./internal/releaseguard/cmd --binary "$app/Contents/MacOS/ModelPlanCommunity")
           mkdir "$RUNNER_TEMP/output"
           cp "$archive" "$RUNNER_TEMP/output/ModelPlan-Community-test.zip"
-          python3 control/desktop/native/tools/distribution/candidate_manifest.py create --source "$SOURCE_SHA" --control "$CONTROL_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --archive "$RUNNER_TEMP/output/ModelPlan-Community-test.zip" --info "$app/Contents/Info.plist" --manifest "$RUNNER_TEMP/output/manifest.json"
+          python3 control/desktop/native/tools/distribution/candidate_manifest.py create --cli-pin control/desktop/native/consent-cli-pin.json --source "$SOURCE_SHA" --control "$CONTROL_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --archive "$RUNNER_TEMP/output/ModelPlan-Community-test.zip" --info "$app/Contents/Info.plist" --manifest "$RUNNER_TEMP/output/manifest.json"
       - uses: actions/upload-artifact@v4
         with:
           name: modelplan-v1-test-${{ needs.build.outputs.source }}
