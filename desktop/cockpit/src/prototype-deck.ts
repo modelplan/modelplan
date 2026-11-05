@@ -10,6 +10,7 @@ import {prototypeEngineSupplement,currentWindow,displayWindow} from './prototype
 import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
+import {tok} from '../study/rocket-r1/mfd-pages/fmt.js';
 import {plans} from '../study/rocket-r1/mfd-pages/plans.js';
 import {tune} from '../study/rocket-r1/mfd-pages/tune.js';
 import {where} from '../study/rocket-r1/mfd-pages/where.js';
@@ -82,6 +83,15 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   const d=publicData(),selectedId=scope==='all'?null:d.ids.get(scope)??null,ui={page:modules[selected].id,view:null,days:uiDays,stack:uiStack,chart:uiChart,where:uiWhere,time:uiTime,subTab:uiSubTab,subDays:7,cycle:null,older:false,scope:selectedId,selModel:null,trials:{},now:d.now,lang:locale,fill:{},redAt:redBelow()};
   page.className='mfd-page pg-'+modules[selected].id;
   page.innerHTML=d.empty?`<p class="mp-empty">${t('eng.empty')}</p>`:modules[selected].render(d,ui);
+  // PR #478: show Today only when every included account has a known value.
+  if(selected===0){
+   const members=scope==='all'?d.members:d.members.filter(m=>m.key===scope);
+   const values=members.map(m=>prototypeEngineSupplement(m.account,data??undefined).todayTokens);
+   if(values.length&&values.every((v):v is number=>v!==null)){
+    const sum=values.reduce((a,v)=>a+v,0);
+    if(Number.isSafeInteger(sum)){const total=node('div','ov-top');total.append(node('span','lbl',t('mfd.today')),node('b','ov-total',tok(sum)));const alerts=page.querySelector('.mfd-alerts');if(alerts)alerts.after(total);else page.prepend(total);}
+   }
+  }
   // Study list IDs are positional; attach the originating member identity for focus restoration.
   for(const el of page.querySelectorAll<HTMLElement>('[data-mfd^="scope:member"]')){const match=/^scope:member(\d+)$/.exec(el.dataset.mfd??'');const member=match?d.members[Number(match[1])]:null;if(member){el.dataset.focusMember=member.key;}}
   // 30-day history and the full session list are unavailable, not zero.
