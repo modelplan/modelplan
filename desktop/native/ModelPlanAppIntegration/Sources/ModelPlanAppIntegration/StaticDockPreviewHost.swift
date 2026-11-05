@@ -124,6 +124,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !createsNativePanels, !retired, !id.isEmpty, status != .unknown else { return }
         comparisonStatuses = [id: status]; inputGeneration &+= 1; rebuild()
     }
+    @_spi(DockResourceChecks) public func setDockRenderInspectionForChecks(_ enabled: Bool) {
+        for view in [dockView] + alternateViews { view.inspectCompletedRendersForChecks = enabled }
+    }
+
+    @_spi(DockResourceChecks) public var presentedDockRenderInspectionForChecks: DockRenderInspection? {
+        guard permitted, !retired, edge.presentation?.state == .expanded,
+              !createsNativePanels || panel?.isVisible == true else { return nil }
+        return interactionView.presentedRenderInspectionForChecks
+    }
     private var workingSignals: [String: DockWorkingSignal] = [:]
     private var workingDriver: DockWorkingEffects?
     private var workingFrameProvider: (any EffectFrameProvider)?

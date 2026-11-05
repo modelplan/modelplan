@@ -2,12 +2,12 @@
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
 import ModelPlanWire
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 private actor PairedSyntheticClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
@@ -65,7 +65,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, vendorKey: String? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -83,6 +83,7 @@ private actor EntrySyntheticClient: EngineClient {
         var session = windows[0]
         row["consent"] = "allowed"; row["state"] = "fresh"; row["surfaces"] = ["dock"]
         row["name"] = ["en": "Synthetic account", "zh": "合成账户"]
+        if let vendorKey { row["vendorKey"] = vendorKey }
         row["expiresAt"] = "2027-01-01T00:00:00Z"
         row["stateAfterExpiry"] = ["state": "stale",
             "reason": ["code": "stale_reading", "text": ["en": "Last known", "zh": "旧读数"]],
@@ -234,6 +235,77 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalEntryObservesOnlyCompletedDockPaint() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("render-observations-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let id = "aaaaaaaaaaaaaaaa"
+        _ = try await settings.update { $0.subscriptionSettings[id] = .init(alias: "Work") }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 25, weeklyDeadline: "2026-12-05T12:00:00Z", vendorKey: "openai")
+        let display = DockDisplayArea(id: "render-test", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 874))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id) }, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare()
+        let dock = app.composition.dock, view = dock.dockView
+        XCTAssertNil(dock.presentedDockRenderInspectionForChecks)
+        dock.setDockRenderInspectionForChecks(true)
+        app.allowDockPresentation()
+        await app.composition.start()
+
+        let render = try XCTUnwrap(dock.presentedDockRenderInspectionForChecks)
+        XCTAssertEqual(render.face.source, .suppliedMaterial)
+        XCTAssertEqual(render.face.materialIdentity, "T2FaceMaterial")
+        XCTAssertEqual(render.face.pixelSize, view.renderedPixelSize)
+        XCTAssertEqual(render.bitmaps.first?.role, .fixed)
+        XCTAssertTrue(render.bitmaps.contains { $0.role == .nozzle && $0.filtering == .high })
+        let mark = try XCTUnwrap(render.bitmaps.first { $0.role == .vendor })
+        XCTAssertEqual(mark.memberID, id)
+        XCTAssertTrue(mark.supplemental)
+        XCTAssertEqual(mark.filtering, .none)
+        XCTAssertFalse(mark.frame.isEmpty)
+
+        let readout = try XCTUnwrap(render.readouts[id])
+        XCTAssertEqual(readout.text, "25%")
+        XCTAssertEqual(readout.frame, view.helpReadoutAnchor(id))
+        XCTAssertEqual(readout.glyphTransform.a, 1, accuracy: 0.001)
+        XCTAssertEqual(readout.glyphTransform.d, -1, accuracy: 0.001)
+        XCTAssertTrue(readout.frame.contains(CGPoint.zero.applying(readout.glyphTransform)))
+        XCTAssertFalse(readout.hasDedicatedBacking)
+        XCTAssertEqual(render.aliases[id]?.text, "Work")
+        XCTAssertEqual(render.aliases[id]?.glyphTransform.d, -1)
+        let components = try XCTUnwrap(readout.ink.components)
+        XCTAssertEqual(components[0], 239.0 / 255, accuracy: 0.001)
+        XCTAssertEqual(components[1], 68.0 / 255, accuracy: 0.001)
+        XCTAssertEqual(render.rings[id]?.map(\.role), [.outer, .inner])
+        XCTAssertEqual(render.rings[id]?.map(\.windowID), ["session:18000:main:main", "weekly:604800:main:main"])
+        XCTAssertEqual(render.rings[id]?.last?.fraction, 0.25)
+        let outer = try XCTUnwrap(render.rings[id]?.first)
+        let inner = try XCTUnwrap(render.rings[id]?.last)
+        XCTAssertGreaterThan(outer.strokeWidth, inner.strokeWidth)
+        XCTAssertEqual(inner.ink, readout.ink)
+        let clock = try XCTUnwrap(render.clocks[id])
+        XCTAssertEqual(clock.positions, 37)
+        XCTAssertEqual(clock.dotFrames.count, 19, "half of the M44 weekly clock rounds to 19 lit dots")
+        XCTAssertTrue(clock.dotFrames.allSatisfy(view.bounds.contains))
+        XCTAssertEqual(clock.ink.alpha, 0.6, accuracy: 0.001)
+
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.dockEdge(.bottom))
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .bottom)
+        let bottom = try XCTUnwrap(dock.presentedDockRenderInspectionForChecks?.readouts[id])
+        let ringFrame = try XCTUnwrap(view.interactionAnchor(id))
+        XCTAssertGreaterThan(bottom.frame.midX, ringFrame.midX)
+        XCTAssertNotEqual(bottom.frame, readout.frame)
+        XCTAssertTrue(view.playRefreshSweep(id, reduceMotion: false))
+        XCTAssertTrue(dock.presentedDockRenderInspectionForChecks == nil, "the sweep replaces the resting raster")
+        view.retireOfficialPresentation()
+        XCTAssertTrue(dock.presentedDockRenderInspectionForChecks == nil, "retiring the paint withdraws its observation")
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {

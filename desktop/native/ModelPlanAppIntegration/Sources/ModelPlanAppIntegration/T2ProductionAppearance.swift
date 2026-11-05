@@ -27,7 +27,7 @@ import ModelPlanSettings
         let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
         let vendor = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: vendorManifest)
         let material = T2FaceMaterial()
-        let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor) { supplied, scale in
+        let renderer = DockInstrumentRenderer(resources: official, supplementalResources: vendor, materialIdentity: "T2FaceMaterial") { supplied, scale in
             try material.render(geometry: geometry, viewport: supplied.bounds, scale: scale)
         }
         var notices = view.appearanceNotices
