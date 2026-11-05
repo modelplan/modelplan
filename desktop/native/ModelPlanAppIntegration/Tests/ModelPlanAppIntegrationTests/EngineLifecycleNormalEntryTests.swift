@@ -239,14 +239,14 @@ private actor LifecycleEngine: EngineClient {
         return root
     }
 
-    private func make(_ root: URL, topology: Topology, edit: ((inout SettingsPreferences) -> Void)? = nil)
+    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false, edit: ((inout SettingsPreferences) -> Void)? = nil)
         async throws -> EngineDockMenuApplication {
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         if let edit { _ = try await store.update { edit(&$0) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: store, createsNativePanels: false, dockEnvironment: topology.read,
-            makeClient: { _, store in LifecycleEngine(store: store) }, activateSettings: {})
+            settingsStore: store, createsNativePanels: native, dockEnvironment: topology.read,
+            makeClient: { _, store in LifecycleEngine(store: store, rows: rows) }, activateSettings: {})
         await app.prepare()
         addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
         return app
@@ -320,6 +320,71 @@ private actor LifecycleEngine: EngineClient {
         }
     }
 
+    func testD02ThirtyAliasesFitRightWithReservedDockAndResize() async throws {
+        try await checkThirtyAliases(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD02NativeThirtyAliasesKeepVisibleRightPanel() async throws {
+        _ = NSApplication.shared
+        try await checkThirtyAliases(native: true)
+    }
+    #endif
+
+    private func checkThirtyAliases(native: Bool) async throws {
+        let root = profile()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native {
+            EngineRowsEntry.nativeJourneyProfile = root
+            addTeardownBlock { @MainActor in EngineRowsEntry.nativeJourneyProfile = nil }
+        }
+        #endif
+        let topology = Topology()
+        topology.primary = .init(id: "A", frame: CGRect(x: 0, y: 0, width: 1470, height: 956),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 860))
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        let account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+        let ids = (0..<30).map { String(format: "%016x", $0 + 1) }
+        row["surfaces"] = ["dock", "menu"]
+        row["expiresAt"] = "2099-01-01T00:00:00Z"
+        row["accounts"] = ids.map { id in
+            var member = account
+            member["subscriptionRef"] = id
+            return member
+        }
+        projection["rows"] = [row]
+        json["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let app = try await make(root, topology: topology, rows: rows, native: native) {
+            $0.dockEdge = .right
+            $0.size = .medium
+            for (index, id) in ids.enumerated() { $0.subscriptionSettings[id] = .init(alias: "Alias \(index)") }
+        }
+        _ = start(app)
+        try await wait { !app.lifecyclePaused }
+        for available in [CGRect(x: 0, y: 70, width: 1470, height: 860),
+                          CGRect(x: 70, y: 0, width: 1400, height: 930),
+                          CGRect(x: 0, y: 70, width: 1280, height: 704)] {
+            topology.primary = .init(id: "A", frame: CGRect(x: 0, y: 0, width: available.maxX, height: available.maxY + 26),
+                visibleFrame: available)
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            let place = try expanded(app)
+            XCTAssertEqual(place.edge, .right)
+            XCTAssertTrue(available.contains(place.frame))
+            XCTAssertFalse(app.composition.dock.dockView.interactionOverflowIDs.isEmpty)
+            if native {
+                let panel = try XCTUnwrap(app.composition.dock.nativePanel)
+                XCTAssertTrue(panel.isVisible)
+                XCTAssertEqual(panel.frame.maxX, available.maxX, accuracy: 1)
+                XCTAssertGreaterThanOrEqual(panel.frame.minY, available.minY + 23)
+            }
+        }
+    }
+
     func testD03BottomUsesVisibleFloorAndStableTopologyDoesNotJump() async throws {
         let topology = Topology()
         let app = try await make(profile(), topology: topology) { $0.dockEdge = .bottom }
@@ -327,9 +392,16 @@ private actor LifecycleEngine: EngineClient {
         let place = try expanded(app)
         XCTAssertEqual(place.edge, .bottom)
         XCTAssertEqual(place.frame.minY, topology.primary.visibleFrame.minY, accuracy: 0.5)
-        // AppKit supplies the same reserved visible frame for transient hide/reveal samples.
-        app.composition.dock.refreshPresence()
-        XCTAssertEqual(try expanded(app).frame, place.frame)
+        let original = topology.primary
+        for floor in [4.0, 70.0] {
+            topology.primary = DockDisplayArea(id: "A", frame: original.frame,
+                visibleFrame: CGRect(x: 0, y: floor, width: 1512, height: 945 - floor))
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            let changed = try expanded(app)
+            XCTAssertEqual(changed.edge, .bottom)
+            XCTAssertEqual(changed.frame.minY, floor, accuracy: 0.5)
+            XCTAssertEqual(changed.alongFraction, place.alongFraction, accuracy: 0.001)
+        }
     }
 
     func testD12FullscreenResizeAndWakeKeepSavedPlace() async throws {
@@ -338,6 +410,7 @@ private actor LifecycleEngine: EngineClient {
             $0.dockDisplayID = "A"; $0.dockEdge = .bottom; $0.dockAlongFraction = 0.62
         }
         let workspace = start(app)
+        app.allowDockPresentation()
         let before = try expanded(app)
         XCTAssertEqual(app.composition.dock.dockView.layer?.contentsScale, 2)
         topology.fullscreen = true; app.composition.dock.refreshPresence()

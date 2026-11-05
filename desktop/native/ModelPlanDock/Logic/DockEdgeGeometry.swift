@@ -95,46 +95,6 @@ public enum DockEdgeGeometry {
         case .top:return true
         }
     }
-    private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,displays:[DockDisplayArea],fraction:Double,point:CGPoint?,corner:CGFloat,wake:CGFloat,resting:Bool = false)->DockEdgePlacement?{
-        let u=d.usableFrame,vertical=p.edge != .bottom
-        let along=vertical ? p.expandedSize.height:p.expandedSize.width
-        let cross=vertical ? p.expandedSize.width:p.expandedSize.height
-        let before=max(p.alongAnchor,p.sliverLength/2),after=max(along-p.alongAnchor,p.sliverLength/2)
-        let total=before+after,span=vertical ? u.height:u.width
-        guard cross<=(vertical ? u.width:u.height),p.sliverThickness<=cross,wake<=(vertical ? u.width:u.height),p.sliverLength<=span else{return nil}
-        let intervals: [ClosedRange<CGFloat>]
-        if resting {
-            let lower = (vertical ? u.minY : u.minX) + corner
-            let upper = (vertical ? u.maxY : u.maxX) - corner
-            guard upper - lower >= total else { return nil }
-            intervals = [lower...upper]
-        } else {
-            intervals = exposedIntervals(on:d,edge:p.edge,displays:displays,cornerClearance:corner)
-                .filter { $0.upperBound - $0.lowerBound >= total }
-        }
-        guard !intervals.isEmpty else{return nil}
-        let desired=point.map{vertical ? $0.y:$0.x} ?? ((vertical ? u.minY:u.minX)+CGFloat(max(0,min(1,fraction)))*span)
-        let centres=intervals.map{r in max(r.lowerBound+before,min(r.upperBound-after,desired))}
-        let centre=centres.min{abs($0-desired)<abs($1-desired)}!
-        let frame:CGRect,sliver:CGRect,wakeRect:CGRect
-        switch p.edge{
-        case .left:
-            frame=CGRect(x:u.minX,y:centre-p.alongAnchor,width:cross,height:along)
-            sliver=CGRect(x:u.minX,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
-            wakeRect=CGRect(x:u.minX,y:sliver.minY,width:wake,height:sliver.height)
-        case .right:
-            frame=CGRect(x:u.maxX-cross,y:centre-p.alongAnchor,width:cross,height:along)
-            sliver=CGRect(x:u.maxX-p.sliverThickness,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
-            wakeRect=CGRect(x:u.maxX-wake,y:sliver.minY,width:wake,height:sliver.height)
-        case .bottom:
-            frame=CGRect(x:centre-p.alongAnchor,y:u.minY,width:along,height:cross)
-            sliver=CGRect(x:centre-p.sliverLength/2,y:u.minY,width:p.sliverLength,height:p.sliverThickness)
-            wakeRect=CGRect(x:sliver.minX,y:u.minY,width:sliver.width,height:wake)
-        case .top:return nil
-        }
-        let actual=Double((centre-(vertical ? u.minY:u.minX))/span)
-        return .init(displayID:d.id,edge:p.edge,alongFraction:actual,frame:frame,sliverFrame:sliver,wakeFrame:wakeRect,layout:p)
-    }
     /// Retention rectangles include boundaries, but an exact adjoining-display endpoint must not wake.
     public static func canWake(at point:CGPoint,placement:DockEdgePlacement,displays:[DockDisplayArea])->Bool{
         let r=placement.wakeFrame
@@ -154,30 +114,11 @@ public enum DockEdgeGeometry {
         try validate(displays:displays,layouts:layouts)
         guard preference.alongFraction.isFinite,cornerClearance.isFinite,cornerClearance>=0,wakeDepth.isFinite,wakeDepth>0,
               pointer.map({$0.x.isFinite && $0.y.isFinite}) ?? true else{throw DockEdgeError.invalidGeometry}
-        let sorted=displays.sorted{$0.id<$1.id}
-        let preferred=sorted.first{$0.id==preference.displayID}
-        // A missing fixed display recovers to primary without following pointer motion.
-        // nil identity is the explicit follow mode; the host resolves primary-only choices.
-        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.frame.contains(p)}} : nil
-        let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
+        let sorted = displays.sorted { $0.id < $1.id }
+        let chosen = PulseRestingPlacement.display(preference: preference, displays: sorted, pointer: pointer, primaryID: primaryID)
         if !nearest {
-            guard let chosen else { return nil }
-            let fraction = max(0, min(1, preference.alongFraction))
-            let edge: DockEdge
-            let point: CGPoint?
-            if preference.edge == .top {
-                let visible = chosen.usableFrame
-                let x = visible.minX + fraction * visible.width
-                let left = x - visible.minX, right = visible.maxX - x
-                edge = visible.height < min(left, right) ? .bottom : (left < right ? .left : .right)
-                point = CGPoint(x: x, y: visible.maxY)
-            } else {
-                edge = preference.edge
-                point = nil
-            }
-            guard let layout = layouts.first(where: { $0.displayID == chosen.id && $0.edge == edge }) else { return nil }
-            return candidate(layout,on:chosen,displays:sorted,fraction:fraction,point:point,
-                             corner:cornerClearance,wake:wakeDepth,resting:true)
+            return PulseRestingPlacement.resolve(preference: preference, display: chosen,
+                layouts: layouts, corner: cornerClearance, wake: wakeDepth)
         }
 
         // The existing drag preview is scoped to the later Pulse carry port.
@@ -185,8 +126,9 @@ public enum DockEdgeGeometry {
         for d in sorted {
             for edge in allowedEdges {
                 guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),
-                      let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,
-                                      point:pointer,corner:cornerClearance,wake:wakeDepth) else { continue }
+                      let c=PulseRestingPlacement.candidate(layout,on:d,fraction:preference.alongFraction,
+                                      point:pointer,wake:wakeDepth,
+                                      intervals:exposedIntervals(on:d,edge:edge,displays:sorted,cornerClearance:cornerClearance)) else { continue }
                 candidates.append(c)
             }
         }

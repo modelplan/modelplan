@@ -410,7 +410,11 @@ import ModelPlanMenuVerification
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if EngineRowsEntry.nativeJourneyProfile == nil { status?.autosaveName = "ModelPlanCommunity.StatusItem" }
+        #else
         status?.autosaveName = "ModelPlanCommunity.StatusItem"
+        #endif
         status?.isVisible = true
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
@@ -418,6 +422,7 @@ import ModelPlanMenuVerification
         }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
+        renderMenu()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     func renderMenu() {
@@ -601,6 +606,26 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var nativeJourneyStatusVisible: Bool {
+        guard let status, status.isVisible, let button = status.button, button.image != nil,
+              let window = button.window else { return false }
+        return window.isVisible && !button.isHiddenOrHasHiddenAncestor && button.bounds.width > 0
+    }
+
+    func stopNativeDockJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
+        interactionBinding?.stop()
+        firstRunFlow?.dispose()
+        dockHelp?.suspend()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()

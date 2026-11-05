@@ -148,6 +148,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var pointerInputView: PulsePanelPointerSurface { pointerSurface }
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var suppressJourneyOrderIn = false
+    #endif
+
     var nativeMovePreviewPanel: NSPanel? { outlinePanel }
     #if DEBUG
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
@@ -799,7 +803,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
         let followed = topology.display(followedDisplayID) ?? displayFacts.pointer.flatMap { topology.containing($0) }
-        let display = (passPreferences.followActiveDisplay ? followed : topology.display(passPreferences.dockDisplayID)) ?? topology.main
+        let destination = passPreferences.followActiveDisplay ? followed?.id : passPreferences.dockDisplayID
+        let display = PulseRestingPlacement.display(preference: .init(displayID: destination),
+            displays: topology.displays, pointer: nil, primaryID: topology.primaryID)
         let backingScale = captureBackingScaleForChecks.flatMap { (1...2).contains($0) ? $0 : nil } ?? display?.backingScale ?? 1
         dockView.presentationBackingScale = backingScale
         alternateViews.forEach { $0.presentationBackingScale = backingScale }
@@ -813,8 +819,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         })
         for view in [dockView] + alternateViews {
             view.appearanceNotices = presentationNotices
-            view.appearanceDisplaySize = display?.frame.size
-            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
+            view.appearanceDisplaySize = display?.usableFrame.size
+            view.appearanceMenuBarExclusion = 0
         }
         var appearanceFallback = false
         lastAppearanceError = nil
@@ -1122,8 +1128,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
             outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
         } else { hideMovePreview() }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if suppressJourneyOrderIn { return }
+        #endif
         if !panel.isVisible, let dockPanel = panel as? PulseDockPanel {
-            dockPanel.orderInAtPlacement(frame)
+            dockPanel.orderInAtPlacement { granted in
+                guard let placement = value.placement,
+                      let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
+                return PulseRestingPlacement.replaceGranted(granted, requested: frame, edge: placement.edge,
+                                                             visible: display.usableFrame)
+            }
         } else {
             panel.displayIfNeeded()
             panel.orderFrontRegardless()

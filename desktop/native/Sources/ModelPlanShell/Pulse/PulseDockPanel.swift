@@ -52,9 +52,10 @@ import AppKit
 
     /// The caller places the frame before installing the content. AppKit may
     /// adjust the frame on first order-in, so restore the requested placement.
-    public func orderInAtPlacement(_ frame: CGRect) {
+    public func orderInAtPlacement(_ replace: (CGRect) -> CGRect?) {
         orderFrontRegardless()
-        setFrame(frame, display: true)
+        if let target = replace(frame) { setFrame(target, display: true) }
+        else { orderOut(nil) }
     }
     private let input = PulsePanelInputRoute()
     public var mouseHandler: (any PulsePanelMouseHandling)? {
