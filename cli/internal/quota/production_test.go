@@ -480,6 +480,7 @@ func TestProductionRouteRestrictions(t *testing.T) {
 type productionTransport func(*http.Request) (*http.Response, error)
 
 func (f productionTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (productionTransport) ReaderSingleAttempt()                                {}
 
 func TestProductionRevocationDuringManagedRead(t *testing.T) {
 	_ = claudeTestPaths(t)

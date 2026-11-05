@@ -124,7 +124,7 @@ import ModelPlanDock
         try await editor.commit(.resetHints)
         XCTAssertEqual(requests.last?.intent, .action(.resetHelpHints))
         XCTAssertEqual(editor.snapshot?.preferences.helpHints, FirstUseHintPreferences())
-        XCTAssertEqual(FirstUseHintKind.allCases.count, 9)
+        XCTAssertEqual(FirstUseHintKind.allCases.count, 11)
         let after = requests.count
         await editor.reload(); editor.update(environment: .init()); editor.update(context: ctx)
         XCTAssertEqual(requests.count, after, "restoration/observation is not a user-service request")

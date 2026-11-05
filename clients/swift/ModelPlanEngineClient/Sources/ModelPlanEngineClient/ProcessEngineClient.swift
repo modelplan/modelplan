@@ -19,6 +19,7 @@ struct ClientPending {
     var continuation: CheckedContinuation<EngineRequestCompletion, Error>?
     var timeout: Task<Void, Never>?
     var pluginTool: WirePluginTool? = nil
+    var memberRefresh = false
     var sent = false
     var receiptKnown = false
     var committedAt: EngineConsentFloor? = nil
@@ -125,6 +126,10 @@ public actor ProcessEngineClient: EngineClient {
 
     public nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool {
         deliveryAuthority.isCurrent(context)
+    }
+
+    public func supportsCapability(_ capability: String) async -> Bool {
+        handshaken && !gateClosed && capabilities.contains(capability)
     }
 
     public func start() async throws -> EngineDeliveryContext {
@@ -304,6 +309,7 @@ public actor ProcessEngineClient: EngineClient {
         guard current.count < (control ? 256 : 64), current.reduce(0, { $0 + $1.data.count }) + data.count <= (control ? 4 << 20 : 32 << 20) else { throw EngineClientError.localBusy }
         var entry = ClientPending(id: id, method: method, purpose: purpose, grant: grant, continuation: continuation)
         entry.pluginTool = pluginTool
+        if method == "refresh/request", case .object(let fields) = params { entry.memberRefresh = fields["member"] != nil }
         let token = child!.id
         entry.timeout = Task { [weak self] in
             do { try await Task.sleep(for: timeout); await self?.timedOut(key, child: token) } catch {}
@@ -401,6 +407,9 @@ public actor ProcessEngineClient: EngineClient {
         let maximum: Duration = method == "plugin/install" ? .seconds(120) : runtime.requestTimeout
         let bound = min(timeout ?? maximum, maximum)
         guard bound > .zero else { throw EngineClientError.deadlineExceeded(.notSent) }
+        if let refresh = params as? WireRefreshRequestParams, refresh.member != nil, !capabilities.contains("memberRefreshV1") {
+            throw EngineClientError.unsupportedCapability
+        }
         let parameters = try wireJSON(params)
         if let grant, let userAction { try registerIntent(grant, action: userAction) }
         let cancellation = RequestCancellation()
