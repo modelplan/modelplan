@@ -33,12 +33,15 @@ public enum PulseLoginResult: Equatable, Sendable {
 @MainActor public final class PulseLoginItem {
     private let isAppBundle: Bool
     private let service: any PulseLoginService
-    public init(isAppBundle: Bool, service: any PulseLoginService) {
-        self.isAppBundle = isAppBundle; self.service = service
+    public init(isAppBundle: Bool, bundleURL: URL? = nil, service: any PulseLoginService) {
+        // A translocated bundle is a temporary path, not a stable login-item target.
+        // Inspect path components only; do not query the filesystem or login database.
+        let translocated = bundleURL?.standardizedFileURL.pathComponents.contains("AppTranslocation") ?? false
+        self.isAppBundle = isAppBundle && !translocated; self.service = service
     }
     public convenience init(bundle: Bundle = .main) {
         self.init(isAppBundle: bundle.bundleIdentifier != nil && bundle.bundlePath.hasSuffix(".app"),
-                  service: MainAppLoginService())
+                  bundleURL: bundle.bundleURL, service: MainAppLoginService())
     }
     public var state: PulseLoginState { isAppBundle ? service.state : .unavailable }
     public func request(enabled: Bool, origin: PulseLoginOrigin) -> PulseLoginResult {

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "profile": "synthetic",
+  "interimBundleID": "org.modelplan.community.swift.scaffold",
+  "candidateBundleID": "ai.modelplan.candidate",
+  "installations": [
+    {"bundleID": "org.modelplan.community.swift.scaffold", "loginItemNames": ["org.modelplan.community.swift.scaffold"]},
+    {"bundleID": "ai.modelplan.candidate", "loginItemNames": ["ai.modelplan.candidate"]}
+  ],
+  "scenarios": [
+    {"kind": "install-over", "dockCount": 1, "engineCount": 1, "loginCount": 1, "settingsWritable": true},
+    {"kind": "side-by-side", "dockCount": 1, "engineCount": 1, "loginCount": 1, "settingsWritable": true}
+  ]
+}

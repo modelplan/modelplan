@@ -52,6 +52,21 @@ import ModelPlanSettings
         XCTAssertEqual(adapter.handle(request, current: current, mayChangeLoginItem: true), .performed(.requiresApproval))
         XCTAssertEqual(service.registers, 1)
     }
+    func testTranslocatedFirstRunRequestNeverRegisters() async throws {
+        let (editor, _) = try await editor()
+        let service = AdapterLoginService()
+        let path = URL(fileURLWithPath: "/private/var/folders/synthetic/AppTranslocation/A/d/ModelPlan.app")
+        let item = PulseLoginItem(isAppBundle: true, bundleURL: path, service: service)
+        let adapter = CommunityLoginServiceAdapter(item: item)
+        var emitted: SettingsHostRequest?; editor.onHostRequest = { emitted = $0 }
+        let options = OnboardingOptions(preferences: try XCTUnwrap(editor.snapshot).preferences)
+        _ = try await editor.completeFirstRun(options: options, action: .done, host: .standalone, expectedRevision: try XCTUnwrap(editor.snapshot).revision)
+        let request = try XCTUnwrap(emitted), current = try XCTUnwrap(editor.snapshot)
+        XCTAssertEqual(adapter.handle(request, current: current, mayChangeLoginItem: true), .unsupported)
+        XCTAssertEqual(adapter.observedState, .unavailable)
+        XCTAssertEqual(service.reads, 0)
+        XCTAssertEqual(service.registers, 0)
+    }
     func testUnrelatedHostRequestIsNotClaimedOrObserved() async throws {
         let (editor, _) = try await editor()
         let service = AdapterLoginService(), adapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: service))

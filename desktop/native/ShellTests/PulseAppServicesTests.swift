@@ -83,6 +83,23 @@ import XCTest
         XCTAssertEqual(app.request(enabled: false, origin: .explicitUserChoice), .unsupported)
         XCTAssertEqual(service.unregisters, 0)
     }
+    func testTranslocatedBundleNeverRegistersEvenOnExplicitChoice() {
+        let service = LoginService()
+        let path = URL(fileURLWithPath: "/private/var/folders/synthetic/AppTranslocation/ABC/d/ModelPlan.app")
+        let item = PulseLoginItem(isAppBundle: true, bundleURL: path, service: service)
+        XCTAssertEqual(item.state, .unavailable)
+        XCTAssertEqual(item.request(enabled: true, origin: .explicitUserChoice), .unsupported)
+        XCTAssertEqual(item.request(enabled: true, origin: .firstRunCompletion), .unsupported)
+        XCTAssertEqual(service.reads, 0)
+        XCTAssertEqual(service.registers, 0)
+        XCTAssertEqual(service.unregisters, 0)
+    }
+    func testInstalledBundleRetainsExplicitRegistration() {
+        let service = LoginService()
+        let item = PulseLoginItem(isAppBundle: true, bundleURL: URL(fileURLWithPath: "/Applications/ModelPlan.app"), service: service)
+        XCTAssertEqual(item.request(enabled: true, origin: .explicitUserChoice), .performed(.needsApproval))
+        XCTAssertEqual(service.registers, 1)
+    }
     func testLoginFailureReportsObservedStateAndOnStateIsNotRegisteredAgain() {
         let service = LoginService(), item = PulseLoginItem(isAppBundle: true, service: service)
         service.fail = true

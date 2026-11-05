@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MIT
+name: G4 synthetic prep
+on:
+  pull_request:
+    paths:
+      - 'desktop/native/Sources/ModelPlanShell/Pulse/PulseLoginItem.swift'
+      - 'desktop/native/ShellTests/PulseAppServicesTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/CommunityLoginServiceAdapterTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/NormalEntrySettingsJourneyTests.swift'
+      - 'desktop/native/tools/app-smoke/*install*'
+      - 'desktop/native/tools/distribution/*upgrade*'
+      - 'desktop/native/tools/distribution/fixtures/g4-upgrade-synthetic.json'
+      - 'desktop/native/verification/*display_receipt*'
+      - 'desktop/native/verification/tests/test_display_receipts.py'
+      - '.github/workflows/g4-prep.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/native/Sources/ModelPlanShell/Pulse/PulseLoginItem.swift'
+      - 'desktop/native/ShellTests/PulseAppServicesTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/CommunityLoginServiceAdapterTests.swift'
+      - 'desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/NormalEntrySettingsJourneyTests.swift'
+      - 'desktop/native/tools/app-smoke/*install*'
+      - 'desktop/native/tools/distribution/*upgrade*'
+      - 'desktop/native/tools/distribution/fixtures/g4-upgrade-synthetic.json'
+      - 'desktop/native/verification/*display_receipt*'
+      - 'desktop/native/verification/tests/test_display_receipts.py'
+      - '.github/workflows/g4-prep.yml'
+permissions:
+  contents: read
+jobs:
+  native-synthetic:
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test the login adapter without system registration
+        run: swift test --package-path desktop/native --scratch-path "$RUNNER_TEMP/g4-shell" --jobs 2 --filter PulseAppServicesTests
+      - name: Test normal-entry synthetic login and coexistence
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path "$RUNNER_TEMP/g4-app" --jobs 2 --filter '(CommunityLoginServiceAdapterTests|NormalEntrySettingsJourneyTests/test(TranslocatedNormalEntryKeepsLoginUnavailableWithoutRegistration|SyntheticTwoInstallSelectionAndWritableSettingsAfterReplacement))'

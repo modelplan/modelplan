@@ -15,10 +15,13 @@ actor SettingsJourneyClient: EngineClient {
     let store: EngineStore
     let rows: WireRowsSnapshot
     private(set) var grantCalls = 0
+    private(set) var starts = 0
     func grantCount() -> Int { grantCalls }
+    func startCount() -> Int { starts }
     let context = EngineDeliveryContext(sessionID: "synthetic-entry", floor: .init(storeEpoch: "synthetic-entry", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
+        starts += 1
         await store.consume(.connection(.ready(context)))
         await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: 0))
@@ -76,6 +79,68 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testSyntheticTwoInstallSelectionAndWritableSettingsAfterReplacement() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g4-two-installs-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        var firstClient: SettingsJourneyClient?, secondClient: SettingsJourneyClient?
+        func makeApp(_ name: String, client: @escaping @MainActor (SettingsJourneyClient) -> Void) throws -> EngineDockMenuApplication {
+            EngineRowsEntry.make(configuration: config,
+                settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+                createsNativePanels: false, bundleURL: profile.appendingPathComponent(name + ".app"),
+                dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, store in let value = SettingsJourneyClient(store: store, rows: rows); client(value); return value },
+                activateSettings: {})
+        }
+        let interim = try makeApp("Interim") { firstClient = $0 }
+        let candidate = try makeApp("Candidate") { secondClient = $0 }
+        interim.notificationAuthorizationService = JourneyNotificationService()
+        candidate.notificationAuthorizationService = JourneyNotificationService()
+        let firstLogin = JourneyLoginService(), secondLogin = JourneyLoginService()
+        interim.loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(isAppBundle: true, service: firstLogin))
+        candidate.loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(isAppBundle: true, service: secondLogin))
+        defer { interim.composition.dock.close(); candidate.composition.dock.close() }
+        await interim.prepare(); await candidate.prepare()
+        _ = try await interim.settingsHost.application.editor.commit(SettingsB21Edit.login(true))
+        XCTAssertEqual(firstLogin.registrations, 1); XCTAssertEqual(secondLogin.registrations, 0)
+        interim.allowDockPresentation()
+        await interim.composition.start()
+        let active = await (try XCTUnwrap(firstClient)).startCount()
+        let inactive = await (try XCTUnwrap(secondClient)).startCount()
+        XCTAssertEqual(active, 1); XCTAssertEqual(inactive, 0)
+        XCTAssertTrue(interim.composition.dock.interactionEnvironment().active)
+        XCTAssertFalse(candidate.composition.dock.interactionEnvironment().active)
+        _ = try await interim.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(false))
+        await interim.composition.stop(); interim.composition.dock.close()
+        let replaced = try makeApp("Interim") { _ in }
+        replaced.notificationAuthorizationService = JourneyNotificationService()
+        defer { replaced.composition.dock.close() }
+        await replaced.prepare()
+        XCTAssertEqual(replaced.settingsHost.application.editor.snapshot?.preferences.autoHide, false)
+    }
+    func testTranslocatedNormalEntryKeepsLoginUnavailableWithoutRegistration() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g4-translocated-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let path = URL(fileURLWithPath: "/private/var/folders/synthetic/AppTranslocation/A/d/ModelPlan.app")
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"]),
+            createsNativePanels: false, bundleURL: path, dockEnvironment: normalEntryTestEnvironment,
+            makeClient: { _, store in SettingsJourneyClient(store: store, rows: rows) }, activateSettings: {})
+        let service = JourneyLoginService()
+        app.loginServiceAdapter = CommunityLoginServiceAdapter(item: PulseLoginItem(isAppBundle: true, bundleURL: path, service: service))
+        app.notificationAuthorizationService = JourneyNotificationService()
+        defer { app.composition.dock.close() }
+        await app.prepare()
+        XCTAssertEqual(app.currentSettingsContext.capabilities.login, .unavailable)
+        XCTAssertEqual(service.registrations, 0)
+    }
     func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }

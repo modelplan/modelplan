@@ -120,6 +120,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
       - run: python3 desktop/native/tools/ci/native_test_partition.py check
+      - run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_display_receipts.py' -v
+      - run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_upgrade_identity.py' -v
+      - run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_install_receipt.py' -v
 
   app-smoke:
     permissions:
@@ -153,6 +156,15 @@ jobs:
           PYCODE
       - name: Check smoke assertions and release identity negative controls
         run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
+      - name: Generate synthetic install-state fixture
+        run: python3 desktop/native/tools/app-smoke/check-install-receipt.py --fixture > "$RUNNER_TEMP/g4-install-synthetic.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: g4-install-synthetic-receipt
+          path: ${{ runner.temp }}/g4-install-synthetic.json
+          if-no-files-found: warn
+          retention-days: 3
       - name: Fetch the approved prebuilt credential helper
         env:
           GH_TOKEN: ${{ github.token }}
