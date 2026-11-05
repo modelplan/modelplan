@@ -272,6 +272,17 @@ import ModelPlanSettings
 
 @MainActor final class DockPulseDragPersistenceTests: XCTestCase {
     func testD19NormalDragKeepsCornerClearanceAndAvoidsSystemDock() async throws {
+        try await exerciseD19(nativePanels: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD19NativePanelDragKeepsCornerClearanceAndAvoidsSystemDock() async throws {
+        _ = NSApplication.shared
+        try await exerciseD19(nativePanels: true)
+    }
+    #endif
+
+    private func exerciseD19(nativePanels: Bool) async throws {
         let topology = DragTopology()
         let frame = CGRect(x: 0, y: 0, width: 1600, height: 900)
         let reservations: [(String, CGRect)] = [
@@ -290,16 +301,32 @@ import ModelPlanSettings
                 topology.active = [display]
                 topology.pointer = CGPoint(x: available.midX, y: available.midY)
                 let root = profile.appendingPathComponent("\(mode)-" + reservation)
+                #if MODELPLAN_DOCK_NATIVE_JOURNEY
+                if nativePanels { EngineRowsEntry.nativeJourneyProfile = root }
+                defer { if nativePanels { EngineRowsEntry.nativeJourneyProfile = nil } }
+                #endif
                 let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
                 let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                     applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
-                    createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+                    createsNativePanels: nativePanels, dockEnvironment: topology.read, activateSettings: {})
                 addTeardownBlock { @MainActor in await app.composition.stop() }
                 await app.prepare()
                 app.allowDockPresentation()
 
                 let host = app.composition.dock
                 let editor = app.settingsHost.application.editor
+                let panel: NSPanel?
+                #if MODELPLAN_DOCK_NATIVE_JOURNEY
+                panel = nativePanels ? try XCTUnwrap(host.nativePanel) : nil
+                #else
+                panel = nil
+                #endif
+                func send(_ type: NSEvent.EventType, at point: CGPoint, to panel: NSPanel) throws {
+                    panel.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type,
+                        location: panel.convertPoint(fromScreen: point), modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                        context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)))
+                }
                 let targets: [(DockEdge, CGPoint, Bool?)] = [
                     (.left, .init(x: available.minX + 2, y: available.minY + 14), false),
                     (.left, .init(x: available.minX + 2, y: available.maxY - 14), true),
@@ -317,18 +344,31 @@ import ModelPlanSettings
                         stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
                     }.first { drag.backgroundCanDrag(local: $0) }, label)
                     let start = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
-                    let down = CGPoint(x: start.minX + local.x, y: start.maxY - local.y)
+                    let down = panel.map { $0.convertPoint(toScreen: view.convert(local, to: nil)) }
+                        ?? CGPoint(x: start.minX + local.x, y: start.maxY - local.y)
                     topology.pointer = down
-                    let arrival = ContinuousClock.now + .seconds(1)
-                    while !drag.beginBackgroundMove(local: local, global: down) {
-                        guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget: " + label) }
-                        try await Task.sleep(for: .milliseconds(10))
-                    }
                     let revision = try XCTUnwrap(editor.snapshot?.revision)
-                    topology.pointer = point
-                    drag.updateBackgroundMove(global: point)
-                    XCTAssertEqual(editor.snapshot?.revision, revision, label)
-                    drag.endBackgroundMove(global: point)
+                    if let panel {
+                        XCTAssertTrue(panel.isVisible, label)
+                        // A new press must arrive after the normal reveal guard.
+                        try await Task.sleep(for: .milliseconds(320))
+                        try send(.leftMouseDown, at: down, to: panel)
+                        topology.pointer = point
+                        try send(.leftMouseDragged, at: point, to: panel)
+                        XCTAssertTrue(panel.isVisible, label)
+                        XCTAssertEqual(editor.snapshot?.revision, revision, label)
+                        try send(.leftMouseUp, at: point, to: panel)
+                    } else {
+                        let arrival = ContinuousClock.now + .seconds(1)
+                        while !drag.beginBackgroundMove(local: local, global: down) {
+                            guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget: " + label) }
+                            try await Task.sleep(for: .milliseconds(10))
+                        }
+                        topology.pointer = point
+                        drag.updateBackgroundMove(global: point)
+                        XCTAssertEqual(editor.snapshot?.revision, revision, label)
+                        drag.endBackgroundMove(global: point)
+                    }
                     try await waitForSettings(editor) {
                         editor.snapshot?.revision == revision + 1 && !editor.isSaving
                     }
@@ -341,6 +381,14 @@ import ModelPlanSettings
                     let painted = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
                     XCTAssertEqual(painted, observed.frame, label)
                     XCTAssertTrue(available.contains(painted), label)
+                    if let panel {
+                        XCTAssertTrue(panel.isVisible, label)
+                        XCTAssertTrue(available.contains(panel.frame), label)
+                        XCTAssertEqual(panel.frame.minX, painted.minX, accuracy: 1, label)
+                        XCTAssertEqual(panel.frame.maxX, painted.maxX, accuracy: 1, label)
+                        XCTAssertEqual(panel.frame.minY, painted.minY, accuracy: 1, label)
+                        XCTAssertEqual(panel.frame.maxY, painted.maxY, accuracy: 1, label)
+                    }
                     switch edge {
                     case .left: XCTAssertEqual(painted.minX, available.minX, accuracy: 0.001, label)
                     case .right: XCTAssertEqual(painted.maxX, available.maxX, accuracy: 0.001, label)
