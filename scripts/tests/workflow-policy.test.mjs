@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, draftGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
   const text = `jobs:\n  check:\n    ${TRUSTED_MAC_ROUTE}\n`;
@@ -100,5 +100,30 @@ test("every macOS-running workflow in this repository carries the concurrency gr
     if (!/\.(ya?ml)$/.test(f)) continue;
     const text = fs.readFileSync(new URL(f, dir), "utf8");
     assert.deepEqual(macConcurrencyProblems(text), [], f);
+  }
+});
+
+test("macOS jobs on pull_request are draft-guarded (or dispatch-only) and the workflow keeps workflow_dispatch", () => {
+  const on = "on:\n  pull_request:\n  push:\n  workflow_dispatch:\n";
+  const guarded = (job) => `on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n${job}`;
+  // compliant: the standard guard
+  assert.deepEqual(draftGuardProblems(guarded("  a:\n    if: github.event_name != 'pull_request' || !github.event.pull_request.draft\n    runs-on: macos-latest\n")), []);
+  // compliant: dispatch-only job, and a matrix that collapses to ubuntu on drafts
+  assert.deepEqual(draftGuardProblems(guarded("  a:\n    if: github.event_name == 'workflow_dispatch'\n    runs-on: macos-latest\n")), []);
+  assert.deepEqual(draftGuardProblems(guarded("  a:\n    strategy:\n      matrix:\n        os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '[\"ubuntu-latest\"]' || '[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n")), []);
+  // violations: an unguarded macOS job, and a missing workflow_dispatch trigger
+  assert.ok(draftGuardProblems(guarded("  a:\n    runs-on: macos-latest\n")).some((p) => p.includes("macOS job a")), "unguarded job");
+  assert.ok(draftGuardProblems("on:\n  pull_request:\n  push:\njobs:\n  a:\n    if: github.event_name != 'pull_request' || !github.event.pull_request.draft\n    runs-on: macos-latest\n").some((p) => p.includes("workflow_dispatch missing")), "missing dispatch trigger");
+  // ubuntu-only and workflow_call-only workflows are outside the rule
+  assert.deepEqual(draftGuardProblems("on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n"), []);
+  assert.deepEqual(draftGuardProblems("on:\n  workflow_call:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
+});
+
+test("every macOS workflow in this repository draft-guards its jobs and keeps a dispatch trigger", () => {
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  for (const f of fs.readdirSync(dir)) {
+    if (!/\.(ya?ml)$/.test(f)) continue;
+    const text = fs.readFileSync(new URL(f, dir), "utf8");
+    assert.deepEqual(draftGuardProblems(text), [], f);
   }
 });

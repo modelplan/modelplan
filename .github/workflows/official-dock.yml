@@ -1,5 +1,6 @@
 name: Official Dock geometry
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'desktop/official-visuals/dock/**'
@@ -44,6 +45,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   geometry:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-15
     timeout-minutes: 20
     steps:

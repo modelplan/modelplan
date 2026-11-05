@@ -87,3 +87,56 @@ export function macConcurrencyProblems(text) {
   }
   return problems;
 }
+
+// Draft PRs iterate locally (queue rule, 11-05 round 8): a workflow with a pull_request
+// trigger must not start macOS jobs for a draft head. Every job that starts macOS jobs
+// carries a draft guard (the standard `if: github.event_name != 'pull_request' ||
+// !github.event.pull_request.draft`, a dispatch-only if, or a matrix that collapses to
+// ubuntu on drafts — the u6-engine-store-core pattern), and the workflow keeps a
+// `workflow_dispatch:` trigger so a lane can still request Mac CI for a draft head
+// (queues/ci-requests.md -> ci-dispatch.sh).
+function jobBlocks(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => /^jobs:/.test(l));
+  if (start === -1) return [];
+  const jobs = [];
+  let cur = null;
+  for (const line of lines.slice(start + 1)) {
+    if (/^[A-Za-z_"'-]+:/.test(line)) break;               // next top-level key: jobs section ended
+    const job = /^  ([A-Za-z][\w-]*):\s*$/.exec(line);      // exactly 2-space indent: a job name
+    if (job) { cur = { name: job[1], lines: [] }; jobs.push(cur); continue; }
+    if (cur) cur.lines.push(line);
+  }
+  return jobs;
+}
+
+const DRAFT_IF = /github\.event\.pull_request\.draft/;
+const DISPATCH_ONLY_IF = /^\s*if:.*github\.event_name\s*==\s*'workflow_dispatch'/;  // a dispatch-only gate (extra owner conditions after it are fine)
+
+function jobRunsMacos(lines) {
+  return lines.some((l) => /^\s*runs-on:.*macos/.test(l))
+    || lines.some((l) => /^\s*os:.*\[.*macos/.test(l))
+    || lines.some((l) => /uses:.*workflows\/trusted-mac\.yml/.test(l));
+}
+
+function jobDraftGuarded(lines) {
+  return lines.some((l) => /^\s*if:.*github\.event\.pull_request\.draft/.test(l))   // draft guard in the job if
+    || lines.some((l) => /^\s*os:.*github\.event\.pull_request\.draft/.test(l))     // matrix collapses on drafts
+    || lines.some((l) => DISPATCH_ONLY_IF.test(l));                                  // dispatch-only job
+}
+
+export function draftGuardProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  if (!on || !/\bpull_request\b/.test(on) || !runsMacos(text)) return problems;
+  if (!/\bworkflow_dispatch:/.test(on)) {
+    problems.push("workflow_dispatch missing: a lane cannot request Mac CI for a draft head (queues/ci-requests.md)");
+  }
+  for (const job of jobBlocks(text)) {
+    if (!jobRunsMacos(job.lines)) continue;
+    if (!jobDraftGuarded(job.lines)) {
+      problems.push(`macOS job ${job.name} runs on draft PRs; add "if: github.event_name != 'pull_request' || !github.event.pull_request.draft" (or collapse the matrix to ubuntu on drafts)`);
+    }
+  }
+  return problems;
+}
