@@ -67,6 +67,7 @@ struct DockHelpInteraction: Equatable {
     enum Source: Equatable { case pointer, keyboard }
     let anchor: DockRequestedHelpAnchor
     let source: Source
+    let receipt = UUID()
 }
 
 /// Interactive native Dock companion shared by production and explicit self-tests.
@@ -1197,6 +1198,16 @@ struct DockHelpInteraction: Equatable {
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
     }
+    /// The presenter supplies the same title and body it displayed, after its own dwell.
+    /// An older surface or focus receipt cannot overwrite or clear the current control.
+    @discardableResult func setDockHelpAccessibilityExplanation(
+        _ text: String?, for interaction: DockHelpInteraction, on surface: DockHelpSurface
+    ) -> Bool {
+        guard isCurrentDockHelpSurface(surface), !surface.dragging, interaction.source == .keyboard,
+              currentDockHelpInteraction == interaction, interactionController?.hasCapture != true else { return false }
+        return interactionView.setFocusedHelpExplanation(text, for: interaction.anchor.id)
+    }
+
     private func publishDockHelpInteraction() {
         let next: DockHelpInteraction?
         if let surface = currentDockHelpSurface, !surface.dragging,
@@ -1216,7 +1227,11 @@ struct DockHelpInteraction: Equatable {
                 next = anchor.map { .init(anchor: $0, source: .pointer) }
             } else { next = nil }
         } else { next = nil }
-        guard next != currentDockHelpInteraction else { return }
+        // A fresh focus visit gets a new receipt, but repeated samples of one visit stay silent.
+        guard next?.anchor != currentDockHelpInteraction?.anchor ||
+                next?.source != currentDockHelpInteraction?.source else { return }
+        dockView.clearFocusedHelpExplanation()
+        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
         currentDockHelpInteraction = next
         dockHelpInteractionDidChange?(next)
     }
@@ -1293,6 +1308,8 @@ struct DockHelpInteraction: Equatable {
                                    visible: true, dragging: value.moving, anchors: anchors)
         next.mapAnchors = mapAnchors
         guard next != previous else { return }
+        dockView.clearFocusedHelpExplanation()
+        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
         lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
         dockHelpSurfaceDidChange?(next)
     }
