@@ -44,6 +44,25 @@ import ModelPlanWire
         XCTAssertFalse(controller.selectedIDs.contains("four.key"))
         XCTAssertFalse(controller.selectedIDs.contains("five.status"))
     }
+    func testFirstRunInvalidationBeforeDispatchDoesNotClaimSubmission() async throws {
+        let engine = ScopeConsentTestClient()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1,
+                      consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.firstRunFacts())
+        XCTAssertTrue(controller.beginFirstRunDraft())
+        controller.choose("one.local", selected: true)
+        let observer = controller.observe {
+            if case .sending = controller.phase { controller.clearAcceptedPrivateState() }
+        }
+        let result = await controller.submitFirstRunSelection()
+        controller.removeObserver(observer)
+        XCTAssertEqual(result, .unavailable)
+        let grants = await engine.recordedGrants()
+        XCTAssertTrue(grants.isEmpty)
+    }
     func testChangingSurfaceLanguagePreservesDraft() throws {
         let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
             try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)

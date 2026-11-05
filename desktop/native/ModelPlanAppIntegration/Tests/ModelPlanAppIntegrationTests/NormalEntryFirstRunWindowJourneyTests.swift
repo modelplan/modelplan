@@ -74,6 +74,9 @@ import ModelPlanWire
         let syntheticClient = try XCTUnwrap(first.composition.client as? SettingsJourneyClient)
         let grantsBeforeConfirmation = await syntheticClient.grantCount()
         XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
+        let selectedReader = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
+        selectedReader.performClick(nil)
+        XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty)
         let dock = first.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
         XCTAssertTrue(dock.interactionEnvironment().active, "The normal entry must expose the official interaction projection")
@@ -176,7 +179,7 @@ import ModelPlanWire
         XCTAssertFalse(firstRunWindow.isVisible)
         XCTAssertTrue(scopeView.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
         let grantsAfterDone = await syntheticClient.grantCount()
-        XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
+        XCTAssertEqual(grantsAfterDone, 0, "Completing first run without selected readers must not grant permission")
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")
         XCTAssertEqual(cockpitButton.accessibilityLabel(), "打开驾驶舱")
         let chineseMenu = try XCTUnwrap(first.liveStatusMenu)
