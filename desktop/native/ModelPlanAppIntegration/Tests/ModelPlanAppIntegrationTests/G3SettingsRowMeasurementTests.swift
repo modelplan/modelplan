@@ -119,6 +119,23 @@ private actor G316Engine: EngineClient {
                 try png.write(to: output.appendingPathComponent("\(locale)-\(pane.id).png"), options: .atomic)
                 allOffenders.append(contentsOf: offenders.map { locale + "." + $0.1 })
             }
+            controller.selectPane("dock")
+            controller.searchField.stringValue = locale == "en" ? "critical threshold" : "变红阈值"
+            controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+            let content = try XCTUnwrap(window.contentView)
+            let filtered = descendants(content).compactMap { $0 as? SettingsNativeRow }.filter { !$0.isHiddenOrHasHiddenAncestor }
+            let threshold = try XCTUnwrap(filtered.first { $0.key == .redBelow })
+            let stack = try XCTUnwrap(threshold.superview as? NSStackView)
+            let sectionLabels = stack.arrangedSubviews.compactMap { $0 as? NSTextField }.filter {
+                $0.accessibilityIdentifier()?.hasPrefix("settings.section.") == true
+            }
+            XCTAssertEqual(sectionLabels.count, 1, "Search must remove headings without matching rows")
+            XCTAssertEqual(sectionLabels.first?.accessibilityIdentifier(), "settings.section.dock.numbers")
+            controller.searchField.stringValue = ""
+            controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+            XCTAssertGreaterThan(stack.arrangedSubviews.compactMap { $0 as? NSTextField }.filter {
+                $0.accessibilityIdentifier()?.hasPrefix("settings.section.dock.") == true
+            }.count, 1, "Clearing search must restore all visible Dock sections")
             await app.composition.stop()
         }
         XCTAssertGreaterThan(totalRows, 0, "The measurement must inspect real Settings rows")
