@@ -246,7 +246,7 @@ private actor S4RowsClient: EngineClient {
         var data=result["data"] as! [String:Any]
         var projection=data["projection"] as! [String:Any]
         var events=projection["resetEvents"] as! [[String:Any]]
-        let clock=Date(),formatter=ISO8601DateFormatter()
+        var clock=Date(),formatter=ISO8601DateFormatter()
         events[0]["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-60))
         events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(3600))
         events[0]["schedule"]=["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
@@ -257,6 +257,7 @@ private actor S4RowsClient: EngineClient {
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english; $0.notifications.optedIn = true }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        entry.composition.currentDate = { clock }
         var deliveries:[String]=[]
         entry.composition.setResetNotificationDelivery { deliveries.append($0) }
         await entry.prepare();await entry.composition.start()
@@ -317,8 +318,13 @@ private actor S4RowsClient: EngineClient {
         let acknowledged=try attention.project(signals,stationBySubscription:stations,at:clock)
         try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge both indicators")
         try require(DockNoticeProjection.selected(for:matching,at:clock) != nil,"acknowledgement must not erase the Dock-face notice")
+        // Simulate a slow host before delivering the confirmation. Its expiry
+        // is based on the controlled delivery time, not journey wall time.
+        clock=clock.addingTimeInterval(31)
         events[0]["status"]="confirmed";events[0]["confirms"]=decoded[0].id
-        events[0]["expiresAt"]=formatter.string(from:clock.addingTimeInterval(30))
+        let expiryString=formatter.string(from:clock.addingTimeInterval(30))
+        guard let confirmationExpiry=formatter.date(from:expiryString) else { throw Failure(description:"confirmation expiry fixture invalid") }
+        events[0]["expiresAt"]=expiryString
         var superseded=events[0];superseded["status"]="announced";superseded.removeValue(forKey:"confirms")
         superseded["publishedAt"]=formatter.string(from:clock.addingTimeInterval(-10))
         projection["resetEvents"]=[superseded,events[0]];data["projection"]=projection
@@ -329,6 +335,12 @@ private actor S4RowsClient: EngineClient {
         for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
         try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
         try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
+        let beforeExpiry=clock
+        clock=confirmationExpiry.addingTimeInterval(-1)
+        try require(entry.composition.resetSignals.first(where:{$0.id == matching.id})?.reset?.status == .confirmed,"normal entry must retain the confirmation before its wire expiry")
+        clock=confirmationExpiry
+        try require(entry.composition.resetSignals.first(where:{$0.id == matching.id})?.reset == nil,"normal entry must retire the confirmation at its wire expiry")
+        clock=beforeExpiry
         let captured=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         let originalProjection=captured["projection"] as! [String:Any]
         let originalRow=(originalProjection["rows"] as! [[String:Any]])[0]

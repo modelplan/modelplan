@@ -99,6 +99,18 @@ type historyGate struct {
 	Failures      int
 }
 
+func (gate *historyGate) fail(now time.Time, floor time.Duration, projection bool) {
+	gate.Failures = min(gate.Failures+1, 4)
+	wait := time.Duration(10*(1<<(gate.Failures-1))) * time.Minute
+	if gate.Failures == 4 {
+		wait = time.Hour
+	}
+	if projection {
+		wait = min(time.Duration(1<<gate.Failures)*floor, time.Minute)
+	}
+	gate.Next = now.Add(wait).UTC()
+}
+
 func historyHash(key []byte, domain, value string) string {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(domain))
@@ -774,6 +786,23 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 	}
 	if projection != nil {
 		if !projection.finish(&s, now) {
+			// The reservation survives aborts, but a failing reducer must also
+			// back off without committing its snapshot or cursor. Honor the
+			// same cancellation and consent fence as a successful projection.
+			if ctx.Err() == nil && historyAdmission(tool, a) == "" {
+				gate.fail(now, floor, true)
+				saveGate := func() error {
+					if !historySave(gatePath, gate) {
+						return errors.New("history gate unavailable")
+					}
+					return nil
+				}
+				if a.Publish != nil {
+					_ = a.Publish(saveGate)
+				} else {
+					_ = saveGate()
+				}
+			}
 			r := ReadHistoryCache(cache, tool, a, now)
 			r.Availability = "partial"
 			return r
@@ -794,15 +823,7 @@ func refreshHistory(ctx context.Context, tool, root, cache string, a HistoryAcce
 		gate.Failures = 0
 		gate.Next = now.Add(floor).UTC()
 	} else {
-		gate.Failures = min(gate.Failures+1, 4)
-		wait := time.Duration(10*(1<<(gate.Failures-1))) * time.Minute
-		if gate.Failures == 4 {
-			wait = time.Hour
-		}
-		if projection != nil {
-			wait = min(time.Duration(1<<gate.Failures)*floor, time.Minute)
-		}
-		gate.Next = now.Add(wait).UTC()
+		gate.fail(now, floor, projection != nil)
 	}
 	if ctx.Err() != nil || historyAdmission(tool, a) != "" {
 		return ReadHistoryCache(cache, tool, a, now)
