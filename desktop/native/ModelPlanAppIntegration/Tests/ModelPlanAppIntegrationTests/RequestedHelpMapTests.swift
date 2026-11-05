@@ -23,6 +23,10 @@ import ModelPlanSettings
         var token = DockStatusHelpDismissal()
         token.arm(nil)
         XCTAssertNil(token.take(reason: .pointer), "A first-run or other non-status request has no status focus token")
+        let old = UUID(), replacement = UUID()
+        token.arm(old); token.arm(replacement)
+        XCTAssertEqual(token.take(reason: .escape), replacement, "A newer request supersedes the old focus token")
+        XCTAssertNil(token.take(reason: .pointer))
     }
     private func input() -> HelpUIRenderInput {
         .init(sessionID: UUID(), viewport: CGSize(width: 600, height: 600), profile: .compact640,
