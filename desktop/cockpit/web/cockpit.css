@@ -35,6 +35,9 @@
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 :root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
 
+/* Three 16px rows fit within the fixed compact strip without scrolling. */
+[data-profile="compact"] #cockpit .ck-tape{padding-top:2px;padding-bottom:2px}
+
 /* Keep observed state labels legible and animate only live cursors. */
 .ck-tape .t-observed{grid-template-columns:6px 84px 64px 42px minmax(0,1fr) 44px 78px}
 .ck-tape .t-time{position:relative;padding-right:10px}

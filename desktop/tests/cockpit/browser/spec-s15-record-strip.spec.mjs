@@ -37,6 +37,25 @@ test('S15 live-session last-seen strip uses real producer states, locale, overfl
  expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('.ck-tape')).not.toContainText('GLM-5.3');
 });
 
+test('S15 compact strip keeps three rows and overflow visible within its inner bounds in both locales',async({page})=>{
+ await page.setViewportSize({width:636,height:640});
+ const {send,receive,data}=await open(page),strip=page.locator('.ck-tape');
+ expect(await receive(send('shell',{...shell,tier:'compact'}))).toBe(true);
+ for(const locale of ['en','zh-CN']){
+  expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
+  for(const overflow of [false,true]){
+   const sessions=data.details.sessions.slice(0,3);
+   data.details.sessions=overflow?[...sessions,...Array.from({length:3},(_,i)=>({...sessions[0],sessionRef:(i+4).toString(16).padStart(16,'0')}))]:sessions;
+   expect(await receive(send('display',{data}))).toBe(true);
+   const rows=strip.locator('.tl');await expect(rows).toHaveCount(3);
+   if(overflow)await expect(strip.locator('.t-overflow')).toHaveCount(1);else await expect(strip.locator('.t-overflow')).toHaveCount(0);
+   const metrics=await strip.evaluate(e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {top:r.top+parseFloat(s.paddingTop),bottom:r.bottom-parseFloat(s.paddingBottom),scroll:e.scrollHeight,client:e.clientHeight};});
+   for(const row of await rows.all())for(const item of [row,...await row.locator('.t-time').all()]){const box=await item.boundingBox();expect(box.y).toBeGreaterThanOrEqual(metrics.top-0.5);expect(box.y+box.height).toBeLessThanOrEqual(metrics.bottom+0.5);}
+   expect(metrics.scroll).toBeLessThanOrEqual(metrics.client);
+  }
+ }
+});
+
 test('S15 S19 running cursors animate only for visible active sessions and become static under Reduce Motion',async({page})=>{
  const {send,receive,data}=await open(page),cursors=page.locator('.ck-tape .t-cur');await expect(cursors).toHaveCount(2);
  const details=await cursors.first().evaluate(e=>{const s=getComputedStyle(e);return {name:s.animationName,duration:s.animationDuration,count:s.animationIterationCount,width:s.width,height:s.height}});
