@@ -14,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
@@ -84,7 +85,7 @@ done
 			unlock()
 		}
 	}()
-	p := startQueryBinaryCaps(t, binary, []string{"rows"})
+	p := startQueryBinaryCaps(t, binary, []string{"rows", "windowSourcesV1"})
 	first := p.call("rows/subscribe", map[string]any{})
 	var initial wire.Envelope[wire.RowsSnapshot]
 	if err := json.Unmarshal(first["result"], &initial); err != nil {
@@ -94,7 +95,7 @@ done
 	for _, row := range initial.Data.Projection.Rows {
 		if row.ID == "codex" {
 			for _, a := range row.Accounts {
-				if a.Route == "runtime_rpc" && a.SubscriptionRef != nil && a.ObservedAt != nil && a.ObservedAt.Equal(old) {
+				if a.Route == "runtime_rpc" && a.SubscriptionRef != nil && a.ObservedAt != nil && a.ObservedAt.Equal(old) && a.ValueState == rows.ValueStateRetained {
 					ref = *a.SubscriptionRef
 				}
 			}
@@ -120,11 +121,11 @@ done
 			for _, row := range update.Data.Projection.Rows {
 				if row.ID == "codex" {
 					for _, a := range row.Accounts {
-						if a.Route != "runtime_rpc" || a.SubscriptionRef == nil || *a.SubscriptionRef != ref || a.ObservedAt == nil || !a.ObservedAt.After(old) {
+						if a.Route != "runtime_rpc" || a.SubscriptionRef == nil || *a.SubscriptionRef != ref || a.ObservedAt == nil || !a.ObservedAt.After(old) || a.ValueState != rows.ValueStateCurrent {
 							continue
 						}
 						for _, w := range a.Windows {
-							if w.RemainingPercent != nil && *w.RemainingPercent == 70 && w.ObservedAt != nil && w.ObservedAt.After(old) {
+							if w.RemainingPercent != nil && *w.RemainingPercent == 70 && w.ObservedAt != nil && w.ObservedAt.After(old) && w.Source != nil && *w.Source == rows.WindowSourceRuntime {
 								return
 							}
 						}
