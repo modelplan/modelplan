@@ -9,13 +9,19 @@ import AppKit
     func beginPanelMove(windowPoint: CGPoint, globalPoint: CGPoint) -> Bool
     func continuePanelMove(globalPoint: CGPoint)
     func finishPanelMove(globalPoint: CGPoint)
+    var hasPanelControlCapture: Bool { get }
     func cancelPanelMove()
+}
+
+public extension PulsePanelMouseHandling {
+    var hasPanelControlCapture: Bool { false }
 }
 
 /// Input capture only; the host's controller owns placement and hide state.
 @MainActor final class PulsePanelInputRoute {
     weak var handler: (any PulsePanelMouseHandling)?
     private(set) var captured = false
+    var canCancel: Bool { captured || handler?.hasPanelControlCapture == true }
     func begin(windowPoint: CGPoint, globalPoint: CGPoint, controlClick: Bool) -> Bool {
         cancel()
         guard !controlClick, let handler else { return false }
@@ -35,7 +41,7 @@ import AppKit
         return true
     }
     func cancel() {
-        let held = captured; captured = false
+        let held = canCancel; captured = false
         if held { handler?.cancelPanelMove() }
     }
 }
@@ -67,7 +73,7 @@ import AppKit
         stopEscapeMonitor()
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated {
-                guard let self, self.input.captured, event.keyCode == 53 else { return event }
+                guard let self, self.input.canCancel, event.keyCode == 53 else { return event }
                 self.input.cancel()
                 self.stopEscapeMonitor()
                 return nil
@@ -86,15 +92,19 @@ import AppKit
         let global = pointerLocation?() ?? NSEvent.mouseLocation
         let handled: Bool
         switch event.type {
-        case .keyDown where event.keyCode == 53 && input.captured:
+        case .keyDown where event.keyCode == 53 && input.canCancel:
             input.cancel()
             stopEscapeMonitor()
             handled = true
         case .leftMouseDown:
             receivedInput?(event.type, event.timestamp)
-            handled = input.begin(windowPoint: event.locationInWindow, globalPoint: global,
-                                  controlClick: event.modifierFlags.contains(.control))
-            if handled { monitorEscape() } else { stopEscapeMonitor() }
+            if !input.begin(windowPoint: event.locationInWindow, globalPoint: global,
+                            controlClick: event.modifierFlags.contains(.control)) {
+                super.sendEvent(event)
+            }
+            // The instrument may capture a nozzle during AppKit's dispatch.
+            if input.canCancel { monitorEscape() } else { stopEscapeMonitor() }
+            return
         case .leftMouseDragged:
             receivedInput?(event.type, event.timestamp)
             handled = input.drag(globalPoint: global)

@@ -1596,5 +1596,10 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.endBackgroundMove(global: globalPoint)
     }
-    public func cancelPanelMove() { edge.cancelBackgroundMove() }
+    public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+
+    public func cancelPanelMove() {
+        if hasPanelControlCapture { interactionController?.cancelNozzle() }
+        edge.cancelBackgroundMove()
+    }
 }
