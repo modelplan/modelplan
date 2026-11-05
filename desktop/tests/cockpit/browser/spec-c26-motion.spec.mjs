@@ -15,5 +15,5 @@ for(const reduceMotion of [false,true])test(`C-26 data refresh preserves module 
  const during=await boxes();expect(during).toEqual(before);
  if(!reduceMotion){expect(animationCount).toBeGreaterThan(0);expect(sampled.length).toBeGreaterThanOrEqual(3);}
  for(const state of sampled)expect(state).toEqual(before);
- if(reduceMotion)expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
+ if(reduceMotion)expect(animationCount).toBe(0);
 });
