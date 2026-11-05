@@ -141,6 +141,50 @@ private actor DockStripEngine: EngineClient {
         XCTAssertNotEqual(try pixels(), withAlerts, "Disabling quota alerts must remove actual painted segments")
     }
 
+    func testOfficialResetAnnouncementCannotRefillThePersonalRing() async throws {
+        let fixture = try DockStripFixture()
+        addTeardownBlock { @MainActor in await fixture.close() }
+        try await fixture.open()
+        let member = DockStripFixture.ids[0]
+        func reading() throws -> DockInstrumentReading {
+            try XCTUnwrap(fixture.host.dockView.presentedReadingsForChecks[member])
+        }
+
+        let before = try reading()
+        XCTAssertEqual(before.outer?.fraction, 0.41)
+        XCTAssertEqual(before.readout, "41%")
+        XCTAssertNil(fixture.host.dockView.presentedNoticesForChecks[member])
+
+        let start = DockStripFixture.stamp(fixture.clock.wall.addingTimeInterval(-1))
+        let end = DockStripFixture.stamp(fixture.clock.wall.addingTimeInterval(3600))
+        var projection = try XCTUnwrap(fixture.raw["projection"] as? [String: Any])
+        projection["resetEvents"] = [[
+            "version": 1, "id": "synthetic-public-reset", "provider": "openai", "rowId": "codex",
+            "status": "announced", "planIds": ["pro"], "publishedAt": start, "expiresAt": end,
+            "schedule": ["precision": "window", "from": start, "through": end],
+            "source": ["kind": "publication", "publicationId": "synthetic"]
+        ]]
+        fixture.raw["projection"] = projection
+        try await fixture.publish()
+        let announcement = try reading()
+        XCTAssertEqual(fixture.host.dockView.presentedNoticesForChecks[member]?.key.kind, .resetAnnounced)
+        XCTAssertEqual(announcement.outer?.fraction, before.outer?.fraction)
+        XCTAssertEqual(announcement.readout, before.readout)
+
+        fixture.tick(2)
+        fixture.mutateFirstRowAccount(at: 0) { account in
+            var windows = account["windows"] as! [[String: Any]]
+            windows[0]["remainingPercent"] = 82
+            windows[0]["observedAt"] = DockStripFixture.stamp(fixture.clock.wall)
+            account["windows"] = windows
+        }
+        try await fixture.publish()
+        let updated = try reading()
+        XCTAssertEqual(updated.outer?.fraction, 0.82)
+        XCTAssertEqual(updated.readout, "70%", "the still-tighter weekly window remains the selected readout")
+        XCTAssertEqual(fixture.host.dockView.presentedNoticesForChecks[member]?.key.kind, .resetAnnounced)
+    }
+
     func testRevealAcknowledgesStripWithoutClearingTheMenuOrQuotaSegments() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var signal = DockSubscriptionSignal(id: "member")
