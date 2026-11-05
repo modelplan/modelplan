@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Single-Mac GUI booking queue
 
-M2 owns the verification skill and reviews its admission integration. `book.py`
+M0 owns the verification skill; changes are reviewed by the coordinator (Claude). `book.py`
 provides cooperative FIFO scheduling on the approved shared filesystem. It does **not** grant a GUI
 lease, coordinator GO, foreground permission or permission to use owner data.
 Launch's existing release, guardian, deadline and synthetic-profile checks still
