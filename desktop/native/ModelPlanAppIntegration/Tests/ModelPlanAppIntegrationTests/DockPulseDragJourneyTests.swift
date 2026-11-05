@@ -65,6 +65,11 @@ import ModelPlanSettings
         XCTAssertTrue(controller.isBackgroundPressed, "D-09")
         XCTAssertEqual(controller.presentation?.paintedFrame, before)
         topology.active.append(topology.c)
+        // Sliding along the right rail into the bottom snap range applies no pull-off.
+        let corner = CGPoint(x: before.midX, y: topology.a.usableFrame.minY + 10)
+        controller.updateBackgroundMove(global: corner)
+        XCTAssertEqual(controller.presentation?.placement?.edge, mode == 1 ? .right : .bottom,
+                       "D-04: strong snap holds the right rail until pull-off; always-attached selects the nearest edge")
         let held = CGPoint(x: before.midX - 70, y: before.midY)
         controller.updateBackgroundMove(global: held)
         XCTAssertEqual(controller.presentation?.paintedFrame?.maxX, topology.a.usableFrame.maxX)
