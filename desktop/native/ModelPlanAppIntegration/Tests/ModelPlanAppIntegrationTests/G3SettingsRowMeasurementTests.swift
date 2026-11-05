@@ -28,8 +28,9 @@ private actor G316Engine: EngineClient {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
     func testG3_16_SettingsRowsMeasureActualBands() async throws {
-        let temp = try XCTUnwrap(ProcessInfo.processInfo.environment["RUNNER_TEMP"], "CI artifact root required")
-        let output = URL(fileURLWithPath: temp).appendingPathComponent("dock-instrument-checks/dock-visual/g3-16", isDirectory: true)
+        let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+            ?? FileManager.default.temporaryDirectory
+        let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/g3-16", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         var allOffenders = [String]()
         var totalRows = 0
@@ -59,20 +60,30 @@ private actor G316Engine: EngineClient {
                     }
                 }
                 var offenders = [(NSRect, String)]()
+                var measurements = [String]()
                 for row in rows {
                     let title = row.titleLabel.convert(row.titleLabel.bounds, to: row)
                     let subtitle = row.subtitle.convert(row.subtitle.bounds, to: row)
                     let text = title.union(subtitle)
                     let control = row.controls.convert(row.controls.bounds, to: row)
                     let offset = control.midY - text.midY
-                    print("G3-16 locale=\(locale) pane=\(pane.id) row=\(row.key.rawValue) frame-offset=\(String(format: "%.2f", offset))")
+                    let measurement = "G3-16 locale=\(locale) pane=\(pane.id) row=\(row.key.rawValue) frame-offset=\(String(format: "%.2f", offset))"
+                    print(measurement); measurements.append(measurement)
                     if abs(offset) > 1 { offenders.append((row.convert(control, to: canvas), "\(pane.id).\(row.key.rawValue): \(offset)")) }
-                    if !row.group.isHiddenOrHasHiddenAncestor { offenders.append((.zero, "\(pane.id).\(row.key.rawValue): group heading in row")) }
+                    if let copy = row.titleLabel.superview as? NSStackView {
+                        if copy.arrangedSubviews.count != 2 || copy.arrangedSubviews[0] !== row.titleLabel || copy.arrangedSubviews[1] !== row.subtitle {
+                            offenders.append((.zero, "\(pane.id).\(row.key.rawValue): unexpected content in title stack"))
+                        }
+                    } else { offenders.append((.zero, "\(pane.id).\(row.key.rawValue): missing title stack")) }
                     let visible = row.controls.arrangedSubviews.filter { !$0.isHiddenOrHasHiddenAncestor }
                     if visible.count > 1 && visible.contains(where: { $0 is NSTextField }) {
                         offenders.append((.zero, "\(pane.id).\(row.key.rawValue): text beneath control"))
                     }
                 }
+                let attachment = XCTAttachment(string: measurements.joined(separator: "\n"))
+                attachment.name = "G3-16 \(locale) \(pane.id) frame offsets"
+                attachment.lifetime = .keepAlways
+                add(attachment)
                 let bitmap = try XCTUnwrap(canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds))
                 canvas.cacheDisplay(in: canvas.bounds, to: bitmap)
                 let image = NSImage(size: canvas.bounds.size); image.addRepresentation(bitmap)

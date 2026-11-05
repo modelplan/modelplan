@@ -65,7 +65,7 @@ final class SettingsV1PolicyTests: XCTestCase {
             let row = SettingsNativeRow(key: key)
             row.apply(try XCTUnwrap(rows.first { $0.key == key }), language: .english, saving: false,
                 input: nil, reduced: false, onChoice: #selector(V1RowTarget.selected(_:)), target: target,
-                showGroup: false, snapshot: snapshot, context: context, holdAvailable: false, hasHost: hasHost,
+                snapshot: snapshot, context: context, holdAvailable: false, hasHost: hasHost,
                 onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
             return row
         }

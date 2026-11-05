@@ -5,7 +5,6 @@ import AppKit
     let key: SettingKey
     let titleLabel = NSTextField(labelWithString: "")
     let subtitle = NSTextField(wrappingLabelWithString: "")
-    let group = NSTextField(labelWithString: "")
     let controls = NSStackView()
     let illustration = NSView()
     var diagram: SettingsDiagramView?
@@ -19,8 +18,6 @@ import AppKit
     private var aliasLines: [String: NSStackView] = [:]
     private var aliasLabels: [String: NSTextField] = [:]
     private var subscriptionLabels: [String: NSTextField] = [:]
-    private(set) var memberReasonLabels: [String: NSTextField] = [:]
-    private var readerDescriptions: [String: NSTextField] = [:]
     private var controlIDs: [String] = []
     private var tracking: NSTrackingArea?
     private let readout = NSTextField(wrappingLabelWithString: "")
@@ -38,7 +35,6 @@ import AppKit
         subtitle.preferredMaxLayoutWidth = 160
         subtitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         subtitle.setContentCompressionResistancePriority(.required, for: .vertical)
-        group.font = .systemFont(ofSize: 11, weight: .medium); group.textColor = .secondaryLabelColor
         let copy = NSStackView(views: [titleLabel, subtitle])
         copy.orientation = .vertical; copy.alignment = .leading; copy.spacing = 5
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -88,7 +84,7 @@ import AppKit
         for field in aliases.values { field.retire() }
         shortcut?.retire(); order?.retire(); resetHints?.retire(); surfaceAction?.retire()
         for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
-        choices = [:]; subscriptionLabels = [:]; readerDescriptions = [:]; memberReasonLabels = [:]; controlIDs = []
+        choices = [:]; subscriptionLabels = [:]; controlIDs = []
         aliases = [:]; aliasLines = [:]; aliasLabels = [:]; shortcut = nil; order = nil; resetHints = nil
         surfaceAction = nil; licenseView = nil
     }
@@ -99,7 +95,7 @@ import AppKit
     }
 
     func apply(_ row: SettingsRow, language: SettingsLanguage, saving: Bool, input: SettingsDiagramInput?,
-               reduced: Bool, onChoice: Selector, target: AnyObject, showGroup: Bool,
+               reduced: Bool, onChoice: Selector, target: AnyObject,
                snapshot: SettingsSnapshot, context: SettingsPageContext, holdAvailable: Bool,
                hasHost: Bool, onEdit: @escaping (NSView & SettingsOwnedControl, SettingsB21Edit) -> Void,
                onSurfaceAction: @escaping (NSView & SettingsOwnedControl, SettingsSurfaceAction) -> Void,
@@ -107,8 +103,6 @@ import AppKit
         let p = snapshot.preferences
         titleLabel.stringValue = row.title.value(language)
         subtitle.stringValue = row.subtitle.value(language)
-        group.stringValue = [row.paneTitle.value(language), row.groupTitle?.value(language)].compactMap { $0 }.joined(separator: " · ")
-        group.isHidden = true
         if let input {
             if diagram == nil {
                 let view = SettingsDiagramView(input: input); diagram = view
@@ -204,8 +198,6 @@ import AppKit
                     subscriptionLabels[id] = name
                     name.lineBreakMode = .byTruncatingTail; name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                     let line = NSStackView(views: [name, popup]); line.spacing = 6; line.distribution = .fill
-                    let reason = NSTextField(labelWithString: "")
-                    memberReasonLabels[id] = reason
                     controls.addArrangedSubview(line)
                     line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
                 }
@@ -230,8 +222,6 @@ import AppKit
             popup.setAccessibilityLabel([row.title.value(language), label].filter { !$0.isEmpty }.joined(separator: " · "))
             popup.setAccessibilityHelp(unstableReason ?? (enabled ? row.subtitle.value(language) : SettingsWords.text("Not editable in this build.", "此版本暂不提供编辑。", language)))
             popup.toolTip = unstableReason
-            memberReasonLabels[id]?.stringValue = unstableReason ?? ""
-            memberReasonLabels[id]?.isHidden = unstableReason == nil
         }
         if case .readers(let readers) = row.value, !readers.isEmpty {
             subtitle.stringValue = readers.map { $0.title + ": " + $0.description.value(language) + " · " + Self.readerStatus($0.observation, language: language) }.joined(separator: " · ")
@@ -241,7 +231,8 @@ import AppKit
         }
         if !reasons.isEmpty { subtitle.stringValue = reasons.joined(separator: " · ") }
         if values.isEmpty {
-            if key == .percentagePin { readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language) }
+            readout.isHidden = false
+            if key == .percentagePin || key == .visible { readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language) }
             else if key == .captureHiding { readout.stringValue = SettingsWords.text("Unavailable", "不可用", language) }
             else if key == .retention { readout.stringValue = SettingsWords.text("Sessions: 35 days\nDaily totals: 371 days\nManaged by the CLI", "会话：35 天\n每日汇总：371 天\n由 CLI 管理", language) }
             else if key == .clearCLI { readout.stringValue = SettingsWords.text("Unavailable; CLI-owned data", "不可用：CLI 管理的数据", language) }
@@ -292,7 +283,6 @@ import AppKit
             aliases.removeValue(forKey: id)?.retire()
             if let line = aliasLines.removeValue(forKey: id) { controls.removeArrangedSubview(line); line.removeFromSuperview() }
             aliasLabels.removeValue(forKey: id)
-            memberReasonLabels.removeValue(forKey:id)
         }
         for (index, sub) in subs.enumerated() {
             if aliases[sub.id] == nil {
@@ -305,8 +295,6 @@ import AppKit
                 label.lineBreakMode = .byTruncatingTail; label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
                 aliasLabels[sub.id] = label
                 let line = NSStackView(views: [label,field]); line.spacing = 6; line.distribution = .fill
-                let reason=NSTextField(wrappingLabelWithString:"");reason.font = .systemFont(ofSize:11);reason.textColor = .secondaryLabelColor
-                memberReasonLabels[sub.id]=reason
                 aliasLines[sub.id]=line
                 controls.insertArrangedSubview(line, at: index)
                 line.widthAnchor.constraint(equalTo:controls.widthAnchor).isActive = true
@@ -319,8 +307,6 @@ import AppKit
             field.isEnabled = reason == nil && (enabled || field.editing)
             field.toolTip = reason
             if let reason { field.setAccessibilityHelp(reason) }
-            memberReasonLabels[sub.id]?.stringValue = reason ?? ""
-            memberReasonLabels[sub.id]?.isHidden = reason == nil
             field.setAccessibilityLabel(SettingsWords.text("Alias: ", "别名：", language) + sub.name)
         }
         let reasons = subs.compactMap { sub in
@@ -329,6 +315,7 @@ import AppKit
         if !reasons.isEmpty { subtitle.stringValue = reasons.joined(separator: " · ") }
         if subs.isEmpty {
             if readout.superview == nil { controls.addArrangedSubview(readout) }
+            readout.isHidden = false
             readout.stringValue = SettingsWords.text("No subscriptions detected", "尚未检测到订阅", language)
         } else if readout.superview != nil { controls.removeArrangedSubview(readout); readout.removeFromSuperview() }
     }

@@ -17,7 +17,7 @@ import XCTest
             func apply() throws {
                 let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: snapshot.preferences, context: context).first { $0.key == key })
                 view.apply(row, language: .english, saving: false, input: nil, reduced: false,
-                    onChoice: #selector(NSApplication.terminate(_:)), target: NSApplication.shared, showGroup: false,
+                    onChoice: #selector(NSApplication.terminate(_:)), target: NSApplication.shared,
                     snapshot: snapshot, context: context, holdAvailable: true, hasHost: false,
                     onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
             }
@@ -43,7 +43,7 @@ import XCTest
             let value=try XCTUnwrap(rows.first { $0.key == key })
             let view=SettingsNativeRow(key:key)
             view.apply(value,language:.english,saving:false,input:nil,reduced:false,
-                       onChoice:#selector(NSApplication.terminate(_:)),target:NSApplication.shared,showGroup:false,
+                       onChoice:#selector(NSApplication.terminate(_:)),target:NSApplication.shared,
                        snapshot:snapshot,context:context,holdAvailable:true,hasHost:false,
                        onEdit:{_,_ in},onSurfaceAction:{_,_ in},onDraftCleared:{_ in})
             if key == .alias {
@@ -53,10 +53,16 @@ import XCTest
                 XCTAssertTrue(try XCTUnwrap(view.choices["stable"]).isEnabled)
                 XCTAssertFalse(try XCTUnwrap(view.choices["row#source#1"]).isEnabled)
             }
-            XCTAssertTrue(try XCTUnwrap(view.memberReasonLabels["stable"]).isHidden)
-            let reason=try XCTUnwrap(view.memberReasonLabels["row#source#1"])
-            XCTAssertFalse(reason.isHidden)
-            XCTAssertEqual(reason.stringValue,"Unverified account — changes can't be saved yet")
+            let reason = "Unverified account — changes can't be saved yet"
+            XCTAssertFalse(view.subtitle.isHiddenOrHasHiddenAncestor)
+            XCTAssertTrue(view.subtitle.stringValue.contains(reason), "The actual visible subtitle must explain the disabled member")
+            if key == .alias {
+                XCTAssertNil(try XCTUnwrap(view.aliases["stable"]).toolTip)
+                XCTAssertEqual(try XCTUnwrap(view.aliases["row#source#1"]).toolTip, reason)
+            } else {
+                XCTAssertNil(try XCTUnwrap(view.choices["stable"]).toolTip)
+                XCTAssertEqual(try XCTUnwrap(view.choices["row#source#1"]).toolTip, reason)
+            }
         }
     }
     func testOrderKeepsStableRowsInteractiveButRejectsUnstableDrag() throws {
