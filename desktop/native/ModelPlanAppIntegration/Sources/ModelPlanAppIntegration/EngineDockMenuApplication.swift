@@ -479,7 +479,13 @@ import ModelPlanMenuVerification
         ]
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
-        var diagnosticFacts: [ProviderDiagnosticFact] = []
+        let content = composition.provider.dockContent
+        // Some reader failures publish an admitted provider row without any
+        // account. Such failures still need the same Diagnostics action.
+        var diagnosticFacts = (content.menuRows + content.dockRows).compactMap { row -> ProviderDiagnosticFact? in
+            guard row.state == .failed, row.accounts.isEmpty else { return nil }
+            return .init(providerID: row.id, name: english ? row.name.en : row.name.zh, condition: .failed)
+        }
         for member in composition.accountMembers.members {
             guard let row = admitted[member.id] else { continue }
             let condition: ProviderDiagnosticCondition

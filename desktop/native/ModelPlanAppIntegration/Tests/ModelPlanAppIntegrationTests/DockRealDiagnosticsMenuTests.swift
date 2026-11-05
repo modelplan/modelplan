@@ -86,7 +86,7 @@ import XCTest
             "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int), "allow": [scope], "deny": [String]()
         ])
         _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
-        var healthy = try decode(Data(contentsOf: snapshot))
+        let healthy = try decode(Data(contentsOf: snapshot))
         XCTAssertEqual(healthy["status"] as? String, "ok")
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -117,10 +117,14 @@ import XCTest
 
         // Backdate the synthetic fixture and reservation to exercise a second
         // real reader call without changing the production refresh interval.
-        let due = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-360))
-        healthy["observedAt"] = due
-        try encode(healthy).write(to: snapshot, options: .atomic)
-        try encode(["schemaVersion": 1, "nextAttemptAt": due]).write(to: attempts, options: .atomic)
+        func makeDue(_ original: [String: Any], seconds: TimeInterval) throws {
+            let due = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-seconds))
+            var fixture = original
+            fixture["observedAt"] = due
+            try encode(fixture).write(to: snapshot, options: .atomic)
+            try encode(["schemaVersion": 1, "nextAttemptAt": due]).write(to: attempts, options: .atomic)
+        }
+        try makeDue(healthy, seconds: 360)
         try Data().write(to: failed)
         _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
         let failure = try decode(Data(contentsOf: snapshot))
@@ -147,6 +151,19 @@ import XCTest
         menu.performActionForItem(at: index)
         await fulfillment(of: [shown], timeout: 2)
         XCTAssertEqual(surface.shown, ["diagnostics"])
+
+        try makeDue(failure, seconds: 3_600)
+        try FileManager.default.removeItem(at: failed)
+        _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
+        let recovery = ContinuousClock.now + .seconds(5)
+        while row()?.state != .fresh && ContinuousClock.now < recovery {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        XCTAssertEqual(row()?.state, .fresh)
+        XCTAssertEqual(try items().map(\.title), english)
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try items().map(\.title), chinese)
     }
 }
 #endif
