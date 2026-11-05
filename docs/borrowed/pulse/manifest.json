@@ -78,7 +78,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
-      "sha256": "732dce220a986b9e914cf4d9b28c541e2c5c792eb54424979d891c2197f4f56b",
+      "sha256": "4ed9094780c45b5536230fe09193fd323ee88a0f5cd1b7e95a601763b68ef6c1",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
@@ -87,7 +87,9 @@
         "non-key/non-main window and window-level mouse transaction only",
         "injected region/lifecycle handler and cancellation",
         "private appearance selector and visual/provider logic omitted",
-        "numeric moved/entered/exited observation forwards events unchanged; test builds enable mouse-moved receipt delivery"
+        "numeric moved/entered/exited observation forwards events unchanged; test builds enable mouse-moved receipt delivery",
+        "finish first show by ordering front and applying the requested frame again after the host places and installs content",
+        "expose PanelScreen identifier to the ModelPlan display topology sample"
       ]
     },
     {

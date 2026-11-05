@@ -6,8 +6,10 @@ public enum DockEdgeError: Error, Equatable { case invalidGeometry, duplicateLay
 /// Session-resolved identity only; the shared display owner persists durable identity.
 public struct DockDisplayArea: Equatable, Sendable {
     public let id:String, frame:CGRect, visibleFrame:CGRect, usableFrame:CGRect
-    public init(id:String,frame:CGRect,visibleFrame:CGRect,safeFrame:CGRect? = nil){
+    public let backingScale: Int, name: String?
+    public init(id:String,frame:CGRect,visibleFrame:CGRect,safeFrame:CGRect? = nil,backingScale:Int = 1,name:String? = nil){
         self.id=id;self.frame=frame;self.visibleFrame=visibleFrame
+        self.backingScale=backingScale;self.name=name
         usableFrame=frame.intersection(visibleFrame).intersection(safeFrame ?? frame)
     }
 }
@@ -93,14 +95,23 @@ public enum DockEdgeGeometry {
         case .top:return true
         }
     }
-    private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,displays:[DockDisplayArea],fraction:Double,point:CGPoint?,corner:CGFloat,wake:CGFloat)->DockEdgePlacement?{
+    private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,displays:[DockDisplayArea],fraction:Double,point:CGPoint?,corner:CGFloat,wake:CGFloat,resting:Bool = false)->DockEdgePlacement?{
         let u=d.usableFrame,vertical=p.edge != .bottom
         let along=vertical ? p.expandedSize.height:p.expandedSize.width
         let cross=vertical ? p.expandedSize.width:p.expandedSize.height
         let before=max(p.alongAnchor,p.sliverLength/2),after=max(along-p.alongAnchor,p.sliverLength/2)
         let total=before+after,span=vertical ? u.height:u.width
         guard cross<=(vertical ? u.width:u.height),p.sliverThickness<=cross,wake<=(vertical ? u.width:u.height),p.sliverLength<=span else{return nil}
-        let intervals=exposedIntervals(on:d,edge:p.edge,displays:displays,cornerClearance:corner).filter{$0.upperBound-$0.lowerBound>=total}
+        let intervals: [ClosedRange<CGFloat>]
+        if resting {
+            let lower = (vertical ? u.minY : u.minX) + corner
+            let upper = (vertical ? u.maxY : u.maxX) - corner
+            guard upper - lower >= total else { return nil }
+            intervals = [lower...upper]
+        } else {
+            intervals = exposedIntervals(on:d,edge:p.edge,displays:displays,cornerClearance:corner)
+                .filter { $0.upperBound - $0.lowerBound >= total }
+        }
         guard !intervals.isEmpty else{return nil}
         let desired=point.map{vertical ? $0.y:$0.x} ?? ((vertical ? u.minY:u.minX)+CGFloat(max(0,min(1,fraction)))*span)
         let centres=intervals.map{r in max(r.lowerBound+before,min(r.upperBound-after,desired))}
@@ -132,9 +143,9 @@ public enum DockEdgeGeometry {
         for other in displays where other.id != d.id{
             let f=d.frame,n=other.frame
             switch placement.edge{
-            case .left:if n.minX<f.minX && n.maxX>=f.minX && point.y>=n.minY && point.y<=n.maxY{return false}
-            case .right:if n.maxX>f.maxX && n.minX<=f.maxX && point.y>=n.minY && point.y<=n.maxY{return false}
-            case .bottom:if n.minY<f.minY && n.maxY>=f.minY && point.x>=n.minX && point.x<=n.maxX{return false}
+            case .left:if point.x<=f.minX && n.minX<f.minX && n.maxX>=f.minX && point.y>=n.minY && point.y<=n.maxY{return false}
+            case .right:if point.x>=f.maxX && n.maxX>f.maxX && n.minX<=f.maxX && point.y>=n.minY && point.y<=n.maxY{return false}
+            case .bottom:if point.y<=f.minY && n.minY<f.minY && n.maxY>=f.minY && point.x>=n.minX && point.x<=n.maxX{return false}
             case .top:return false
             }
         };return true
@@ -149,24 +160,39 @@ public enum DockEdgeGeometry {
         // nil identity is the explicit follow mode; the host resolves primary-only choices.
         let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.frame.contains(p)}} : nil
         let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
+        if !nearest {
+            guard let chosen else { return nil }
+            let fraction = max(0, min(1, preference.alongFraction))
+            let edge: DockEdge
+            let point: CGPoint?
+            if preference.edge == .top {
+                let visible = chosen.usableFrame
+                let x = visible.minX + fraction * visible.width
+                let left = x - visible.minX, right = visible.maxX - x
+                edge = visible.height < min(left, right) ? .bottom : (left < right ? .left : .right)
+                point = CGPoint(x: x, y: visible.maxY)
+            } else {
+                edge = preference.edge
+                point = nil
+            }
+            guard let layout = layouts.first(where: { $0.displayID == chosen.id && $0.edge == edge }) else { return nil }
+            return candidate(layout,on:chosen,displays:sorted,fraction:fraction,point:point,
+                             corner:cornerClearance,wake:wakeDepth,resting:true)
+        }
+
+        // The existing drag preview is scoped to the later Pulse carry port.
         var candidates=[DockEdgePlacement]()
-        for d in sorted where nearest || d.id==chosen?.id{
-            for edge in allowedEdges{
-                let migrationPoint=preference.edge == .top ? CGPoint(x:d.usableFrame.minX+CGFloat(max(0,min(1,preference.alongFraction)))*d.usableFrame.width,y:d.usableFrame.maxY):nil
-                guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,point:nearest ? pointer:migrationPoint,corner:cornerClearance,wake:wakeDepth) else{continue}
+        for d in sorted {
+            for edge in allowedEdges {
+                guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),
+                      let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,
+                                      point:pointer,corner:cornerClearance,wake:wakeDepth) else { continue }
                 candidates.append(c)
             }
         }
-        // If the preferred display has no usable exposed/registered edge, safely fall back to another display.
-        if candidates.isEmpty && !nearest,let chosen{
-            // Automatic recovery is not a drag: keep the stored along-edge intent and use
-            // the chosen display as a stable distance anchor, never the moving pointer.
-            return try resolve(preference:.init(displayID:chosen.id,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:nil,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
-        }
         let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
         if !alternatives.isEmpty{candidates=alternatives}
-        if !nearest,let exact=candidates.first(where:{$0.edge==preference.edge}){return exact}
-        guard let target=(nearest ? pointer:nil) ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
+        guard let target=pointer ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
         func distance(_ c:DockEdgePlacement)->CGFloat{
             let x=max(c.sliverFrame.minX,min(c.sliverFrame.maxX,target.x)),y=max(c.sliverFrame.minY,min(c.sliverFrame.maxY,target.y))
             return hypot(target.x-x,target.y-y)

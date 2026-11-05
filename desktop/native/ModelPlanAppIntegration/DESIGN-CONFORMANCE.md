@@ -30,3 +30,12 @@ drag commit, durable restart and rebuild, both menu languages/order, and visible
 unreadable reasons/withdrawal. `U6StatusItemFrameTests` checks the image cap.
 Hosted live-frame assertions retain their approved-host guard; a skip is not a
 pass. These tests do not authorize a device run.
+
+
+## D9 registry amendments for Pulse placement
+
+| Requirement | Decision | Revised binding |
+|---|---|---|
+| DOCK-3.6-05 | Q8, “edges next to another display and the macOS Dock are allowed” | Resting on the painted strip can reveal the widget at an inner edge. The wake target is inside its display. |
+| DOCK-3.6-15 | Q8, “edges next to another display and the macOS Dock are allowed” | Keep the saved left, right or bottom edge on the chosen display, including adjoining edges. The bottom placement uses the visible frame above the macOS Dock under Q9. |
+| DOCK-3.1-07 | Q10, “size per display” | Resolve geometry and backing scale for the destination display. Preserve the D/52 art proportions. Per-display appearance evidence is pending M1 and owner review. |

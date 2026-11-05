@@ -292,6 +292,10 @@ import ModelPlanMenuVerification
         renderMenu()
         interactionBinding?.install()
     }
+    private var dockPresentationGateOpen: Bool {
+        lifecycleController?.canRetry ?? !lifecyclePaused
+    }
+
     func allowDockPresentation() {
         guard !terminating else { return }
         composition.dock.setPresentationAllowed(true)
@@ -313,7 +317,10 @@ import ModelPlanMenuVerification
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
-            }, onGateOpen: { [weak self] in self?.renderMenu() })
+            }, onGateOpen: { [weak self] in
+                self?.allowDockPresentation()
+                self?.renderMenu()
+            })
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
@@ -333,6 +340,8 @@ import ModelPlanMenuVerification
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
+        // A retry or engine failure can withdraw rows while the OS gate remains open.
+        if dockPresentationGateOpen { allowDockPresentation() }
         renderMenu()
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -431,7 +440,7 @@ import ModelPlanMenuVerification
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
-        let showAvailability = ShowQuotaWidgetRequest.availability(paused: lifecyclePaused || terminating,
+        let showAvailability = ShowQuotaWidgetRequest.availability(paused: !dockPresentationGateOpen || terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         let showTitle: String
         switch showAvailability {
@@ -535,7 +544,7 @@ import ModelPlanMenuVerification
         }
     }
     private func showDock() {
-        guard ShowQuotaWidgetRequest.availability(paused: terminating || lifecyclePaused,
+        guard ShowQuotaWidgetRequest.availability(paused: terminating || !dockPresentationGateOpen,
                 loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready,
               let revision = settings.editor.snapshot?.revision else { return }
         showRequestInFlight = true; showFeedback = nil; renderMenu()
@@ -546,7 +555,7 @@ import ModelPlanMenuVerification
             guard !self.terminating else { return }
             let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
             self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
-            if currentOutcome == .ready && !self.lifecyclePaused { self.composition.dock.revealForUser() }
+            if currentOutcome == .ready && self.dockPresentationGateOpen { self.composition.dock.revealForUser() }
             self.renderMenu()
         }
     }

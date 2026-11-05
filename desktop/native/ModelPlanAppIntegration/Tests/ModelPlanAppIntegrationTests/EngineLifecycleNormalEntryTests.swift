@@ -204,7 +204,7 @@ private actor LifecycleEngine: EngineClient {
 @MainActor final class DockPulsePlacementNormalEntryTests: XCTestCase {
     private final class Topology {
         var primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
-            visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875))
+            visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875), backingScale: 2)
         let neighbour = DockDisplayArea(id: "B", frame: CGRect(x: 1512, y: -300, width: 2560, height: 1440),
             visibleFrame: CGRect(x: 1512, y: -300, width: 2560, height: 1415))
         var joined = false
@@ -319,6 +319,7 @@ private actor LifecycleEngine: EngineClient {
         }
         let workspace = start(app)
         let before = try expanded(app)
+        XCTAssertEqual(app.composition.dock.dockView.layer?.contentsScale, 2)
         topology.fullscreen = true; app.composition.dock.refreshPresence()
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         topology.fullscreen = false; app.composition.dock.refreshPresence()
@@ -327,6 +328,7 @@ private actor LifecycleEngine: EngineClient {
             visibleFrame: CGRect(x: 0, y: 70, width: 1280, height: 693))
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         let resized = try expanded(app)
+        XCTAssertEqual(app.composition.dock.dockView.layer?.contentsScale, 1)
         XCTAssertEqual(resized.edge, .bottom)
         XCTAssertEqual(resized.alongFraction, 0.62, accuracy: 0.001)
         XCTAssertNotEqual(resized.frame.size, before.frame.size)

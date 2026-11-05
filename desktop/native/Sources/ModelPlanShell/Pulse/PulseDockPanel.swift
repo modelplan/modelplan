@@ -1,5 +1,6 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 // ModelPlan adaptation of FloatingPanel event routing at Pulse 7668384cbcf357bba7dee4af85b4052a59c6e35d.
+// ModelPlan adaptation: reuse Pulse display identity and restore the requested frame after initial order-in.
 // No upstream private appearance selector, visual tether or provider logic is used.
 import AppKit
 
@@ -44,6 +45,17 @@ import AppKit
 @MainActor public final class PulseDockPanel: NSPanel {
     public override var canBecomeKey: Bool { false }
     public override var canBecomeMain: Bool { false }
+
+    public static func displayIdentifier(for screen: NSScreen) -> String? {
+        PanelScreen.identifier(of: screen)
+    }
+
+    /// The caller places the frame before installing the content. AppKit may
+    /// adjust the frame on first order-in, so restore the requested placement.
+    public func orderInAtPlacement(_ frame: CGRect) {
+        orderFrontRegardless()
+        setFrame(frame, display: true)
+    }
     private let input = PulsePanelInputRoute()
     public var mouseHandler: (any PulsePanelMouseHandling)? {
         get { input.handler }
