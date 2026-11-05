@@ -26,6 +26,13 @@ class CandidateIsolationTests(unittest.TestCase):
         self.assertEqual(receipt['proofResults']['credentialMutationDenied'], 'not-run')
         self.assertEqual(receipt['scratchPaths'], {})
 
+    def test_probe_failure_includes_sanitized_stderr(self):
+        result = subprocess.CompletedProcess([], 71, '', 'sandbox_apply: Operation not permitted')
+        with mock.patch.object(isolation.subprocess, 'run', return_value=result):
+            proof = isolation.synthetic_probe()
+        self.assertEqual(proof['exitCode'], 71)
+        self.assertEqual(proof['stderr'], 'sandbox_apply: Operation not permitted')
+
     def test_sandbox_failure_is_not_a_proof(self):
         with mock.patch.object(isolation.subprocess, 'run', side_effect=OSError('unavailable')):
             self.assertEqual(isolation.synthetic_probe()['status'], 'unavailable')

@@ -58,7 +58,8 @@ def synthetic_probe():
                                      str(sentinel), str(root / 'scratch')],
                                     capture_output=True, text=True, timeout=10, check=False)
             if result.returncode:
-                return {'status': 'unavailable', 'reason': 'sandbox probe failed', 'exitCode': result.returncode}
+                return {'status': 'unavailable', 'reason': 'sandbox probe failed', 'exitCode': result.returncode,
+                        'stderr': result.stderr.replace(tmp, '<scratch>')[:4096]}
             proof = json.loads(result.stdout)
             if set(proof) != {'syntheticDeniedRead', 'scratchWrite', 'outboundNetwork'}:
                 raise ValueError('unexpected probe response')
