@@ -45,6 +45,8 @@
     "licenseFile": "desktop/official-visuals/LICENSE.md",
     "licenseText": "LICENSES/LicenseRef-ModelPlan-Visuals-1.0.txt",
     "binaries": {
+      "desktop/official-visuals/icons/tray-outline.png": "4cca64d77f4a3d80e33b37398a1ef2502619f8107263d819ff86ad8ba19d1e6e",
+      "desktop/official-visuals/icons/tray-outline@2x.png": "44355868b3f7a30bb828d62d1ab3a276d86bddbb2b8e4c9dc45633dcf42d3da8",
       "desktop/official-visuals/cockpit/strip/assets/close-hover@3x.png": "26b831ff4bf6ca443cfb5df9a5bd8576ecf31b944820ed88f5710312f3de21cc",
       "desktop/official-visuals/cockpit/strip/assets/close-normal@3x.png": "149845b577925796ce036a6d226ddd1f3d670407f27e5b88979e7374d66ed5c3",
       "desktop/official-visuals/cockpit/strip/assets/close-pressed@3x.png": "80ee6af5c81db59fda40562cdafbe68dbcdd8129a119b3fd79a3484698ecc37a",

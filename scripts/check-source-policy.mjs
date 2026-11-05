@@ -121,6 +121,12 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
     continue;
   }
+  if (p === "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/V01TrayTemplateTests.swift") {
+    assert.equal(code.split("official-visuals").length, 2, "one tray reference path in the native test");
+    assert.ok(code.includes('repo.appendingPathComponent("desktop/official-visuals/icons/" + name)'), "exact native tray reference directory");
+    assert.ok(code.includes('let name = scale == 1 ? "tray-outline.png" : "tray-outline@2x.png"'), "exact 1x/2x tray references");
+    continue;
+  }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
   const end = p === "desktop/cockpit/build.mjs" ? "} else {" : "} else if (external) {";
   const branch = code.slice(code.indexOf("if (official) {"), code.indexOf(end));
