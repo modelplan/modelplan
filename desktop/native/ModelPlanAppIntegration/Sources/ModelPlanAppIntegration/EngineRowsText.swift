@@ -15,5 +15,8 @@ enum EngineRowsText {
     static let quit = SettingsText("Quit", "退出")
     static let waiting = SettingsText("Waiting for readings", "等待读数")
     static let paused = SettingsText("Readings paused", "读数已暂停")
+    static let readingServiceUnavailable = SettingsText(
+        "Readings unavailable. Check the reading service connection in Settings.",
+        "读数不可用，请在设置中检查读取服务连接。")
     static let waitingForFresh = SettingsText("Waiting for current readings. Refresh to retry.", "等待读数更新，可刷新重试。")
 }
