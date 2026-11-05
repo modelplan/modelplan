@@ -64,7 +64,7 @@ type CockpitToday struct {
 	BindingBasis         string   `json:"bindingBasis"`
 }
 type CockpitSession struct {
-	StartedAt       *time.Time           `json:"startedAt,omitempty" null:"forbidden"`
+	ObservedSince   *time.Time           `json:"observedSince,omitempty" null:"forbidden"`
 	EffortStatus    *CockpitEffortStatus `json:"effortStatus,omitempty" null:"forbidden"`
 	SpeedMode       *CockpitSpeedMode    `json:"speedMode,omitempty" null:"forbidden"`
 	SessionRef      string               `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`

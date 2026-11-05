@@ -86,7 +86,7 @@ func TestCockpitLiveSessionExtensionRealBinary(t *testing.T) {
 	if !ok {
 		t.Fatal("legacy session missing")
 	}
-	for _, key := range []string{"startedAt", "effortStatus", "speedMode"} {
+	for _, key := range []string{"startedAt", "observedSince", "effortStatus", "speedMode"} {
 		if _, ok := oldData[key]; ok {
 			t.Fatalf("legacy received %s", key)
 		}
@@ -99,14 +99,17 @@ func TestCockpitLiveSessionExtensionRealBinary(t *testing.T) {
 	if !ok {
 		t.Fatal("admitted session missing")
 	}
-	if first["startedAt"] != now.Add(-time.Minute).Format(time.RFC3339) || first["effortStatus"] != "reported" || first["speedMode"] != "priority" {
+	if _, ok := first["startedAt"]; ok {
+		t.Fatal("bounded tail observation falsely presented as a session start")
+	}
+	if first["observedSince"] != now.Add(-time.Minute).Format(time.RFC3339) || first["effortStatus"] != "reported" || first["speedMode"] != "priority" {
 		t.Fatalf("reported facts missing: %+v", first)
 	}
 	second, ok := got["2222222222222222"].(map[string]any)
 	if !ok {
 		t.Fatal("second session missing")
 	}
-	for _, key := range []string{"startedAt", "effortStatus", "speedMode"} {
+	for _, key := range []string{"startedAt", "observedSince", "effortStatus", "speedMode"} {
 		if _, ok := second[key]; ok {
 			t.Fatalf("unknown %s escaped: %+v", key, second)
 		}

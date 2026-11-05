@@ -625,7 +625,7 @@
       "type": "WireCockpitSession",
       "optional": [
         {
-          "field": "startedAt",
+          "field": "observedSince",
           "omission": true,
           "null": false,
           "wrongType": false,

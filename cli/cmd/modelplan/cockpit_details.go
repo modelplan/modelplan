@@ -223,8 +223,8 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		item := wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value}
 		if appserver.CockpitLiveSessionEnabled(ctx) {
 			if !session.StartedAt.IsZero() && !session.StartedAt.After(session.LastAt) && !session.StartedAt.After(now) {
-				started := session.StartedAt
-				item.StartedAt = &started
+				observed := session.StartedAt
+				item.ObservedSince = &observed
 			}
 			if effort != nil && session.EffortStatus == "reported" {
 				status := wire.CockpitEffortReported

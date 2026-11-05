@@ -471,7 +471,7 @@
             }
           ]
         },
-        "startedAt": {
+        "observedSince": {
           "anyOf": [
             {
               "format": "date-time",

@@ -1979,7 +1979,7 @@ public struct WireCockpitResetCount: Codable, Sendable {
 }
 
 public struct WireCockpitSession: Codable, Sendable {
-    public let `startedAt`: WireTimestamp?
+    public let `observedSince`: WireTimestamp?
     public let `effortStatus`: WireCockpitEffortStatus?
     public let `speedMode`: WireCockpitSpeedMode?
     public let `sessionRef`: String
@@ -1992,7 +1992,7 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `state`: String
     public let `rate`: Double?
     private enum CodingKeys: String, CodingKey {
-        case `startedAt`
+        case `observedSince`
         case `effortStatus`
         case `speedMode`
         case `sessionRef`
@@ -2005,8 +2005,8 @@ public struct WireCockpitSession: Codable, Sendable {
         case `state`
         case `rate`
     }
-    public init(`startedAt`: WireTimestamp? = nil, `effortStatus`: WireCockpitEffortStatus? = nil, `speedMode`: WireCockpitSpeedMode? = nil, `sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
-        self.`startedAt` = `startedAt`
+    public init(`observedSince`: WireTimestamp? = nil, `effortStatus`: WireCockpitEffortStatus? = nil, `speedMode`: WireCockpitSpeedMode? = nil, `sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
+        self.`observedSince` = `observedSince`
         self.`effortStatus` = `effortStatus`
         self.`speedMode` = `speedMode`
         self.`sessionRef` = `sessionRef`
@@ -2022,8 +2022,8 @@ public struct WireCockpitSession: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        if c.contains(.`startedAt`), try c.decodeNil(forKey: .`startedAt`) { throw WireDecodeError.invalidIdentity }
-        self.`startedAt` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`startedAt`)
+        if c.contains(.`observedSince`), try c.decodeNil(forKey: .`observedSince`) { throw WireDecodeError.invalidIdentity }
+        self.`observedSince` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`observedSince`)
         if c.contains(.`effortStatus`), try c.decodeNil(forKey: .`effortStatus`) { throw WireDecodeError.invalidIdentity }
         self.`effortStatus` = try c.decodeIfPresent(WireCockpitEffortStatus.self, forKey: .`effortStatus`)
         if c.contains(.`speedMode`), try c.decodeNil(forKey: .`speedMode`) { throw WireDecodeError.invalidIdentity }
@@ -2042,7 +2042,7 @@ public struct WireCockpitSession: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encodeIfPresent(`startedAt`, forKey: .`startedAt`)
+        try c.encodeIfPresent(`observedSince`, forKey: .`observedSince`)
         try c.encodeIfPresent(`effortStatus`, forKey: .`effortStatus`)
         try c.encodeIfPresent(`speedMode`, forKey: .`speedMode`)
         try c.encode(`sessionRef`, forKey: .`sessionRef`)

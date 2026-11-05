@@ -275,9 +275,10 @@ rechecks the provider-wide floor, backoff, budget, and current consent.
 
 `cockpitLiveSessionV1` is an additive initialize capability used together with
 `cockpitDetailsV1`. Only clients declaring both receive the optional
-`details.sessions[].startedAt`, `effortStatus`, and `speedMode` fields.
-`startedAt` is an admitted local observation of a session's start and is
-omitted when missing or later than the last observation. `effortStatus` is
+`details.sessions[].observedSince`, `effortStatus`, and `speedMode` fields.
+`observedSince` is the earliest activity in the bounded admitted local sample;
+the actual session may have started earlier. It is omitted when missing or
+later than the last observation. `effortStatus` is
 `reported` only when the supported effort value was observed; absent means
 unknown. `speedMode` is `fast` or `priority` only when explicitly reported;
 its absence is not evidence of standard mode. This is a bounded local
