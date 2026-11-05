@@ -266,7 +266,7 @@ public enum SettingsCatalogue {
                     // nil means that no history producer is connected; do not show a dead row.
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
-                    if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
+                    if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
                         d.subtitle.english, d.subtitle.chinese, pane.title.english, pane.title.chinese,
