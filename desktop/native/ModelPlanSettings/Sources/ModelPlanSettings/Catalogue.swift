@@ -380,7 +380,8 @@ public enum SettingsCatalogue {
             }
             return .text(lines.isEmpty ? "--" : lines.joined(separator: "\n"))
         case .refreshHistory:
-            guard let history = c.refreshHistory, !history.isEmpty else { return .text("--") }
+            guard let history = c.refreshHistory else { return .text("--") }
+            guard !history.isEmpty else { return .text(p.language == .english ? "No recent refreshes" : "暂无刷新记录") }
             func safe(_ value: String) -> String {
                 guard value.utf8.count <= 128, !value.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else { return "--" }
                 return value

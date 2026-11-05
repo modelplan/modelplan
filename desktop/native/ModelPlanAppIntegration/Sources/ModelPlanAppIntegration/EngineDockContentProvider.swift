@@ -237,10 +237,18 @@ public enum EngineDeadlineFacts {
             } else {
                 cardState = input.dataState == .fresh ? .ok : .error
             }
+            let grouped=Dictionary(grouping:account.windows,by: \.id)
+            let observations=grouped.compactMapValues { windows -> DockWindowObservation? in
+                guard windows.count == 1, let window=windows.first else { return nil }
+                return .init(sourceName:Self.sourceName(window.source,english:english),observedAt:date(window.observedAt))
+            }
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
-                nextStep: message.1.map { text($0.text) } ?? "",
+                nextStep: message.1.flatMap { step in
+                    let value=text(step.text).trimmingCharacters(in:.whitespacesAndNewlines)
+                    return value.isEmpty ? nil:value
+                } ?? (english ? "Open Settings to review this subscription.":"打开设置检查此订阅。"),
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,cardReadingState:cardState)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,windowObservations:observations,cardReadingState:cardState)
         }
         let status: String
         switch value.status {
@@ -334,6 +342,16 @@ public enum EngineDeadlineFacts {
         case .statusLine:return english ? "Tool status line":"工具状态栏"
         case .manual:return english ? "Manual reading":"手动读数"
         case .knownUnknown,.unknown:return english ? "Unknown source":"未知来源"
+        }
+    }
+    static func sourceName(_ source:RowsWindowSource?,english:Bool) -> String {
+        switch source {
+        case .some(.localHistory):return english ? "Local history":"本地历史"
+        case .some(.runtime):return english ? "Tool runtime":"工具运行时"
+        case .some(.savedLogin):return english ? "Saved sign-in":"已有登录"
+        case .some(.apiKey):return english ? "Configured key":"已配置密钥"
+        case .some(.other):return english ? "Other source":"其他来源"
+        case .none,.some(.unknown):return english ? "Unknown source":"未知来源"
         }
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {

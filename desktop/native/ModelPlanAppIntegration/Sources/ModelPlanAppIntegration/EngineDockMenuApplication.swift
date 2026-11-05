@@ -3,6 +3,7 @@ import AppKit
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanEngineClient
+import ModelPlanWire
 import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -34,6 +35,10 @@ import ModelPlanMenuVerification
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
     private var showFeedback: ShowQuotaWidgetOutcome?
+    private var refreshHistoryDelivery: EngineDeliveryContext?
+    private var refreshHistorySupported = false
+    private var refreshDiagnosticsTask: Task<Void, Never>?
+    private var refreshDiagnosticsToken: UUID?
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -108,6 +113,7 @@ import ModelPlanMenuVerification
             guard let self, !self.terminating else { return }
             if self.liveStatusMenu != nil { self.renderMenu() }
             self.console?.applySettings(value)
+            self.updateSettingsContext()
             self.dockHelp?.refresh()
         }
         let application=settings
@@ -146,7 +152,49 @@ import ModelPlanMenuVerification
             if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
         }
     }
+    // Query once per admitted connection, and again when Settings opens or a refresh finishes.
+    // Only accepted Store events supply UI data; request completion is not evidence.
+    private func requestRefreshDiagnostics(force: Bool = false) {
+        let snapshot = composition.store.snapshot
+        guard !terminating, case .ready(let ready) = snapshot.connection,
+              let delivery = snapshot.delivery, ready == delivery, composition.client.isCurrent(delivery) else {
+            refreshDiagnosticsTask?.cancel(); refreshDiagnosticsTask = nil; refreshDiagnosticsToken = nil
+            refreshHistoryDelivery = nil; refreshHistorySupported = false
+            return
+        }
+        let changed = refreshHistoryDelivery != delivery
+        if changed {
+            refreshDiagnosticsTask?.cancel(); refreshDiagnosticsTask = nil
+            refreshHistoryDelivery = delivery; refreshHistorySupported = false
+        }
+        guard (changed || force), refreshDiagnosticsTask == nil else { return }
+        let token = UUID(); refreshDiagnosticsToken = token
+        refreshDiagnosticsTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { if self.refreshDiagnosticsToken == token { self.refreshDiagnosticsTask = nil; self.refreshDiagnosticsToken = nil } }
+            let supported = await self.composition.client.supportsCapability("refreshDecisionsV1")
+            guard !Task.isCancelled, !self.terminating, self.refreshDiagnosticsToken == token,
+                  self.refreshHistoryDelivery == delivery, self.composition.store.snapshot.delivery == delivery,
+                  self.composition.client.isCurrent(delivery) else { return }
+            self.refreshHistorySupported = supported; self.updateSettingsContext()
+            guard supported else { return }
+            do { _ = try await self.composition.client.diagnostics(timeout: .seconds(5)) }
+            catch { NSLog("ModelPlan refresh diagnostics unavailable") }
+        }
+    }
+    private func admittedRefreshHistory(english: Bool) -> [SettingsRefreshAttempt]? {
+        guard refreshHistorySupported, refreshHistoryDelivery == composition.store.snapshot.delivery,
+              let decisions = composition.store.snapshot.diagnostics?.refreshDecisions else { return nil }
+        let outcomes: [String: (String, String)] = ["not_attempted": ("Not attempted", "未尝试"), "deferred": ("Deferred", "已延后"), "failed": ("Failed", "失败"), "succeeded": ("Succeeded", "成功")]
+        let reasons: [String: (String, String)] = ["startup": ("Startup", "启动"), "wake": ("Wake", "唤醒"), "due": ("Due", "已到刷新时间"), "not_granted": ("Permission not granted", "未授予权限"), "offline": ("Offline", "离线"), "read_only": ("Read only", "只读"), "budget": ("Budget", "预算限制"), "in_flight": ("In progress", "进行中"), "unavailable": ("Unavailable", "不可用"), "completed": ("Completed", "已完成")]
+        return decisions.filter { $0.scope.isKnown && $0.outcome.isKnown && $0.reason.isKnown }.suffix(20).compactMap { value in
+            guard let outcome = outcomes[value.outcome.rawValue], let reason = reasons[value.reason.rawValue] else { return nil }
+            return SettingsRefreshAttempt(relativeTime: english ? "\(value.agoSeconds)s ago" : "\(value.agoSeconds)秒前", scope: value.scope.rawValue,
+                outcome: english ? outcome.0 : outcome.1, reason: english ? reason.0 : reason.1)
+        }
+    }
     private func updateSettingsContext() {
+        requestRefreshDiagnostics()
         let ready: Bool
         if case .ready = composition.store.snapshot.connection { ready = true } else { ready = false }
         let admitted = composition.presentedContent.snapshot.presentationRows
@@ -154,15 +202,17 @@ import ModelPlanMenuVerification
             guard let row = admitted[member.id] else { return nil }
             return .init(name: .init(member.name(english: true), member.name(english: false)),
                          source: row.sourceName.isEmpty ? nil : .init(EngineDockContentProvider.sourceName(member.account.route, english: true), EngineDockContentProvider.sourceName(member.account.route, english: false)),
-                         lastRead: row.originalObservedAt, nextRefresh: nil)
+                         lastRead: row.originalObservedAt, nextRefresh: row.sourceName.isEmpty || !member.isStable ? nil : EngineResetTimestampContract.date(member.account.refreshNotBefore))
         }
-        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics else { return }
+        let history = admittedRefreshHistory(english: settings.editor.snapshot?.preferences.language != .chinese)
+        guard ready != lastAboutConnectionReady || readers != settings.editor.context.readerDiagnostics || history != settings.editor.context.refreshHistory else { return }
         lastAboutConnectionReady = ready
         // Preserve Dock-owned catalogue, display and placement facts when the
         // engine connection changes; only About's CLI readiness comes from here.
         var context = settings.editor.context
         context.about.cliState = contextSource.make(engineReady: ready).about.cliState
         context.readerDiagnostics = readers
+        context.refreshHistory = history
         settings.update(context: context)
     }
     private func activateMember(_ id: String) {
@@ -192,7 +242,7 @@ import ModelPlanMenuVerification
                       $0.account.subscriptionRef == member.account.subscriptionRef && $0.account.accountLocator == member.account.accountLocator
                   }),
                   adapter.admission(for: member, delivery: delivery, now: Date()) == .ready else { return }
-            do { try await adapter.request(member: member, delivery: delivery) }
+            do { try await adapter.request(member: member, delivery: delivery); self.requestRefreshDiagnostics(force: true) }
             catch {
                 guard !self.terminating, self.composition.client.isCurrent(delivery),
                       self.composition.presentedContent.snapshot.inputs.contains(where: { $0.id == id }) else { return }
@@ -206,7 +256,7 @@ import ModelPlanMenuVerification
         try await foundationStore.updateCore(value, expectedRevision: expectedRevision)
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
-    public func presentSettings() async { await settingsHost.present() }
+    public func presentSettings() async { requestRefreshDiagnostics(force:true);await settingsHost.present() }
     var cockpitAnchor: CGRect? {
         guard let button = status?.button, let window = button.window else { return nil }
         return window.convertToScreen(button.convert(button.bounds, to: nil))
@@ -578,7 +628,7 @@ import ModelPlanMenuVerification
     }
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
-        terminating = true; settings.editor.onHostRequest = nil
+        terminating = true; refreshDiagnosticsTask?.cancel(); refreshDiagnosticsToken = nil; settings.editor.onHostRequest = nil
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
