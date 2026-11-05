@@ -76,6 +76,10 @@ private actor V05SyntheticClient: EngineClient {
         defer { app.composition.dock.close() }
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         let dock = app.composition.dock, id = "aaaaaaaaaaaaaaaa"
+        XCTAssertNil(dock.lastAppearanceError, "The production Dock appearance must load")
+        XCTAssertTrue(dock.interactionBindingInstalled, "Normal-entry interaction must be installed")
+        XCTAssertTrue(dock.interactionEnvironment().active, "Normal-entry interaction must be active")
+        XCTAssertTrue(dock.dockView.interactionProjectionAvailable, "The production Dock view must be available")
         let placement = try XCTUnwrap(dock.edgePresentation?.placement), anchor = try XCTUnwrap(dock.dockView.interactionAnchor(id))
         pointer = CGPoint(x: placement.frame.minX + anchor.midX - dock.dockView.bounds.minX, y: placement.frame.maxY - anchor.midY + dock.dockView.bounds.minY)
         try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(id)
