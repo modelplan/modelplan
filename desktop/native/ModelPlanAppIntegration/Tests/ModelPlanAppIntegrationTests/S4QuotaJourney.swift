@@ -336,7 +336,7 @@ private actor S4RowsClient: EngineClient {
         guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:confirmationClock) else { throw Failure(description:"linked confirmation was not projected") }
         try require(notice.key.kind == .resetConfirmed && notice.shape == .solid,"linked confirmation must project the solid confirmed notice")
         for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
+        try require(deliveries.count == 1,"confirmation must not notify again for the same official reset event")
         try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
         let beforeExpiry=clock
         clock=confirmationExpiry.addingTimeInterval(-1)
