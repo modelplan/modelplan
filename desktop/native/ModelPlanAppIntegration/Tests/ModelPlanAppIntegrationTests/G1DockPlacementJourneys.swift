@@ -50,7 +50,6 @@ import ModelPlanDock
     }
 }
 
-#if G1_PLACEMENT_SEAMS
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
@@ -110,7 +109,7 @@ private actor G1DEngine: EngineClient {
 }
 @MainActor private final class G1DFixture {
     static let ids = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"]
-    let clock = G1DClock(), timer = G1DTimer()
+    let clock = G1DClock(), timer = G1DTimer(), placementTimer = G1DTimer()
     let root: URL, store: SettingsStore
     var app: EngineDockMenuApplication!
     var engine: G1DEngine!
@@ -160,7 +159,7 @@ private actor G1DEngine: EngineClient {
         let rows = try decode()
         app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEnabled,
             dockEnvironment: { [weak self] in guard let self else { return .init(displays: [], layouts: []) }; return .init(displays: self.displays, layouts: [], primaryDisplayID: "primary", pointer: self.pointer, presence: self.presence, cardFrame: self.cardFrame) },
-            deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed }, deadlineScheduling: timer,
+            deadlineNow: { [clock] in clock.wall }, deadlineElapsed: { [clock] in clock.elapsed }, deadlineScheduling: timer, placementScheduling: placementTimer,
             makeClient: { [weak self] _, store in let engine = G1DEngine(store: store, rows: rows); self?.engine = engine; return engine }, activateSettings: {})
         app.composition.setResetNotificationDelivery { [weak self] in self?.notificationRequests.append($0) }
         await app.prepare(); app.allowDockPresentation(); await app.composition.start(); tick(0.5)
@@ -183,7 +182,9 @@ private actor G1DEngine: EngineClient {
         if restarted { mutateFirst { a in var windows = a["windows"] as! [[String: Any]]; for i in windows.indices { windows[i]["observedAt"] = Self.stamp(clock.wall); windows[i]["resetsAt"] = Self.stamp(clock.wall.addingTimeInterval(7200)); windows[i]["validUntil"] = windows[i]["resetsAt"] }; a["windows"] = windows } }
         try await publish()
     }
-    func tick(_ seconds: Double) { clock.elapsed += seconds; clock.wall.addTimeInterval(seconds); timer.fireIfDue(clock.elapsed); host.refreshPresence(); host.interactionControllerForChecks?.refresh() }
+    func advanceClock(by seconds: Double) { clock.elapsed += seconds; clock.wall.addTimeInterval(seconds); timer.fireIfDue(clock.elapsed); placementTimer.fireIfDue(clock.elapsed); host.refreshPresence(); host.interactionControllerForChecks?.refresh() }
+    func movePointer(to point: CGPoint) { pointer = point; host.refreshPresence() }
+    func tick(_ seconds: Double) { advanceClock(by: seconds) }
     func hover(_ selectedID: String? = nil) throws {
         let id = selectedID ?? Self.ids[0]
         let placement = try XCTUnwrap(host.edgePresentation?.placement), rect = try XCTUnwrap(host.dockView.interactionAnchor(id))
@@ -200,10 +201,7 @@ private actor G1DEngine: EngineClient {
     func close() async { if let app { await app.composition.stop() }; try? FileManager.default.removeItem(at: root) }
 }
 
-#endif
-
 @MainActor extension G1DockPlacementJourneys {
-    #if G1_PLACEMENT_SEAMS
     private func placementFixture(autoHide: Bool = false, cockpit: Bool = false) async throws -> G1DFixture {
         let value = try G1DFixture()
         addTeardownBlock { @MainActor in await value.close() }
@@ -222,7 +220,35 @@ private actor G1DEngine: EngineClient {
         fixture.pointer = point; fixture.tick(0)
         XCTAssertEqual(fixture.host.interactionEnvironment().insideShared, expected, label)
     }
-    #endif
+
+    func testG1PlacementPointerObservationUsesInstalledController() async throws {
+        let f = try await placementFixture()
+        let target = CGPoint(x: 321, y: 432)
+        f.movePointer(to: target)
+        XCTAssertEqual(f.host.placementObservationForChecks?.pointer, target)
+        XCTAssertNil(f.host.nativePanel)
+    }
+    func testG1PlacementClockObservationUsesIndependentScheduler() async throws {
+        let f = try await placementFixture(autoHide: true)
+        let before = try XCTUnwrap(f.host.placementObservationForChecks?.elapsed)
+        f.timer.arm(at: before + 50) {}
+        f.host.refreshPresence()
+        XCTAssertEqual(f.timer.deadline, before + 50, "placement sampling must not cancel a data deadline")
+        XCTAssertNotNil(f.placementTimer.deadline, "the installed placement controller arms its own scheduler")
+        f.advanceClock(by: 0.25)
+        XCTAssertEqual(try XCTUnwrap(f.host.placementObservationForChecks?.elapsed), before + 0.25, accuracy: 0.0001)
+        XCTAssertEqual(f.host.samplingIntervalForChecks, 0.15, accuracy: 0.0001)
+    }
+    func testG1PlacementDisplayObservationTracksActualSample() async throws {
+        let f = try await placementFixture()
+        let extra = DockDisplayArea(id: "synthetic-second", frame: .init(x: -800, y: 0, width: 800, height: 900), visibleFrame: .init(x: -800, y: 0, width: 800, height: 900))
+        f.displays.append(extra); f.advanceClock(by: 0)
+        let observation = try XCTUnwrap(f.host.placementObservationForChecks)
+        XCTAssertEqual(observation.displays, f.displays.sorted { $0.id < $1.id })
+        XCTAssertEqual(observation.primaryDisplayID, "primary")
+        let frames = try XCTUnwrap(f.host.placementFramesForChecks), placement = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(frames.dock, placement.frame); XCTAssertEqual(frames.sliver, placement.sliverFrame); XCTAssertEqual(frames.wake, placement.wakeFrame)
+    }
 
     func testG1_DOCK_3_6_03_insideSlackForEachPaintedSurface() async throws {
         #if G1_PLACEMENT_SEAMS
@@ -253,7 +279,6 @@ private actor G1DEngine: EngineClient {
         #endif
     }
     func testG1_DOCK_3_6_04_cardCorridorAndHide() async throws {
-        #if G1_PLACEMENT_SEAMS
         let f = try await placementFixture(autoHide: true); try f.revealFromWake(); f.tick(0.301)
         try f.hover(); f.tick(0.25); XCTAssertFalse(f.host.card.isHidden)
         let place = try XCTUnwrap(f.host.edgePresentation?.placement)
@@ -265,32 +290,24 @@ private actor G1DEngine: EngineClient {
         f.pointer = .init(x: 600, y: 400); f.tick(0); f.tick(0.501)
         XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
         XCTAssertTrue(f.host.card.isHidden, "the actual hide decision closes the card")
-        #else
-        throw XCTSkip("DOCK-3.6-04 seam-needed: EngineRowsEntry.swift:dockEnvironment; StaticDockPreviewHost.swift:cardFrameForChecks")
-        #endif
     }
     func testG1_DOCK_3_6_05_dwellSettingsSamplingAndSharedSeam() async throws {
-        #if G1_PLACEMENT_SEAMS
         for milliseconds in [100, 150, 300] {
             let f = try await placementFixture(autoHide: true)
             _ = try await f.editor.commit(SettingsB21Edit.reveal(milliseconds))
             let p = try XCTUnwrap(f.host.edgePresentation?.placement)
-            f.pointer = .init(x: p.wakeFrame.midX, y: p.wakeFrame.midY); f.tick(0)
-            f.tick(Double(milliseconds) / 1000 - 0.001)
+            f.movePointer(to: .init(x: p.wakeFrame.midX, y: p.wakeFrame.midY))
+            f.advanceClock(by: Double(milliseconds) / 1000 - 0.001)
             XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
-            f.tick(0.002); XCTAssertEqual(f.host.edgePresentation?.state, .expanded)
+            f.advanceClock(by: 0.002); XCTAssertEqual(f.host.edgePresentation?.state, .expanded)
             XCTAssertEqual(f.host.samplingIntervalForChecks, 0.150, accuracy: 0.001)
         }
         let shared = try await placementFixture(autoHide: true)
         shared.displays.append(.init(id: "neighbour", frame: .init(x: 1440, y: 0, width: 1000, height: 900), visibleFrame: .init(x: 1440, y: 0, width: 1000, height: 900)))
-        shared.pointer = .init(x: 1440, y: 450); shared.tick(0); shared.tick(0.301)
+        shared.movePointer(to: .init(x: 1440, y: 450)); shared.advanceClock(by: 0.301)
         XCTAssertNotEqual(shared.host.edgePresentation?.state, .expanded, "a shared display seam cannot reveal")
-        #else
-        throw XCTSkip("DOCK-3.6-05 seam-needed: EngineRowsEntry.swift:dockEnvironment,deadlineElapsed,deadlineScheduling; StaticDockPreviewHost.swift:samplingIntervalForChecks")
-        #endif
     }
     func testG1_DOCK_3_6_06_continuousAbsenceAndReentry() async throws {
-        #if G1_PLACEMENT_SEAMS
         let f = try await placementFixture(autoHide: true); try f.revealFromWake(); f.tick(0.301)
         let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
         f.pointer = .init(x: 600, y: 400); f.tick(0); f.tick(0.499)
@@ -299,9 +316,6 @@ private actor G1DEngine: EngineClient {
         f.pointer = .init(x: 600, y: 400); f.tick(0); f.tick(0.499)
         XCTAssertEqual(f.host.edgePresentation?.state, .expanded, "re-entry starts a new absolute deadline")
         f.tick(0.002); XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
-        #else
-        throw XCTSkip("DOCK-3.6-06 seam-needed: EngineRowsEntry.swift:dockEnvironment,deadlineElapsed,deadlineScheduling")
-        #endif
     }
     func testG1_DOCK_3_6_07_cockpitCloseRestoresWithoutFlash() async throws {
         #if G1_PLACEMENT_SEAMS
@@ -337,14 +351,10 @@ private actor G1DEngine: EngineClient {
         #endif
     }
     func testG1_DOCK_3_6_09_arrivalGuard() async throws {
-        #if G1_PLACEMENT_SEAMS
         let f = try await placementFixture(autoHide: true); try f.revealFromWake()
         let action = DockInstrumentAction.subscription(G1DFixture.ids[0])
         f.tick(0.299); XCTAssertEqual(f.host.dockView.permitsAction?(action, .pointer), false)
         f.tick(0.002); XCTAssertEqual(f.host.dockView.permitsAction?(action, .pointer), true)
-        #else
-        throw XCTSkip("DOCK-3.6-09 seam-needed: EngineRowsEntry.swift:dockEnvironment,deadlineElapsed,deadlineScheduling")
-        #endif
     }
     func testG1_DOCK_3_6_10_protectionRecoveryAndNoPinnedCard() async throws {
         #if G1_PLACEMENT_SEAMS

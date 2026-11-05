@@ -51,6 +51,16 @@ public struct DockEdgePresentation:Equatable,Sendable {
         switch state{case .sliver:return placement?.sliverFrame;case .expanded:return placement?.frame;case .suppressed:return nil}
     }
 }
+#if DEBUG
+/// Read-only values captured from the actual controller sample, not resampled input.
+@_spi(DockResourceChecks) public struct DockEdgeObservationForChecks: Sendable {
+    public let pointer: CGPoint?
+    public let displays: [DockDisplayArea]
+    public let primaryDisplayID: String?
+    public let elapsed: TimeInterval
+    public let cardFrame: CGRect?
+}
+#endif
 @MainActor public final class DockEdgeController:DockBackgroundDragHandling {
     public private(set) var preference:DockEdgePreference
     public private(set) var presentation:DockEdgePresentation?
@@ -62,6 +72,10 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private let read:()->DockEdgeEnvironment,clock:()->TimeInterval,scheduler:any DockEdgeScheduling
     private let position: (DockPlacementRequest) throws -> DockEdgePlacement?
     private var visibility:DockVisibilityState
+    #if DEBUG
+    @_spi(DockResourceChecks) public private(set) var observationForChecks: DockEdgeObservationForChecks?
+    @_spi(DockResourceChecks) public var samplingIntervalForChecks: TimeInterval { visibility.policy.sampleInterval }
+    #endif
     private var running=false,sampling=false,timerGeneration:UInt=0
     private var geometry:[DockDisplayArea]=[],layouts:[DockEdgeLayout]=[]
     private var primaryID:String?
@@ -80,6 +94,9 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public func start(){guard !running else{return};running=true;refresh()}
     public func stop(){
         running=false;timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
+        #if DEBUG
+        observationForChecks = nil
+        #endif
         let hadMove=dragOrigin != nil;clearMove();visibility = .init(policy:visibility.policy)
         if hadMove{onClearRecordedLocks?(.drag)}
         guard !running,timerGeneration==token else{return}
@@ -111,6 +128,10 @@ public struct DockEdgePresentation:Equatable,Sendable {
         timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
         do{
             let env=environment(),now=clock();var input=env.presence
+            #if DEBUG
+            observationForChecks = .init(pointer: env.pointer, displays: env.displays,
+                                         primaryDisplayID: env.primaryDisplayID, elapsed: now, cardFrame: env.cardFrame)
+            #endif
             guard visibility.policy.sampleInterval>0 else{throw DockLogicError.invalidTime}
             let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
             var extraClear:DockRecordedLocks=[]

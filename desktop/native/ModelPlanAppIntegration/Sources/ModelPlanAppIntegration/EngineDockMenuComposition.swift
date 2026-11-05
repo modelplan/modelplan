@@ -78,6 +78,7 @@ public struct EngineMenuRefreshResult {
                 dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
                 deadlineNow: @escaping @MainActor () -> Date = { Date() },
                 deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
+                placementScheduling: (any DockEdgeScheduling)? = nil,
                 makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil) {
         let clock = EngineDockClock()
         clock.now = deadlineNow
@@ -97,7 +98,13 @@ public struct EngineMenuRefreshResult {
         let provider = EngineDockMenuProvider(store: store)
         self.provider = provider
         adapter = EngineDockContentProvider(source: provider)
-        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment, currentDate: { clock.now() })
+        // Keep placement and data-deadline schedulers independent.
+        let edgeScheduler: (any DockEdgeScheduling)?
+        if let placementScheduling { edgeScheduler = placementScheduling }
+        else if let deadlineElapsed { edgeScheduler = DockCommonModeScheduler(clock: deadlineElapsed) }
+        else { edgeScheduler = nil }
+        dock = ProductionDockFactory.community(createsNativePanels: createsNativePanels, nativeEnvironment: dockEnvironment,
+            elapsedClock: deadlineElapsed, edgeScheduling: edgeScheduler, currentDate: { clock.now() })
         adapter.bindDockMenuTracking(dock)
         _ = pairedProjection
         dock.onWillRetire = { [weak self] in

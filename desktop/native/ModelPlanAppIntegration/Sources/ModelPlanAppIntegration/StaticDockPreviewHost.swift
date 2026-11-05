@@ -145,6 +145,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private lazy var pointerSurface = makePointerSurface()
     var pointerInputView: PulsePanelPointerSurface { pointerSurface }
     var edgePresentation: DockEdgePresentation? { edge.presentation }
+    #if DEBUG
+    /// Exact values consumed by the installed controller's last sample.
+    @_spi(DockResourceChecks) public var placementObservationForChecks: DockEdgeObservationForChecks? { edge.observationForChecks }
+    @_spi(DockResourceChecks) public var samplingIntervalForChecks: TimeInterval { edge.samplingIntervalForChecks }
+    /// Registered geometry; callers must consult the current surface state for visibility.
+    @_spi(DockResourceChecks) public var placementFramesForChecks: (dock: CGRect, sliver: CGRect, wake: CGRect)? {
+        guard let p = edge.presentation?.placement else { return nil }
+        return (p.frame, p.sliverFrame, p.wakeFrame)
+    }
+    #endif
     var nativePanel: NSPanel? { panel }
     var nativeMovePreviewPanel: NSPanel? { outlinePanel }
     #if DEBUG
