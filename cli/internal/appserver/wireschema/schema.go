@@ -255,7 +255,11 @@ func (b *builder) schema(t reflect.Type, ref bool) any {
 			if name == "" {
 				name = field.Name
 			}
-			props[name] = b.schema(field.Type, true)
+			fieldType := field.Type
+			if field.Tag.Get("null") == "forbidden" && fieldType.Kind() == reflect.Pointer {
+				fieldType = fieldType.Elem()
+			}
+			props[name] = b.schema(fieldType, true)
 			for _, constraint := range strings.Split(field.Tag.Get("schema"), ",") {
 				key, value, ok := strings.Cut(constraint, "=")
 				if !ok {
