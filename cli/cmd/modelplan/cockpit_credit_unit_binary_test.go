@@ -113,6 +113,30 @@ func TestCockpitCreditUnitsRealBinary(t *testing.T) {
 		}
 	}
 	setUnit("credits")
+	snapshotPath := filepath.Join(observed, "codex-account.json")
+	staleRaw, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stale map[string]any
+	if err := json.Unmarshal(staleRaw, &stale); err != nil {
+		t.Fatal(err)
+	}
+	stale["observedAt"] = now.Add(-2 * time.Hour)
+	credit := stale["usageCredits"].(map[string]any)
+	credit["observedAt"] = now.Add(-2 * time.Hour)
+	staleRaw, err = json.Marshal(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snapshotPath, staleRaw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	staleCredits, _ := query([]string{"rows", "cockpit", "cockpitDetailsV1", "cockpitCreditUnitsV1"})
+	if staleCredits != nil {
+		t.Fatalf("stale credit observation escaped: %+v", staleCredits)
+	}
+	setUnit("credits")
 	if err := consent.Change(consent.Path(), func(s *consent.State) error {
 		record := s.Scopes[consent.ScopeCodexRuntimeUsage]
 		record.Allowed = false
