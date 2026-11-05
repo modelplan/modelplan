@@ -87,6 +87,125 @@ import XCTest
         var down = 0, drag = 0, up = 0
     }
 
+    func testD04PhysicalThreeDisplayStrongSnap() async throws { try await exerciseThreeDisplayCarry(mode: 1) }
+    func testD04PhysicalThreeDisplayAlwaysAttached() async throws { try await exerciseThreeDisplayCarry(mode: 2) }
+
+    private func exerciseThreeDisplayCarry(mode: Int) async throws {
+        _ = NSApplication.shared
+        let topology = DockDisplayTopology.system()
+        let a = try XCTUnwrap(topology.main)
+        let others = topology.displays.filter { $0.id != a.id && !$0.frame.intersects(a.frame) }.sorted {
+            $0.frame.midX == $1.frame.midX ? $0.frame.midY < $1.frame.midY : $0.frame.midX < $1.frame.midX
+        }
+        let b = try XCTUnwrap(others.first, "D-04 needs three real non-mirrored displays")
+        let c = try XCTUnwrap(others.dropFirst().first { !$0.frame.intersects(b.frame) },
+                              "D-04 needs a distinct third display")
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        UserDefaults.standard.register(defaults: [modeKey: mode])
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        guard UserDefaults.standard.integer(forKey: modeKey) == mode else {
+            return XCTFail("An explicit setting overrides the isolated test mode")
+        }
+
+        let (app, store, storedURL) = try await makeProfile(displayID: a.id, edge: .right, declaredQuotas: [72, 53, 38])
+        await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel as? PulseDockPanel)
+        let ready = try await wait(.seconds(5)) {
+            let values = Set(dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent))
+            return panel.isVisible && panel.occlusionState.contains(.visible) &&
+                dock.edgePresentation?.placement?.displayID == a.id && values == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("The real widget must begin on A/right with all synthetic readings") }
+        let savedBefore = await store.snapshot()
+        let bytes = try Data(contentsOf: storedURL)
+        let events = PointerEvents()
+        let previousInput = panel.receivedInput
+        panel.receivedInput = { type, _ in
+            switch type {
+            case .leftMouseDown: events.down += 1
+            case .leftMouseDragged: events.drag += 1
+            case .leftMouseUp: events.up += 1
+            default: break
+            }
+        }
+        defer { panel.receivedInput = previousInput }
+        let previousPlacement = dock.onPlacementObserved
+        var observedFrames = 0, invalidFrames = 0
+        dock.onPlacementObserved = { placement, recovering in
+            previousPlacement?(placement, recovering)
+            guard dock.edgePresentation?.moving == true, events.up == 0 else { return }
+            observedFrames += 1
+            guard let placement,
+                  let display = topology.display(placement.displayID), panel.isVisible,
+                  panel.level == .statusBar,
+                  display.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame) else {
+                invalidFrames += 1
+                return
+            }
+        }
+        defer { dock.onPlacementObserved = previousPlacement }
+
+        func holdAtCentre(_ display: DockDisplayArea, role: String) async throws -> Bool {
+            let centre = display.usableFrame.insetBy(dx: display.usableFrame.width * 0.35,
+                                                    dy: display.usableFrame.height * 0.35)
+            announce("D-04 mode \(mode)", "Hold the drag near \(role)'s centre")
+            return try await wait(.seconds(40)) {
+                events.down > 0 && events.drag > 0 && events.up == 0 &&
+                    centre.contains(NSEvent.mouseLocation) &&
+                    dock.edgePresentation?.moving == true &&
+                    dock.edgePresentation?.placement?.displayID == display.id &&
+                    panel.isVisible && panel.occlusionState.contains(.visible)
+            }
+        }
+
+        announce("D-04 mode \(mode)", "A is the primary display; B and C are the remaining displays ordered left to right")
+        announce("D-04 mode \(mode)", "Press the widget body on A/right and keep holding until the release prompt")
+        for (display, role) in [(b, "B"), (c, "C")] {
+            guard try await holdAtCentre(display, role: role) else {
+                return XCTFail("The held native widget did not reach \(role)'s centre")
+            }
+            let carried = try XCTUnwrap(dock.edgePresentation)
+            if mode == 1 {
+                XCTAssertNotEqual(carried.paintedFrame, carried.placement?.frame, "Strong snap floats at display centre")
+                XCTAssertTrue(panel.frame.contains(NSEvent.mouseLocation))
+            } else {
+                XCTAssertEqual(carried.paintedFrame, carried.placement?.frame, "Always-attached mode stays on a rail")
+            }
+            XCTAssertTrue(display.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame))
+            XCTAssertEqual(try Data(contentsOf: storedURL), bytes)
+        }
+        announce("D-04 mode \(mode)", "While still holding, move near C's bottom usable edge")
+        let bottom = try await wait(.seconds(40)) {
+            events.up == 0 && dock.edgePresentation?.moving == true &&
+                dock.edgePresentation?.placement?.displayID == c.id &&
+                dock.edgePresentation?.placement?.edge == .bottom &&
+                abs(panel.frame.minY - c.usableFrame.minY) <= 1 && panel.isVisible
+        }
+        guard bottom else { return XCTFail("The held native widget did not attach to C/bottom") }
+        XCTAssertGreaterThan(observedFrames, 0)
+        XCTAssertEqual(invalidFrames, 0, "Every observed placement must keep a visible, frontmost, contained panel")
+        XCTAssertEqual(try Data(contentsOf: storedURL), bytes)
+
+        announce("D-04 mode \(mode)", "Release on C/bottom and capture the settled widget")
+        let released = try await wait(.seconds(30)) {
+            events.up > 0 && dock.edgePresentation?.moving == false &&
+                app.settingsHost.application.editor.snapshot?.preferences.dockDisplayID == c.id
+        }
+        guard released else { return XCTFail("The real release did not save C") }
+        let saved = await store.snapshot()
+        XCTAssertEqual(saved.revision, savedBefore.revision + 1)
+        XCTAssertEqual(saved.preferences.dockEdge, .bottom)
+        XCTAssertEqual(panel.level, .floating)
+        XCTAssertEqual(panel.frame.minY, c.visibleFrame.minY, accuracy: 1)
+        try await Task.sleep(for: .seconds(5))
+    }
+
     func testD05PhysicalMixedScaleStrongSnap() async throws { try await exerciseMixedScale(mode: 1) }
     func testD05PhysicalMixedScaleAlwaysAttached() async throws { try await exerciseMixedScale(mode: 2) }
 
