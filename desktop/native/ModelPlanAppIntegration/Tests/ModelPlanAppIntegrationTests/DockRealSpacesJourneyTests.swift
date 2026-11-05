@@ -186,6 +186,86 @@ import XCTest
         var wakes = 0
     }
 
+    func testD10PhysicalHotPlugRestoresSavedDisplayWithoutWriting() async throws {
+        _ = NSApplication.shared
+        let topology = DockDisplayTopology.system()
+        let main = try XCTUnwrap(topology.main)
+        let savedDisplay = try XCTUnwrap(topology.displays.first {
+            $0.id != main.id && !$0.frame.intersects(main.frame)
+        }, "D-10 requires a real removable non-mirrored display")
+        let (app, store, storedURL) = try await makeProfile(displayID: savedDisplay.id, edge: .right,
+                                                          declaredQuotas: [72, 53, 38])
+        await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        func visibleOn(_ id: String) -> Bool {
+            guard let panel = dock.nativePanel else { return false }
+            return dock.edgePresentation?.placement?.displayID == id &&
+                panel.isVisible && panel.occlusionState.contains(.visible)
+        }
+        let ready = try await wait(.seconds(5)) {
+            guard case .ready = app.composition.store.snapshot.connection else { return false }
+            let values = Set(dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent))
+            return visibleOn(savedDisplay.id) && values == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("The real App must paint the synthetic readings visibly on its saved display") }
+        let original = try XCTUnwrap(dock.edgePresentation?.placement)
+        let initial = await store.snapshot()
+        let originalBytes = try Data(contentsOf: storedURL)
+        XCTAssertEqual(original.edge, .right)
+        XCTAssertEqual(original.alongFraction, initial.preferences.dockAlongFraction, accuracy: 0.01)
+        XCTAssertEqual(initial.preferences.dockDisplayID, savedDisplay.id)
+
+        let events = LifecycleEvents()
+        let notifications = NotificationCenter.default
+        let observer = notifications.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                                  object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { events.screens += 1 }
+        }
+        defer { notifications.removeObserver(observer) }
+
+        let beforeRemoval = events.screens
+        announce("D-10", "Capture the saved placement, then physically disconnect the secondary display showing the widget")
+        let removed = try await wait(.seconds(45)) {
+            events.screens > beforeRemoval && DockDisplayTopology.system().display(savedDisplay.id) == nil &&
+                visibleOn(main.id)
+        }
+        guard removed else { return XCTFail("The missing-display transition did not show the Dock on the primary display") }
+        let fallback = try XCTUnwrap(dock.edgePresentation?.placement)
+        let fallbackPanel = try XCTUnwrap(dock.nativePanel)
+        let currentMain = try XCTUnwrap(DockDisplayTopology.system().display(main.id))
+        XCTAssertEqual(fallback.edge, original.edge)
+        XCTAssertEqual(fallback.alongFraction, original.alongFraction, accuracy: 0.01)
+        XCTAssertEqual(fallbackPanel.frame.maxX, currentMain.visibleFrame.maxX, accuracy: 1)
+        let afterRemoval = await store.snapshot()
+        XCTAssertEqual(afterRemoval.revision, initial.revision)
+        XCTAssertEqual(afterRemoval.preferences.dockDisplayID, savedDisplay.id)
+        XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes)
+
+        let beforeReturn = events.screens
+        announce("D-10", "Capture the primary fallback, then reconnect the same display to its original port")
+        let reattached = try await wait(.seconds(60)) {
+            events.screens > beforeReturn && DockDisplayTopology.system().display(savedDisplay.id) != nil &&
+                visibleOn(savedDisplay.id)
+        }
+        guard reattached else { return XCTFail("The Dock did not return to its original display") }
+        let restored = try XCTUnwrap(dock.edgePresentation?.placement)
+        let restoredPanel = try XCTUnwrap(dock.nativePanel)
+        let currentSaved = try XCTUnwrap(DockDisplayTopology.system().display(savedDisplay.id))
+        XCTAssertEqual(restored.edge, original.edge)
+        XCTAssertEqual(restored.alongFraction, original.alongFraction, accuracy: 0.01)
+        XCTAssertEqual(restoredPanel.frame.maxX, currentSaved.visibleFrame.maxX, accuracy: 1)
+        let afterReturn = await store.snapshot()
+        XCTAssertEqual(afterReturn.revision, initial.revision)
+        XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes)
+        announce("D-10", "Capture the restored placement within five seconds")
+        try await Task.sleep(for: .seconds(5))
+        XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes)
+    }
+
     func testD12NativeFullscreenResolutionAndWakeKeepSavedPlace() async throws {
         _ = NSApplication.shared
         let main = try XCTUnwrap(DockDisplayTopology.system().main)
