@@ -100,7 +100,8 @@ import XCTest
         XCTAssertEqual(windows.count, 1)
         windows[0]["observedAt"] = old
         seed["windows"] = windows
-        try encode(seed).write(to: readingURL, options: .atomic)
+        let retainedBytes = try encode(seed)
+        try retainedBytes.write(to: readingURL, options: .atomic)
         let reservation = cache.appendingPathComponent("reader-attempts/codex.json")
         try encode(["schemaVersion": 1, "nextAttemptAt": old]).write(to: reservation, options: .atomic)
         try response(used: 30)
@@ -112,28 +113,51 @@ import XCTest
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-runtime-card",
-            allowedEnvironment: environment), settingsStore: settings, createsNativePanels: false,
-            bundleURL: root.appendingPathComponent("Synthetic.app"),
-            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
-            deadlineNow: { Date() }, deadlineElapsed: { elapsed }, deadlineScheduling: RuntimeCardTimer(), activateSettings: {})
-        addTeardownBlock { @MainActor in await app.composition.stop() }
-        await app.prepare()
-        app.allowDockPresentation()
-        let delivery = try await app.composition.client.start()
-        func account() -> RowsAccount? {
-            let row = app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }
-            return row?.accounts.first {
-                $0.subscriptionRef == ref && $0.route == .runtimeRpc
-            }
+        func makeApplication(offline: Bool = false) async -> EngineDockMenuApplication {
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-runtime-card",
+                allowedEnvironment: environment, offline: offline), settingsStore: settings, createsNativePanels: false,
+                bundleURL: root.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+                deadlineNow: { Date() }, deadlineElapsed: { elapsed }, deadlineScheduling: RuntimeCardTimer(), activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            return app
         }
+        func account(in app: EngineDockMenuApplication) -> RowsAccount? {
+            let row = app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }
+            return row?.accounts.first { $0.subscriptionRef == ref && $0.route == .runtimeRpc }
+        }
+        func blockedRefresh(in app: EngineDockMenuApplication, reason: WireRefreshDisabledReason) async throws {
+            let store = app.composition.store
+            var replies: [(WireRequestID, [WireRefreshScheduled])] = []
+            let observer = store.observeRefreshReplies { replies.append(($0, $1)) }
+            defer { store.removeRefreshReplyObserver(observer) }
+            let result = try await app.composition.client.refresh(.init(scopes: [scope]), timeout: .seconds(4))
+            let reply = try XCTUnwrap(replies.first { $0.0 == result.requestID }?.1.first)
+            XCTAssertEqual(reply.disabledReason, reason)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: requested.path),
+                           "Neither startup nor an explicit blocked request may call the runtime")
+        }
+
+        let offline = await makeApplication(offline: true)
+        _ = try await offline.composition.client.start()
+        _ = try await offline.composition.client.subscribeRows(timeout: .seconds(4))
+        XCTAssertEqual(account(in: offline)?.valueState, .retained)
+        XCTAssertEqual(account(in: offline)?.observedAt?.rawValue, old)
+        try await blockedRefresh(in: offline, reason: .offline)
+        XCTAssertEqual(try Data(contentsOf: readingURL), retainedBytes, "Offline may not replace the retained cache")
+        await offline.composition.stop()
+
+        let app = await makeApplication()
+        let delivery = try await app.composition.client.start()
         func wait(until predicate: () -> Bool) async throws {
             let deadline = ContinuousClock.now + .seconds(10)
             while !predicate() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         }
-        try await wait { account()?.valueState == .retained }
-        XCTAssertEqual(account()?.observedAt?.rawValue, old)
-        XCTAssertEqual(account()?.valueState, .retained)
+        try await wait { account(in: app)?.valueState == .retained }
+        XCTAssertEqual(account(in: app)?.observedAt?.rawValue, old)
+        XCTAssertEqual(account(in: app)?.valueState, .retained)
 
         let dock = app.composition.dock, view = dock.dockView
         func openCard() throws -> DockCardView {
@@ -152,7 +176,7 @@ import XCTest
             if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
             return root.subviews.lazy.compactMap { text(name, in: $0) }.first
         }
-        let window = try XCTUnwrap(account()?.windows.first)
+        let window = try XCTUnwrap(account(in: app)?.windows.first)
         XCTAssertEqual(window.remainingPercent, 20)
         XCTAssertEqual(window.observedAt?.rawValue, old)
         XCTAssertEqual(window.source, .runtime)
@@ -164,14 +188,14 @@ import XCTest
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         try FileManager.default.removeItem(at: hold)
-        try await wait { account()?.valueState == .current && account()?.windows.first?.remainingPercent == 70 }
+        try await wait { account(in: app)?.valueState == .current && account(in: app)?.windows.first?.remainingPercent == 70 }
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
-        let recovered = try XCTUnwrap(account()?.windows.first)
+        let recovered = try XCTUnwrap(account(in: app)?.windows.first)
         XCTAssertEqual(recovered.id, window.id)
         XCTAssertEqual(recovered.remainingPercent, 70)
         XCTAssertEqual(recovered.source, .runtime)
         XCTAssertNotEqual(recovered.observedAt?.rawValue, old)
-        XCTAssertEqual(account()?.valueState, .current)
+        XCTAssertEqual(account(in: app)?.valueState, .current)
         XCTAssertTrue(dock.detachedCardForChecks === card, "The still-hovered card must update without closing")
         // If continuity fails, a fresh hover still distinguishes projection from the close.
         let currentCard: DockCardView
@@ -187,9 +211,18 @@ import XCTest
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
         _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
-        XCTAssertNil(account(), "A revoked subscription must not reappear on the next real rows reply")
+        XCTAssertNil(account(in: app), "A revoked subscription must not reappear on the next real rows reply")
         XCTAssertNil(try dock.cardContent(for: ref))
+        await app.composition.stop()
 
+        try FileManager.default.removeItem(at: requested)
+        try Data().write(to: hold)
+        let denied = await makeApplication()
+        _ = try await denied.composition.client.start()
+        _ = try await denied.composition.client.subscribeRows(timeout: .seconds(4))
+        XCTAssertNil(account(in: denied), "A new launch must honor the persisted denial")
+        try await blockedRefresh(in: denied, reason: .readOnly)
+        XCTAssertNil(try denied.composition.dock.cardContent(for: ref))
     }
 }
 #endif
