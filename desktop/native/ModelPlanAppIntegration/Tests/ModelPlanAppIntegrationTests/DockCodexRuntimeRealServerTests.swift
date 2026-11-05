@@ -61,6 +61,11 @@ import XCTest
         return try decode(output.fileHandleForReading.readDataToEndOfFile())
     }
 
+    private func text(_ name: String, in root: NSView) -> String? {
+        if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
+        return root.subviews.lazy.compactMap { self.text(name, in: $0) }.first
+    }
+
     func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
         let (root, helper, environment) = try sandbox()
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
@@ -179,10 +184,6 @@ import XCTest
             return try XCTUnwrap(dock.detachedCardForChecks)
         }
         let card = try openCard()
-        func text(_ name: String, in root: NSView) -> String? {
-            if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
-            return root.subviews.lazy.compactMap { text(name, in: $0) }.first
-        }
         let window = try XCTUnwrap(account(in: app)?.windows.first)
         XCTAssertEqual(window.remainingPercent, 20)
         XCTAssertEqual(window.observedAt?.rawValue, old)
@@ -236,12 +237,13 @@ import XCTest
         // Establish tool presence without a usable runtime executable.
         _ = try script("codex", in: root, "#!/bin/sh\nexit 64\n")
         let scope = "codex.local_history"
+        let runtimeScope = "codex.runtime_usage"
         _ = try await command(["consent", "init", "--json"], helper: helper, environment: environment)
         let before = try await command(["consent", "--json"], helper: helper, environment: environment)
         _ = try await command(["consent", "grant", "--json"], helper: helper, environment: environment, input: [
             "requestId": UUID().uuidString.lowercased(), "expectStoreEpoch": try XCTUnwrap(before["storeEpoch"] as? String),
             "expectGeneration": try XCTUnwrap(before["generation"] as? Int),
-            "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int), "allow": [scope], "deny": [String]()
+            "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int), "allow": [scope], "deny": [runtimeScope]
         ])
         let now = Date(), iso = ISO8601DateFormatter()
         let day = iso.string(from: now).prefix(10).replacingOccurrences(of: "-", with: "/")
@@ -266,10 +268,14 @@ import XCTest
         XCTAssertEqual(directWindow["remainingPercent"] as? Double, 20)
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
         let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-local-card",
-            allowedEnvironment: environment), settingsStore: settings, createsNativePanels: false,
-            bundleURL: root.appendingPathComponent("Synthetic.app"),
-            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+            allowedEnvironment: environment, readOnly: true), settingsStore: settings, createsNativePanels: false,
+            bundleURL: root.appendingPathComponent("Synthetic.app"), dockEnvironment: {
+                var topology = normalEntryTestEnvironment()
+                topology.pointer = pointer
+                return topology
+            }, deadlineElapsed: { elapsed }, deadlineScheduling: RuntimeCardTimer(), activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
         app.allowDockPresentation()
@@ -287,11 +293,14 @@ import XCTest
         XCTAssertEqual(firstWindow.source, .localHistory)
         XCTAssertEqual(firstWindow.observedAt?.rawValue, iso.string(from: old))
 
+        func appendReading(used: Int, at observed: Date) throws {
+            let handle = try FileHandle(forWritingTo: log)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: line(used: used, at: observed))
+        }
         let fresh = Date()
-        let handle = try FileHandle(forWritingTo: log)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: line(used: 30, at: fresh))
-        try handle.close()
+        try appendReading(used: 30, at: fresh)
         func waitForFreshReading(timeout: Duration) async throws -> Bool {
             let end = ContinuousClock.now + timeout
             while localAccount()?.windows.first?.remainingPercent != 70 && ContinuousClock.now < end {
@@ -301,14 +310,7 @@ import XCTest
         }
         let deliveredOnAppend = try await waitForFreshReading(timeout: .seconds(6))
         XCTAssertTrue(deliveredOnAppend, "The existing subscription must receive the new local observation without a request")
-        if !deliveredOnAppend {
-            // Diagnostic control: an empty declared-quota file is already watched
-            // by the producer. It contributes no readings and sends no App request.
-            let declared = root.appendingPathComponent(".config/modelplan/local.json")
-            try encode(["schemaVersion": 1, "plans": [], "windows": []]).write(to: declared, options: .atomic)
-            let deliveredOnWatchedFile = try await waitForFreshReading(timeout: .seconds(4))
-            XCTAssertTrue(deliveredOnWatchedFile, "The same subscription must carry the new quota when the producer is notified")
-        }
+        guard deliveredOnAppend else { return }
         let current = try XCTUnwrap(localAccount())
         let currentWindow = try XCTUnwrap(current.windows.first)
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
@@ -318,9 +320,38 @@ import XCTest
         XCTAssertEqual(currentWindow.remainingPercent, 70)
         XCTAssertEqual(currentWindow.source, .localHistory)
         XCTAssertEqual(currentWindow.observedAt?.rawValue, iso.string(from: fresh))
-        let card = try XCTUnwrap(app.composition.dock.cardContent(for: "codex#local_log"))
-        XCTAssertTrue(card.rows.contains { $0.id == "quota:" + currentWindow.id && $0.value == "70%" })
-        XCTAssertTrue(card.sourceAndAge.contains("Local history"))
+        XCTAssertNil(current.subscriptionRef, "Local history must not be linked to a runtime account")
+        let dock = app.composition.dock, view = dock.dockView
+        let member = "codex#local_log"
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(member))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+                          y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(member)
+        elapsed += 0.251
+        try XCTUnwrap(dock.interactionControllerForChecks).refresh()
+        let card = try XCTUnwrap(dock.detachedCardForChecks)
+        XCTAssertEqual(text("row.quota:" + currentWindow.id + ".value", in: card), "70%")
+        XCTAssertTrue(text("source", in: card)?.contains("Local history · just now") == true)
+
+        // Commit the denial from the same synthetic profile while the read-only
+        // App stays subscribed. The consent event must withdraw the actual card.
+        _ = try await command(["consent", "grant", "--json"], helper: helper, environment: environment, input: [
+            "requestId": UUID().uuidString.lowercased(), "expectStoreEpoch": delivery.floor.storeEpoch,
+            "expectGeneration": delivery.floor.generation, "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int),
+            "allow": [String](), "deny": [scope]
+        ])
+        let withdrawal = ContinuousClock.now + .seconds(4)
+        while dock.detachedCardForChecks != nil && ContinuousClock.now < withdrawal {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(dock.detachedCardForChecks)
+        XCTAssertNil(text("row.quota:" + currentWindow.id + ".value", in: card))
+        try appendReading(used: 10, at: Date())
+        try await Task.sleep(for: .milliseconds(1_250))
+        XCTAssertNil(localAccount())
+        XCTAssertNil(try dock.cardContent(for: member))
+
     }
 
 }
