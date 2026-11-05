@@ -191,7 +191,7 @@ import AppKit
     }
     private func refreshEnabled() {
         let scopeIdle: Bool
-        if let scopeConsentEntry { if case .idle = scopeConsentEntry.controller.phase { scopeIdle = true } else { scopeIdle = false } }
+        if let scopeConsentEntry { if case .idle = scopeConsentEntry.controller.phase { scopeIdle = !scopeConsentEntry.controller.firstRunConsentPending } else { scopeIdle = false } }
         else { scopeIdle = true }
         let enabled = active && pageValid && !busy && !editor.isSaving && !editor.connections.isBusy && options != nil && !scopeUnavailable && scopeIdle
         loginButton.isEnabled = enabled

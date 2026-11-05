@@ -47,7 +47,10 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
     }
     /// Presentation policy only; no grant, persistence, inspection or assumed restore.
     public func beginFirstRunDraft() -> Bool {
-        guard case .idle=phase, firstRunPendingIDs == nil else { return false }
+        if firstRunPendingIDs != nil {
+            firstRunExplicitSelection = true; changed(); return true
+        }
+        guard case .idle=phase else { return false }
         firstRunExplicitSelection=true;selectedIDs=[];changed();return true
     }
     public func endFirstRunDraft() { firstRunExplicitSelection=false }
@@ -156,7 +159,7 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
                     if old.state != scope.state || old.keychain != scope.keychain || old.route != scope.route {
                         selectedIDs.remove(scope.scope)
                     }
-                } else if !firstRunExplicitSelection && scope.state == .unset && scope.route != .savedLoginApi && scope.route != .browserSession && scope.route != .knownUnknown && scope.route.isKnown && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
+                } else if !firstRunExplicitSelection && firstRunPendingIDs == nil && scope.state == .unset && scope.route != .savedLoginApi && scope.route != .browserSession && scope.route != .knownUnknown && scope.route.isKnown && scope.defaultCheck && scope.detected && !scope.retired && scope.disabledReason == nil {
                     selectedIDs.insert(scope.scope)
                 }
             }
