@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanSettings
+import ModelPlanEngineClient
 @testable import ModelPlanAppIntegration
 
 @MainActor final class TestSettingsSurface: SettingsWindowSurface {
@@ -124,6 +125,57 @@ import ModelPlanSettings
         _ = host.perform(try XCTUnwrap(item.action), with: item)
         await fulfillment(of: [menu], timeout: 2)
         XCTAssertEqual(builds, 1); XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntrySettingsMenuShortcutAndWidgetActionShareTheWindow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let surface = TestSettingsSurface()
+        var builds = 0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, makeSettingsSurface: { _ in builds += 1; return surface },
+            activateSettings: {})
+        await app.prepare()
+        app.allowDockPresentation()
+        defer { app.composition.dock.close() }
+
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        let settings = try XCTUnwrap(menu.items.first { $0.title == "Settings…" })
+        XCTAssertEqual(settings.keyEquivalent, ",")
+        XCTAssertEqual(settings.keyEquivalentModifierMask, .command)
+        let menuShown = expectation(description: "Settings menu opens the actual shared host")
+        surface.onShow = { menuShown.fulfill() }
+        _ = try XCTUnwrap(settings.target as? NSObject).perform(try XCTUnwrap(settings.action), with: settings)
+        await fulfillment(of: [menuShown], timeout: 2)
+
+        let widgetShown = expectation(description: "Widget Settings action opens the same host")
+        surface.onShow = { widgetShown.fulfill() }
+        let nodes = try XCTUnwrap(app.composition.dock.dockView.accessibilityChildren() as? [NSAccessibilityElement])
+        let entry = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.empty" })
+        XCTAssertTrue(entry.accessibilityPerformPress())
+        await fulfillment(of: [widgetShown], timeout: 2)
+        XCTAssertEqual(builds, 1)
+        XCTAssertEqual(surface.shown.count, 2)
+    }
+
+    func testNormalEntryDoesNotOfferUpdateActionWithAnAdvertisedCapability() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("no-updates-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        defer { app.composition.dock.close() }
+        var context = app.settingsHost.application.editor.context
+        context.capabilities.updateServiceAvailable = true
+        app.settingsHost.application.update(context: context)
+        await app.prepare()
+        XCTAssertTrue(app.settingsHost.application.editor.context.capabilities.updateServiceAvailable)
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        XCTAssertFalse(menu.items.contains { $0.title == "Check for updates" || $0.title == "检查更新" })
+        XCTAssertTrue(menu.items.contains { $0.title == "About" })
     }
 
     func testSuspendAlsoRetiresAnEntryStillQueuedOnTheMainActor() async throws {
