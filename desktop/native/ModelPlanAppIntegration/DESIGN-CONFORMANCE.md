@@ -46,3 +46,25 @@ evidence is pending M1 and owner review.
 Transient placement, missing-display fallback and active-display following
 publish observed placement. A successful release commits through one Settings
 placement writer.
+
+## Pulse carry test build
+
+The real panel carries the widget between displays. A successful release saves
+the chosen display, edge and relative position once. Escape restores the starting
+placement. A pointer in a gap keeps the last carried frame and a release in the
+gap cancels.
+
+The internal defaults key `ModelPlanDockDragMode` selects mode 1 (follow with
+edge hold and strong snap) or mode 2 (always attached). Mode 1 is the default.
+`ModelPlanDockSnapDistance` and `ModelPlanDockBreakDistance` are in points, with
+defaults of 96 and 120. The break distance is at least the snap distance.
+
+The failing-first commit is `a398985f`. The two detached controls cover carry,
+release, all three edges and their along-edge endpoints, held topology samples
+and cancel. The normal-entry reorder test verifies a saved order and an
+accessibility announcement in both modes. The native journeys compile under
+`MODELPLAN_DOCK_NATIVE_JOURNEY` and need an admitted GUI session.
+
+M1 evidence is pending for D-04 through D-11 and the reorder part of D-18.
+The destination scale and real input/Space/window observations are device
+checks. The existing lifecycle/privacy gate can withdraw the panel.

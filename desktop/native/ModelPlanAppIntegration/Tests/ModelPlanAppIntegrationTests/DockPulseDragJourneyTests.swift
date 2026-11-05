@@ -65,6 +65,17 @@ import ModelPlanSettings
         XCTAssertTrue(controller.isBackgroundPressed, "D-09")
         XCTAssertEqual(controller.presentation?.paintedFrame, before)
         topology.active.append(topology.c)
+        let held = CGPoint(x: before.midX - 70, y: before.midY)
+        controller.updateBackgroundMove(global: held)
+        XCTAssertEqual(controller.presentation?.paintedFrame?.maxX, topology.a.usableFrame.maxX)
+        let pulled = CGPoint(x: before.midX - 140, y: before.midY)
+        controller.updateBackgroundMove(global: pulled)
+        if mode == 1 {
+            XCTAssertTrue(controller.presentation?.paintedFrame?.contains(pulled) == true)
+            XCTAssertLessThan(try XCTUnwrap(controller.presentation?.paintedFrame?.maxX), topology.a.usableFrame.maxX)
+        } else {
+            XCTAssertEqual(controller.presentation?.paintedFrame?.maxX, topology.a.usableFrame.maxX)
+        }
         let middle = CGPoint(x: topology.b.frame.midX, y: 300)
         controller.updateBackgroundMove(global: middle)
         let carried = try XCTUnwrap(controller.presentation?.paintedFrame)
@@ -76,9 +87,12 @@ import ModelPlanSettings
         XCTAssertEqual(controller.presentation?.paintedFrame, before, "D-11")
         for screen in [topology.b, topology.c, topology.a] {
             let r = screen.usableFrame
-            for (edge, point) in [(DockEdge.left, CGPoint(x: r.minX + 1, y: r.midY)),
-                                  (.right, CGPoint(x: r.maxX - 1, y: r.midY)),
-                                  (.bottom, CGPoint(x: r.midX, y: r.minY + 1))] {
+            let vertical = [r.minY + 30, r.midY, r.maxY - 30]
+            let horizontal = [r.minX + 30, r.midX, r.maxX - 30]
+            let points = vertical.map { (DockEdge.left, CGPoint(x: r.minX + 1, y: $0)) } +
+                vertical.map { (DockEdge.right, CGPoint(x: r.maxX - 1, y: $0)) } +
+                horizontal.map { (DockEdge.bottom, CGPoint(x: $0, y: r.minY + 1)) }
+            for (edge, point) in points {
                 _ = try press()
                 let count = commits.count
                 controller.updateBackgroundMove(global: point)
@@ -88,6 +102,43 @@ import ModelPlanSettings
                 XCTAssertEqual(commits.last?.displayID, screen.id, "D-07")
                 XCTAssertEqual(commits.last?.edge, edge, "D-07")
             }
+        }
+    }
+    func testD08D10InnerStripWakeAndHotPlugPreserveIntentInBothModes() throws {
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            let topology = DragTopology()
+            topology.pointer = CGPoint(x: topology.b.frame.midX, y: 450)
+            var clock = 0.0
+            var commits = 0
+            let controller = DockEdgeController(preference: .init(displayID: "B", edge: .left, alongFraction: 0.6),
+                clock: { clock }, scheduler: DragSchedule(), read: {
+                    var sample = topology.read()
+                    sample.layouts = sample.displays.map {
+                        DockEdgeLayout(displayID: $0.id, edge: .left, expandedSize: CGSize(width: 80, height: 160),
+                                       sliverLength: 110, sliverThickness: 4, hoverRects: [])
+                    }
+                    return sample
+                }, position: PulseDockPositioning.resolve)
+            controller.onCommittedPlacement = { _ in commits += 1 }
+            controller.start()
+            XCTAssertEqual(controller.presentation?.state, .sliver)
+            let strip = try XCTUnwrap(controller.presentation?.paintedFrame)
+            topology.pointer = CGPoint(x: strip.midX, y: strip.midY)
+            controller.refresh()
+            clock += 1
+            controller.refresh()
+            XCTAssertEqual(controller.presentation?.state, .expanded)
+            topology.active = [topology.a, topology.c]
+            controller.refresh()
+            XCTAssertEqual(controller.presentation?.placement?.displayID, "A")
+            topology.active.append(topology.b)
+            controller.refresh()
+            XCTAssertEqual(controller.presentation?.placement?.displayID, "B")
+            XCTAssertEqual(controller.preference, .init(displayID: "B", edge: .left, alongFraction: 0.6))
+            XCTAssertEqual(commits, 0)
+            controller.stop()
         }
     }
     func testD04D06D07D09D11Mode1() throws { try exercise(1) }
@@ -118,6 +169,8 @@ import ModelPlanSettings
         let host = app.composition.dock
         let panel = try XCTUnwrap(host.nativePanel)
         XCTAssertTrue(panel.isVisible)
+        // Wait for the existing arrival guard before delivering the first press.
+        try await Task.sleep(for: .milliseconds(320))
         let start = panel.frame
         func event(_ type: NSEvent.EventType, point: CGPoint) throws {
             topology.pointer = point
@@ -173,6 +226,22 @@ import ModelPlanSettings
         XCTAssertEqual(panel.frame.minX, topology.b.visibleFrame.minX, accuracy: 1, "D-10 return")
         let after = await store.snapshot()
         XCTAssertEqual(after.revision, saved.revision)
+
+        topology.pointer = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        func waitForSurface(_ state: DockSurfaceState) async throws {
+            let deadline = ContinuousClock.now + .seconds(2)
+            while host.edgePresentation?.state != state && ContinuousClock.now < deadline {
+                host.refreshPresence()
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(host.edgePresentation?.state, state)
+            XCTAssertTrue(panel.isVisible)
+        }
+        try await waitForSurface(.sliver)
+        topology.pointer = CGPoint(x: panel.frame.midX, y: panel.frame.midY)
+        XCTAssertTrue(topology.b.frame.contains(topology.pointer))
+        try await waitForSurface(.expanded) // D-08, wake from the B/left inner strip.
     }
     func testD04ToD11NativeMode1() async throws { try await exercise(1) }
     func testD04ToD11NativeMode2() async throws { try await exercise(2) }

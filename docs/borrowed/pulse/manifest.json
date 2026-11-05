@@ -78,7 +78,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
-      "sha256": "d6a31c83013e5b626cf6daf7a2c17b41ad5453864cabd5e1cb01fa69e9f496bd",
+      "sha256": "1bb97d7967d32a83f05ff14d1bca64532a66e183d570afbc2252f93d5546c1a5",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
@@ -90,7 +90,8 @@
         "numeric moved/entered/exited observation forwards events unchanged; test builds enable mouse-moved receipt delivery",
         "finish first show by ordering front and applying the requested frame again after the host places and installs content",
         "expose PanelScreen identifier to the ModelPlan display topology sample",
-        "Recompute the ordered-in frame from the AppKit-granted rectangle"
+        "Recompute the ordered-in frame from the AppKit-granted rectangle",
+        "Drive drag with current display-space pointer; capture Escape only within this app during a held press"
       ]
     },
     {
@@ -124,7 +125,7 @@
     },
     {
       "path": "desktop/native/ModelPlanDock/Logic/PulseRestingPlacement.swift",
-      "sha256": "f8ae3788ec94c8d92bd8b965008cb78cc0fee10938222de33a0f6e9319f4d474",
+      "sha256": "090c634ad7ceec3887a43a44f05d20d5f3de893f162824c546ec82fe14ac9963",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
@@ -133,6 +134,20 @@
         "Choose saved display with main fallback and keep the saved edge",
         "Clamp the registered rail anchor inside the available rectangle and corner clearances",
         "Reapply placement to the frame granted on first order-in"
+      ]
+    },
+    {
+      "path": "desktop/native/ModelPlanDock/Logic/PulsePanelDrag.swift",
+      "sha256": "8cf83b4fa4e9b9379a197753fe46ae4ef304643be7e2a3c14a058b0cdbcbe20c",
+      "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
+      "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
+      "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
+      "implementationModified": true,
+      "adaptations": [
+        "Two internal carry modes, including Pulse pull-off hold with separate snap and break distances",
+        "Use destination display visible frame and three allowed edges",
+        "Preserve grab offset in follow mode; commit only at successful release",
+        "Omit liquid neck, spring, short handle and floating rest"
       ]
     }
   ]

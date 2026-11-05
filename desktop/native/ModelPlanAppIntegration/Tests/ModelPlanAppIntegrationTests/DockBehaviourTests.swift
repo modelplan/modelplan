@@ -151,7 +151,7 @@ import ModelPlanSettings
         fixture.host.render(snapshot: snapshot, diagnostics: diagnostics)
     }
 
-    func testRasterDefaultHostDragShowsPreviewAndRestoresAtBothScales() async throws {
+    func testRasterDefaultHostDragCarriesPanelAndRestoresAtBothScales() async throws {
         for scale in [1, 2] {
             let url = try temporaryURL(), folder = url.deletingLastPathComponent()
             let settings = try SettingsStore(url: url)
@@ -231,32 +231,22 @@ import ModelPlanSettings
             }
             try gesture(CGPoint(x: 20, y: 80), to: end, release: false)
             XCTAssertEqual(f.host.edgePresentation?.moving, true)
-            let destination = try XCTUnwrap(f.host.edgePresentation?.snapPreview)
-            XCTAssertEqual(destination.edge, .left); XCTAssertEqual(panel.frame, originalFrame)
-            let preview = try XCTUnwrap(f.host.nativeMovePreviewPanel, "raster drags need visible destination feedback")
-            XCTAssertTrue(preview.isVisible); XCTAssertTrue(preview.ignoresMouseEvents)
-            XCTAssertEqual(preview.frame, destination.frame)
-            XCTAssertNil(preview.contentView?.hitTest(CGPoint(x: 20, y: 80)))
-            XCTAssertGreaterThan(preview.alphaValue, 0)
-            let surface = try XCTUnwrap(preview.contentView as? DockSnapOutlineView)
-            XCTAssertNil(surface.path)
-            let material = try XCTUnwrap(surface.rasterImage)
-            XCTAssertEqual(material.width, 96 * scale); XCTAssertEqual(material.height, 160 * scale)
-            let pixels = try XCTUnwrap(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
-            surface.cacheDisplay(in: surface.bounds, to: pixels)
-            let painted = try XCTUnwrap(pixels.colorAt(x: pixels.pixelsWide / 2, y: pixels.pixelsHigh / 2))
-            XCTAssertGreaterThan(painted.alphaComponent, 0); XCTAssertLessThan(painted.alphaComponent, 1)
+            let destination = try XCTUnwrap(f.host.edgePresentation?.placement)
+            XCTAssertEqual(destination.edge, .left)
+            XCTAssertNotEqual(panel.frame, originalFrame)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertEqual(panel.frame, f.host.edgePresentation?.paintedFrame)
             f.inputs.presence.mouseButtonDown = false
             view.mouseUp(with: try f.event(.leftMouseUp, global: end))
             view.mouseUp(with: try f.event(.leftMouseUp, global: end))
             XCTAssertEqual(commits.count, 1, "a completed native gesture commits once")
-            XCTAssertFalse(preview.isVisible); XCTAssertNil(surface.rasterImage)
+            XCTAssertFalse(f.host.edgePresentation?.moving ?? true)
             let commit = try XCTUnwrap(commits.first)
             try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
             let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
             try f.reveal(); let savedFrame = panel.frame
             XCTAssertNotEqual(savedFrame, originalFrame)
-            f.host.close(); XCTAssertFalse(panel.isVisible); XCTAssertFalse(preview.isVisible)
+            f.host.close(); XCTAssertFalse(panel.isVisible)
             let restored = try BehaviourFixture(url: url, customAppearance: appearance)
             defer { restored.host.close() }
             await restored.start(); try restored.reveal()
@@ -383,14 +373,14 @@ import ModelPlanSettings
         f.host.commitDisplayPlacement = { commits.append(($0, $1, $2)) }
         let local = CGPoint(x: 25, y: 30)
         let start = panel.convertPoint(toScreen: f.host.dockView.convert(local, to: nil))
-        // Bottom space is reserved for the system Dock in this layout; drop on the exposed left edge.
+        // This gesture targets the left edge, beside the macOS Dock.
         let end = CGPoint(x: 1, y: 450)
         f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
         f.host.dockView.mouseDown(with: try f.event(.leftMouseDown, global: start))
         f.inputs.pointer = end
         f.host.dockView.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
         XCTAssertEqual(f.host.edgePresentation?.moving, true)
-        XCTAssertEqual(f.host.edgePresentation?.snapPreview?.edge, .left)
+        XCTAssertEqual(f.host.edgePresentation?.placement?.edge, .left)
         f.inputs.presence.mouseButtonDown = false
         f.host.dockView.mouseUp(with: try f.event(.leftMouseUp, global: end))
         XCTAssertEqual(commits.count, 1)

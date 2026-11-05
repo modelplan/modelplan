@@ -342,23 +342,7 @@ private actor LifecycleEngine: EngineClient {
         let topology = Topology()
         topology.primary = .init(id: "A", frame: CGRect(x: 0, y: 0, width: 1470, height: 956),
             visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 860))
-        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
-        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
-        var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
-        let account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
-        let ids = (0..<30).map { String(format: "%016x", $0 + 1) }
-        row["surfaces"] = ["dock", "menu"]
-        row["expiresAt"] = "2099-01-01T00:00:00Z"
-        row["accounts"] = ids.map { id in
-            var member = account
-            member["subscriptionRef"] = id
-            return member
-        }
-        projection["rows"] = [row]
-        json["projection"] = projection
-        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let (rows, ids) = try aliasedRows(memberCount: 30)
         let app = try await make(root, topology: topology, rows: rows, native: native) {
             $0.dockEdge = .right
             $0.size = .medium
@@ -383,6 +367,72 @@ private actor LifecycleEngine: EngineClient {
                 XCTAssertGreaterThanOrEqual(panel.frame.minY, available.minY + 23)
             }
         }
+    }
+
+    private func aliasedRows(memberCount: Int) throws -> (WireRowsSnapshot, [String]) {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        let account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+        let ids = (0..<memberCount).map { String(format: "%016x", $0 + 1) }
+        row["surfaces"] = ["dock", "menu"]
+        row["expiresAt"] = "2099-01-01T00:00:00Z"
+        row["accounts"] = ids.map { id in
+            var member = account
+            member["subscriptionRef"] = id
+            return member
+        }
+        projection["rows"] = [row]
+        json["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        return (rows, ids)
+    }
+
+    func testD18OptionArrowCommitsAndAnnouncesInBothModes() async throws {
+        try await checkKeyboardOrder(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD18NativeOptionArrowCommitsAndAnnouncesInBothModes() async throws {
+        _ = NSApplication.shared
+        try await checkKeyboardOrder(native: true)
+    }
+    #endif
+
+    private func checkKeyboardOrder(native: Bool) async throws {
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+        let (rows, ids) = try aliasedRows(memberCount: 2)
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            let root = profile()
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            if native { EngineRowsEntry.nativeJourneyProfile = root }
+            #endif
+            let app = try await make(root, topology: Topology(), rows: rows, native: native) { $0.motion = .on }
+            _ = start(app)
+            try await wait { !app.lifecyclePaused }
+            let view = app.composition.dock.dockView
+            let first = try XCTUnwrap(view.interactionTargets(edge: .right).first?.id)
+            let editor = app.settingsHost.application.editor
+            let before = await editor.store.snapshot()
+            view.keyboardTargetID = first
+            let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option,
+                timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+                characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 125))
+            view.keyDown(with: key)
+            try await waitForSettings(editor) { editor.snapshot?.preferences.subscriptions.order.last == first }
+            let after = await editor.store.snapshot()
+            XCTAssertEqual(Set(after.preferences.subscriptions.order), Set(ids))
+            XCTAssertEqual(after.revision, before.revision + 1)
+            XCTAssertTrue((view.accessibilityValue() as? String)?.contains("position 2 of 2") == true)
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        EngineRowsEntry.nativeJourneyProfile = nil
+        #endif
     }
 
     func testD03BottomUsesVisibleFloorAndStableTopologyDoesNotJump() async throws {

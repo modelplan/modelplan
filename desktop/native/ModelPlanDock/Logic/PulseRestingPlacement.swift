@@ -60,7 +60,7 @@ public enum PulseRestingPlacement {
         return CGRect(origin: origin, size: granted.size)
     }
 
-    static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,fraction:Double,point:CGPoint?,wake:CGFloat,intervals:[ClosedRange<CGFloat>])->DockEdgePlacement?{
+    private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,fraction:Double,point:CGPoint?,wake:CGFloat,intervals:[ClosedRange<CGFloat>])->DockEdgePlacement?{
         let u=d.usableFrame,vertical=p.edge != .bottom
         let along=vertical ? p.expandedSize.height:p.expandedSize.width
         let cross=vertical ? p.expandedSize.width:p.expandedSize.height

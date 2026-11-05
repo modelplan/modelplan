@@ -105,7 +105,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertTrue(handler.beginBackgroundMove(local: local, global: start))
         let destination = CGPoint(x: -999, y: 500); pointer = destination
         handler.updateBackgroundMove(global: destination)
-        let preview = try XCTUnwrap(host.edgePresentation?.snapPreview)
+        let preview = try XCTUnwrap(host.edgePresentation?.placement)
         XCTAssertTrue(handler.isBackgroundMoving); XCTAssertEqual(preview.displayID, "secondary"); XCTAssertEqual(preview.edge, .left)
         XCTAssertNotNil(host.dockView.registeredMoveOutlinePath)
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: destination)
@@ -155,7 +155,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertTrue(handler.beginBackgroundMove(local: local, global: start))
         let destination = CGPoint(x: 1199, y: 700); pointer = destination
         handler.updateBackgroundMove(global: destination)
-        let preview = try XCTUnwrap(host.edgePresentation?.snapPreview)
+        let preview = try XCTUnwrap(host.edgePresentation?.placement)
         XCTAssertEqual(preview.displayID, "primary"); XCTAssertEqual(preview.edge, .right)
         XCTAssertNotEqual(preview.alongFraction, initial.alongFraction)
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: destination)
