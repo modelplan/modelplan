@@ -180,12 +180,16 @@ import AppKit
             doneButton.title = page.done.value(language); helpButton.title = page.seeWhatsHere.value(language)
             helpButton.isHidden = !page.showsExploration
             if scopeUnavailable { errorMessage = SettingsWords.text("Reading permissions are busy. Close and try again.", "读取权限正在处理，请关闭后重试。", language) }
-            status.stringValue = errorMessage ?? ""; status.isHidden = errorMessage == nil
+            let pendingMessage = pendingConsent != nil && consentSubmitted
+                ? SettingsWords.text("Waiting for reading permissions to be confirmed.", "正在等待读取权限确认。", language) : nil
+            status.stringValue = errorMessage ?? pendingMessage ?? ""
+            status.textColor = errorMessage == nil ? .secondaryLabelColor : .systemRed
+            status.isHidden = errorMessage == nil && pendingMessage == nil
             let appearance: NSAppearance.Name? = p.theme == .system ? nil : p.theme == .night ? .darkAqua : .aqua
             if window?.appearance?.name != appearance { window?.appearance = appearance.flatMap(NSAppearance.init(named:)) }
         } catch {
             errorMessage = SettingsWords.text("First run is unavailable. Check the subscription data.", "首次运行页暂不可用，请检查订阅数据。", language)
-            status.stringValue = errorMessage!; status.isHidden = false
+            status.stringValue = errorMessage!; status.textColor = .systemRed; status.isHidden = false
         }
         refreshEnabled()
     }
@@ -247,7 +251,7 @@ import AppKit
             pendingConsent = nil; consentSubmitted = false
             saveFirstRun(pending.action, options: pending.options, revision: pending.revision, generation: pending.generation)
         } else {
-            errorMessage = SettingsWords.text("Waiting for reading permissions to be confirmed.", "正在等待读取权限确认。", editor.snapshot?.preferences.language ?? .chinese)
+            errorMessage = nil
             refresh()
         }
     }
