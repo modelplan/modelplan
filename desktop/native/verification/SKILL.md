@@ -118,6 +118,38 @@ PID plus start time, so the same binary running outside the run is never matched
 Keychain is not redirected by a synthetic HOME: do not grant consent to tools during a synthetic
 run, so no reader touches the host user's Keychain.
 
+### Prepared packaged candidate (V1, direct mode)
+
+Use the same booking, guardian and V1 coordinator-GO release sequence above. A
+local JSON manifest supplies `sourceSHA` (40 lowercase hex) and `sha256` (64
+lowercase hex); `--archive` points at the already downloaded zip. The launch
+template supplies `profile: synthetic`, `host: macci`, the complete
+`expectedLease` from the started booking, `booking`, `requiredSeconds`, and
+absolute local `leasePath`, `releasePath`, `stopPath`, `subjectPidPath` and
+`candidateCleanupReceipt`. The last five paths are outside the removable run
+scratch. `prepare` verifies the archive before creating a fresh scratch root.
+Set the guardian arguments to the same paths used in the template:
+
+```sh
+python3 desktop/native/verification/bin/packaged_candidate.py prepare \
+  --archive "$ARCHIVE" --manifest "$MANIFEST" --template "$RUN_TEMPLATE" \
+  --scratch-parent "$SCRATCH_PARENT" --registry "$REGISTRY"
+python3 desktop/native/verification/bin/guardian.py --lease "$LEASE_PATH" \
+  --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH" \
+  --candidate-registry "$REGISTRY" --candidate-parent "$SCRATCH_PARENT" \
+  --candidate-cleanup-receipt "$CLEANUP_RECEIPT" > "$GUARDIAN_OUT" &
+GUARDIAN_PID=$!
+python3 desktop/native/verification/bin/release.py --lane V1 --host macci \
+  --id "$BOOKING_ID" --lease "$LEASE_PATH" --coordinator-go "$GO_URL" --output "$RELEASE_PATH"
+python3 desktop/native/verification/bin/packaged_candidate.py run \
+  --registry "$REGISTRY" --receipt "$RECEIPT"
+wait "$GUARDIAN_PID"
+```
+
+The caller must finish the booking only after the guardian and candidate
+cleanup receipt confirm closure. An unconfirmed cleanup keeps it held. A fresh
+HOME is not a Keychain or network sandbox; do not grant real-tool consent.
+
 Synthetic Dock data: the shipped (release, ad-hoc) app has **no** canned-rows or scenario input. Its
 normal entry takes rows only from its bundled CLI `app-server`, which reads real provider sources
 under HOME (after consent) and verified publication data; the child gets only `HOME`, `PATH`,

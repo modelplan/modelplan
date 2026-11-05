@@ -353,6 +353,7 @@ def main(argv=None):
             import candidate_scratch
             lease = json.loads(args.lease.read_text())
             registry = json.loads(args.candidate_registry.read_text())
+            registry = registry.get('registry', registry)
             reservation = json.loads(args.subject_pid_file.read_text())
             receipt = candidate_scratch.cleanup_registered(
                 registry, reservation, parent=args.candidate_parent,

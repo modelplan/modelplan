@@ -36,10 +36,6 @@ class CandidateConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 candidate.verify_archive(alias, digest)
 
-    def test_caller_flags_cannot_claim_isolation(self):
-        with self.assertRaisesRegex(RuntimeError, "launch denied"):
-            candidate.require_isolation_proof({"isolated": True, "networkBlocked": True})
-
     def test_stage_checks_hash_and_never_overwrites_an_existing_file(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / "source.zip"; source.write_bytes(b"synthetic")

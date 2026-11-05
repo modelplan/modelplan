@@ -18,18 +18,6 @@ real-run queue.
 The ledger is a coordination record, not a security boundary; its writers are
 trusted lanes on the approved share.
 
-### gui-1 CI hook
-
-`bin/ci_booking.py` is the hook for a future gui-1 job. It uses lane `V1` and
-the same explicitly configured `MODELPLAN_BOOKING_LEDGER` as M1. Its `request`,
-`start`, `finish` and `withdraw` subcommands use the existing FIFO ledger;
-request and start are separate so a refused start retains a visible booking ID.
-`finish` requires the run's lease, guardian result, and a run-bound cleanup
-receipt. These are trusted-writer attestations, not independent proof that
-candidate isolation or scratch cleanup happened. The CI caller must not
-write the cleanup receipt until its own cleanup checks pass. The hook neither
-grants a release nor launches a candidate. No CI workflow is wired to it yet.
-
 ## One session, one unit, several scenarios
 
 From the checkout root (invoke all commands with `python3`), set

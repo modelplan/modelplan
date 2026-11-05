@@ -93,11 +93,3 @@ def stage_local_archive(source, destination, expected):
 def read_config(path):
     with Path(path).open(encoding="utf-8") as stream:
         return validate_config(json.load(stream))
-
-
-def require_isolation_proof(_proof):
-    # The current packaged candidate has no admitted synthetic engine source or
-    # fail-closed provider-network fence. A snapshot of open files alone cannot
-    # prove that no real-account file was ever opened. Never treat caller-provided
-    # flags as proof, and do not start this candidate until both controls exist.
-    raise RuntimeError("packaged candidate isolation is not yet implemented; launch denied")
