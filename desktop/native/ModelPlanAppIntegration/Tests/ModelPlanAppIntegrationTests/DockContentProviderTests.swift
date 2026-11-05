@@ -14,6 +14,25 @@ import ModelPlanSettings
 }
 @MainActor final class DockContentProviderTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func testCardStatusUsesPrototypeCopyInBothLanguages() {
+        let input = DockInstrumentInput(id: "example", name: "Example", windows: [])
+        let age = now.addingTimeInterval(-37 * 60)
+        let cases: [(DockCardReadingState, String, String)] = [
+            (.ok, "", ""),
+            (.loading, "读取中", "Reading"),
+            (.stale, "过期 · 37分钟前", "Stale · 37m ago"),
+            (.errorLastGood, "读取失败 · 保留 37分钟前的读数", "Read failed · showing 37m ago"),
+            (.error, "需要读取权限", "Reading permission required")
+        ]
+        for (state, zh, en) in cases {
+            let chinese = DockContentRow(input: input, reason: "需要读取权限", nextStep: "", originalObservedAt: age, sourceName: "本地历史", cardReadingState: state)
+            let english = DockContentRow(input: input, reason: "Reading permission required", nextStep: "", originalObservedAt: age, sourceName: "Local history", cardReadingState: state)
+            XCTAssertEqual(chinese.cardSourceAndAge(at: now, english: false), "本地历史 · 37分钟前")
+            XCTAssertEqual(english.cardSourceAndAge(at: now, english: true), "Local history · 37m ago")
+            XCTAssertEqual(chinese.cardBadge(at: now, english: false), zh)
+            XCTAssertEqual(english.cardBadge(at: now, english: true), en)
+        }
+    }
     private func legacy() throws -> JoinedSnapshot {
         let iso = ISO8601DateFormatter()
         let value: [String: Any] = ["schemaVersion": 1, "kind": "modelplan.personal-snapshot",
@@ -86,8 +105,8 @@ import ModelPlanSettings
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try legacy(), diagnostics: diagnostics)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertTrue(menu.contains("Engine-only summary"))
-        XCTAssertTrue(menu.contains("Engine-only reason"))
+        XCTAssertFalse(menu.contains("Engine-only summary"), "Reader diagnostics belong in Settings, not the Dock menu")
+        XCTAssertFalse(menu.contains("Engine-only reason"), "The Dock menu must contain only prototype actions")
         XCTAssertFalse(provider.contexts.isEmpty)
         XCTAssertEqual(provider.contexts.last?.now, now)
         XCTAssertEqual(provider.contexts.last?.snapshot?.personal.accounts?.count, 1)

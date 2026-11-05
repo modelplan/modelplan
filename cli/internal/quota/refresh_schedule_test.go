@@ -113,6 +113,7 @@ func TestCodexRepeatedRefreshUsesInLockSharedReservation(t *testing.T) {
 type scopeTransport func(*http.Request) (*http.Response, error)
 
 func (f scopeTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func (scopeTransport) ReaderSingleAttempt()                                {}
 func TestSelectedNativeRefreshKeepsOtherProviderAndMakesNoOtherCall(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()

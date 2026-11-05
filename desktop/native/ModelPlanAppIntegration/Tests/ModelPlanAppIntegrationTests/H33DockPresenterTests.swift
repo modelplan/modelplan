@@ -79,7 +79,7 @@ import ModelPlanSettings
         let value = try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]])
         host.render(snapshot: value, diagnostics: diagnostics)
         host.updateDockConsent(try consent(["codex"]))
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         func rowCount() -> Int {
             (host.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
                 .filter { $0.accessibilityIdentifier()?.hasPrefix("dock.subscription.") == true }.count
@@ -116,10 +116,10 @@ import ModelPlanSettings
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: try snapshot(connections: [["id": "codex", "authorization": ["status": "yes"], "quota": ["status": "no", "reason": "missing"]]]), diagnostics: diagnostics)
         _ = try await backend.detect()
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") })
         port.fail = true
         do { _ = try await backend.detect(); XCTFail("Expected readback failure") } catch {}
-        XCTAssertTrue(host.menu().items.contains { $0.title.contains("Waiting for first reading") }, "Failed inspection retains the last canonical presentation")
+        XCTAssertFalse(host.menu().items.contains { $0.title.contains("Waiting for first reading") }, "Reader status is not a menu item")
         XCTAssertNil(host.nativePanel)
     }
     func testNativeFailurePrecedesLegacyMissingOnActualHost() async throws {
@@ -142,9 +142,9 @@ import ModelPlanSettings
                 host.updateDockConsent(try consent(["claude"]))
                 host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
                 let menu = host.menu().items.map(\.title).joined(separator: " ")
-                XCTAssertTrue(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
+                XCTAssertFalse(menu.contains("Reading unavailable")); XCTAssertFalse(menu.contains("Waiting"))
                 XCTAssertFalse(menu.contains(failure))
-                host.dockView.onAction?(.subscription(row.input.id))
+                try presentSyntheticHostCard(host, id: row.input.id)
                 func labels(_ view: NSView) -> [NSTextField] { (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(labels) }
                 XCTAssertTrue(labels(host.card).contains { $0.stringValue.contains("Reading unavailable") })
                 XCTAssertFalse(labels(host.card).contains { $0.stringValue.contains(failure) })
@@ -280,12 +280,12 @@ import ModelPlanSettings
         let row = try XCTUnwrap(model(value, consent: try consent(["grok"])).inputs.first)
         XCTAssertEqual(row.name, "Grok"); XCTAssertTrue(row.alias?.contains("Grok") == true)
         let menu = host.menu().items.map(\.title).joined(separator: " ")
-        XCTAssertTrue(menu.contains("Grok")); XCTAssertTrue(menu.contains("Settings"))
-        host.dockView.onAction?(.subscription(row.id))
+        XCTAssertFalse(menu.contains("Grok")); XCTAssertTrue(menu.contains("设置"))
+        try presentSyntheticHostCard(host, id: row.id)
         func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
         let labels = views(host.card).compactMap { $0 as? NSTextField }
         XCTAssertTrue(labels.contains { $0.stringValue.contains("Reading unavailable") })
-        XCTAssertTrue(labels.contains { $0.stringValue.contains("Check reader status in Settings") })
+        XCTAssertFalse(labels.contains { $0.stringValue.contains("Check reader status in Settings") }, "The card uses one error badge; its Settings action remains available")
         let button = try XCTUnwrap(views(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
         XCTAssertEqual(button.title, "设置")
         _ = (try XCTUnwrap(button.target as? NSObject)).perform(try XCTUnwrap(button.action), with: button)
@@ -312,8 +312,8 @@ import ModelPlanSettings
             await app.reload()
             var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
             host.updateDockConsent(try consent([provider])); host.render(snapshot: value, diagnostics: diagnostics); host.setPresentationAllowed(true)
-            XCTAssertTrue(host.menu().items.contains { $0.title.contains(expected) })
-            host.dockView.onAction?(.subscription(row.input.id))
+            XCTAssertFalse(host.menu().items.contains { $0.title.contains(expected) })
+            try presentSyntheticHostCard(host, id: row.input.id)
             func text(_ v: NSView) -> [String] { (v as? NSTextField).map { [$0.stringValue] } ?? v.subviews.flatMap(text) }
             XCTAssertTrue(text(host.card).contains { $0.contains(expected) })
             XCTAssertNil(host.nativePanel)

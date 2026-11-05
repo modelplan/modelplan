@@ -15,7 +15,7 @@ import ModelPlanDock
             revision+=1;view.appearance=NSAppearance(named:theme)
             let row=DockCardRow(id:"window.5h",kind:.quota,label:chinese ? "5 小时":"5 hours",value:"50%",detail:chinese ? "剩余额度":"Remaining quota",remainingFraction:0.5,tone:.normal)
             let content=DockCardContent(subscriptionID:"b23",revision:revision,name:"Synthetic",rows:[row],enterLabel:chinese ? "打开":"Open",dismissLabel:chinese ? "关闭":"Close")
-            try view.apply(content,pinned:true)
+            try view.apply(content)
             guard let bar=descendants(view).first(where:{$0.accessibilityIdentifier()=="dock.card.quota.window.5h"}),
                   let button=descendants(view).first(where:{$0.accessibilityIdentifier()=="dock.card.enter"}) as? NSButton else{throw NativeFailure(message:"B23: missing card controls")}
             try require(bar.accessibilityLabel()==row.label,"quota label uses the localized source row")
@@ -29,7 +29,8 @@ import ModelPlanDock
         }
     }
     let target=firstButton?.target,selector=firstButton?.action,count=received.count
-    try view.apply(.init(subscriptionID:"b23",revision:revision+1,name:"Synthetic",rows:[]),pinned:false)
+    try view.apply(.init(subscriptionID:"b23",revision:revision+1,name:"Synthetic",rows:[]))
+    view.dispose()
     if let selector{_ = NSApplication.shared.sendAction(selector,to:target,from:firstButton)}
     try require(received.count==count,"removed controls cannot dispatch a retained old selector")
     try require(firstButton?.isEnabled==false,"removed button retired")
