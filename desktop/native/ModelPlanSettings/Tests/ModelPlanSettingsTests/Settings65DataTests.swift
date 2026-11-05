@@ -45,7 +45,7 @@ final class Settings65DataTests: XCTestCase {
         XCTAssertEqual(english.first { $0.key == .readerDetails }?.value, .text("Codex · Source: Local history · Last read: -- · Next refresh: --"))
         XCTAssertNil(english.first { $0.key == .refreshHistory }, "Absent producer must not surface a permanently empty row")
         context.refreshHistory = []
-        XCTAssertEqual(try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics").first { $0.key == .refreshHistory }?.value, .text("--"))
+        XCTAssertEqual(try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics").first { $0.key == .refreshHistory }?.value, .text("No recent refreshes"))
         preferences.language = .chinese
         let chinese = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
         XCTAssertEqual(chinese.first { $0.key == .readerDetails }?.value, .text("Codex · 来源：本地历史 · 上次读取：-- · 下次刷新：--"))
@@ -54,6 +54,18 @@ final class Settings65DataTests: XCTestCase {
         guard case .text(let history) = try XCTUnwrap(historyRows.first { $0.key == .refreshHistory }).value else { return XCTFail("Missing refresh history") }
         XCTAssertEqual(history.components(separatedBy: "\n").count, 20)
         XCTAssertFalse(history.contains("t0 ·")); XCTAssertTrue(history.contains("t24 · scope · deferred · --"))
+    }
+    func testEmptyRefreshHistoryHasExplicitCopyInBothLanguages() throws {
+        for structure in [SettingsStructure.task65, .provisional] {
+            for (language, expected) in [(SettingsLanguage.english, "No recent refreshes"), (.chinese, "暂无刷新记录")] {
+                var preferences = SettingsPreferences(); preferences.language = language
+                var context = SettingsPageContext(); context.configureV1NormalEntry()
+                XCTAssertFalse(try SettingsCatalogue.rows(preferences: preferences, context: context, structure: structure).contains { $0.key == .refreshHistory })
+                context.refreshHistory = []
+                let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context, structure: structure).first { $0.key == .refreshHistory })
+                XCTAssertEqual(row.value, .text(expected))
+            }
+        }
     }
     func testFiveDiagramInputsHaveFiniteAnimationAndStaticReducedMotionWithoutGeometryChanges() throws {
         var p = SettingsPreferences(); p.showPercentages = false; p.dockEdge = .bottom; p.subscriptionSettings["b"] = .init(percentagePin: .week)

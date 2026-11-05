@@ -10,11 +10,12 @@ import XCTest
 final class SettingsV1PolicyTests: XCTestCase {
     func testV1HidesRefreshHistoryUntilAProducerSuppliesIt() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
-        let missing = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
+        var preferences = SettingsPreferences(); preferences.language = .english
+        let missing = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
         XCTAssertFalse(missing.contains { $0.key == .refreshHistory })
         context.refreshHistory = []
-        let connected = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
-        XCTAssertEqual(connected.first { $0.key == .refreshHistory }?.value, .text("--"))
+        let connected = try SettingsCatalogue.rows(preferences: preferences, context: context, paneID: "diagnostics")
+        XCTAssertEqual(connected.first { $0.key == .refreshHistory }?.value, .text("No recent refreshes"))
     }
     func testV1HidesUnsupportedAppearanceAndIgnitionChoices() throws {
         var context = SettingsPageContext(); context.v1NormalEntry = true
