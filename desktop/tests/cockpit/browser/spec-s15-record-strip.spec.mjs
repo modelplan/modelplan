@@ -95,3 +95,16 @@ test('S16 selecting an unbound last-seen record cannot invent a session binding'
  expect(await page.evaluate(()=>({scope:document.querySelector('#cockpit').dataset.scope,actions:window.__cockpitMessages.filter(m=>m.type==='action').length}))).toEqual(before);
  await expect(page.locator('.ck-tape')).not.toContainText(/ended|stopped|已结束/);await expect(row.locator('.t-time')).not.toContainText(/ago|分钟前|小时前/);
 });
+
+test('C-25 help describes the distinct Today average and last-minute session rate in both languages',async({page})=>{
+ const {send,receive}=await open(page),map=page.locator('#help-map');
+ await expect(page.locator('.ck-tape .t-live').filter({hasText:'58'})).toHaveCount(1);await expect(page.locator('.eng-cols .qtokens').first()).toHaveText('12k');
+ for(const [locale,today,session] of [
+  ['en',/summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution/,/last 60 seconds; at least 5 eligible samples/],
+  ['zh-CN',/可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属/,/近 60 秒生成速度：合格请求至少 5 个样本/],
+ ]){
+  expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);await page.keyboard.down('Alt');await expect(map).toBeVisible();
+  await expect(map.locator('[data-target=".lb-t,.qrow-t,.qaverage"]')).toContainText(today);
+  await expect(map.locator('[data-target=".t-live"]')).toContainText(session);await page.keyboard.up('Alt');
+ }
+});
