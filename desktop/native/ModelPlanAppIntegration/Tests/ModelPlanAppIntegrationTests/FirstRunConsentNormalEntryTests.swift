@@ -81,6 +81,9 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertFalse(summary.isHiddenOrHasHiddenAncestor)
         for name in ["First plan", "Second plan", "Browser plan"] { XCTAssertTrue(summary.stringValue.contains(name)) }
         for id in ["one.local", "two.runtime", "three.browser"] { XCTAssertEqual(try button("scope.allow." + id).state, .off) }
+        XCTAssertTrue(try button("scope.selectAll").title.contains("standard readers"))
+        XCTAssertTrue(try button("scope.allow.one.local").title.contains("Local history"))
+        XCTAssertTrue(try button("scope.allow.three.browser").title.contains("Browser-session usage"))
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.allow.four.key" })
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.allow.five.status" })
         try button("scope.selectAll").performClick(nil)
