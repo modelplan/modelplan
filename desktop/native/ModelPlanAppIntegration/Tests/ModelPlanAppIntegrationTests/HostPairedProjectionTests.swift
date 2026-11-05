@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanCore
@@ -138,6 +139,53 @@ private actor EntrySyntheticClient: EngineClient {
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
         XCTAssertFalse(paired.isCurrent(second.sourceToken))
     }
+    func testD18NormalOptionArrowsSaveAndAnnounceWithEitherReduceMotionSource() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-keyboard-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 75, secondWeekly: 55)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+
+        let application = app.settingsHost.application
+        let dock = app.composition.dock, view = dock.dockView
+        let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
+        var environment = application.editor.environment
+        func optionArrow(keyCode: UInt16, order: [String], announcement: String) async throws {
+            XCTAssertTrue(dock.interactionEnvironment().reducedMotion)
+            let children = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+            let focused = try XCTUnwrap(children.first { $0.accessibilityIdentifier() == "dock.subscription." + first })
+            XCTAssertFalse(try XCTUnwrap(focused.accessibilityLabel()).isEmpty)
+            focused.setAccessibilityFocused(true)
+            let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.option],
+                timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
+                isARepeat: false, keyCode: keyCode))
+            view.keyDown(with: key)
+            let deadline = ContinuousClock.now + .seconds(2)
+            while (view.accessibilityValue() as? String)?.hasSuffix(announcement) != true && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let saved = await settings.snapshot()
+            XCTAssertEqual(saved.preferences.subscriptions.order, order)
+            XCTAssertTrue((view.accessibilityValue() as? String)?.hasSuffix(announcement) == true)
+        }
+
+        environment.reduceMotion = true
+        application.update(environment: environment)
+        XCTAssertEqual(application.editor.snapshot?.preferences.motion, .system)
+        try await optionArrow(keyCode: 125, order: [second, first], announcement: "position 2 of 2")
+
+        environment.reduceMotion = false
+        application.update(environment: environment)
+        _ = try await application.editor.commit(SettingsB20Edit.motion(.on))
+        try await optionArrow(keyCode: 126, order: [first, second], announcement: "position 1 of 2")
+    }
+
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
