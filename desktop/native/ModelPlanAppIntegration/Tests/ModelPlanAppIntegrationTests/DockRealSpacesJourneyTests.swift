@@ -13,7 +13,8 @@ import XCTest
         var count = 0
     }
 
-    private func makeProfile(displayID: String, edge: SettingsDockEdge, declaredQuotas: [Int] = []) async throws
+    private func makeProfile(displayID: String, edge: SettingsDockEdge, declaredQuotas: [Int] = [],
+                             autoHide: Bool = false, along: Double = 0.62) async throws
         -> (EngineDockMenuApplication, SettingsStore, URL) {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: executable.path))
@@ -54,11 +55,11 @@ import XCTest
         }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update {
-            $0.autoHide = false
+            $0.autoHide = autoHide
             $0.followActiveDisplay = false
             $0.dockDisplayID = displayID
             $0.dockEdge = edge
-            $0.dockAlongFraction = 0.62
+            $0.dockAlongFraction = along
         }
         EngineRowsEntry.nativeJourneyProfile = root
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-dock-device",
@@ -184,6 +185,89 @@ import XCTest
         var screens = 0
         var sleeps = 0
         var wakes = 0
+    }
+
+    func testD08PhysicalInnerStripWakesWithoutCrossingDisplays() async throws {
+        _ = NSApplication.shared
+        let topology = DockDisplayTopology.system()
+        var candidate: (display: DockDisplayArea, edge: SettingsDockEdge, along: Double)?
+        displays: for display in topology.displays {
+            for adjacent in topology.displays where adjacent.id != display.id {
+                let edge: SettingsDockEdge
+                if abs(display.frame.maxX - adjacent.frame.minX) < 0.5 &&
+                    abs(display.usableFrame.maxX - display.frame.maxX) < 0.5 {
+                    edge = .right
+                } else if abs(display.frame.minX - adjacent.frame.maxX) < 0.5 &&
+                    abs(display.usableFrame.minX - display.frame.minX) < 0.5 {
+                    edge = .left
+                } else { continue }
+                let lower = max(display.usableFrame.minY, adjacent.frame.minY)
+                let upper = min(display.usableFrame.maxY, adjacent.frame.maxY)
+                guard upper - lower >= 350 else { continue }
+                let along = Double(((lower + upper) / 2 - display.usableFrame.minY) / display.usableFrame.height)
+                candidate = (display, edge, along)
+                break displays
+            }
+        }
+        let target = try XCTUnwrap(candidate, "D-08 needs two side-by-side displays with a usable shared edge")
+        let (app, store, storedURL) = try await makeProfile(displayID: target.display.id, edge: target.edge,
+            declaredQuotas: [72, 53, 38], autoHide: true, along: target.along)
+        await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        func state(_ expected: DockSurfaceState) -> Bool {
+            guard let panel = dock.nativePanel else { return false }
+            return dock.edgePresentation?.state == expected && panel.isVisible && panel.occlusionState.contains(.visible)
+        }
+
+        announce("D-08", "Place the pointer near the centre of the display showing the collapsed widget")
+        let ready = try await wait(.seconds(30)) {
+            guard case .ready = app.composition.store.snapshot.connection else { return false }
+            return target.display.frame.contains(NSEvent.mouseLocation) && state(.sliver)
+        }
+        guard ready else { return XCTFail("The real App must show the inner strip with the pointer on its own display") }
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let panel = try XCTUnwrap(dock.nativePanel)
+        XCTAssertTrue(panel.contentView is DockSliverView)
+        XCTAssertEqual(placement.displayID, target.display.id)
+        XCTAssertEqual(placement.edge, target.edge == .left ? .left : .right)
+        XCTAssertEqual(panel.frame.minX, placement.sliverFrame.minX, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxX, placement.sliverFrame.maxX, accuracy: 1)
+        let wake = placement.wakeFrame.insetBy(dx: 2, dy: 6)
+        XCTAssertFalse(wake.isEmpty)
+        XCTAssertTrue(target.display.frame.contains(wake))
+        XCTAssertFalse(wake.contains(NSEvent.mouseLocation))
+        let before = await store.snapshot()
+        let bytes = try Data(contentsOf: storedURL)
+
+        var leftSource = false
+        announce("D-08", "Move toward the inner strip and hold just inside the same display, without crossing the seam")
+        let expanded = try await wait(.seconds(30)) {
+            let point = NSEvent.mouseLocation
+            leftSource = leftSource || !target.display.frame.contains(point)
+            return state(.expanded) && wake.contains(point)
+        }
+        guard expanded else { return XCTFail("The native inner strip did not reveal with the pointer on its own display") }
+        XCTAssertFalse(leftSource, "Pointer samples must stay on the originating display")
+        XCTAssertEqual(dock.edgePresentation?.placement?.displayID, target.display.id)
+        try await Task.sleep(for: .milliseconds(550))
+        XCTAssertTrue(state(.expanded), "The inner wake band counts as inside the open widget")
+        XCTAssertTrue(wake.contains(NSEvent.mouseLocation))
+
+        announce("D-08", "Move back toward the centre of the same display and capture the restored strip")
+        let collapsed = try await wait(.seconds(30)) {
+            target.display.frame.contains(NSEvent.mouseLocation) &&
+                !placement.wakeFrame.contains(NSEvent.mouseLocation) && state(.sliver)
+        }
+        XCTAssertTrue(collapsed)
+        XCTAssertEqual(dock.edgePresentation?.placement, placement)
+        let after = await store.snapshot()
+        XCTAssertEqual(after.revision, before.revision)
+        XCTAssertEqual(try Data(contentsOf: storedURL), bytes)
+        try await Task.sleep(for: .seconds(5))
     }
 
     func testD10PhysicalHotPlugRestoresSavedDisplayWithoutWriting() async throws {
