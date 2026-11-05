@@ -239,3 +239,19 @@ class PackageNeutralHookTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class SmokeBuildFlagTests(unittest.TestCase):
+    def test_optional_smoke_flags_in_release_and_debug(self):
+        for debug in (False, True):
+            for enabled in (False, True):
+                with self.subTest(debug=debug, enabled=enabled), tempfile.TemporaryDirectory() as root:
+                    fixture = PackageNeutralFixture(Path(root))
+                    result = fixture.run(arguments=('--e2e-journey',) if debug else (),
+                                         environment={'MODELPLAN_NORMAL_ENTRY_SMOKE_BUILD': '1' if enabled else None})
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    builds = [c for c in fixture.commands() if c['command'] == 'swift']
+                    self.assertTrue(builds)
+                    for build in builds:
+                        args = build['args']
+                        self.assertEqual('-DMODELPLAN_NORMAL_ENTRY_SMOKE' in args, enabled)
+                        self.assertEqual('-DMODELPLAN_E2E_JOURNEY' in args, debug)

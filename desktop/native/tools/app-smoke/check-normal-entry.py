@@ -24,6 +24,7 @@ def run_process(command, environment, *, timeout=60):
     deadline = time.monotonic() + timeout
     markers = [b'MODELPLAN_SMOKE_READY', b'MODELPLAN_SMOKE_ROWS']
     buffer = b''
+    completed = False
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
@@ -52,11 +53,16 @@ def run_process(command, environment, *, timeout=60):
             raise RuntimeError('normal entry did not terminate cleanly') from None
         if result:
             raise RuntimeError(f'normal entry exited with status {result}')
+        completed = True
     except (BrokenPipeError, OSError) as error:
         raise RuntimeError('normal entry could not receive quit request') from error
     finally:
+        if not completed:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
             process.wait()
         process.stdin.close(); process.stdout.close()
 

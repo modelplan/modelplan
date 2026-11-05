@@ -3,6 +3,10 @@
 import importlib.util
 from pathlib import Path
 import sys
+import os
+import subprocess
+import tempfile
+import time
 import unittest
 
 spec = importlib.util.spec_from_file_location('normal_smoke', Path(__file__).with_name('check-normal-entry.py'))
@@ -34,3 +38,22 @@ class NormalSmokeTests(unittest.TestCase):
         self.assertEqual(env['CFFIXED_USER_HOME'], '/synthetic/home')
         self.assertEqual(env['MODELPLAN_NORMAL_ENTRY_SMOKE'], '1')
         self.assertNotIn('GH_TOKEN', env)
+
+    def test_exited_parent_does_not_leave_owned_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / 'child.pid'
+            parent = ("import os,subprocess,sys; "
+                      "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'], "
+                      "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+                      "open(sys.argv[1],'w').write(str(child.pid)); os._exit(3)")
+            with self.assertRaises(RuntimeError):
+                smoke.run_process([sys.executable, '-u', '-c', parent, str(marker)], {}, timeout=5)
+            pid = int(marker.read_text())
+            for _ in range(50):
+                state = subprocess.run(['/bin/ps', '-p', str(pid), '-o', 'stat='],
+                                       capture_output=True, text=True).stdout.strip()
+                if not state or state.startswith('Z'):
+                    break
+                time.sleep(0.02)
+            else:
+                self.fail('owned child survived failed parent cleanup')

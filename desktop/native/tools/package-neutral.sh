@@ -38,20 +38,20 @@ export CLANG_MODULE_CACHE_PATH="$output_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$output_dir/module-cache"
 # CI smoke instrumentation observes the production entry without selecting the legacy probe.
 # Normal packages do not compile this test-only observer.
-smoke_flags=()
+set --
 if [ "${MODELPLAN_NORMAL_ENTRY_SMOKE_BUILD:-}" = 1 ]; then
-    smoke_flags=(-Xswiftc -DMODELPLAN_NORMAL_ENTRY_SMOKE)
+    set -- -Xswiftc -DMODELPLAN_NORMAL_ENTRY_SMOKE
 fi
 for architecture in arm64 x86_64; do
     if [ "$configuration" = debug ]; then
         swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
             --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration debug \
             --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp \
-            -Xswiftc -DMODELPLAN_E2E_JOURNEY "${smoke_flags[@]}"
+            -Xswiftc -DMODELPLAN_E2E_JOURNEY "$@"
     else
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
-        --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp "${smoke_flags[@]}"
+        --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp "$@"
     fi
     archive_arch=$architecture
     if [ "$architecture" = x86_64 ]; then archive_arch=amd64; fi
