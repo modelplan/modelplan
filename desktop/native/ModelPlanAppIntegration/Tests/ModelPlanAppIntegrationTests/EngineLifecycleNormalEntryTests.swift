@@ -202,6 +202,18 @@ private actor LifecycleEngine: EngineClient {
 
 /// Normal entry with detached native views. The admitted M1 run covers actual windows and displays.
 @MainActor final class DockPulsePlacementNormalEntryTests: XCTestCase {
+    private final class RowsReplyProbe: EngineStoreEventSink {
+        private(set) var count = 0
+        func clearPrivateViews(_ invalidation: EngineInvalidation) {}
+        func apply(_ snapshot: EngineStoreSnapshot) {}
+        func acceptedEvent(_ event: EngineClientEvent) {
+            switch event {
+            case .rowsChanged, .response(_, .rows): count += 1
+            default: break
+            }
+        }
+    }
+
     private final class Topology {
         var primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
             visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875), backingScale: 2)
@@ -209,11 +221,14 @@ private actor LifecycleEngine: EngineClient {
             visibleFrame: CGRect(x: 1512, y: -300, width: 2560, height: 1415))
         var joined = false
         var fullscreen = false
+        var cockpitClosed = true
+        var pointer = CGPoint(x: 750, y: 450)
         func read() -> DockEdgeEnvironment {
             var presence = DockPresence()
             presence.allowedOverFullscreen = !fullscreen
+            presence.cockpitClosed = cockpitClosed
             return .init(displays: joined ? [primary, neighbour] : [primary], layouts: [],
-                         primaryDisplayID: primary.id, pointer: CGPoint(x: 750, y: 450), presence: presence)
+                         primaryDisplayID: primary.id, pointer: pointer, presence: presence)
         }
     }
 
@@ -264,10 +279,14 @@ private actor LifecycleEngine: EngineClient {
     func testD01FreshProfileShowsEmptyStationBeforeRows() async throws {
         let topology = Topology()
         let app = try await make(profile(), topology: topology)
+        let replies = RowsReplyProbe()
+        let observation = app.composition.store.attach(replies)
+        defer { app.composition.store.detach(observation) }
         let launched = ContinuousClock.now
         _ = start(app)
         try await wait { app.composition.dock.edgePresentation?.state == .expanded }
         XCTAssertLessThan(ContinuousClock.now - launched, .seconds(2))
+        XCTAssertEqual(replies.count, 0)
         let place = try expanded(app)
         XCTAssertEqual(place.displayID, "A")
         XCTAssertEqual(place.edge, .right)
@@ -349,6 +368,8 @@ private actor LifecycleEngine: EngineClient {
         initial.composition.dock.close()
         let app = try await make(root, topology: topology)
         _ = start(app)
+        let editor = app.settingsHost.application.editor
+        XCTAssertEqual(editor.snapshot?.preferences.showDock, false)
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         func show(_ application: EngineDockMenuApplication) throws {
             try select("Show Quota Widget", in: XCTUnwrap(application.liveStatusMenu))
@@ -365,6 +386,16 @@ private actor LifecycleEngine: EngineClient {
         try show(app)
         try await wait { highlight(app) != nil && highlight(app) !== first }
         XCTAssertEqual(try expanded(app).frame, saved)
+        for shown in [false, true] {
+            _ = try await editor.commit(SettingsB21Edit.showDock(shown))
+            let snapshot = await editor.store.snapshot()
+            XCTAssertEqual(snapshot.preferences.showDock, shown)
+            let rows = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: "dock")
+            XCTAssertEqual(rows.first { $0.key == .showDock }?.value, .toggle(shown))
+            XCTAssertEqual(app.composition.dock.edgePresentation?.paintedFrame != nil, shown)
+            let menu = try XCTUnwrap(app.liveStatusMenu)
+            XCTAssertEqual(menu.items.first { $0.title == "Show Quota Widget" }?.isEnabled, true)
+        }
 
         let strip = try await make(profile(), topology: topology) { $0.autoHide = true; $0.motion = .on }
         _ = start(strip)
@@ -376,5 +407,71 @@ private actor LifecycleEngine: EngineClient {
         try await wait({ strip.composition.dock.edgePresentation?.state == .sliver }, seconds: 4)
         XCTAssertEqual(strip.settingsHost.application.editor.snapshot?.preferences.autoHide, true)
         XCTAssertNil(strip.composition.store.snapshot.rows)
+    }
+
+    func testD14ShowQueuesWhileSystemOrCockpitBlocks() async throws {
+        let topology = Topology()
+        let app = try await make(profile(), topology: topology) {
+            $0.showDock = false
+            $0.autoHide = true
+            $0.motion = .on
+        }
+        let workspace = start(app)
+        let editor = app.settingsHost.application.editor
+        func exercise(block: () -> Void, unblock: () -> Void) async throws {
+            block()
+            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+            try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == true && !editor.isSaving }
+            let saved = await editor.store.snapshot()
+            XCTAssertTrue(saved.preferences.showDock)
+            XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
+            unblock()
+            try await wait {
+                app.composition.dock.edgePresentation?.state == .expanded &&
+                app.composition.dock.dockView.layer?.sublayers?.contains { $0.name == "dock.locate-highlight" } == true
+            }
+            XCTAssertNotNil(app.composition.dock.dockView.emptyStationRectForChecks)
+            XCTAssertNil(app.composition.store.snapshot.rows)
+            _ = try await editor.commit(SettingsB21Edit.showDock(false))
+        }
+        try await exercise(block: { workspace.post(name: NSWorkspace.willSleepNotification, object: nil) },
+                           unblock: { workspace.post(name: NSWorkspace.didWakeNotification, object: nil) })
+        try await exercise(block: { workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil) },
+                           unblock: { workspace.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil) })
+        try await exercise(block: { topology.cockpitClosed = false; app.composition.dock.refreshPresence() },
+                           unblock: { topology.cockpitClosed = true; app.composition.dock.refreshPresence() })
+    }
+
+    func testD17FollowSamplesPreserveSavedPlace() async throws {
+        let topology = Topology()
+        topology.joined = true
+        let app = try await make(profile(), topology: topology) {
+            $0.dockDisplayID = "A"
+            $0.dockEdge = .right
+            $0.dockAlongFraction = 0.62
+        }
+        _ = start(app)
+        let editor = app.settingsHost.application.editor
+        let initial = try expanded(app)
+        let original = await editor.store.snapshot()
+        topology.pointer = CGPoint(x: topology.neighbour.frame.midX, y: topology.neighbour.frame.midY)
+        app.composition.dock.refreshPresence()
+        XCTAssertEqual(try expanded(app), initial)
+        let afterFixedSample = await editor.store.snapshot()
+        XCTAssertEqual(afterFixedSample.revision, original.revision)
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(true))
+        let following = await editor.store.snapshot()
+        let followed = try expanded(app)
+        XCTAssertEqual(followed.displayID, "B")
+        XCTAssertEqual(followed.edge, initial.edge)
+        XCTAssertEqual(followed.alongFraction, initial.alongFraction, accuracy: 0.001)
+        topology.pointer = CGPoint(x: topology.primary.frame.midX, y: topology.primary.frame.midY)
+        app.composition.dock.refreshPresence()
+        XCTAssertEqual(try expanded(app), initial)
+        let afterFollow = await editor.store.snapshot()
+        XCTAssertEqual(afterFollow.revision, following.revision)
+        XCTAssertEqual(afterFollow.preferences.dockDisplayID, original.preferences.dockDisplayID)
+        XCTAssertEqual(afterFollow.preferences.dockEdge, original.preferences.dockEdge)
+        XCTAssertEqual(afterFollow.preferences.dockAlongFraction, original.preferences.dockAlongFraction)
     }
 }
