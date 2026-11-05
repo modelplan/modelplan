@@ -271,6 +271,95 @@ import ModelPlanSettings
 }
 
 @MainActor final class DockPulseDragPersistenceTests: XCTestCase {
+    func testD19NormalDragKeepsCornerClearanceAndAvoidsSystemDock() async throws {
+        let topology = DragTopology()
+        let frame = CGRect(x: 0, y: 0, width: 1600, height: 900)
+        let reservations: [(String, CGRect)] = [
+            ("bottom", CGRect(x: 0, y: 72, width: 1600, height: 804)),
+            ("left", CGRect(x: 72, y: 0, width: 1528, height: 876)),
+            ("right", CGRect(x: 0, y: 0, width: 1528, height: 876)),
+        ]
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-reservations-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            for (reservation, available) in reservations {
+                let display = DockDisplayArea(id: "A", frame: frame, visibleFrame: available)
+                topology.active = [display]
+                topology.pointer = CGPoint(x: available.midX, y: available.midY)
+                let root = profile.appendingPathComponent("\(mode)-" + reservation)
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+                let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                    applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+                    createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+                addTeardownBlock { @MainActor in await app.composition.stop() }
+                await app.prepare()
+                app.allowDockPresentation()
+
+                let host = app.composition.dock
+                let editor = app.settingsHost.application.editor
+                let targets: [(DockEdge, CGPoint, Bool?)] = [
+                    (.left, .init(x: available.minX + 2, y: available.minY + 14), false),
+                    (.left, .init(x: available.minX + 2, y: available.maxY - 14), true),
+                    (.right, .init(x: available.maxX - 2, y: available.minY + 14), false),
+                    (.right, .init(x: available.maxX - 2, y: available.maxY - 14), true),
+                    (.bottom, .init(x: available.minX + 14, y: available.minY + 2), false),
+                    (.bottom, .init(x: available.maxX - 14, y: available.minY + 2), true),
+                    (.bottom, .init(x: available.midX, y: available.midY), nil),
+                ]
+                for (edge, point, upperEnd) in targets {
+                    let label = "Mode \(mode), system Dock \(reservation), \(edge), \(point)"
+                    let view = host.dockView
+                    let drag = try XCTUnwrap(view.backgroundDragDelegate, label)
+                    let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+                        stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+                    }.first { drag.backgroundCanDrag(local: $0) }, label)
+                    let start = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
+                    let down = CGPoint(x: start.minX + local.x, y: start.maxY - local.y)
+                    topology.pointer = down
+                    let arrival = ContinuousClock.now + .seconds(1)
+                    while !drag.beginBackgroundMove(local: local, global: down) {
+                        guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget: " + label) }
+                        try await Task.sleep(for: .milliseconds(10))
+                    }
+                    let revision = try XCTUnwrap(editor.snapshot?.revision)
+                    topology.pointer = point
+                    drag.updateBackgroundMove(global: point)
+                    XCTAssertEqual(editor.snapshot?.revision, revision, label)
+                    drag.endBackgroundMove(global: point)
+                    try await waitForSettings(editor) {
+                        editor.snapshot?.revision == revision + 1 && !editor.isSaving
+                    }
+                    let observed = try XCTUnwrap(host.edgePresentation?.placement, label)
+                    let saved = await store.snapshot()
+                    XCTAssertEqual(observed.edge, edge, label)
+                    XCTAssertEqual(observed.displayID, display.id, label)
+                    XCTAssertEqual(saved.preferences.dockDisplayID, display.id, label)
+                    XCTAssertEqual(saved.preferences.dockAlongFraction, observed.alongFraction, accuracy: 0.0001, label)
+                    let painted = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
+                    XCTAssertEqual(painted, observed.frame, label)
+                    XCTAssertTrue(available.contains(painted), label)
+                    switch edge {
+                    case .left: XCTAssertEqual(painted.minX, available.minX, accuracy: 0.001, label)
+                    case .right: XCTAssertEqual(painted.maxX, available.maxX, accuracy: 0.001, label)
+                    case .bottom: XCTAssertEqual(painted.minY, available.minY, accuracy: 0.001, label)
+                    case .top: XCTFail(label)
+                    }
+                    if let upperEnd {
+                        let occupied = painted.union(observed.sliverFrame)
+                        let clearance = edge == .bottom
+                            ? (upperEnd ? available.maxX - occupied.maxX : occupied.minX - available.minX)
+                            : (upperEnd ? available.maxY - occupied.maxY : occupied.minY - available.minY)
+                        XCTAssertEqual(clearance, 24, accuracy: 0.001, label)
+                    }
+                }
+                await app.composition.stop()
+            }
+        }
+    }
+
     func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
