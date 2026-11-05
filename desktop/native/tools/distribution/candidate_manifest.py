@@ -38,14 +38,15 @@ def create(archive, info, source, control, run_id, attempt, cli_pin):
     enabled = metadata.get('ModelPlanCockpitEntryEnabled')
     if enabled is not True:
         raise ValueError('candidate cockpit entry must be enabled')
-    return {'sourceSHA': source, 'packageSHA256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+    package_digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    return {'sourceSHA': source, 'packageSHA256': package_digest, 'sha256': package_digest,
             'cockpitEntryEnabled': enabled, 'controlSHA': control, 'workflowRunID': run_id, 'workflowAttempt': attempt,
             'cliSource': 'declared-reviewed-release', 'cliVersion': version, 'cliSHA256': cli_digest}
 
 
 def verify(archive, manifest, expected):
     value = json.loads(manifest.read_text())
-    if set(value) != {'sourceSHA', 'packageSHA256', 'cockpitEntryEnabled', 'controlSHA', 'workflowRunID', 'workflowAttempt', 'cliSource', 'cliVersion', 'cliSHA256'}:
+    if set(value) != {'sourceSHA', 'packageSHA256', 'sha256', 'cockpitEntryEnabled', 'controlSHA', 'workflowRunID', 'workflowAttempt', 'cliSource', 'cliVersion', 'cliSHA256'}:
         raise ValueError('unexpected manifest')
     if not re.fullmatch(r'[0-9a-f]{40}', expected) or value['sourceSHA'] != expected:
         raise ValueError('source SHA mismatch')
@@ -57,7 +58,8 @@ def verify(archive, manifest, expected):
         not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', value['cliVersion']) or
         not re.fullmatch(r'[0-9a-f]{64}', value['cliSHA256'])):
         raise ValueError('invalid CLI receipt')
-    if value['cockpitEntryEnabled'] is not True or value['packageSHA256'] != hashlib.sha256(archive.read_bytes()).hexdigest():
+    if (value['cockpitEntryEnabled'] is not True or value['sha256'] != value['packageSHA256'] or
+        value['packageSHA256'] != hashlib.sha256(archive.read_bytes()).hexdigest()):
         raise ValueError('package or cockpit mismatch')
 
 

@@ -32,6 +32,12 @@ class CandidateManifestTests(unittest.TestCase):
             sha = 'a' * 40
             manifest.write_text(json.dumps(create(archive, info, sha, 'c' * 40, '123', '2', cli_pin)))
             verify(archive, manifest, sha)
+            value = json.loads(manifest.read_text())
+            value['sha256'] = '0' * 64
+            manifest.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):
+                verify(archive, manifest, sha)
+            manifest.write_text(json.dumps(create(archive, info, sha, 'c' * 40, '123', '2', cli_pin)))
             self.assertEqual(json.loads(manifest.read_text())['cliSource'], 'declared-reviewed-release')
             self.assertEqual(json.loads(manifest.read_text())['cliVersion'], '0.0.1')
             helper.write_bytes(b'forged')
