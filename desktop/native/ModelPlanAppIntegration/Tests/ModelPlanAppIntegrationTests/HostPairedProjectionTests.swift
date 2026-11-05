@@ -2,7 +2,7 @@
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -65,7 +65,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, resetCardClock: Date? = nil) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -101,6 +101,23 @@ private actor EntrySyntheticClient: EngineClient {
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
         week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
         week["resetsAt"] = weeklyDeadline
+        if let wall = resetCardClock {
+            let stamp = ISO8601DateFormatter()
+            let scheduled = stamp.string(from: wall.addingTimeInterval(3600))
+            projection["resetEvents"] = [["version": 1, "id": "synthetic-card-reset", "provider": "openai",
+                "rowId": "codex", "status": "announced", "publishedAt": stamp.string(from: wall.addingTimeInterval(-60)),
+                "expiresAt": stamp.string(from: wall.addingTimeInterval(7200)),
+                "schedule": ["precision": "deadline", "from": scheduled, "through": scheduled],
+                "source": ["kind": "publication", "publicationId": "synthetic",
+                    "url": "https://example.invalid/digest", "links": [
+                        ["type": "original", "url": "https://example.invalid/post"],
+                        ["type": "original", "url": "https://example.invalid/post"],
+                        ["type": "original", "url": "http://example.invalid/insecure"],
+                        ["type": "original", "url": "https://user@example.invalid/credentials"]]]]]
+            account["resetCards"] = ["state": "complete", "count": 2,
+                "earliestExpiresAt": stamp.string(from: wall.addingTimeInterval(108000)),
+                "truncated": false, "sources": []]
+        }
         windows = [session, week]; account["windows"] = windows; accounts = [account]
         if let secondWeekly {
             var other = account, otherWeek = week
@@ -234,6 +251,51 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 12, day: 2, hour: 16)))
+        let snapshot = try rows(weekly: 75, resetCardClock: wall)
+        var elapsed = 0.0
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        var pointer = CGPoint(x: 700, y: 450)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            cockpitEntryEnabled: true,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation()
+        let dock = app.composition.dock
+        var cockpitOpens = 0
+        dock.showConsole = { cockpitOpens += 1 }
+        await app.composition.start()
+        XCTAssertTrue(dock.card.isHidden, "an admitted public event must not open the card")
+        XCTAssertEqual(cockpitOpens, 0)
+        let id = "aaaaaaaaaaaaaaaa", view = dock.dockView
+        XCTAssertEqual(view.presentedNoticesForChecks[id]?.key.kind, .resetAnnounced)
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        func text(_ root: NSView) -> [String] {
+            (root as? NSTextField).map { [$0.stringValue] } ?? root.subviews.flatMap(text)
+        }
+        XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
+        XCTAssertTrue(text(dock.card).contains("2 resets · expire in 30h"))
+        let content = try XCTUnwrap(dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(content.links.map(\.url.absoluteString), ["https://example.invalid/digest", "https://example.invalid/post"])
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertTrue(text(dock.card).contains("预告 17:00 重置"))
+        XCTAssertTrue(text(dock.card).contains("重置 2 次 · 30 小时后到期"))
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
