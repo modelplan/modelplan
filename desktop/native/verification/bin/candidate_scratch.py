@@ -42,9 +42,7 @@ def create(parent, run_id, epoch):
     return registry
 
 
-def cleanup(registry, *, parent, run_id, epoch, subject_closed):
-    if subject_closed is not True:
-        raise ValueError("subject closure not confirmed")
+def validate_registry(registry, *, parent, run_id, epoch):
     if not isinstance(registry, dict) or registry.get("runID") != run_id or registry.get("epoch") != epoch:
         raise ValueError("run identity mismatch")
     approved_parent = Path(parent)
@@ -66,6 +64,13 @@ def cleanup(registry, *, parent, run_id, epoch, subject_closed):
     with marker.open(encoding="utf-8") as stream:
         if json.load(stream) != registry:
             raise ValueError("scratch marker mismatch")
+    return root
+
+
+def cleanup(registry, *, parent, run_id, epoch, subject_closed):
+    if subject_closed is not True:
+        raise ValueError("subject closure not confirmed")
+    root = validate_registry(registry, parent=parent, run_id=run_id, epoch=epoch)
     if not shutil.rmtree.avoids_symlink_attacks:
         raise RuntimeError("safe directory removal unavailable")
     shutil.rmtree(root)
@@ -98,7 +103,7 @@ def cleanup_registered(registry, reservation, *, parent, run_id, epoch, subject_
         if clock() >= deadline:
             raise ValueError("launcher still running")
         sleep(0.05)
-    root = Path(registry.get("root", "")).resolve()
+    root = validate_registry(registry, parent=parent, run_id=run_id, epoch=epoch).resolve()
     prefix = scope.get("prefix")
     if not prefix or not Path(prefix).resolve().is_relative_to(root):
         raise ValueError("process scope is outside candidate scratch")
