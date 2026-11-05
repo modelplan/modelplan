@@ -11,8 +11,8 @@ export const grouped = n => n == null ? '--' : Math.round(n).toLocaleString('en-
 export const unit = n => n >= 1e6 ? [(n / 1e6).toFixed(1), 'M'] : n >= 1e3 ? [String(Math.round(n / 1e3)), 'k'] : [String(Math.round(n)), ''];
 export const sign = v => v > 0.05 ? '+' + v.toFixed(1) : v < -0.05 ? '−' + Math.abs(v).toFixed(1) : '±0';
 export const times = v => v == null || !isFinite(v) ? '—' : '×' + (v >= 10 ? v.toFixed(0) : v.toFixed(2));
-// Quota status (spec 2.1, one rule everywhere): ok ≥ 41 %, mid above threshold to 40 %, low at/below "turn red below" (ui.redAt, 25).
-export const level = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r < 41 ? 'mid' : 'ok';
+// Quota status (spec 2.1, one rule everywhere): ok above 50 %, mid above threshold through 50 %, low at/below "turn red below" (ui.redAt, 25).
+export const level = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 
 const loc = ui => ui.lang === 'en' ? 'en' : 'zh-CN';
 // Reset/expiry text is always relative to the supplied reading clock, never the host clock.

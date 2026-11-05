@@ -17,8 +17,8 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // Width classes (spec 4), by the columns on the page: wide for 1–2 (cells ≥ 240 px: the bar with the number and one
 // compact line beside it; round D2 removed the road bar), medium for 3–4, narrow for 5–6 (one line over a full-width bar).
 export const widthClass = n => n <= 2 ? 'wide' : n <= 4 ? 'medium' : 'narrow';
-// Quota status (spec 2.1): ok ≥ 41 %, mid above threshold to 40 %, low at/below "turn red below" (settings, default 16); used up is low.
-export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r < 41 ? 'mid' : 'ok';
+// Quota status (spec 2.1): ok above 50 %, mid above threshold through 50 %, low at/below "turn red below" (settings, default 16); used up is low.
+export const levelOf = (r, redAt = 25) => r == null ? 'none' : r <= redAt ? 'low' : r <= 50 ? 'mid' : 'ok';
 // Lit segments of the 10-segment bar: tens, rounded, but a window with anything left keeps one segment lit, so only a
 // used-up window shows an empty bar.
 export const litSegments = r => r == null || r <= 0 ? 0 : clamp(Math.round(r / 10), 1, 10);
