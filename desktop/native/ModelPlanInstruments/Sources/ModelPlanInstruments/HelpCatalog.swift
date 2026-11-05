@@ -65,7 +65,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("按 Esc 或点别处取消，卡片不会随指针移动而关闭。", "Press Esc or click elsewhere to release the card.")
         case .caution:
             title = copy("注意灯", "Alert lamp")
-            basis = copy("按一下查看全部提醒并停止闪烁。", "Press to see all alerts and stop the flashing.")
+            basis = copy("显示当前提醒状态。", "Indicates current alerts.")
         case .shutter:
             title = copy("悬窗开关", "Window shutter")
             basis = copy("拖到另一端或按一下，收起或展开悬窗。", "Drag to the other end or press to fold or expand the Window.")
@@ -191,7 +191,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("来源只说明这次读数从哪里取得。", "This identifies where this reading was obtained.")
         case .window:
             title = copy("悬窗", "Window")
-            basis = copy("显示模型概况；按放大键查看完整画面。", "Shows the model overview; press Enlarge for the full view.")
+            basis = copy("场景视图暂不可用。", "The field view is unavailable.")
         case .control:
             title = helpLine(context.fact) ?? copy("选项", "Option")
             basis = copy("按一下使用这个选项，不会改变真实会话。", "Press to use this option; it leaves real sessions unchanged.")
@@ -203,7 +203,7 @@ public struct HelpCatalog: Sendable {
             basis = copy("此项的可用性以应用报告的状态为准。", "Availability follows the status reported by the app.")
         case .record:
             title = copy("会话记录", "Session record")
-            basis = copy("运行中的会话在前，按一行查看这次会话。", "Running sessions come first; press a row to view that session.")
+            basis = copy("运行中的会话在前，其后为最近观察；-- 表示速率不可用。", "Running sessions first, then last seen; -- means speed unavailable.")
         }
         let facts = helpLine(context.fact).map { HelpDurationText.expand($0, language: language) }
         let prefix = topic == .control || topic == .link ? nil : facts
