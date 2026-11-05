@@ -192,7 +192,13 @@ struct CockpitUnavailableNotice {
             case .night:theme = .night
             case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
             }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full)
+            let effective: EffectiveSettings
+            if let current = composition.latestSettings, current.snapshot.revision == snapshot.revision {
+                effective = current.effective
+            } else {
+                effective = .init(snapshot.preferences, environment: SettingsWindowController.systemEnvironment())
+            }
+            owner.appearance = appearance(from: effective, theme: theme)
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
                 switch intent {
@@ -210,6 +216,21 @@ struct CockpitUnavailableNotice {
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
+
+    func applySettings(_ value: SettingsApplication) {
+        let next = appearance(from: value.effective, theme: owner.appearance.theme)
+        guard next != owner.appearance else { return }
+        owner.appearance = next
+        owner.coordinator?.updateAppearance(next)
+    }
+
+    private func appearance(from settings: EffectiveSettings, theme: CockpitAppearance.Theme) -> CockpitAppearance {
+        let current = owner.appearance
+        return .init(theme: theme, locale: settings.language == .english ? .en : .zhCN, profile: current.profile,
+                     reduceMotion: settings.reduceMotion, reduceTransparency: settings.reduceTransparency,
+                     shutterClosed: current.shutterClosed, detached: current.detached, redBelow: settings.redBelow)
+    }
+
     func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
