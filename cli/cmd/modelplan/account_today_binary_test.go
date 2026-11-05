@@ -49,7 +49,7 @@ func TestAccountTodayRowsRealBinary(t *testing.T) {
 		}
 	}
 	save("codex-account.json", map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": now, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": ref, "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": now.Add(time.Hour), "observedAt": now}}})
-	save("perf.json", speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: now.Local().Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}, Live: []speed.LiveRecord{{GrantEpoch: epoch, Ref: "1111111111111111", Source: "codex", SubscriptionRef: ref, LastAt: now, StartedAt: now.Add(-time.Minute), Running: true}}})
+	save("perf.json", speed.PerfLedger{SchemaVersion: 1, Since: now.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: now.Local().Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}, Live: []speed.LiveRecord{{GrantEpoch: epoch, Ref: "1111111111111111", Source: "codex", SubscriptionRef: ref, LastAt: now, StartedAt: now.Add(-time.Minute), Running: true}}})
 	binary := filepath.Join(t.TempDir(), "modelplan")
 	if raw, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v %s", err, raw)

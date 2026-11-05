@@ -61,7 +61,7 @@ func TestAccountTodaySubscriptionWithdrawsExpiredEvidence(t *testing.T) {
 		}
 	}
 	write("codex-account.json", map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": start, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": ref, "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": start.Add(time.Hour), "observedAt": start}}})
-	ledger := speed.PerfLedger{SchemaVersion: 1, Since: start.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: start.Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}, Live: []speed.LiveRecord{{GrantEpoch: epoch, Ref: "1111111111111111", Source: "codex", SubscriptionRef: ref, LastAt: start.Add(-speed.LiveWithin + 5*time.Second), StartedAt: start.Add(-time.Hour), Running: true}}}
+	ledger := speed.PerfLedger{SchemaVersion: 1, Since: start.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: start.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}, Live: []speed.LiveRecord{{GrantEpoch: epoch, Ref: "1111111111111111", Source: "codex", SubscriptionRef: ref, LastAt: start.Add(-speed.LiveWithin + 5*time.Second), StartedAt: start.Add(-time.Hour), Running: true}}}
 	write("perf.json", ledger)
 	backend, err := NewSharedBackend(SharedConfig{now: clock.read, Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "codex", ReaderID: "native:codex", Preferred: "native"}, Detected: true}}}
@@ -177,7 +177,7 @@ func TestAccountTodaySubscriptionWithdrawsExpiredBinding(t *testing.T) {
 		}
 	}
 	write("codex-account.json", map[string]any{"schemaVersion": 1, "status": "ok", "observedAt": start, "admission": state.CaptureStamp(consent.ScopeCodexRuntimeUsage), "subscriptionRef": ref, "windows": []any{map[string]any{"kind": "weekly", "usedPercent": 25, "windowMinutes": 10080, "resetsAt": start.Add(time.Hour), "observedAt": start}}})
-	ledger := speed.PerfLedger{SchemaVersion: 1, Since: start.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: start.Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}}
+	ledger := speed.PerfLedger{SchemaVersion: 1, Since: start.Add(-time.Hour), Rows: []speed.PerfRow{{GrantEpoch: epoch, Day: start.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 12000, EligibleRequests: 5, EligibleOutputTokens: 210, GenMs: 5000}}}
 	write("perf.json", ledger)
 	backend, err := NewSharedBackend(SharedConfig{now: clock.read, Detect: func() detect.Report {
 		return detect.Report{Tools: []detect.Tool{{Entry: detect.Entry{ProviderID: "codex", ReaderID: "native:codex", Preferred: "native"}, Detected: true}}}

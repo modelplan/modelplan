@@ -12,7 +12,7 @@ import (
 func TestCockpitTodayTotalsRequiresUniqueCurrentBinding(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.Local)
 	account := quota.Account{Source: "codex", Subscription: &quota.Binding{Ref: "0123456789abcdef", Status: "verified", ObservedAt: now}}
-	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
+	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
 	got := CockpitTodayTotals([]quota.Account{account}, view)
 	if len(got) != 1 || got[0].OutputTokens != 120 || got[0].GenerationTPS == nil || *got[0].GenerationTPS != 50 || got[0].BindingBasis != "source-wide-current-binding" {
 		t.Fatalf("known totals: %#v", got)
@@ -44,5 +44,19 @@ func TestCockpitTodayTotalsRequiresUniqueCurrentBinding(t *testing.T) {
 	view.Ledger.Rows = nil
 	if got := CockpitTodayTotals([]quota.Account{account}, view); len(got) != 0 {
 		t.Fatalf("empty ledger: %#v", got)
+	}
+}
+
+func TestCockpitTodayDoesNotInventZeroWithoutAnObservedRequest(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.Local)
+	account := quota.Account{Source: "codex", Subscription: &quota.Binding{Ref: "0123456789abcdef", Status: "verified", ObservedAt: now}}
+	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex"}}}}
+	if got := CockpitTodayTotals([]quota.Account{account}, view); len(got) != 0 {
+		t.Fatalf("unobserved zero presented as known: %#v", got)
+	}
+	view.Ledger.Rows[0].ObservedRequests = 1
+	got := CockpitTodayTotals([]quota.Account{account}, view)
+	if len(got) != 1 || got[0].OutputTokens != 0 || got[0].GenerationTPS != nil {
+		t.Fatalf("observed zero lost: %#v", got)
 	}
 }

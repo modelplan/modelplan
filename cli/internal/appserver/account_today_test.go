@@ -14,7 +14,7 @@ func TestAccountTodayUsesOnlyUniqueCurrentSourceBinding(t *testing.T) {
 	ref, other := "0123456789abcdef", "fedcba9876543210"
 	report := []quota.Account{{Source: "codex", Subscription: &quota.Binding{Ref: ref, Status: "verified", ObservedAt: now}}}
 	p := rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent}}}}}
-	perf := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
+	perf := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
 	attachAccountToday(&p, report, perf)
 	got := p.Rows[0].Accounts[0].Today
 	if got == nil || got.ObservedOutputTokens == nil || *got.ObservedOutputTokens != 120 || got.GenerationTps == nil || *got.GenerationTps != 50 || got.BindingBasis != "source-wide-current-binding" || got.RunningSessions != nil {

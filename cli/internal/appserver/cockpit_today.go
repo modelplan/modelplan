@@ -51,7 +51,7 @@ func CockpitTodayTotals(accounts []quota.Account, view speed.PerfView) []Cockpit
 	}
 	for _, total := range view.TodayTotals() {
 		c := bySource[total.Source]
-		if c.ambiguous || c.ref == "" || total.Sums.ObservedOutputTokens < 0 {
+		if c.ambiguous || c.ref == "" || total.Sums.ObservedRequests <= 0 || total.Sums.ObservedOutputTokens < 0 {
 			continue
 		}
 		item := CockpitToday{SubscriptionRef: c.ref, Source: total.Source, OutputTokens: total.Sums.ObservedOutputTokens, BindingBasis: "source-wide-current-binding"}
