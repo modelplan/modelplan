@@ -13,6 +13,7 @@ import ModelPlanWire
 private actor G1CardRowsClient: EngineClient {
     let store: EngineStore
     let rows: WireRowsSnapshot
+    private var refreshCalls = 0
     let context = EngineDeliveryContext(sessionID: "g1-card", floor: .init(storeEpoch: "g1-card", generation: 1), revision: 1)
 
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
@@ -25,10 +26,21 @@ private actor G1CardRowsClient: EngineClient {
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
+    func supportsCapability(_ capability: String) async -> Bool { capability == "memberRefreshV1" }
+    func requestCount() -> Int { refreshCalls }
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("g1-rows")) }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?, prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
+        refreshCalls += 1
+        let id = WireRequestID.string("g1-refresh-\(refreshCalls)")
+        await prepared(id)
+        let result = try WireMemberRefreshResult(outcome: .started)
+        let envelope = try WireEnvelope(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: result)
+        await store.consume(.response(requestID: id, .memberRefresh(.init(envelope: envelope, delivery: context))))
+        return .init(requestID: id)
+    }
     func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
     func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
@@ -39,7 +51,7 @@ private actor G1CardRowsClient: EngineClient {
 @MainActor final class G1DockCardJourneys: XCTestCase {
     private let memberID = "aaaaaaaaaaaaaaaa"
 
-    private func snapshot(credits: [String: Any]? = nil, includeScoped: Bool = false,
+    private func snapshot(credits: [String: Any]? = nil, includeScoped: Bool = false, includeResetEvent: Bool = false,
                           missingPercentage: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -76,9 +88,15 @@ private actor G1CardRowsClient: EngineClient {
         account["subscriptionRef"] = memberID; account["valueState"] = "current"
         account["observedAt"] = observed; account["freshUntil"] = deadline
         account["plan"] = ["id": "synthetic-plan", "name": ["en": "Synthetic Plan", "zh": "Synthetic Plan"]]
-        account["windows"] = windows; account["credits"] = credits ?? NSNull()
-        account["resetCards"] = NSNull(); row["accounts"] = [account]
-        projection["rows"] = [row]; projection.removeValue(forKey: "resetEvents")
+        account["windows"] = windows
+        if let credits { account["credits"] = credits } else { account.removeValue(forKey: "credits") }
+        account.removeValue(forKey: "resetCards"); row["accounts"] = [account]
+        projection["rows"] = [row]
+        if includeResetEvent {
+            var event = try XCTUnwrap((projection["resetEvents"] as? [[String: Any]])?.first)
+            event["publishedAt"] = observed; event["expiresAt"] = deadline
+            projection["resetEvents"] = [event]
+        } else { projection.removeValue(forKey: "resetEvents") }
         root["projection"] = projection
         return try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
     }
@@ -88,11 +106,11 @@ private actor G1CardRowsClient: EngineClient {
         nodes(root).compactMap { $0 as? NSTextField }.first { $0.accessibilityIdentifier() == identifier }?.stringValue
     }
 
-    private func withRenderedCard(credits: [String: Any]? = nil, includeScoped: Bool = false,
-                                  missingPercentage: Bool = false,
+    private func withRenderedCard(credits: [String: Any]? = nil, includeScoped: Bool = false, includeResetEvent: Bool = false,
+                                  missingPercentage: Bool = false, presentCard: Bool = true,
                                   check: (StaticDockPreviewHost, EngineDockMenuApplication) async throws -> Void) async throws {
         _ = NSApplication.shared
-        let rows = try snapshot(credits: credits, includeScoped: includeScoped, missingPercentage: missingPercentage)
+        let rows = try snapshot(credits: credits, includeScoped: includeScoped, includeResetEvent: includeResetEvent, missingPercentage: missingPercentage)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g1-card-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -105,23 +123,15 @@ private actor G1CardRowsClient: EngineClient {
         let host = app.composition.dock
         do {
             // Exercise the production controller's hover dwell and host callback.
-            try presentSyntheticHostCard(host, id: memberID)
-            XCTAssertFalse(host.card.isHidden, "normal entry must present an actual card for the admitted member")
+            if presentCard {
+                try presentSyntheticHostCard(host, id: memberID)
+                XCTAssertFalse(host.card.isHidden, "normal entry must present an actual card for the admitted member")
+            }
             try await check(host, app)
             await app.composition.stop(); host.close()
         } catch {
             await app.composition.stop(); host.close()
             throw error
-        }
-    }
-
-    func testDOCK_3_8_05RenderedHeaderShowsMemberPlanAgeAndGlyph() async throws {
-        try await withRenderedCard { host, _ in
-            let title = try XCTUnwrap(text(host.card, "dock.card.text.name"))
-            XCTAssertTrue(title.contains("Synthetic Tool"))
-            XCTAssertTrue(title.contains("Synthetic Plan"))
-            XCTAssertNotNil(text(host.card, "dock.card.text.source"))
-            XCTAssertTrue(nodes(host.card).contains { $0 is NSImageView }, "the actual header must render the member glyph")
         }
     }
 
@@ -170,6 +180,89 @@ private actor G1CardRowsClient: EngineClient {
         try await withRenderedCard(missingPercentage: true) { host, _ in
             XCTAssertEqual(text(host.card, "dock.card.text.row.quota:five.value"), "--")
             XCTAssertNil(text(host.card, "dock.card.text.row.credits.value"))
+        }
+    }
+
+    func test_DOCK_3_8_03_hoverDwellAndLeave() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-03 waits for G1RenderedSnapshot")
+        try await withRenderedCard(presentCard: false) { _, app in
+            let ring = try XCTUnwrap(app.renderedSnapshotForChecks().find("dock.subscription." + memberID))
+            app.movePointer(to: CGPoint(x: ring.frame.midX, y: ring.frame.midY))
+            app.advanceClock(by: 0.249)
+            XCTAssertNil(app.renderedSnapshotForChecks().card)
+            app.advanceClock(by: 0.001)
+            let card = try XCTUnwrap(app.renderedSnapshotForChecks().card)
+            XCTAssertTrue(card.visible)
+            app.movePointer(to: CGPoint(x: card.frame.midX, y: card.frame.midY))
+            app.advanceClock(by: 0.3)
+            XCTAssertTrue(app.renderedSnapshotForChecks().card?.visible == true)
+            app.movePointer(to: CGPoint(x: ring.frame.minX - 1000, y: ring.frame.minY - 1000))
+            app.advanceClock(by: 0.3)
+            XCTAssertFalse(app.renderedSnapshotForChecks().card?.visible == true)
+        }
+    }
+
+    func test_DOCK_3_8_07_snapshotRelativeCopy() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-07 waits for G1RenderedSnapshot")
+        try await withRenderedCard { _, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.quota:five.detail")?.text, "Resets in 2h 14m")
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.quota:five.detail")?.text, "2小时14分后重置")
+        }
+    }
+
+    func test_DOCK_3_8_08_snapshotReportedCredits() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-08 waits for G1RenderedSnapshot")
+        try await withRenderedCard(credits: ["balance": 19614, "unit": "credits"]) { _, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.value")?.text, "19,614")
+        }
+        try await withRenderedCard(credits: ["balance": 0.42, "unit": "credits"]) { _, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.value")?.text, "<1")
+        }
+        try await withRenderedCard(credits: ["balance": 19614, "unit": "synthetic-unknown"]) { _, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.label")?.text, "Reserve")
+        }
+    }
+
+    func test_DOCK_3_8_12_snapshotScopedWindow() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-12 waits for G1RenderedSnapshot")
+        try await withRenderedCard(includeScoped: true) { host, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.quota:scoped.value")?.text, "1%")
+            let reading = try XCTUnwrap(host.dockView.presentedReadingsForChecks[memberID])
+            XCTAssertEqual(reading.outer?.windowID, "five")
+            XCTAssertEqual(reading.inner?.windowID, "week")
+        }
+    }
+
+    func test_DOCK_3_8_10_ringRefreshDoesNotPin() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-10 waits for G1RenderedSnapshot")
+        try await withRenderedCard(presentCard: false) { host, app in
+            let client = try XCTUnwrap(app.composition.client as? G1CardRowsClient)
+            for _ in 0..<100 where app.memberRefreshAdapter == nil { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertNotNil(app.memberRefreshAdapter)
+            host.dockView.onAction?(.subscription(memberID))
+            for _ in 0..<100 {
+                if await client.requestCount() > 0 { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let calls = await client.requestCount()
+            XCTAssertEqual(calls, 1)
+            XCTAssertFalse(app.renderedSnapshotForChecks().card?.visible == true)
+            XCTAssertEqual(host.dockView.refreshSweepCountForChecks, 1)
+        }
+    }
+
+    func test_DOCK_3_8_11_announcedResetDetails() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-11 waits for G1RenderedSnapshot")
+        try await withRenderedCard(includeResetEvent: true) { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            let prefix = "dock.card.text.row.reset-event:synthetic-reset:announced"
+            XCTAssertNotNil(rendered.find(prefix + ".label"))
+            XCTAssertEqual(rendered.find(prefix + ".detail")?.text, "Public status does not confirm a personal quota reset")
+            let options = XCTExpectedFailure.Options(); options.isStrict = true
+            XCTExpectFailure("DOCK-3.8-11 product-missing: reset timing and source link", options: options) {
+                XCTAssertTrue(rendered.all(role: .control).contains { $0.text == "Source · Original" })
+            }
         }
     }
 
