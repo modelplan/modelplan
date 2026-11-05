@@ -96,6 +96,14 @@
         "U8ConsentJourneyTests"
       ],
       "allowedSkips": {
+        "G3OwnerDefectJourneyTests/testG3_07RealEnginePackagedGlyphPreflight": {
+          "leg": "gui",
+          "reason": "requires an identity-bound packaged candidate and helper, not supplied to the native CI job"
+        },
+        "G3OwnerDefectJourneyTests/testG3_08RealEnginePackagedGlyphPreflight": {
+          "leg": "gui",
+          "reason": "requires an identity-bound packaged candidate and helper, not supplied to the native CI job"
+        },
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"

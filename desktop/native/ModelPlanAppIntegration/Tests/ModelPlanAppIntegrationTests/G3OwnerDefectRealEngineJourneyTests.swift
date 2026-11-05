@@ -44,20 +44,36 @@ private actor G3SyntheticEngine: EngineClient {
 }
 
 @MainActor final class G3OwnerDefectJourneyTests: XCTestCase {
+    private enum PreflightFailure: Error { case incompleteIdentity, invalidCandidate, invalidDigest, helperUnavailable, identityMismatch }
+    private static func candidateIdentity(_ environment: [String: String]) throws -> (URL, String)? {
+        let candidateValue = environment["MODELPLAN_G3_CANDIDATE_APP"]
+        let hashValue = environment["MODELPLAN_G3_HELPER_SHA256"]
+        if candidateValue == nil && hashValue == nil { return nil }
+        guard let candidate = candidateValue, let hash = hashValue else { throw PreflightFailure.incompleteIdentity }
+        guard hash.range(of: "^[0-9a-fA-F]{64}$", options: .regularExpression) != nil else { throw PreflightFailure.invalidDigest }
+        let bundle = URL(fileURLWithPath: candidate, isDirectory: true).standardizedFileURL
+        guard bundle.pathExtension == "app" else { throw PreflightFailure.invalidCandidate }
+        return (bundle, hash.lowercased())
+    }
+    func testG3PreflightIdentityRequiresCompleteValidInput() throws {
+        XCTAssertNil(try Self.candidateIdentity([:]))
+        XCTAssertThrowsError(try Self.candidateIdentity(["MODELPLAN_G3_CANDIDATE_APP": "/synthetic/ModelPlan.app"]))
+        XCTAssertThrowsError(try Self.candidateIdentity(["MODELPLAN_G3_HELPER_SHA256": String(repeating: "a", count: 64)]))
+        XCTAssertThrowsError(try Self.candidateIdentity(["MODELPLAN_G3_CANDIDATE_APP": "/synthetic/ModelPlan.app", "MODELPLAN_G3_HELPER_SHA256": String(repeating: "z", count: 64)]))
+        XCTAssertThrowsError(try Self.candidateIdentity(["MODELPLAN_G3_CANDIDATE_APP": "/synthetic/not-app", "MODELPLAN_G3_HELPER_SHA256": String(repeating: "a", count: 64)]))
+        let valid = try XCTUnwrap(Self.candidateIdentity(["MODELPLAN_G3_CANDIDATE_APP": "/synthetic/ModelPlan.app", "MODELPLAN_G3_HELPER_SHA256": String(repeating: "A", count: 64)]))
+        XCTAssertEqual(valid.0.pathExtension, "app"); XCTAssertEqual(valid.1, String(repeating: "a", count: 64))
+    }
     // A detached real-engine preflight is useful evidence, but does not claim
     // a displayed status-item contour or visible-extent result.
     private func realStatusPreflight() async throws -> (EngineDockMenuApplication, NSImage) {
-        let environment = ProcessInfo.processInfo.environment
-        guard let candidate = environment["MODELPLAN_G3_CANDIDATE_APP"],
-              let expectedHash = environment["MODELPLAN_G3_HELPER_SHA256"], expectedHash.count == 64 else {
+        guard let (bundle, expectedHash) = try Self.candidateIdentity(ProcessInfo.processInfo.environment) else {
             throw XCTSkip("NOT RUN: an identity-bound packaged candidate and helper are required")
         }
-        let bundle = URL(fileURLWithPath: candidate, isDirectory: true).standardizedFileURL
-        guard bundle.pathExtension == "app" else { throw XCTSkip("NOT RUN: candidate is not a packaged app") }
         let binary = bundle.appendingPathComponent("Contents/Helpers/modelplan")
-        guard FileManager.default.isExecutableFile(atPath: binary.path) else { throw XCTSkip("NOT RUN: packaged app-server is unavailable") }
+        guard FileManager.default.isExecutableFile(atPath: binary.path) else { throw PreflightFailure.helperUnavailable }
         let digest = SHA256.hash(data: try Data(contentsOf: binary)).map { String(format: "%02x", $0) }.joined()
-        guard digest == expectedHash.lowercased() else { throw XCTSkip("NOT RUN: candidate helper identity mismatch") }
+        guard digest == expectedHash else { throw PreflightFailure.identityMismatch }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-real-engine-" + UUID().uuidString, isDirectory: true)
         let session = root.appendingPathComponent(".codex/sessions/2026/11/05", isDirectory: true)
         try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
