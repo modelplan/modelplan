@@ -18,14 +18,14 @@ export function publicationFaders(publication:unknown):{accounts:never[];faders:
  for(const value of root.models.slice(0,3)){
   const model=object(value),id=text(model?.id),name=text(model?.name),recommended=level(model?.recommended);
   if(!model||!id||!name||!recommended||!Array.isArray(model.efforts))continue;
-  const rows:Fader['e']=[],seen=new Set<string>();
+  const rows:Fader['e']=[],seen=new Set<string>();let recommendedStarred=false;
   for(const value of model.efforts.slice(0,32)){
    const effort=object(value),label=level(effort?.effort),ability=number(effort?.ability),cost=number(effort?.cost);
    if(!label||seen.has(label))continue;
-   seen.add(label);rows.push([label,ability,cost,number(effort?.time)]);
+   seen.add(label);if(label===recommended&&effort?.star===true)recommendedStarred=true;rows.push([label,ability,cost,number(effort?.time)]);
   }
   rows.sort((a,b)=>['Low','Med','High','XHigh','Max'].indexOf(a[0])-['Low','Med','High','XHigh','Max'].indexOf(b[0]));
-  if(!rows.some(row=>row[0]===recommended)||!model.efforts.some(value=>{const e=object(value);return e?.star===true&&level(e.effort)===recommended;}))continue;
+  if(!recommendedStarred)continue;
   faders.push({id,name,short:name,rec:recommended,e:rows,accounts:[],sessions:[]});
  }
  return {accounts:[],faders};

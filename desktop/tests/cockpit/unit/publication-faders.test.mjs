@@ -15,3 +15,11 @@ test('maps published model verdicts without inventing unknown readings',()=>{
  assert.deepEqual(publicationFaders({...input,contractVersion:2}),{accounts:[],faders:[]});
  assert.deepEqual(publicationFaders({contractVersion:1,models:[{...input.models[0],recommended:'max'}]}),{accounts:[],faders:[]});
 });
+
+test('glm-450-4 ignores a starred duplicate when the retained recommended row is unstarred',()=>{
+ const p={contractVersion:1,models:[{id:'model',name:'Example',recommended:'medium',efforts:[
+  {effort:'medium',star:false,ability:10,cost:1,time:null},
+  {effort:'medium',star:true,ability:20,cost:2,time:null},
+ ]}]};
+ assert.deepEqual(publicationFaders(p),{accounts:[],faders:[]});
+});
