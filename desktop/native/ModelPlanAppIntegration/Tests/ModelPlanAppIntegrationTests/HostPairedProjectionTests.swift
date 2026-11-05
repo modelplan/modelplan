@@ -284,6 +284,8 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text(dock.card, named: "source"), "本地历史 · 37分钟前")
         XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("工具运行时 · 11分钟前") == true)
         XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
+        _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.percentagePin(id, .week))
+        XCTAssertEqual(text(dock.card, named: "source"), "工具运行时 · 11分钟前")
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {

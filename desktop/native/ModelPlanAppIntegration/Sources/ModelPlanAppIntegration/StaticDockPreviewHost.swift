@@ -1399,10 +1399,14 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        return try DockCardProjection.content(input: memberSafePreferences.applying(to: input),
+        let projected = memberSafePreferences.applying(to: input)
+        let row = model?.presentationRows[id]
+        let selected = row?.windowObservations == nil ? nil :
+            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: Double(preferences.redBelow)).selectedWindowID
+        return try DockCardProjection.content(input: projected,
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
+                sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
