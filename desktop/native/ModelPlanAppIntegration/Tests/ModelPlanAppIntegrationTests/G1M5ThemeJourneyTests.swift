@@ -63,12 +63,21 @@ private actor ThemeG1SyntheticClient: EngineClient {
         await app.settingsHost.present(origin: .programmatic)
         let window = try XCTUnwrap(NSApp.windows.first { !existing.contains(ObjectIdentifier($0)) && $0.isVisible })
         defer { window.close() }
-        let options = XCTExpectedFailure.Options()
-        options.isStrict = true
-        XCTExpectFailure("THM-10-03 product-missing: Settings forces dark appearance", options: options) {
-            XCTAssertNil(NSApp.appearance, "The application must inherit the macOS appearance")
-            XCTAssertNil(window.appearance, "Settings must inherit the macOS appearance")
-        }
+        XCTAssertTrue(type(of: window) == NSWindow.self)
+        XCTAssertTrue(window.styleMask.contains([.titled, .closable, .resizable]))
+        XCTAssertNotNil(window.standardWindowButton(.closeButton))
+        XCTAssertEqual(window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]), .darkAqua)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let controls = descendants(try XCTUnwrap(window.contentView))
+        let search = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.search" } as? NSSearchField)
+        let sidebar = try XCTUnwrap(controls.first { $0.accessibilityIdentifier() == "settings.sidebar" } as? NSTableView)
+        XCTAssertTrue(type(of: search) == NSSearchField.self)
+        XCTAssertTrue(type(of: sidebar) == NSTableView.self)
+        XCTAssertEqual(sidebar.style, .sourceList)
+        XCTAssertNil(search.appearance)
+        XCTAssertNil(sidebar.appearance)
+        XCTAssertEqual(search.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]), .darkAqua)
+        XCTAssertEqual(sidebar.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]), .darkAqua)
         await app.composition.stop()
     }
 
