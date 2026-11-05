@@ -476,13 +476,10 @@ import ModelPlanMenuVerification
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
         }
-        if settings.editor.context.capabilities.updateServiceAvailable, settings.editor.onHostRequest != nil {
-            menuItems.append(.init(title: label("Check for updates", "检查更新"), action: { [weak self] in self?.checkForUpdates() }))
-        }
         menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
-            .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: label("Settings…", "设置…"), keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
@@ -555,7 +552,6 @@ import ModelPlanMenuVerification
         guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
         NSWorkspace.shared.open(link.url)
     }
-    @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
         if lifecyclePaused { lifecycleController?.retryPending(); return }
