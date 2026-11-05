@@ -4,7 +4,7 @@ import Foundation
 /// Provisional identifiers retained for callers of the original eight-page draft.
 /// The injected structure, not this enum or its declaration order, determines navigation/grouping.
 public enum SettingsPane: String, CaseIterable, Sendable {
-    case appearance, rings, position, general, notifications, subscriptions, privacy, about, dock, cockpit
+    case appearance, rings, position, general, notifications, subscriptions, privacy, diagnostics, about, dock, cockpit
     public var title: SettingsText {
         SettingsStructure.task65.panes.first { $0.id == rawValue }?.title ?? SettingsStructure.provisional.panes.first { $0.id == rawValue }?.title ?? .init(rawValue, rawValue)
     }
@@ -44,13 +44,14 @@ public struct SettingsStructure: Equatable, Sendable {
     /// Confirmed task65 data table; this is not an artwork or native-window release.
     public static let task65 = SettingsStructure(provisional: [
         .init(id: "general", title: .init("General", "通用"), groups: [Settings65Homes.general]),
-        .init(id: "dock", title: .init("Dock", "挂件"), groups: Settings65Homes.dock),
+        .init(id: "dock", title: .init("Quota Widget", "额度挂件"), groups: Settings65Homes.dock),
         .init(id: "cockpit", title: .init("Cockpit", "驾驶舱"), groups: [Settings65Homes.cockpit]),
         .init(id: "appearance", title: .init("Appearance", "外观"), groups: [Settings65Homes.appearance]),
         .init(id: "subscriptions", title: .init("Subscriptions", "订阅"), groups: [Settings65Homes.subscriptions]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
         .init(id: "privacy", title: .init("Data & Privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
     /// Historical input only; not the default. Retained for generic compatibility/regression tests.
     /// Current content only, not a final page/visual freeze. Regrouping changes this input table alone.
@@ -60,8 +61,9 @@ public struct SettingsStructure: Equatable, Sendable {
         .init(id: "position", title: .init("Position and behavior", "位置和行为"), groups: [.init(id: "main", keys: [.showDock,.autoHide,.reveal,.magnification,.fullscreen,.captureHiding,.activeDisplay,.dockDisplay,.dockEdge,.dockPosition,.order])]),
         .init(id: "general", title: .init("General", "通用"), groups: [.init(id: "main", keys: [.login,.automaticUpdates,.menuDisplay,.openShortcut,.dockShortcut,.language,.opening,.countdown,.resetHints])]),
         .init(id: "notifications", title: .init("Notifications", "通知"), groups: [.init(id: "main", keys: [.notificationConsent,.forecast,.reset,.official,.expiring,.stale])]),
-        .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])]),
+        .init(id: "subscriptions", title: .init("Subscriptions", "每个订阅"), groups: [.init(id: "main", keys: [.visible,.alias,.detectedReaders,.optionalReaders])]),
         .init(id: "privacy", title: .init("Data and privacy", "数据与隐私"), groups: [.init(id: "main", keys: [.projectNames,.retention,.clearCLI,.clearAppCache,.privacyStatement])]),
-        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.diagnostics,.feedback,.licenses])]),
+        .init(id: "diagnostics", title: .init("Diagnostics", "诊断"), groups: [.init(id: "main", keys: [.source,.readerDetails,.refreshHistory,.diagnostics])]),
+        .init(id: "about", title: .init("About", "关于"), groups: [.init(id: "main", keys: [.appVersion,.cliStatus,.consentHelp,.architecture,.updateStatus,.websiteLink,.methodologyLink,.privacyLink,.repositoryLink,.feedback,.licenses])]),
     ])
 }

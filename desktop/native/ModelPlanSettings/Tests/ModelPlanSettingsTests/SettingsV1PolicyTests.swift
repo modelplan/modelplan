@@ -8,6 +8,14 @@ import XCTest
 }
 
 final class SettingsV1PolicyTests: XCTestCase {
+    func testV1HidesRefreshHistoryUntilAProducerSuppliesIt() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        let missing = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
+        XCTAssertFalse(missing.contains { $0.key == .refreshHistory })
+        context.refreshHistory = []
+        let connected = try SettingsCatalogue.rows(preferences: .init(), context: context, paneID: "diagnostics")
+        XCTAssertEqual(connected.first { $0.key == .refreshHistory }?.value, .text("--"))
+    }
     func testV1HidesUnsupportedAppearanceAndIgnitionChoices() throws {
         var context = SettingsPageContext(); context.v1NormalEntry = true
         let defaults = SettingsPreferences()
@@ -31,11 +39,12 @@ final class SettingsV1PolicyTests: XCTestCase {
     func testV1NoEffectControlsAreDisabledWithVisibleReasons() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
-        let keys: [SettingKey] = [.login, .automaticUpdates, .menuDisplay, .openShortcut, .dockShortcut,
+        XCTAssertFalse(rows.contains { $0.key == .automaticUpdates || $0.key == .updateStatus })
+        let keys: [SettingKey] = [.login, .menuDisplay, .openShortcut, .dockShortcut,
             .resetHints, .magnification, .showPercentages, .sliverAlert, .percentagePin, .order,
             .visible, .alias, .notificationConsent, .forecast, .reset, .official, .expiring, .stale,
             .projectNames, .language, .fullscreen, .redBelow,
-            .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache, .updateStatus]
+            .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache]
         for key in keys {
             let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
             XCTAssertEqual(row.availability, .serviceUnavailable, "A no-effect control must not remain enabled: \(key)")

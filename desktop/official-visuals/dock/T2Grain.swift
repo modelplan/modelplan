@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 // Copyright (c) 2026 ModelPlan. All rights reserved.
 import Foundation
+import CoreGraphics
 
 /// Deterministic, non-stitched SVG fractal noise for the accepted T2 material.
 /// Algorithm definition: https://www.w3.org/TR/SVG11/filters.html#feTurbulenceElement
@@ -70,5 +71,40 @@ public struct T2Grain: Sendable {
             }
             return min(1, max(0, (sum + 1) / 2))
         }
+    }
+}
+
+/// Only deterministic material noise is retained: no geometry, identifiers, readings or text.
+/// All material instances share a bounded LRU so re-projection does not resample identical pixels.
+@MainActor final class T2GrainRasterCache {
+    private struct Key: Equatable { let viewport: CGRect; let scale: Int }
+    private struct Entry { let key: Key; let bytes: Data }
+    private let capacity: Int
+    private let grain = T2Grain()
+    private var entries: [Entry] = []
+    private(set) var rasterizations = 0
+    var retainedBytes: Int { entries.reduce(0) { $0 + $1.bytes.count } }
+    init(capacity: Int = 16 * 1024 * 1024) { self.capacity = max(0, capacity) }
+    func raster(viewport: CGRect, scale: Int) -> Data {
+        let key = Key(viewport: viewport, scale: scale)
+        if let index = entries.firstIndex(where: { $0.key == key }) {
+            let entry = entries.remove(at: index); entries.append(entry); return entry.bytes
+        }
+        let width = Int(ceil(viewport.width * CGFloat(scale))), height = Int(ceil(viewport.height * CGFloat(scale)))
+        var samples = [Float](repeating: 0, count: width * height * 4)
+        for row in 0..<height {
+            for column in 0..<width {
+                let x = Double(viewport.minX) + (Double(column) + 0.5) / Double(scale)
+                let y = Double(viewport.minY) + (Double(row) + 0.5) / Double(scale)
+                let channels = grain.channels(x: x, y: y), offset = (row * width + column) * 4
+                for channel in 0..<4 { samples[offset + channel] = Float(channels[channel]) }
+            }
+        }
+        let bytes = samples.withUnsafeBytes { Data($0) }; rasterizations += 1
+        if bytes.count <= capacity {
+            while entries.count >= 32 || retainedBytes + bytes.count > capacity { entries.removeFirst() }
+            entries.append(.init(key: key, bytes: bytes))
+        }
+        return bytes
     }
 }
