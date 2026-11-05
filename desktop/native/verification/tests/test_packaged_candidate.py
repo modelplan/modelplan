@@ -3,7 +3,9 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -107,6 +109,33 @@ class PackagedCandidateTests(unittest.TestCase):
         self.assertFalse(Path(config["subjectPidPath"]).exists())
         self.assertTrue(json.loads((self.root / "receipt.json").read_text())["cleaned"])
         self.assertFalse(Path(record["registry"]["root"]).exists())
+
+    def test_real_guardian_cleans_after_launcher_admission_failure(self):
+        record = self.prepare()
+        config = json.loads(Path(record["launchConfig"]).read_text())
+        now = time.time()
+        Path(config["leasePath"]).write_text(json.dumps({"runID": "run", "epoch": "epoch",
+            "notBefore": now, "expiresAt": now + 120, "exclusive": True, "ownerPreempted": False}))
+        command = [sys.executable, str(Path(guardian.__file__)), "--lease", config["leasePath"],
+                   "--stop", config["stopPath"], "--subject-pid-file", config["subjectPidPath"],
+                   "--candidate-registry", str(self.root / "registry.json"),
+                   "--candidate-parent", str(self.root), "--candidate-cleanup-receipt", config["candidateCleanupReceipt"]]
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not json.loads(Path(config["leasePath"]).read_text()).get("guardian"):
+                if proc.poll() is not None: self.fail("guardian exited before heartbeat")
+                time.sleep(0.05)
+            self.assertTrue(json.loads(Path(config["leasePath"]).read_text()).get("guardian"))
+            with self.assertRaisesRegex(RuntimeError, "launch failed"):
+                packaged_candidate.run(record, self.root / "receipt.json")
+            stdout, stderr = proc.communicate(timeout=10)
+            self.assertEqual(proc.returncode, 0, stdout + stderr)
+            self.assertTrue(json.loads((self.root / "receipt.json").read_text())["cleaned"])
+            self.assertFalse(Path(record["registry"]["root"]).exists())
+        finally:
+            if proc.poll() is None:
+                proc.terminate(); proc.communicate(timeout=10)
 
 
 if __name__ == "__main__":
