@@ -14,7 +14,8 @@ import XCTest
     }
 
     private func makeProfile(displayID: String, edge: SettingsDockEdge, declaredQuotas: [Int] = [],
-                             autoHide: Bool = false, along: Double = 0.62) async throws
+                             autoHide: Bool = false, along: Double = 0.62,
+                             cockpitEntryEnabled: Bool? = nil) async throws
         -> (EngineDockMenuApplication, SettingsStore, URL) {
         let executable = try reviewedExecutable()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-device-" + UUID().uuidString)
@@ -60,7 +61,8 @@ import XCTest
             $0.dockEdge = edge
             $0.dockAlongFraction = along
         }
-        return (makeDeviceApplication(root: root, executable: executable, store: store), store,
+        return (makeDeviceApplication(root: root, executable: executable, store: store,
+                                      cockpitEntryEnabled: cockpitEntryEnabled), store,
                 root.appendingPathComponent("ModelPlan/settings.json"))
     }
 
@@ -75,11 +77,13 @@ import XCTest
     }
 
     private func makeDeviceApplication(root: URL, executable: URL, store: SettingsStore,
-                                       registerTeardown: Bool = true) -> EngineDockMenuApplication {
+                                       registerTeardown: Bool = true,
+                                       cockpitEntryEnabled: Bool? = nil) -> EngineDockMenuApplication {
         EngineRowsEntry.nativeJourneyProfile = root
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-dock-device",
             allowedEnvironment: deviceEnvironment(root), offline: true, readOnly: true), settingsStore: store,
-            createsNativePanels: true, bundleURL: root.appendingPathComponent("Synthetic.app"), activateSettings: {})
+            createsNativePanels: true, bundleURL: root.appendingPathComponent("Synthetic.app"),
+            cockpitEntryEnabled: cockpitEntryEnabled, activateSettings: {})
         if registerTeardown {
             addTeardownBlock { @MainActor in
                 await app.stopNativeDockJourney()
@@ -927,6 +931,123 @@ import XCTest
                 XCTAssertFalse(frame.insetBy(dx: -12, dy: -12).contains(outside))
             }
             try await assertRestored(step)
+        }
+    }
+
+    func testD11PhysicalIgnitionAndNozzleThreshold() async throws {
+        _ = NSApplication.shared
+        let display = try XCTUnwrap(DockDisplayTopology.system().displays.first { $0.backingScale == 1 },
+                                    "D-11 physical pixel distances require a 1x display")
+        let (app, store, storedURL) = try await makeProfile(displayID: display.id, edge: .bottom,
+            declaredQuotas: [72, 53, 38], cockpitEntryEnabled: true)
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel as? PulseDockPanel)
+        let ready = try await wait(.seconds(12)) {
+            panel.isVisible && dock.interactionControllerRunning &&
+                dock.edgePresentation?.placement?.displayID == display.id &&
+                dock.edgePresentation?.placement?.edge == .bottom &&
+                Set(dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("D-11 needs the native widget on the 1x bottom rail") }
+        let children = try XCTUnwrap(panel.contentView?.subviews)
+        let view = try XCTUnwrap(children.compactMap { $0 as? DockInstrumentView }.first)
+        let ignition = try XCTUnwrap(children.compactMap { $0 as? NSButton }.first {
+            $0.isTransparent && $0.isEnabled && !$0.isHiddenOrHasHiddenAncestor && !$0.bounds.isEmpty
+        })
+        let ignitionFrame = panel.convertToScreen(ignition.convert(ignition.bounds, to: nil))
+        let controller = try XCTUnwrap(dock.interactionControllerForChecks)
+        let order = view.interactionTargets(edge: .bottom).map(\.id)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(try XCTUnwrap(order.first)))
+        let nozzleFrame = panel.convertToScreen(view.convert(nozzle, to: nil))
+        let frame = panel.frame
+        let before = await store.snapshot()
+        let bytes = try Data(contentsOf: storedURL)
+        let sweeps = view.refreshSweepCountForChecks
+        let originalOpen = dock.showConsole
+        var cockpitRequests = 0
+        dock.showConsole = { cockpitRequests += 1 }
+        defer { dock.showConsole = originalOpen }
+
+        let events = PointerEvents()
+        let previousInput = panel.receivedInput
+        let previousPlacement = dock.onPlacementObserved
+        var start: CGPoint?
+        var displacement: CGFloat = 0
+        var peak: CGFloat = 0
+        var movedPanel = false
+        dock.onPlacementObserved = { placement, recovering in
+            previousPlacement?(placement, recovering)
+            movedPanel = movedPanel || dock.edgePresentation?.moving == true
+        }
+        panel.receivedInput = { type, timestamp in
+            previousInput?(type, timestamp)
+            switch type {
+            case .leftMouseDown:
+                events.down += 1
+                start = NSEvent.mouseLocation
+                displacement = 0
+                peak = 0
+            case .leftMouseDragged:
+                events.drag += 1
+                if let start {
+                    displacement = NSEvent.mouseLocation.x - start.x
+                    peak = max(peak, abs(displacement))
+                }
+            case .leftMouseUp:
+                events.up += 1
+            default:
+                break
+            }
+        }
+        defer {
+            panel.receivedInput = previousInput
+            dock.onPlacementObserved = previousPlacement
+        }
+
+        func assertUnchanged(_ step: String) async throws {
+            XCTAssertTrue(panel.isVisible, step)
+            XCTAssertEqual(panel.frame, frame, step)
+            XCTAssertFalse(movedPanel, step)
+            XCTAssertEqual(cockpitRequests, 0, step)
+            XCTAssertEqual(view.interactionTargets(edge: .bottom).map(\.id), order, step)
+            XCTAssertEqual(view.refreshSweepCountForChecks, sweeps, step)
+            XCTAssertFalse(controller.hasCapture, step)
+            XCTAssertNil(controller.presentation?.reorder, step)
+            XCTAssertFalse(app.settingsHost.application.editor.isSaving, step)
+            let saved = await store.snapshot()
+            XCTAssertEqual(saved.revision, before.revision, step)
+            XCTAssertEqual(try Data(contentsOf: storedURL), bytes, step)
+        }
+
+        announce("D-11", "Press the ignition inside \(ignitionFrame), drag outside the button and release.")
+        // AppKit button tracking may consume its own drag/up events instead of dispatching them to NSPanel.
+        guard try await wait(.seconds(35), until: {
+            events.down == 1 && NSEvent.pressedMouseButtons & 1 == 0 && !ignitionFrame.contains(NSEvent.mouseLocation)
+        }) else { return XCTFail("No completed physical ignition gesture") }
+        XCTAssertTrue(start.map(ignitionFrame.contains) == true)
+        try await assertUnchanged("ignition drag")
+
+        for target in [4.0, 5.0, 6.0] {
+            let downBefore = events.down, upBefore = events.up, dragBefore = events.drag
+            announce("D-11", "Press near the centre of \(nozzleFrame); move right by \(Int(target)) pixels and hold.")
+            let reached = try await wait(.seconds(35)) {
+                events.down == downBefore + 1 && events.up == upBefore && events.drag > dragBefore &&
+                    start.map(nozzleFrame.contains) == true && controller.hasCapture && abs(displacement - target) < 0.25
+            }
+            guard reached else { return XCTFail("No physical \(target) px checkpoint. Last sampled delta: \(displacement)") }
+            XCTAssertLessThan(peak, target + 0.25, "The physical gesture must not overshoot its threshold")
+            if target > 5 { XCTAssertNotNil(controller.presentation?.reorder) }
+            else { XCTAssertNil(controller.presentation?.reorder) }
+            XCTAssertEqual(panel.frame, frame)
+            announce("D-11", "Release without moving from the checkpoint.")
+            guard try await wait(.seconds(15), until: { events.up == upBefore + 1 }) else {
+                return XCTFail("Physical threshold release did not arrive")
+            }
+            XCTAssertLessThan(peak, target + 0.25, "Release must stay at the sampled threshold")
+            try await assertUnchanged("\(Int(target)) px threshold")
         }
     }
 
