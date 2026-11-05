@@ -48,7 +48,7 @@ public enum Settings65Homes {
     ]
     public static let cockpit = SettingsGroupDefinition(id: "cockpit", keys: [.opening,.countdown])
     public static let appearance = SettingsGroupDefinition(id: "appearance", keys: [.theme,.motion,.transparency])
-    public static let subscriptions = SettingsGroupDefinition(id: "subscriptions", keys: [.visible,.alias,.source,.detectedReaders,.optionalReaders])
+    public static let subscriptions = SettingsGroupDefinition(id: "subscriptions", keys: [.visible,.alias,.detectedReaders,.optionalReaders])
     public static let paneCountPending = false
 }
 public enum SettingsDiagramKind: String, CaseIterable, Sendable { case edge, percentages, autoCollapse, size, quotaWindow }

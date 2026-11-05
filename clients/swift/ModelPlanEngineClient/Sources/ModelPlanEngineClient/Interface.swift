@@ -45,6 +45,7 @@ public enum EngineResponse: Sendable {
     case consent(EngineReply<WireConsentFacts>)
     case grant(EngineGrantResult)
     case refresh(EngineReply<[WireRefreshScheduled]>)
+    case memberRefresh(EngineReply<WireMemberRefreshResult>)
     case history(EngineReply<WireHistoryPage>)
     case cockpit(EngineReply<WireCockpitData>)
     case pluginInstall(EngineReply<WirePluginInstallResult>)
@@ -99,6 +100,7 @@ public protocol EngineClient: Actor {
     /// clear acknowledgement. False during invalidation, stop or restart.
     /// This does not grant scope, reserve validity or cancel an OS operation.
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool
+    func supportsCapability(_ capability: String) async -> Bool
     func start() async throws -> EngineDeliveryContext
     func stop() async
     func retry() async throws -> EngineDeliveryContext
@@ -122,6 +124,7 @@ public protocol EngineClient: Actor {
 }
 
 extension EngineClient {
+    public func supportsCapability(_ capability: String) async -> Bool { false }
     public func refresh(_ request: WireRefreshRequestParams, timeout: Duration?,
                         prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion {
         // A client without the pre-send seam must not invent a correlation ID.

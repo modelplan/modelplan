@@ -93,6 +93,8 @@ public struct EngineStoreCore: Sendable {
             snapshot.lastGrant = result
         case .refresh(let reply):
             snapshot.refresh = reply.envelope.data
+        case .memberRefresh:
+            break // delivered to the request-specific observer, never retained as global state
         case .history(let reply):
             snapshot.history = reply.envelope.data
             succeeded(.history)

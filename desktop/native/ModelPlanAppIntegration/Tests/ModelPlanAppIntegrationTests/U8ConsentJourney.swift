@@ -81,9 +81,11 @@ private actor U8JourneyEngine:EngineClient {
         for (pane,query) in [(Optional("subscriptions"),""),(nil,"synthetic-sub")] {
             let rows=try SettingsCatalogue.rows(preferences:preferences,context:settingsContext,paneID:pane,query:query)
             let retained=entry.retainingNonConsentRows(rows)
-            try require(Set(retained.map(\.key)).isSuperset(of:[.visible,.alias,.source]),"SET-9-16 per-subscription visibility, alias and source must survive consent replacement in pane and search")
+            try require(Set(retained.map(\.key)).isSuperset(of:[.visible,.alias]),"SET-9-16 per-subscription visibility and alias must survive consent replacement in pane and search")
             try require(!retained.contains{[SettingKey.detectedReaders,.optionalReaders].contains($0.key)},"only replaced legacy consent rows may be suppressed")
         }
+        let diagnosticsRows=try SettingsCatalogue.rows(preferences:preferences,context:settingsContext,paneID:"diagnostics")
+        try require(entry.retainingNonConsentRows(diagnosticsRows).contains{$0.key == .source},"per-subscription source belongs in Diagnostics")
         try require(entry.controller.selectedIDs.isEmpty,"first-run facts must not pre-check standard or browser scopes")
         entry.controller.selectAll()
         try require(entry.controller.selectedIDs == ["codex.local_history","cursor.saved_login"],"select all must include only known standard paths, never browser or unknown routes")
