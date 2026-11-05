@@ -820,7 +820,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         for view in [dockView] + alternateViews {
             view.appearanceNotices = presentationNotices
             view.appearanceDisplaySize = display?.usableFrame.size
-            view.appearanceMenuBarExclusion = 0
+            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.usableFrame.maxY) } ?? 0
         }
         var appearanceFallback = false
         lastAppearanceError = nil
@@ -919,7 +919,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             // AppKit can round the owned window to whole backing pixels. A data-only
             // update must keep that actual surface size until registered geometry changes.
             let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
-            _ = try? prepareSliver(size: size)
+            _ = try? prepareSliver(size: size, backingScale: display?.backingScale)
         }
         let selectedID = passPreferences.followActiveDisplay ? display?.id : (passPreferences.dockDisplayID ?? topology.main?.id)
         let preference = DockEdgePreference(displayID: selectedID, edge: selected, alongFraction: passPreferences.dockAlongFraction)
@@ -1295,7 +1295,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
-    func prepareSliver(size: CGSize) throws -> DockSliverView {
+    func prepareSliver(size: CGSize, backingScale: Int? = nil) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
         do {
             let geometry = presentationGeometry
@@ -1308,7 +1308,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 marks[dot.stationID] = DockSliverNoticeMark(position: position, notice: dot.notice, unit: geometry.noticeUnit)
             }
             sliver.noticeMarks = marks.values.sorted { $0.position == $1.position ? $0.notice.key.subscriptionID < $1.notice.key.subscriptionID : $0.position < $1.position }
-            let nativeScale = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID)?.backingScale ?? geometry.sliverScale
+            let nativeScale = backingScale
+                ?? topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID)?.backingScale
+                ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
                              accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language))
             sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize

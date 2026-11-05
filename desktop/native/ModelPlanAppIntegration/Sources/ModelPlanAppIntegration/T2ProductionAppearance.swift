@@ -26,7 +26,12 @@ import ModelPlanSettings
         // T2 measures its curved span before raster bounds union the ignition.
         // Feed any measured excess back into the overflow budget before drawing.
         for _ in 0..<8 {
-            let coords = T2EdgeCoordinates(edge: edge, width: budget.width, height: budget.height, menuBarExclusion: 0)
+            // Preserve the study's top-left origin for artwork and control registration.
+            // The top reservation is added to the coordinate extent and excluded from
+            // the along-edge budget, so fit still uses only the available rectangle.
+            let top = view.appearanceMenuBarExclusion
+            let coords = T2EdgeCoordinates(edge: edge, width: budget.width, height: budget.height + top,
+                                           menuBarExclusion: top)
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
                 showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
