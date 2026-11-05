@@ -8,6 +8,25 @@ enum ScopeConsentFixtures {
     static let local = "gemini.local_history"
     static let gemini = "gemini.account_usage.saved_login"
     static let cursor = "cursor.account_usage.saved_login"
+    static func firstRunFacts() throws -> WireConsentFacts {
+        var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
+        while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json").path) { root.deleteLastPathComponent() }
+        let data = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json"))
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let scopes = object["scopes"] as? [[String: Any]], let base = scopes.first else { throw Failure.missingCapture }
+        let definitions = [("one.local", "local_log"), ("two.runtime", "runtime_rpc"),
+                           ("three.browser", "browser_session"), ("four.key", "api_key_api"),
+                           ("five.status", "status_line")]
+        let synthetic = definitions.map { id, route -> [String: Any] in
+            var value = base
+            value["scope"] = id; value["tool"] = "codex"; value["route"] = route
+            value["detected"] = true; value["retired"] = false; value["state"] = "unset"
+            value["defaultCheck"] = true; value["cleanupPending"] = false
+            value.removeValue(forKey: "keychain"); value.removeValue(forKey: "disabledReason")
+            return value
+        }
+        return try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: ["consentTextVersion": object["consentTextVersion"] as Any, "scopes": synthetic]))
+    }
     static func facts(grantedGemini: Bool = false, cursorDefault: Bool = false, retiredGemini: Bool = false, unknownGeminiRoute: Bool = false) throws -> WireConsentFacts {
         var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json").path) { root.deleteLastPathComponent() }

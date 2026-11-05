@@ -6,6 +6,44 @@ import ModelPlanWire
 @testable import ModelPlanSettings
 
 @MainActor final class ScopeConsentFlowTests: XCTestCase {
+    func testFirstRunDoneSubmitsOnlyExplicitlySelectedStandardScopes() async throws {
+        let engine = ScopeConsentTestClient()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1,
+                      consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.firstRunFacts())
+        XCTAssertTrue(controller.beginFirstRunDraft())
+        XCTAssertTrue(controller.selectedIDs.isEmpty, "First-run readers start unchecked")
+        controller.selectAll()
+        XCTAssertEqual(controller.selectedIDs, ["one.local", "two.runtime"])
+        controller.choose("one.local", selected: false)
+        let before = await engine.recordedGrants(); XCTAssertTrue(before.isEmpty)
+        let result = await controller.submitFirstRunSelection()
+        XCTAssertEqual(result, .submitted)
+        let sent = await engine.recordedGrants()
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?.allow, ["two.runtime"])
+        XCTAssertTrue(sent.first?.deny.isEmpty == true)
+        XCTAssertTrue(sent.first?.keychain?.isEmpty ?? true)
+        XCTAssertFalse(controller.isAllowed("two.runtime"), "RPC completion is not accepted consent facts")
+    }
+
+    func testFirstRunSelectAllDoesNotChangeBrowserChoiceOrSelectKeyAndStatusPaths() throws {
+        let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1,
+                      consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.firstRunFacts())
+        XCTAssertTrue(controller.beginFirstRunDraft())
+        controller.choose("three.browser", selected: true)
+        controller.selectAll()
+        XCTAssertEqual(controller.selectedIDs, ["one.local", "two.runtime", "three.browser"])
+        XCTAssertFalse(controller.selectedIDs.contains("four.key"))
+        XCTAssertFalse(controller.selectedIDs.contains("five.status"))
+    }
     func testChangingSurfaceLanguagePreservesDraft() throws {
         let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
             try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
