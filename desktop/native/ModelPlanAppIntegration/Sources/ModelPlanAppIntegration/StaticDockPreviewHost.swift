@@ -285,6 +285,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
     }
@@ -501,7 +502,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
-            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
+            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: effectiveRedBelow) else { return nil }
             let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
@@ -786,7 +787,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             var value = passPreferences.applying(to: input)
             value.unavailableReason=next.presentationRows[input.id]?.reason
             if let signal = workingSignals[input.id] { value.working = signal }
-            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow)) else { return nil }
+            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: effectiveRedBelow) else { return nil }
             if !createsNativePanels, let fixtureStatus = comparisonStatuses[input.id] { return reading.comparisonFixture(status: fixtureStatus) }
             return reading
         }

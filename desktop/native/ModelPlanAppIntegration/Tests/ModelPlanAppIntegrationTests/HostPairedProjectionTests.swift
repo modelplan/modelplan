@@ -168,6 +168,15 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(try reading(first).readout, "25%")
         XCTAssertEqual(try reading(first).status, .critical)
         XCTAssertNotNil(view.helpReadoutAnchor(first))
+        let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
+        guard case .choice(let selected, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
+        XCTAssertEqual(selected, "25")
+        for option in options {
+            let threshold = try XCTUnwrap(Int(option))
+            _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
+            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
+            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
+        }
         _ = try await editor.commit(SettingsB20Edit.redBelow(20))
         XCTAssertEqual(try reading(first).status, .warning)
         XCTAssertEqual(try reading(second).readout, "20%")
@@ -199,11 +208,13 @@ private actor EntrySyntheticClient: EngineClient {
         await relaunched.composition.stop()
         // A prerelease profile can contain 16 even though the current editor no longer offers it.
         let existing = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let seeded = try await existing.update { $0.redBelow = 16 }
+        _ = try await existing.update { $0.redBelow = 16 }
+        let settingsFile = root.appendingPathComponent("ModelPlan/settings.json")
+        let storedBytes = try Data(contentsOf: settingsFile)
         let legacy = try await start()
         let committed = try XCTUnwrap(legacy.composition.latestSettings)
         XCTAssertEqual(committed.snapshot.preferences.redBelow, 16)
-        XCTAssertEqual(committed.snapshot.revision, seeded.revision, "Opening the widget must not rewrite legacy settings")
+        XCTAssertEqual(try Data(contentsOf: settingsFile), storedBytes, "Opening the widget must not rewrite legacy settings")
         let shown = legacy.composition.dock.dockView.presentedReadingsForChecks
         let effective = committed.effective.redBelow
         XCTAssertEqual(shown[first]?.status, effective >= 25 ? .critical : .warning)
