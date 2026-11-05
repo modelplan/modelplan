@@ -27,7 +27,7 @@ A machine may hold the plugin's copy (`~/.cache/modelplan-cli/<version>/`), the 
 ## 3. Detection and consent
 
 1. `modelplan detect` lists the tools found on this machine from the **detector catalogue** (section 5). It reads presence only: app bundle IDs, config/credential *paths*, Keychain item *names*, CLI presence. No credential is read and no network call is made.
-2. **One consent** covers every detected tool. The App's first-run page, or `modelplan connect --detected` in a terminal or agent, lists the detected tools pre-checked. For each tool it shows where the reading comes from, which provider host receives the tool's own credential, and whether CodexBar reads it. One confirmation enables all checked tools.
+2. **One consent** covers every detected tool. The App's first-run page lists detected standard readers unchecked; select all checks only those standard readers. Browser-session readers remain off unless individually selected. The `modelplan connect --detected` flow is available in a terminal or agent. For each tool the consent flow shows where the reading comes from, which provider host receives the tool's own credential, and whether CodexBar reads it. One confirmation enables the checked tools.
 3. A tool detected later is offered on its own: an App badge or a one-line CLI hint. Earlier choices are never re-asked.
 4. `modelplan disconnect <tool|--all>` and the App's "Forget readings" revoke consent and delete that tool's cached readings.
 
@@ -175,7 +175,7 @@ generation 提交 `consent grant --json`。请求以 UUID 幂等，标准授权�
 - **Browser session (advanced):** providers readable only from a browser sign-in (about 50 at 0.81.0, e.g. Windsurf, Devin, Augment, Qoder, Trae CN, Perplexity, Manus, Mistral). Off by default and never in the one-click consent. The user turns each one on separately; the explanation says macOS will ask for the browser's "Safe Storage" key, which unlocks that browser's saved sign-ins, and that CodexBar keeps the session cookie in its own Keychain item. "Forget readings" also clears that cookie cache. Background refreshes never trigger a Keychain prompt; only a user action may, and a denial is not re-asked for six hours (CodexBar's own policy).
 - **Not read:** providers whose CodexBar path refreshes tokens (e.g. Antigravity, Factory, StepFun, Vertex AI); head providers use our native readers instead. API-key-only platforms are not offered.
 
-**Where users choose:** the first-run page lists the tools detected from local signals in two groups: standard (pre-checked) and browser session (advanced, unchecked, with a one-line note; checking one shows the full explanation). Settings → Subscriptions has a per-subscription reading-source switch, and "Add subscription" for web-only services with no local signal. Detection never scans browser data.
+**Where users choose:** the first-run page lists the tools detected from local signals in two groups: standard (initially unchecked) and browser session (advanced, unchecked, with a one-line note; checking one shows the full explanation). Select all affects standard readers only. Settings → Subscriptions has a per-subscription reading-source switch, and "Add subscription" for web-only services with no local signal. Detection never scans browser data.
 
 **Routing**, per provider, from the catalogue: `preferred: native | codexbar | off`.
 
