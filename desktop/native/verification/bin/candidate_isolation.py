@@ -68,6 +68,20 @@ def synthetic_probe():
             return {'status': 'unavailable', 'reason': 'sandbox probe could not be verified'}
 
 
+def keychain_event_matches(metadata, candidate_pid, candidate_executable):
+    """Match pre-extracted client metadata only; do not inspect event messages.
+
+    The caller must separately establish that its source reports the actual
+    client rather than the security service. This matcher is not a monitor.
+    """
+    if not isinstance(metadata, dict) or type(candidate_pid) is not int or candidate_pid <= 0:
+        return False
+    if not isinstance(candidate_executable, str) or not candidate_executable:
+        return False
+    return (type(metadata.get('clientPID')) is int and metadata['clientPID'] == candidate_pid
+            and metadata.get('clientExecutable') == candidate_executable)
+
+
 def isolation_receipt(probe=None):
     """A synthetic probe never authorizes a candidate or proves Keychain safety."""
     return {
@@ -75,7 +89,7 @@ def isolation_receipt(probe=None):
         'guards': {'syntheticInputs': 'not-enforced', 'credentialAndKeychainMutations': 'not-enforced',
                    'providerNetwork': 'not-enforced'},
         'proofResults': {'syntheticSandbox': probe if probe is not None else {'status': 'not-run'},
-                         'credentialMutationDenied': 'not-run', 'candidateIsolation': 'not-run'},
+                         'keychainMonitoringD19': 'not-verified', 'candidateIsolation': 'not-run'},
         'scratchPaths': {},
         'reason': 'candidate filesystem, credential-service and network isolation have not been established',
     }

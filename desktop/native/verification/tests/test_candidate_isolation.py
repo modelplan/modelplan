@@ -23,8 +23,15 @@ class CandidateIsolationTests(unittest.TestCase):
         receipt = isolation.isolation_receipt({'status': 'completed', 'syntheticDeniedRead': 'denied',
                                                'scratchWrite': 'allowed', 'outboundNetwork': 'denied'})
         self.assertEqual(receipt['verdict'], 'refuse')
-        self.assertEqual(receipt['proofResults']['credentialMutationDenied'], 'not-run')
+        self.assertEqual(receipt['proofResults']['keychainMonitoringD19'], 'not-verified')
         self.assertEqual(receipt['scratchPaths'], {})
+
+    def test_keychain_metadata_requires_actual_client_identity(self):
+        event = {'clientPID': 42, 'clientExecutable': '/synthetic/candidate', 'operation': 'query'}
+        self.assertTrue(isolation.keychain_event_matches(event, 42, '/synthetic/candidate'))
+        self.assertFalse(isolation.keychain_event_matches(event, 43, '/synthetic/candidate'))
+        self.assertFalse(isolation.keychain_event_matches({'processID': 42}, 42, '/synthetic/candidate'))
+        self.assertFalse(isolation.keychain_event_matches({'clientPID': True, 'clientExecutable': '/synthetic/candidate'}, 1, '/synthetic/candidate'))
 
     def test_probe_failure_includes_sanitized_stderr(self):
         result = subprocess.CompletedProcess([], 71, '', 'sandbox_apply: Operation not permitted')
