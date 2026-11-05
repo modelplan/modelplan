@@ -244,6 +244,175 @@ import ModelPlanSettings
         if disabled { XCTAssertFalse(host.nativePanel?.isVisible == true) }
         else { XCTAssertTrue(host.nativePanel?.isVisible == true) }
     }
+
+    private func promptD14(_ instruction: String) {
+        FileHandle.standardOutput.write(Data(("D-14: " + instruction + "\n").utf8))
+    }
+
+    private func preserveTestAppAppearance() {
+        let app = NSApplication.shared
+        let mainMenu = app.mainMenu, appearance = app.appearance
+        let policy = app.activationPolicy()
+        addTeardownBlock { @MainActor in
+            app.mainMenu = mainMenu
+            app.appearance = appearance
+            app.setActivationPolicy(policy)
+        }
+    }
+
+    private func watchPhysicalMenu(matching matches: @escaping (NSMenu) -> Bool, action: String,
+                                   until completed: () -> Bool) async throws {
+        var tracked = false
+        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+            object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    if let menu = note.object as? NSMenu, matches(menu) { tracked = true }
+                }
+            }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        promptD14(action)
+        let applied = try await wait(45) { tracked && completed() }
+        _ = try XCTUnwrap(applied ? true : nil, "The physical menu action must complete: \(action)")
+    }
+
+    func testD14PhysicalHideRelaunchAndShowWhileRowsAreWithheld() async throws {
+        preserveTestAppAppearance()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (relay, _, home) = try await makeRowsBarrier(in: root)
+        let profile = root.appendingPathComponent("profile")
+        let first = try await make(profile, nil, executable: relay, helperHome: home) {
+            $0.motion = .on
+            $0.autoHide = false
+            $0.showDock = true
+            $0.dockEdge = .right
+        }
+        addTeardownBlock { @MainActor in
+            await first.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(first)
+        let visible = try await wait(8) { first.nativeJourneyStatusVisible && first.composition.dock.nativePanel?.isVisible == true }
+        let original = try XCTUnwrap(visible ? first.composition.dock.nativePanel?.frame : nil)
+        let firstEditor = first.settingsHost.application.editor
+        try await watchPhysicalMenu(matching: first.composition.dock.ownsDockMenu, action: "Right-click the visible widget and select Hide Quota Widget.") {
+            firstEditor.snapshot?.preferences.showDock == false && !firstEditor.isSaving &&
+                first.composition.dock.nativePanel?.isVisible != true
+        }
+        let hidden = await firstEditor.store.snapshot()
+        XCTAssertFalse(hidden.preferences.showDock)
+        XCTAssertNil(first.composition.store.snapshot.rows)
+        await first.stopNativeDockJourney()
+
+        let second = try await make(profile, nil, executable: relay, helperHome: home)
+        addTeardownBlock { @MainActor in
+            await second.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(second)
+        let editor = second.settingsHost.application.editor
+        let ready = try await wait(8) {
+            second.nativeJourneyStatusVisible && editor.snapshot?.preferences.showDock == false
+        }
+        XCTAssertTrue(ready)
+        XCTAssertFalse(second.composition.dock.nativePanel?.isVisible == true)
+        XCTAssertEqual(editor.snapshot?.revision, hidden.revision)
+        promptD14("Capture the still-hidden widget after reopening the same profile.")
+
+        let host = second.composition.dock
+        func highlight() -> CALayer? {
+            host.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        second.setActivityPaused(true)
+        let paused = try await wait(4) { second.lifecyclePaused && host.nativePanel?.isVisible != true }
+        XCTAssertTrue(paused)
+        let pausedMenu = try XCTUnwrap(second.liveStatusMenu)
+        XCTAssertTrue(pausedMenu.items.contains { $0.title == "Show Quota Widget" && $0.isEnabled })
+        try await watchPhysicalMenu(matching: { $0 === pausedMenu }, action: "In the status menu, select Show Quota Widget while presentation is paused.") {
+            editor.snapshot?.preferences.showDock == true && !editor.isSaving
+        }
+        XCTAssertEqual(editor.snapshot?.revision, hidden.revision + 1)
+        XCTAssertFalse(host.nativePanel?.isVisible == true)
+        XCTAssertNil(highlight())
+        second.setActivityPaused(false)
+        let revealed = try await wait(8) { host.nativePanel?.isVisible == true && highlight() != nil }
+        XCTAssertTrue(revealed)
+        XCTAssertEqual(host.nativePanel?.frame, original)
+        XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+        XCTAssertNil(second.composition.store.snapshot.rows)
+        let firstMark = try XCTUnwrap(highlight())
+        XCTAssertTrue(firstMark.animationKeys()?.isEmpty ?? true)
+        promptD14("Capture the empty widget restored to its original position with a static highlight.")
+
+        let showAgain = try XCTUnwrap(second.liveStatusMenu)
+        let shownRevision = editor.snapshot?.revision
+        try await watchPhysicalMenu(matching: { $0 === showAgain }, action: "Select Show Quota Widget again while the widget is already visible.") {
+            highlight().map { $0 !== firstMark } == true
+        }
+        XCTAssertEqual(host.nativePanel?.frame, original)
+        XCTAssertEqual(editor.snapshot?.revision, shownRevision)
+        XCTAssertTrue(try XCTUnwrap(highlight()).animationKeys()?.isEmpty ?? true)
+
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        promptD14("Move the pointer away from the widget until it collapses to the strip.")
+        let collapsed = try await wait(12) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(collapsed)
+        let stripMenu = try XCTUnwrap(second.liveStatusMenu)
+        let stripRevision = editor.snapshot?.revision
+        try await watchPhysicalMenu(matching: { $0 === stripMenu }, action: "With the strip collapsed, select Show Quota Widget in the status menu.") {
+            host.edgePresentation?.state == .expanded && highlight() != nil
+        }
+        XCTAssertTrue(try XCTUnwrap(highlight()).animationKeys()?.isEmpty ?? true)
+        promptD14("Keep the pointer away and capture the strip collapsing again by its normal rule.")
+        let recollapsed = try await wait(12) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(recollapsed)
+        XCTAssertEqual(editor.snapshot?.revision, stripRevision)
+        XCTAssertTrue(editor.snapshot?.preferences.autoHide == true)
+        XCTAssertNil(second.composition.store.snapshot.rows)
+    }
+
+    func testD14PhysicalSettingsToggleAndStatusMenuStayInSync() async throws {
+        preserveTestAppAppearance()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-settings-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (_, _, home) = try await makeRowsBarrier(in: root)
+        let app = try await make(root.appendingPathComponent("profile"), nil, executable: try reviewedHelper(),
+                                 helperHome: home) {
+            $0.autoHide = false
+            $0.onboarding.next()
+        }
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(app)
+        let ready = try await wait(12) {
+            app.nativeJourneyStatusVisible && !app.lifecyclePaused && app.composition.dock.nativePanel?.isVisible == true
+        }
+        guard ready else { return XCTFail("Settings needs the real native launch and a current engine delivery") }
+        let windowsBefore = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        func settingsWindow() -> NSWindow? {
+            NSApplication.shared.windows.first { !windowsBefore.contains(ObjectIdentifier($0)) && $0.isVisible && $0.title == "Settings" }
+        }
+        try await watchPhysicalMenu(matching: { $0 === menu }, action: "Open Settings from the native status menu and select the Quota Widget pane.") {
+            settingsWindow() != nil
+        }
+        let editor = app.settingsHost.application.editor
+        let frame = try XCTUnwrap(app.composition.dock.nativePanel?.frame)
+        for shown in [false, true] {
+            promptD14("In Settings, turn Show Quota Widget \(shown ? "on" : "off"). Capture the result.")
+            let applied = try await wait(45) {
+                editor.snapshot?.preferences.showDock == shown && !editor.isSaving &&
+                    (app.composition.dock.nativePanel?.isVisible == true) == shown
+            }
+            XCTAssertTrue(applied)
+            let stored = await editor.store.snapshot()
+            XCTAssertEqual(stored.preferences.showDock, shown)
+            XCTAssertTrue(app.liveStatusMenu?.items.contains { $0.title == "Show Quota Widget" && $0.isEnabled } == true)
+            if shown { XCTAssertEqual(app.composition.dock.nativePanel?.frame, frame) }
+        }
+    }
     #endif
 
     func testD02AndD03NativePanelTracksReservationsAndKeepsEdge() async throws {
