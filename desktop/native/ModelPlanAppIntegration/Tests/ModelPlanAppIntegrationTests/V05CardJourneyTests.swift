@@ -76,6 +76,21 @@ private actor V05SyntheticClient: EngineClient {
         defer { app.composition.dock.close() }
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         let dock = app.composition.dock, id = "aaaaaaaaaaaaaaaa"
+        // This is the directory uploaded by the pinned GUI workflow, including on test failure.
+        let environment = ProcessInfo.processInfo.environment
+        let evidence: URL?
+        if environment["GITHUB_ACTIONS"] == "true" {
+            let runnerTemp = try XCTUnwrap(environment["RUNNER_TEMP"], "The GUI runner must supply its artifact directory")
+            evidence = URL(fileURLWithPath: runnerTemp, isDirectory: true)
+                .appendingPathComponent("dock-instrument-checks/dock-visual", isDirectory: true)
+        } else {
+            evidence = nil
+        }
+        if let evidence {
+            try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
+            let result = dock.lastAppearanceError.map { "Production appearance failed: \($0)\n" } ?? "Production appearance loaded.\n"
+            try result.write(to: evidence.appendingPathComponent("v05-appearance.txt"), atomically: true, encoding: .utf8)
+        }
         XCTAssertNil(dock.lastAppearanceError, "The production Dock appearance must load")
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal-entry interaction must be installed")
         XCTAssertTrue(dock.interactionEnvironment().active, "Normal-entry interaction must be active")
@@ -91,6 +106,22 @@ private actor V05SyntheticClient: EngineClient {
             let texts = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
             XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")
             for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
+            if let evidence {
+                let suffix = language == .english ? "en" : "zh"
+                guard let bitmap = dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds),
+                      !dock.card.bounds.isEmpty else {
+                    try "Card bitmap unavailable.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
+                    XCTFail("The synthetic card cannot be rendered to an offscreen bitmap")
+                    continue
+                }
+                dock.card.cacheDisplay(in: dock.card.bounds, to: bitmap)
+                guard let png = bitmap.representation(using: .png, properties: [:]) else {
+                    try "Card PNG encoding failed.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
+                    XCTFail("The synthetic card bitmap cannot be encoded")
+                    continue
+                }
+                try png.write(to: evidence.appendingPathComponent("v05-card-\(suffix).png"), options: .atomic)
+            }
         }
         await app.composition.stop()
     }

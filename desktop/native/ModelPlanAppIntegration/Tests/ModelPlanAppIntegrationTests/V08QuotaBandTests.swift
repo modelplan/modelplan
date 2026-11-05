@@ -4,6 +4,21 @@ import ModelPlanDock
 import ModelPlanOfficialDock
 
 final class V08QuotaBandTests: XCTestCase {
+    func testV09StatusInksAreNotBrandOrVendorIdentityColours() throws {
+        let coordinates = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: T2GeometryInput(coordinates: coordinates))
+        let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+        let identityRGB: [[Double]] = [
+            [223, 96, 76], [238, 242, 246], [192, 140, 255], [181, 214, 90], [255, 106, 0]
+        ]
+        for name in ["normal", "warning", "critical"] {
+            let ink = try XCTUnwrap(skin.palette[name])
+            for rgb in identityRGB {
+                let same = zip([ink.r, ink.g, ink.b], rgb).allSatisfy { pair in abs(pair.0 - pair.1 / 255) < 0.000001 }
+                XCTAssertFalse(same, "Status role \(name) must not use a brand or vendor colour")
+            }
+        }
+    }
     func testV08ProductionSkinUsesReviewedNightStatusColours() throws {
         let coordinates = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)
         let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: T2GeometryInput(coordinates: coordinates))
