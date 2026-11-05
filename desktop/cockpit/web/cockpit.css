@@ -34,3 +34,9 @@
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 :root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
+
+/* A bounded caution cue; hidden and reduced-motion surfaces remain still. */
+@keyframes cockpit-caution-blink{50%{filter:brightness(.45)}}
+#cockpit[data-active="true"][data-shell="open"] .caution.flash{animation:cockpit-caution-blink 1s steps(1,end) 10!important}
+html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .caution.flash{animation:none!important}
+@media(prefers-reduced-motion:reduce){#cockpit[data-active][data-shell] .caution.flash{animation:none!important}}
