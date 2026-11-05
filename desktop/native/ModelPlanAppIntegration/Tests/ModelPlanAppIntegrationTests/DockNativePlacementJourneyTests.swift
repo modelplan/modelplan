@@ -413,6 +413,95 @@ import ModelPlanSettings
             if shown { XCTAssertEqual(app.composition.dock.nativePanel?.frame, frame) }
         }
     }
+    func testD15PhysicalRestingPanelRendersEveryDisplayEdgeAndSize() async throws {
+        preserveTestAppAppearance()
+        let topology = DockDisplayTopology.system()
+        guard topology.displays.count >= 2, topology.displays.indices.allSatisfy({ index in
+            topology.displays[..<index].allSatisfy { !$0.frame.intersects(topology.displays[index].frame) }
+        }) else { return XCTFail("D-15 needs at least two actual non-mirrored displays") }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d15-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (_, _, home) = try await makeRowsBarrier(in: root)
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        let quotas = [76, 58, 41, 25]
+        let ids = quotas.indices.map { "synthetic-d15-\($0)" }
+        let plans = ids.map { ["planId": $0] }
+        let windows: [[String: Any]] = zip(ids, quotas).map { id, remaining in
+            ["planId": id, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+             "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+             "resetAt": iso.string(from: now.addingTimeInterval(7_200))]
+        }
+        let settingsDirectory = home.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: settingsDirectory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "plans": plans, "windows": windows])
+        try data.write(to: settingsDirectory.appendingPathComponent("local.json"), options: .atomic)
+        let app = try await make(root.appendingPathComponent("profile"), nil, executable: try reviewedHelper(),
+                                 helperHome: home) {
+            $0.autoHide = false
+            $0.followActiveDisplay = false
+            $0.onboarding.next()
+        }
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(app)
+        let host = app.composition.dock
+        let ready = try await wait(12) {
+            app.nativeJourneyStatusVisible && !app.lifecyclePaused && host.nativePanel?.isVisible == true &&
+                Set(host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == Set(quotas.map(Double.init))
+        }
+        guard ready else { return XCTFail("The real helper must deliver the four synthetic readings") }
+        let panel = try XCTUnwrap(host.nativePanel)
+        let editor = app.settingsHost.application.editor
+        let edges: [(SettingsDockEdge, DockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        let requestedAppearance = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D15_THEME"] ?? "night"
+        let theme = try XCTUnwrap(SettingsTheme(rawValue: requestedAppearance))
+        _ = try await editor.commit(SettingsB20Edit.theme(theme))
+
+        for (index, screen) in topology.displays.enumerated() {
+            _ = try await editor.commit(SettingsB21Edit.dockDisplay(screen.id))
+            for (preference, edge) in edges {
+                _ = try await editor.commit(SettingsB21Edit.dockEdge(preference))
+                for size in [SettingsSize.small, .medium, .large] {
+                    _ = try await editor.commit(SettingsB20Edit.size(size))
+                    let label = "display \(index + 1), \(edge), \(size), \(theme)"
+                    let visible = try await wait(4) {
+                        panel.isVisible && panel.occlusionState.contains(.visible) &&
+                            host.edgePresentation?.placement?.displayID == screen.id &&
+                            host.edgePresentation?.placement?.edge == edge
+                    }
+                    XCTAssertTrue(visible, label)
+                    let place = try XCTUnwrap(host.edgePresentation?.placement)
+                    let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+                    XCTAssertEqual(view.appearanceDisplaySize, screen.usableFrame.size, label)
+                    XCTAssertEqual(view.presentationBackingScale, screen.backingScale, label)
+                    XCTAssertEqual(panel.frame.width, place.frame.width, accuracy: 1, label)
+                    XCTAssertEqual(panel.frame.height, place.frame.height, accuracy: 1, label)
+                    XCTAssertTrue(screen.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame), label)
+                    switch edge {
+                    case .left: XCTAssertEqual(panel.frame.minX, screen.usableFrame.minX, accuracy: 1, label)
+                    case .right: XCTAssertEqual(panel.frame.maxX, screen.usableFrame.maxX, accuracy: 1, label)
+                    case .bottom: XCTAssertEqual(panel.frame.minY, screen.usableFrame.minY, accuracy: 1, label)
+                    case .top: XCTFail("Top is not an allowed resting edge")
+                    }
+                    let skin = try XCTUnwrap(view.presentedSkinForChecks)
+                    let nozzles = skin.stations.filter { $0.subscriptionID != nil }
+                    XCTAssertFalse(nozzles.isEmpty, label)
+                    for nozzle in nozzles { XCTAssertEqual(nozzle.diameter, size.nozzleDiameter, accuracy: 0.001, label) }
+                    XCTAssertEqual(nozzles.count + view.interactionOverflowIDs.count, quotas.count, label)
+                    let raster = try XCTUnwrap(view.renderedPixelSize)
+                    XCTAssertEqual(raster.width, ceil(view.bounds.width * CGFloat(screen.backingScale)), label)
+                    XCTAssertEqual(raster.height, ceil(view.bounds.height * CGFloat(screen.backingScale)), label)
+                    FileHandle.standardOutput.write(Data(("D-15: Capture " + label +
+                        " at 100%. Native raster \(Int(raster.width))×\(Int(raster.height)).\n").utf8))
+                    try await Task.sleep(for: .seconds(5))
+                }
+            }
+        }
+    }
     #endif
 
     func testD02AndD03NativePanelTracksReservationsAndKeepsEdge() async throws {
