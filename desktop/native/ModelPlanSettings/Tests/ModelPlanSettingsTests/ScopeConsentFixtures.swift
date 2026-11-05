@@ -8,7 +8,7 @@ enum ScopeConsentFixtures {
     static let local = "gemini.local_history"
     static let gemini = "gemini.account_usage.saved_login"
     static let cursor = "cursor.account_usage.saved_login"
-    static func firstRunFacts() throws -> WireConsentFacts {
+    static func firstRunFacts(allowed: Set<String> = []) throws -> WireConsentFacts {
         var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json").path) { root.deleteLastPathComponent() }
         let data = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json"))
@@ -20,7 +20,7 @@ enum ScopeConsentFixtures {
         let synthetic = definitions.map { id, route -> [String: Any] in
             var value = base
             value["scope"] = id; value["tool"] = "codex"; value["route"] = route
-            value["detected"] = true; value["retired"] = false; value["state"] = "unset"
+            value["detected"] = true; value["retired"] = false; value["state"] = allowed.contains(id) ? "allowed" : "unset"
             value["defaultCheck"] = true; value["cleanupPending"] = false
             value.removeValue(forKey: "keychain"); value.removeValue(forKey: "disabledReason")
             return value

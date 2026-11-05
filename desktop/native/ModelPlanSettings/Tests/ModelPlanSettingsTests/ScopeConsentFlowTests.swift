@@ -89,6 +89,9 @@ import ModelPlanWire
         let sent = await engine.recordedGrants()
         XCTAssertEqual(sent.count, 1)
         XCTAssertEqual(sent.first?.allow, ["one.local"])
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.firstRunFacts(allowed: ["one.local"]))
+        XCTAssertTrue(controller.isAllowed("one.local"))
+        XCTAssertTrue(controller.canChoose("two.runtime"), "Only accepted facts settle the pending choice")
     }
     func testChangingSurfaceLanguagePreservesDraft() throws {
         let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
