@@ -119,7 +119,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
         do{
             var input=env.presence
             guard visibility.policy.sampleInterval>0 else{throw DockLogicError.invalidTime}
-            if drag != nil, input.lifecycleActive, input.enabled, input.cockpitClosed, input.allowedOverFullscreen {
+            if drag != nil, allowsDrag(input) {
                 return
             }
             let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
@@ -171,16 +171,20 @@ public struct DockEdgePresentation:Equatable,Sendable {
         drag = PulsePanelDrag(press: global, placement: placement)
         return true
     }
+    private func allowsDrag(_ presence: DockPresence) -> Bool {
+        presence.lifecycleActive && presence.enabled && presence.cockpitClosed && presence.allowedOverFullscreen
+    }
+
     public func updateBackgroundMove(global: CGPoint) {
         guard running, var transaction = drag, transaction.beginMovement(at: global) else { return }
         drag = transaction
         let before = environment()
-        guard before.presence.lifecycleActive, before.presence.enabled, before.presence.cockpitClosed,
-              before.presence.allowedOverFullscreen else { cancelBackgroundMove(); return }
+        guard allowsDrag(before.presence) else { refresh(); return }
         guard let display = PulsePanelDrag.display(at: global, in: before.displays) else { return }
         prepareDragDisplay?(display)
         guard drag != nil, running else { return }
         let env = environment()
+        guard allowsDrag(env.presence) else { refresh(); return }
         // Topology can change while the destination artwork is prepared. Keep
         // the verified carry until the next pointer event has a current target.
         guard PulsePanelDrag.display(at: global, in: env.displays) == display else { return }
@@ -206,15 +210,15 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public func endBackgroundMove(global: CGPoint) {
         guard running, let transaction = drag else { return }
         let before = environment()
-        guard transaction.moved, before.presence.lifecycleActive, before.presence.enabled,
-              before.presence.cockpitClosed, before.presence.allowedOverFullscreen,
-              let display = PulsePanelDrag.display(at: global, in: before.displays) else {
+        guard allowsDrag(before.presence) else { refresh(); return }
+        guard transaction.moved, let display = PulsePanelDrag.display(at: global, in: before.displays) else {
             cancelBackgroundMove(); return
         }
         prepareDragDisplay?(display)
         guard drag != nil, running else { return }
         do {
             let env = environment()
+            guard allowsDrag(env.presence) else { refresh(); return }
             guard PulsePanelDrag.display(at: global, in: env.displays) == display else {
                 cancelBackgroundMove()
                 return
