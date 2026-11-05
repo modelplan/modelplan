@@ -668,18 +668,35 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
-    func withdrawAdmittedContent(privacy: Bool) {
-        guard !retired else { return }
+    @discardableResult
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+        guard !retired else { return false }
+        let keepCard = !privacy && cardPresentedGeneration != nil && (cardID.map(members.contains) ?? false)
+        if keepCard {
+            // Leave only an empty shell during the synchronous replacement.
+            // Its old labels, AX nodes and action generation retire before recompute.
+            cardPresentedGeneration = nil
+            card.dispose()
+        } else {
+            dismissCard()
+        }
         inputGeneration &+= 1
         model = nil; contentMenuStatusLines = []; contentEmptyText = nil
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        catalogueKey = ""; catalogueChanged?([])
-        dismissCard(); try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
+        if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
+        try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
+        return keepCard
+    }
+
+    func finishCardReplacement() -> Bool {
+        guard cardID != nil, cardPresentedGeneration == nil else { return false }
+        dismissCard()
+        return true
     }
 
     /// Installs the content consumer without replacing window/input ownership.

@@ -128,7 +128,7 @@ enum HostVerifiedWindowError: Error, Equatable {
                 // missing private quota proof must not erase that public status.
                 additionalRows: admitted ? row.additionalRows : row.additionalRows.filter { $0.kind == .notice && $0.id.hasPrefix("reset-event:") },
                 windowObservations: row.windowObservations.map { observations in
-                    admitted ? observations.filter { provenIDs.contains($0.key) } : [:]
+                    admitted ? observations.filter { provenIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
                 },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
         }

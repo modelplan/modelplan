@@ -243,7 +243,12 @@ public enum EngineDeadlineFacts {
             let observations: [String: DockWindowObservation]? = hasWindowSources
                 ? Dictionary(grouping: account.windows, by: \.id).compactMapValues { windows in
                     guard windows.count == 1, let window = windows.first else { return nil }
-                    return DockWindowObservation(sourceName: windowSourceName(window.source), observedAt: date(window.observedAt))
+                    let observed = date(window.observedAt)
+                    let verifiedRetained = account.valueState == .retained && member.isStable &&
+                        member.subscriptionRef == member.id && sourceState(member, now: context.now) == .stale &&
+                        window.source?.isKnown == true && (observed.map { $0 <= context.now } ?? false)
+                    return DockWindowObservation(sourceName: windowSourceName(window.source),
+                                                 observedAt: observed, verifiedRetained: verifiedRetained)
                 }
                 : nil
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
