@@ -256,6 +256,33 @@ private actor G1DEngine: EngineClient {
         XCTAssertTrue(view.playRefreshSweep(id,reduceMotion:true)); XCTAssertFalse(view.refreshSweepAnimatingForChecks)
         XCTAssertEqual(view.renderedWidgetValuesForChecks[id]?.text,original.text)
     }
+    func testGenericSnapshotDockReadsActualRenderedValueAndRetiresItOnClear() async throws {
+        let f=try await fixture(), id=G1DFixture.ids[0]
+        let snapshot=f.app.renderedSnapshotForChecks()
+        let readout=try XCTUnwrap(snapshot.element("dock.readout."+id))
+        XCTAssertEqual(readout.text,"41%");XCTAssertEqual(readout.attributes["remainingPercent"],"41.0")
+        XCTAssertEqual(readout.ink?.hex,"#E9EDF0FF")
+        XCTAssertEqual(snapshot.element("dock.face")?.assetSource,"ModelPlanOfficialDock.T2FaceMaterial")
+        XCTAssertGreaterThan(try XCTUnwrap(readout.frame).width,0)
+        let count=f.host.dockView.refreshSweepCountForChecks, before=f.host.dockView.frame
+        _=f.app.renderedSnapshotForChecks();XCTAssertEqual(f.host.dockView.frame,before)
+        XCTAssertEqual(f.host.dockView.refreshSweepCountForChecks,count)
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision:2,reason:.connectionLost,previous:nil,nextFloor:nil)))
+        XCTAssertNil(f.app.renderedSnapshotForChecks().element("dock.readout."+id))
+    }
+    func testGenericSnapshotCardReadsPaintedTextInkAndBackground() async throws {
+        let f=try await fixture();try f.hover();f.tick(0.251)
+        let card=f.host.card;card.layoutSubtreeIfNeeded()
+        let bitmap=try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in:card.bounds));card.cacheDisplay(in:card.bounds,to:bitmap)
+        let snapshot=f.app.renderedSnapshotForChecks()
+        let name=try XCTUnwrap(snapshot.element("dock.card.text.name"))
+        XCTAssertTrue(try XCTUnwrap(name.text).contains("Synthetic Alpha"));XCTAssertNotNil(name.ink)
+        XCTAssertNotNil(snapshot.element("card")?.fill)
+        XCTAssertGreaterThan(try XCTUnwrap(name.contrastAgainstParent),1)
+        XCTAssertEqual(snapshot.element("card")?.attributes["paintEvidence"],"completed-native-draw")
+        f.host.setPresentationAllowed(false)
+        XCTAssertNil(f.app.renderedSnapshotForChecks().element("dock.card.text.name"))
+    }
     private func fixture(autoHide: Bool = false, cockpitEnabled: Bool = false) async throws -> G1DFixture { let f = try G1DFixture(); addTeardownBlock { @MainActor in await f.close() }; try await f.open(autoHide: autoHide, cockpitEnabled: cockpitEnabled); return f }
     private func complete(_ condition: @escaping @MainActor () async -> Bool) async throws { let deadline = ContinuousClock.now + .seconds(15); while !(await condition()) { guard ContinuousClock.now < deadline else { XCTFail("Async delivery did not complete"); return }; await Task.yield() } }
     private func seam(_ id: String, _ reason: String) async throws {

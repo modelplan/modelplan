@@ -57,6 +57,7 @@ public struct DockInstrumentSkin: Codable, Sendable {
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
 /// Metadata captured by the successful drawing pass, never inferred from pixels.
 public struct DockRenderedTextInspection {
+    public let text: String, ink: DockInk
     public let frame: CGRect
     public let glyphTransform: CGAffineTransform
     /// This renderer paints text over the existing face; it paints no dedicated text backing.
@@ -237,7 +238,8 @@ public struct DockRenderResult {public let image:CGImage;public let backgroundIm
             c.saveGState();c.clip(to:rect)
             let baseline=rect.midY+(ascent-descent)/2
             c.translateBy(x:rect.midX-CGFloat(advance)/2,y:baseline);c.scaleBy(x:1,y:-1);c.textMatrix = .identity
-            let observation = DockRenderedTextInspection(frame: rect, glyphTransform: c.ctm, hasDedicatedBacking: false)
+            let channels = color.components!
+            let observation = DockRenderedTextInspection(text:value,ink:.init(Double(channels[0]),Double(channels[1]),Double(channels[2]),Double(channels[3])),frame: rect, glyphTransform: c.ctm, hasDedicatedBacking: false)
             c.textPosition = .zero;CTLineDraw(line,c);c.restoreGState()
             return observation
         }
