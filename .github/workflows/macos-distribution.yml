@@ -41,6 +41,9 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

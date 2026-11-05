@@ -2,6 +2,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -48,3 +49,54 @@ class BundlePinGuardTests(unittest.TestCase):
             (root / 'desktop/cockpit/.tmp/official/orphan.js').write_text('orphan')
             with self.assertRaises(ValueError):
                 guard.validate(root)
+
+    def test_community_only_requires_complete_pinned_community_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.fixture(root)
+            import shutil
+            shutil.rmtree(root / 'desktop/cockpit/.tmp/official')
+            self.assertEqual([x['edition'] for x in guard.validate(root, editions=('community',))], ['community'])
+            community = root / 'desktop/cockpit/.tmp/community'
+            (community / 'index.html').write_text('tampered')
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+            (community / 'index.html').unlink()
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+            (community / 'index.html').write_bytes(b'public synthetic HTML')
+            pins = json.loads(source.read_text())
+            pins['community'] = '0' * 64
+            source.write_text(json.dumps(pins))
+            with self.assertRaisesRegex(ValueError, 'native pin differs'):
+                guard.validate(root, editions=('community',))
+
+    def test_community_bundle_root_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            community = root / 'desktop/cockpit/.tmp/community'
+            moved = root / 'moved'
+            community.rename(moved)
+            community.symlink_to(moved, target_is_directory=True)
+            with self.assertRaises(ValueError):
+                guard.validate(root, editions=('community',))
+
+    def test_special_file_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            os.mkfifo(root / 'desktop/cockpit/.tmp/community/pipe')
+            with self.assertRaisesRegex(ValueError, 'Special build output'):
+                guard.validate(root, editions=('community',))
+
+    def test_appledouble_metadata_links_rejected_and_regular_files_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            bundle = root / 'desktop/cockpit/.tmp/community'
+            (bundle / '._ordinary').write_bytes(b'synthetic metadata')
+            guard.validate(root, editions=('community',))
+            (bundle / '._linked').symlink_to(root / 'outside')
+            with self.assertRaisesRegex(ValueError, 'Linked build output'):
+                guard.validate(root, editions=('community',))

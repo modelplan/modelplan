@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import json
+import hashlib
 import os
 from pathlib import Path
 import plistlib
@@ -116,18 +117,27 @@ class PackagingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             packaging.copy_tree(folder, self.root / 'copied')
 
-    def test_public_resources_include_separate_visual_and_ofl_notices_and_placeholder(self):
-        receipt = packaging.stage_resources(self.app)
-        self.assertEqual(receipt['cockpit'], 'placeholder')
-        r = self.app / 'Contents/Resources'
-        self.assertIn('U10 interface placeholder', (r / 'Cockpit/index.html').read_text())
-        self.assertTrue((r / 'VISUAL-LICENSE.md').is_file())
-        for family in ('manrope', 'dm-sans', 'jetbrains-mono', 'share-tech-mono'):
-            self.assertTrue((r / 'ThirdParty/fonts' / family / 'OFL.txt').is_file())
-        self.assertTrue((r / 'ThirdParty/licenses/pulse/THIRD_PARTY_NOTICES.md').is_file())
-        self.assertNotEqual(receipt['fonts']['sha256'], receipt['officialVisuals']['sha256'])
-        self.assertEqual((r / 'OfficialVisuals/runtime/manifest.json').read_bytes(),
-                         (ROOT / 'desktop/official-visuals/runtime/manifest.json').read_bytes())
+    def synthetic_cockpit(self, public):
+        cockpit = public / 'desktop/cockpit/dist'
+        cockpit.mkdir(parents=True)
+        body = b'synthetic official cockpit'
+        (cockpit / 'index.html').write_bytes(body)
+        manifest = json.dumps({'schemaVersion': 1, 'edition': 'official', 'interfaceOnly': True,
+                               'files': {'index.html': hashlib.sha256(body).hexdigest()}}).encode()
+        (cockpit / 'bundle-manifest.json').write_bytes(manifest)
+        source = public / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({'community': 'a' * 64, 'official': hashlib.sha256(manifest).hexdigest()}))
+        return cockpit
+
+    def test_missing_cockpit_dist_fails_before_other_staging(self):
+        import shutil
+        public = self.root / 'empty-public'
+        cockpit = self.synthetic_cockpit(public)
+        shutil.rmtree(cockpit)
+        with self.assertRaisesRegex(ValueError, 'Missing or linked canonical bundle'):
+            packaging.stage_resources(self.app, public)
+        self.assertFalse((self.app / 'Contents/Resources/Cockpit').exists())
 
     def test_u11_public_dist_is_consumed_without_running_code(self):
         public = self.root / 'public'
@@ -138,10 +148,37 @@ class PackagingTests(unittest.TestCase):
         cockpit = public / 'desktop/cockpit/dist'
         cockpit.mkdir(parents=True)
         (cockpit / 'index.html').write_text('<p>synthetic U11 built bundle</p>')
+        manifest = json.dumps({'schemaVersion':1, 'edition':'official', 'interfaceOnly':True,
+                               'files':{'index.html':hashlib.sha256((cockpit / 'index.html').read_bytes()).hexdigest()}}).encode()
+        (cockpit / 'bundle-manifest.json').write_bytes(manifest)
+        source = public / 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
+        source.parent.mkdir(parents=True)
+        source.write_text(json.dumps({'community':'a'*64,'official':hashlib.sha256(manifest).hexdigest()}))
+        (self.app / 'Contents/Resources/Cockpit').mkdir()
+        (self.app / 'Contents/Resources/Cockpit/index.html').write_text('old community bundle')
         receipt = packaging.stage_resources(self.app, public)
         self.assertEqual(receipt['cockpit'], 'bundled-interface-only')
         self.assertEqual((self.app / 'Contents/Resources/Cockpit/index.html').read_bytes(),
                          (cockpit / 'index.html').read_bytes())
+        self.assertTrue((self.app / 'Contents/Resources/VISUAL-LICENSE.md').is_file())
+        r = self.app / 'Contents/Resources'
+        for family in ('manrope', 'dm-sans', 'jetbrains-mono', 'share-tech-mono'):
+            self.assertTrue((r / 'ThirdParty/fonts' / family / 'OFL.txt').is_file())
+        self.assertTrue((r / 'ThirdParty/licenses/pulse/THIRD_PARTY_NOTICES.md').is_file())
+        self.assertNotEqual(receipt['fonts']['sha256'], receipt['officialVisuals']['sha256'])
+        self.assertEqual((r / 'OfficialVisuals/runtime/manifest.json').read_bytes(),
+                         (ROOT / 'desktop/official-visuals/runtime/manifest.json').read_bytes())
+
+    def test_modified_official_bundle_is_rejected_before_replacing_community(self):
+        public = self.root / 'public'
+        cockpit = self.synthetic_cockpit(public)
+        (cockpit / 'index.html').write_text('tampered')
+        old = self.app / 'Contents/Resources/Cockpit'
+        old.mkdir()
+        (old / 'index.html').write_text('community still here')
+        with self.assertRaisesRegex(ValueError, 'Undeclared or changed canonical output'):
+            packaging.stage_resources(self.app, public)
+        self.assertEqual((old / 'index.html').read_text(), 'community still here')
 
     def test_u14_manifest_binds_final_app_helper_sources_and_archive_evidence(self):
         self.seal()
@@ -200,12 +237,25 @@ class PackagingTests(unittest.TestCase):
         with patch.object(packaging.platform, 'system', return_value='Darwin'), \
              patch.object(packaging, 'git', side_effect=['a' * 40, '']), \
              patch.object(packaging, 'load_json', return_value={'version': packaging.HELPER_VERSION}), \
+             patch.object(packaging.cockpit_guard, 'validate'), \
              patch.object(packaging.credential_artifact, 'acquire', side_effect=ValueError('approval missing')), \
              patch.object(packaging.release, 'fetch_cli') as cli_fetch, \
              patch.object(packaging, 'run') as build:
             with self.assertRaisesRegex(ValueError, 'approval missing'):
                 packaging.build(self.root / 'missing-approved-artifact', 'synthetic-candidate', '1')
             cli_fetch.assert_not_called()
+            build.assert_not_called()
+
+    def test_missing_official_bundle_stops_before_credentials_and_build(self):
+        with patch.object(packaging.platform, 'system', return_value='Darwin'), \
+             patch.object(packaging, 'git', side_effect=['a' * 40, '']), \
+             patch.object(packaging, 'load_json', return_value={'version': packaging.HELPER_VERSION}), \
+             patch.object(packaging.cockpit_guard, 'validate', side_effect=ValueError('missing cockpit')), \
+             patch.object(packaging.credential_artifact, 'acquire', side_effect=AssertionError('credential acquisition reached')) as acquire, \
+             patch.object(packaging, 'run') as build:
+            with self.assertRaisesRegex(ValueError, 'missing cockpit'):
+                packaging.build(self.root / 'missing-bundle', 'synthetic-candidate', '1')
+            acquire.assert_not_called()
             build.assert_not_called()
 
     def test_linux_cannot_claim_a_real_mac_package(self):

@@ -134,6 +134,9 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -200,7 +203,7 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@02dff3d036e786e49be300b40dbf01291b8ce5da
     with:
       task: native
       os: ${{ matrix.os }}

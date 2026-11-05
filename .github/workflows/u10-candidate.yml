@@ -97,6 +97,12 @@ jobs:
           with open(os.environ['GITHUB_ENV'], 'a') as output:
               output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
           PY
+      - name: Build the official cockpit bundle for candidate packaging
+        run: |
+          npm ci --prefix desktop/cockpit --ignore-scripts
+          npm run build:official --prefix desktop/cockpit
+          node desktop/native/ModelPlanCockpitWeb/prepare-candidate.mjs official
+          python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --edition official --bundle desktop/cockpit/dist
       - name: Assemble and seal candidate, archive, and generate U14 manifest
         env:
           GH_TOKEN: ${{ github.token }}
