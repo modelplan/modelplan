@@ -26,6 +26,24 @@ class CandidateIsolationTests(unittest.TestCase):
         self.assertEqual(receipt['proofResults']['keychainMonitoringD19'], 'not-verified')
         self.assertEqual(receipt['scratchPaths'], {})
 
+    def test_monitor_rejects_unsafe_name(self):
+        with self.assertRaises(ValueError):
+            isolation.SecurityEventMonitor('security" OR true')
+
+    def test_monitor_drops_message_and_ignores_other_clients(self):
+        import io
+        monitor = isolation.SecurityEventMonitor.__new__(isolation.SecurityEventMonitor)
+        monitor._events = isolation.deque(maxlen=10)
+        monitor._lock = isolation.threading.Lock()
+        monitor._pid = 42
+        events = [{'timestamp': 'synthetic', 'processID': 42, 'subsystem': 'com.apple.security',
+                   'category': 'test', 'eventMessage': 'must not be retained'},
+                  {'timestamp': 'synthetic', 'processID': 43, 'subsystem': 'com.apple.security', 'category': 'test'}]
+        process = mock.Mock(stdout=io.StringIO('\n'.join(json.dumps(e) for e in events) + '\n'))
+        monitor._collect(process)
+        self.assertEqual(len(monitor.events()), 1)
+        self.assertEqual(set(monitor.events()[0]), {'timestamp', 'processID', 'subsystem', 'category'})
+
     def test_keychain_metadata_requires_actual_client_identity(self):
         event = {'clientPID': 42, 'clientExecutable': '/synthetic/candidate', 'operation': 'query'}
         self.assertTrue(isolation.keychain_event_matches(event, 42, '/synthetic/candidate'))
