@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: de4e3d93be63ad9ecf57b47c30f616907ff41e5fe28f90340ab1ecbbc1746379
+// Schema SHA-256: 701ab08c05a4a00bfa72a8043ff89633d61bd52cf1b701b1291bf7203a7e25d7
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -45,7 +45,7 @@ export type WireCockpitData = {
 
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
-  readonly "publication"?: WireCockpitPublication | null;
+  readonly "publication"?: WireCockpitPublication;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
   readonly "sessions": ReadonlyArray<WireCockpitSession>;
@@ -68,7 +68,7 @@ export type WireCockpitPublicationEffort = {
   readonly "cost": number | null;
   readonly "effort": string;
   readonly "label": string;
-  readonly "multiplier"?: number | null;
+  readonly "multiplier"?: number;
   readonly "provisional"?: boolean;
   readonly "star": boolean;
   readonly "time": number | null;
@@ -519,14 +519,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "array"
       },
       "publication": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/CockpitPublication"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/CockpitPublication"
       },
       "resetEvents": {
         "items": {
@@ -653,14 +646,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "multiplier": {
-        "anyOf": [
-          {
-            "type": "number"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "type": "number"
       },
       "provisional": {
         "type": "boolean"

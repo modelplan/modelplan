@@ -38,3 +38,14 @@ test('S10 trial does not transfer to a replacement publication occupying the sam
  await slider.focus();await page.keyboard.press('ArrowUp');await expect(slider).toHaveAttribute('aria-valuetext','High');
  data.details.publication.publicationId='aaaaaaaaaaaaaaaaaaaaaaaa';expect(await receive(send('display',{data}))).toBe(true);await expect(slider).toHaveAttribute('aria-valuetext','Med');
 });
+
+test('C-09 page rejects null publication while accepting absent and valid publication',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ expect(await receive(send('load',{appearance,shell}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ delete data.details.publication;expect(await receive(send('display',{data}))).toBe(true);
+ data.details.publication=null;expect(await receive(send('display',{data}))).toBe(false);
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[]};
+ expect(await receive(send('display',{data}))).toBe(true);
+});

@@ -290,14 +290,7 @@
           "type": "array"
         },
         "publication": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/CockpitPublication"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/CockpitPublication"
         },
         "resetEvents": {
           "items": {
@@ -424,14 +417,7 @@
           "type": "string"
         },
         "multiplier": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "number"
         },
         "provisional": {
           "type": "boolean"
