@@ -83,7 +83,8 @@ struct PulsePanelDrag {
         let snaps = Self.distance(from: nearest, pointer: pointer, visible: visible) <= snapDistance
         var edge = nearest
         var attached = alwaysAttached || snaps
-        if !alwaysAttached, heldDisplay == display.id, let heldEdge, !snaps || nearest == heldEdge,
+        // The held rail takes precedence over another edge entering snap range at a corner.
+        if !alwaysAttached, heldDisplay == display.id, let heldEdge,
            let layout = layouts.first(where: { $0.displayID == display.id && $0.edge == heldEdge }) {
             let origin = CGPoint(x: pointer.x - grab.x * layout.expandedSize.width,
                                  y: pointer.y - grab.y * layout.expandedSize.height)

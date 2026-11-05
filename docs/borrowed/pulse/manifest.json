@@ -138,7 +138,7 @@
     },
     {
       "path": "desktop/native/ModelPlanDock/Logic/PulsePanelDrag.swift",
-      "sha256": "8cf83b4fa4e9b9379a197753fe46ae4ef304643be7e2a3c14a058b0cdbcbe20c",
+      "sha256": "2a6840b4a5061eccd2d356411ead2ab021a7f72fac3e6a030218277afe37d251",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
