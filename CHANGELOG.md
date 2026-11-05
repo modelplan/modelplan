@@ -11,14 +11,32 @@ This draft targets the next CLI release. The tag, release and plugin pins requir
 These candidate notes apply only if the named changes merge and are included in the release candidate.
 以下候选说明仅在对应变更合并并纳入发布候选版本后适用。
 
-- **#461 — reader request budget:** prevent a guarded reader stage from making extra HTTP requests through transport retries; connection failures remain bounded and existing provider limits apply.
-  **#461 — 读取器请求预算：**防止受保护的读取阶段因传输层重试而发出额外 HTTP 请求；连接失败保持有界，并继续遵守现有提供方限制。
+- **#477 / #501 — effort and share diagnostics (overlapping proposals):** keep a reported effort unknown when it is absent from the verified publication, and include additional allowlisted cached reader status codes in `doctor --share` without exposing account IDs, paths or error text.
+  **#477 / #501 — 档位与共享诊断（内容重叠）：**当报告的档位未出现在已验证发布数据中时，保持当前档位未知；`doctor --share` 增加允许列表中的缓存读取器状态码，不暴露账户 ID、路径或错误文本。
+- **#501 — refresh and history corrections:** preserve a queued refresh when an expired credential wait finishes, record status-line window lengths consistently, and keep cycles from different plans separate. This is conditional on #501 merging before the candidate is frozen.
+  **#501 — 刷新与历史修正：**凭据等待过期后保留已排队的刷新，统一状态栏窗口时长，并按套餐分开记录周期。仅在冻结候选版本前合并 #501 时适用。
+- **#481 — account-today producer:** with `accountTodayV1`, provide available locally observed output tokens, generation rate and bound running-session counts per current account. Unknown values are omitted; source-wide current binding does not establish historical ownership. The Dock consumer is tracked separately in #485.
+  **#481 — 账户今日数据生产端：**协商 `accountTodayV1` 后，为当前账户提供可用的本机观察输出 token、生成速度和已绑定运行会话数。未知值会省略；按来源绑定到当前账户不代表历史归属。Dock 消费端由 #485 单独跟踪。
+- **#461 — reader request budget:** prevent a guarded reader stage from making extra HTTP requests through transport retries; connection failures remain bounded and existing provider limits apply. HTTP/2-only endpoints and unreviewed custom transports fail closed.
+  **#461 — 读取器请求预算：**防止受保护的读取阶段因传输层重试而发出额外 HTTP 请求；连接失败保持有界，并继续遵守现有提供方限制。仅支持 HTTP/2 的端点及未经审核的自定义传输会安全拒绝。
 - **#457 and #450 — cockpit publication:** when negotiated, verified cached publication model and effort facts can reach cockpit details and the App faders; missing or unverified data remains unavailable.
   **#457 与 #450 — 驾驶舱发布数据：**在完成协商后，已验证缓存中的模型与档位数据可进入驾驶舱详情和 App 推子；缺失或未验证的数据仍显示为不可用。
 - **#467 — test reliability:** synchronize the member-refresh regression test so it checks in-flight deferral and the completed-read floor deterministically. This is a test change; it does not change CLI refresh behavior.
   **#467 — 测试可靠性：**同步单成员刷新的回归测试，稳定验证读取进行中的延迟与读取完成后的最短间隔。此项仅修改测试，不改变 CLI 刷新行为。
 
 ### Included changes
+
+- **#455 — local history recovery:** back off after repeated local projection failures while retaining the last good snapshot and cursor; a successful projection resets the failure delay.
+  **#455 — 本机历史恢复：**本机数据投影连续失败时逐步延长重试间隔，保留上次成功的快照和游标；成功后重置等待时间。
+
+- **#502 — interrupted updates:** recover abandoned, aged CLI update lock files and empty installer lock directories. A fresh marker still blocks a competing update; avoid running old updaters or installers concurrently, since an old process active for over ten minutes cannot be distinguished from an abandoned marker.
+  **#502 — 中断后的更新：**恢复遗留过久的 CLI 更新锁文件和空安装锁目录。新建的锁仍会阻止并发更新；请避免同时运行旧版更新程序或安装器，因为运行超过十分钟的旧进程无法与遗留锁区分。
+
+- **#434 — optional CodexBar helper:** update the pinned compatibility helper to v0.83.0; the existing consent and verification controls continue to apply.
+  **#434 — 可选 CodexBar 助手：**将锁定的兼容助手更新至 v0.83.0；现有授权和校验机制继续生效。
+
+- **#500 — test reliability:** remove fractional-time assumptions from the onboarding regression test; no shipped CLI behavior changes.
+  **#500 — 测试可靠性：**移除新手引导回归测试对小数时间的假设；不改变发布的 CLI 行为。
 
 - Update every installed ModelPlan CLI copy together, including plugin-pinned copies. Stop older CLI processes before starting this version; older and newer copies must not run concurrently against the same cache because their ledger lock protocols do not mutually exclude one another.
   请同时更新所有已安装的 ModelPlan CLI，包括插件锁定的副本。启动此版本前请停止旧 CLI 进程；新旧版本不得同时使用同一缓存，因为两者的账本锁协议无法相互排斥。
