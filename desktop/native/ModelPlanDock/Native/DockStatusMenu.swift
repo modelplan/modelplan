@@ -111,8 +111,12 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         layer?.add(animation,forKey:"dock-notice-once")
     }
     public func attach(to button: NSButton) {
-        frame = NSRect(x: max(0, button.bounds.width - 7), y: max(0, button.bounds.height - 7), width: 7, height: 7)
-        autoresizingMask = [.minXMargin, .minYMargin]
+        let bounds = button.bounds
+        let side: CGFloat = 7
+        frame = NSRect(x: max(bounds.minX, bounds.maxX - side),
+                       y: button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - side),
+                       width: side, height: side)
+        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
         if superview !== button { button.addSubview(self) }
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}

@@ -205,7 +205,8 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
-    static func announcedMenuIndicator(capture:URL) async throws -> Bool {
+    static func announcedMenuIndicator(capture: URL,
+        inspect: ((EngineDockMenuApplication) async throws -> Void)? = nil) async throws -> Bool {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
         let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
@@ -234,6 +235,7 @@ private actor S4RowsClient: EngineClient {
         let displayed = entry.noticeIndicator.notice == entry.composition.dock.menuNotice
         entry.composition.dock.setPresentationAllowed(true)
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
+        try await inspect?(entry)
         entry.composition.dock.acknowledgeDockReveal()
         try require(entry.noticeIndicator.notice == nil, "opening Dock must clear the indicator without cockpit")
         await entry.composition.stop()

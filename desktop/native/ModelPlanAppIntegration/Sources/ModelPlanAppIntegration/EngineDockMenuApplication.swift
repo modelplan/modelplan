@@ -10,6 +10,15 @@ import ModelPlanSettings
 import ModelPlanMenuVerification
 #endif
 
+struct StatusNoticePresentation {
+    let frameInButton: CGRect
+    let buttonBounds: CGRect
+    let buttonIsFlipped: Bool
+    let tone: DockNotice.Tone?
+    let shape: DockNotice.Shape?
+    let isVisible: Bool
+}
+
 /// The rows-backed normal Dock/menu lifecycle. Legacy probe entry remains separate.
 @MainActor public final class EngineDockMenuApplication: NSObject, NSApplicationDelegate, NSMenuDelegate {
     public let composition: EngineDockMenuComposition
@@ -400,9 +409,7 @@ import ModelPlanMenuVerification
         },
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
-        status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status?.autosaveName = "ModelPlanCommunity.StatusItem"
-        status?.isVisible = true
+        installStatusItem(autosaveName: "ModelPlanCommunity.StatusItem")
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
             guard let self else { return false }; return menu === self.status?.menu
@@ -411,6 +418,31 @@ import ModelPlanMenuVerification
         #endif
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
+    /// A caller supplying no autosave name owns a temporary, non-persisted item.
+    func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
+        guard status == nil, !terminating else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let autosaveName { item.autosaveName = autosaveName }
+        item.isVisible = true
+        status = item
+    }
+
+    func removeStatusItem() {
+        guard let status else { return }
+        self.status = nil
+        noticeIndicator.removeFromSuperview()
+        status.menu = nil
+        NSStatusBar.system.removeStatusItem(status)
+    }
+
+    var statusNoticePresentation: StatusNoticePresentation? {
+        guard let status, let button = status.button, noticeIndicator.superview === button else { return nil }
+        let windowVisible = button.window.map { $0.isVisible && $0.alphaValue > 0 && $0.occlusionState.contains(.visible) } ?? false
+        return StatusNoticePresentation(frameInButton: noticeIndicator.frame, buttonBounds: button.bounds,
+            buttonIsFlipped: button.isFlipped, tone: noticeIndicator.notice?.tone, shape: noticeIndicator.notice?.shape,
+            isVisible: status.isVisible && windowVisible && noticeIndicator.notice != nil && !noticeIndicator.isHiddenOrHasHiddenAncestor)
+    }
+
     func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english
         let component: DockStatusMenu
