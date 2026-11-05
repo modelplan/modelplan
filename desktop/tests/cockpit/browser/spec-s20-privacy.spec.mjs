@@ -15,5 +15,11 @@ test('S20 clear removes rendered private facts before acknowledgement and reject
  expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);await expect(page.locator('#outside-cockpit-focus')).toBeFocused();
  const result=await page.evaluate(()=>({html:document.querySelector('#cockpit').innerHTML,ack:window.__events.filter(e=>e.type==='cleared').at(-1)}));
  for(const marker of ['PRIVATE-ROW-CANARY','PRIVATE-MODEL-CANARY','PRIVATE-PROJECT-CANARY']){expect(result.html).not.toContain(marker);expect(result.ack.observedHTML).not.toContain(marker);}
- expect(await receive(stale)).toBe(false);await expect(page.locator('#cockpit')).not.toContainText('PRIVATE-ROW-CANARY');await expect(page.locator('#outside-cockpit-focus')).toBeFocused();
+ expect(await receive(stale)).toBe(false);
+ // Fresh transport sequence and current revision isolate the older generation fence.
+ const freshSequenceOldGeneration=send('display',{generation:'41',viewRevision:'4',data});
+ expect(await receive(freshSequenceOldGeneration)).toBe(false);
+ const after=await page.locator('#cockpit').innerHTML();
+ for(const marker of ['PRIVATE-ROW-CANARY','PRIVATE-MODEL-CANARY','PRIVATE-PROJECT-CANARY'])expect(after).not.toContain(marker);
+ await expect(page.locator('#outside-cockpit-focus')).toBeFocused();
 });
