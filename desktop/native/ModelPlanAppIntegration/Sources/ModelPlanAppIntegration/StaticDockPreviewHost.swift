@@ -1208,12 +1208,14 @@ struct DockHelpInteraction: Equatable {
         return interactionView.setFocusedHelpExplanation(text, for: interaction.anchor.id)
     }
 
+    var focusedDockHelpAnchorID: String? { interactionView.focusedHelpAnchorID }
+
     private func publishDockHelpInteraction() {
         let next: DockHelpInteraction?
         if let surface = currentDockHelpSurface, !surface.dragging,
            interactionController?.hasCapture != true, let panel {
             let view = interactionView
-            if let focused = view.focusedHelpAnchorID,
+            if let focused = focusedDockHelpAnchorID,
                let anchor = surface.mapAnchors.first(where: { $0.id == focused && $0.visible }) {
                 next = .init(anchor: anchor, source: .keyboard)
             } else if let pointer = environment().pointer {

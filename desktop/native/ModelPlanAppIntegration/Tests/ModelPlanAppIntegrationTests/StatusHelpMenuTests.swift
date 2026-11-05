@@ -7,11 +7,11 @@ import ModelPlanEngineClient
 @testable import ModelPlanAppIntegration
 
 @MainActor final class StatusHelpMenuTests: XCTestCase {
-    private func application(language: String = "en") async throws -> EngineDockMenuApplication {
+    private func application(language: String = "en", cockpitEnabled: Bool? = nil) async throws -> EngineDockMenuApplication {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-help-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEnabled, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
         await app.prepare()
         return app
     }
@@ -57,6 +57,38 @@ import ModelPlanEngineClient
         app.statusHelpDidDismiss(request)
         XCTAssertNil(app.statusHelpRequestID)
         XCTAssertFalse(app.statusHelpButtonFocused, "A detached view cannot report native status focus")
+    }
+
+    func testS07NormalEntryIgnitionReportsItsOwnFocus() async throws {
+        let app = try await application(cockpitEnabled: true)
+        let dock = app.composition.dock
+        defer { dock.close() }
+        app.allowDockPresentation()
+        let container = try XCTUnwrap(dock.dockView.superview)
+        let label = EngineRowsText.openCockpit.value(.english)
+        let ignition = try XCTUnwrap(container.subviews.compactMap { $0 as? NSButton }
+            .first { $0.accessibilityLabel() == label })
+        XCTAssertTrue(ignition.isEnabled)
+        XCTAssertFalse(ignition.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(ignition.bounds.isEmpty)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+
+        ignition.setAccessibilityFocused(true)
+        XCTAssertEqual(dock.focusedDockHelpAnchorID, "dock.ignition")
+        ignition.setAccessibilityFocused(false)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+
+        ignition.setAccessibilityFocused(true)
+        dock.cockpitEntryEnabled = false
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
+        ignition.setAccessibilityFocused(true)
+        dock.cockpitEntryEnabled = true
+        XCTAssertNil(dock.focusedDockHelpAnchorID, "A disabled ignition cannot carry stale focus into the enabled state")
+
+        ignition.setAccessibilityFocused(true)
+        XCTAssertEqual(dock.focusedDockHelpAnchorID, "dock.ignition")
+        dock.setPresentationAllowed(false)
+        XCTAssertNil(dock.focusedDockHelpAnchorID)
     }
 
     func testS10NormalEntryRegistersThePaintedGripAsADragTarget() async throws {
