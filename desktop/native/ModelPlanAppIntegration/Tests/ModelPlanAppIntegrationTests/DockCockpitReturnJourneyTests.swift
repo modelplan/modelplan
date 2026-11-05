@@ -79,7 +79,8 @@ import ModelPlanWire
         if native { EngineRowsEntry.nativeJourneyProfile = root }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
             applicationVersion: "dock-cockpit-return", allowedEnvironment: environment,
-            offline: true, readOnly: true), settingsStore: store, createsNativePanels: native, cockpitEntryEnabled: true,
+            offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
+            bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
             makeConsole: { composition in
                 SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { false }, activate: {})
@@ -91,6 +92,8 @@ import ModelPlanWire
         }
         cockpit.bind(client: app.composition.client)
         await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
         app.allowDockPresentation()
         let delivery = try await app.composition.client.start()
         XCTAssertEqual(app.composition.store.snapshot.connection, .ready(delivery))

@@ -10,6 +10,16 @@ import ModelPlanSettings
 /// Uses a reviewed CLI and a disposable profile through the normal detached Dock entry.
 @MainActor final class DockStripRealServerTests: XCTestCase {
     func testD20RealServerPaintsOnlyTheAffectedStripPitches() async throws {
+        try await exercise(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD20NativeStripPaintsOnlyTheAffectedPitches() async throws {
+        try await exercise(native: true)
+    }
+    #endif
+
+    private func exercise(native: Bool) async throws {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
         let executable = URL(fileURLWithPath: path)
@@ -50,11 +60,22 @@ import ModelPlanSettings
         let defaults = await store.snapshot()
         XCTAssertTrue(defaults.preferences.sliverAlert)
         _ = try await store.update { $0.autoHide = true; $0.motion = .on; $0.dockEdge = .bottom }
-        let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let display = DockDisplayArea(id: "synthetic", frame: frame, visibleFrame: frame)
+        let display: DockDisplayArea
+        if native {
+            _ = NSApplication.shared
+            let screen = try XCTUnwrap(NSScreen.main)
+            display = .init(id: "synthetic", frame: screen.frame, visibleFrame: screen.visibleFrame)
+        } else {
+            let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+            display = .init(id: "synthetic", frame: frame, visibleFrame: frame)
+        }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native { EngineRowsEntry.nativeJourneyProfile = root }
+        defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
+        #endif
         let pointer = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d20",
-            allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: store, createsNativePanels: false,
+            allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"),
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
             activateSettings: {})
@@ -85,6 +106,14 @@ import ModelPlanSettings
         func currentStrip() throws -> DockSliverView {
             let placement = try XCTUnwrap(dock.edgePresentation?.placement)
             XCTAssertEqual(placement.edge, .bottom)
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            if native {
+                let panel = try XCTUnwrap(dock.nativePanel)
+                XCTAssertTrue(panel.isVisible)
+                XCTAssertEqual(panel.frame.minY, display.visibleFrame.minY, accuracy: 1)
+                return try XCTUnwrap(panel.contentView as? DockSliverView)
+            }
+            #endif
             return try dock.prepareSliver(size: placement.sliverFrame.size)
         }
         let strip = try currentStrip()

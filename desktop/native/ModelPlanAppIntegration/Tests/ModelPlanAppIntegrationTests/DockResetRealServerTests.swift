@@ -17,6 +17,16 @@ import ModelPlanSettings
 
 @MainActor final class DockResetRealServerTests: XCTestCase {
     func testD21RealServerPublishesTheFullResetNoticeLifecycle() async throws {
+        try await exercise(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD21NativeOrderInAcknowledgesTheResetNotice() async throws {
+        try await exercise(native: true)
+    }
+    #endif
+
+    private func exercise(native: Bool) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -107,12 +117,26 @@ import ModelPlanSettings
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update { $0.autoHide = true; $0.motion = .on }
+        let dockEnvironment: @MainActor () -> DockEdgeEnvironment
+        if native {
+            _ = NSApplication.shared
+            let screen = try XCTUnwrap(NSScreen.main)
+            let display = DockDisplayArea(id: "synthetic", frame: screen.frame, visibleFrame: screen.visibleFrame)
+            let pointer = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
+            dockEnvironment = { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) }
+        } else {
+            dockEnvironment = normalEntryTestEnvironment
+        }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native { EngineRowsEntry.nativeJourneyProfile = root }
+        defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
+        #endif
         var wall = now
         let cockpit = ResetCockpitProbe()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d21",
-            allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: false,
+            allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
-            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
+            dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
             activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
@@ -137,7 +161,14 @@ import ModelPlanSettings
         let dock = app.composition.dock
         let member = "aaaaaaaaaaaaaaaa"
         func strip() throws -> DockSliverView {
-            try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            if native {
+                let panel = try XCTUnwrap(dock.nativePanel)
+                XCTAssertTrue(panel.isVisible)
+                return try XCTUnwrap(panel.contentView as? DockSliverView)
+            }
+            #endif
+            return try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
         }
         func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
 
@@ -160,9 +191,16 @@ import ModelPlanSettings
 
         XCTAssertTrue(initial.accessibilityPerformPress())
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
-        // A detached surface does not order in a panel. Invoke the same
-        // acknowledgement once the accessibility action has expanded it.
-        dock.acknowledgeDockReveal()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native {
+            let panel = try XCTUnwrap(dock.nativePanel)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertTrue(dock.dockView.window === panel)
+        }
+        #endif
+        // A detached surface cannot order in a panel. The native variant
+        // relies entirely on automatic acknowledgement from visible order-in.
+        if !native { dock.acknowledgeDockReveal() }
         XCTAssertEqual(face(), announcement)
         XCTAssertNil(app.noticeIndicator.notice)
         try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }
