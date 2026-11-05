@@ -116,7 +116,11 @@ import ModelPlanSettings
         try publish([announced])
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        _ = try await store.update { $0.autoHide = true; $0.motion = .on }
+        _ = try await store.update {
+            $0.autoHide = true; $0.motion = .on
+            $0.notifications.optedIn = true
+            $0.notifications.kinds = [.official]
+        }
         let dockEnvironment: @MainActor () -> DockEdgeEnvironment
         if native {
             _ = NSApplication.shared
@@ -127,20 +131,22 @@ import ModelPlanSettings
         } else {
             dockEnvironment = normalEntryTestEnvironment
         }
-        #if MODELPLAN_DOCK_NATIVE_JOURNEY
-        if native { EngineRowsEntry.nativeJourneyProfile = root }
-        defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
-        #endif
         var wall = now
         let cockpit = ResetCockpitProbe()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d21",
             allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
             dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
-            activateSettings: {})
+            isolatedResetNotificationLedger: root.appendingPathComponent("test-notifications.json"), activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
         XCTAssertNil(app.notificationAuthorizationService)
+        var delivered: [String] = []
+        app.composition.setResetNotificationDelivery { event, title in
+            XCTAssertEqual(title, "Official extra reset")
+            delivered.append(event)
+        }
         app.allowDockPresentation()
         let delivery = try await app.composition.client.start()
         func wait(_ description: String, until predicate: () -> Bool) async throws {
@@ -188,6 +194,7 @@ import ModelPlanSettings
         let quota = initial.quotaSegmentColorRolesForChecks
         XCTAssertEqual(quota.first?.remainingPercent, 30)
         XCTAssertEqual(quota.first?.quotaRole, .warning, "The fixture must have quota paint before acknowledging the notice")
+        try await wait("Announced notice is delivered once") { delivered == [eventID] }
 
         XCTAssertTrue(initial.accessibilityPerformPress())
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
@@ -217,6 +224,7 @@ import ModelPlanSettings
         XCTAssertEqual(try strip().noticeMarks.first?.notice, confirmation)
         XCTAssertEqual(app.noticeIndicator.notice, confirmation)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+        XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
         try await subscribe()
@@ -234,6 +242,7 @@ import ModelPlanSettings
         try publish([expiring])
         try await subscribe()
         try await waitForEvent(expiryID, "announced")
+        try await wait("A distinct event receives its own delivery") { delivered == [eventID, expiryID] }
         let expiringNotice = try XCTUnwrap(face())
         XCTAssertEqual(app.noticeIndicator.notice, expiringNotice)
         app.showConsole()
@@ -244,6 +253,7 @@ import ModelPlanSettings
         dock.refreshDockContent()
         XCTAssertNil(face())
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
+        XCTAssertEqual(delivered, [eventID, expiryID], "Expiry must not publish another notification")
     }
 }
 #endif
