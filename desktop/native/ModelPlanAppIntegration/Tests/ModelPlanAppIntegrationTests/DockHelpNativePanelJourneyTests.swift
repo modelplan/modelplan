@@ -46,38 +46,71 @@ import ModelPlanDock
         let subscription = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.subscription." + id })
         let gripNode = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == grip.id })
 
-        let ringFocus = DockHelpInteraction(anchor: ring, source: .keyboard)
-        let gripFocus = DockHelpInteraction(anchor: grip, source: .keyboard)
-        let gripPointer = DockHelpInteraction(anchor: grip, source: .pointer)
-        XCTAssertNil(dock.currentDockHelpInteraction)
-        XCTAssertTrue(changes.isEmpty)
+        func interaction(_ anchor: DockRequestedHelpAnchor, _ source: DockHelpInteraction.Source) throws -> DockHelpInteraction {
+            let value = try XCTUnwrap(dock.currentDockHelpInteraction)
+            XCTAssertEqual(value.anchor, anchor)
+            XCTAssertEqual(value.source, source)
+            return value
+        }
         func movePointer(to point: CGPoint) {
             pointer = point
             dock.pointerInputView.reportAgain()
             dock.pointerInputView.sampleNow()
         }
+
+        let originalValue = subscription.accessibilityValue() as? String
+        let originalHelp = subscription.accessibilityHelp()
+        XCTAssertNil(dock.currentDockHelpInteraction)
+        XCTAssertTrue(changes.isEmpty)
         movePointer(to: CGPoint(x: grip.rect.midX, y: grip.rect.midY))
+        let gripPointer = try interaction(grip, .pointer)
         XCTAssertEqual(changes, [gripPointer])
+        XCTAssertFalse(dock.setDockHelpAccessibilityExplanation("Pointer only", for: gripPointer, on: surface))
+
         subscription.setAccessibilityFocused(true)
+        let ringFocus = try interaction(ring, .keyboard)
+        let ringSurface = try XCTUnwrap(dock.currentDockHelpSurface)
+        let ringText = "Quota ring\nShows the current window."
+        XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(ringText, for: ringFocus, on: ringSurface))
+        XCTAssertEqual(subscription.accessibilityHelp(), ringText)
+        XCTAssertEqual(subscription.accessibilityValue() as? String, originalValue)
         subscription.setAccessibilityFocused(true)
         XCTAssertEqual(changes, [gripPointer, ringFocus])
-        XCTAssertEqual(dock.currentDockHelpInteraction, ringFocus)
-
         movePointer(to: outside)
         XCTAssertEqual(changes, [gripPointer, ringFocus], "Keyboard focus takes precedence over a pointer change")
         subscription.setAccessibilityFocused(false)
         XCTAssertEqual(changes, [gripPointer, ringFocus, nil])
+        XCTAssertEqual(subscription.accessibilityHelp(), originalHelp)
+
+        subscription.setAccessibilityFocused(true)
+        let secondVisit = try interaction(ring, .keyboard)
+        let secondSurface = try XCTUnwrap(dock.currentDockHelpSurface)
+        XCTAssertEqual(secondSurface.layoutID, ringSurface.layoutID)
+        XCTAssertNotEqual(secondVisit.receipt, ringFocus.receipt)
+        XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(ringText, for: secondVisit, on: secondSurface))
+        XCTAssertFalse(dock.setDockHelpAccessibilityExplanation(nil, for: ringFocus, on: ringSurface))
+        XCTAssertEqual(subscription.accessibilityHelp(), ringText)
+        subscription.setAccessibilityFocused(false)
+
         gripNode.setAccessibilityFocused(true)
+        let gripFocus = try interaction(grip, .keyboard)
+        let gripSurface = try XCTUnwrap(dock.currentDockHelpSurface)
+        let gripText = "Move the widget\nDrag the grip to another edge."
+        XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(gripText, for: gripFocus, on: gripSurface))
+        XCTAssertEqual(gripNode.accessibilityHelp(), gripText)
         gripNode.setAccessibilityFocused(true)
-        XCTAssertEqual(changes, [gripPointer, ringFocus, nil, gripFocus])
+        let beforeWithdrawal: [DockHelpInteraction?] = [gripPointer, ringFocus, nil, secondVisit, nil, gripFocus]
+        XCTAssertEqual(changes, beforeWithdrawal)
 
         dock.setPresentationAllowed(false)
         XCTAssertFalse(panel.isVisible)
         XCTAssertNil(dock.currentDockHelpSurface)
         XCTAssertNil(dock.currentDockHelpInteraction)
-        XCTAssertEqual(changes, [gripPointer, ringFocus, nil, gripFocus, nil])
+        XCTAssertNil(gripNode.accessibilityHelp())
+        XCTAssertEqual(changes, beforeWithdrawal + [nil])
+        XCTAssertFalse(dock.setDockHelpAccessibilityExplanation(gripText, for: gripFocus, on: gripSurface))
         dock.refreshPresence()
-        XCTAssertEqual(changes, [gripPointer, ringFocus, nil, gripFocus, nil], "A withdrawn host cannot publish the old focus again")
+        XCTAssertEqual(changes, beforeWithdrawal + [nil], "A withdrawn host cannot publish the old focus again")
     }
 }
 #endif
