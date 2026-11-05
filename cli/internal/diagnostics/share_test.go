@@ -47,6 +47,58 @@ func TestShareOnlyEmitsAllowlistedSourcesAndStatuses(t *testing.T) {
 	}
 }
 
+// A native provider's failure must reach the share report whatever file stores it:
+// antigravity keeps entries in native.json, managed readers (claude, gemini, grok) in
+// observed/readers/<id>.json. Without the line, a broken installation reads as healthy.
+func TestShareReportsEveryNativeProviderFailure(t *testing.T) {
+	dir := t.TempDir()
+	put(t, dir, "observed/native.json", `{"schemaVersion":1,"providers":[{"provider":"antigravity","status":"error","errorCode":"http_401","alias":"private"},{"provider":"unlisted-provider","status":"error"}]}`)
+	put(t, dir, "observed/readers/gemini.json", `{"schemaVersion":1,"provider":"gemini","entries":[{"profileKey":"h1","status":"error","errorCode":"http_401","attemptedAt":"2026-11-03T08:00:00Z","notice":"private notice"},{"profileKey":"h2","status":"ok"}]}`)
+	put(t, dir, "observed/readers/other-tool.json", `{"schemaVersion":1,"entries":[{"status":"error","errorCode":"secret"}]}`)
+	put(t, dir, "observed/readers/grok.json", `{"schemaVersion":9,"entries":[{"status":"error"}]}`)
+	b, err := json.Marshal(Collect(dir, "0.5.40"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "private") || strings.Contains(string(b), "secret") || strings.Contains(string(b), "other-tool") {
+		t.Fatalf("private value in share report: %s", b)
+	}
+	have := map[string]map[string]bool{}
+	for _, s := range Collect(dir, "0.5.40").Sources {
+		if have[s.Source] == nil {
+			have[s.Source] = map[string]bool{}
+		}
+		have[s.Source][s.Status] = true
+	}
+	if !have["native:antigravity"]["error"] {
+		t.Errorf("antigravity entry in native.json is invisible: %v", have)
+	}
+	if !have["native:gemini"]["error"] || !have["native:gemini"]["ok"] {
+		t.Errorf("gemini reader failure is invisible: %v", have)
+	}
+	if _, ok := have["native:other-tool"]; ok {
+		t.Errorf("provider outside the allowlist was shared: %v", have)
+	}
+	if _, ok := have["native:unlisted-provider"]; ok {
+		t.Errorf("provider outside the allowlist was shared: %v", have)
+	}
+	if _, ok := have["native:grok"]; ok {
+		t.Errorf("an unsupported reader schema must not emit a line: %v", have)
+	}
+}
+
+func TestShareRejectsMismatchedOrOversizedManagedState(t *testing.T) {
+	dir := t.TempDir()
+	put(t, dir, "observed/readers/claude.json", `{"schemaVersion":1,"provider":"gemini","entries":[{"status":"error"}]}`)
+	entries := strings.Repeat(`{"status":"error"},`, 16) + `{"status":"ok"}`
+	put(t, dir, "observed/readers/grok.json", `{"schemaVersion":1,"provider":"grok","entries":[`+entries+`]}`)
+	for _, source := range Collect(dir, "0.5.40").Sources {
+		if source.Source == "native:claude" || source.Source == "native:grok" {
+			t.Fatalf("invalid managed cache contributed a status: %+v", source)
+		}
+	}
+}
+
 func TestShareKeepsDistinctAccountStatesWithoutIdentities(t *testing.T) {
 	dir := t.TempDir()
 	put(t, dir, "observed/codex-account.json", `{"schemaVersion":1,"status":"expired_login","error":"private account"}`)
