@@ -50,19 +50,27 @@ import XCTest
         XCTAssertNil(host.lastAppearanceError); XCTAssertNil(host.lastWorkingEffectError)
         XCTAssertEqual(host.activeWorkingEffectIDs, ["synthetic"])
         XCTAssertEqual(host.rotatingWorkingEffectIDs, ["synthetic"])
+        XCTAssertEqual(host.workingEffectRotationPeriodsForChecks, ["synthetic": 1])
+        host.seekWorkingEffectsForChecks(0.5)
+        XCTAssertEqual(host.activeWorkingEffectIDs, ["synthetic"])
+        XCTAssertTrue(host.workingEffectRotationPeriodsForChecks.isEmpty, "a frozen capture has no installed rotation")
         XCTAssertLessThanOrEqual(pool.decodedBytes, EffectResourcePool.maximumBytes)
         try host.setWorkingSignals([signal(false)])
         XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty); XCTAssertTrue(host.rotatingWorkingEffectIDs.isEmpty)
+        XCTAssertTrue(host.workingEffectRotationPeriodsForChecks.isEmpty)
         try host.setWorkingSignals([signal(true)])
         try await store.update { $0.motion = .on }
         await coordinator.reload()
         XCTAssertEqual(host.activeWorkingEffectIDs, ["synthetic"])
         XCTAssertTrue(host.rotatingWorkingEffectIDs.isEmpty); XCTAssertTrue(host.animatingWorkingEffectIDs.isEmpty)
+        XCTAssertTrue(host.workingEffectRotationPeriodsForChecks.isEmpty)
         try await store.update { $0.motion = .system }
         osReduced = true; await coordinator.reload()
         XCTAssertEqual(host.activeWorkingEffectIDs, ["synthetic"])
         XCTAssertTrue(host.rotatingWorkingEffectIDs.isEmpty); XCTAssertTrue(host.animatingWorkingEffectIDs.isEmpty)
+        XCTAssertTrue(host.workingEffectRotationPeriodsForChecks.isEmpty)
         host.setPresentationAllowed(false)
         XCTAssertTrue(host.activeWorkingEffectIDs.isEmpty); XCTAssertEqual(pool.activeLeaseCount, 0)
+        XCTAssertTrue(host.workingEffectRotationPeriodsForChecks.isEmpty)
     }
 }

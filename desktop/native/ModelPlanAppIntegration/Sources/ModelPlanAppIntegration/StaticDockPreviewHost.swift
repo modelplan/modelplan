@@ -131,6 +131,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public private(set) var lastWorkingEffectError: Error?
     @_spi(DockResourceChecks) public var activeWorkingEffectIDs: Set<String> { workingDriver?.activeIDs ?? [] }
     @_spi(DockResourceChecks) public var rotatingWorkingEffectIDs: Set<String> { workingDriver?.rotatingIDs ?? [] }
+    @_spi(DockResourceChecks) public var workingEffectRotationPeriodsForChecks: [String: Double] {
+        workingDriver?.rotationPeriods ?? [:]
+    }
     @_spi(DockResourceChecks) public var animatingWorkingEffectIDs: Set<String> { workingDriver?.animatingIDs ?? [] }
     @_spi(DockResourceChecks) public func seekWorkingEffectsForChecks(_ seconds: Double) { workingDriver?.seekForCapture(seconds) }
     private let sliverParameters: DockSliverParameters

@@ -37,6 +37,11 @@ public struct DockEffectRotation: Equatable, Sendable {
     private var staticIDs=Set<String>()
     private static let rotationKey="dock-effect-rotation"
     public var rotatingIDs:Set<String>{Set(consumers.filter{$0.value.layer.animation(forKey:Self.rotationKey) != nil}.map(\.key))}
+    /// Durations come from the animations attached to the working bitmap layers.
+    @_spi(DockResourceChecks) public var rotationPeriods: [String: Double] {
+        consumers.compactMapValues { $0.layer.animation(forKey: Self.rotationKey)?.duration }
+    }
+
     public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion},hostTime:@escaping ()->CFTimeInterval = {CACurrentMediaTime()}){
         self.pool=pool;self.systemReduceMotion=systemReduceMotion;self.hostTime=hostTime
     }
