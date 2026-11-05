@@ -92,21 +92,21 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(any("skipped without an allowed-skip entry" in e for e in errors))
 
     def test_cap_counts_cases_not_unique_requirement_ids_and_includes_boundary(self):
-        ids = [f"Mod.Fast/testSeam{i}" for i in range(9)]
+        ids = [f"Mod.Fast/testSeam{i}" for i in range(121)]
         text = lambda cases: "\n".join(seam_log(i, "DOCK-3.8-09 waits for G1RenderedSnapshot") for i in cases)
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(partition.verify(PKG, ids[:8], text(ids[:8]), "headless"), [])
-            self.assertTrue(any("cap exceeded: 9 > 8" in e for e in partition.verify(PKG, ids, text(ids), "headless")))
+            self.assertEqual(partition.verify(PKG, ids[:120], text(ids[:120]), "headless"), [])
+            self.assertTrue(any("cap exceeded: 121 > 120" in e for e in partition.verify(PKG, ids, text(ids), "headless")))
 
     def test_g1_skip_cap_trips_even_for_per_test_allowed_cases(self):
-        # Current baseline 3 + fixed margin 5 = cap 8; the ninth is never silently accepted.
-        ids = [f"Mod.Fast/testSeam{i}" for i in range(9)]
+        # Coordinator budget is 120; the 121st skipped case is never silently accepted.
+        ids = [f"Mod.Fast/testSeam{i}" for i in range(121)]
         pkg = {**PKG, "allowedSkips": {i.split(".", 1)[1]: {"leg": "headless", "reason": "synthetic"} for i in ids}}
         text = "\n".join(seam_log(i, f"DOCK-3.8-{n:02d} waits for G1RenderedSnapshot") for n, i in enumerate(ids))
         with contextlib.redirect_stdout(io.StringIO()) as output:
             errors = partition.verify(pkg, ids, text, "headless")
-        self.assertTrue(any("G1 seam skip cap exceeded: 9 > 8" in e for e in errors))
-        self.assertIn("G1 seam skips: 9 (", output.getvalue())
+        self.assertTrue(any("G1 seam skip cap exceeded: 121 > 120" in e for e in errors))
+        self.assertIn("G1 seam skips: 121 (", output.getvalue())
 
     def test_cli_counts_g1_as_skipped_never_as_passed(self):
         pkg = {**PKG, "allowedSkips": {}}

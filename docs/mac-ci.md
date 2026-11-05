@@ -51,8 +51,9 @@ entry tied to that leg. The shared G1 seam exception accepts only an XCTest skip
 attached to that same case and matching
 `^[A-Z]+[-0-9.]+ (waits for G1RenderedSnapshot|SEAM-NEEDED: .+)$`.
 Each verification prints `G1 seam skips: N (IDs…)`; those cases remain skipped, never passed.
-The fixed cap is 8 per verified package/leg run: the current 3 G1 Dock seam cases plus a
-margin of 5. Exceeding it fails verification, even if a case also has an allowedSkips entry;
+The fixed cap is 120 per verified package/leg run: G1 seam-pending IDs as of 2026-11-05
+(~60 plus margin); lower it as the snapshot seam lands; coordinator owns the number.
+Exceeding it fails verification, even if a case also has an allowedSkips entry;
 the cap never grows automatically from source or log counts. All other skip reasons retain
 the existing per-test rule. Expected/executed set equality and failed/duplicate-case checks
 still apply to every case, including G1 skips.
