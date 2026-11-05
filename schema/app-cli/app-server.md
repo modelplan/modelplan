@@ -153,6 +153,14 @@ DTO. Unknown bindings are not grouped. Context and covered scopes remain only in
 the envelope. See [cockpit query](../../docs/cockpit-query.md) for its admission and
 no-mutation contract, and the generated schema for exact field types.
 
+### Cockpit publication identity
+
+The generic wire contract permits publication IDs of 1–128 characters. The
+verified-publication producer for cockpit details in #450 has a narrower
+admission rule: it emits a publication only when its ID is exactly 24 lowercase
+hexadecimal characters (`0`–`9`, `a`–`f`); otherwise the publication is omitted.
+Consumers must not infer that every valid generic publication ID has this shape.
+
 ## Type sketch (Go wire DTOs)
 
 ```go
