@@ -88,8 +88,8 @@ import ModelPlanWire
         switch controller.notice {
         case .none: break
         case .outcomeUnknown: label(.init("The change outcome is unknown. Check current permissions before trying again.", "这次变更结果未知，请先检查当前权限，再决定是否重试。"))
-        case .committedAwaitingFacts: label(.init("The engine recorded the change. Check current permissions to verify its visible result.", "引擎已记录变更，请检查当前权限核验显示结果。"))
-        case .requestFailed: label(.init("The request could not finish. Check the engine connection and current permissions.", "请求未能完成，请检查引擎连接和当前权限。"))
+        case .committedAwaitingFacts: label(.init("The reading service recorded the change. Check current permissions to verify its visible result.", "读取服务已记录变更，请检查当前权限核验显示结果。"))
+        case .requestFailed: label(.init("The request could not finish. Check the reading service connection and current permissions.", "请求未能完成，请检查读取服务连接和当前权限。"))
         case .checking: label(.init("Checking current permissions…", "正在检查当前权限…"))
         case .waitingForFacts: label(.init("Waiting for current permission facts. No change has been assumed.", "等待当前权限信息；尚未假定变更成功。"))
         case .cleanupPending: label(.init("Permission cleanup is pending. Check current permissions to follow progress.", "权限清理尚未完成，可检查当前权限查看进度。"))
@@ -112,7 +112,7 @@ import ModelPlanWire
         case .unverified: label(.init("Plugin installation could not be verified. Check the plugin in the target tool; no installation success is assumed.", "无法核验插件安装结果，请在目标工具中检查插件；尚未假定安装成功。"))
         case .result(let status):
             switch status {
-            case .installed: label(.init("The engine reports the plugin installed. Check it in the target tool.", "引擎报告插件已安装，请在目标工具中检查。"))
+            case .installed: label(.init("The reading service reports the plugin installed. Check it in the target tool.", "读取服务报告插件已安装，请在目标工具中检查。"))
             case .planned: label(.init("The plugin installation plan is ready. Follow the target tool's plugin setup instructions.", "插件安装计划已就绪，请按照目标工具的插件设置说明操作。"))
             case .instructions: label(.init("The host tool needs manual plugin setup. Follow its plugin setup instructions.", "宿主工具需要手动设置插件，请按照其插件设置说明操作。"))
             case .failed: label(.init("The plugin installation did not finish. Check the target tool and try again.", "插件安装未完成，请检查目标工具后重试。"))
@@ -120,10 +120,10 @@ import ModelPlanWire
             }
         }
         guard let facts = controller.facts else {
-            label(.init("Permission details are not ready. Check the engine connection.", "权限信息尚未就绪，请检查引擎连接。")); return
+            label(.init("Permission details are not ready. Check the reading service connection.", "权限信息尚未就绪，请检查读取服务连接。")); return
         }
         if !controller.isMutationServiceReady {
-            label(.init("Permission changes are unavailable. Check the engine connection and current permission details before trying again.", "权限变更暂不可用，请先检查引擎连接和当前权限信息，再决定是否重试。"))
+            label(.init("Permission changes are unavailable. Check the reading service connection and current permission details before trying again.", "权限变更暂不可用，请先检查读取服务连接和当前权限信息，再决定是否重试。"))
         }
         switch controller.phase {
         case .sending: label(.init("Submitting the confirmed change…", "正在提交已确认的变更…"))
@@ -131,7 +131,7 @@ import ModelPlanWire
         default: break
         }
         if facts.scopes.isEmpty {
-            label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the engine.", "暂无已保存或已检测的读取路径，连接引擎后可点“检查当前权限”。"))
+            label(.init("No saved or detected reading paths are available. Choose Check current permissions after connecting the reading service.", "暂无已保存或已检测的读取路径，连接读取服务后可点“检查当前权限”。"))
         }
         for scope in facts.scopes {
             let id = scope.scope
@@ -141,11 +141,11 @@ import ModelPlanWire
                 label(.init("This reading path needs a signed build.", "此读取路径需要签名版本。"))
             }
             if !scope.route.isKnown || scope.route == .knownUnknown {
-                label(.init("This reading path is not recognized. Update the app or check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请更新应用或检查工具连接；仍可撤销或忘记已保存权限。"))
+                label(.init("This reading path is not recognized. Check the tool connection; Revoke and Forget remain available.", "尚不识别此读取路径。请检查工具连接；仍可撤销或忘记已保存权限。"))
             } else if scope.retired || !scope.detected {
                 label(.init("This tool is no longer detected. Saved permissions can still be revoked or forgotten.", "未检测到该工具；仍可撤销或忘记已保存权限。"))
             } else if scope.disabledReason != nil {
-                label(.init("This path cannot be newly allowed under the engine's current policy. Existing permissions can still be revoked.", "引擎当前策略不允许新增授权；仍可撤销已有权限。"))
+                label(.init("The current reading policy does not allow this path to be newly authorized. Existing permissions can still be revoked.", "当前读取策略不允许新增此路径的授权；仍可撤销已有权限。"))
             }
             label(controller.isAllowed(id) ? .init("Allowed", "已授权") : .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。"))
             let selected = controller.selectedIDs.contains(id)
