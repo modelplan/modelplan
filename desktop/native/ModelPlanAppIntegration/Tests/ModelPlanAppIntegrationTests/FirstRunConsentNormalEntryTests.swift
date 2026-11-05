@@ -94,8 +94,18 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertEqual(recorded.count, 1)
         XCTAssertEqual(recorded.first?.allow, ["two.runtime"])
         XCTAssertTrue(window.isVisible, "RPC completion alone does not prove accepted consent")
+        try await publishFacts() // An unchanged accepted snapshot is not the grant result.
+        XCTAssertFalse(try button("firstRun.done").isEnabled, "An unresolved grant cannot be resubmitted")
+        XCTAssertFalse(try button("scope.allow.one.local").isEnabled)
+        window.close()
+        await app.restoreFirstRunIfNeeded()
+        XCTAssertTrue(window.isVisible, "An incomplete first run can be reopened while its grant is unresolved")
+        XCTAssertFalse(try button("firstRun.done").isEnabled)
+        XCTAssertTrue(try button("scope.inspect").isEnabled, "The user can inspect the existing request without replaying it")
         scopes[1]["state"] = "allowed"
         try await publishFacts()
+        XCTAssertTrue(try button("firstRun.done").isEnabled, "Accepted facts settle the old request after reopening")
+        try button("firstRun.done").performClick(nil)
         var snapshot = await app.foundationStore.snapshot()
         for _ in 0..<200 where !snapshot.preferences.onboarding.completed { try await Task.sleep(for: .milliseconds(10)); snapshot = await app.foundationStore.snapshot() }
         XCTAssertTrue(snapshot.preferences.onboarding.completed)

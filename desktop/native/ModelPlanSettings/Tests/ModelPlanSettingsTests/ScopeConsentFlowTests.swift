@@ -79,6 +79,9 @@ import ModelPlanWire
         controller.receiveAcceptedFacts(facts) // The old facts do not settle the submitted mutation.
         XCTAssertFalse(controller.canChoose("one.local"))
         XCTAssertFalse(controller.canChoose("two.runtime"))
+        controller.endFirstRunDraft()
+        XCTAssertTrue(controller.beginFirstRunDraft(), "Reopening first run must permit checking an unresolved request")
+        XCTAssertEqual(controller.selectedIDs, ["one.local"], "Reopening must not replace the in-flight choice")
         controller.choose("two.runtime", selected: true)
         controller.selectAll()
         XCTAssertEqual(controller.selectedIDs, ["one.local"])
