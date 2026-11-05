@@ -287,6 +287,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
     }
@@ -1303,7 +1304,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         return order.compactMap { id in
             guard let input = inputs[id], let pitch=pitches[id] else { return nil }
             // The model already withholds unproven values; evaluate expiry/selection again at presentation time.
-            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:Double(preferences.redBelow))
+            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:effectiveRedBelow)
             let status = reading?.status ?? .unknown
             let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
             return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
