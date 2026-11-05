@@ -278,6 +278,8 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   for (const path of [...R.QUEUE_WORKFLOWS, ".github/workflows/merge-gates-probe.yml"]) {
     assert.match(readFileSync(join(root, path), "utf8"), /^  merge_group:\s*$/m, `${path} must run for queue groups`);
   }
+  const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
+  assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
   assert.match(gates, /actions\/checkout@[0-9a-f]{40} /, "the gate pins its action by commit");
   assert.doesNotMatch(gates, /^\s+(pull_request|merge_group|pull_request_review):/m, "the gate never runs PR code");
