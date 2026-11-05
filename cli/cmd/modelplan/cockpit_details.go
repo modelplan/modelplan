@@ -138,7 +138,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 					continue
 				}
 				v := *window.RemainingPercent
-				if v < 0 || v > 100 || math.IsNaN(v) || v >= 41 {
+				if v < 0 || v > 50 || math.IsNaN(v) {
 					continue
 				}
 				severity := "warning"
