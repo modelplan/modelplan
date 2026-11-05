@@ -117,7 +117,6 @@ private actor V05SyntheticClient: EngineClient {
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
         for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings", "a retained reading is shown", "refresh when permitted"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数", "在允许时刷新"])] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
-            dock.card.layoutSubtreeIfNeeded()
             let fields = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }
             let texts = fields.map(\.stringValue)
             XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")
