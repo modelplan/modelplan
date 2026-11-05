@@ -17,7 +17,8 @@ func TestR07PerWindowProvenanceWithMissingTimeStaysUnknown(t *testing.T) {
 	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
 	older := now.Add(-45 * time.Minute)
 	newer := now.Add(-5 * time.Minute)
-	account := Account{ObservedAt: &now, FreshUntil: &now.Add(time.Hour)}
+	fresh := now.Add(time.Hour)
+	account := Account{ObservedAt: &now, FreshUntil: &fresh}
 	windows := buildWindows([]WindowInput{
 		{Kind: "five_hour", Source: WindowSourceLocalHistory, RemainingPercent: ptr(75.0), ObservedAt: ptr(older)},
 		{Kind: "weekly", Source: WindowSourceRuntime, RemainingPercent: ptr(40.0), ObservedAt: ptr(newer)},

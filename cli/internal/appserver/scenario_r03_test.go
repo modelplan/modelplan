@@ -125,6 +125,7 @@ func TestR03InFlightReadDoesNotBlockOtherRoute(t *testing.T) {
 			runs[scope]++
 			next[scope] = at.Add(30 * time.Minute)
 			mu.Unlock()
+			calls <- scope
 			if scope == consent.ScopeCodexRuntimeUsage {
 				select {
 				case <-release:
@@ -132,7 +133,6 @@ func TestR03InFlightReadDoesNotBlockOtherRoute(t *testing.T) {
 					return ctx.Err()
 				}
 			}
-			calls <- scope
 			return nil
 		}}
 	s := NewRefreshScheduler(context.Background(), config)
