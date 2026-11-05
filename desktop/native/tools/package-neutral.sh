@@ -36,6 +36,7 @@ archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
 export CLANG_MODULE_CACHE_PATH="$output_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$output_dir/module-cache"
+# Both pinned CLI inputs still feed the existing consent-identity receipt; only arm64 is built and bundled.
 for architecture in arm64 x86_64; do
     if [ "$architecture" = arm64 ]; then
     if [ "$configuration" = debug ]; then
