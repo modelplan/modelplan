@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import CoreGraphics
 import Foundation
 import XCTest
 import ModelPlanCore
@@ -266,11 +267,50 @@ private actor EntrySyntheticClient: EngineClient {
         let hull = try XCTUnwrap(view.registeredHullBounds)
         let nozzle = try XCTUnwrap(view.interactionAnchor(id))
         let restingWidth = try XCTUnwrap(view.presentedImageForChecks).width
+        let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
+        let viewportOrigin = CGPoint(x: station.centre.x - nozzle.midX, y: station.centre.y - nozzle.midY)
+        let scale = CGFloat(try XCTUnwrap(view.presentationBackingScale))
+        func crop(_ frame: CGRect, origin: CGPoint) throws -> Data {
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let region = frame.offsetBy(dx: -origin.x, dy: -origin.y)
+                .applying(.init(scaleX: scale, y: scale)).integral
+            let cropped = try XCTUnwrap(image.cropping(to: region))
+            XCTAssertEqual(cropped.width, Int(region.width))
+            XCTAssertEqual(cropped.height, Int(region.height))
+            // CGImage crops may retain parent storage. Compare tightly packed RGBA bytes.
+            let stride = cropped.width * 4
+            let context = try XCTUnwrap(CGContext(data: nil, width: cropped.width, height: cropped.height,
+                bitsPerComponent: 8, bytesPerRow: stride, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+            return Data(bytes: try XCTUnwrap(context.data), count: stride * cropped.height)
+        }
+        let nozzleFrame = nozzle.offsetBy(dx: viewportOrigin.x, dy: viewportOrigin.y)
+        let restingNozzle = try crop(nozzleFrame, origin: skin.bounds.origin)
+        func inkMask(_ rgba: Data) -> Set<Int> {
+            // The fixture paints bright, neutral text over the dark backing.
+            // Ignore anti-aliased edge noise and lower-intensity material.
+            let pixels = Array(rgba)
+            return Set(stride(from: 0, to: pixels.count, by: 4).filter {
+                min(pixels[$0], pixels[$0 + 1], pixels[$0 + 2]) >= 220
+            })
+        }
+        let restingInk = inkMask(try crop(station.readout, origin: skin.bounds.origin))
+        XCTAssertFalse(restingInk.isEmpty, "The registered readout crop must contain painted glyphs")
+        func assertHoverPixels(line: UInt = #line) throws {
+            XCTAssertNotEqual(try crop(nozzleFrame, origin: viewportOrigin), restingNozzle,
+                              "Hover must transform pixels inside the registered nozzle, even with the viewport shift removed", line: line)
+            let hoverInk = inkMask(try crop(station.readout, origin: viewportOrigin))
+            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(1, restingInk.count / 50),
+                                     "The painted readout must stay fixed in the skin coordinate space", line: line)
+        }
         XCTAssertGreaterThan(view.bounds.width, skin.bounds.width, "The view reserves hover space beyond the approved skin")
         XCTAssertEqual(restingWidth, Int(ceil(skin.bounds.width * CGFloat(view.presentationBackingScale ?? 1))))
         let events = try XCTUnwrap(view.nozzleEventDelegate)
         events.hoverNozzle(id)
-        XCTAssertNotEqual(try pixels(), resting, "Subtle hover must magnify the actual painted nozzle")
+        try assertHoverPixels()
         XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
@@ -297,7 +337,7 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertGreaterThan(neighbour.scale, 1)
         XCTAssertLessThan(neighbour.scale, 1.5)
         XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
-        XCTAssertNotEqual(try pixels(), resting)
+        try assertHoverPixels()
         _ = try await application.editor.commit(SettingsB20Edit.motion(.on))
         events.hoverNozzle(id)
         XCTAssertTrue(view.nozzlePosesForChecks.isEmpty)
