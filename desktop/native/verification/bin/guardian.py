@@ -352,13 +352,34 @@ def main(argv=None):
         try:
             import candidate_scratch
             lease = json.loads(args.lease.read_text())
-            registry = json.loads(args.candidate_registry.read_text())
-            registry = registry.get('registry', registry)
-            reservation = json.loads(args.subject_pid_file.read_text())
-            receipt = candidate_scratch.cleanup_registered(
-                registry, reservation, parent=args.candidate_parent,
-                run_id=lease['runID'], epoch=lease['epoch'], subject_closed=closed,
-                lookup=identity, scan=lambda scope: process_scan.scan(scope, identity))
+            candidate = json.loads(args.candidate_registry.read_text())
+            registry = candidate.get('registry', candidate)
+            if subject == 'none':
+                # A missing PID file alone is not proof: the launcher could
+                # still be preparing. Require the run-bound receipt it writes
+                # only after launch.py exited before registering a subject.
+                proof_path = Path(candidate.get('noSubjectReceipt', ''))
+                if (not proof_path.is_absolute() or proof_path.is_symlink() or not proof_path.is_file()
+                        or candidate.get('subjectPidPath') != str(args.subject_pid_file)):
+                    raise ValueError('pre-registration exit unconfirmed')
+                with registration(args.subject_pid_file):
+                    proof = json.loads(proof_path.read_text())
+                    if (args.subject_pid_file.exists() or proof.get('runID') != lease['runID']
+                            or proof.get('epoch') != lease['epoch'] or proof.get('subjectPidPath') != str(args.subject_pid_file)
+                            or type(proof.get('launcherExit')) is not int or proof['launcherExit'] == 0):
+                        raise ValueError('pre-registration exit unconfirmed')
+                    root = candidate_scratch.validate_registry(registry, parent=args.candidate_parent,
+                                                               run_id=lease['runID'], epoch=lease['epoch'])
+                    if process_scan.scan(process_scan.scope_for(prefix=root), identity):
+                        raise ValueError('candidate process scope not empty')
+                    receipt = candidate_scratch.cleanup(registry, parent=args.candidate_parent,
+                                                        run_id=lease['runID'], epoch=lease['epoch'], subject_closed=True)
+            else:
+                reservation = json.loads(args.subject_pid_file.read_text())
+                receipt = candidate_scratch.cleanup_registered(
+                    registry, reservation, parent=args.candidate_parent,
+                    run_id=lease['runID'], epoch=lease['epoch'], subject_closed=closed,
+                    lookup=identity, scan=lambda scope: process_scan.scan(scope, identity))
             with args.candidate_cleanup_receipt.open('x', encoding='utf-8') as stream:
                 json.dump(receipt, stream, sort_keys=True)
                 stream.flush(); os.fsync(stream.fileno())

@@ -6,10 +6,12 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
 import candidate_scratch
 import packaged_candidate
+import guardian
 
 
 class PackagedCandidateTests(unittest.TestCase):
@@ -53,6 +55,58 @@ class PackagedCandidateTests(unittest.TestCase):
             packaged_candidate.run(record, self.root / "receipt.json", runner=lambda *a, **kw: SimpleNamespace(returncode=0), clock=lambda: next(values))
         self.assertFalse(json.loads((self.root / "receipt.json").read_text())["cleaned"])
         self.assertTrue(Path(record["registry"]["root"]).exists())
+
+    def test_launcher_failure_before_registration_still_cleans_scratch(self):
+        record = self.prepare()
+        config = json.loads(Path(record["launchConfig"]).read_text())
+        def finish_guardian(_):
+            args = ["--lease", config["leasePath"], "--stop", config["stopPath"],
+                    "--subject-pid-file", config["subjectPidPath"],
+                    "--candidate-registry", str(self.root / "registry.json"),
+                    "--candidate-parent", str(self.root),
+                    "--candidate-cleanup-receipt", config["candidateCleanupReceipt"]]
+            with patch.object(guardian, "run", return_value=("stopped", True, "none")), \
+                 patch.object(guardian.process_scan, "scan", return_value=[]):
+                self.assertEqual(guardian.main(args), 0)
+        Path(config["leasePath"]).write_text(json.dumps({"runID": "run", "epoch": "epoch"}))
+        with self.assertRaisesRegex(RuntimeError, "launch failed"):
+            packaged_candidate.run(record, self.root / "receipt.json",
+                                   runner=lambda *a, **kw: SimpleNamespace(returncode=2), wait=finish_guardian)
+        self.assertTrue(json.loads((self.root / "receipt.json").read_text())["cleaned"])
+        self.assertFalse(Path(record["registry"]["root"]).exists())
+
+    def test_guardian_without_pre_registration_receipt_keeps_scratch(self):
+        record = self.prepare()
+        config = json.loads(Path(record["launchConfig"]).read_text())
+        Path(config["leasePath"]).write_text(json.dumps({"runID": "run", "epoch": "epoch"}))
+        args = ["--lease", config["leasePath"], "--stop", config["stopPath"],
+                "--subject-pid-file", config["subjectPidPath"],
+                "--candidate-registry", str(self.root / "registry.json"),
+                "--candidate-parent", str(self.root), "--candidate-cleanup-receipt", config["candidateCleanupReceipt"]]
+        with patch.object(guardian, "run", return_value=("stopped", True, "none")):
+            self.assertEqual(guardian.main(args), 3)
+        self.assertTrue(Path(record["registry"]["root"]).is_dir())
+        self.assertFalse(Path(config["candidateCleanupReceipt"]).exists())
+
+    def test_real_launcher_admission_failure_never_registers_and_is_cleaned(self):
+        record = self.prepare()
+        config = json.loads(Path(record["launchConfig"]).read_text())
+        # Missing release causes the real launcher to fail before registration;
+        # no app, GUI, or credentials are started or read.
+        Path(config["leasePath"]).write_text(json.dumps({"runID": "run", "epoch": "epoch"}))
+        def finish_guardian(_):
+            args = ["--lease", config["leasePath"], "--stop", config["stopPath"],
+                    "--subject-pid-file", config["subjectPidPath"],
+                    "--candidate-registry", str(self.root / "registry.json"),
+                    "--candidate-parent", str(self.root), "--candidate-cleanup-receipt", config["candidateCleanupReceipt"]]
+            with patch.object(guardian, "run", return_value=("stopped", True, "none")), \
+                 patch.object(guardian.process_scan, "scan", return_value=[]):
+                self.assertEqual(guardian.main(args), 0)
+        with self.assertRaisesRegex(RuntimeError, "launch failed"):
+            packaged_candidate.run(record, self.root / "receipt.json", wait=finish_guardian)
+        self.assertFalse(Path(config["subjectPidPath"]).exists())
+        self.assertTrue(json.loads((self.root / "receipt.json").read_text())["cleaned"])
+        self.assertFalse(Path(record["registry"]["root"]).exists())
 
 
 if __name__ == "__main__":

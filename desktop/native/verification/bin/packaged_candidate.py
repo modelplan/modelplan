@@ -49,6 +49,8 @@ def prepare(archive, manifest, template, parent, registry_path):
             json.dump(config, stream, sort_keys=True)
         record = {"registry": registry, "sourceSHA": source, "packageSHA256": digest,
                   "launchConfig": str(config_path), "stopPath": config["stopPath"],
+                  "subjectPidPath": config["subjectPidPath"],
+                  "noSubjectReceipt": str(Path(str(registry_path) + ".no-subject.json")),
                   "candidateCleanupReceipt": config["candidateCleanupReceipt"]}
         fd = os.open(registry_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -70,6 +72,18 @@ def run(record, receipt_path, *, runner=subprocess.run, clock=time.time, wait=ti
         candidate_config.verify_archive(config["argv"][0], record["packageSHA256"])
         result = runner([sys.executable, str(Path(__file__).with_name("launch.py")), "--config", str(config_path), "--execute"], check=False)
         status = result.returncode
+        # launch.py reserves the PID file before it can spawn the subject. Only
+        # after that launcher has exited may absence of the reservation attest
+        # a pre-registration failure. Serialize against any registration.
+        if type(status) is int and status != 0:
+            pid_file = Path(record["subjectPidPath"])
+            with guardian.registration(pid_file):
+                if not pid_file.exists():
+                    proof = {"runID": record["registry"]["runID"], "epoch": record["registry"]["epoch"],
+                             "launcherExit": status, "subjectPidPath": str(pid_file)}
+                    fd = os.open(record["noSubjectReceipt"], os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        json.dump(proof, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
     except BaseException as error:
         failure = type(error).__name__
     finally:
