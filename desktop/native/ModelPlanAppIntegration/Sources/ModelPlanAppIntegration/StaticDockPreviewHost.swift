@@ -83,6 +83,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var showConsole: (() -> Void)?
     public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
     public var showSettings: (() -> Void)?
+    var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     public var requestHideDock:(() -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
@@ -1526,6 +1527,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
+        card.onOpenURL = { [weak self, revision = content.revision] url in
+            guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed),
+                  EngineRowsEventDecoder.isHTTPSSourceURL(url),
+                  self.model?.presentationRows[id]?.links.contains(where: { $0.url == url }) == true else { return }
+            self.openCardSourceURL(url)
+        }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
             if let controller = self.interactionController, controller.isActive { controller.dismissCard() }

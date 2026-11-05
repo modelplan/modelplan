@@ -27,6 +27,11 @@ public struct EngineResetEvent:Equatable,Sendable {
 
 /// Projects only explicit wire events; quota readings never create notices.
 public enum EngineRowsEventDecoder {
+    static func isHTTPSSourceURL(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.isEmpty == false &&
+            url.user == nil && url.password == nil
+    }
+
     public static func decode(_ rows:WireRowsSnapshot?) -> EngineRowsEventState {
         guard let events=rows?.projection.resetEvents else { return .absentFromSchema }
         let rowIDs=Set(rows?.projection.rows.map(\.id) ?? [])
@@ -45,8 +50,7 @@ public enum EngineRowsEventDecoder {
                 let candidates = [("publication", event.source.url)] + (event.source.links ?? []).prefix(8).map { ($0.type, Optional($0.url)) }
                 for (kind, raw) in candidates where sourceLinks.count < 8 {
                     guard ["publication", "aihot", "original"].contains(kind), let raw, raw.utf8.count <= 2048,
-                          let url = URL(string: raw), url.scheme?.lowercased() == "https", !(url.host ?? "").isEmpty,
-                          url.user == nil, url.password == nil, seenURLs.insert(url).inserted else { continue }
+                          let url = URL(string: raw), isHTTPSSourceURL(url), seenURLs.insert(url).inserted else { continue }
                     sourceLinks.append(.init(kind:kind,url:url))
                 }
             }

@@ -897,6 +897,32 @@ private actor G1DEngine: EngineClient {
         let bounded = try f.card().links
         XCTAssertEqual(bounded.count, 8); XCTAssertEqual(Set(bounded.map(\.url)).count, 8)
     }
+    func testNormalEntryOpensOnlyCurrentAdmittedResetSourceLinks() async throws {
+        let f = try await fixture()
+        var opened: [URL] = []
+        f.host.openCardSourceURL = { opened.append($0) }
+        try await f.event()
+        try f.hover(); f.tick(0.25)
+        func sourceButton(in view: NSView) -> NSButton? {
+            if let button = view as? NSButton, button.title == "Source" { return button }
+            return view.subviews.lazy.compactMap { sourceButton(in: $0) }.first
+        }
+        let button = try XCTUnwrap(sourceButton(in: f.host.card))
+        let source = try XCTUnwrap(URL(string: "https://example.test/reset"))
+        XCTAssertTrue(button.isEnabled)
+        button.performClick(nil)
+        XCTAssertEqual(opened, [source])
+
+        let invoke = try XCTUnwrap(f.host.card.onOpenURL)
+        invoke(try XCTUnwrap(URL(string: "https://example.test/not-admitted")))
+        invoke(try XCTUnwrap(URL(string: "http://example.test/reset")))
+        XCTAssertEqual(opened, [source])
+
+        await f.app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .connectionLost, previous: nil, nextFloor: nil)))
+        button.performClick(nil)
+        invoke(source)
+        XCTAssertEqual(opened, [source], "An action retained from the retired card cannot open a URL")
+    }
     func testG1_DOCK_3_8_12() async throws {
         let f = try await fixture();f.mutateFirst{a in var windows=a["windows"] as! [[String:Any]];var extra=windows[0];extra["id"]="scoped";extra["modelScope"]=["models":["synthetic"]];extra["remainingPercent"]=1;windows.append(extra);a["windows"]=windows};try await f.publish()
         XCTAssertEqual(f.host.dockView.presentedReadingsForChecks[G1DFixture.ids[0]]?.remainingPercent,41)
