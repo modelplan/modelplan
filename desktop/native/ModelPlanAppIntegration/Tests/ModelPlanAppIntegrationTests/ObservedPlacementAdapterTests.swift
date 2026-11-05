@@ -15,10 +15,10 @@ import ModelPlanSettings
         let application = SettingsApplicationCoordinator(store: store, apply: { _ in deliveries += 1 })
         await application.reload(); let before = try XCTUnwrap(application.editor.snapshot)
         let frame = CGRect(x: 0, y: 0, width: 60, height: 200)
-        let layout = DockEdgeLayout(displayID: "recovery", edge: .left, expandedSize: frame.size,
+        let layout = DockEdgeLayout(displayID: "recovery", edge: .right, expandedSize: frame.size,
             sliverLength: 100, sliverThickness: 4, hoverRects: [frame])
         let display = CGRect(x: 0, y: 0, width: 1200, height: 900)
-        let placement = try XCTUnwrap(DockEdgeGeometry.resolve(preference: .init(displayID: "recovery", edge: .right),
+        let placement = try XCTUnwrap(DockEdgeGeometry.resolve(preference: .init(displayID: "preferred", edge: .right),
             displays: [.init(id: "recovery", frame: display, visibleFrame: display)], layouts: [layout], pointer: nil, primaryID: "recovery"))
         XCTAssertThrowsError(try CommunityDockPlacementFacts.requireSynchronized(placement, recovering: true, application: application))
         XCTAssertTrue(try CommunityDockPlacementFacts.apply(placement, recovering: true, application: application))
@@ -26,7 +26,8 @@ import ModelPlanSettings
         let delivered = deliveries
         XCTAssertFalse(try CommunityDockPlacementFacts.apply(placement, recovering: true, application: application))
         XCTAssertEqual(deliveries, delivered)
-        XCTAssertEqual(application.editor.context.dockPlacementObservation?.edge, .left)
+        XCTAssertEqual(placement.displayID, "recovery")
+        XCTAssertEqual(application.editor.context.dockPlacementObservation?.edge, .right)
         XCTAssertEqual(application.editor.snapshot?.revision, before.revision)
         XCTAssertEqual(application.editor.snapshot?.preferences.dockEdge, .right)
         XCTAssertEqual(application.editor.snapshot?.preferences.dockDisplayID, "preferred")
