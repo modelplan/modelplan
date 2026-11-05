@@ -24,7 +24,7 @@ class LedgerSnapshotTests(unittest.TestCase):
         from update_verified_handoff import snapshot
         text = '''| G3-01 | private | x | x | x | x | VERIFIED (evidence) |
 | G3-02 | VERIFIED | x | x | x | x | TEST-PASS |
-| G3-03 | private | x | x | x | x | OPEN |
+| G3-03 | private | x | x | x | x | VERIFIED-NOT |
 '''
         self.assertEqual(snapshot(text, date(2026, 11, 5)), {'date': '2026-11-05', 'verified': ['G3-01']})
         with self.assertRaises(ValueError):

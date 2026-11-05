@@ -18,7 +18,7 @@ def snapshot(ledger, today):
         if len(columns) != 7 or not re.fullmatch(r'G3-[0-9]+', columns[0]) or columns[0] in seen:
             raise ValueError('invalid ledger row')
         seen.add(columns[0])
-        if re.match(r'^VERIFIED(?:\b|$)', columns[-1]):
+        if re.match(r'^VERIFIED(?:\s|$)', columns[-1]):
             ids.append(columns[0])
     if not seen:
         raise ValueError('no ledger rows')
