@@ -84,6 +84,9 @@ private actor V18SyntheticClient: EngineClient {
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
         for (language, expected) in [(SettingsLanguage.english, "resets in 2h 14m"), (.chinese, "2 小时 14 分后重置")] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            let projected = try XCTUnwrap(dock.cardContent(for: id))
+            XCTAssertTrue(projected.rows.contains { $0.detail.contains(expected) },
+                          "The admitted normal-entry card projection must carry its relative reset")
             let texts = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
             XCTAssertTrue(texts.contains { $0.contains(expected) }, "The normal-entry card must display its relative reset")
         }
