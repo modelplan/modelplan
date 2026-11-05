@@ -138,6 +138,28 @@ final class CommunityCockpitEntryTests:XCTestCase {
             XCTAssertTrue(after.sourceAndAge.contains("just now"), after.sourceAndAge)
             let observed = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
             XCTAssertLessThan(abs(observed.timeIntervalSince(updatedAt)), 2)
+            // R-01: two more real local observations show 4% then 3% on the
+            // same subscribed normal-entry card, with the latter's real age.
+            for (used, expected) in [(96, "4%"), (97, "3%")] {
+                let nextAt = Date()
+                let writer = try FileHandle(forWritingTo: log)
+                try writer.seekToEnd()
+                try writer.write(contentsOf: record(nextAt, used: used))
+                try writer.close()
+                var current: DockCardContent?
+                for _ in 0..<300 {
+                    if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
+                       card.rows.contains(where: { $0.label == "Weekly" && $0.value == expected }) {
+                        current = card; break
+                    }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let card = try XCTUnwrap(current, "subscribed card did not deliver \(expected)")
+                XCTAssertTrue(card.sourceAndAge.contains("Local history"), card.sourceAndAge)
+                XCTAssertTrue(card.sourceAndAge.contains("just now"), card.sourceAndAge)
+                let actual = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
+                XCTAssertLessThan(abs(actual.timeIntervalSince(nextAt)), 2)
+            }
             await app.composition.stop()
         } catch {
             await app.composition.stop()
