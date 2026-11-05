@@ -4,9 +4,9 @@
 import {leaderAnchor,routeLeader} from '../study/rocket-r1/help-routing.js';
 type Locale='en'|'zh-CN';
 const notes:ReadonlyArray<readonly [string,string,string]>=[
- ['.ck-port','Window: click to open the 3D launch field.','悬窗：点击打开 3D 发射场。'],
+ ['.ck-port','Window: the field view is unavailable.','悬窗：场景视图暂不可用。'],
  ['[data-shutter]','Window shutter: drag or press to fold or expand the Window.','悬窗开关：拖动或按一下，收起或展开。'],
- ['[data-caution]','Alert lamp: press for all alerts and to stop flashing.','注意灯：按一下查看全部提醒并停止闪烁。'],
+ ['[data-caution]','Alert lamp: indicates current alerts.','注意灯：显示当前提醒状态。'],
  ['[data-settings]','Settings: adjust preferences or show hints again in its window.','设置：在独立窗口调整偏好或重新显示提示。'],
  ['[data-detach]','Detach','分离窗口'],['[data-close]','Close: end the local Try and close the Cockpit.','关闭：结束本地试档并收起驾驶舱。'],
  ['.lb-t,.qrow-t,.qaverage','Today’s output; today’s average generation speed is summed eligible output tokens divided by summed generation seconds, not live speed; current source binding, not historical account attribution','今日输出；今日平均生成速度为可测速输出 token 总量除以生成秒数总量，不是实时速度；按当前来源关联，非历史账户归属'],

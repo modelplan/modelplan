@@ -73,3 +73,14 @@ test('S17 Option help describes the available last-seen strip without promising 
   await expect(map.locator('[data-target=".ck-tape"]')).toHaveText(expected);await page.keyboard.up('Alt');await expect(map).toBeHidden();
  }
 });
+
+test('S17 Option help does not promise deferred field or full alert list in either language',async({page})=>{
+ const {send,receive}=await open(page),map=page.locator('#help-map');
+ for(const [locale,field,alert] of [['en','Window: the field view is unavailable.','Alert lamp: indicates current alerts.'],['zh-CN','悬窗：场景视图暂不可用。','注意灯：显示当前提醒状态。']]){
+  expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
+  await page.keyboard.down('Alt');await expect(map).toBeVisible();
+  await expect(map.locator('[data-target=".ck-port"]')).toHaveText(field);
+  await expect(map.locator('[data-target="[data-caution]"]')).toHaveText(alert);
+  await page.keyboard.up('Alt');await expect(map).toBeHidden();
+ }
+});
