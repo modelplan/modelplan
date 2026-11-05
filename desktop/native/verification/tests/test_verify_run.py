@@ -23,7 +23,7 @@ class FakeSession:
     lease = None  # set by the harness per run: paths + snapshot of a live lease for the supervisor check
 
     def __init__(self, ctx, segment, index, fail=None, cleaned=True):
-        self.segment, self.fail, self.cleaned = segment, fail, cleaned
+        self.ctx, self.segment, self.fail, self.cleaned = ctx, segment, fail, cleaned
 
     def open(self):
         FakeSession.opened.append(list(self.segment['ids']))
@@ -75,10 +75,10 @@ class FakeActions:
             raise verify_run.NotRun('appearance-switch-not-granted-on-this-host')
 
     def status_menu(self, subject, item, action, directory):
-        raise verify_run.NotRun(f'status-menu-action-{action}-has-no-arrival-receipt')
+        raise verify_run.NotRun(f'status-menu-action-{action}-has-no-fixed-action-id')
 
     def relaunch(self, subject):
-        raise verify_run.NotRun('relaunch-unsupported')
+        raise verify_run.NotRun('relaunch-needs-a-live-direct-mode-segment')
 
     def sleep(self, value):
         self.calls.append(('sleep', value))
@@ -253,25 +253,62 @@ class VerifyRunTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn('closure unconfirmed', readme)
 
-    def test_real_profile_records_mode_private_statement_and_helper_gap(self):
+    def test_real_profile_records_mode_private_statement_and_flows_through_the_shared_helpers(self):
+        seen = []
         class Real(FakeSession):
-            def __init__(self, *a):
-                super().__init__(*a, fail=verify_run.NotRun('real-profile-launch-not-supported-by-shared-helpers'))
+            def open(self):
+                seen.append(self.ctx['profile'])
+                return super().open()
         code, lines, readme = self.go(ids=('V-01', 'D-14', 'D-01'), profile='real', session=Real)
         self.assertEqual(code, 0)
+        self.assertEqual(seen, ['real'] * len(seen))  # the profile reaches every segment unchanged
         self.assertEqual(json.loads((self.out / 'preflight.json').read_text())['profile'], 'real')
         self.assertIn('PRIVATE EVIDENCE', readme)
         self.assertIn(verify_run.ISOLATION_REAL, readme)
         self.assertNotIn(verify_run.ISOLATION_SYNTHETIC, readme)
         self.assertIn('never be attached to or quoted in public PRs', verify_run.ISOLATION_REAL)
-        self.assertIn('reason=real-profile-launch-not-supported-by-shared-helpers', lines['V-01'])
-        self.assertIn('profile-real', lines['D-01'])  # D-01 needs a fresh synthetic profile
+        self.assertNotIn('real-profile-launch-not-supported-by-shared-helpers', readme)
+        for ident in ('V-01', 'D-14'):
+            receipt = json.loads((self.out / ident / 'receipt.json').read_text())
+            self.assertEqual(receipt['profile'], 'real')
 
-    def test_real_session_refuses_real_profile_before_booking(self):
+    def test_session_relaunch_reuses_the_same_home_with_a_new_pid(self):
+        run = self.root / 'segment'; run.mkdir()
         session = verify_run.Session(dict(profile='real'), dict(flavour='release', ids=['V-01']), 1)
-        with self.assertRaises(verify_run.NotRun):
-            session.open()
-        self.assertEqual(session.close(), dict(cleaned=True, detail='nothing launched'))
+        session.paths = dict(subjectPidPath=str(run / 'subject.json'), relaunchPath=str(run / 'relaunch'))
+        session.local = run
+        session.procs = {'run': type('R', (), {'poll': staticmethod(lambda: None)})()}
+        (run / 'launch.out').write_text('\n'.join([
+            json.dumps(dict(runID='r', ownedPID=111, bundle='/app/ModelPlan.app', profile='real',
+                            home='/Users/tester')),
+            json.dumps(dict(relaunch=1, ownedPID=222, bundle='/app/ModelPlan.app', profile='real',
+                            home='/Users/tester')),
+        ]) + '\n')
+        (run / 'subject.json').write_text(json.dumps(dict(state='running', pid=111)))
+        first = session.await_subject(0)
+        self.assertEqual((first['pid'], first['home']), (111, '/Users/tester'))
+        (run / 'subject.json').write_text(json.dumps(dict(state='running', pid=222)))
+        second = session.relaunch(first | dict(runID='r', epoch='e', leasePath='l', stopPath='s'))
+        self.assertEqual(second['pid'], 222)  # a new launch ...
+        self.assertEqual(second['home'], '/Users/tester')  # ... with the same real HOME
+        self.assertEqual(second['runID'], 'r')
+        self.assertEqual((run / 'relaunch').read_text(), '1')
+
+    def test_relaunch_step_updates_the_subject_for_later_steps(self):
+        captures = []
+        class Follow(FakeActions):
+            def relaunch(self, subject):
+                return subject | dict(pid=999)
+            def capture(self, subject, *args):
+                captures.append(subject['pid'])
+                return super().capture(subject, *args)
+        ctx = dict(profile='synthetic', sha='a' * 40, layout='single',
+                   markers=verify_run.account_markers(), displays=[], baseline={})
+        step = dict(steps=[dict(name='again', action='relaunch'), dict(name='shot', action='capture-window')])
+        outcome, reason = verify_run.run_id('X-01', step, dict(flavour='release'),
+                                            dict(pid=111, registeredAt=0.0), ctx, Follow(), self.root)
+        self.assertEqual(outcome, 'REVIEW')
+        self.assertEqual(captures, [999])  # the capture saw the relaunched subject, not the old one
 
     def test_output_must_be_new_and_outside_a_checkout(self):
         out = self.root / 'used'; out.mkdir(); (out / 'x').write_text('x')
