@@ -229,6 +229,58 @@ import ModelPlanSettings
         XCTAssertEqual(controller.presentation?.paintedFrame, initial)
     }
 
+    func testD09PreparationCannotCarryOrSaveAfterCockpitBlocks() throws {
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            for releasing in [false, true] {
+                let topology = DragTopology()
+                var clock = 0.0, cockpitClosed = true
+                let original = DockEdgePreference(displayID: topology.a.id)
+                let controller = DockEdgeController(preference: original, clock: { clock },
+                    scheduler: DragSchedule(), read: {
+                        var sample = topology.read()
+                        sample.presence.autoHide = false
+                        sample.presence.cockpitClosed = cockpitClosed
+                        sample.layouts = sample.displays.flatMap { display in
+                            DockEdgeGeometry.allowedEdges.map { edge in
+                                DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
+                                    sliverLength: 110, sliverThickness: 4, hoverRects: [])
+                            }
+                        }
+                        return sample
+                    }, position: PulseDockPositioning.resolve)
+                var presents: [DockEdgePresentation] = [], commits: [DockEdgePreference] = []
+                controller.onPresent = { presents.append($0) }
+                controller.onCommittedPlacement = { commits.append($0) }
+                controller.start()
+                defer { controller.stop() }
+                let frame = try XCTUnwrap(controller.presentation?.paintedFrame)
+                controller.dragRegions = .init(body: CGPath(rect: CGRect(origin: .zero, size: frame.size), transform: nil),
+                    excludedControls: [])
+                clock = 1
+                let down = CGPoint(x: frame.midX, y: frame.midY)
+                XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: frame.width / 2, y: frame.height / 2), global: down))
+                controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y + 24))
+                XCTAssertTrue(controller.presentation?.moving == true)
+                presents.removeAll()
+
+                // A new sample can observe suppression during destination preparation,
+                // before the next normal visibility event is delivered.
+                controller.prepareDragDisplay = { _ in cockpitClosed = false }
+                let target = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
+                if releasing { controller.endBackgroundMove(global: target) }
+                else { controller.updateBackgroundMove(global: target) }
+
+                XCTAssertEqual(controller.presentation?.state, .suppressed(.cockpit))
+                XCTAssertFalse(controller.isBackgroundPressed)
+                XCTAssertTrue(presents.allSatisfy { $0.paintedFrame == nil }, "Suppression must not flash a carried or resting frame")
+                XCTAssertTrue(commits.isEmpty, "A newly blocked release must not save")
+                XCTAssertEqual(controller.preference, original)
+            }
+        }
+    }
+
     func testD08D10InnerStripWakeAndHotPlugPreserveIntentInBothModes() throws {
         defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
         for mode in [1, 2] {
