@@ -39,13 +39,15 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
     private var acceptedFactsCallbackToken = UUID()
     private var visibleDraftBasisToken = UUID()
     private var firstRunExplicitSelection=false
+    private var firstRunPendingIDs: Set<String>?
+    public var firstRunConsentPending: Bool { firstRunPendingIDs != nil }
     private var observers: [UUID: @MainActor () -> Void] = [:]
     public init(commands: any ScopeConsentCommands, copyReport: (@MainActor (String) throws -> Void)? = nil) {
         self.commands = commands; self.copyReport = copyReport
     }
     /// Presentation policy only; no grant, persistence, inspection or assumed restore.
     public func beginFirstRunDraft() -> Bool {
-        guard case .idle=phase else { return false }
+        guard case .idle=phase, firstRunPendingIDs == nil else { return false }
         firstRunExplicitSelection=true;selectedIDs=[];changed();return true
     }
     public func endFirstRunDraft() { firstRunExplicitSelection=false }
@@ -101,7 +103,7 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
     public var canRequestAllow: Bool { canMutate && selectedIDs.contains { canChoose($0) } }
     public var isMutationServiceReady: Bool { commands.canMutate }
     public var canMutate: Bool {
-        guard commands.canMutate, facts != nil else { return false }
+        guard commands.canMutate, facts != nil, firstRunPendingIDs == nil else { return false }
         switch phase { case .sending, .waitingForFacts: return false; default: return true }
     }
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
@@ -142,6 +144,10 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
         let previous = facts
         let unchanged = sameVisibleFacts(previous, value)
         facts = value // Every value here was already accepted by M0; none is protocol-filtered here.
+        if let pending = firstRunPendingIDs,
+           pending.allSatisfy({ id in value.scopes.contains { $0.scope == id && $0.state == .allowed } }) {
+            firstRunPendingIDs = nil
+        }
         if !unchanged {
             visibleDraftBasisToken = UUID()
             selectedIDs.formIntersection(Set(value.scopes.map(\.scope)))
@@ -175,7 +181,9 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
         switch value.receipt.code {
         case .cleanupPending: notice = .cleanupPending
         case .ok: notice = (value.receipt.cleanupPending?.isEmpty == false) ? .cleanupPending : .waitingForFacts
-        case .staleGeneration, .staleConsentText, .rejected: notice = .requestFailed
+        case .staleGeneration, .staleConsentText, .rejected:
+            firstRunPendingIDs = nil; notice = .requestFailed
+            if activeRequestToken == nil { phase = .idle }
         case .unknown: notice = .outcomeUnknown
         }
         // No receipt field is copied into facts, selected scopes or permission badges.
@@ -201,7 +209,7 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
     public func receiveAcceptedRows(_ value: WireRowsSnapshot) { rowsSummary = value.projection.rowsSummary; changed() }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
-        activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
+        activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; firstRunPendingIDs = nil; notice = .none
         facts = nil; rowsSummary = nil; selectedIDs = []; phase = .idle; changed()
     }
     public func isAllowed(_ id: String) -> Bool { facts?.scopes.first { $0.scope == id }?.state == .allowed }
@@ -223,10 +231,11 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
         guard firstRunExplicitSelection else { return .unavailable }
         if selectedIDs.isEmpty { return .noSelection }
         guard selectedIDs.allSatisfy({ canChoose($0) }), let confirmation = requestAllow() else { return .unavailable }
+        firstRunPendingIDs = Set(confirmation.intent.allowIDs)
         await confirm(confirmation.id)
-        guard lastIntentRequestID == confirmation.intent.requestID else { return .unavailable }
+        guard lastIntentRequestID == confirmation.intent.requestID else { firstRunPendingIDs = nil; changed(); return .unavailable }
         switch notice {
-        case .requestFailed: return .unavailable
+        case .requestFailed: firstRunPendingIDs = nil; phase = .idle; changed(); return .unavailable
         case .outcomeUnknown, .committedAwaitingFacts: return .outcomeUnknown
         default: return .submitted
         }
@@ -291,7 +300,7 @@ public enum FirstRunConsentSubmission: Equatable, Sendable { case noSelection, s
             else if case .checking = notice { notice = .waitingForFacts }
         } catch {
             guard inspectionToken == token else { return }
-            inspectionToken = nil; notice = .requestFailed
+            inspectionToken = nil; notice = firstRunConsentPending ? .outcomeUnknown : .requestFailed
         }
         changed()
     }

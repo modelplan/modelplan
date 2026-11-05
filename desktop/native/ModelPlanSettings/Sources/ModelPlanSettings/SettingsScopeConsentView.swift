@@ -193,7 +193,7 @@ import ModelPlanWire
             control.state = selected || controller.isAllowed(id) ? .on : .off
             addArrangedSubview(control)
         }
-        if case .waitingForFacts = controller.phase {
+        if controller.firstRunConsentPending {
             label(.init("Checking whether your reading choices were saved.", "正在核验读取选项是否已保存。"))
             addArrangedSubview(button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in
                 await self?.controller.inspectConsent()
