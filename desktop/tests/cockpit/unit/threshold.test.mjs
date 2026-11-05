@@ -13,3 +13,10 @@ test('cockpit query threshold follows the generated committed-setting choices', 
     assert.equal(conforms({redBelow: value}, definitions.CockpitQueryParams, definitions), false);
   }
 });
+
+test.todo('S-11 generated query choices await CLIJIT schema alignment', () => {
+  for (const value of [10, 15, 20, 25, 30, 40]) {
+    assert.equal(conforms({redBelow:value}, definitions.CockpitQueryParams, definitions), true);
+  }
+  assert.equal(conforms({redBelow:16}, definitions.CockpitQueryParams, definitions), false);
+});
