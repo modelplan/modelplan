@@ -262,26 +262,51 @@ private actor EntrySyntheticClient: EngineClient {
         let editor = app.settingsHost.application.editor
         for id in [first, second] { _ = try await editor.commit(SettingsB20Edit.percentagePin(id, .week)) }
 
-        func assertBand(_ id: String, _ expected: DockQuotaStatus, line: UInt = #line) throws {
+        func assertBand(_ id: String, _ expected: DockQuotaStatus, readout: String, line: UInt = #line) throws {
             let reading = try XCTUnwrap(view.presentedReadingsForChecks[id], line: line)
             XCTAssertEqual(reading.status, expected, line: line)
+            XCTAssertEqual(reading.readout, readout, line: line)
             XCTAssertEqual(reading.inner?.status, expected, line: line)
             let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
             XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
         }
-        try assertBand(first, .warning)
-        try assertBand(second, .normal)
+        XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 25)
+        try assertBand(first, .warning, readout: "50%")
+        try assertBand(second, .normal, readout: "51%")
 
         let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
-        let lower = try rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
-        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
-            consentGeneration: delivery.floor.generation, data: lower), delivery: delivery)
-        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: lower.projection.invalidRowCount))
-        try assertBand(first, .critical)
-        try assertBand(second, .critical)
+        var sequence = Int(fixture.sequence)
+        func replace(_ firstPercent: Double, _ secondPercent: Double,
+                     deadline: String = "2028-12-01T00:00:00Z") async throws {
+            sequence += 1
+            let snapshot = try rows(weekly: firstPercent, secondWeekly: secondPercent,
+                                    sequence: sequence, weeklyDeadline: deadline)
+            let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+                consentGeneration: delivery.floor.generation, data: snapshot), delivery: delivery)
+            await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
+        }
+        try await replace(25, 10)
+        try assertBand(first, .critical, readout: "25%")
+        try assertBand(second, .critical, readout: "10%")
         _ = try await editor.commit(SettingsB20Edit.redBelow(10))
-        try assertBand(first, .warning)
-        try assertBand(second, .critical)
+        try assertBand(first, .warning, readout: "25%")
+        try assertBand(second, .critical, readout: "10%")
+
+        _ = try await editor.commit(SettingsB20Edit.redBelow(40))
+        XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 40)
+        try await replace(40, 41)
+        try assertBand(first, .critical, readout: "40%")
+        try assertBand(second, .warning, readout: "41%")
+        _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
+        try assertBand(first, .critical, readout: "60%")
+        try assertBand(second, .warning, readout: "59%")
+        try await replace(50, 51)
+        try assertBand(first, .warning, readout: "50%")
+        try assertBand(second, .normal, readout: "49%")
+
+        try await replace(40, 41, deadline: "2026-12-01T12:00:00Z")
+        try assertBand(first, .unknown, readout: "--")
+        try assertBand(second, .unknown, readout: "--")
     }
 
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
