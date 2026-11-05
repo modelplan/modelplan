@@ -28,6 +28,23 @@ import XCTest
         var preferences = SettingsPreferences(); preferences.theme = theme; preferences.dockEdge = edge
         return try File.Document(settings: preferences, core: core).encoded()
     }
+    func testD19FloatingMigrationKeepsDisplayAndLogsOnlyOnce() throws {
+        for fraction in ["null", "-0.1", "1.1", "\"invalid\""] {
+            let f = try Fixture()
+            try f.legacy("Beta07/settings-v1.json", "{\"schemaVersion\":1,\"preferences\":{\"dockEdge\":\"floating\",\"dockDisplayID\":\"synthetic-display\",\"dockAlongFraction\":\(fraction)}}")
+            var records: [String] = []
+            let hooks = File.Hooks(onMigrationLog: { records.append($0) })
+            let first = try File.open(f.location, hooks: hooks)
+            XCTAssertEqual(first.document.settings.dockEdge, .right)
+            XCTAssertEqual(first.document.settings.dockDisplayID, "synthetic-display")
+            XCTAssertEqual(first.document.settings.dockAlongFraction, 0.5)
+            XCTAssertEqual(records, ["Legacy floating placement migrated to right edge"])
+            let reopened = try File.open(f.location, hooks: hooks)
+            XCTAssertEqual(reopened.document.settings.dockDisplayID, "synthetic-display")
+            XCTAssertEqual(records.count, 1, "Reopening must not emit a second migration log")
+            try f.unchanged()
+        }
+    }
     func testCoexistingLegacyFilesSelectSettingsAsOneGroupAndCoreIndependently() async throws {
         for product in [FoundationSettingsMigration.ProductIdentity.official, .community] {
             let f = try Fixture(product)
