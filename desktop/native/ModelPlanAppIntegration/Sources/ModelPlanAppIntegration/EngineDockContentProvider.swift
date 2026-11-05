@@ -144,7 +144,6 @@ public enum EngineDeadlineFacts {
         var inputs: [DockInstrumentInput] = []
         var reasons: [String: DockContentRow] = [:]
         let members=EngineAccountMemberCatalogue(rows:value.dockRows).members
-        let hasWindowSources = members.contains { $0.account.windows.contains { $0.source != nil } }
         let passWindows = value.status == .ready ? verifiedWindowFacts(members, now: context.now) : []
         let passInstability=Dictionary(uniqueKeysWithValues:members.map { ($0.id,!$0.isStable) })
         let events:[EngineResetEvent]
@@ -157,6 +156,7 @@ public enum EngineDeadlineFacts {
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
+            let hasWindowSources = account.windows.contains { $0.source != nil }
             var resets:[String:Date]=[:]
             var descriptions:[String:String]=[:]
             for window in account.windows {

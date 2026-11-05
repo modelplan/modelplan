@@ -66,7 +66,9 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, distinctWindowSources: Bool = false, restrictedFirst: Bool = false, secondWithoutSources: Bool = false) throws -> WireRowsSnapshot {
+    private enum WindowSources { case captured, distinct, restrictedWithLegacyMember, legacy }
+
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, windowSources: WindowSources = .captured) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -102,8 +104,11 @@ private actor EntrySyntheticClient: EngineClient {
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
         week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
         week["resetsAt"] = weeklyDeadline
+        if windowSources == .legacy {
+            session.removeValue(forKey: "source"); week.removeValue(forKey: "source")
+        }
         windows = [session, week]
-        if distinctWindowSources {
+        if windowSources == .distinct || windowSources == .restrictedWithLegacyMember {
             session["source"] = "local_history"; session["observedAt"] = "2026-12-01T23:23:00Z"
             session["remainingPercent"] = 9
             week["source"] = "runtime"; week["observedAt"] = "2026-12-01T23:49:00Z"
@@ -112,7 +117,7 @@ private actor EntrySyntheticClient: EngineClient {
             extra.removeValue(forKey: "source"); extra.removeValue(forKey: "observedAt")
             windows = [session, week, extra]
         }
-        if restrictedFirst {
+        if windowSources == .restrictedWithLegacyMember {
             var scoped = session
             scoped["id"] = "restricted-runtime"; scoped["limitKey"] = "code_review"; scoped["poolKey"] = "code_review"
             scoped["remainingPercent"] = 38
@@ -124,7 +129,7 @@ private actor EntrySyntheticClient: EngineClient {
             other["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; other["accountLocator"] = "bbbbbbbbbbbbbbbb"
             otherWeek["remainingPercent"] = secondWeekly
             var otherSession = session
-            if secondWithoutSources {
+            if windowSources == .restrictedWithLegacyMember {
                 other["route"] = "saved_login_api"
                 other["observedAt"] = "2026-12-01T23:37:00Z"
                 otherSession.removeValue(forKey: "source")
@@ -265,7 +270,7 @@ private actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try rows(weekly: 75, distinctWindowSources: true)
+        let readings = try rows(weekly: 75, windowSources: .distinct)
         var elapsed = 0.0
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
@@ -307,8 +312,7 @@ private actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let snapshot = try rows(weekly: 75, secondWeekly: 55, distinctWindowSources: true,
-                                restrictedFirst: true, secondWithoutSources: true)
+        let snapshot = try rows(weekly: 75, secondWeekly: 55, windowSources: .restrictedWithLegacyMember)
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
@@ -338,13 +342,9 @@ private actor EntrySyntheticClient: EngineClient {
         }
 
         let restricted = "aaaaaaaaaaaaaaaa"
-        XCTAssertNil(view.presentedReadingsForChecks[restricted]?.outer)
+        XCTAssertNil(try XCTUnwrap(view.presentedReadingsForChecks[restricted]).outer)
         try open(restricted)
-        let account = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[restricted])
-        let expectedHeader = account.sourceName + " · " + CommunityObservationAge.cardText(observedAt: account.originalObservedAt, now: wall, english: true)
-        XCTAssertFalse(account.sourceName.isEmpty)
-        XCTAssertNotNil(account.originalObservedAt)
-        XCTAssertEqual(text("source", in: dock.card), expectedHeader)
+        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
         XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
         XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("Local history · 37m ago") == true)
 
@@ -353,6 +353,21 @@ private actor EntrySyntheticClient: EngineClient {
         try open("bbbbbbbbbbbbbbbb")
         XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 23m ago")
         XCTAssertEqual(text("row.source.value", in: dock.card), "Saved sign-in")
+
+        dock.interactionControllerForChecks?.dismissCard()
+        events.hoverNozzle(nil)
+        let legacy = try rows(weekly: 55, sequence: 8, windowSources: .legacy)
+        XCTAssertTrue(legacy.projection.rows.flatMap(\.accounts).flatMap(\.windows).allSatisfy { $0.source == nil })
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+            consentGeneration: delivery.floor.generation, data: legacy), delivery: delivery)
+        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: legacy.projection.invalidRowCount))
+        try open(restricted)
+        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 24h ago")
+        XCTAssertEqual(text("row.source.value", in: dock.card), "Saved sign-in")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(text("source", in: dock.card), "已有登录 · 24小时前")
+        XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {

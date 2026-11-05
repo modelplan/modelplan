@@ -36,7 +36,9 @@ public struct DockContentRow: Sendable {
         CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
     public func cardSourceAndAge(at now:Date,english:Bool,selectedWindowID:String?=nil) -> String {
-        if windowObservations != nil { return observationText(for: selectedWindowID, at: now, english: english) }
+        if let selectedWindowID, windowObservations != nil {
+            return observationText(for: selectedWindowID, at: now, english: english)
+        }
         let age = cardAge(at: now, english: english)
         return sourceName.isEmpty ? age : sourceName + " · " + age
     }
