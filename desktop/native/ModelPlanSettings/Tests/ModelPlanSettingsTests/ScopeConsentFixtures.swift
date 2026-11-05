@@ -8,15 +8,16 @@ enum ScopeConsentFixtures {
     static let local = "gemini.local_history"
     static let gemini = "gemini.account_usage.saved_login"
     static let cursor = "cursor.account_usage.saved_login"
-    static func firstRunFacts(allowed: Set<String> = []) throws -> WireConsentFacts {
+    static func firstRunFacts(allowed: Set<String> = [], extraReader: Bool = false) throws -> WireConsentFacts {
         var root = URL(fileURLWithPath: #filePath).resolvingSymlinksInPath().deletingLastPathComponent()
         while root.path != "/", !FileManager.default.fileExists(atPath: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json").path) { root.deleteLastPathComponent() }
         let data = try Data(contentsOf: root.appendingPathComponent("schema/app-cli/captures/WireConsentFacts.json"))
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let scopes = object["scopes"] as? [[String: Any]], let base = scopes.first else { throw Failure.missingCapture }
-        let definitions = [("one.local", "local_log"), ("two.runtime", "runtime_rpc"),
+        var definitions = [("one.local", "local_log"), ("two.runtime", "runtime_rpc"),
                            ("three.browser", "browser_session"), ("four.key", "api_key_api"),
                            ("five.status", "status_line")]
+        if extraReader { definitions.append(("six.local", "local_log")) }
         let synthetic = definitions.map { id, route -> [String: Any] in
             var value = base
             value["scope"] = id; value["tool"] = "codex"; value["route"] = route

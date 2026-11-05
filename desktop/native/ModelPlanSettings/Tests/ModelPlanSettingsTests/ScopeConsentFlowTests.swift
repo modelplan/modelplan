@@ -80,6 +80,8 @@ import ModelPlanWire
         XCTAssertFalse(controller.canChoose("one.local"))
         XCTAssertFalse(controller.canChoose("two.runtime"))
         controller.endFirstRunDraft()
+        controller.receiveAcceptedFacts(try ScopeConsentFixtures.firstRunFacts(extraReader: true))
+        XCTAssertEqual(controller.selectedIDs, ["one.local"], "A newly discovered reader must not become selected while the request is unresolved")
         XCTAssertTrue(controller.beginFirstRunDraft(), "Reopening first run must permit checking an unresolved request")
         XCTAssertEqual(controller.selectedIDs, ["one.local"], "Reopening must not replace the in-flight choice")
         controller.choose("two.runtime", selected: true)
