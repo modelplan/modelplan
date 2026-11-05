@@ -5,6 +5,40 @@ import ModelPlanDock
 @testable import ModelPlanSettings
 
 final class ConsumerTests: XCTestCase {
+    func testS11ThresholdOptionsAndLegacyEffectiveFallback() throws {
+        for value in [40, 30, 25, 20, 15, 10] {
+            XCTAssertNoThrow(try SettingsB20Edit(key: .redBelow, value: String(value)))
+            var preferences = SettingsPreferences(); preferences.redBelow = value
+            XCTAssertNoThrow(try preferences.validate())
+            XCTAssertEqual(EffectiveSettings(preferences, environment: .init()).redBelow, value)
+        }
+        for legacy in [16, 17, 99] {
+            var preferences = SettingsPreferences(); preferences.redBelow = legacy
+            XCTAssertNoThrow(try preferences.validate(), "A saved in-range legacy value remains readable")
+            XCTAssertEqual(EffectiveSettings(preferences, environment: .init()).redBelow, 25)
+            XCTAssertEqual(preferences.redBelow, legacy, "Projection does not rewrite the saved value")
+            XCTAssertThrowsError(try SettingsB20Edit(key: .redBelow, value: String(legacy)))
+        }
+    }
+    func testS11EveryThresholdIsInclusiveForRemainingEvenWhenShowingUsed() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for threshold in [40, 30, 25, 20, 15, 10] {
+            var preferences = SettingsPreferences()
+            preferences.redBelow = threshold; preferences.percentageMode = .used
+            let effective = EffectiveSettings(preferences, environment: .init())
+            for remaining in [Double(threshold) - 0.01, Double(threshold), Double(threshold) + 0.01] {
+                var input = DockInstrumentInput(id: "s11", name: "Synthetic", windows: [
+                    .init(id: "week", period: .week, label: "Week", remainingPercent: remaining,
+                          resetsAt: now.addingTimeInterval(3_600), durationSeconds: 604_800)
+                ])
+                input.dataState = .fresh
+                let reading = try DockInstrumentProjection.evaluate(preferences.applying(to: input), now: now,
+                    redBelow: Double(effective.redBelow))
+                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .warning,
+                               "Critical classification uses remaining quota at the selected boundary")
+            }
+        }
+    }
     func testF20RuntimeAccessibilityAndAppearanceWithoutMutatingPreference() {
         var p = SettingsPreferences(), e = SettingsEnvironment()
         e.darkAppearance = true; e.reduceMotion = true; e.reduceTransparency = true

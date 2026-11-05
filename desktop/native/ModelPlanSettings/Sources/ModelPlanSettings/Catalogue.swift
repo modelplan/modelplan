@@ -189,10 +189,10 @@ public enum SettingsCatalogue {
         .init(.motion,"Reduce motion","减少动态效果","Follow accessibility settings or always reduce motion.","跟随辅助功能设置或始终减少动态。"),
         .init(.transparency,"Reduce transparency","减少透明度","Follow accessibility settings or use solid surfaces.","跟随辅助功能设置或使用不透明表面。"),
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
-        .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
+        .init(.showPercentages,"Quota Widget percentages","额度挂件百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
-        .init(.sliverAlert,"Sliver alert color","隐藏条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.sliverAlert,"Strip alerts","隐藏条提示","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
         .init(.showDock,"Show Quota Widget","显示额度挂件","Show or hide the Quota Widget.","显示或隐藏额度挂件。"),
         .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
@@ -214,7 +214,7 @@ public enum SettingsCatalogue {
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Opening behavior","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
-        .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and their open/reveal budgets.","重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
+        .init(.resetHints,"Show hints again","重新显示提示","Show the first-use hints again.","再次显示首次使用提示。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is read.","读取到重置时通知。"),
@@ -266,7 +266,7 @@ public enum SettingsCatalogue {
                     // nil means that no history producer is connected; do not show a dead row.
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
-                    if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
+                    if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
                         d.subtitle.english, d.subtitle.chinese, pane.title.english, pane.title.chinese,
@@ -278,7 +278,7 @@ public enum SettingsCatalogue {
                     }
                     guard baseMatches || (perSubscription && !subs.isEmpty) else { return nil }
                     let subtitle: SettingsText
-                    if let reason = c.unavailableControls[key] {
+                    if let reason = unavailableReason(key, c) {
                         subtitle = reason
                     } else if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
@@ -294,8 +294,13 @@ public enum SettingsCatalogue {
     private static func normalized(_ text: String) -> String {
         text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
+    private static func unavailableReason(_ k: SettingKey, _ c: SettingsPageContext) -> SettingsText? {
+        let disconnected = SettingsText("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
+        if k == .resetHints, c.capabilities.helpMapAvailable, c.unavailableControls[k] == disconnected { return nil }
+        return c.unavailableControls[k]
+    }
     private static func availability(_ k: SettingKey, _ c: SettingsPageContext) -> SettingAvailability {
-        if c.unavailableControls[k] != nil { return .serviceUnavailable }
+        if unavailableReason(k, c) != nil { return .serviceUnavailable }
         switch k {
         case .captureHiding: return .unsupportedCaptureHiding
         case .retention, .clearCLI: return .cliOwned
@@ -334,7 +339,7 @@ public enum SettingsCatalogue {
         case .percentageMode: return choices(p.percentageMode)
         case .showPercentages: return .toggle(p.showPercentages)
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
-        case .redBelow: return .choice(String(p.redBelow), options: [10,16,20,25].map(String.init))
+        case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)

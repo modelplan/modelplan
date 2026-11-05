@@ -159,7 +159,10 @@ import AppKit
     }
     private func subscriptions(_ subscriptions: [SettingsVerifiedSubscription]) {
         label(.init("Verified subscriptions", "已验证订阅"), heading: true)
-        if subscriptions.isEmpty { label(.init("No verified subscription references reported.", "尚未报告已验证的订阅引用。")) }
+        if subscriptions.isEmpty {
+            label(firstRun ? .init("No subscriptions found", "未检测到订阅")
+                           : .init("No verified subscription references reported.", "尚未报告已验证的订阅引用。"))
+        }
         for sub in subscriptions {
             label(sub.name, heading: true)
             if !sub.plan.isEmpty { label(.init(sub.plan, sub.plan)) }
