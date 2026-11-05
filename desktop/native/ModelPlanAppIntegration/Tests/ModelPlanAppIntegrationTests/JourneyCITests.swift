@@ -5,6 +5,9 @@ import Darwin
 import XCTest
 import ModelPlanCore
 import ModelPlanSettings
+@_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanEngineClient
+import ModelPlanWire
 @testable import ModelPlanCommunityHost
 @testable import ModelPlanAppIntegration
 
@@ -65,6 +68,47 @@ import ModelPlanSettings
     private func render(_ host: StaticDockPreviewHost, _ value: JoinedSnapshot) {
         var diagnostics = StoreDiagnostics(); diagnostics.personal = nil
         host.render(snapshot: value, diagnostics: diagnostics)
+    }
+    private final class DwellScheduler:DockEdgeScheduling {
+        func arm(at deadline:TimeInterval,_ action:@escaping @MainActor ()->Void) {}
+        func cancel() {}
+    }
+    func testJourneyDwellAcceptsAlreadyElapsedTimeAndNeverRollsTheReducerBack() throws {
+        let restore=flags();defer{restore()}
+        var clock=0.0
+        let content=DockCardContent(subscriptionID:"synthetic",name:"Synthetic",rows:[])
+        let controller=DockInteractionController(clock:{clock},scheduler:DwellScheduler()) {
+            .init(catalogue:["synthetic"],preferences:.init(),targets:[],hoveredID:"synthetic",insideShared:true,
+                  active:true,contents:["synthetic":content])
+        }
+        defer{controller.stop()};controller.start()
+        XCTAssertNil(controller.presentation?.card.subscriptionID)
+        clock=0.30
+        XCTAssertTrue(controller.advanceJourneyHoverDwell(for:"synthetic"))
+        XCTAssertEqual(controller.presentation?.card.subscriptionID,"synthetic")
+        clock=0.10;controller.refresh()
+        XCTAssertTrue(controller.isRunning);XCTAssertEqual(controller.presentation?.card.subscriptionID,"synthetic")
+    }
+    func testJourneyDriverOpensNormalEntryCardThroughHoverWithoutActivatingTheRow() async throws {
+        let restore=flags();defer{restore()}
+        let fixtureURL=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:Data(contentsOf:fixtureURL))
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),
+            settingsStore:try store(),createsNativePanels:false,dockEnvironment:normalEntryTestEnvironment,
+            makeClient:{_,store in SettingsJourneyClient(store:store,rows:rows)},activateSettings:{})
+        await app.prepare();app.allowDockPresentation();await app.composition.start()
+        defer{app.composition.dock.close()}
+        let host=app.composition.dock
+        let row=try XCTUnwrap(host.journeyRows.first),index=try XCTUnwrap(row["rowIndex"] as? Int)
+        let before=host.dockView.refreshSweepCountForChecks
+        host.dockView.onAction={_ in XCTFail("Journey card opening must not activate the row")}
+        XCTAssertTrue(host.journeyOpenCard(at:index))
+        XCTAssertFalse(host.card.isHidden);XCTAssertNotNil(host.journeyCardAge)
+        XCTAssertTrue(host.interactionControllerRunning)
+        XCTAssertEqual(host.dockView.refreshSweepCountForChecks,before,"Hover is not a refresh action")
+        host.journeyDismissCard();XCTAssertTrue(host.card.isHidden)
+        XCTAssertTrue(host.journeyOpenCard(at:index),"The same row must reopen after a dismiss")
+        host.setPresentationAllowed(false);XCTAssertFalse(host.journeyOpenCard(at:index))
     }
     func testBothRuntimeFlagsGateEveryObservationAndCardDriver() async throws {
         _ = NSApplication.shared

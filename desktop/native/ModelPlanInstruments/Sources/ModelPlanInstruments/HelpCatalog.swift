@@ -56,10 +56,10 @@ public struct HelpCatalog: Sendable {
             basis = copy("点按打开驾驶舱，长按点火；快速打开设置会跳过点火。", "Tap to open the Cockpit or hold to ignite; Always quick skips ignition.")
         case .sliver:
             title = copy("隐藏条", "Sliver")
-            basis = copy("靠近这里稍停可显示挂件，右键可打开菜单。", "Rest near this edge to reveal the Dock or right-click for its menu.")
+            basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
         case .dockMove:
-            title = copy("移动挂件", "Move the Dock")
-            basis = copy("拖动背景或端部握柄可移动整个挂件，松手贴合预览边缘；只能停在左、右或下边缘。", "Drag the background or end grips to move the whole Dock, then release at the preview on the left, right or bottom edge.")
+            title = copy("移动额度挂件", "Move the Quota Widget")
+            basis = copy("拖动背景或端部握柄可移动整个额度挂件，松手贴合预览边缘；只能停在左、右或下边缘。", "Drag the background or end grips to move the whole Quota Widget, then release at the preview on the left, right or bottom edge.")
         case .pinned:
             title = copy("已钉住", "Pinned")
             basis = copy("按 Esc 或点别处取消，卡片不会随指针移动而关闭。", "Press Esc or click elsewhere to release the card.")
@@ -131,10 +131,10 @@ public struct HelpCatalog: Sendable {
             title = copy("额度 · 剩余", "Quota · left")
             basis = copy("数字是这个喷口选定周期的剩余额度，圈也表示剩余。", "This number is quota left in the nozzle's selected window, and the rings also show quota left.")
         case .nozzle:
-            title = copy("挂件喷口 · 订阅", "Dock nozzle · subscription")
+            title = copy("额度挂件喷口 · 订阅", "Quota Widget nozzle · subscription")
             basis = context.nozzleLocation == .overflow
-                ? copy("悬停查看额度卡片，按一下钉住；更多订阅暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Rest for the quota card or press to pin; overflow items cannot be dragged in v1; use Option arrows to move one place.")
-                : copy("悬停查看额度卡片，按一下钉住，沿挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。", "Rest for the quota card, press to pin, or drag along the Dock to reorder; Option arrows move one place.")
+                ? copy("悬停查看额度卡片，点按刷新；更多订阅暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Hover for the quota card or click to refresh; overflow items cannot be dragged in v1; use Option arrows to move one place.")
+                : copy("悬停查看额度卡片，点按刷新，沿额度挂件拖动喷口可调整订阅顺序；也可用 ⌥ 加方向键移动一位。", "Hover for the quota card, click to refresh, or drag along the Quota Widget to reorder; Option arrows move one place.")
         case .page:
             title = copy("订阅页", "Subscription page")
             basis = copy("翻页不会改变已选订阅。", "Changing pages keeps your subscription selection.")

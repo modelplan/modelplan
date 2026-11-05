@@ -16,6 +16,24 @@ import ModelPlanSettings
     func cancel() {}
 }
 @MainActor final class EngineDockInteractionBindingTests: XCTestCase {
+    func testActivationForwardsOnlyWhileBindingIsActive() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("settings.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let host = InteractionHost()
+        let app = SettingsApplicationCoordinator(store: try SettingsStore(url: url)) { _ in }
+        await app.reload()
+        let binding = EngineDockInteractionBinding(host: host, application: app, scheduler: InteractionScheduler(), clock: { 0 })
+        var activated: [String] = []
+        binding.onActivate = { activated.append($0) }
+        binding.start()
+        let controller = try XCTUnwrap(host.controller)
+        controller.click("a")
+        controller.click("unknown")
+        XCTAssertEqual(activated, ["a"])
+        binding.stop()
+        controller.click("a")
+        XCTAssertEqual(activated, ["a"])
+    }
     func testKeyboardOrderPersistsAndRetiredControllerCannotWrite() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("settings.json")
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
