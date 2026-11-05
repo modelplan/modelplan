@@ -107,7 +107,7 @@ final class LoginTests: XCTestCase {
         try await store.update { $0.openAtLogin = false }
         let before = try Data(contentsOf: url)
         do {
-            try await store.update { $0.openAtLogin = true; $0.redBelow = 17 }
+            try await store.update { $0.openAtLogin = true; $0.redBelow = 101 }
             XCTFail("Invalid edit should fail before commit")
         } catch { XCTAssertEqual(error as? SettingsError, .invalidPreference) }
         let snapshot = await store.snapshot()

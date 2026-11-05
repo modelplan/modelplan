@@ -24,7 +24,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.menuDisplay, .icon); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
         XCTAssertEqual(p.notifications.kinds, Set(NotificationKind.allCases))
-        for bad in ["{\"theme\":\"custom\"}", "{\"theme\":null}", "{\"redBelow\":17}", "{\"revealMilliseconds\":0}", "{\"showDock\":\"false\"}"] {
+        for bad in ["{\"theme\":\"custom\"}", "{\"theme\":null}", "{\"redBelow\":101}", "{\"revealMilliseconds\":0}", "{\"showDock\":\"false\"}"] {
             XCTAssertThrowsError(try JSONDecoder().decode(SettingsPreferences.self, from: Data(bad.utf8)), bad)
         }
     }
@@ -72,7 +72,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertFalse(restored.sliverAlert)
     }
     func testExplicitDefaultsSurviveRestartAndUnrelatedEdits() async throws {
-        for threshold in [10, 16, 20, 25] {
+        for threshold in [10, 15, 16, 20, 25, 30, 40] {
             let url = try file(), store = try SettingsStore(url: url)
             try await store.update { p in
                 p.redBelow = threshold; p.size = .small; p.dockEdge = .left
@@ -92,7 +92,7 @@ final class PreferencesTests: XCTestCase {
         let url = try file(), store = try SettingsStore(url: url)
         try await store.update { $0.redBelow = 20 }
         let before = try Data(contentsOf: url)
-        do { try await store.update { $0.redBelow = 12 }; XCTFail("accepted invalid threshold") } catch { XCTAssertEqual(error as? SettingsError, .invalidPreference) }
+        do { try await store.update { $0.redBelow = 101 }; XCTFail("accepted invalid threshold") } catch { XCTAssertEqual(error as? SettingsError, .invalidPreference) }
         do { try await store.update(expectedRevision: 0) { $0.showDock = false }; XCTFail("accepted stale edit") } catch { XCTAssertEqual(error as? SettingsError, .staleRevision) }
         XCTAssertEqual(try Data(contentsOf: url), before)
         let snapshot = await store.snapshot(); XCTAssertEqual(snapshot.revision, 1); XCTAssertEqual(snapshot.preferences.redBelow, 20)

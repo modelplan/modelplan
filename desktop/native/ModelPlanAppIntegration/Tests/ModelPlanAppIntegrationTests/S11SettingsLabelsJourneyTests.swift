@@ -31,12 +31,10 @@ import ModelPlanWire
         defer { window.close() }
         let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
         let critical = try XCTUnwrap(controller.choice(key: .redBelow))
-        // XCTest's default expected-failure option is strict: an unexpected pass must be reviewed.
-        XCTExpectFailure("S-11 product-missing: legacy threshold and offered values use the previous contract") {
-            XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["40", "30", "25", "20", "15", "10"])
-            XCTAssertEqual(critical.selectedItem?.representedObject as? String, "25")
-            XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 25)
-        }
+        XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["40", "30", "25", "20", "15", "10"])
+        XCTAssertEqual(critical.selectedItem?.representedObject as? String, "25")
+        XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 25)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("settings.json")), Data(legacy.utf8), "Display fallback must not rewrite the saved document")
         await app.composition.stop()
     }
     func testNormalSettingsKeepsThresholdAndPersistsPercentageBasis() async throws {
@@ -60,8 +58,9 @@ import ModelPlanWire
             defer { window.close() }
             let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
             let critical = try XCTUnwrap(controller.choice(key: .redBelow))
-            XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["10", "16", "20", "25"])
-            XCTAssertEqual(critical.selectedItem?.representedObject as? String, String(threshold))
+            XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["40", "30", "25", "20", "15", "10"])
+            XCTAssertEqual(critical.selectedItem?.representedObject as? String, "25")
+            XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 25)
             let basis = try XCTUnwrap(controller.choice(key: .percentageMode))
             XCTAssertTrue(basis.isEnabled)
             XCTAssertEqual(basis.selectedItem?.representedObject as? String, "remaining")
@@ -69,9 +68,15 @@ import ModelPlanWire
             basis.selectItem(at: used)
             XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(basis.action), to: basis.target, from: basis))
             await controller.waitForPendingSave()
+            let preserved = await store.snapshot()
+            XCTAssertEqual(preserved.preferences.redBelow, threshold, "An unrelated edit must preserve the stored value")
+            let forty = try XCTUnwrap(critical.itemArray.firstIndex { ($0.representedObject as? String) == "40" })
+            critical.selectItem(at: forty)
+            XCTAssertTrue(NSApplication.shared.sendAction(try XCTUnwrap(critical.action), to: critical.target, from: critical))
+            await controller.waitForPendingSave()
             let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
             let saved = await reopened.snapshot()
-            XCTAssertEqual(saved.preferences.redBelow, threshold)
+            XCTAssertEqual(saved.preferences.redBelow, 40)
             XCTAssertEqual(saved.preferences.percentageMode, .used)
             await app.composition.stop()
         }
