@@ -17,14 +17,16 @@ These candidate notes apply only if the named changes merge and are included in 
   **#501 — 刷新与历史修正：**凭据等待过期后保留已排队的刷新，统一状态栏窗口时长，并按套餐分开记录周期。仅在冻结候选版本前合并 #501 时适用。
 - **#481 — account-today producer:** with `accountTodayV1`, provide available locally observed output tokens, generation rate and bound running-session counts per current account. Unknown values are omitted; source-wide current binding does not establish historical ownership. The Dock consumer is tracked separately in #485.
   **#481 — 账户今日数据生产端：**协商 `accountTodayV1` 后，为当前账户提供可用的本机观察输出 token、生成速度和已绑定运行会话数。未知值会省略；按来源绑定到当前账户不代表历史归属。Dock 消费端由 #485 单独跟踪。
-- **#461 — reader request budget:** prevent a guarded reader stage from making extra HTTP requests through transport retries; connection failures remain bounded and existing provider limits apply. HTTP/2-only endpoints and unreviewed custom transports fail closed.
-  **#461 — 读取器请求预算：**防止受保护的读取阶段因传输层重试而发出额外 HTTP 请求；连接失败保持有界，并继续遵守现有提供方限制。仅支持 HTTP/2 的端点及未经审核的自定义传输会安全拒绝。
 - **#457 and #450 — cockpit publication:** when negotiated, verified cached publication model and effort facts can reach cockpit details and the App faders; missing or unverified data remains unavailable.
   **#457 与 #450 — 驾驶舱发布数据：**在完成协商后，已验证缓存中的模型与档位数据可进入驾驶舱详情和 App 推子；缺失或未验证的数据仍显示为不可用。
-- **#467 — test reliability:** synchronize the member-refresh regression test so it checks in-flight deferral and the completed-read floor deterministically. This is a test change; it does not change CLI refresh behavior.
-  **#467 — 测试可靠性：**同步单成员刷新的回归测试，稳定验证读取进行中的延迟与读取完成后的最短间隔。此项仅修改测试，不改变 CLI 刷新行为。
 
 ### Included changes
+
+- **#461 — reader request budget:** prevent a guarded reader stage from making extra HTTP requests through transport retries; connection failures remain bounded and existing provider limits apply. HTTP/2-only endpoints and unreviewed custom transports fail closed.
+  **#461 — 读取器请求预算：**防止受保护的读取阶段因传输层重试而发出额外 HTTP 请求；连接失败保持有界，并继续遵守现有提供方限制。仅支持 HTTP/2 的端点及未经审核的自定义传输会安全拒绝。
+
+- **#467 — test reliability:** synchronize the member-refresh regression test so it checks in-flight deferral and the completed-read floor deterministically. This is a test change; it does not change CLI refresh behavior.
+  **#467 — 测试可靠性：**同步单成员刷新的回归测试，稳定验证读取进行中的延迟与读取完成后的最短间隔。此项仅修改测试，不改变 CLI 刷新行为。
 
 - **#455 — local history recovery:** back off after repeated local projection failures while retaining the last good snapshot and cursor; a successful projection resets the failure delay.
   **#455 — 本机历史恢复：**本机数据投影连续失败时逐步延长重试间隔，保留上次成功的快照和游标；成功后重置等待时间。
