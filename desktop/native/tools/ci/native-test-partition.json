@@ -44,7 +44,6 @@
         "CancellationPresentationTests",
         "CanonicalConnectionBackendTests",
         "CockpitInstrumentCompositionTests",
-        "CommunityCockpitEntryTests",
         "CommunityContextHelpTests",
         "CommunityEmptyReaderMenuTests",
         "CommunityFieldProductionWiringTests",
@@ -97,11 +96,11 @@
       ],
       "allowedSkips": {
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
         },
         "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
-          "leg": "headless",
+          "leg": "gui",
           "reason": "needs both canonical cockpit editions built first"
         },
         "S1GalleryTests/testProduceOffscreenGallery": {
