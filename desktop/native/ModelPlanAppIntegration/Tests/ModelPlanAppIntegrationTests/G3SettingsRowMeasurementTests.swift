@@ -52,6 +52,22 @@ private actor G316Engine: EngineClient {
                 content.layoutSubtreeIfNeeded(); window.displayIfNeeded()
                 let rows = descendants(content).compactMap { $0 as? SettingsNativeRow }.filter { !$0.isHiddenOrHasHiddenAncestor }
                 totalRows += rows.count
+                let language: SettingsLanguage = locale == "en" ? .english : .chinese
+                for group in pane.groups {
+                    guard let title = group.title,
+                          let first = rows.first(where: { group.keys.contains($0.key) }),
+                          let stack = first.superview as? NSStackView,
+                          let rowIndex = stack.arrangedSubviews.firstIndex(of: first) else { continue }
+                    let identifier = "settings.section.\(pane.id).\(group.id)"
+                    let headings = stack.arrangedSubviews.compactMap { $0 as? NSTextField }.filter {
+                        $0.accessibilityIdentifier() == identifier && !$0.isHiddenOrHasHiddenAncestor
+                    }
+                    XCTAssertEqual(headings.count, 1, "One section heading must precede its first visible row")
+                    if let heading = headings.first, let headingIndex = stack.arrangedSubviews.firstIndex(of: heading) {
+                        XCTAssertEqual(heading.stringValue, title.value(language))
+                        XCTAssertEqual(headingIndex + 1, rowIndex)
+                    }
+                }
                 var canvas = content
                 if var ancestor = rows.first as NSView? {
                     while let parent = ancestor.superview {
