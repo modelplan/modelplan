@@ -156,8 +156,8 @@ public struct EngineMenuRefreshResult {
     public var memberInstability:[String:Bool] {
         Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
     }
-    func installResetEvents(settings:SettingsStore,live:Bool,isolatedLedger:URL? = nil) {
-        let base:URL
+    func installResetEvents(settings: SettingsStore, live: Bool, isolatedLedger: URL? = nil) {
+        let base: URL
         if let isolatedLedger {
             base = isolatedLedger.deletingLastPathComponent()
         } else if live {
@@ -173,7 +173,11 @@ public struct EngineMenuRefreshResult {
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
-        resetNotifier?.deliveryOverride=delivery
+        setResetNotificationDelivery { id, _ in try await delivery(id) }
+    }
+
+    func setResetNotificationDelivery(_ delivery: @escaping @MainActor (String, String) async throws -> Void) {
+        resetNotifier?.deliveryOverride = delivery
         resetNotifier?.apply(store.snapshot)
     }
     private var fallbackStatusText: String {
@@ -223,5 +227,5 @@ public struct EngineMenuRefreshResult {
     }
     func suspendDeadlines() { deadlineLifecycleSuspended = true; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

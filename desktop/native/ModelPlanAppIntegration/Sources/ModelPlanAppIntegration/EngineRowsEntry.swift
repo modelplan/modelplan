@@ -28,14 +28,15 @@ import ModelPlanEngineClient
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
+                            isolatedResetNotificationLedger: URL? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
         let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
-        app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels,
-            isolatedLedger: nativeJourneyProfile?.appendingPathComponent("reset-notifications.json"))
+        let ledger = isolatedResetNotificationLedger ?? nativeJourneyProfile?.appendingPathComponent("reset-notifications.json")
         #else
-        app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels)
+        let ledger = isolatedResetNotificationLedger
         #endif
+        app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels, isolatedLedger: ledger)
         return app
     }
 }
