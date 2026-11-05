@@ -74,6 +74,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
     private var officialRenderer: DockInstrumentRenderer?
+    private var restingInstrumentImage: CGImage?
+    @_spi(DockResourceChecks) public private(set) var nozzlePosesForChecks: [String: DockNozzlePose] = [:]
     private var refreshSweepTask: Task<Void, Never>?
     private var refreshSweepOriginal: CGImage?
     private var refreshSweepGeneration: UInt64 = 0
@@ -216,7 +218,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        resetVisuals();restingInstrumentImage=nil;officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -240,7 +242,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
-            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
+            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size=skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
@@ -259,13 +261,41 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
         resetVisuals(); community = false; failed = true
+        restingInstrumentImage = nil
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    private func resetVisuals(){cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+
+    /// Draws only the changed pose over the existing static material. The model, registered
+    /// pointer targets, readout geometry and refresh cadence remain in their original basis.
+    public func setNozzlePoses(_ poses: [String: DockNozzlePose]) {
+        guard poses != nozzlePosesForChecks, !failed, !community, let skin, let renderer = officialRenderer,
+              let restingInstrumentImage else { return }
+        let painted: CGImage
+        if poses.isEmpty {
+            painted = restingInstrumentImage
+        } else {
+            guard let result = try? renderer.render(skin: skin, readings: readings, notices: notices, scale: scale,
+                poses: poses, cachedBackground: backgroundImage) else { return }
+            painted = result.image
+        }
+        nozzlePosesForChecks = poses
+        if refreshSweepOriginal == nil { image = painted }
+        else { refreshSweepOriginal = painted }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        for (id, layer) in workingLayerParents {
+            if let pose = poses[id] {
+                layer.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y)
+                    .scaledBy(x: pose.scale, y: pose.scale))
+            } else { layer.setAffineTransform(.identity) }
+        }
+        CATransaction.commit()
+        needsDisplay = true
+    }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
@@ -286,7 +316,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
                 guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
                 var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
-                do { self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale).image }
+                do { self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale, poses: self.nozzlePosesForChecks, cachedBackground: self.backgroundImage).image }
                 catch { break }
                 self.needsDisplay = true
                 if elapsed >= DockRefreshSweep.duration { break }
