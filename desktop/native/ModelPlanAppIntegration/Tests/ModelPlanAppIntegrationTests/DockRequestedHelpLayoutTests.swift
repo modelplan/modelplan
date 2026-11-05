@@ -7,6 +7,25 @@ import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class DockRequestedHelpLayoutTests: XCTestCase {
+    func testGripAndBackgroundShareOneRequestedMapCaption() throws {
+        let grip = DockRequestedHelpAnchor(id: "dock.grip.0", region: .dockMove,
+            rect: CGRect(x: 900, y: 200, width: 24, height: 40), visible: true)
+        let move = DockRequestedHelpAnchor(id: "dock.move", region: .dockMove,
+            rect: CGRect(x: 900, y: 500, width: 40, height: 40), visible: true)
+        for language in [InstrumentLanguage.english, .chinese] {
+            for anchors in [[grip, move], [move, grip]] {
+                let recipe = NeutralHelpUIRecipeProvider()
+                let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1600, height: 1100),
+                    language: language, anchors: anchors, blocked: [], recipe: recipe))
+                let labels = recipe.presentation(for: input).mapLabels
+                XCTAssertEqual(labels.count, 1, "Grip and background use the same movement explanation")
+                XCTAssertEqual(labels.first?.text, HelpMapCatalog(language).sentence(.dockMove))
+                XCTAssertEqual(input.map.regionAnchors[.dockMove], anchors.first?.id)
+                XCTAssertTrue(input.map.supplements.isEmpty)
+                XCTAssertEqual(anchors.count, 2, "Map caption grouping must not mutate the host's separate targets")
+            }
+        }
+    }
     func testNozzleHelpOnlyPromisesRefreshWhenNegotiated() throws {
         let anchor = DockRequestedHelpAnchor(id: "nozzle", region: .nozzle,
             rect: CGRect(x: 400, y: 300, width: 40, height: 40), visible: true)
