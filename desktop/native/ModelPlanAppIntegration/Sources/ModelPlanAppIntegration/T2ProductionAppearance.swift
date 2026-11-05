@@ -17,11 +17,33 @@ import ModelPlanSettings
         case .right: edge = .right
         case .bottom: edge = .bottom
         }
-        let coords = T2EdgeCoordinates(edge: edge, width: screen.width, height: screen.height, menuBarExclusion: view.appearanceMenuBarExclusion)
-        let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter, showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
         let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "", hasEvent: view.appearanceNotices[$0.subscriptionID] != nil) }
-        let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
-        let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages, zaiMarkEnabled: view.zaiMarkEnabled)
+        let vertical = edge != .bottom
+        let nativeEdge: DockEdge = edge == .left ? .left : edge == .right ? .right : .bottom
+        let room = PulseRestingPlacement.frameRoom(CGRect(origin: .zero, size: screen), edge: nativeEdge)
+        var budget = screen
+        var fit: (T2Geometry, DockInstrumentSkin)?
+        // T2 measures its curved span before raster bounds union the ignition.
+        // Feed any measured excess back into the overflow budget before drawing.
+        for _ in 0..<8 {
+            // Preserve the study's top-left origin for artwork and control registration.
+            // The top reservation is added to the coordinate extent and excluded from
+            // the along-edge budget, so fit still uses only the available rectangle.
+            let top = view.appearanceMenuBarExclusion
+            let coords = T2EdgeCoordinates(edge: edge, width: budget.width, height: budget.height + top,
+                                           menuBarExclusion: top)
+            let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
+                showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
+            let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
+            let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
+                                          zaiMarkEnabled: view.zaiMarkEnabled)
+            guard vertical ? skin.bounds.width <= room.width : skin.bounds.height <= room.height else { break }
+            let excess = vertical ? skin.bounds.height - room.height : skin.bounds.width - room.width
+            if excess <= 0 { fit = (geometry, skin); break }
+            if vertical { budget.height -= ceil(excess) }
+            else { budget.width -= ceil(excess) }
+        }
+        guard let (geometry, skin) = fit else { throw DockEdgeError.invalidGeometry }
         let artwork = try T2BundledArtwork.records().mapValues { DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }
         let official = try DockArtworkStore(root: T2BundledArtwork.rootURL(), manifest: .init(files: artwork))
         let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))

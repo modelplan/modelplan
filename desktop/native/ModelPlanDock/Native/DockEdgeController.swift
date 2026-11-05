@@ -109,8 +109,9 @@ public struct DockEdgePresentation:Equatable,Sendable {
     private func refresh(intent:DockVisibilityIntent){
         guard running,!sampling else{return};sampling=true;defer{sampling=false}
         timerGeneration &+= 1;let token=timerGeneration;scheduler.cancel()
+        let env=environment(),now=clock()
         do{
-            let env=environment(),now=clock();var input=env.presence
+            var input=env.presence
             guard visibility.policy.sampleInterval>0 else{throw DockLogicError.invalidTime}
             let changed=geometry != env.displays || layouts != env.layouts || primaryID != env.primaryDisplayID
             var extraClear:DockRecordedLocks=[]
@@ -132,14 +133,21 @@ public struct DockEdgePresentation:Equatable,Sendable {
             guard running,timerGeneration==token else{return}
             if result.didReveal || reset?.didReveal == true{onReveal?()}
             guard running,timerGeneration==token else{return}
-            guard input.lifecycleActive else{return}
-            if case .suppressed = result.state{return}
+            guard input.lifecycleActive, input.enabled else{return}
             let due=min(result.nextDeadline ?? .infinity,now+visibility.policy.sampleInterval)
             guard due.isFinite,due>now else{throw DockLogicError.invalidTime}
             scheduler.arm(at:due){[weak self] in guard let self,self.running,self.timerGeneration==token else{return};self.refresh()}
         }catch{
-            clearMove();running=false;visibility = .init(policy:visibility.policy)
-            publish(.init(state:.suppressed(.lifecycle),placement:nil,snapPreview:nil,moving:false));onFailure?(error)
+            clearMove();visibility = .init(policy:visibility.policy)
+            publish(.init(state:.suppressed(.lifecycle),placement:nil,snapPreview:nil,moving:false))
+            onFailure?(error)
+            let retry = now + visibility.policy.sampleInterval
+            guard running, timerGeneration == token, env.presence.lifecycleActive, env.presence.enabled,
+                  retry.isFinite, retry > now else { return }
+            scheduler.arm(at: retry) { [weak self] in
+                guard let self, self.running, self.timerGeneration == token else { return }
+                self.refresh()
+            }
         }
     }
     private func publish(_ next:DockEdgePresentation){if next != presentation{presentation=next;onPresent?(next)}}
