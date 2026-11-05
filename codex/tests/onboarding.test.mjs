@@ -261,10 +261,15 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   const sessionCli = (await readFile(join(root, 'hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1];
   await put(pinnedDir(h), script('0.5.50', 'echo bad'));
   assert.equal(start(), '', 'a CLI before SessionStart support is never asked, even when pinned');
-  // The old pinned copy does not hide an eligible CLI the user installed.
-  await put(join(h, '.local/bin'), script(sessionCli));
+  // Remove the deliberately invalid pinned fixture before testing the installed fallback.
+  await rm(join(pinnedDir(h), 'modelplan'));
+  const eligible = [sessionCli, pin.version].sort((a, b) => {
+    const av = a.split('.').map(Number), bv = b.split('.').map(Number);
+    return av[0] - bv[0] || av[1] - bv[1] || av[2] - bv[2];
+  })[1];
+  await put(join(h, '.local/bin'), script(eligible));
   assert.deepEqual(JSON.parse(start()), { hints: 1 });
-  await put(join(h, '.cache/modelplan-cli', sessionCli), script(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  await put(join(h, '.cache/modelplan-cli', eligible), script(eligible, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
   assert.deepEqual(JSON.parse(start()), { resent: 1 });
   assert.equal(await readFile(join(h, 'input'), 'utf8'), input);
   assert.equal(await readFile(join(h, 'args'), 'utf8'), 'advise\n--hook\ncodex\n');
