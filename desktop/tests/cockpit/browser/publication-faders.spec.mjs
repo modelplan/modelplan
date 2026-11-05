@@ -22,3 +22,19 @@ test('admitted cockpit details populate faders and pin on release',async({page})
  await expect(strips.nth(0)).toContainText('Synthetic C');await expect(strips.nth(0).locator('.st-pin')).toHaveCount(1);
  delete data.details.publication;expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
 });
+
+test('S10 trial does not transfer to a replacement publication occupying the same fader slot',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ const model={id:'model-a',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null},{effort:'high',label:'High',star:false,ability:50,cost:3,time:null}]};
+ data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[model]};
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ const slider=page.locator('.fd-ch:not(.empty) [role=slider]').first();await slider.focus();await page.keyboard.press('ArrowUp');await expect(slider).toHaveAttribute('aria-valuetext','High');
+ expect(await receive(send('display',{data}))).toBe(true);await expect(slider).toHaveAttribute('aria-valuetext','High');
+ data.details.publication={...data.details.publication,publicationId:'fedcba9876543210fedcba98',models:[{...model,id:'model-b',name:'Synthetic B'}]};expect(await receive(send('display',{data}))).toBe(true);
+ await expect(page.locator('.fd-strip').first()).toContainText('Synthetic B');await expect(slider).toHaveAttribute('aria-valuetext','Med');await expect(page.locator('.fd-ch:not(.empty) .fd-ghost')).toBeHidden();
+ await slider.focus();await page.keyboard.press('ArrowUp');await expect(slider).toHaveAttribute('aria-valuetext','High');
+ data.details.publication.models=[{...model,id:'model-c',name:'Synthetic C'}];expect(await receive(send('display',{data}))).toBe(true);await expect(slider).toHaveAttribute('aria-valuetext','Med');
+ await slider.focus();await page.keyboard.press('ArrowUp');await expect(slider).toHaveAttribute('aria-valuetext','High');
+ data.details.publication.publicationId='aaaaaaaaaaaaaaaaaaaaaaaa';expect(await receive(send('display',{data}))).toBe(true);await expect(slider).toHaveAttribute('aria-valuetext','Med');
+});
