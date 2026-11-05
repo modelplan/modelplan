@@ -247,7 +247,11 @@ import XCTest
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
-        if physical { try await capturePhysicalMenu(app, prompt: "Recovered Chinese menu. Open, capture, then dismiss.") }
+        if physical {
+            try await capturePhysicalMenu(app, prompt: "Recovered Chinese menu. Open, capture, then dismiss.")
+            try await capturePausedShortcut(app)
+            try await capturePhysicalShortcut(app, title: "设置")
+        }
         #endif
     }
 
@@ -296,6 +300,36 @@ import XCTest
         XCTAssertFalse(app.isD24StatusMenuTracking)
         announce("Capture the Settings window, then close it.")
         guard try await wait(.seconds(45), until: { !window.isVisible }) else { return XCTFail("Close Settings to continue") }
+    }
+
+    private func capturePausedShortcut(_ app: EngineDockMenuApplication) async throws {
+        app.setActivityPaused(true)
+        defer { app.setActivityPaused(false) }
+        NSApplication.shared.activate()
+        guard try await wait(.seconds(5), until: {
+            app.lifecyclePaused && NSApplication.shared.isActive && !app.isD24StatusMenuTracking
+        }) else { return XCTFail("The foreground app did not enter the paused state") }
+
+        var receivedCommandComma = false
+        let monitor = try XCTUnwrap(NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "," {
+                MainActor.assumeIsolated { receivedCommandComma = true }
+            }
+            return event
+        })
+        defer { NSEvent.removeMonitor(monitor) }
+        announce("The app is paused and its status menu is closed. Press physical Command-comma and capture that Settings stays closed.")
+        guard try await wait(.seconds(30), until: { receivedCommandComma }) else {
+            return XCTFail("No physical Command-comma was delivered while paused")
+        }
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertTrue(app.lifecyclePaused)
+        XCTAssertFalse(NSApplication.shared.windows.contains { $0.isVisible && ($0.title == "Settings" || $0.title == "设置") })
+
+        app.setActivityPaused(false)
+        guard try await wait(.seconds(12), until: { !app.lifecyclePaused }) else {
+            return XCTFail("The real app-server did not restore the active shortcut")
+        }
     }
 
     private func containsText(_ expected: String, in view: NSView?) -> Bool {
