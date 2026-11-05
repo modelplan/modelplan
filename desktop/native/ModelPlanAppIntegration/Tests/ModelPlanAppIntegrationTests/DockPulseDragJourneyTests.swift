@@ -271,6 +271,49 @@ import ModelPlanSettings
 }
 
 @MainActor final class DockPulseDragPersistenceTests: XCTestCase {
+    func testD19NormalEntryMigratesLegacyFloatingWithoutCoordinates() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-floating-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let topology = DragTopology()
+        let cases: [(savedDisplay: String?, savedAlong: Double?, expectedDisplay: String, expectedAlong: Double)] = [
+            ("B", 0.27, "B", 0.27),
+            ("disconnected", 0.27, "A", 0.27),
+            (nil, nil, "A", 0.5)
+        ]
+        for (index, sample) in cases.enumerated() {
+            let root = profile.appendingPathComponent(String(index))
+            let legacy = root.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+            try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            var placement: [String: Any] = ["dockEdge": "floating"]
+            placement["dockDisplayID"] = sample.savedDisplay
+            placement["dockAlongFraction"] = sample.savedAlong
+            let bytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "preferences": placement])
+            try bytes.write(to: legacy)
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let status = await store.foundationStatus()
+            XCTAssertEqual(status?.selection?.settings, .communitySettings)
+            XCTAssertEqual(status?.issues, [.init(source: .communitySettings, failure: .invalidEdge)])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            let dock = app.composition.dock
+            let displayed = try XCTUnwrap(dock.edgePresentation?.placement)
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+            XCTAssertEqual(displayed.edge, .right)
+            XCTAssertEqual(displayed.displayID, sample.expectedDisplay)
+            XCTAssertEqual(displayed.alongFraction, sample.expectedAlong, accuracy: 0.001)
+            let settings = await store.snapshot()
+            XCTAssertEqual(settings.preferences.dockDisplayID, sample.savedDisplay, "Transient fallback must not replace the saved display")
+            XCTAssertEqual(settings.preferences.dockAlongFraction, sample.expectedAlong)
+            XCTAssertEqual(settings.preferences.dockEdge, .right)
+            XCTAssertEqual(try Data(contentsOf: legacy), bytes)
+            await app.composition.stop()
+        }
+    }
+
     func testD19NormalDragKeepsCornerClearanceAndAvoidsSystemDock() async throws {
         try await exerciseD19(nativePanels: false)
     }
