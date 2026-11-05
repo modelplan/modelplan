@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 72 optional/nullable fields reachable from the production
+This inventory covers optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -58,7 +58,7 @@ containers and failure ID retain their required-key checks.
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
-| CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
+| CockpitSession.StartedAt | forbidden | Omission means no valid observed start; explicit null is rejected. |\n| CockpitSession.EffortStatus | forbidden | Omission means unknown; only a supported observed effort reports a status. |\n| CockpitSession.SpeedMode | forbidden | Omission means unknown; only admitted fast/priority values are emitted. |\n| CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
 | CockpitSession.Effort | coalesced | Null means an unreported or unsupported effort. |
 | CockpitSession.ProjectLabel | coalesced | Null means no permitted local label; the producer honors the project-label switch. |
 | CockpitSession.Rate | coalesced | Null means insufficient or unavailable samples, not zero throughput. |
