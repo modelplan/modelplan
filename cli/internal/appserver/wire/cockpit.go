@@ -17,6 +17,7 @@ type CockpitQueryParams struct {
 // Go groups verified bindings so the page never interprets accounts as plans.
 type CockpitData struct {
 	Details       *CockpitDetails       `json:"details,omitempty" null:"coalesced"`
+	History       *CockpitHistory       `json:"history,omitempty" null:"coalesced"`
 	Projection    RowsProjection        `json:"projection"`
 	Subscriptions []CockpitSubscription `json:"subscriptions"`
 }

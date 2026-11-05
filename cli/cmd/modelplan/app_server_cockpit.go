@@ -66,5 +66,12 @@ func (s sharedCockpit) ReadCockpit(ctx context.Context, a queries.CockpitAdmissi
 		}
 		data.Details = &details
 	}
+	if appserver.CockpitHistoryEnabled(ctx) {
+		history, err := s.cockpitHistory(ctx, view, a, groups)
+		if err != nil {
+			return wire.CockpitData{}, err
+		}
+		data.History = &history
+	}
 	return data, nil
 }
