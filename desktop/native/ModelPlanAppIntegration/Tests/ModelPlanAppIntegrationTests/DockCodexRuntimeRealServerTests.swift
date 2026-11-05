@@ -292,15 +292,22 @@ import XCTest
         try handle.seekToEnd()
         try handle.write(contentsOf: line(used: 30, at: fresh))
         try handle.close()
-        let end = ContinuousClock.now + .seconds(6)
-        while localAccount()?.windows.first?.remainingPercent != 70 && ContinuousClock.now < end {
-            try await Task.sleep(for: .milliseconds(20))
+        func waitForFreshReading(timeout: Duration) async throws -> Bool {
+            let end = ContinuousClock.now + timeout
+            while localAccount()?.windows.first?.remainingPercent != 70 && ContinuousClock.now < end {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            return localAccount()?.windows.first?.remainingPercent == 70
         }
-        XCTAssertEqual(localAccount()?.windows.first?.remainingPercent, 70,
-                       "The existing subscription must receive the new local observation without a request")
-        if localAccount()?.windows.first?.remainingPercent != 70 {
-            // Positive control for a valid fixture. This cannot satisfy automatic delivery.
-            _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+        let deliveredOnAppend = try await waitForFreshReading(timeout: .seconds(6))
+        XCTAssertTrue(deliveredOnAppend, "The existing subscription must receive the new local observation without a request")
+        if !deliveredOnAppend {
+            // Diagnostic control: an empty declared-quota file is already watched
+            // by the producer. It contributes no readings and sends no App request.
+            let declared = root.appendingPathComponent(".config/modelplan/local.json")
+            try encode(["schemaVersion": 1, "plans": [], "windows": []]).write(to: declared, options: .atomic)
+            let deliveredOnWatchedFile = try await waitForFreshReading(timeout: .seconds(4))
+            XCTAssertTrue(deliveredOnWatchedFile, "The same subscription must carry the new quota when the producer is notified")
         }
         let current = try XCTUnwrap(localAccount())
         let currentWindow = try XCTUnwrap(current.windows.first)
