@@ -23,6 +23,7 @@ class DisplayReceiptTests(unittest.TestCase):
         mutations = [lambda x: x['events'][2].update(display='foreign'),
                      lambda x: x['events'][1].update(elapsedSeconds=-1),
                      lambda x: x['events'][2].update(elapsedSeconds=10),
+                     lambda x: x['events'][3].update(elapsedSeconds=30),
                      lambda x: x['events'][3].update(preferenceSHA256='b' * 64),
                      lambda x: x['events'][1].update(kind='replug'),
                      lambda x: x.update(profile='real'), lambda x: x['events'].pop()]

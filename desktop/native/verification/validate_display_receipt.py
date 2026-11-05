@@ -25,7 +25,7 @@ def validate(receipt, approved):
         if not isinstance(event, dict) or set(event) != {'kind', 'elapsedSeconds', 'display', 'preferenceSHA256'} or event['kind'] != expected:
             raise ValueError('invalid event')
         elapsed = event['elapsedSeconds']
-        if type(elapsed) not in (int, float) or not math.isfinite(elapsed) or not 0 <= elapsed <= 86400 or elapsed < prior:
+        if type(elapsed) not in (int, float) or not math.isfinite(elapsed) or not 0 <= elapsed <= 86400 or elapsed <= prior:
             raise ValueError('invalid event time')
         prior = elapsed
         if not isinstance(event['display'], str) or event['display'] not in approved:

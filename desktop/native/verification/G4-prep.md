@@ -22,7 +22,7 @@ preparation for the owner-approved G4 steps, not evidence those steps occurred.
   `python3 desktop/native/verification/validate_display_receipt.py
   --approved-display internal --approved-display external`. The separately
   supplied labels must be task-approved, and receipt events must be in the
-  order sleep, wake, unplug, replug, with monotonic elapsed seconds and the
+  order sleep, wake, unplug, replug, with strictly increasing elapsed seconds and the
   same preference SHA-256. Validation does not observe a display, prove label
   approval or establish sleep/clamshell/reboot success.
 
