@@ -63,6 +63,33 @@ import ModelPlanWire
         let grants = await engine.recordedGrants()
         XCTAssertTrue(grants.isEmpty)
     }
+    func testFirstRunStaleFactsDoNotUnlockSubmittedSelection() async throws {
+        let engine = ScopeConsentTestClient()
+        let commands = EngineClientScopeConsentCommands(client: engine, ready: { true }, makeGrant: { intent in
+            try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1,
+                      consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)
+        })
+        let controller = ScopeConsentController(commands: commands)
+        let facts = try ScopeConsentFixtures.firstRunFacts()
+        controller.receiveAcceptedFacts(facts)
+        XCTAssertTrue(controller.beginFirstRunDraft())
+        controller.choose("one.local", selected: true)
+        let result = await controller.submitFirstRunSelection()
+        XCTAssertEqual(result, .submitted)
+        controller.receiveAcceptedFacts(facts) // The old facts do not settle the submitted mutation.
+        XCTAssertFalse(controller.canChoose("one.local"))
+        XCTAssertFalse(controller.canChoose("two.runtime"))
+        controller.choose("two.runtime", selected: true)
+        controller.selectAll()
+        XCTAssertEqual(controller.selectedIDs, ["one.local"])
+        await engine.failInspection(.unsupportedCapability)
+        await controller.inspectConsent()
+        if case .outcomeUnknown = controller.notice {} else { XCTFail("A failed readback cannot prove the submitted grant failed") }
+        XCTAssertFalse(controller.canChoose("two.runtime"))
+        let sent = await engine.recordedGrants()
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?.allow, ["one.local"])
+    }
     func testChangingSurfaceLanguagePreservesDraft() throws {
         let commands = EngineClientScopeConsentCommands(client: ScopeConsentTestClient(), ready: { true }, makeGrant: { intent in
             try .init(requestId: intent.requestID, expectStoreEpoch: "synthetic", expectGeneration: 1, consentTextVersion: 17, allow: intent.allowIDs, deny: intent.denyIDs)

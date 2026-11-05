@@ -50,8 +50,10 @@ enum ScopeConsentFixtures {
 actor ScopeConsentTestClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { false }
     private var failure: EngineClientError?
+    private var inspectionFailure: EngineClientError?
     private var inspections = 0
     func failGrant(_ error: EngineClientError) { failure = error }
+    func failInspection(_ error: EngineClientError) { inspectionFailure = error }
     func inspectionCount() -> Int { inspections }
     private var pluginHold = false
     private var pluginHeld: CheckedContinuation<Void, Never>?
@@ -76,7 +78,11 @@ actor ScopeConsentTestClient: EngineClient {
     func retry() async throws -> EngineDeliveryContext { throw EngineClientError.notReady }
     func stop() async {}
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.notReady }
-    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { inspections += 1; return try completion() }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion {
+        inspections += 1
+        if let inspectionFailure { throw inspectionFailure }
+        return try completion()
+    }
     func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion {
         grants.append(request); started?.resume(); started = nil
         if shouldHold { await withCheckedContinuation { held = $0 } }
