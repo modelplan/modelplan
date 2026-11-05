@@ -69,3 +69,17 @@ test("both workflow extensions are checked", () => {
   assert.ok(!isWorkflowFile(".github/workflows/nested/ci.yml"));
   assert.ok(!isWorkflowFile(".github/workflows/README.md"));
 });
+
+test("v1 install guide matches the supported package and update policy", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const guide = await readFile(new URL("../../docs/install-beta.md", import.meta.url), "utf8");
+  const obsolete = /\buniversal\b|\bmacOS\s*14\b|\bSparkle\b|\bappcast\b/i;
+  for (const stale of ["universal", "macOS 14", "Sparkle", "appcast"]) {
+    assert.match(stale, obsolete);
+  }
+  assert.doesNotMatch(guide, obsolete);
+  assert.match(guide, /Apple silicon only/i);
+  assert.match(guide, /macOS 15 or later/i);
+  assert.match(guide, /no automatic updates/i);
+  assert.match(guide, /no update feed/i);
+});

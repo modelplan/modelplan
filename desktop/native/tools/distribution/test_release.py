@@ -513,8 +513,6 @@ class AppcastCandidate(unittest.TestCase):
             with self.assertRaises(ValueError): release.appcast_bytes(info, archive, signature, 'https://example.invalid/a', 'https://example.invalid/feed')
 
 
-if __name__ == '__main__': unittest.main()
-
 class AppleSiliconArchitectureTests(unittest.TestCase):
     def test_only_exact_arm64_is_accepted(self):
         for output in (b'x86_64', b'arm64 x86_64', b'', b'arm64 arm64', b'arm64e'):
@@ -528,3 +526,7 @@ class AppleSiliconArchitectureTests(unittest.TestCase):
         with patch.object(release, 'run', side_effect=RuntimeError('lipo failed')):
             with self.assertRaises(RuntimeError):
                 release.require_arm64(Path('/synthetic/app'))
+
+
+if __name__ == '__main__':
+    unittest.main()
