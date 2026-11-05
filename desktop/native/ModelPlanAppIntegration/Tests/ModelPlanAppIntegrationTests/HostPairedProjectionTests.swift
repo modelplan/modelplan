@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -65,7 +66,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, distinctWindowSources: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, distinctWindowSources: Bool = false, restrictedFirst: Bool = false, secondWithoutSources: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -111,12 +112,25 @@ private actor EntrySyntheticClient: EngineClient {
             extra.removeValue(forKey: "source"); extra.removeValue(forKey: "observedAt")
             windows = [session, week, extra]
         }
+        if restrictedFirst {
+            var scoped = session
+            scoped["id"] = "restricted-runtime"; scoped["limitKey"] = "code_review"; scoped["poolKey"] = "code_review"
+            scoped["remainingPercent"] = 38
+            windows = [scoped]
+        }
         account["windows"] = windows; accounts = [account]
         if let secondWeekly {
             var other = account, otherWeek = week
             other["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; other["accountLocator"] = "bbbbbbbbbbbbbbbb"
             otherWeek["remainingPercent"] = secondWeekly
-            other["windows"] = [session, otherWeek]; accounts.append(other)
+            var otherSession = session
+            if secondWithoutSources {
+                other["route"] = "saved_login_api"
+                other["observedAt"] = "2026-12-01T23:37:00Z"
+                otherSession.removeValue(forKey: "source")
+                otherWeek.removeValue(forKey: "source")
+            }
+            other["windows"] = [otherSession, otherWeek]; accounts.append(other)
         }
         row["accounts"] = accounts; rows = [row]; projection["rows"] = rows; root["projection"] = projection
         return try JSONDecoder().decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
@@ -286,6 +300,59 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
         _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.percentagePin(id, .week))
         XCTAssertEqual(text(dock.card, named: "source"), "工具运行时 · 11分钟前")
+    }
+
+    func testNormalCardRetainsAccountProvenanceForRestrictedAndSourceLessMembers() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-restricted-provenance-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 75, secondWeekly: 55, distinctWindowSources: true,
+                                restrictedFirst: true, secondWithoutSources: true)
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+
+        let dock = app.composition.dock, view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let events = try XCTUnwrap(view.nozzleEventDelegate)
+        func open(_ id: String) throws {
+            let anchor = try XCTUnwrap(view.interactionAnchor(id))
+            pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+                y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+            events.hoverNozzle(id)
+            elapsed += 0.251
+            dock.interactionControllerForChecks?.refresh()
+            XCTAssertFalse(dock.card.isHidden)
+        }
+        func text(_ name: String, in root: NSView) -> String? {
+            if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
+            return root.subviews.lazy.compactMap { text(name, in: $0) }.first
+        }
+
+        let restricted = "aaaaaaaaaaaaaaaa"
+        XCTAssertNil(view.presentedReadingsForChecks[restricted]?.outer)
+        try open(restricted)
+        let account = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[restricted])
+        let expectedHeader = account.sourceName + " · " + CommunityObservationAge.cardText(observedAt: account.originalObservedAt, now: wall, english: true)
+        XCTAssertFalse(account.sourceName.isEmpty)
+        XCTAssertNotNil(account.originalObservedAt)
+        XCTAssertEqual(text("source", in: dock.card), expectedHeader)
+        XCTAssertEqual(text("row.quota:restricted-runtime.value", in: dock.card), "38%")
+        XCTAssertTrue(text("row.quota:restricted-runtime.detail", in: dock.card)?.contains("Local history · 37m ago") == true)
+
+        dock.interactionControllerForChecks?.dismissCard()
+        events.hoverNozzle(nil)
+        try open("bbbbbbbbbbbbbbbb")
+        XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 23m ago")
+        XCTAssertEqual(text("row.source.value", in: dock.card), "Saved sign-in")
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
