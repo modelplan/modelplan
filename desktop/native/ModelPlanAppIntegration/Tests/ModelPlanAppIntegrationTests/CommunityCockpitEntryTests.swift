@@ -4,6 +4,7 @@ import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
+import ModelPlanDock
 @testable import ModelPlanCockpitWeb
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
@@ -69,6 +70,80 @@ private actor RouteClient: EngineClient {
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    // G3-13 / R-06: exercise the ordinary entry and real CLI transport. No
+    // refresh or second subscription is sent after the synthetic local update.
+    @MainActor func testG313RealCLIRecoversRetainedWeeklyCard() async throws {
+        guard let binary = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"], !binary.isEmpty else {
+            if ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_REQUIRED"] == "1" {
+                XCTFail("U11 must provide the real synthetic-test CLI")
+                throw CancellationError()
+            }
+            throw XCTSkip("Build the real synthetic-test CLI for the normal-entry recovery test")
+        }
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary), "U11 CLI must be executable")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g313-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sessions = root.appendingPathComponent(".codex/sessions/2026/11/05", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let log = sessions.appendingPathComponent("rollout-synthetic.jsonl")
+        let old = Date().addingTimeInterval(-3 * 3600 - 10)
+        func record(_ at: Date, used: Int) throws -> Data {
+            let formatter = ISO8601DateFormatter()
+            let value: [String: Any] = ["timestamp": formatter.string(from: at), "type": "event_msg",
+                "payload": ["type": "token_count", "rate_limits": ["limit_id": "codex", "plan_type": "plus",
+                    "primary": ["used_percent": used, "window_minutes": 10080,
+                                "resets_at": Int(Date().addingTimeInterval(86400).timeIntervalSince1970)]]]]
+            var data = try JSONSerialization.data(withJSONObject: value)
+            data.append(0x0a)
+            return data
+        }
+        try record(old, used: 80).write(to: log)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("settings"), preferredLanguages: ["en-US"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
+            applicationVersion: "g313-synthetic", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin"], offline: true),
+            settingsStore: settings, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        do {
+            await app.prepare()
+            await app.composition.start()
+            var memberID: String?
+            var oldCard: DockCardContent?
+            for _ in 0..<300 {
+                if let member = app.composition.accountMembers.members.first(where: { $0.rowID == "codex" }),
+                   let card = try app.composition.dock.cardContent(for: member.id), card.stateLabel.contains("Stale") {
+                    memberID = member.id; oldCard = card; break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let id = try XCTUnwrap(memberID, "the real CLI must deliver a retained Codex card")
+            let before = try XCTUnwrap(oldCard)
+            XCTAssertTrue(before.sourceAndAge.contains("Local history"), before.sourceAndAge)
+            XCTAssertTrue(before.sourceAndAge.contains("3h ago"), before.sourceAndAge)
+            XCTAssertTrue(before.stateLabel.contains("Stale"), before.stateLabel)
+            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" }, "the retained card must have a weekly row")
+            let file = try FileHandle(forWritingTo: log)
+            try file.seekToEnd()
+            let updatedAt = Date()
+            try file.write(contentsOf: record(updatedAt, used: 30))
+            try file.close()
+            var recovered: DockCardContent?
+            for _ in 0..<300 {
+                if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
+                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" }) {
+                    recovered = card; break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let after = try XCTUnwrap(recovered, "new local observation did not automatically recover the card")
+            XCTAssertTrue(after.sourceAndAge.contains("Local history"), after.sourceAndAge)
+            XCTAssertTrue(after.sourceAndAge.contains("just now"), after.sourceAndAge)
+            let observed = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
+            XCTAssertLessThan(abs(observed.timeIntervalSince(updatedAt)), 2)
+            await app.composition.stop()
+        } catch {
+            await app.composition.stop()
+            throw error
+        }
+    }
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
