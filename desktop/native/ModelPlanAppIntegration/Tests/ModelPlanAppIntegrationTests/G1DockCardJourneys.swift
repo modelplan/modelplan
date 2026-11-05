@@ -172,4 +172,50 @@ private actor G1CardRowsClient: EngineClient {
             XCTAssertNil(text(host.card, "dock.card.text.row.credits.value"))
         }
     }
+
+    func test_DOCK_3_8_05_snapshotHeader() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-05 waits for G1RenderedSnapshot")
+        try await withRenderedCard { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            let heading = try XCTUnwrap(rendered.find("dock.card.text.name")?.text)
+            XCTAssertTrue(heading.contains("Synthetic Tool"))
+            XCTAssertTrue(heading.contains("Synthetic Plan"))
+            XCTAssertFalse(try XCTUnwrap(rendered.find("dock.card.text.source")?.text).isEmpty)
+            XCTAssertNil(rendered.find("dock.card.text.state"))
+            func hasImage(_ element: G1Element) -> Bool {
+                element.imageSource != nil || element.children.contains(where: hasImage)
+            }
+            let card = try XCTUnwrap(rendered.card)
+            let options = XCTExpectedFailure.Options()
+            options.isStrict = true
+            XCTExpectFailure("DOCK-3.8-05 product-missing: card glyph", options: options) {
+                XCTAssertTrue(hasImage(card), "The rendered card header must have a glyph")
+            }
+        }
+    }
+
+    func test_DOCK_3_8_06_snapshotSegments() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-06 waits for G1RenderedSnapshot")
+        try await withRenderedCard { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            func segments(_ element: G1Element) -> Int {
+                (element.role == .segment ? 1 : 0) + element.children.reduce(0) { $0 + segments($1) }
+            }
+            for id in ["dock.card.quota.quota:five", "dock.card.quota.quota:week"] {
+                let bar = try XCTUnwrap(rendered.find(id))
+                XCTAssertEqual(segments(bar), 10, "Each actual quota bar must render ten segments")
+            }
+        }
+    }
+
+    func test_DOCK_3_8_13_snapshotHealthyFacts() async throws {
+        try XCTSkipUnless(G1Seams.snapshotAvailable, "DOCK-3.8-13 waits for G1RenderedSnapshot")
+        try await withRenderedCard(missingPercentage: true) { _, app in
+            let rendered = app.renderedSnapshotForChecks()
+            XCTAssertEqual(rendered.find("dock.card.text.row.quota:five.value")?.text, "--")
+            XCTAssertNil(rendered.find("dock.card.text.row.credits.value"))
+            XCTAssertNil(rendered.find("dock.card.text.state"))
+            XCTAssertFalse(try XCTUnwrap(rendered.find("dock.card.text.source")?.text).isEmpty)
+        }
+    }
 }
