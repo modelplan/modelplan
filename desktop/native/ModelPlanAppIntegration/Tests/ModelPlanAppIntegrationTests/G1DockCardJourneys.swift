@@ -219,6 +219,9 @@ private actor G1CardRowsClient: EngineClient {
         try await withRenderedCard(credits: ["balance": 0.42, "unit": "credits"]) { _, app in
             XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.value")?.text, "<1")
         }
+        try await withRenderedCard(credits: ["balance": 0, "unit": "credits"]) { _, app in
+            XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.value")?.text, "0")
+        }
         try await withRenderedCard(credits: ["balance": 19614, "unit": "synthetic-unknown"]) { _, app in
             XCTAssertEqual(app.renderedSnapshotForChecks().find("dock.card.text.row.credits.label")?.text, "Reserve")
         }
