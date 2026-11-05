@@ -39,6 +39,14 @@ private actor V05SyntheticClient: EngineClient {
 
 @MainActor final class V05CardJourneyTests: XCTestCase {
     func testV05NormalEntryRendersReserveWithoutDiagnosticLinesInBothLanguages() async throws {
+        try await checkReserve(retained: false)
+    }
+
+    func testV05NormalEntryShowsRetainedReserveOnceInBothLanguages() async throws {
+        try await checkReserve(retained: true)
+    }
+
+    private func checkReserve(retained: Bool) async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v05-card-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -59,6 +67,12 @@ private actor V05SyntheticClient: EngineClient {
         windows[0].removeValue(forKey: "modelScope"); windows[0]["current"] = true
         windows[0]["observedAt"] = "2026-12-01T00:00:00Z"; windows[0]["validUntil"] = "2028-12-01T00:00:00Z"
         windows[0]["resetsAt"] = "2028-12-01T00:00:00Z"; windows[0]["remainingPercent"] = 42.0
+        if retained {
+            row["state"] = "stale"; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
+            row["reason"] = ["code": "stale_reading", "text": ["en": "A retained reading is shown", "zh": "正在显示保留的旧读数"]]
+            row["nextStep"] = ["action": "refresh", "text": ["en": "Refresh when permitted", "zh": "在允许时刷新"], "availableAt": NSNull(), "disabledReason": NSNull()]
+            account["valueState"] = "retained"; windows[0]["current"] = false
+        }
         account["windows"] = [windows[0]]; row["accounts"] = [account]; rows[0] = row
         projection["rows"] = rows; projection.removeValue(forKey: "resetEvents"); root["projection"] = projection
         let snapshot = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
@@ -89,7 +103,7 @@ private actor V05SyntheticClient: EngineClient {
         if let evidence {
             try FileManager.default.createDirectory(at: evidence, withIntermediateDirectories: true)
             let result = dock.lastAppearanceError.map { "Production appearance failed: \($0)\n" } ?? "Production appearance loaded.\n"
-            try result.write(to: evidence.appendingPathComponent("v05-appearance.txt"), atomically: true, encoding: .utf8)
+            try result.write(to: evidence.appendingPathComponent("v05-appearance-\(retained ? "retained" : "fresh").txt"), atomically: true, encoding: .utf8)
         }
         XCTAssertNil(dock.lastAppearanceError, "The production Dock appearance must load")
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal-entry interaction must be installed")
@@ -101,13 +115,15 @@ private actor V05SyntheticClient: EngineClient {
         elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(dock.card.isHidden)
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
-        for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限"])] {
+        for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings", "a retained reading is shown", "refresh when permitted"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数", "在允许时刷新"])] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
             let texts = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
             XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")
+            XCTAssertEqual(texts.filter { $0 == "123" }.count, 1, "The synthetic rounded reserve must be shown exactly once")
+            XCTAssertFalse(texts.contains { $0.contains("≈") }, "The integer policy does not use an approximation marker")
             for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
             if let evidence {
-                let suffix = language == .english ? "en" : "zh"
+                let suffix = (retained ? "retained-" : "fresh-") + (language == .english ? "en" : "zh")
                 guard let bitmap = dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds),
                       !dock.card.bounds.isEmpty else {
                     try "Card bitmap unavailable.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
