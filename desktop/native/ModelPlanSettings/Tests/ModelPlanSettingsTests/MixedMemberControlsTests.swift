@@ -4,6 +4,31 @@ import XCTest
 @testable import ModelPlanSettings
 
 @MainActor final class MixedMemberControlsTests: XCTestCase {
+    func testEmptySubscriptionReadoutReturnsAfterMembersDisappear() async throws {
+        _ = NSApplication.shared
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("empty-members-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
+        let snapshot = await store.snapshot()
+        for key in [SettingKey.visible, .alias, .percentagePin] {
+            let view = SettingsNativeRow(key: key)
+            var context = SettingsPageContext()
+            context.subscriptions = [.init(id: "stable", name: .init("Stable", "稳定"))]
+            func apply() throws {
+                let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: snapshot.preferences, context: context).first { $0.key == key })
+                view.apply(row, language: .english, saving: false, input: nil, reduced: false,
+                    onChoice: #selector(NSApplication.terminate(_:)), target: NSApplication.shared, showGroup: false,
+                    snapshot: snapshot, context: context, holdAvailable: true, hasHost: false,
+                    onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
+            }
+            try apply()
+            context.subscriptions = []
+            try apply()
+            let readout = try XCTUnwrap(view.controls.arrangedSubviews.compactMap { $0 as? NSTextField }.first)
+            XCTAssertFalse(readout.isHiddenOrHasHiddenAncestor, "The empty state must be visible for \(key)")
+            XCTAssertEqual(readout.stringValue, "No subscriptions detected", "The empty state must explain \(key)")
+        }
+    }
     func testOnlyUnstableMemberControlsCarryTheDisabledReason() async throws {
         _ = NSApplication.shared
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("mixed-members-"+UUID().uuidString)
