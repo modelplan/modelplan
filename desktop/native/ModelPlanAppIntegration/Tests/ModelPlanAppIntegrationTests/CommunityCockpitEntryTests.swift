@@ -69,6 +69,7 @@ private actor RouteClient: EngineClient {
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    // Salvaged from #448: exercise the production capability negotiation with a synthetic real app-server.
     @MainActor func testNormalEntryReceivesCockpitDetailsFromRealAppServer() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
