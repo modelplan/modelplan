@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanEngineClient
+import ModelPlanShell
 import ModelPlanWire
 @testable import ModelPlanSettings
 @testable import ModelPlanAppIntegration
@@ -24,6 +25,9 @@ import ModelPlanWire
             let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
                 dockEnvironment: normalEntryTestEnvironment,
                 makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+            // Done can dispatch the checked login choice once the real host wiring lands.
+            // Keep this journey isolated from the machine's Login Items in either version.
+            app.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: JourneyLoginService()))
             await app.prepare(); await app.composition.start()
             defer { app.composition.dock.close() }
             let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
