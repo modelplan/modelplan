@@ -82,10 +82,10 @@ private actor V08JourneyClient: EngineClient {
         let view = app.composition.dock.dockView
         for threshold in [25, 10] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.redBelow(threshold))
-            for remaining in [0.0, 25, 26, 40, 41, 100] {
+            for remaining in [0.0, 25, 26, 40, 41, 50, 51, 100] {
                 try await client.replaceRows(fixture(remaining))
                 let reading = try XCTUnwrap(view.presentedReadingsForChecks["aaaaaaaaaaaaaaaa"])
-                let expected: DockQuotaStatus = remaining <= Double(threshold) ? .critical : remaining < 41 ? .warning : .normal
+                let expected: DockQuotaStatus = remaining <= Double(threshold) ? .critical : remaining <= 50 ? .warning : .normal
                 XCTAssertEqual(reading.status, expected, "remaining=\(remaining), threshold=\(threshold)")
                 XCTAssertEqual(reading.outer?.status, expected)
                 let skin = try XCTUnwrap(view.presentedSkinForChecks)

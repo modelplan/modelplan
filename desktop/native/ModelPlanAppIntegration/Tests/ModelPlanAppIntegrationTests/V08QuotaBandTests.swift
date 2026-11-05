@@ -7,7 +7,7 @@ final class V08QuotaBandTests: XCTestCase {
     func testV09VendorIdentityDoesNotChangeQuotaStatus() throws {
         let bands: [(Double, DockQuotaStatus)] = [
             (0, .critical), (25, .critical), (26, .warning),
-            (40, .warning), (41, .normal), (100, .normal)
+            (40, .warning), (41, .warning), (50, .warning), (51, .normal), (100, .normal)
         ]
         for vendor in ["cursor", "copilot", "opencode", "qwen"] {
             for (remaining, expected) in bands {
@@ -50,7 +50,8 @@ final class V08QuotaBandTests: XCTestCase {
     }
     func testV08RemainingQuotaBandsAtBothThresholds() throws {
         let cases: [(Double, DockQuotaStatus, DockQuotaStatus)] = [
-            (100, .normal, .normal), (41, .normal, .normal),
+            (100, .normal, .normal), (51, .normal, .normal),
+            (50, .warning, .warning), (41, .warning, .warning),
             (40, .warning, .warning), (26, .warning, .warning),
             (25, .critical, .warning), (10, .critical, .critical), (0, .critical, .critical)
         ]
