@@ -5,6 +5,7 @@ import ModelPlanDock
 import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
+public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale, errorLastGood, error }
 public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
@@ -14,16 +15,32 @@ public struct DockContentRow: Sendable {
     public let resetTimes:[String:Date]
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
+    public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[]) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
         self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
+        self.cardReadingState = cardReadingState ?? {
+            switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
+        }()
+    }
+    private func cardAge(at now:Date,english:Bool) -> String {
+        CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
     public func cardSourceAndAge(at now:Date,english:Bool) -> String {
-        let age = CommunityObservationAge.text(observedAt: originalObservedAt, now: now,
-                                               language: english ? .english : .chinese)
-        return age
+        let age = cardAge(at: now, english: english)
+        return sourceName.isEmpty ? age : sourceName + " · " + age
+    }
+    public func cardBadge(at now:Date,english:Bool) -> String {
+        let age=cardAge(at:now,english:english)
+        switch cardReadingState {
+        case .ok: return ""
+        case .loading: return english ? "Reading" : "读取中"
+        case .stale: return (english ? "Stale · " : "过期 · ") + age
+        case .errorLastGood: return english ? "Read failed · showing " + age : "读取失败 · 保留 " + age + "的读数"
+        case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
+        }
     }
     public func resetDetails(at now:Date,english:Bool) -> [String:String] {
         input.windows.reduce(into:[:]) { result,window in
