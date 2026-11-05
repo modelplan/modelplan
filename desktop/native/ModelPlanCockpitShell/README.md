@@ -17,12 +17,6 @@ Generic MIT model code for the native cockpit shell. This is a nonvisual prepara
 
 Expiry yields `steadyUnacknowledged`; it does not acknowledge. New semantic episodes and worsening severity get a fresh bounded interval. Clear removes latches; Reduce Motion immediately presents a steady light. Colors, lens artwork and localized accessibility strings belong to the presentation layer.
 
-## Semantic caution input (P03)
-
-`update(notices:now:)` accepts `CautionNotice` values. `CautionEpisodeID` binds subscription, optional window, event kind and episode identity, excluding localized text, countdowns and readings. Length framing prevents delimiter collisions; canonical Unicode reconstruction preserves the same identity. Empty or oversized identity components are rejected. Information/blue notices never become primitive caution conditions.
-
-This overload only maps into the existing `CautionLampModel.update` / `ModelPlanPrimitives.CautionState`; it does not add a controller or another transition implementation. Tests cover the specified 0/3/6/16/20/24-second sequence, information exclusion, same-severity new episodes, both severity levels with Reduce Motion/acknowledgement, reconstruction, and elapsed recovery after sleep. The existing condition-based API remains valid.
-
 ## Local verification
 
 M0 has registered this target in the native root package. Use that root entry point: the historical lane-local manifest depends on the parent and now collides with its same-named target. No manifest change is needed for P03. No private checkout or external package is required. Run from the public worktree, after checking disk space:
@@ -69,24 +63,10 @@ Use one skin instance per surface. Configure the surface with visible engine-col
 
 B09 tests use neutral synthetic providers to check raster admission, duplicate IDs, still identity, closed allocation, whole-root coordinate conversion, quick fade and teardown. Private registered-art comparisons and native-host receipts are separate. They do not establish physical-display input latency, minimum-runtime acceptance or whole-app memory budgets.
 
-## B10 strip and HUD consumers
-
-`CockpitStripView` uses an injected `CockpitStripSkin` for registered art/layout. `NeutralCockpitControlsSkin` is the complete resource-free community skin. Bind `onAction` to the app's existing settings, sourced alerts and close routes; attachment is an intent only. `onTitleDrag` reports global AppKit points plus backing scale. M0 owns the physical-pixel threshold/snap, fitting, saved arrangements, dock exclusivity and native window/Space behavior. The strip has no position store or entrance renderer.
-
-`CockpitShutterGesture` owns only temporary local travel. Click, drag and slider AX/keyboard input emit a detent request; disabled input cannot change the caller's preference. The source-specific travel is injected by the skin. The thumb/reveal use finite compositor transitions and stop with Reduce Motion. Controls may expose a registered hit overhang through `CockpitOverflowHitTesting`; the vessel root forwards those hits without moving painted geometry or shrinking hit areas during root scaling.
-
-Caution uses the existing `CautionLampModel`, absolute ContinuousClock deadlines and one common-mode validation timer. A bounded 1 Hz opacity animation preserves phase over hide/show and ends without waiting for timer delivery. Press acknowledges and emits the sourced-alert intent; clearing/worsening remains model-owned. ALERT stays the face legend in both locales, with localized AX. The current OS Reduce Motion preference and effective caller profile suppress motion. `CockpitPresentationConsumer` propagates root pause/stop to these children; plain application deactivation does not imply hiding.
-
-`CockpitHUDView` accepts at most six already-selected models in published order, explicit frontier IDs and nullable recommendation/current metrics. Feed the existing shared selector's chart IDs, not a second selection implementation. The private layout chooses tall versus compact row capacity. `CockpitHUDChart` only maps log cost and linear ability to coordinates; it never ranks, chooses recommendations, invents zero for missing data or infers sessions. Supply current values/reported effort only from an admitted observation. A configuration already marked as recommended has no extra current dot.
-
-Bind `onOpenEffort` and `onReturn` to M0/M3's sourced Effort/return route. Stable row/point objects preserve focus across data/appearance refreshes. Only row full names receive native tooltips (always, including aliases); chart points and strip controls expose full AX without native titles. Closed/empty HUD state immediately clears targets and allocates zero viewport, including when incoming stale model data is malformed.
-
-`onHintInput` and `onOptionHelp` are consumer seams. Pass them to the one existing Settings hint arbiter and help overlay through M0. This module owns no hint dwell/priority/budget, flags, persistence or global key monitor. `helpTargets()` supplies stable strip anchors and state-specific Detach/Put back captions. Canonical Today/live-speed definitions stay with the existing instrument help producer; complete help-map assembly is outside this leaf component.
-
-`CockpitHelpOverlay` is a pointer-transparent leaf renderer for caller-positioned annotations. M0 supplies its visibility/latch, canonical copy and routes; it stores no hint state. Full B19b map composition remains with its owning batch.
+## B10 input model
 
 
-The input-only `CockpitPortholeView` accepts a same-capture `CockpitStill` plus normalized rocket projections and the host's admitted IDs. It emits selection/focus/enlargement intent; it never constructs a field renderer. Renderer availability defaults off. Empty/stale projections cannot change selection. Hit distances use window/viewport points after the root transform, with nearest hits and stable capture-order ties. Field click, zoom, keyboard and AX share an opening latch; metadata refresh does not reset it. The host acknowledges close with `setEnlarged(false)` and reuses its existing runtime/selection guards. Keep the HUD as a sibling above this input leaf so its pointer/accessibility routes remain separate.
+The input-only `CockpitPortholeView` accepts a same-capture `CockpitStill` plus normalized rocket projections and the host's admitted IDs. It emits selection/focus/enlargement intent; it never constructs a field renderer. Renderer availability defaults off. Empty/stale projections cannot change selection. Hit distances use window/viewport points after the root transform, with nearest hits and stable capture-order ties. Field click, zoom, keyboard and AX share an opening latch; metadata refresh does not reset it. The host acknowledges close with `setEnlarged(false)` and reuses its existing runtime/selection guards.
 
 M0 must bind capture identity/projection to the exact displayed, fitted image, provide the existing aperture hit shape, and call `consumeOpeningContinuation` before the existing backdrop-close action, forwarding the native click count, timestamp and window number. The second opening click is consumed once; ordinary outside clicks are not. These are host/bridge integration requirements, not an enlargement/runtime release. No field bridge, Core/Shell or package changes are included here.
 

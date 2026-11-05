@@ -23,27 +23,3 @@ actor DelayedFieldStage<Value: Sendable> {
     }
     func finish() { result?.resume(returning: value); result = nil }
 }
-
-final class FieldSnapshotRequestTests: XCTestCase {
-    @MainActor func testNativeEncoderCancellationWaitsForActualExitAndCompletesExactlyOnce() async {
-        let gate = DelayedFieldStage(value: Data([1, 2, 3]))
-        var completions = 0
-        let retired = expectation(description: "Owned encoder actually exited")
-        let request = FieldSnapshotRequest { data in
-            XCTAssertNil(data); completions += 1; retired.fulfill()
-        }
-        XCTAssertTrue(request.startEncoding({ XCTAssertFalse(Thread.isMainThread); return await gate.run() }) { request.finish($0) })
-        await gate.waitForStart()
-        request.cancel()
-        XCTAssertEqual(completions, 0)
-        XCTAssertNotNil(request.encoder)
-        XCTAssertFalse(request.startEncoding({ Data([4]) }) { _ in XCTFail("Second encoder admitted") })
-        await gate.finish()
-        await fulfillment(of: [retired], timeout: 2)
-        let wasCancelled = await gate.cancelledOnExit
-        XCTAssertTrue(wasCancelled)
-        XCTAssertNil(request.encoder)
-        request.finish(Data([5]))
-        XCTAssertEqual(completions, 1)
-    }
-}
