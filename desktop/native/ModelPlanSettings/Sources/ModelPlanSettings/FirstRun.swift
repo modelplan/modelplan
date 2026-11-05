@@ -23,7 +23,7 @@ public struct FirstRunPage: Sendable {
     public let subscriptions: [SettingsSubscription]
     public let readers: [ReaderSetting]
     public let login: LoginSetting
-    /// V1's web cockpit does not yet expose Option help; it is tracked for post-v1.
+    /// The normal entry offers exploration only when its actual Help map is available.
     public let showsExploration: Bool
     public init(preferences: SettingsPreferences, context: SettingsPageContext) throws {
         guard Set(context.subscriptions.map(\.id)).count == context.subscriptions.count,
@@ -31,7 +31,7 @@ public struct FirstRunPage: Sendable {
         subscriptions = context.subscriptions
         readers = ReaderSetting.project(consent: preferences.readerConsent, observations: context.readerObservations)
         login = .init(preferences: preferences, capabilities: context.capabilities)
-        showsExploration = !context.v1NormalEntry
+        showsExploration = !context.v1NormalEntry || context.capabilities.helpMapAvailable
     }
 }
 public enum LoginRequestReason: Equatable, Sendable { case explicitUserChoice, firstRunCompletion, restoration, systemObservation }
@@ -92,7 +92,9 @@ public extension SettingsStore {
             p.onboarding.next(in: .task65)
         }
         let effects: [FirstRunEffect]
-        if action == .seeWhatsHere { effects = (host == .popup ? [.closeFirstRunPopup] : []) + [.openCockpit,.latchOptionHelp] }
+        if action == .seeWhatsHere {
+            effects = (host == .popup ? [.closeFirstRunPopup] : []) + [capabilities.helpMapUsesDock ? .revealDock : .openCockpit, .latchOptionHelp]
+        }
         else { effects = host == .popup ? [.closeFirstRunPopup,.revealDock] : [.returnToSettings] }
         return .init(snapshot: saved, effects: effects, login: .init(snapshot: saved, observedState: capabilities.login,
             request: LoginServicePolicy.request(choice: saved.preferences.openAtLogin, observed: capabilities.login, reason: .firstRunCompletion)))

@@ -17,7 +17,8 @@ Current scope:
 | --- | --- |
 | DOCK-3.1-05, DOCK-3.1-07, DOCK-3.1-08 | Pure T2 geometry, 36/44/52 points, default 44, D/52 scaling |
 | DOCK-3.1-12, DOCK-3.1-15, DOCK-3.1-16, DOCK-3.1-17 | Upright readout anchors, gap reduction before overflow, full-slice curvature |
-| DOCK-3.1-22, DOCK-3.1-23, DOCK-3.1-29 | Button area search and opposite-end grip; bottom ignition defaults to the right end |
+| DOCK-3.1-23, DOCK-3.1-29 | Button area search and opposite-end grip; bottom ignition defaults to the right end |
+| DOCK-3.1-22, DOCK-3.1-24 | Shape-limited disabled ignition veil; normal-entry evidence: `P1ExactPlacementTests.testDisabledIgnitionVeilIsShapeLimitedOnNormalEntry`. Full device/visual acceptance remains unverified. |
 | DOCK-3.1-10, DOCK-3.1-11 | Isolated native gradient/grain face layer; pixel agreement remains unverified |
 | DOCK-3.6-02 | Size-independent 20-point wake constant; runtime behavior remains separate |
 | DOCK-3.4-03/-04, DOCK-3.7-02 | Reset-dot layout and painting from explicit per-member provider presentation; synthetic unit coverage, production provider/factory binding remains pending |

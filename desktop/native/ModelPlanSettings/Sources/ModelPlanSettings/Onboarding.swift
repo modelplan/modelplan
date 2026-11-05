@@ -53,7 +53,7 @@ public struct OnboardingDefinition: Equatable, Sendable {
     public static let provisional = OnboardingDefinition(provisional: [
         .init(id: .welcome, title: .init("Welcome and privacy", "欢迎与隐私"), capabilities: .trialDemo),
         .init(id: .detectedSubscriptions, title: .init("Detected subscriptions", "已检测到的订阅")),
-        .init(id: .dockLocation, title: .init("Find the dock", "挂件位置"), capabilities: .dockLesson),
+        .init(id: .dockLocation, title: .init("Find Quota Widget", "额度挂件位置"), capabilities: .dockLesson),
     ])
 }
 public enum TutorialResult: String, Codable, Sendable { case quick, hold }
