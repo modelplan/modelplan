@@ -82,7 +82,11 @@ struct DockStatusHelpAnchor {
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
                 default: return nil
                 }
-            }, dismiss: { [weak self] _ in self?.composition.host.dismiss() }, layer: composition.layer)
+            }, dismiss: { [weak self] _ in
+                guard let self else { return }
+                self.composition.host.dismiss()
+                self.refresh()
+            }, layer: composition.layer)
         let binding = DockHelpBinding(presenter: presenter,
             isCurrent: { [weak self] surface in self?.isCurrent(surface) == true })
         self.presenter = presenter; self.binding = binding
@@ -97,6 +101,10 @@ struct DockStatusHelpAnchor {
             let handled = (try? self.requestedMap?.handleHelpAction(action)) == true
             self.dismissingMap = false
             if handled { self.finishMap(); self.refresh() }
+        }
+        composition.onSettingsReceipt = { [weak self] edit, accepted in
+            guard accepted, case .resetHelpHints = edit.kind else { return }
+            self?.refresh()
         }
         router.installDock(binding)
         dock.dockHelpSurfaceDidChange = { [weak self] surface in self?.update(surface) }
