@@ -506,6 +506,140 @@ import ModelPlanShell
         }
     }
 
+    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    func testD09RealServerPublicationAndTopologyCannotMoveTheHeldWidget() async throws {
+        let helper = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: [modeKey: mode])
+            XCTAssertEqual(UserDefaults.standard.integer(forKey: modeKey), mode)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d09-" + UUID().uuidString)
+            let config = root.appendingPathComponent(".config/modelplan")
+            try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+            let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+            let seed = Process()
+            seed.executableURL = helper
+            seed.arguments = ["consent", "init", "--json"]
+            seed.environment = environment
+            seed.standardInput = FileHandle.nullDevice
+            seed.standardOutput = FileHandle.nullDevice
+            seed.standardError = FileHandle.nullDevice
+            try seed.run()
+            let seedDeadline = ContinuousClock.now + .seconds(5)
+            while seed.isRunning && ContinuousClock.now < seedDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            if seed.isRunning {
+                seed.terminate()
+                return XCTFail("Temporary consent initialization timed out")
+            }
+            XCTAssertEqual(seed.terminationStatus, 0)
+
+            let plan = "synthetic-d09", iso = ISO8601DateFormatter()
+            func writeReading(_ percent: Int) throws {
+                let now = Date()
+                let fixture: [String: Any] = ["schemaVersion": 1, "plans": [["planId": plan]], "windows": [[
+                    "planId": plan, "kind": "five_hour", "remainingPercent": percent, "resetMode": "rolling",
+                    "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+                    "resetAt": iso.string(from: now.addingTimeInterval(7_200)),
+                ]]]
+                let bytes = try JSONSerialization.data(withJSONObject: fixture)
+                try bytes.write(to: config.appendingPathComponent("local.json"), options: .atomic)
+            }
+            try writeReading(40)
+
+            let topology = DragTopology()
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            _ = try await store.update {
+                $0.dockDisplayID = "A"
+                $0.dockEdge = .right
+                $0.autoHide = false
+                $0.followActiveDisplay = true
+            }
+            let storedURL = root.appendingPathComponent("ModelPlan/settings.json")
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-d09",
+                allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: store,
+                createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            let delivery = try await app.composition.client.start()
+            _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+            let host = app.composition.dock, view = host.dockView
+            func serverReading() -> Double? {
+                app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "declared:" + plan }?
+                    .accounts.first?.windows.first?.remainingPercent
+            }
+            XCTAssertEqual(serverReading(), 40)
+            let before = await store.snapshot()
+            let bytes = try Data(contentsOf: storedURL)
+            let initial = try XCTUnwrap(host.edgePresentation?.placement)
+            let drag = try XCTUnwrap(view.backgroundDragDelegate)
+            let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+                stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+            }.first { drag.backgroundCanDrag(local: $0) })
+            let down = CGPoint(x: initial.frame.minX + local.x, y: initial.frame.maxY - local.y)
+            topology.pointer = down
+            let arrival = ContinuousClock.now + .seconds(1)
+            var captured = drag.beginBackgroundMove(local: local, global: down)
+            while !captured && ContinuousClock.now < arrival {
+                try await Task.sleep(for: .milliseconds(20))
+                captured = drag.beginBackgroundMove(local: local, global: down)
+            }
+            guard captured else { return XCTFail("Mode \(mode) did not capture the actual host's background") }
+
+            let destination = topology.b.usableFrame
+            let held = CGPoint(x: destination.maxX - 15, y: destination.midY - 60)
+            topology.pointer = held
+            drag.updateBackgroundMove(global: held)
+            let carried = try XCTUnwrap(host.edgePresentation?.paintedFrame)
+            XCTAssertEqual(host.edgePresentation?.placement?.displayID, topology.b.id)
+            XCTAssertTrue(drag.isBackgroundMoving)
+
+            // The topology/follow sample sees C, with no new captured drag event.
+            // Meanwhile a real app-server publication replaces the declared reading.
+            topology.active = [topology.b, topology.c]
+            topology.pointer = CGPoint(x: topology.c.frame.midX, y: topology.c.frame.midY)
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            host.refreshPresence()
+            try writeReading(70)
+            let published = ContinuousClock.now + .seconds(6)
+            while serverReading() != 70 && ContinuousClock.now < published {
+                XCTAssertEqual(host.edgePresentation?.paintedFrame, carried, "Mode \(mode) jumped while held")
+                XCTAssertTrue(drag.isBackgroundMoving, "Mode \(mode) lost the held transaction")
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(serverReading(), 70)
+            XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+            XCTAssertEqual(host.edgePresentation?.paintedFrame, carried)
+            XCTAssertTrue(drag.isBackgroundMoving)
+            let whileHeld = await store.snapshot()
+            XCTAssertEqual(whileHeld.revision, before.revision)
+            XCTAssertEqual(try Data(contentsOf: storedURL), bytes)
+
+            let next = CGPoint(x: held.x, y: held.y + 80)
+            topology.pointer = next
+            drag.updateBackgroundMove(global: next)
+            let resumed = try XCTUnwrap(host.edgePresentation?.paintedFrame)
+            XCTAssertTrue(destination.insetBy(dx: -1, dy: -1).contains(resumed))
+            XCTAssertEqual(resumed.midY - carried.midY, 80, accuracy: 1, "Mode \(mode) must follow the next captured event")
+            drag.endBackgroundMove(global: next)
+            let editor = app.settingsHost.application.editor
+            try await waitForSettings(editor) { editor.snapshot?.preferences.dockDisplayID == topology.b.id && !editor.isSaving }
+            let after = await store.snapshot()
+            XCTAssertEqual(after.revision, before.revision + 1)
+            XCTAssertEqual(after.preferences.dockEdge, .right)
+            await app.composition.stop()
+        }
+    }
+    #endif
+
     func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
