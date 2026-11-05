@@ -1,15 +1,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Z.ai / GLM Coding Plan reader card
 
-- Vendor source: [Official GLM Coding Plan overview](https://docs.z.ai/devpack/overview) (checked 2026-10-29; product context, not documentation of the monitor quota response); exact compatibility request is pinned in the public reader.
+- Vendor source: [Official GLM Coding Plan overview](https://docs.z.ai/devpack/overview) (checked 2026-10-29; product context). The monitor quota endpoint is now first-party documented in the official [zai-org/ZCode](https://github.com/zai-org/ZCode) repository @ `a9fe401e` (Apache-2.0; checked 2026-11-05): [coding-plan-quota-remaining-api.md](https://github.com/zai-org/ZCode/blob/a9fe401e/docs/coding-plan-quota-remaining-api.md) (GET `/api/monitor/usage/quota/limit`, header `authorization: <API Key>`, "do not add a `Bearer` prefix"; Coding Plan key, not an ordinary model key) and [bigmodel-coding-plan-usage-quota.md](https://github.com/zai-org/ZCode/blob/a9fe401e/docs/bigmodel-coding-plan-usage-quota.md) (hosts `api.z.ai` and `bigmodel.cn`/`open.bigmodel.cn`, "the same key works on both hosts"; provider order `builtin:zai`, `builtin:bigmodel`, then custom providers on those hosts). ZCode Desktop 3.17.2 calls this endpoint for its own "Plan usage" panel. Exact compatibility request is pinned in the public reader.
 - References compared: [CodexBar@ee890b5f](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Resources/Plugins/zai.js) (MIT), [Pulse@78eddaaf](https://github.com/qunqin24/Pulse/blob/78eddaaf9f19bc17c5a5446aee8d98724961b8f9/Docs/providers/zai.md) (Apache-2.0).
 - Reviewed ModelPlan artifact: `670fe9e7f9c2ac44ec64ac22e647b3baac73f11e`; [zai.go](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/quota/zai.go); [fixed HTTP pins](https://github.com/modelplan/modelplan/blob/670fe9e7f9c2ac44ec64ac22e647b3baac73f11e/cli/internal/readers/request_set.go). Public-source review only, 2026-10-29.
 - Scope: `zai.account_usage.api_key`. Local history and other access classes do not grant this account route.
-- Status: card/evidence inventory, not a catalogue enablement or owner-shaped acceptance. This docs change enables no source and changes no consent/default.
+- Status: card/evidence inventory, not a catalogue enablement or owner-shaped acceptance. This docs change enables no source and changes no consent/default. The 2026-11-05 update records first-party endpoint documentation, ZCode storage file names and an open authorization-header question: facts only, no behaviour change.
 
 ## Data
 
-Personal coding-plan TOKENS_LIMIT/CREDIT_LIMIT/TIME_LIMIT meters, native counts or percentages, supported unit/number duration and reset time, plan-shaped labels and the explicit MCP marker. No team/project enumeration, BigModel cash balance, model charts or local-token-to-quota inference.
+Personal coding-plan TOKENS_LIMIT/CREDIT_LIMIT/TIME_LIMIT meters, native counts or percentages, supported unit/number duration and reset time, plan-shaped labels and the explicit MCP marker. The first-party ZCode docs confirm this card's window mapping (`TOKENS_LIMIT` unit 3 number 5 = 5-hour, unit 6 = weekly; `TIME_LIMIT` unit 5 number 1 = monthly MCP; `percentage` = percent used), matching `zai.go` parsing. No team/project enumeration, BigModel cash balance, model charts or local-token-to-quota inference.
 
 - [CodexBar@ee890b5f](https://github.com/steipete/CodexBar/blob/ee890b5f392e70d6e20162d3e95cf9f1be265b60/Sources/CodexBarCore/Resources/Plugins/zai.js): Key-auth quota plugin supports additional model-usage/balance endpoints, scope selectors and endpoint overrides. ModelPlan retains one fixed personal quota GET only.
 - [Pulse@78eddaaf](https://github.com/qunqin24/Pulse/blob/78eddaaf9f19bc17c5a5446aee8d98724961b8f9/Docs/providers/zai.md): Compares the same regional quota family and optional model-usage history. Reference-reported invalid/expired subscription responses and CREDIT_LIMIT semantics motivate explicit schema/error handling; no inference probe or historical account data is adopted.
@@ -18,7 +18,7 @@ Personal coding-plan TOKENS_LIMIT/CREDIT_LIMIT/TIME_LIMIT meters, native counts 
 
 | Path | Carrier | Auth | Endpoint status | Side effects | Red-line check |
 | --- | --- | --- | --- | --- | --- |
-| ModelPlan-selected environment key | H | K | Undocumented monitor GET | One fixed personal-quota request | Chosen |
+| ModelPlan-selected environment key | H | K | Monitor GET documented in the official ZCode docs (compatibility; no vendor stability guarantee) | One fixed personal-quota request | Chosen |
 | Explicit Claude Code settings profile | L → H | K | Same fixed monitor GET | Read one selected regular config and validate Coding Plan provenance | Chosen only when explicitly admitted |
 | Selected OpenCode provider/auth slot | L → H | K | Parser exists for same GET | Requires an active-provider selector | Not production-admitted at this pin |
 | Team/balance/model charts/custom host | H | K | Different endpoints/parameters | Extra calls or unintended key destination | Excluded |
@@ -89,7 +89,17 @@ Existing test references are pinned to the reviewed implementation, not new exec
 
 ## Known gaps and unknowns
 
-- The monitor endpoint is a compatibility interface; the vendor product/inference documentation does not certify its schema or no-write semantics. Source comments and endpoint names are insufficient proof.
+- The monitor endpoint is first-party documented in the official zai-org/ZCode docs, and ZCode Desktop 3.17.2 calls it itself; that is documentation and usage evidence, not a vendor stability or no-write/no-charge guarantee for other clients.
+- **Open question (no behaviour change): authorization header form.** The official ZCode docs say to send `authorization: <API Key>` without a `Bearer` prefix, while the pinned ModelPlan transport sends `Authorization: Bearer` (as CodexBar and Pulse do; Pulse reports measuring success with `Bearer`). One live verification from a lane that already holds a key must settle which form the endpoint accepts before any transport change is considered. Until then the pinned header stays as reviewed.
+- No alternative external interface exists today: `zcode` (0.17.0) has no usage/quota subcommand; the app-server `usage/stats` method returns local token/session/tool totals only; there is no OAuth/third-party-authorisation route for quota. Facts recorded 2026-11-05 from the pinned ZCode sources above.
+
+## ZCode storage layout (research facts, file names only)
+
+Recorded from the official ZCode repository @ `a9fe401e` and its `docs/analysis/credentials-json-code-audit.md`; no credential values are included, and no ModelPlan behaviour depends on this section.
+
+- `~/.zcode/v2/provider_config.json` — plaintext, shared by Desktop and CLI. User-added providers carry `config.access.{type, apiKey}` (type `api-key` or `zhipu-coding-plan-api-key`), `config.api.baseUrl` and `defaultModelSelection.providerId`; fixed `account:*` providers carry no key here. Built-in templates (`zai-api`/`bigmodel-api`) default to `zhipu-coding-plan-api-key`.
+- `~/.zcode/v2/credentials.json` — encrypted, `enc:v1:` AES-256-GCM envelope. The key is a SHA-256 of `ZCODE_CREDENTIAL_SECRET`, or of a fixed string built from platform, home directory and username; ZCode's own audit states this is not a Keychain-backed store. Manual "Coding Plan API key" entries are stored here encrypted; for OAuth logins the quota-reading token is minted per request and kept in memory only, so the file holds no ready quota key.
+- Older layouts: Desktop 3.11–3.14 used `~/.zcode/v2/config.json` with plaintext `provider[id].options.apiKey` (read by current source only through a legacy reader); CLI-only installs keep `~/.zcode/cli/{config.json,setting.json}`. The layout has changed at least twice in about three months.
 - The failure branch can include label-filtered vendor Msg text in the native error. Label validation is not a complete credential-redaction proof. Existing selected-config canary tests do not establish every rejection/error/diagnostic/cockpit output path; a hostile-response canary regression remains needed.
 - OpenCode config-source parsing must not be described as an enabled production route. Enabling it needs a selected-provider contract and separate acceptance.
 - Per-read HTTP auth-stop recording does not establish a persisted cross-read scope latch. Later scheduled reads remain possible after backoff; this is a standard-completion gap.
