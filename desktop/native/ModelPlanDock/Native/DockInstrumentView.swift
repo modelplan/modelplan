@@ -6,6 +6,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
 @MainActor private final class DockInstrumentAXNode:NSAccessibilityElement {
     var press:(()->Bool)?
     var focus:((Bool)->Void)?
+    var normalHelp: String? { didSet { setAccessibilityHelp(contextualHelp ?? normalHelp) } }
+    var contextualHelp: String? { didSet { setAccessibilityHelp(contextualHelp ?? normalHelp) } }
     override func accessibilityPerformPress()->Bool {press?() ?? false}
     override func setAccessibilityFocused(_ focused: Bool) { super.setAccessibilityFocused(focused); focus?(focused) }
 }
@@ -43,12 +45,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
     public var keyboardTargetID: String? {
-        didSet { if keyboardTargetID != oldValue { onHelpFocusChanged?() } }
+        didSet { if keyboardTargetID != oldValue { helpFocusChanged() } }
     }
     public var onHelpFocusChanged: (() -> Void)?
     public private(set) var registeredGripRects: [CGRect] = []
     public private(set) var focusedGripIndex: Int? {
-        didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); onHelpFocusChanged?() } }
+        didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); helpFocusChanged() } }
     }
     private var hoveredGripIndex: Int?
     private var gripOutline: CAShapeLayer?
@@ -113,7 +115,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                       y: station.eventRect.midY - skin.bounds.minY - radius, width: 2 * radius, height: 2 * radius)
     }
     private var focusedNoticeID: String? {
-        didSet { if focusedNoticeID != oldValue { onHelpFocusChanged?() } }
+        didSet { if focusedNoticeID != oldValue { helpFocusChanged() } }
     }
 
     public var focusedHelpAnchorID: String? {
@@ -121,6 +123,32 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if let id = focusedNoticeID, helpNoticeAnchor(id) != nil { return "dock.notice." + id }
         guard let id = keyboardTargetID else { return nil }
         return (helpRingsAnchor(id) == nil ? "dock.nozzle." : "dock.rings.") + id
+    }
+
+    private weak var contextualHelpNode: DockInstrumentAXNode?
+
+    private func helpFocusChanged() {
+        clearFocusedHelpExplanation()
+        onHelpFocusChanged?()
+    }
+
+    public func clearFocusedHelpExplanation() {
+        contextualHelpNode?.contextualHelp = nil
+        contextualHelpNode = nil
+    }
+
+    /// Update only the current keyboard control. The underlying reading remains its AX value.
+    @discardableResult public func setFocusedHelpExplanation(_ text: String?, for anchorID: String) -> Bool {
+        guard !failed, !isHiddenOrHasHiddenAncestor, focusedHelpAnchorID == anchorID,
+              nozzleEventDelegate?.hasCapture != true, backgroundDragDelegate?.isBackgroundMoving != true else { return false }
+        let key = focusedGripIndex.map { "grip.\($0)" }
+            ?? focusedNoticeID.map { "notice." + $0 }
+            ?? keyboardTargetID.map { "subscription." + $0 }
+        guard let key, let node = nodes[key] else { return false }
+        if contextualHelpNode !== node { clearFocusedHelpExplanation() }
+        node.contextualHelp = text
+        contextualHelpNode = text == nil ? nil : node
+        return true
     }
 
     public func helpRingsAnchor(_ id: String) -> CGRect? {
@@ -301,7 +329,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();registerGripRects([]);officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
@@ -343,13 +371,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
-        resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; community = false; failed = true
+        clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; community = false; failed = true
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onHelpFocusChanged=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){clearFocusedHelpExplanation();onHelpFocusChanged=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
@@ -387,7 +415,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         if let original = refreshSweepOriginal { image = original; refreshSweepOriginal = nil; needsDisplay = true }
     }
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
+    public override func viewDidHide(){clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}
@@ -465,7 +493,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         func append(_ key:String,_ label:String,_ value:String?,_ help:String,_ rect:CGRect,_ action:DockInstrumentAction) {
             let node=nodes[key] ?? DockInstrumentAXNode(),oldValue=node.accessibilityValue() as? String
             node.setAccessibilityRole(.button);node.setAccessibilityParent(self);node.setAccessibilityEnabled(onAction != nil)
-            node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.setAccessibilityHelp(help)
+            node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.normalHelp=help
             node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in
                 guard let self,let node,self.nodes[key] === node,self.permitsAction?(action,.accessibility) ?? true else{return false}
                 // A gate may synchronously refresh the snapshot; recheck this stable AX node afterward.
