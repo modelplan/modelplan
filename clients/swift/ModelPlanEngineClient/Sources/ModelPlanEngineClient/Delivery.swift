@@ -364,7 +364,12 @@ extension ProcessEngineClient {
                 metadata = true; pending[key]?.receiptKnown = true; pending[key]?.committedAt = committed
                 matchReceipt(grant, receipt: decoded, historical: historic)
                 result = .grant(EngineGrantResult(receipt: decoded.data, committedAt: committed, delivery: context, supersededByLaterConsent: historic))
-            case "refresh/request": result = .refresh(EngineReply(envelope: try decodeEnvelope(envelope, as: [WireRefreshScheduled].self).value, delivery: context))
+            case "refresh/request":
+                if entry.memberRefresh {
+                    result = .memberRefresh(EngineReply(envelope: try decodeEnvelope(envelope, as: WireMemberRefreshResult.self).value, delivery: context))
+                } else {
+                    result = .refresh(EngineReply(envelope: try decodeEnvelope(envelope, as: [WireRefreshScheduled].self).value, delivery: context))
+                }
             case "history/query": result = .history(EngineReply(envelope: try decodeEnvelope(envelope, as: WireHistoryPage.self).value, delivery: context))
             case "cockpit/query": result = .cockpit(EngineReply(envelope: try decodeEnvelope(envelope, as: WireCockpitData.self).value, delivery: context))
             case "publication/get": result = .publication(EngineReply(envelope: try decodeEnvelope(envelope, as: WirePublicationResult.self).value, delivery: context))

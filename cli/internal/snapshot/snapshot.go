@@ -113,8 +113,9 @@ type Session struct {
 	Stale       bool       `json:"stale"`
 	Model       ModelRef   `json:"model"`
 	// Effort is the effort in use (the harness default reads as ★), Recommended the ★ effort;
-	// both nil when the model is not in the publication. Effort keeps that fallback for older
-	// clients; EffortStatus says whether the harness reported an effort at all.
+	// both nil when the model is not in the publication, Effort also nil when the harness
+	// reported an effort the publication does not list. Effort keeps the ★ fallback for older
+	// clients only when the harness reported no effort; EffortStatus says which it is.
 	Effort       *EffortRef `json:"effort"`
 	EffortStatus string     `json:"effortStatus"` // reported | unreported
 	Recommended  *EffortRef `json:"recommended"`
@@ -513,9 +514,7 @@ func session(a *quota.Account, d *digest.Digest) (Session, bool) {
 	x.Model.ID, x.Model.Name, x.Model.DeveloperID = m.ID, m.Name, m.DeveloperID
 	rec, cur := m.Rec(), m.Rec()
 	if h.Effort != "" {
-		if e := m.Effort(h.Effort); e != nil {
-			cur = e
-		}
+		cur = m.Effort(h.Effort) // a reported effort the publication does not list is unknown, not ★
 	}
 	if rec != nil {
 		x.Recommended = &EffortRef{Key: rec.Effort, Label: rec.Label, Star: true}

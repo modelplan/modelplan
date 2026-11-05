@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -190,11 +190,17 @@ test('a failing CLI run is recorded as a failure, never as a working hook', asyn
   assert.doesNotMatch(text, /设置完整/);
   await writeFile(own, script(pin.version, 'exit 0'));
   hook(h);
+  // The ago text rounds the heartbeat's mtime against the real clock, so an exact "0分前" flips
+  // to "1分前" after a 30 s stall. Park the heartbeat whole seconds in the middle of the hour
+  // bucket: "2时前" holds until the render trails the mtime write by 30 minutes.
+  const beat = new Date(Math.floor((Date.now() - 2 * 3600000) / 1000) * 1000);
+  await utimes(join(h, '.cache/modelplan-codex/hook-ran'), beat, beat);
+  await utimes(join(h, '.cache/modelplan-codex/hook-ok'), beat, beat);
   const ok = await setupStatus({ home: h, find: () => own });
   assert.equal(ok.hook.result, 'ok');
   assert.ok(ok.hook.lastSuccess);
   assert.match(renderQuota({ status: 'unavailable' }, 'zh', { status: 'ok', events: [] }, { cli: ok.cli, hook: ok.hook, advice: { status: 'ok' }, adviceEvents: 0 }),
-    /设置完整：CLI [\d.]+ · 钩子 0分前在本机运行（任一对话）· 提醒计算正常，当前没有需要提醒的事/);
+    /设置完整：CLI [\d.]+ · 钩子 2时前在本机运行（任一对话）· 提醒计算正常，当前没有需要提醒的事/);
   await rm(h, { recursive: true });
 });
 
@@ -255,10 +261,15 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   const sessionCli = (await readFile(join(root, 'hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1];
   await put(pinnedDir(h), script('0.5.50', 'echo bad'));
   assert.equal(start(), '', 'a CLI before SessionStart support is never asked, even when pinned');
-  // The old pinned copy does not hide an eligible CLI the user installed.
-  await put(join(h, '.local/bin'), script(sessionCli));
+  // Remove the deliberately invalid pinned fixture before testing the installed fallback.
+  await rm(join(pinnedDir(h), 'modelplan'));
+  const eligible = [sessionCli, pin.version].sort((a, b) => {
+    const av = a.split('.').map(Number), bv = b.split('.').map(Number);
+    return av[0] - bv[0] || av[1] - bv[1] || av[2] - bv[2];
+  })[1];
+  await put(join(h, '.local/bin'), script(eligible));
   assert.deepEqual(JSON.parse(start()), { hints: 1 });
-  await put(join(h, '.cache/modelplan-cli', sessionCli), script(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  await put(join(h, '.cache/modelplan-cli', eligible), script(eligible, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
   assert.deepEqual(JSON.parse(start()), { resent: 1 });
   assert.equal(await readFile(join(h, 'input'), 'utf8'), input);
   assert.equal(await readFile(join(h, 'args'), 'utf8'), 'advise\n--hook\ncodex\n');

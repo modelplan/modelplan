@@ -15,7 +15,7 @@ The fixture adapter creates one temporary `SettingsStore` shared by the editor a
 
 | Scene | Expected gate | Execution boundary |
 |---|---|---|
-| `settings.panes` | Eight canonical panes and their displayed row membership | Offscreen controller visits/checkpoints |
+| `settings.panes` | Nine canonical panes and their displayed row membership | Offscreen controller visits/checkpoints |
 | `settings.search` | English/Chinese query and cleared-query membership | Programmatic field/delegate wiring; not typed keyboard proof |
 | `settings.popups` | Local theme/motion/size commits and current popup state | Safe popup selections; not native-menu tracking proof |
 | `settings.alias-cancel` | Draft cancelled without a preference revision/alias change | Native field-editor command path with synthetic text; not real IME |

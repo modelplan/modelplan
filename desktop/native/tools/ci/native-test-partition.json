@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "_comment": "Classes listed under headless run on the ordinary self-hosted Mac runner; every other class, including new ones, runs on the GUI runner. A headless class's file may not use window-server APIs and must build every Dock/entry factory with createsNativePanels: false (checked by native_test_partition.py check).",
+  "windowServerMarkers": [
+    "\\bNSWindow\\s*\\(",
+    "\\bNSPanel\\s*\\(",
+    "\\bNSApplication\\.shared\\b",
+    "\\bNSApp\\b",
+    "\\bNSStatusBar\\b",
+    "\\bstatusItem\\s*\\(",
+    "\\borderFront",
+    "\\bmakeKeyAndOrderFront\\b",
+    "\\bmakeKey\\s*\\(",
+    "\\bsetActivationPolicy\\b",
+    "\\bNSScreen\\b",
+    "\\bCGEvent",
+    "\\bAXUIElement",
+    "\\bCGWindowList",
+    "\\bCGDisplay",
+    "\\bNSWorkspace\\b",
+    "\\brunModal\\b",
+    "\\bisVisible\\b",
+    "\\bocclusionState\\b",
+    "createsNativePanels\\s*:\\s*true"
+  ],
+  "panelFactories": [
+    "\\bEngineRowsEntry\\.make\\(",
+    "\\bCommunityCockpitApplicationFactory\\.make\\(",
+    "\\bProductionDockFactory\\.community\\(",
+    "\\bEngineDockMenuApplication(?:\\.make)?\\(",
+    "\\bEngineDockMenuComposition\\(",
+    "\\bStaticDockPreviewHost\\("
+  ],
+  "packages": {
+    "app-integration": {
+      "packagePath": "desktop/native/ModelPlanAppIntegration",
+      "testModule": "ModelPlanAppIntegrationTests",
+      "testSources": "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests",
+      "preexistingSkip": [
+        "GeneratedConsentPortTests"
+      ],
+      "headless": [
+        "CLIConsentPortTests",
+        "CancellationPresentationTests",
+        "CanonicalConnectionBackendTests",
+        "CockpitInstrumentCompositionTests",
+        "CommunityCockpitEntryTests",
+        "CommunityContextHelpTests",
+        "CommunityEmptyReaderMenuTests",
+        "CommunityFieldProductionWiringTests",
+        "CommunityInstrumentSurfaceTests",
+        "CommunityLoginServiceAdapterTests",
+        "CommunityMenuBarTests",
+        "CommunityReaderFactsBindingTests",
+        "CommunityReaderReasonTests",
+        "CommunitySettingsSessionTests",
+        "CommunitySourceActionTests",
+        "ConnectionIntegrationTests",
+        "ConsentContractTests",
+        "ConsentCoreQ2Tests",
+        "ConsentHostDisplayTests",
+        "DockInteractionHostPortTests",
+        "DockLiveFollowerTests",
+        "DockPlacementGeometryTests",
+        "DockPlacementProducerTests",
+        "DockPointerObservationTests",
+        "DockRasterDragTests",
+        "DockWakePolicyTests",
+        "EngineDesignConformanceTests",
+        "EngineDockInteractionBindingTests",
+        "HintExecutionHostTests",
+        "HostPairedProjectionTests",
+        "InstrumentHelpCompositionTests",
+        "InstrumentHintSourceRouterTests",
+        "M5CreditsDisplayFormatTests",
+        "NativeAccountDockProjectionTests",
+        "NormalEntrySettingsJourneyTests",
+        "ObservedPlacementAdapterTests",
+        "OfficialDockEntryJourneyTests",
+        "OfficialMaterialPerformanceTests",
+        "PluginInstallFlowTests",
+        "ProductionConsentIdentityTests",
+        "ProductionSettingsFactoryTests",
+        "ProductionSettingsJourneyTests",
+        "PulseDockPositioningTests",
+        "ReserveTruthNoWindowTests",
+        "Respin5FreshnessPreferenceTests",
+        "S1GalleryTests",
+        "S4QuotaJourneyTests",
+        "SettingsApplicationTests",
+        "SettingsWaitEventTests",
+        "SettingsWindowHostTests",
+        "StaticDockPresentationTests",
+        "SubscriptionCatalogueOwnershipTests",
+        "T2MaterialSeamTests",
+        "U8ConsentJourneyTests"
+      ],
+      "allowedSkips": {
+        "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
+          "leg": "headless",
+          "reason": "needs the real synthetic-test CLI, which the native job does not build"
+        },
+        "CommunityCockpitEntryTests/testProductionPinsAdmitCanonicalBundles": {
+          "leg": "headless",
+          "reason": "needs both canonical cockpit editions built first"
+        },
+        "S1GalleryTests/testProduceOffscreenGallery": {
+          "leg": "headless",
+          "reason": "gallery producer runs only with MODELPLAN_S1_GOLDEN_DIR and MODELPLAN_S1_GALLERY_DIR"
+        },
+        "U6StatusItemFrameTests/testHostedStatusItemTitleChangePublishesLastSettledTopFrame": {
+          "leg": "gui",
+          "reason": "owned status-item placement runs only on GitHub-hosted Mac runners (pre-existing guard)"
+        }
+      }
+    }
+  }
+}
