@@ -65,7 +65,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, distinctWindowSources: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -101,7 +101,17 @@ private actor EntrySyntheticClient: EngineClient {
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
         week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
         week["resetsAt"] = weeklyDeadline
-        windows = [session, week]; account["windows"] = windows; accounts = [account]
+        windows = [session, week]
+        if distinctWindowSources {
+            session["source"] = "local_history"; session["observedAt"] = "2026-12-01T23:23:00Z"
+            session["remainingPercent"] = 9
+            week["source"] = "runtime"; week["observedAt"] = "2026-12-01T23:49:00Z"
+            var extra = week
+            extra["id"] = "missing-provenance"; extra["limitKey"] = "code_review"; extra["poolKey"] = "code_review"
+            extra.removeValue(forKey: "source"); extra.removeValue(forKey: "observedAt")
+            windows = [session, week, extra]
+        }
+        account["windows"] = windows; accounts = [account]
         if let secondWeekly {
             var other = account, otherWeek = week
             other["subscriptionRef"] = "bbbbbbbbbbbbbbbb"; other["accountLocator"] = "bbbbbbbbbbbbbbbb"
@@ -234,6 +244,46 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalCardShowsEachAdmittedWindowsOwnSourceAndAge() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("window-provenance-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let readings = try rows(weekly: 75, distinctWindowSources: true)
+        var elapsed = 0.0
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        var pointer = CGPoint(x: 700, y: 450)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock, view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        func text(_ root: NSView, named name: String) -> String? {
+            if let field = root as? NSTextField, field.accessibilityIdentifier() == "dock.card.text." + name { return field.stringValue }
+            return root.subviews.lazy.compactMap { text($0, named: name) }.first
+        }
+        XCTAssertEqual(text(dock.card, named: "source"), "Local history · 37m ago")
+        XCTAssertTrue(text(dock.card, named: "row.quota:session:18000:main:main.detail")?.contains("Local history · 37m ago") == true)
+        XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("Tool runtime · 11m ago") == true)
+        XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("Unknown source · Reading time unknown") == true)
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(text(dock.card, named: "source"), "本地历史 · 37分钟前")
+        XCTAssertTrue(text(dock.card, named: "row.quota:weekly:604800:main:main.detail")?.contains("工具运行时 · 11分钟前") == true)
+        XCTAssertTrue(text(dock.card, named: "row.quota:missing-provenance.detail")?.contains("未知来源 · 读数时间未知") == true)
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
