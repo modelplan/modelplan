@@ -22,6 +22,22 @@ test('S18 S22 reduced transparency gives the porthole an opaque backing in both 
   expect(resolved.background).toMatch(/^rgb\(/);expect(resolved.backdrop).toBe('none');
   expect(await Promise.all([pane.boundingBox(),deck.boundingBox(),tape.boundingBox()])).toEqual(before);
   expect(await receive(send('appearance',{...appearance,theme,reduceTransparency:false}))).toBe(true);
-  expect(await pane.evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+  expect(await pane.evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(23, 30, 38)');
+ }
+});
+
+test('S27 the porthole remains dark over a light host in both themes without reduced transparency',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:visualFixture().data}))).toBe(true);
+ await page.evaluate(()=>{document.body.style.background='white'});
+ for(const theme of ['day','night']){
+  expect(await receive(send('appearance',{...appearance,theme,reduceTransparency:false}))).toBe(true);
+  const rgb=await page.locator('.ck-port').evaluate(e=>getComputedStyle(e).backgroundColor);
+  const channels=rgb.match(/^rgb\((\d+), (\d+), (\d+)\)$/);expect(channels).not.toBeNull();
+  expect(Math.max(...channels.slice(1).map(Number))).toBeLessThan(64);
  }
 });
