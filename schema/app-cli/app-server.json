@@ -429,6 +429,17 @@
         "model": {
           "type": "string"
         },
+        "observedSince": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projectLabel": {
           "anyOf": [
             {
@@ -464,17 +475,6 @@
                 "fast",
                 "priority"
               ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "observedSince": {
-          "anyOf": [
-            {
-              "format": "date-time",
               "type": "string"
             },
             {

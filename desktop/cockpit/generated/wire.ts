@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: f00c95485574dc993a51256f78cc15450d71d47ea8d47e1b6f0cf08c7add7868
+// Schema SHA-256: 4a8061ee0439a50b38b0dd25ae832db98a284cc59163afc69478b527e4444f1f
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -68,12 +68,12 @@ export type WireCockpitSession = {
   readonly "effortStatus"?: "reported" | null;
   readonly "lastObservedAt": string;
   readonly "model": string;
+  readonly "observedSince"?: string | null;
   readonly "projectLabel": string | null;
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
   readonly "speedMode"?: "fast" | "priority" | null;
-  readonly "observedSince"?: string | null;
   readonly "state": string;
   readonly "subscriptionRef": string | null;
 };
@@ -632,6 +632,17 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "model": {
         "type": "string"
       },
+      "observedSince": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "projectLabel": {
         "anyOf": [
           {
@@ -667,17 +678,6 @@ export const definitions: Readonly<Record<string, Schema>> = {
               "fast",
               "priority"
             ],
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "observedSince": {
-        "anyOf": [
-          {
-            "format": "date-time",
             "type": "string"
           },
           {
