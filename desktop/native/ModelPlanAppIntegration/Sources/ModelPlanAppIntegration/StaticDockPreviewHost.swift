@@ -175,6 +175,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var contentMenuStatusLines: [String]?
     private var contentEmptyText: String?
     #if DEBUG && MODELPLAN_E2E_JOURNEY
+    private var journeyHoverID:String?
+    private var journeyOwnsCardController=false
+    private final class JourneyCardScheduler:DockEdgeScheduling {
+        func arm(at deadline:TimeInterval,_ action:@escaping @MainActor ()->Void) {}
+        func cancel() {}
+    }
     /// Read the very model fed to the retained Dock; no additional producer or projection.
     public var journeySnapshot: CommunityDockSnapshot? { CommunityJourneyCI.enabled ? model : nil }
     public var journeyFeedGeneratedAt: Date? { CommunityJourneyCI.enabled ? snapshot?.personal.generatedAt.date : nil }
@@ -239,12 +245,33 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard CommunityJourneyCI.enabled else { return }
         card.onDismiss?()
     }
-    /// Use the retained row/card wiring and actual enter button; these never install a route.
+    /// Drive the real hover reducer and host presentation callback, never the row activation route.
     public func journeyOpenCard(at index: Int) -> Bool {
-        guard CommunityJourneyCI.enabled, let model, model.inputs.indices.contains(index),
-              journeyRows.contains(where: { $0["rowIndex"] as? Int == index }) else { return false }
-        dockView.onAction?(.subscription(model.inputs[index].id))
-        return !card.isHidden && cardID == model.inputs[index].id
+        guard CommunityJourneyCI.enabled,permitted,!retired,!rendering,preferences.showDock,
+              let model,model.inputs.indices.contains(index),
+              journeyRows.contains(where:{$0["rowIndex"] as? Int == index}) else{return false}
+        let id=model.inputs[index].id
+        if interactionController == nil {
+            // The legacy journey host has no app interaction owner. Supply explicit
+            // synthetic hover input, like the card-content harness, to the same reducer.
+            let controller=DockInteractionController(clock:{0},scheduler:JourneyCardScheduler()) { [weak self] in
+                guard let self,let model=self.model else{return .init(catalogue:[],preferences:.init(),targets:[],active:false)}
+                let content=self.journeyHoverID.flatMap{try? self.cardContent(for:$0)}
+                let contents=content.map{[$0.subscriptionID:$0]} ?? [:]
+                return .init(catalogue:model.inputs.map(\.id),preferences:.init(),targets:[],hoveredID:self.journeyHoverID,
+                    insideShared:true,parentExpanded:true,active:self.permitted && !self.retired && !self.rendering && self.preferences.showDock,contents:contents)
+            }
+            installInteraction(controller);journeyOwnsCardController=true;controller.start()
+        }
+        guard let controller=interactionController,controller.isRunning else{return false}
+        if journeyOwnsCardController {
+            journeyHoverID=nil;controller.refresh();journeyHoverID=id;controller.refresh()
+        } else {
+            guard let events=interactionView.nozzleEventDelegate else{return false}
+            events.hoverNozzle(nil);events.hoverNozzle(id)
+        }
+        guard controller.advanceJourneyHoverDwell(for:id) else{return false}
+        return !card.isHidden && cardID == id
     }
     public func journeyPressCardEnter() -> Bool {
         guard CommunityJourneyCI.enabled, !card.isHidden else { return false }
@@ -389,6 +416,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !retired, interactionController !== controller else { return }
         if let previous = interactionController { uninstallInteraction(previous) }
         interactionController = controller
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        journeyOwnsCardController=false;journeyHoverID=nil
+        #endif
         controller.onPresent = { [weak self, weak controller] value in
             guard let self, let controller, self.interactionController === controller, !self.retired else { return }
             self.renderInteraction(value)
@@ -452,6 +482,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         interactionEvents.forEach { $0.cancelNozzle() }
         interactionEvents = []; interactionOriginalActions = []
         interactionController = nil; interactionHoveredID = nil; interactionPreviewOrder = nil
+        #if DEBUG && MODELPLAN_E2E_JOURNEY
+        journeyOwnsCardController=false;journeyHoverID=nil
+        #endif
         dismissCard(); overflowTray.dispose(); overflowPanel?.orderOut(nil)
         if !retired { rebuild() }
     }
