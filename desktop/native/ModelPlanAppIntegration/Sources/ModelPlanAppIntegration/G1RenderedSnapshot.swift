@@ -59,9 +59,11 @@
       guard raw.count == 9, raw.first == "#", let bits = UInt32(raw.dropFirst(), radix: 16) else {
         return nil
       }
-      return .init(
-        Double((bits >> 24) & 255) / 255, Double((bits >> 16) & 255) / 255,
-        Double((bits >> 8) & 255) / 255, Double(bits & 255) / 255)
+      let red: Double = Double((bits >> 24) & UInt32(255)) / 255.0
+      let green: Double = Double((bits >> 16) & UInt32(255)) / 255.0
+      let blue: Double = Double((bits >> 8) & UInt32(255)) / 255.0
+      let alpha: Double = Double(bits & UInt32(255)) / 255.0
+      return G1RenderedColor(red, green, blue, alpha)
     }
     static func color(_ ink: DockInk) -> Self { .init(ink.r, ink.g, ink.b, ink.a) }
     static func color(_ color: NSColor?, in view: NSView) -> Self? {

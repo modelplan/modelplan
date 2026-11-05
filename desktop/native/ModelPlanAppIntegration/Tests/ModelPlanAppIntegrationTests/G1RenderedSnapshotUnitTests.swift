@@ -48,6 +48,18 @@ import XCTest
         CGRect(x: 0, y: 0, width: 30, height: 10), earlier: view.g1DrawnPaints[...], over: white,
         in: view))
   }
+  func testHexParsingPreservesEveryRenderedChannelAndRejectsMissingAlpha() throws {
+    let color = try XCTUnwrap(G1RenderedColor.fromHex("#12345678"))
+    XCTAssertEqual(color.r, 18.0 / 255.0)
+    XCTAssertEqual(color.g, 52.0 / 255.0)
+    XCTAssertEqual(color.b, 86.0 / 255.0)
+    XCTAssertEqual(color.a, 120.0 / 255.0)
+    XCTAssertEqual(color.hex, "#12345678")
+    XCTAssertEqual(G1RenderedColor.fromHex("#00000000"), .init(0, 0, 0, 0))
+    XCTAssertEqual(G1RenderedColor.fromHex("#FFFFFFFF"), .init(1, 1, 1, 1))
+    XCTAssertNil(G1RenderedColor.fromHex("#123456"))
+    XCTAssertNil(G1RenderedColor.fromHex("#1234567Z"))
+  }
   func testContrastRequiresObservedBackdropAndUsesActualAlpha() throws {
     let black = G1RenderedColor(0, 0, 0)
     let white = G1RenderedColor(1, 1, 1)
