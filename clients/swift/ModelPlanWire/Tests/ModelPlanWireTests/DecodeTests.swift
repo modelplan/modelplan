@@ -31,10 +31,13 @@ final class DecodeTests: XCTestCase {
             value["unit"] = unit
             XCTAssertNoThrow(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
         }
-        for unit in [NSNull(), 7, "bogus"] as [Any] {
-            value["unit"] = unit
-            XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
-        }
+        value["unit"] = NSNull()
+        XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)), "explicit null")
+        value["unit"] = 7
+        XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)), "wrong type")
+        value["unit"] = "bogus"
+        let future = try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value))
+        XCTAssertEqual(future.unit, .unknown("bogus"), "future display enum")
     }
     private var captures: URL {
         if let path = ProcessInfo.processInfo.environment["MODELPLAN_CAPTURE_DIR"] {
