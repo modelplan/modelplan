@@ -10,6 +10,35 @@ import ModelPlanWire
 @MainActor final class I06FirstRunRelaunchJourneyTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
 
+    func testNormalEntryPresentsFirstRunAgainWhenClosedBeforeDone() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("i06-incomplete-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        for _ in 0..<2 {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let saved = await store.snapshot()
+            XCTAssertFalse(saved.preferences.onboarding.completed)
+            let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+            app.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: JourneyLoginService()))
+            await app.prepare(); await app.composition.start()
+            defer { app.composition.dock.close() }
+            let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.restoreFirstRunIfNeeded()
+            let window = try XCTUnwrap(NSApplication.shared.windows.first {
+                !before.contains(ObjectIdentifier($0)) && $0.isVisible && $0.windowController is SettingsFirstRunController
+            }, "An unfinished first run must be presented on each reconstructed entry")
+            window.close()
+            let afterClose = await store.snapshot()
+            XCTAssertFalse(afterClose.preferences.onboarding.completed, "Closing without Done must not complete setup")
+            await app.composition.stop()
+        }
+    }
+
     func testNormalEntryDoesNotPresentFirstRunAfterDoneAndStoreReopen() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("i06-relaunch-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
