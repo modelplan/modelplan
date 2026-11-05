@@ -34,10 +34,12 @@ def validate(repo, editions=('community', 'official')):
             raise ValueError('Unexpected canonical edition metadata')
         seen = set()
         for path in root.rglob('*'):
-            if is_appledouble(path):
-                continue
             if path.is_symlink():
                 raise ValueError('Linked build output')
+            if not path.is_dir() and not path.is_file():
+                raise ValueError('Special build output')
+            if is_appledouble(path):
+                continue
             if not path.is_file() or path == manifest:
                 continue
             relative = path.relative_to(root).as_posix()

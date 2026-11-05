@@ -80,3 +80,15 @@ class BundlePinGuardTests(unittest.TestCase):
             community.symlink_to(moved, target_is_directory=True)
             with self.assertRaises(ValueError):
                 guard.validate(root, editions=('community',))
+
+    def test_appledouble_metadata_links_rejected_and_regular_files_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            bundle = root / 'desktop/cockpit/.tmp/community'
+            metadata = bundle / '._ordinary'
+            metadata.write_bytes(b'synthetic metadata')
+            guard.validate(root, editions=('community',))
+            (bundle / '._linked').symlink_to(root / 'outside')
+            with self.assertRaisesRegex(ValueError, 'Linked build output'):
+                guard.validate(root, editions=('community',))
