@@ -4,12 +4,27 @@ import AppKit
 import CryptoKit
 import Foundation
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
+@MainActor private final class ResetCockpitProbe: EngineRowsConsoleSurface {
+    private(set) var shown = false
+    func show() { shown = true }
+    func hide() {}
+    func render() {}
+}
+
 @MainActor final class DockResetRealServerTests: XCTestCase {
     func testD21PublicResetAndCurrentMemberReachTheNormalDock() async throws {
+        try await exerciseResetLifecycle(native: false)
+    }
+
+    func testD21NativeResetLifecycle() async throws {
+        try await exerciseResetLifecycle(native: true)
+    }
+
+    private func exerciseResetLifecycle(native: Bool) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -57,12 +72,15 @@ import ModelPlanSettings
         let now = Date(), iso = ISO8601DateFormatter()
         func at(_ offset: Double) -> String { iso.string(from: now.addingTimeInterval(offset)) }
         let reset = at(7_200), observed = at(-120), published = at(-60)
-        let window: [String: Any] = ["kind": "five_hour", "usedPercent": 50, "windowMinutes": 300,
-            "resetsAt": reset, "observedAt": observed, "resetMode": "rolling"]
-        try write(json(["schemaVersion": 1, "status": "ok", "observedAt": observed, "plan": "plus",
-                        "subscriptionRef": "aaaaaaaaaaaaaaaa", "windows": [window],
-                        "admission": ["storeEpoch": epoch, "generation": generation, "scope": scope]]),
-                  to: "observed/codex-account.json")
+        func writeReading(used: Int, observed: String, reset: String) throws {
+            let window: [String: Any] = ["kind": "five_hour", "usedPercent": used, "windowMinutes": 300,
+                "resetsAt": reset, "observedAt": observed, "resetMode": "rolling"]
+            try write(json(["schemaVersion": 1, "status": "ok", "observedAt": observed, "plan": "plus",
+                            "subscriptionRef": "aaaaaaaaaaaaaaaa", "windows": [window],
+                            "admission": ["storeEpoch": epoch, "generation": generation, "scope": scope]]),
+                      to: "observed/codex-account.json")
+        }
+        try writeReading(used: 50, observed: observed, reset: reset)
         let eventID = "synthetic-d21-announcement"
         let url = "https://status.openai.com/incidents/synthetic-d21"
         let announced: [String: Any] = ["id": eventID, "provider": "openai", "eventType": "direct_reset_announced",
@@ -96,38 +114,135 @@ import ModelPlanSettings
         try publish([announced])
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        _ = try await store.update { $0.autoHide = true; $0.motion = .on }
+        _ = try await store.update {
+            $0.autoHide = true; $0.motion = .on
+            $0.notifications.optedIn = true; $0.notifications.kinds = [.official]
+        }
+        let dockEnvironment: @MainActor () -> DockEdgeEnvironment
+        if native {
+            let screen = try XCTUnwrap(NSScreen.main)
+            let display = DockDisplayArea(id: "synthetic", frame: screen.frame, visibleFrame: screen.visibleFrame)
+            let pointer = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
+            dockEnvironment = { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) }
+        } else {
+            dockEnvironment = normalEntryTestEnvironment
+        }
+        var wall = now
+        let cockpit = ResetCockpitProbe()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d21",
-            allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: false,
-            bundleURL: root.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+            allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
+            bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
+            dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
             isolatedResetNotificationLedger: root.appendingPathComponent("test-notifications.json"), activateSettings: {})
         addTeardownBlock { @MainActor in await app.composition.stop() }
-        await app.prepare(); app.allowDockPresentation()
-        let delivery = try await app.composition.client.start()
-        func waitForEvent(_ status: String) async throws {
-            func matches() -> Bool {
-                guard case .available(let events) = app.composition.rowEvents else { return false }
-                return events.contains { $0.id == eventID && $0.status == status }
-            }
-            let end = ContinuousClock.now + .seconds(4)
-            while !matches(), ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertTrue(matches(), "The real server must publish the " + status + " event")
+        await app.prepare()
+        XCTAssertNil(app.notificationAuthorizationService)
+        var delivered: [String] = []
+        app.composition.setResetNotificationDelivery { id, title in
+            XCTAssertEqual(title, "Official extra reset")
+            delivered.append(id)
         }
-        try await waitForEvent("announced")
-        try publish([announced, confirmed])
-        _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
-        try await waitForEvent("confirmed")
-        XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        app.allowDockPresentation()
+        let delivery = try await app.composition.client.start()
+        func wait(_ description: String, until predicate: () -> Bool) async throws {
+            let end = ContinuousClock.now + .seconds(4)
+            while !predicate(), ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertTrue(predicate(), description)
+        }
+        func waitForEvent(_ id: String, _ status: String) async throws {
+            try await wait("The real server must publish the " + status + " event") {
+                guard case .available(let events) = app.composition.rowEvents else { return false }
+                return events.contains { $0.id == id && $0.status == status }
+            }
+        }
+        func subscribe() async throws {
+            _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+            XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        }
+        let dock = app.composition.dock
+        let member = "aaaaaaaaaaaaaaaa"
+        func strip() throws -> DockSliverView {
+            if native {
+                let panel = try XCTUnwrap(dock.nativePanel)
+                XCTAssertTrue(panel.isVisible)
+                return try XCTUnwrap(panel.contentView as? DockSliverView)
+            }
+            return try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
+        }
+        func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
 
+        try await waitForEvent(eventID, "announced")
         let row = try XCTUnwrap(app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" })
         XCTAssertEqual(row.accounts.first?.windows.first?.remainingPercent, 50)
         XCTAssertEqual(row.accounts.first?.windows.first?.current, true)
         XCTAssertEqual(row.state, .fresh, "A current cached runtime reading must be admitted to the Dock. Producer reason: " + String(describing: row.reason.code))
         guard row.state == .fresh else { return }
-        let dock = app.composition.dock
-        let strip = try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
-        XCTAssertFalse(strip.noticeMarks.isEmpty)
-        XCTAssertEqual(strip.quotaSegmentColorRolesForChecks.first?.remainingPercent, 50)
+        let initial = try strip()
+        let announcement = try XCTUnwrap(initial.noticeMarks.first?.notice)
+        XCTAssertEqual(announcement.key.kind, .resetAnnounced)
+        XCTAssertEqual(announcement.tone, .blue)
+        XCTAssertEqual(announcement.shape, .hollow)
+        XCTAssertEqual(face(), announcement)
+        XCTAssertEqual(app.noticeIndicator.notice, announcement)
+        let quota = initial.quotaSegmentColorRolesForChecks
+        XCTAssertEqual(quota.first?.remainingPercent, 50)
+        try await wait("Deliver the announcement once") { delivered == [eventID] }
+
+        XCTAssertTrue(initial.accessibilityPerformPress())
+        XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+        if native {
+            let panel = try XCTUnwrap(dock.nativePanel)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertTrue(dock.dockView.window === panel)
+        } else {
+            // The detached host cannot order in a panel. Exercise the same
+            // acknowledgement after the accessibility action changes state.
+            dock.acknowledgeDockReveal()
+        }
+        XCTAssertEqual(face(), announcement)
+        XCTAssertNil(app.noticeIndicator.notice)
+        try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }
+        XCTAssertTrue(try strip().noticeMarks.isEmpty)
+        XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+
+        try publish([announced, confirmed])
+        try await subscribe()
+        try await waitForEvent(eventID, "confirmed")
+        let confirmation = try XCTUnwrap(face())
+        XCTAssertEqual(confirmation.key.kind, .resetConfirmed)
+        XCTAssertEqual(confirmation.tone, .blue)
+        XCTAssertEqual(confirmation.shape, .solid)
+        XCTAssertEqual(try strip().noticeMarks.first?.notice, confirmation)
+        XCTAssertEqual(app.noticeIndicator.notice, confirmation)
+        XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+
+        try writeReading(used: 30, observed: at(-10), reset: at(10_800))
+        try await subscribe()
+        XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.remainingPercent, 70)
+        XCTAssertNil(face())
+        XCTAssertNil(app.noticeIndicator.notice)
+        XCTAssertTrue(try strip().noticeMarks.isEmpty)
+        XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver a second notification")
+
+        let expiryID = "synthetic-d21-expiry"
+        let expiry = at(60)
+        var expiring = announced
+        expiring["id"] = expiryID
+        expiring["schedule"] = ["precision": "deadline", "from": expiry, "through": expiry, "label": "before the deadline"]
+        try publish([expiring])
+        try await subscribe()
+        try await waitForEvent(expiryID, "announced")
+        try await wait("A distinct event has its own notification") { delivered == [eventID, expiryID] }
+        let expiringNotice = try XCTUnwrap(face())
+        XCTAssertEqual(app.noticeIndicator.notice, expiringNotice)
+        app.showConsole()
+        XCTAssertTrue(cockpit.shown)
+        XCTAssertNil(app.noticeIndicator.notice)
+        XCTAssertEqual(try strip().noticeMarks.first?.notice, expiringNotice)
+        wall = now.addingTimeInterval(61)
+        dock.refreshDockContent()
+        XCTAssertNil(face())
+        XCTAssertTrue(try strip().noticeMarks.isEmpty)
     }
 }
 #endif
