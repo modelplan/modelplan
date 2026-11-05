@@ -201,7 +201,7 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
         raise ValueError('Invalid approved source/team')
     if info.get('CFBundleIdentifier') != bundle_id or not bundle_id:
         raise ValueError('Candidate bundle ID mismatch')
-    if info.get('LSMinimumSystemVersion') not in ('14.0', '14.0.0'):
+    if info.get('LSMinimumSystemVersion') not in ('15.0', '15.0.0'):
         raise ValueError('Candidate deployment floor mismatch')
     if not re.fullmatch(r'\d+(?:\.\d+){0,2}', info.get('CFBundleVersion', '')):
         raise ValueError('Invalid build version')
@@ -212,11 +212,6 @@ def validate_candidate(app, source, bundle_id, team_id, *, feed=None):
     if sha256(helper) != (resource / 'modelplan.sha256').read_text().strip():
         raise ValueError('Candidate bundled CLI hash mismatch')
     check_bundle_architectures(app, app / 'Contents/MacOS' / info['CFBundleExecutable'])
-    if info.get('SUFeedURL') != https_url(feed if feed is not None else os.environ['MACOS_FEED_URL']):
-        raise ValueError('Candidate feed channel mismatch')
-    public_key = base64.b64decode(info.get('SUPublicEDKey', ''), validate=True)
-    if len(public_key) != 32:
-        raise ValueError('Candidate Sparkle public key missing')
     return info
 
 
@@ -395,11 +390,11 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     ET.SubElement(item, 'title').text = 'ModelPlan ' + info['CFBundleShortVersionString']
     ET.SubElement(item, f'{{{NS}}}version').text = info['CFBundleVersion']
     ET.SubElement(item, f'{{{NS}}}shortVersionString').text = info['CFBundleShortVersionString']
-    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '14.0.0'
+    ET.SubElement(item, f'{{{NS}}}minimumSystemVersion').text = '15.0.0'
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
-    ET.SubElement(item, 'description').text = 'Apple silicon macOS binary.'
+    ET.SubElement(item, 'description').text = 'Apple silicon macOS 15+ binary.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
     for old in sorted(old_items, key=lambda item: build_version(item.findtext(f'{{{NS}}}version')), reverse=True):
@@ -548,7 +543,7 @@ def adhoc_appcast(app, output, tool, *, previous=None):
                                     previous=previous))
     notes = ('# ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)\n\n'
              'Build: ' + info['CFBundleVersion'] + '\n\nSource commit: ' + env['GITHUB_SHA'] + '\n\n'
-             'Apple silicon macOS build.\n\n'
+             'Apple silicon macOS 15+ build.\n\n'
              'This beta is ad-hoc signed and is not notarized. Gatekeeper may block first open; '
              'after trying to open the app, use System Settings → Privacy & Security → Open Anyway '
              'and confirm the first-open prompt if you trust this release.\n\n'

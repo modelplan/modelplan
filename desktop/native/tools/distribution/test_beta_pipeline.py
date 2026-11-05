@@ -137,27 +137,13 @@ print(signature.base64EncodedString())
 
 
 class FailClosedTests(unittest.TestCase):
-    def test_workflow_keeps_keys_out_of_pr_and_publication_jobs(self):
+    def test_v1_workflow_does_not_prepare_sparkle_or_access_signing_secrets(self):
         workflow = (Path(__file__).resolve().parents[4] / '.github/workflows/macos-distribution.yml').read_text()
-        jobs = dict(re.findall(r'^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:\n|\Z)',
-                               workflow.split('\njobs:\n', 1)[1], re.MULTILINE | re.DOTALL))
-        self.assertNotIn('secrets.', jobs['neutral-build'])
-        self.assertNotIn('environment:', jobs['neutral-build'])
-        for name in ('release-candidate', 'adhoc-beta-candidate', 'publish-beta-draft'):
-            guard = re.search(r'^    if: (.*)$', jobs[name], re.MULTILINE).group(1)
-            for required in ("github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
-                             "github.repository == 'modelplan/modelplan'"):
-                self.assertIn(required, guard)
-            self.assertIn('environment: macos-release', jobs[name])
-        self.assertIn("vars.MACOS_DEVELOPER_ID_ENABLED == 'true'", jobs['release-candidate'])
-        self.assertIn('needs: adhoc-beta-candidate', jobs['publish-beta-draft'])
-        self.assertNotIn('secrets.', jobs['publish-beta-draft'])
-        beta = jobs['adhoc-beta-candidate']
-        self.assertEqual(set(re.findall(r'secrets\.([A-Z0-9_]+)', beta)), {'SPARKLE_ED25519_PRIVATE_KEY'})
-        self.assertIn('contents: read', beta)
-        self.assertNotIn('contents: write', beta)
-        self.assertIn('shell: bash', beta.split('id: gates', 1)[1].split('- name:', 1)[0])
-        self.assertIn('--previous-appcast', beta)
+        self.assertNotIn('SPARKLE', workflow)
+        self.assertNotIn('fetch-sparkle', workflow)
+        self.assertNotIn('secrets.', workflow)
+        self.assertNotIn('contents: write', workflow)
+        self.assertNotIn('environment: macos-release', workflow)
 
     def test_requested_beta_without_key_fails_plan_command_with_clear_setting_name(self):
         with tempfile.TemporaryDirectory() as root:

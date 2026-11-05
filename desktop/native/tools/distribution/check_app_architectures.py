@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 from pathlib import Path
+import plistlib
 import re
 import subprocess
 
@@ -21,6 +22,13 @@ def validate(app, main, cli, approved_sha, inspector=inspect):
     app, main, cli = Path(app), Path(main), Path(cli)
     if app.is_symlink() or not app.is_dir() or not re.fullmatch('[0-9a-f]{64}', approved_sha):
         raise ValueError('invalid app or independent helper pin')
+    info = app / 'Contents/Info.plist'
+    if info.is_symlink() or not info.is_file() or info.stat().st_size > 65536:
+        raise ValueError('invalid bundle metadata')
+    if 'SUFeedURL' in plistlib.loads(info.read_bytes()):
+        raise ValueError('update feed is not allowed in v1')
+    if any(part.lower() == 'sparkle.framework' for path in app.rglob('*') for part in path.relative_to(app).parts):
+        raise ValueError('Sparkle framework is not allowed in v1')
     helper = app / HELPER
     if helper.is_symlink() or not helper.is_file() or not 0 < helper.stat().st_size <= 32 * 1024 * 1024:
         raise ValueError('invalid pinned helper')

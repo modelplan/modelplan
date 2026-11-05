@@ -212,7 +212,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         self.output = self.root / 'payload'
         self.info = {'CFBundleIdentifier': 'test.modelplan', 'CFBundleExecutable': 'ModelPlan',
                      'CFBundleVersion': '42', 'CFBundleShortVersionString': '0.1 & beta',
-                     'LSMinimumSystemVersion': '14.0', 'SUFeedURL': 'https://example.invalid/beta.xml',
+                     'LSMinimumSystemVersion': '15.0',
                      'SUPublicEDKey': base64.b64encode(bytes(32)).decode()}
         self.write_info()
         (self.resources / 'build-edition.json').write_text(json.dumps({'edition': 'official'}))
@@ -221,7 +221,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         for name in ('LICENSE.txt', 'CLI-THIRD-PARTY-NOTICES.md', 'VISUAL-LICENSE.md'):
             (self.resources / name).write_text('synthetic notice')
         self.env = dict(AdhocBetaGates().configured(), GITHUB_SHA='a' * 40, RUNNER_TEMP=str(self.root),
-                        MACOS_BUNDLE_ID='test.modelplan', MACOS_BETA_FEED_URL=self.info['SUFeedURL'],
+                        MACOS_BUNDLE_ID='test.modelplan', MACOS_BETA_FEED_URL='https://example.invalid/beta.xml',
                         MACOS_FEED_URL='https://example.invalid/stable.xml',
                         MACOS_UPDATE_URL='https://example.invalid/ModelPlan-beta-arm64.zip',
                         MACOS_RELEASE_NOTES_URL='https://example.invalid/notes/42')
@@ -279,7 +279,7 @@ class AdhocBetaCandidate(unittest.TestCase):
         item = xml.find('channel/item')
         self.assertEqual(xml.find('channel/link').text, self.env['MACOS_BETA_FEED_URL'])
         self.assertEqual(item.find(f'{{{release.NS}}}channel').text, 'beta')
-        self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '14.0.0')
+        self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '15.0.0')
         self.assertEqual(item.find(f'{{{release.NS}}}releaseNotesLink').text, self.env['MACOS_RELEASE_NOTES_URL'])
         self.assertEqual(item.find('enclosure').attrib[f'{{{release.NS}}}edSignature'], self.signature)
         self.assertEqual(item.find('enclosure').attrib['url'], self.env['MACOS_UPDATE_URL'])
@@ -360,16 +360,19 @@ class AdhocBetaCandidate(unittest.TestCase):
     def test_invalid_candidate_is_refused_before_signing_or_output(self):
         # Exercise the real shared validation rather than replacing it with a successful stub.
         invalid = [('CFBundleIdentifier', 'wrong.bundle'), ('LSMinimumSystemVersion', '13.0'),
-                   ('CFBundleVersion', 'not-a-build'), ('SUPublicEDKey', ''),
+                   ('CFBundleVersion', 'not-a-build'),
                    ('SUFeedURL', self.env['MACOS_FEED_URL'])]
         for key, value in invalid:
             with self.subTest(key=key):
-                original = self.info[key]; self.info[key] = value; self.write_info()
+                original = self.info.get(key); self.info[key] = value; self.write_info()
                 with patch.object(release, 'run', side_effect=self.fake_run), self.assertRaises(ValueError):
                     self.prepare()
                 self.assertFalse(self.output.exists())
                 self.assertFalse(any(args[0] == 'codesign' for args, _ in self.calls))
-                self.info[key] = original; self.write_info(); self.calls.clear()
+
+                if original is None: self.info.pop(key)
+                else: self.info[key] = original
+                self.write_info(); self.calls.clear()
         for name, invalid_text in [('build-edition.json', '{"edition":"community"}'),
                                    ('release-provenance.json', '{"sourceCommit":"wrong"}'),
                                    ('modelplan.sha256', 'incorrect')]:
@@ -494,7 +497,7 @@ class AppcastCandidate(unittest.TestCase):
             self.assertIsNone(item.find(f'{{{release.NS}}}channel'))
             self.assertIsNone(item.find(f'{{{release.NS}}}releaseNotesLink'))
             self.assertEqual(item.find(f'{{{release.NS}}}version').text, '42')
-            self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '14.0.0')
+            self.assertEqual(item.find(f'{{{release.NS}}}minimumSystemVersion').text, '15.0.0')
             self.assertEqual(item.find('enclosure').attrib['length'], str(archive.stat().st_size))
             self.assertIn('1.2.3 & test', item.find('title').text)
 

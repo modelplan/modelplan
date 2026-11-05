@@ -9,7 +9,7 @@ output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
-credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt arm64 helper directory}
+credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
 credential_tools="$native_root/ModelPlanCredentialAgent/tools"
 # Reject missing or mismatched pins before starting either App compilation.
@@ -85,7 +85,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>ModelPlanCockpitEntryEnabled</key><false/>
 <key>NSHighResolutionCapable</key><true/>

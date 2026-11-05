@@ -1,138 +1,32 @@
-# macOS beta distribution
+# macOS v1 distribution checks
 
-The public `.github/workflows/macos-distribution.yml` prepares Sparkle updates without an Apple Developer account. It validates an approved official assembly, ad-hoc signs the app, signs its update ZIP with the owner's EdDSA key, generates a separate beta appcast and release notes, and creates a **draft prerelease**. PR builds use standard hosted runners without secrets. Developer ID and notarization remain disabled placeholders.
+The v1 neutral build is an ad-hoc-signed Apple silicon application for macOS
+15 or later. It does not include Sparkle, a Sparkle feed URL or automatic
+updates. The independently approved credential helper remains byte-for-byte
+universal and is the only permitted non-arm64 bundle executable. The app and
+bundled CLI are arm64-only. The architecture check rejects an unknown or
+modified helper, any other non-arm64 Mach-O, `Sparkle.framework` anywhere in
+the bundle, and an `SUFeedURL` in the app Info.plist.
 
-## Owner setup, once
+`macos-distribution.yml` performs the neutral build and uploads a CI artifact;
+it neither prepares Sparkle nor publishes a release. Its public PR jobs use no
+release secrets. The app's reviewed CLI and helper artifacts must be available
+and independently pinned. Build receipts and generated checksums describe only
+the CI build; ad-hoc signing is not Developer ID signing or notarization.
 
-Configure the protected **macos-release** GitHub environment with required reviewers and main-only deployment branches. The owner creates the Sparkle key pair later, outside CI, with the reviewed Sparkle distribution's `generate_keys`. Store the exported private key only as the encrypted environment secret **`SPARKLE_ED25519_PRIVATE_KEY`** (the existing repository name). Give the app packager the matching public key for `SUPublicEDKey`. Never put a private key in the checkout, an Actions variable, a command argument, an artifact, or a release. The workflow never creates keys or searches a local Keychain; it passes the secret to `sign_update` through stdin. [Sparkle key setup](https://sparkle-project.org/documentation/#eddsa-ed25519-signatures), [stdin signing](https://sparkle-project.org/documentation/security-and-reliability/).
+`release.py` retains older signing, notarization and appcast helper routines for
+historical compatibility. The v1 workflow does not call them. Their presence is
+not an update service or authorization to sign, notarize or publish. Real
+release decisions, trusted-candidate verification, user consent and owner
+approval remain separate gates.
 
-Set these nonsecret environment variables:
-
-| Variable | Purpose |
-| --- | --- |
-| `MACOS_BUNDLE_ID` | Approved stable official bundle identity; no Apple account is required |
-| `MACOS_OFFICIAL_WORKFLOW_ID` | Numeric ID of the trusted official assembly workflow |
-| `SPARKLE_TOOLS_URL`, `SPARKLE_TOOLS_SHA256` | Reviewed immutable Sparkle release tar.xz and checksum; no latest download |
-| `MACOS_BETA_FEED_URL` | Dedicated credential-free HTTPS beta appcast file, matching the app's `SUFeedURL` |
-| `MACOS_FEED_URL` | Future stable feed, when known; must be a separate file |
-| `MACOS_UPDATE_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/ModelPlan-beta-arm64.zip` |
-| `MACOS_RELEASE_NOTES_URL` | `https://github.com/modelplan/modelplan/releases/download/macos-beta-BUILD/release-notes.html` |
-
-Replace `BUILD` with the candidate's numeric `CFBundleVersion` before dispatch. Publication checks that both URLs match the resulting release assets. Feed separation rejects same-host/port/path aliases, including query-only differences, escaped paths and dot segments. Hosting redirects and aliases must also keep beta and stable files separate.
-
-Missing or whitespace-only signing secrets or settings **fail the explicitly requested beta job**, with a diagnostic listing setting names only. There is no unsigned fallback. The automatic neutral build still needs no secrets or private checkout.
-
-## Assembly handoff
-
-Dispatch on canonical `main` with `prepare_adhoc_beta=true` and `candidate_run_id` identifying a successful push/manual official assembly on the **exact current main SHA**, in this repository, from `MACOS_OFFICIAL_WORKFLOW_ID`. PR, fork, tag, other-branch and other-commit inputs are rejected. The assembly must upload `modelplan-macos-official-candidate` containing `ModelPlan.app.zip`. The automatic community build cannot supply the official handoff.
-
-The candidate must have the approved bundle ID, numeric build version, macOS 14 minimum, universal app/helper executables, exact source provenance, official edition marker, helper integrity record, and MIT/CLI third-party/official visual notices. ZIP traversal and escaping symlinks are rejected. `SUFeedURL` must match the beta feed and `SUPublicEDKey` must contain the owner's public key.
-
-App integration remains the packager's responsibility: embed the reviewed Sparkle runtime and permit `beta` through `SPUUpdaterDelegate.allowedChannels(for:)`. Otherwise Sparkle ignores beta items even in a dedicated feed. This pipeline does not add runtime updater code. Verify the actual Sparkle assembly's component entitlements/runtime flags after signing and exercise a real update before releasing a candidate; synthetic tests cannot establish that packaging behavior. [Sparkle channels](https://sparkle-project.org/documentation/publishing/#channels), [component signing](https://sparkle-project.org/documentation/sandboxing/#code-signing).
-
-## Feed generation and publication
-
-The job downloads the **beta** feed history over HTTPS and retains its existing items and signatures. Malformed, unavailable, unsigned, duplicate-version or non-beta history fails closed. For the very first beta only, set `bootstrap_beta_feed=true`: this permits a confirmed HTTP 404 to initialize the feed. It does not permit authentication errors, timeouts or server errors to erase history. Subsequent releases must read the current hosted beta feed; retain the last published appcast there before the next dispatch.
-
-New build numbers must exceed every retained version. One-, two- and three-component numeric versions compare numerically with zero padding (`10` = `10.0.0`, and `10` > `9`). The appcast lists items newest first and rejects stable items. The current archive signature is verified by Sparkle and independently with CryptoKit against the public key embedded in the candidate. [Sparkle publishing and version fields](https://sparkle-project.org/documentation/publishing/).
-
-After ad-hoc signing, helper-hash refresh, app resealing and strict signature verification, the job creates a symlink-preserving ZIP with `ditto`. It uploads:
-
-- `ModelPlan-beta-arm64.zip` and `appcast-beta.xml` with beta channel, EdDSA signature, archive length, build/display versions and macOS 14.0.0 minimum.
-- `RELEASE_NOTES.md` and escaped `release-notes.html`, identifying the build/source and explaining first-open and permission limits.
-- `SHA256SUMS` covering those four files, plus `draft-release.json` with `draft: true` and `prerelease: true`.
-
-A separate protected job with repository write permission, **without signing secrets**, checks the payload and creates `macos-beta-BUILD` using `gh release create --draft --prerelease --latest=false`. It first requires a confirmed HTTP 404 for that tag; an existing tag or inconclusive lookup fails before release creation. It never edits an existing release, changes the stable feed, or promotes anything to a normal/latest release. Reusing a tag fails rather than replacing previously reviewed assets. A failed publication can leave a partial draft; inspect/remove that draft explicitly before retrying.
-
-Draft assets are not anonymously downloadable and do not activate auto-updates. After reviewing the exact bytes, the coordinator can publish the draft **as a prerelease only** and place its `appcast-beta.xml` at `MACOS_BETA_FEED_URL`, preserving the ZIP/notes URLs and bytes. This workflow prepares that reviewable release; it never replaces a live hosted feed. Test N→N+1, invalid-signature and interruption behavior on the actual app before beta rollout.
-
-## Limits users see
-
-This beta is ad-hoc signed and **not notarized**. Gatekeeper can block first open. After trying to open the app, a user who trusts the release may need System Settings → Privacy & Security → **Open Anyway**, then confirmation of the first-open prompt. [Apple's first-open guidance](https://support.apple.com/en-us/102445).
-
-Accessibility and Screen Recording (TCC) grants may need re-granting after updates because the ad-hoc signature changes. Generated release notes repeat both limits. Intel is compiled but execution is untested; 3D may stutter. Local tests and CI do not establish clean-Mac Gatekeeper/TCC behavior, real updates, minimum-OS launch, or visual acceptance.
-
-## Later: Developer ID and notarization
-
-The existing `release-candidate` job requires both `prepare_signed_candidate=true` and the explicit repository variable **`MACOS_DEVELOPER_ID_ENABLED=true`**. With the variable unset it stays off, even if Apple credentials appear. It does not publish releases. Enable it only when the owner is ready to configure the Apple account and validate that path.
-
-Its environment secrets remain `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_NOTARY_KEY_P8_BASE64`, `APPLE_NOTARY_KEY_ID`, `APPLE_NOTARY_ISSUER_ID`, and the Sparkle secret above. Additional variables are `MACOS_SIGNING_IDENTITY` (exact Developer ID Application identity) and `MACOS_TEAM_ID`, plus the existing bundle/feed/tool settings. Missing dependencies skip optional signed stages; malformed material, identity mismatch and notarization rejection fail. Temporary keychains/credential files are removed and raw credential-tool diagnostics are never uploaded.
-
-The preserved path signs inside-out, refreshes helper identity, verifies team/bundle, waits for notarization acceptance, staples, assesses Gatekeeper, then archives/signs the update. Later migration needs the same bundle identity and Sparkle key with a higher build number: publish a notarized transition item to the existing beta feed, then point the notarized app at the separate stable feed. That transition requires real update validation.
-
-## Local checks
+For local synthetic checks run:
 
 ```sh
 python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
 node scripts/check-source-policy.mjs
 ```
 
-The release-gate tests use synthetic strings and generated ZIPs, not credentials. They prove missing-secret ordering (including all beta-setting combinations), trusted-trigger denial, archive traversal/link rejection, community/official separation, distinct feed files, beta signing order/helper hash refresh and appcast XML bounds/escaping. They do not prove Developer ID, Apple notarization, a live Sparkle update, minimum-OS launch or visual acceptance. Do not run sign/notarize/appcast locally to seek credentials; these commands require an explicitly configured release context.
-
-The beta-pipeline tests generate and discard a throwaway Ed25519 key inside the test (CryptoKit on macOS; OpenSSL on Linux). They verify serialized enclosure signatures, numeric ordering, beta isolation, history bootstrap refusal, missing-key failure, draft-only publication guards, candidate validation and signing/hash order. No owner key, account, credential discovery or real release is used.
-
-References: [Sparkle publishing](https://sparkle-project.org/documentation/publishing/) (archive preservation, signed enclosure and version fields), [Sparkle security](https://sparkle-project.org/documentation/security-and-reliability/) (stdin key handling), [Apple notarization](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
-
-The native consent archive pin is independent of plugin CLI pins. It must match both the runtime consent identity and its metadata producer; plugin updates do not implicitly upgrade the App helper. The focused `test_consent_input.py` follows the real workflow input and checks that three-part contract without executing a helper, package or signing command. Bumping the native pin requires a reviewed identity update in the same change.
-
-## Prebuilt credential-helper input
-
-`package-neutral.sh` requires `MODELPLAN_CREDENTIAL_AGENT_ARTIFACT` and
-`MODELPLAN_CREDENTIAL_AGENT_SHA256` for every mode, including synthetic smoke.
-The directory is the independently approved universal artifact from the U7
-builder: `modelplan-credential-agent`, `credential-agent.json`, and `proof.json`.
-The external SHA must be approved independently, not derived from an untrusted
-artifact directory as an automatic approval. Different compiler/SDK inputs need
-their own reviewed artifact; no cross-environment digest equivalence is assumed.
-
-Missing/linked inputs or a binary digest mismatch fail before App compilation.
-The canonical U7 embed tool then enforces its pin, universal architecture and
-existing signature checks before the outer App seal; the canonical final checker
-validates the embedded pin after sealing. Packaging never calls the credential
-helper builder, executes the helper, or re-signs it. Existing CLI signing is
-separate. `--single` proves one final App's pin, not two-App, Keychain or A14 proof.
-The helper remains R2 default-deny.
-
-The canonical U7 tools are supplied by prerequisite public #376; App wiring stays
-in #369. Packaging callers must provide
-their reviewed artifact inputs before enabling this hook; there is no silent
-fallback. The shell fixture tests use inert build/signing/verifier boundaries and
-prove orchestration and failure propagation only.
-
-U10 modifies and re-seals its outer App after the neutral scaffold; it therefore
-runs the same `--single` checker again after its final seal/archive identity
-checks, before writing delivery checksums. It consumes the same approved inputs.
-
-## Coordinator-approved producer-run binding
-
-The reviewed triple lives at `desktop/native/credential-agent-artifact-pin.json`
-with exactly three string fields: `runID`, `artifactName`, and `sha256`. The last
-field is the credential-helper **binary** SHA-256, not GitHub's ZIP digest. This
-file is added or updated only after the coordinator approves that exact triple;
-no placeholder approval or build-derived automatic approval is supplied.
-
-`fetch_credential_artifact.py` resolves only that run in `modelplan/modelplan`,
-requires a successful completed main push/manual run from the same repository,
-selects the unique unexpired named artifact in that run, safely reads its ZIP,
-and checks the binary and descriptor against the independently approved digest.
-It exports the artifact directory/digest only after verification. There is no
-latest-run fallback or helper builder call. Missing approvals, wrong run/name,
-expired or ambiguous artifacts, unsafe members and digest mismatches fail closed.
-The canonical U7 embed/final tools still own universal/signature/full-pin checks.
-
-macos-distribution and desktop app-smoke use the CLI's `--github-env` output.
-U10 and the e2e builder call the same downloader before CLI/App compilation,
-passing the verified binding explicitly to `package-neutral.sh`; e2e does not
-create a second helper. Their artifact-consuming jobs add only `actions: read`
-to `contents: read`. The ephemeral download token is not exported in the binding
-or passed by the Python callers to packaging children. No signing secret or
-release permission is added. The producer workflow remains M3-owned.
-
-The producer artifact also carries `SHA256SUMS` and `LICENSE.txt`; the downloader
-retains both alongside the binary, pin and proof. These audit checksums do not
-replace the coordinator-approved independent binary digest.
-
-U14 macOS `build_app` is also a production packaging caller: it obtains the same
-approved input before its CLI compilation, passes only the verified binding to
-the packager, and removes download auth from build environments. Its scenario,
-watchdog, synthetic profile and evidence semantics are unchanged.
+The tests exercise fail-closed metadata, architecture, pin and orchestration
+boundaries using synthetic fixtures. They do not prove a physical Mac run,
+release signing, notarization or a user installation.
