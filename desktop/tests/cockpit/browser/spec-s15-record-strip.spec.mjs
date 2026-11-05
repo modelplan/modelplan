@@ -5,7 +5,7 @@ import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 async function open(page){
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.addInitScript(()=>{window.__cockpitMessages=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){window.__cockpitMessages.push(JSON.parse(raw));}}}};});
  await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
@@ -83,4 +83,15 @@ test('S17 Option help does not promise deferred field or full alert list in eith
   await expect(map.locator('[data-target="[data-caution]"]')).toHaveText(alert);
   await page.keyboard.up('Alt');await expect(map).toBeHidden();
  }
+});
+
+
+test('S16 selecting an unbound last-seen record cannot invent a session binding',async({page})=>{
+ const {send,receive,data}=await open(page);const sessions=data.details.sessions;
+ for(const s of sessions)s.subscriptionRef=null;expect(await receive(send('display',{data}))).toBe(true);
+ const row=page.locator('.ck-tape .t-observed').first();await expect(row).toBeVisible();await expect(row).toHaveAttribute('aria-disabled','true');await expect(row).toHaveAttribute('tabindex','-1');
+ const before=await page.evaluate(()=>({scope:document.querySelector('#cockpit').dataset.scope,actions:window.__cockpitMessages.filter(m=>m.type==='action').length}));
+ await row.click({force:true});await page.keyboard.press('Enter');
+ expect(await page.evaluate(()=>({scope:document.querySelector('#cockpit').dataset.scope,actions:window.__cockpitMessages.filter(m=>m.type==='action').length}))).toEqual(before);
+ await expect(page.locator('.ck-tape')).not.toContainText(/ended|stopped|已结束/);await expect(row.locator('.t-time')).not.toContainText(/ago|分钟前|小时前/);
 });
