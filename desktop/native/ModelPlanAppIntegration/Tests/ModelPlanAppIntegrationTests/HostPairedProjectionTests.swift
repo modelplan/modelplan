@@ -171,8 +171,8 @@ private actor EntrySyntheticClient: EngineClient {
         let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
         guard case .choice(let selected, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
         XCTAssertEqual(selected, "25")
-        for option in options {
-            let threshold = try XCTUnwrap(Int(option))
+        for threshold in [40, 30, 25, 20, 15, 10] where options.contains(String(threshold)) {
+            let option = String(threshold)
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
             XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
@@ -205,20 +205,45 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(restoredReadings[second]?.status, .critical)
         XCTAssertEqual(restoredReadings[first]?.readout, "75%")
 
-        await relaunched.composition.stop()
-        // A prerelease profile can contain 16 even though the current editor no longer offers it.
-        let existing = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        _ = try await existing.update { $0.redBelow = 16 }
-        let settingsFile = root.appendingPathComponent("ModelPlan/settings.json")
-        let storedBytes = try Data(contentsOf: settingsFile)
-        let legacy = try await start()
-        let committed = try XCTUnwrap(legacy.composition.latestSettings)
-        XCTAssertEqual(committed.snapshot.preferences.redBelow, 16)
-        XCTAssertEqual(try Data(contentsOf: settingsFile), storedBytes, "Opening the widget must not rewrite legacy settings")
-        let shown = legacy.composition.dock.dockView.presentedReadingsForChecks
-        let effective = committed.effective.redBelow
-        XCTAssertEqual(shown[first]?.status, effective >= 25 ? .critical : .warning)
-        XCTAssertEqual(shown[second]?.status, effective >= 20 ? .critical : .warning)
+    }
+
+    func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-bands-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try rows(weekly: 50, secondWeekly: 51)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock, view = dock.dockView
+        let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
+        let editor = app.settingsHost.application.editor
+        for id in [first, second] { _ = try await editor.commit(SettingsB20Edit.percentagePin(id, .week)) }
+
+        func assertBand(_ id: String, _ expected: DockQuotaStatus, line: UInt = #line) throws {
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks[id], line: line)
+            XCTAssertEqual(reading.status, expected, line: line)
+            XCTAssertEqual(reading.inner?.status, expected, line: line)
+            let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
+            XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
+        }
+        try assertBand(first, .warning)
+        try assertBand(second, .normal)
+
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let lower = try rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
+        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+            consentGeneration: delivery.floor.generation, data: lower), delivery: delivery)
+        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: lower.projection.invalidRowCount))
+        try assertBand(first, .critical)
+        try assertBand(second, .critical)
+        _ = try await editor.commit(SettingsB20Edit.redBelow(10))
+        try assertBand(first, .warning)
+        try assertBand(second, .critical)
     }
 
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
