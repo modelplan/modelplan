@@ -3,9 +3,9 @@ package main
 
 import (
 	"regexp"
-	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/quota"
+	"github.com/modelplan/modelplan/cli/internal/snapshot"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
@@ -30,32 +30,13 @@ func cockpitTodayTotals(accounts []quota.Account, view speed.PerfView) []cockpit
 	if !view.OK || !view.Recording {
 		return out
 	}
-	type candidate struct {
-		ref       string
-		ambiguous bool
-	}
-	bySource := map[string]candidate{}
-	for _, account := range accounts {
-		if account.Source == "" {
-			continue
-		}
-		c := bySource[account.Source]
-		b := account.Subscription
-		if account.Stale || b == nil || b.Status != "verified" || !cockpitSubscriptionRef.MatchString(b.Ref) || b.ObservedAt.IsZero() || b.ObservedAt.After(view.Now) || view.Now.Sub(b.ObservedAt) > time.Hour {
-			c.ambiguous = true
-		} else if c.ref != "" && c.ref != b.Ref {
-			c.ambiguous = true
-		} else {
-			c.ref = b.Ref
-		}
-		bySource[account.Source] = c
-	}
+	bindings := snapshot.SourceBindings(accounts, view.Now)
 	for _, total := range view.TodayTotals() {
-		c := bySource[total.Source]
-		if c.ambiguous || c.ref == "" || total.Sums.ObservedOutputTokens < 0 {
+		ref, ok := bindings[total.Source]
+		if !ok || total.Sums.ObservedOutputTokens < 0 {
 			continue
 		}
-		item := cockpitToday{SubscriptionRef: c.ref, Source: total.Source, OutputTokens: total.Sums.ObservedOutputTokens, BindingBasis: "source-wide-current-binding"}
+		item := cockpitToday{SubscriptionRef: ref, Source: total.Source, OutputTokens: total.Sums.ObservedOutputTokens, BindingBasis: snapshot.BindingSourceWideCurrent}
 		if total.Sums.EligibleRequests >= speed.MinSamples && total.Sums.GenMs > 0 && total.Sums.EligibleOutputTokens >= 0 {
 			rate := float64(total.Sums.EligibleOutputTokens) * 1000 / float64(total.Sums.GenMs)
 			item.GenerationTPS = &rate
