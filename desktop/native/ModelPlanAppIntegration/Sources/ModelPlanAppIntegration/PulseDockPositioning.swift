@@ -3,8 +3,8 @@ import Foundation
 import ModelPlanShell
 import ModelPlanDock
 
-/// ModelPlan retains exposed-edge/system-Dock policy. Pulse owns the actual
-/// window-position calculation; the existing single AppKit controller owns
+/// Pulse owns the window-position calculation. The resting request keeps the
+/// saved edge on the selected display. The existing AppKit controller owns
 /// hover/reveal/collapse and the entire press/drag/release transaction.
 enum PulseDockPositioning {
     static func resolve(_ request: DockPlacementRequest) throws -> DockEdgePlacement? {
