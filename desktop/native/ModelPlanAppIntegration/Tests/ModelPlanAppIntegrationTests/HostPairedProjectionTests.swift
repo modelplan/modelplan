@@ -2,7 +2,7 @@
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -234,6 +234,39 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testNormalEntryMagnifiesNozzleWithoutMovingItsReadout() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-magnification-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let readings = try rows(weekly: 75, secondWeekly: 55)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { clock },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        await app.prepare()
+        let application = app.settingsHost.application
+        var environment = application.editor.environment
+        environment.reduceMotion = false
+        application.update(environment: environment)
+        app.allowDockPresentation()
+        await app.composition.start()
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+
+        let view = app.composition.dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let restingReadout = try XCTUnwrap(view.helpReadoutAnchor(id))
+        func pixels() throws -> Data {
+            try XCTUnwrap(view.presentedImageForChecks?.dataProvider?.data) as Data
+        }
+        let resting = try pixels()
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        XCTAssertNotEqual(try pixels(), resting, "Subtle hover must magnify the actual painted nozzle")
+        XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(nil)
+        XCTAssertEqual(try pixels(), resting)
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
