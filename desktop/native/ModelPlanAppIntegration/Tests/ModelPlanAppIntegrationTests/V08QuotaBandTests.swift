@@ -1,8 +1,21 @@
 // SPDX-License-Identifier: MIT
 import XCTest
 import ModelPlanDock
+import ModelPlanOfficialDock
 
 final class V08QuotaBandTests: XCTestCase {
+    func testV08ProductionSkinUsesReviewedNightStatusColours() throws {
+        let coordinates = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)
+        let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: T2GeometryInput(coordinates: coordinates))
+        let skin = try T2DockSkin.make(geometry: geometry, rows: [], showsPercentages: true)
+        for (name, channels) in [("normal", [90.0, 217, 186]), ("warning", [234.0, 193, 123]), ("critical", [239.0, 68, 68])] {
+            let ink = try XCTUnwrap(skin.palette[name])
+            XCTAssertEqual(ink.r, channels[0] / 255, accuracy: 0.000001)
+            XCTAssertEqual(ink.g, channels[1] / 255, accuracy: 0.000001)
+            XCTAssertEqual(ink.b, channels[2] / 255, accuracy: 0.000001)
+            XCTAssertEqual(ink.a, 1, accuracy: 0.000001)
+        }
+    }
     func testV08RemainingQuotaBandsAtBothThresholds() throws {
         let cases: [(Double, DockQuotaStatus, DockQuotaStatus)] = [
             (100, .normal, .normal), (41, .normal, .normal),
