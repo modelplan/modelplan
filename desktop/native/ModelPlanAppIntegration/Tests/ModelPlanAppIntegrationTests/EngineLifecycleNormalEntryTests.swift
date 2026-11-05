@@ -245,7 +245,8 @@ private actor LifecycleEngine: EngineClient {
         if let edit { _ = try await store.update { edit(&$0) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: store, createsNativePanels: native, dockEnvironment: topology.read,
+            settingsStore: store, createsNativePanels: native, bundleURL: root.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: topology.read,
             makeClient: { _, store in LifecycleEngine(store: store, rows: rows) }, activateSettings: {})
         await app.prepare()
         addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
@@ -531,6 +532,75 @@ private actor LifecycleEngine: EngineClient {
         try await wait({ strip.composition.dock.edgePresentation?.state == .sliver }, seconds: 4)
         XCTAssertEqual(strip.settingsHost.application.editor.snapshot?.preferences.autoHide, true)
         XCTAssertNil(strip.composition.store.snapshot.rows)
+    }
+
+    func testD18ShowHighlightUsesEitherReduceMotionSource() async throws {
+        try await checkShowHighlightMotion(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD18NativeShowHighlightUsesEitherReduceMotionSource() async throws {
+        _ = NSApplication.shared
+        try await checkShowHighlightMotion(native: true)
+    }
+    #endif
+
+    private func checkShowHighlightMotion(native: Bool) async throws {
+        let root = profile()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native { EngineRowsEntry.nativeJourneyProfile = root }
+        defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
+        #endif
+        let app = try await make(root, topology: Topology(), native: native) {
+            $0.autoHide = true
+            $0.motion = .system
+        }
+        _ = start(app)
+        let dock = app.composition.dock
+        let editor = app.settingsHost.application.editor
+        var system = editor.environment
+        func setSystemMotion(_ value: Bool) {
+            system.reduceMotion = value
+            app.updateSystemAccessibility(system)
+        }
+        func highlight() -> CALayer? {
+            dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        func show(after previous: CALayer? = nil) async throws -> CALayer {
+            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+            try await wait { highlight() != nil && highlight() !== previous }
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+            if native { XCTAssertTrue(dock.nativePanel?.isVisible == true) }
+            return try XCTUnwrap(highlight())
+        }
+
+        setSystemMotion(false)
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        let animated = try await show()
+        XCTAssertNotNil(animated.animation(forKey: "locate-pulse"), "With both sources off the real highlight animates")
+        let expandedFrame = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+
+        setSystemMotion(true)
+        XCTAssertEqual(editor.snapshot?.preferences.motion, .system)
+        XCTAssertTrue(editor.environment.reduceMotion)
+        XCTAssertNil(animated.animation(forKey: "locate-pulse"), "System Reduce Motion removes a running pulse")
+        XCTAssertTrue(highlight() === animated, "The active highlight remains visible and static")
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+        let systemOnly = try await show(after: animated)
+        XCTAssertTrue(systemOnly.animationKeys()?.isEmpty ?? true)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+
+        try await wait({ dock.edgePresentation?.state == .sliver }, seconds: 4)
+        _ = try await editor.commit(SettingsB20Edit.motion(.on))
+        setSystemMotion(false)
+        XCTAssertFalse(editor.environment.reduceMotion)
+        XCTAssertEqual(editor.snapshot?.preferences.motion, .on)
+        let appOnly = try await show(after: systemOnly)
+        XCTAssertTrue(appOnly.animationKeys()?.isEmpty ?? true)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+        XCTAssertTrue(editor.snapshot?.preferences.autoHide == true)
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
     }
 
     func testD14ShowQueuesWhileSystemOrCockpitBlocks() async throws {
