@@ -40,7 +40,7 @@ private actor PairedSyntheticClient: EngineClient {
     func show(paneID: String?) { pane = paneID;waiter?.resume();waiter=nil }
     func hide() {}
 }
-private actor EntrySyntheticClient: EngineClient {
+actor EntrySyntheticClient: EngineClient {
     let store: EngineStore, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
@@ -66,7 +66,7 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -124,14 +124,14 @@ private actor EntrySyntheticClient: EngineClient {
                 consentGeneration: 1, data: snapshot), delivery: context)
             await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
         }
-        try await deliver(rows(weekly: 75))
+        try await deliver(Self.rows(weekly: 75))
         let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         let first = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         let input = try XCTUnwrap(first.value.snapshot.inputs.first)
         let reading = try DockInstrumentProjection.evaluate(input, now: now)
         XCTAssertEqual(reading.dataState, .stale); XCTAssertEqual(reading.remainingPercent, 75)
         XCTAssertTrue(paired.isCurrent(first.sourceToken))
-        try await deliver(rows(weekly: 33))
+        try await deliver(Self.rows(weekly: 33))
         XCTAssertFalse(paired.isCurrent(first.sourceToken), "same sequence cannot hide different admitted bytes")
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
@@ -144,7 +144,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
@@ -173,7 +173,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z")), elapsed = 0.0
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 33)
+        let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 33)
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
@@ -192,7 +192,7 @@ private actor EntrySyntheticClient: EngineClient {
                 consentGeneration: 1, data: snapshot), delivery: context)
             await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
         }
-        try await replace(rows(weekly: 66, secondWeekly: 22, sequence: 8))
+        try await replace(Self.rows(weekly: 66, secondWeekly: 22, sequence: 8))
         for (id, value) in [("aaaaaaaaaaaaaaaa", "66%"), ("bbbbbbbbbbbbbbbb", "22%")] {
             let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
             XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, value)
@@ -204,7 +204,7 @@ private actor EntrySyntheticClient: EngineClient {
             let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
             XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, "--")
         }
-        try await replace(rows(weekly: 55, secondWeekly: 11, sequence: 9, weeklyDeadline: "2029-12-01T00:00:00Z"))
+        try await replace(Self.rows(weekly: 55, secondWeekly: 11, sequence: 9, weeklyDeadline: "2029-12-01T00:00:00Z"))
         for (id, value) in [("aaaaaaaaaaaaaaaa", "55%"), ("bbbbbbbbbbbbbbbb", "11%")] {
             let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
             XCTAssertEqual(card.rows.first(where: { $0.id == "quota:weekly:604800:main:main" })?.value, value)
@@ -227,10 +227,10 @@ private actor EntrySyntheticClient: EngineClient {
             await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
         }
         let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        try await deliver(rows(weekly: 75, resetID: "reset-one"))
+        try await deliver(Self.rows(weekly: 75, resetID: "reset-one"))
         let first = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(first.value.signals.first?.reset?.id, "reset-one")
-        try await deliver(rows(weekly: 75, resetID: "reset-two"))
+        try await deliver(Self.rows(weekly: 75, resetID: "reset-two"))
         XCTAssertFalse(paired.isCurrent(first.sourceToken), "reset event bytes belong to the same delivery as rows")
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
@@ -242,7 +242,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try rows(weekly: 75, secondWeekly: 55)
+        let readings = try Self.rows(weekly: 75, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
@@ -376,7 +376,7 @@ private actor EntrySyntheticClient: EngineClient {
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
         var interactionElapsed=0.0
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, secondWeekly: 55)
+        let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, secondWeekly: 55)
         let surface = DiagnosticSettingsSurface()
         let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
         var pointer = CGPoint(x: 700, y: 450)
@@ -426,7 +426,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75, unbound: true)
+        let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75, unbound: true)
         var acceptedStore: EngineStore?
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
@@ -449,7 +449,7 @@ private actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-06-01T00:00:00Z"))
-        let timer = EntryDeadlineTimer(), snapshot = try rows(weekly: 75)
+        let timer = EntryDeadlineTimer(), snapshot = try Self.rows(weekly: 75)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment:normalEntryTestEnvironment, deadlineNow: { wall }, deadlineElapsed: { 0 }, deadlineScheduling: timer,
