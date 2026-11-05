@@ -13,7 +13,9 @@ final class HelpCatalogTests: XCTestCase {
             XCTAssertEqual(map.sentence(.alert), alert)
             XCTAssertEqual(map.sentence(.record), record)
             XCTAssertEqual(catalog.explanation(.window).body, language == .english ? "The field view is unavailable." : "场景视图暂不可用。")
+            XCTAssertEqual(catalog.explanation(.caution).body, language == .english ? "Indicates current alerts." : "显示当前提醒状态。")
             XCTAssertEqual(catalog.explanation(.record).body, record)
+            XCTAssertEqual(catalog.explanation(.session).body, record)
         }
     }
     func testEveryTopicHasTwoLocalizedLinesAndIdenticalAccessibleDescription() {
