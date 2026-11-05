@@ -8,15 +8,6 @@ Generic MIT model code for the native cockpit shell. This is a nonvisual prepara
 
 `CockpitWindowState` stores the user's window-switch preference separately from forced closure. The switch is disabled while forced closed, and attempts to change it leave the preference intact. Restoring a larger usable area reuses the saved preference.
 
-`CautionLampModel` reuses `ModelPlanPrimitives.CautionState`, adapting its elapsed seconds to `ContinuousClock.Instant` and `Duration`. Supply only existing amber/red conditions with stable semantic episode IDs; informational notices and formatted text do not belong in this input. Updates, press, presentation and Reduce Motion changes are synchronous value-state operations. Nothing schedules a repeating timer or creates an animation. The host should retain one model for the app lifecycle, serialize its mutations (normally on the main actor), and:
-
-- Update conditions without recreating the model on cockpit open, refresh or locale change.
-- Read `presentation(now:)` before restoring a frame and on wake, menu/tracking exit and deadline delivery. A stale deadline callback can only validate the current state.
-- Schedule one common-mode deadline validation and use the absolute deadline to bound any opacity animation. `blinkStartedAt` and the 1 s period preserve phase across hide/show. Cancel the animation when the mode stops blinking and retain steady model opacity. No animation source is part of this target.
-- Route `.openAlerts` through the existing sourced navigation/return path. A press while off returns no action; returning from an already-open alerts view is the navigation owner's responsibility.
-
-Expiry yields `steadyUnacknowledged`; it does not acknowledge. New semantic episodes and worsening severity get a fresh bounded interval. Clear removes latches; Reduce Motion immediately presents a steady light. Colors, lens artwork and localized accessibility strings belong to the presentation layer.
-
 ## Local verification
 
 M0 has registered this target in the native root package. Use that root entry point: the historical lane-local manifest depends on the parent and now collides with its same-named target. No manifest change is needed for P03. No private checkout or external package is required. Run from the public worktree, after checking disk space:
@@ -31,7 +22,7 @@ node scripts/check-source-policy.mjs
 git diff --check
 ```
 
-Tests exercise tier thresholds, visible-top anchoring, complete fit/reserve containment, negative/above display origins, scaled input conversion, switch restoration, and caution acknowledgement/new/worse/clear/timeout/Reduce Motion/delayed validation. They do not prove physical input, pixels, macOS 14 runtime behavior, animation CPU or app memory acceptance.
+Tests exercise tier thresholds, visible-top anchoring, complete fit/reserve containment, negative/above display origins, scaled input conversion, switch restoration. They do not prove physical input, pixels, macOS 14 runtime behavior, animation CPU or app memory acceptance.
 
 ## Assembly boundary
 
