@@ -192,7 +192,7 @@ public enum SettingsCatalogue {
         .init(.showPercentages,"Quota Widget percentages","额度挂件百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
-        .init(.sliverAlert,"Sliver alerts","隐藏条提示","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.sliverAlert,"Strip alerts","隐藏条提示","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
         .init(.showDock,"Show Quota Widget","显示额度挂件","Show or hide the Quota Widget.","显示或隐藏额度挂件。"),
         .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
