@@ -51,7 +51,7 @@ private actor DockStripEngine: EngineClient {
     var displays = [DockDisplayArea(id: "primary", frame: .init(x: 0,y: 0,width: 1440,height: 900), visibleFrame: .init(x: 0,y: 80,width: 1440,height: 820))]
     var host: StaticDockPreviewHost { app.composition.dock }
     static func stamp(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
-    init(profile: URL? = nil, wall: Date? = nil) throws {
+    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Double] = [41, 26, 0]) throws {
         root = profile ?? FileManager.default.temporaryDirectory.appendingPathComponent("dock-strip-" + UUID().uuidString)
         store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
@@ -74,7 +74,7 @@ private actor DockStripEngine: EngineClient {
                 a["windows"] = [0,1].map { number -> [String: Any] in
                     var w = window; w["id"] = number == 0 ? "short" : "week"; w["role"] = number == 0 ? "session" : "weekly"
                     w["durationSeconds"] = number == 0 ? 18000 : 604800; w["limitKey"] = number == 0 ? "five_hour" : "weekly"; w["poolKey"] = "main"
-                    w["remainingPercent"] = number == 0 ? [51,50,25][index] : [70,60,50][index]
+                    w["remainingPercent"] = number == 0 ? shortRemaining[index] : [70,60,50][index]
                     w["current"] = true; w["observedAt"] = Self.stamp(clock.wall.addingTimeInterval(-60)); w["validUntil"] = "2099-01-01T00:00:00Z"
                     w["resetsAt"] = Self.stamp(clock.wall.addingTimeInterval(number == 0 ? 8040 : 86400)); w["validUntil"] = w["resetsAt"]; w.removeValue(forKey:"modelScope")
                     return w
@@ -106,7 +106,7 @@ private actor DockStripEngine: EngineClient {
 
 @MainActor final class DockStripJourneyTests: XCTestCase {
     func testNormalEntryPaintsOnlyAffectedQuotaPitches() async throws {
-        let fixture = try DockStripFixture()
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 25])
         addTeardownBlock { @MainActor in await fixture.close() }
         let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
         fixture.displays = [.init(id: "primary", frame: frame, visibleFrame: frame)]
