@@ -46,6 +46,25 @@ import ModelPlanWire
                 try await Task.sleep(for: .milliseconds(10)); snapshot = await store.snapshot()
             }
             XCTAssertTrue(snapshot.preferences.onboarding.completed)
+            let beforeSettings = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+            await app.settingsHost.present(paneID: "subscriptions", origin: .userInitiated)
+            let settingsWindow = try XCTUnwrap(NSApplication.shared.windows.first {
+                !beforeSettings.contains(ObjectIdentifier($0)) && $0.isVisible && $0.windowController is SettingsWindowController
+            })
+            defer { settingsWindow.close() }
+            let settingsController = try XCTUnwrap(settingsWindow.windowController as? SettingsWindowController)
+            func assertEmptyText(_ keys: [SettingKey]) throws {
+                let settingsRows = descendants(try XCTUnwrap(settingsWindow.contentView)).compactMap { $0 as? SettingsNativeRow }
+                for key in keys {
+                    let row = try XCTUnwrap(settingsRows.first { $0.key == key && !$0.isHiddenOrHasHiddenAncestor })
+                    XCTAssertTrue(descendants(row).compactMap { $0 as? NSTextField }.contains {
+                        !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == expected
+                    }, "The empty subscription copy should match first run for \(key)")
+                }
+            }
+            try assertEmptyText([.visible, .alias])
+            settingsController.selectPane("dock")
+            try assertEmptyText([.percentagePin])
             await app.composition.stop()
         }
     }
