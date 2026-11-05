@@ -7,6 +7,39 @@ import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class DockRequestedHelpLayoutTests: XCTestCase {
+    func testHelpCatalogUsesBilingualSurfaceNamesWithoutInternalTerms() {
+        let chinese = HelpMapCatalog(.chinese)
+        let english = HelpMapCatalog(.english)
+        let names: [(HelpMapRegion, String, String)] = [
+            (.window, "悬窗", "Window"), (.alert, "注意灯", "Alert lamp"),
+            (.faders, "推杆", "Faders"), (.screen, "公共屏", "Main screen"),
+            (.ignition, "点火钮", "Ignition"), (.sliver, "隐藏条", "Sliver")
+        ]
+        for (region, zh, en) in names {
+            XCTAssertTrue(chinese.sentence(region).hasPrefix(zh + "："), region.rawValue)
+            XCTAssertTrue(english.sentence(region).hasPrefix(en + ":"), region.rawValue)
+        }
+        XCTAssertTrue(chinese.sentence(.dockMove).contains("额度挂件"))
+        XCTAssertTrue(english.sentence(.dockMove).contains("Quota Widget"))
+        XCTAssertTrue(chinese.sentence(.ignition).contains("驾驶舱"))
+        XCTAssertTrue(english.sentence(.ignition).contains("Cockpit"))
+        for surface in [HelpMapSurface.dock, .cockpit] {
+            let zhEntries = chinese.entries(for: surface)
+            let enEntries = english.entries(for: surface)
+            XCTAssertEqual(zhEntries.map(\.region), enEntries.map(\.region))
+            XCTAssertFalse(zhEntries.isEmpty)
+            for (zh, en) in zip(zhEntries, enEntries) {
+                XCTAssertTrue(zh.sentence.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }, zh.id)
+                XCTAssertFalse(en.sentence.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }, en.id)
+                for copy in [zh.sentence, en.sentence] {
+                    for term in ["source scope", "read here", "observation", "fixture", "envelope"] {
+                        XCTAssertFalse(copy.localizedCaseInsensitiveContains(term), zh.id)
+                    }
+                }
+            }
+        }
+    }
+
     func testGripAndBackgroundShareOneRequestedMapCaption() throws {
         let grip = DockRequestedHelpAnchor(id: "dock.grip.0", region: .dockMove,
             rect: CGRect(x: 900, y: 200, width: 24, height: 40), visible: true)
