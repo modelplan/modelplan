@@ -27,6 +27,9 @@ type Transport struct {
 	requests  []Request
 }
 
+// ReaderSingleAttempt declares that this socket-free recorder never retries.
+func (*Transport) ReaderSingleAttempt() {}
+
 func NewTransport(responses ...Response) *Transport {
 	return &Transport{responses: append([]Response(nil), responses...)}
 }
