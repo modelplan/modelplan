@@ -245,7 +245,12 @@ private actor EntrySyntheticClient: EngineClient {
         let readings = try rows(weekly: 75, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
-            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { clock },
+            dockEnvironment: {
+                // Test each committed edge. This branch predates the bottom-reservation placement port.
+                let display = DockDisplayArea(id: "synthetic-display", frame: .init(x: 0, y: 0, width: 1440, height: 900),
+                    visibleFrame: .init(x: 0, y: 0, width: 1440, height: 875))
+                return .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: .init(x: 700, y: 400))
+            }, deadlineNow: { clock },
             makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
         await app.prepare()
         let application = app.settingsHost.application
@@ -342,6 +347,27 @@ private actor EntrySyntheticClient: EngineClient {
         events.hoverNozzle(id)
         XCTAssertTrue(view.nozzlePosesForChecks.isEmpty)
         XCTAssertEqual(try pixels(), resting)
+
+        _ = try await application.editor.commit(SettingsB20Edit.motion(.system))
+        _ = try await application.editor.commit(SettingsB20Edit.size(.large))
+        let edges: [(SettingsDockEdge, DockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        for (edge, expectedPlacement) in edges {
+            _ = try await application.editor.commit(SettingsB21Edit.dockEdge(edge))
+            XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, expectedPlacement)
+            let edgeEvents = try XCTUnwrap(view.nozzleEventDelegate)
+            for hoveredID in ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"] {
+                edgeEvents.hoverNozzle(hoveredID)
+                XCTAssertEqual(view.nozzlePosesForChecks[hoveredID]?.scale, 1.5, "\(edge) \(hoveredID)")
+                for (id, pose) in view.nozzlePosesForChecks {
+                    let anchor = try XCTUnwrap(view.interactionAnchor(id))
+                    let width = anchor.width * pose.scale, height = anchor.height * pose.scale
+                    let posed = CGRect(x: anchor.midX + pose.offset.x - width / 2,
+                                       y: anchor.midY + pose.offset.y - height / 2, width: width, height: height)
+                    XCTAssertTrue(view.bounds.contains(posed), "\(edge) \(id) pose \(posed) outside \(view.bounds)")
+                }
+                edgeEvents.hoverNozzle(nil)
+            }
+        }
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
