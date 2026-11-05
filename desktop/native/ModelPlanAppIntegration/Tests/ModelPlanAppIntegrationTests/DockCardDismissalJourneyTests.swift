@@ -44,6 +44,29 @@ private actor CardDismissalClient: EngineClient {
 }
 
 @MainActor final class DockCardDismissalJourneyTests: XCTestCase {
+    func testD16StaleCloseAndRetiredMenuCannotHoldOrReleaseCurrentTracking() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "test", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root),
+            createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        app.allowDockPresentation()
+        let dock = app.composition.dock
+        defer { dock.close() }
+        let old = dock.menu(), current = dock.menu()
+        let oldDelegate = try XCTUnwrap(old.delegate as? DockSliverMenu)
+        let currentDelegate = try XCTUnwrap(current.delegate as? DockSliverMenu)
+        oldDelegate.menuWillOpen(old)
+        currentDelegate.menuWillOpen(current)
+        oldDelegate.menuDidClose(old)
+        XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen, "A stale close must not release the current menu")
+        dock.setPresentationAllowed(false)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "Withdrawal retires the tracking owner")
+        currentDelegate.menuWillOpen(current)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "A retired surface cannot acquire a menu lock")
+    }
+
     func testNormalEntryStartsAfterPresentationAndOfficialCardCloses() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("card-dismissal-" + UUID().uuidString)
@@ -137,6 +160,23 @@ private actor CardDismissalClient: EngineClient {
         try XCTUnwrap(button(dock.card, id: "dock.card.enter")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "Enter must close the Dock card before navigation")
         XCTAssertEqual(navigations, 1)
+
+        for (language, settings, close) in [(SettingsLanguage.english, "Settings", "Close"), (.chinese, "设置", "关闭")] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+            for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(button(dock.card, id: "dock.card.enter")?.title, settings)
+            XCTAssertEqual(button(dock.card, id: "dock.card.close")?.accessibilityLabel(), close)
+            let menu = dock.menu()
+            let actions = menu.items.filter { [$0.title == settings, $0.title == close].contains(true) }
+            XCTAssertEqual(actions.map(\.title), [settings, close])
+            if let closeItem = actions.last, closeItem.title == close,
+               let target = closeItem.target as? NSObject, let action = closeItem.action {
+                _ = target.perform(action, with: closeItem)
+                XCTAssertTrue(dock.card.isHidden)
+                XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
+            }
+        }
         await app.composition.stop()
     }
 }
