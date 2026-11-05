@@ -45,8 +45,8 @@ private actor G316Engine: EngineClient {
         return field.convert(NSRect(x: draw.minX + glyphs.minX, y: y, width: glyphs.width, height: glyphs.height), to: row)
     }
 
-    // Draw only the actual cell on a transparent bitmap, then measure its ink.
-    // This avoids treating the frequently larger NSControl frame as its bezel.
+    // Experimental: cell ink may omit the actual bezel; do not treat this as
+    // a verified visible-control measurement until compared with the image.
     private func controlInkBounds(_ control: NSControl, in row: NSView) -> NSRect? {
         guard let cell = control.cell, control.bounds.width > 0, control.bounds.height > 0 else { return nil }
         let scale = control.window?.backingScaleFactor ?? 1
@@ -127,6 +127,7 @@ private actor G316Engine: EngineClient {
                     for (index, control) in controls.enumerated() {
                         guard let ink = controlInkBounds(control, in: row) else {
                             print("G3-16 locale=\(locale) pane=\(pane.id) row=\(row.key.rawValue) element=control-\(index) UNMEASURABLE")
+                            offenders.append((.zero, "\(pane.id).\(row.key.rawValue).control-\(index): unmeasurable"))
                             continue
                         }
                         let offset = ink.midY - band.midY
