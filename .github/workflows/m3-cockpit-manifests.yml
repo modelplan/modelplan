@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'desktop/cockpit/**'
+      - 'desktop/tests/cockpit/**'
       - 'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityCockpitApplicationFactory.swift'
       - 'desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py'
       - '.github/workflows/m3-cockpit-manifests.yml'
