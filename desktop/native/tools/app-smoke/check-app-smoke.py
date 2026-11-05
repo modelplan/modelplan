@@ -58,7 +58,7 @@ def assertions(report, helper, home, *, expect_unverified=False):
         ('bundled-cli', report.get('cliPath') == str(helper) and report.get('cliHelpExitCode') == 0
          and type(report.get('cliSupportsConsentJSON')) is bool and report['cliSupportsConsentJSON'] == consent,
          {'path': report.get('cliPath'), 'helpExit': report.get('cliHelpExitCode'), 'consentJSON': consent}),
-        ('dock-defaults', defaults == {'showDock': True, 'autoHide': True, 'edge': 'right'}, defaults),
+        ('dock-defaults', defaults == {'showDock': True, 'autoHide': False, 'edge': 'right'}, defaults),
         ('synthetic-home', report.get('home') == str(home), report.get('home')),
         ('no-visible-ui', report.get('visibleWindows') == 0, report.get('visibleWindows')),
     ]
