@@ -23,7 +23,7 @@ final class DockPlacementPresentationTests: XCTestCase {
         context.dockPlacementObservation = try .init(displayID: placement.displayID, edge: .left,
             alongFraction: placement.alongFraction, recovering: true)
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .dockEdge })
-        XCTAssertEqual(row.title.english, "Preferred Dock edge")
+        XCTAssertEqual(row.title.english, "Preferred Quota Widget edge")
         XCTAssertTrue(row.subtitle.english.contains("Currently left"))
         XCTAssertTrue(row.subtitle.chinese.contains("当前位于左侧"))
         guard case .choice(let value, _) = row.value else { return XCTFail("saved choice missing") }
