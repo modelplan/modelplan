@@ -96,9 +96,9 @@ private actor DockStripEngine: EngineClient {
     }
     func decode() throws -> WireRowsSnapshot { try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: raw)) }
     func publish() async throws { raw["sequence"] = ((raw["sequence"] as? Int) ?? 1) + 1; try await engine.deliver(decode()) }
-    func mutateFirst(_ edit: (inout [String: Any]) -> Void) {
+    func mutateFirstRowAccount(at index: Int, _ edit: (inout [String: Any]) -> Void) {
         var p = raw["projection"] as! [String: Any], rows = p["rows"] as! [[String: Any]], accounts = rows[0]["accounts"] as! [[String: Any]]
-        edit(&accounts[0]); rows[0]["accounts"] = accounts; p["rows"] = rows; raw["projection"] = p
+        edit(&accounts[index]); rows[0]["accounts"] = accounts; p["rows"] = rows; raw["projection"] = p
     }
     func tick(_ seconds: Double) { clock.elapsed += seconds; clock.wall.addTimeInterval(seconds); timer.fireIfDue(clock.elapsed); host.refreshPresence(); host.interactionControllerForChecks?.refresh() }
     func close() async { if let app { await app.composition.stop() }; try? FileManager.default.removeItem(at: root) }
@@ -118,9 +118,26 @@ private actor DockStripEngine: EngineClient {
             return try XCTUnwrap(bitmap.tiffRepresentation)
         }
         let withAlerts = try pixels()
-        _ = try await fixture.store.update { $0.sliverAlert = false }
-        await fixture.app.prepare()
+        XCTAssertTrue(SettingsPreferences().sliverAlert)
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 26, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, .warning, .critical])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.opacity), [0, 0.18, 0.18])
+        XCTAssertTrue(view.accessibilityPerformPress())
+        XCTAssertEqual(fixture.host.edgePresentation?.state, .expanded)
         _ = try fixture.host.prepareSliver(size: size)
+        XCTAssertEqual(try pixels(), withAlerts, "Reveal leaves persistent quota alerts painted")
+        fixture.mutateFirstRowAccount(at: 1) { account in
+            var windows = account["windows"] as! [[String: Any]]
+            windows[0]["remainingPercent"] = 42
+            account["windows"] = windows
+        }
+        try await fixture.publish()
+        _ = try fixture.host.prepareSliver(size: size)
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 42, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, nil, .critical])
+        _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        _ = try fixture.host.prepareSliver(size: size)
+        XCTAssertTrue(view.quotaSegmentColorRolesForChecks.isEmpty)
         XCTAssertNotEqual(try pixels(), withAlerts, "Disabling quota alerts must remove actual painted segments")
     }
 
@@ -139,6 +156,10 @@ private actor DockStripEngine: EngineClient {
         XCTAssertTrue(revealed.dots.isEmpty)
         XCTAssertEqual(revealed.menuNotice, before.menuNotice)
         XCTAssertEqual(revealed.segments, before.segments)
+        var unacknowledged = DockAttentionState()
+        let expired = try unacknowledged.project([signal], stationBySubscription: stations, at: now.addingTimeInterval(60))
+        XCTAssertTrue(expired.dots.isEmpty)
+        XCTAssertNil(expired.menuNotice)
         try state.acknowledge(.cockpitOpening, signals: [signal], at: now)
         XCTAssertNil(try state.project([signal], stationBySubscription: stations, at: now).menuNotice)
     }
