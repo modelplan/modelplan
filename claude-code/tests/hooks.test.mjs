@@ -190,12 +190,17 @@ test('after compaction the pinned CLI gets the SessionStart input; nothing else 
   assert.equal((await readFile(join(root, '../codex/hooks/session-start.sh'), 'utf8')).match(/^session_cli=(\S+)$/m)[1], sessionCli, 'both plugins need the same CLI');
   await pinned(cli('0.5.50', 'echo bad'));
   assert.equal(sh('session-start.sh', input), '', 'a CLI before SessionStart support is never asked, even when pinned');
-  // The old pinned copy does not hide an eligible CLI the user installed.
-  await install(sessionCli);
+  // Remove the deliberately invalid pinned fixture before testing the installed fallback.
+  await rm(join(cliRoot, pin.version, 'modelplan'));
+  const eligible = [sessionCli, pin.version].sort((a, b) => {
+    const av = a.split('.').map(Number), bv = b.split('.').map(Number);
+    return av[0] - bv[0] || av[1] - bv[1] || av[2] - bv[2];
+  })[1];
+  await install(eligible);
   assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { hints: 1 });
-  await mkdir(join(cliRoot, sessionCli), { recursive: true });
-  await writeFile(join(cliRoot, sessionCli, 'modelplan'), cli(sessionCli, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
-  await chmod(join(cliRoot, sessionCli, 'modelplan'), 0o755);
+  await mkdir(join(cliRoot, eligible), { recursive: true });
+  await writeFile(join(cliRoot, eligible, 'modelplan'), cli(eligible, `cat > "$HOME/input"; printf '%s\\n' "$@" > "$HOME/args"; echo '{"resent":1}'`));
+  await chmod(join(cliRoot, eligible, 'modelplan'), 0o755);
   assert.deepEqual(JSON.parse(sh('session-start.sh', input)), { resent: 1 });
   assert.equal(await readFile(join(home, 'input'), 'utf8'), input);
   assert.deepEqual((await readFile(join(home, 'args'), 'utf8')).trim().split('\n'), ['advise', '--hook', 'claude-code']);
