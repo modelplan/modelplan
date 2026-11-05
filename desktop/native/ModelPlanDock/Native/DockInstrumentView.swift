@@ -107,6 +107,15 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
               let station = skin.stations.first(where: { $0.subscriptionID == id }) else { return nil }
         return station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
     }
+    public var focusedHelpAnchorID: String? {
+        focusedGripIndex.map { "dock.grip.\($0)" } ?? keyboardTargetID.map { "dock.nozzle." + $0 }
+    }
+
+    public func helpAnchorID(atLocal point: CGPoint) -> String? {
+        guard isPainted(atLocal: point) else { return nil }
+        if let grip = registeredGripRects.firstIndex(where: { $0.contains(point) }) { return "dock.grip.\(grip)" }
+        return orderedIDs.first(where: { interactionAnchor($0)?.contains(point) == true }).map { "dock.nozzle." + $0 }
+    }
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
     public var onVisualReset:(()->Void)?

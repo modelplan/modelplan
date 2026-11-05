@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -234,6 +235,49 @@ private actor EntrySyntheticClient: EngineClient {
         paired.invalidate()
         let second = try paired.make(.init(snapshot: nil, diagnostics: .init(), now: now))
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
+    }
+
+    func testS07NormalEntryDistinguishesPaintedHelpTargetsAndFocus() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-help-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 75)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+
+        let view = app.composition.dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let station = try XCTUnwrap(skin.stations.first(where: { $0.subscriptionID == id }))
+        let center = CGPoint(x: station.centre.x - skin.bounds.minX, y: station.centre.y - skin.bounds.minY)
+        let number = try XCTUnwrap(view.helpReadoutAnchor(id))
+        let ring = try XCTUnwrap([0.0, .pi / 2, .pi, .pi * 1.5].map { angle in
+            CGPoint(x: center.x + cos(angle) * station.outer.radius, y: center.y + sin(angle) * station.outer.radius)
+        }.first { view.isPainted(atLocal: $0) && !number.contains($0) })
+        XCTAssertEqual(view.helpAnchorID(atLocal: center), "dock.nozzle." + id)
+        XCTAssertEqual(view.helpAnchorID(atLocal: ring), "dock.rings." + id)
+        XCTAssertEqual(view.helpAnchorID(atLocal: CGPoint(x: number.midX, y: number.midY)), "dock.number." + id)
+        XCTAssertNil(view.helpAnchorID(atLocal: CGPoint(x: view.bounds.maxX + 1, y: view.bounds.maxY + 1)))
+
+        let nodes = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+        let subscription = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.subscription." + id })
+        subscription.setAccessibilityFocused(true)
+        XCTAssertEqual(view.focusedHelpAnchorID, "dock.rings." + id)
+        subscription.setAccessibilityFocused(false)
+        XCTAssertNil(view.focusedHelpAnchorID)
+
+        let grip = try XCTUnwrap(view.registeredGripRects.first)
+        XCTAssertEqual(view.helpAnchorID(atLocal: CGPoint(x: grip.midX, y: grip.midY)), "dock.grip.0")
+        let gripNode = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.grip.0" })
+        gripNode.setAccessibilityFocused(true)
+        XCTAssertEqual(view.focusedHelpAnchorID, "dock.grip.0")
+        gripNode.setAccessibilityFocused(false)
+        XCTAssertNil(view.focusedHelpAnchorID)
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
