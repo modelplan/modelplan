@@ -66,6 +66,11 @@ func TestCodexRuntimeAvailabilityRequiresUsableRecentWindows(t *testing.T) {
 	if CodexRuntimeAvailable(cache, admission, now.Add(staleAfter)) {
 		t.Fatal("stale runtime suppressed the local fallback")
 	}
+	account := &Account{ObservedAt: now}
+	Evaluate(account, now.Add(staleAfter))
+	if account.Stale {
+		t.Fatal("the display remains current at the exact freshness boundary")
+	}
 	if CodexRuntimeAvailable(cache, admission, now.Add(3*time.Hour)) {
 		t.Fatal("three-hour-old runtime suppressed the local fallback")
 	}

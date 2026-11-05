@@ -103,7 +103,9 @@ func loadAccount(cache string) *accountSnap {
 }
 
 // CodexRuntimeAvailable reports only whether an admitted runtime snapshot was
-// successful and still fresh. It exposes no provider values or identity.
+// successful and still fresh. At the exact freshness deadline it permits the
+// conservative local fallback even though Evaluate marks stale strictly after it.
+// It exposes no provider values or identity.
 func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.Time) bool {
 	if off() || !admission.Allows("codex", consent.Runtime) {
 		return false
