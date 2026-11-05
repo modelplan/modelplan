@@ -41,3 +41,49 @@ export function workflowProblems(text, path = "") {
   if (text.includes("\\")) for (const raw of decodedVariant(text).split("\n")) check(raw);
   return [...problems];
 }
+
+// macOS hosted-runner capacity (11-05): every workflow that starts macOS jobs on pull_request/push
+// must keep a concurrency group keyed on the workflow + PR number/ref so a newer head cancels the
+// superseded run instead of queueing it behind it in the hosted macOS queue. Main and release runs
+// are never cancelled: either cancel-in-progress is the pull_request-only expression, or it is a
+// literal true with a group that falls back to a per-commit `github.sha` (so main/tag runs each get
+// their own group and nothing cancels them). Workflows triggered only by workflow_dispatch or
+// workflow_call are out of scope.
+const CANCEL_PR_ONLY = /\$\{\{\s*github\.event_name\s*==\s*'pull_request'\s*\}\}/;
+
+function topLevelBlock(text, key) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => new RegExp(`^${key}:`).test(l));
+  if (start === -1) return null;
+  const end = lines.findIndex((l, i) => i > start && /^[A-Za-z_"'-]+:/.test(l));
+  return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+function runsMacos(text) {
+  if (/^\s*runs-on:.*macos/m.test(text)) return true;
+  if (/^\s*(?:os|platform):\s*\[[^\]]*macos/m.test(text)) return true;
+  if (/uses:.*workflows\/trusted-mac\.yml/.test(text)) return true;
+  return false;
+}
+
+export function macConcurrencyProblems(text) {
+  const problems = [];
+  const on = topLevelBlock(text, "on");
+  if (!on || !/\b(pull_request|push)\b/.test(on) || !runsMacos(text)) return problems;
+  const conc = topLevelBlock(text, "concurrency");
+  if (!conc || !/^\s+group:/m.test(conc)) {
+    problems.push("macOS workflow has no concurrency group (group: <workflow>-${{ github.event.pull_request.number || github.ref }})");
+    return problems;
+  }
+  const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
+  const cancelLine = conc.split("\n").find((l) => /^\s+cancel-in-progress:/.test(l)) ?? "";
+  if (!groupLine.includes("github.event.pull_request.number")) {
+    problems.push("concurrency group must be keyed on the PR number (or per-commit sha for main/release)");
+  }
+  const prOnly = CANCEL_PR_ONLY.test(cancelLine);
+  const shaScoped = /cancel-in-progress:\s*true\s*$/.test(cancelLine) && groupLine.includes("|| github.sha");
+  if (!prOnly && !shaScoped) {
+    problems.push("cancel-in-progress must be true only for pull_request heads (main and release runs are never cancelled)");
+  }
+  return problems;
+}

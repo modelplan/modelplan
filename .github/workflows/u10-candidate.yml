@@ -28,7 +28,7 @@ permissions:
   contents: read
 concurrency:
   group: u10-candidate-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   contracts:
     runs-on: ubuntu-latest
