@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 BIN = Path(__file__).resolve().parent
 sys.path.insert(0, str(BIN))
@@ -120,6 +121,7 @@ class Actions:
     def __init__(self, ctx):
         self.ctx = ctx
         self.probe = None
+        self.relauncher = None  # the live segment's same-HOME respawn seam, set by execute()
 
     def ensure_probe(self):
         if self.probe is None:
@@ -201,13 +203,53 @@ title: n.isNil() ? null : ObjC.unwrap(n)}); } JSON.stringify(out);"""
 
     def status_menu(self, subject, item, action, directory):
         if action not in verify_steps.STATUS_MENU_ACTIONS:
-            raise NotRun(f'status-menu-action-{action}-has-no-arrival-receipt')
-        # The fixed actions need pointer_drive --status-menu-plan plus the in-app arrival observer, which only a
-        # test build compiled with MODELPLAN_TEST_ONLY_SPI carries (StatusMenu/README.md). Not wired here yet.
-        raise NotRun('status-menu-drive-not-wired')
+            # hide/show have no fixed action ID in the app's menu (StatusMenuAction carries only
+            # refresh/settings/console/quit); see VERIFY-RUN.md before adding one.
+            raise NotRun(f'status-menu-action-{action}-has-no-fixed-action-id')
+        helper = os.environ.get('MODELPLAN_VERIFICATION_POINTER_DRIVE', '')
+        arrivals = os.environ.get('MODELPLAN_VERIFICATION_ARRIVALS', '')
+        # The lane builds pointer_drive with the StatusMenu sources during host preparation
+        # (StatusMenu/README.md); the arrivals file is the subject's own native observation JSONL.
+        # A release build carries no observer, so without both the ID is NOT-RUN, never guessed.
+        if not helper or not Path(helper).is_file():
+            raise NotRun('status-menu-pointer-helper-not-built-on-this-host')
+        if not arrivals or not Path(arrivals).is_file():
+            raise NotRun('status-menu-arrivals-observer-not-configured-on-this-host')
+        for key in ('runID', 'epoch', 'leasePath', 'stopPath'):
+            if not subject.get(key):
+                raise NotRun('status-menu-needs-a-live-segment')
+        directory.mkdir(parents=True, exist_ok=False)
+        now = time.time()
+        plan = dict(profile=self.ctx['profile'], runID=subject['runID'], epoch=subject['epoch'],
+                    lease=subject['leasePath'], stop=subject['stopPath'], output=str(directory / 'menu-drive.jsonl'),
+                    subjectPID=subject['pid'], subjectBundle=subject['bundle'],
+                    allowedRectangles=[], steps=[],
+                    statusMenu=dict(itemName=item, openMenu=True, timeoutSeconds=10, arrivals=arrivals,
+                                    request=dict(profile=self.ctx['profile'], runID=subject['runID'],
+                                                 epoch=subject['epoch'], subjectPID=subject['pid'],
+                                                 requestID=str(uuid.uuid4()).upper(), action=action,
+                                                 notBefore=now - 1, expiresAt=now + 30)))
+        plan_path = directory / 'menu-plan.json'
+        plan_path.write_text(json.dumps(plan, indent=1, sort_keys=True))
+        result = subprocess.run([helper, '--status-menu-plan', str(plan_path)], capture_output=True, text=True, timeout=120)
+        rows = []
+        for line in (directory / 'menu-drive.jsonl').read_text().splitlines() if (directory / 'menu-drive.jsonl').exists() else []:
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                pass
+        outcome = next((r.get('outcome') for r in reversed(rows) if r.get('event') == 'status-menu-result'
+                        or r.get('type') == 'status-menu-result'), None)
+        if result.returncode != 0 or outcome != 'arrived':
+            raise NotRun(f'status-menu-outcome-{outcome or "no-result"}')
+        return dict(plan=plan_path.name, rows=len(rows))
 
     def relaunch(self, subject):
-        raise NotRun('relaunch-with-the-same-home-not-supported-by-packaged_candidate')
+        """Respawn the segment's subject with the same HOME, environment and argv (direct mode).
+        Returns the new subject identity for the steps that follow."""
+        if self.relauncher is None:
+            raise NotRun('relaunch-needs-a-live-direct-mode-segment')
+        return self.relauncher(subject)
 
     def sleep(self, value):
         time.sleep(value)
@@ -232,6 +274,7 @@ class Session:
         self.ctx, self.segment, self.index = ctx, segment, index
         self.procs = {}
         self.booking = None
+        self.relaunch_token = 0
 
     def tool(self, name, *args, capture=True):
         result = subprocess.run([sys.executable, str(BIN / name), *args], capture_output=capture, text=True, timeout=120)
@@ -241,9 +284,6 @@ class Session:
 
     def open(self):
         ctx = self.ctx
-        if ctx['profile'] != 'synthetic':
-            # The shared launch helpers (admission, launch.py, packaged_candidate) admit only profile synthetic.
-            raise NotRun('real-profile-launch-not-supported-by-shared-helpers')
         lane, minutes = ctx['lane'], min(20, math.ceil(seconds(self.segment['ids'], ctx['steps']) / 60))
         local = Path(ctx['scratchParent']) / f'verify-{ctx["batch"]}-{self.index:02d}-{secrets.token_hex(4)}'
         local.mkdir()
@@ -261,12 +301,17 @@ class Session:
                           '--epoch', self.epoch)
         self.started = True
         paths = {k: str(local / v) for k, v in (('leasePath', 'lease.json'), ('releasePath', 'release.json'),
-                 ('stopPath', 'STOP'), ('subjectPidPath', 'subject.json'), ('candidateCleanupReceipt', 'cleanup.json'))}
+                 ('stopPath', 'STOP'), ('subjectPidPath', 'subject.json'), ('candidateCleanupReceipt', 'cleanup.json'),
+                 ('relaunchPath', 'relaunch'))}
         Path(paths['leasePath']).write_text(json.dumps(lease))
         archive = Path(ctx['work']) / self.segment['flavour'] / preflight.INNER
         digest = preflight.sha256_file(archive)
         (local / 'pin.json').write_text(json.dumps(dict(sourceSHA=ctx['sha'], sha256=digest)))
-        template = dict(profile='synthetic', host=ctx['host'], launchMode='direct', requiredSeconds=60,
+        # The profile is the manifest's: synthetic segments get their throwaway HOME under the
+        # candidate scratch, real segments (M1/V1 only, gated in preflight and admission) keep the
+        # host user's HOME. Every guard (booking, guardian, release, single controller, cleanup)
+        # is identical for both profiles.
+        template = dict(profile=ctx['profile'], host=ctx['host'], launchMode='direct', requiredSeconds=60,
                         expectedLease={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')},
                         booking=dict(id=self.booking, lane=lane, unit=ctx['batch'], scenario=self.segment['ids'][0]),
                         **paths)
@@ -291,24 +336,41 @@ class Session:
             [sys.executable, str(BIN / 'packaged_candidate.py'), 'run', '--registry', str(self.registry),
              '--receipt', str(local / 'candidate-receipt.json')],
             stdout=(local / 'launch.out').open('w'), stderr=subprocess.DEVNULL)
-        deadline = time.time() + 30
+        subject = self.await_subject(0)
+        lease = json.loads(Path(paths['leasePath']).read_text())
+        subject.update(runID=self.run_id, epoch=self.epoch, leasePath=paths['leasePath'], stopPath=paths['stopPath'],
+                       leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+        return subject
+
+    def await_subject(self, token, deadline_seconds=30):
+        """The running subject of launch token `token` (0: the first launch; n: the n-th relaunch)."""
+        deadline = time.time() + deadline_seconds
         while time.time() < deadline:
             try:
-                record = json.loads(Path(paths['subjectPidPath']).read_text())
-                lines = [json.loads(x) for x in (local / 'launch.out').read_text().splitlines() if x.startswith('{')]
-                started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x), None)
-                if record.get('state') == 'running' and started:
-                    home = json.loads(self.registry.read_text())['registry']['root'] + '/home'
-                    lease = json.loads(Path(paths['leasePath']).read_text())
-                    return dict(pid=record['pid'], bundle=started['bundle'], home=home, registeredAt=time.time(),
-                                leasePath=paths['leasePath'], stopPath=paths['stopPath'],
-                                leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+                record = json.loads(Path(self.paths['subjectPidPath']).read_text())
+                lines = [json.loads(x) for x in (self.local / 'launch.out').read_text().splitlines() if x.startswith('{')]
+                wanted = token if token else None
+                started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x
+                                and (wanted is None or x.get('relaunch', 0) == wanted)), None)
+                if record.get('state') == 'running' and started and record.get('pid') == started.get('ownedPID'):
+                    return dict(pid=record['pid'], bundle=started['bundle'], home=started.get('home') or '',
+                                registeredAt=time.time())
             except (OSError, ValueError, KeyError):
                 pass
             if self.procs['run'].poll() is not None:
                 break
             time.sleep(0.2)
         raise StopRun('subject-never-registered')
+
+    def relaunch(self, subject):
+        """Ask launch.py's supervisor to respawn the subject with the same HOME, environment and
+        argv (direct mode, one supervised slot). Raises NotRun when no new launch confirms in time."""
+        self.relaunch_token += 1
+        Path(self.paths['relaunchPath']).write_text(str(self.relaunch_token))
+        updated = self.await_subject(self.relaunch_token, deadline_seconds=60)
+        updated.update(runID=subject.get('runID'), epoch=subject.get('epoch'),
+                       leasePath=subject.get('leasePath'), stopPath=subject.get('stopPath'))
+        return updated
 
     def close(self):
         """Stop, wait for both supervisors, finish only on confirmed closure. Returns a closure record."""
@@ -418,9 +480,10 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 actions.set_appearance(item['value'])
                 changed.append(('appearance', ctx['baseline'].get('appearance', 'light')))  # only what actually changed
             elif kind == 'status-menu':
-                actions.status_menu(subject, item['item'], item['menuAction'], folder / label)
+                record.update(actions.status_menu(subject, item['item'], item['menuAction'], folder / label) or {})
             elif kind == 'relaunch':
-                actions.relaunch(subject)
+                subject = actions.relaunch(subject)
+                record.update(pid=subject['pid'], relaunchedAt=subject['registeredAt'], home=subject.get('home'))
             elif kind == 'dwell':
                 actions.sleep(item['seconds'])
             after = actions.dialogs()
@@ -552,6 +615,7 @@ def execute(manifest, *, lane, layout, ids, out, artifacts_dir, scratch_parent, 
                     results[ident] = ('NOT-RUN', segment['flavour'], 'run-stopped-' + stopped)
                 continue
             current = (session or Session)(ctx, segment, index)
+            actions.relauncher = getattr(current, 'relaunch', None)  # same-HOME respawn for `relaunch` steps
             try:
                 subject = current.open()
                 for ident in segment['ids']:

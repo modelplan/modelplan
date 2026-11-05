@@ -83,6 +83,10 @@ def problems(step, ident=None):
                 out.append(f'{where}: appearance must be light or dark')
             if 'appearance' not in settings:
                 out.append(f'{where}: set-appearance needs "appearance" in systemSettings (restored after the ID)')
+        if item['action'] == 'status-menu' and not NAME.fullmatch(str(item.get('menuAction', ''))):
+            out.append(f'{where}: menuAction must be a lowercase slug; the fixed IDs are '
+                       f'{", ".join(STATUS_MENU_ACTIONS)} (hide/show has no fixed action ID yet: the app menu '
+                       'carries no such item, so those actions stay NOT-RUN at run time)')
         if item['action'] in ('wait-window', 'expect-no-window') and not 0 < item.get('timeoutSeconds', 0) <= 60:
             out.append(f'{where}: timeoutSeconds must be in (0, 60]')
         if item['action'] == 'dwell' and not 0 <= item.get('seconds', -1) <= 60:

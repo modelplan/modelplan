@@ -98,11 +98,18 @@ host. Tests inject a fake host; a real run never passes them by default.
 - A failed baseline restoration is a machine assertion: the ID ends FAIL
   (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
   re-establishes and re-records the baseline.
-- Not yet wired, so NOT-RUN with the reason: `status-menu` (needs the test-build arrival observer and
-  `pointer_drive --status-menu-plan`; Hide/Show have no fixed action ID), `relaunch` (packaged_candidate
-  removes the synthetic HOME after one launch), `set-appearance` unless the host has a recorded Automation
-  grant for System Events (`MODELPLAN_VERIFICATION_APPEARANCE_SWITCH=granted`); without it the switch would
-  raise a TCC prompt, which the run never clicks.
+- `relaunch` stops the subject and starts it again inside the same segment with the same HOME,
+  environment and argv (direct launch mode only; the supervisor announces each launch token in its
+  JSON lines). `status-menu` drives only the fixed action IDs `refresh`, `settings`, `console`,
+  `quit` through `pointer_drive --status-menu-plan`; it needs a host prepared during setup:
+  `MODELPLAN_VERIFICATION_POINTER_DRIVE` (the built helper, StatusMenu/README.md) and
+  `MODELPLAN_VERIFICATION_ARRIVALS` (the subject's native observation JSONL the in-app arrival
+  observer writes; a release build carries none). Hide/Show stay NOT-RUN: the app's status menu has
+  no such item and `StatusMenuAction` has no fixed ID for it — adding one needs new fixed IDs
+  (for example `hideWindow`/`showWindow`) in `StatusMenuAction`, app menu items that carry them and
+  an `actionForItem` mapping, reviewed together. `set-appearance` runs only when the host has a
+  recorded Automation grant for System Events (`MODELPLAN_VERIFICATION_APPEARANCE_SWITCH=granted`);
+  without it the switch would raise a TCC prompt, which the run never clicks.
 
 ## Profiles and isolation
 
@@ -122,10 +129,12 @@ address or this host user's name in a captured AX tree deletes the images and st
 consent may be granted and its Keychain prompts accepted (grant them once while preparing the host; a
 Keychain prompt during a run makes that ID NOT-RUN). Its README starts with a PRIVATE EVIDENCE notice and
 carries the real-account statement instead: images and receipts may show real account data, stay on the
-shared disk only and must never be attached to or quoted in public PRs. **Gap:** the shared launch helpers
-(`admission.py`, `launch.py`, `packaged_candidate.py`) admit only `profile: synthetic`, so a real-profile
-segment is NOT-RUN (`real-profile-launch-not-supported-by-shared-helpers`) until those helpers gain a
-reviewed real-profile mode.
+shared disk only and must never be attached to or quoted in public PRs. The shared helpers run it under
+reviewed rules: `admission.py` admits `profile: real` only on the M1/V1 test hosts, `packaged_candidate.py`
+keeps every booking/guardian/release/cleanup guard and records the mode in its receipts, and `launch.py`
+uses the host user's real HOME and TMPDIR — `CFFIXED_USER_HOME` is explicitly removed, never redirected —
+creates nothing under that HOME, and refuses a HOME at or inside the removable run scratch. A real-profile
+subject may quit and relaunch within its segment like a synthetic one; the HOME is the user's own.
 
 ## Outputs
 
