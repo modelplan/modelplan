@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -36,12 +36,21 @@ import ModelPlanSettings
                 sliverLength: 110, sliverThickness: 4, hoverRects: [])
         }
         var clock = 0.0
+        var expandedLayout = false
         let controller = DockEdgeController(preference: .init(displayID: "A"), clock: { clock },
             scheduler: DragSchedule(), read: {
                 var sample = topology.read()
                 sample.presence.autoHide = false
                 sample.layouts = sample.displays.flatMap { display in
-                    DockEdgeGeometry.allowedEdges.map { layout(display, $0) }
+                    DockEdgeGeometry.allowedEdges.map { edge in
+                        let base = layout(display, edge)
+                        if expandedLayout {
+                            let size = CGSize(width: base.expandedSize.width, height: base.expandedSize.height + 12)
+                            return DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: size,
+                                sliverLength: base.sliverLength, sliverThickness: base.sliverThickness, hoverRects: [])
+                        }
+                        return base
+                    }
                 }
                 return sample
             }, position: PulseDockPositioning.resolve)
@@ -88,6 +97,23 @@ import ModelPlanSettings
         if mode == 1 { XCTAssertTrue(carried.contains(middle)) }
         else { XCTAssertEqual(carried.minY, topology.b.usableFrame.minY, accuracy: 0.01) }
         XCTAssertTrue(commits.isEmpty)
+
+        // While carrying on B, deliver a changed layout and remove the old
+        // display. A refresh may neither cancel the press nor move the panel.
+        expandedLayout = true
+        topology.active = [topology.b, topology.c]
+        topology.pointer = CGPoint(x: topology.c.frame.midX, y: topology.c.frame.midY)
+        clock += 1
+        controller.refresh()
+        XCTAssertTrue(controller.isBackgroundPressed, "D-09")
+        XCTAssertEqual(controller.presentation?.paintedFrame, carried, "D-09")
+        XCTAssertTrue(commits.isEmpty)
+        controller.updateBackgroundMove(global: CGPoint(x: middle.x + 120, y: middle.y))
+        let stillCarried = try XCTUnwrap(controller.presentation?.paintedFrame)
+        XCTAssertTrue(topology.b.usableFrame.contains(stillCarried))
+        XCTAssertNotEqual(stillCarried, carried, "the next pointer event must keep moving the same widget")
+        expandedLayout = false
+        topology.active = [topology.a, topology.b, topology.c]
         controller.cancelBackgroundMove()
         XCTAssertEqual(controller.presentation?.paintedFrame, before, "D-11")
         for screen in [topology.b, topology.c, topology.a] {
@@ -160,7 +186,7 @@ import ModelPlanSettings
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = root
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        _ = try await store.update { $0.dockDisplayID = "A"; $0.dockEdge = .right }
+        _ = try await store.update { $0.dockDisplayID = "A"; $0.dockEdge = .right; $0.followActiveDisplay = true }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "drag-journey", allowedEnvironment: [:]), settingsStore: store,
             createsNativePanels: true, dockEnvironment: topology.read, activateSettings: {})
@@ -184,13 +210,20 @@ import ModelPlanSettings
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
                 context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)))
         }
+        func assertRaster(_ view: DockInstrumentView, scale: Int, line: UInt = #line) throws {
+            let pixels = try XCTUnwrap(view.renderedPixelSize, line: line)
+            XCTAssertEqual(pixels.width, ceil(view.bounds.width * CGFloat(scale)), line: line)
+            XCTAssertEqual(pixels.height, ceil(view.bounds.height * CGFloat(scale)), line: line)
+        }
         let view = host.dockView
+        try assertRaster(view, scale: topology.a.backingScale)
         let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
             stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
         }.first { view.backgroundDragDelegate?.backgroundCanDrag(local: $0) == true })
         let down = panel.convertPoint(toScreen: view.convert(local, to: nil))
         try event(.leftMouseDown, point: down)
-        XCTAssertEqual(panel.frame, start, "D-11")
+        try await Task.sleep(for: .seconds(1))
+        XCTAssertEqual(panel.frame, start, "D-11: a held press does not move the panel before motion")
         try event(.leftMouseUp, point: down)
         XCTAssertEqual(panel.frame, start, "D-11 face click")
         try event(.leftMouseDown, point: down)
@@ -202,10 +235,12 @@ import ModelPlanSettings
             XCTAssertTrue(display.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame), "D-04")
             let painted = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
             XCTAssertEqual(painted.layer?.contentsScale, CGFloat(display.backingScale), "D-05")
+            try assertRaster(painted, scale: display.backingScale)
             let carried = panel.frame
+            host.refreshDockContent()
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
             host.refreshPresence()
-            XCTAssertEqual(panel.frame, carried, "D-09")
+            XCTAssertEqual(panel.frame, carried, "D-09: data, topology and active-display sampling leave the carry intact")
         }
         let during = await store.snapshot()
         XCTAssertEqual(during.revision, before.revision)
@@ -223,6 +258,8 @@ import ModelPlanSettings
         let saved = await store.snapshot()
         XCTAssertEqual(saved.preferences.dockEdge, .left, "D-06 inner edge")
         XCTAssertEqual(saved.revision, before.revision + 1)
+        let landed = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+        try assertRaster(landed, scale: topology.b.backingScale)
         topology.active = [topology.a, topology.c]
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
         XCTAssertTrue(panel.isVisible, "D-10 fallback")
