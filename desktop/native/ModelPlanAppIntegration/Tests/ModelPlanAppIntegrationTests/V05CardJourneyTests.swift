@@ -63,7 +63,7 @@ private actor V05SyntheticClient: EngineClient {
         row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Check read access in Settings", "zh": "在设置检查读取权限"], "availableAt": NSNull(), "disabledReason": NSNull()]
         account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"
-        account["lastFailure"] = NSNull(); account["credits"] = ["balance": 123.45, "unit": "unknown"]
+        account["lastFailure"] = NSNull(); account["credits"] = ["balance": 82467.25, "unit": "unknown"]
         windows[0].removeValue(forKey: "modelScope"); windows[0]["current"] = true
         windows[0]["observedAt"] = "2026-12-01T00:00:00Z"; windows[0]["validUntil"] = "2028-12-01T00:00:00Z"
         windows[0]["resetsAt"] = "2028-12-01T00:00:00Z"; windows[0]["remainingPercent"] = 42.0
@@ -126,8 +126,8 @@ private actor V05SyntheticClient: EngineClient {
             XCTAssertGreaterThan(visibleBounds.height, 0, "The reserve label must have visible height inside the card")
             XCTAssertGreaterThanOrEqual(visibleBounds.width + 1, reserveLabel.intrinsicContentSize.width,
                                         "The reserve label must not be clipped horizontally")
-            XCTAssertEqual(texts.filter { $0 == "123" }.count, 1, "The synthetic rounded reserve must be shown exactly once")
-            let reserveValue = try XCTUnwrap(fields.first { $0.stringValue == "123" })
+            XCTAssertEqual(texts.filter { $0 == "82,467" }.count, 1, "The synthetic rounded reserve with a thousands separator must be shown exactly once")
+            let reserveValue = try XCTUnwrap(fields.first { $0.stringValue == "82,467" })
             let valueBounds = reserveValue.convert(reserveValue.bounds, to: dock.card).intersection(dock.card.bounds)
             XCTAssertGreaterThan(valueBounds.height, 0, "The reserve value must have visible height inside the card")
             XCTAssertGreaterThanOrEqual(valueBounds.width + 1, reserveValue.intrinsicContentSize.width,
