@@ -21,19 +21,21 @@ final class V11GapTests: XCTestCase {
         options.isStrict = true
         XCTExpectFailure("V-11: vertical station gap does not shrink before overflow", options: options) {
             XCTAssertNotNil(compact, "A constrained vertical Dock must reduce its station gap before overflowing")
-            if let geometry = compact {
-                XCTAssertGreaterThanOrEqual(geometry.gap, 6)
-                XCTAssertLessThan(geometry.stations[0].pitch - 52 - 16, 13.99, "The real pitch must shrink, not just the reported gap")
-            }
-            if let skin = compactSkin {
-                let stations = skin.stations.sorted { $0.centre.y < $1.centre.y }
-                for (first, next) in zip(stations, stations.dropFirst()) {
-                    let extent = next.clock.radius + max(next.clock.dotRadius, next.clock.backWidth / 2)
-                    let overlapsHorizontally = first.readout.maxX > next.centre.x - extent && first.readout.minX < next.centre.x + extent
-                    if overlapsHorizontally {
-                        XCTAssertLessThanOrEqual(first.readout.maxY, next.centre.y - extent,
-                                                 "A compact readout must not overlap the next clock")
-                    }
+        }
+        // Only the missing compact layout is expected to fail. Once one exists,
+        // bad pitch or an overlapping readout must be an ordinary test failure.
+        if let geometry = compact {
+            XCTAssertGreaterThanOrEqual(geometry.gap, 6)
+            XCTAssertLessThan(geometry.stations[0].pitch - 52 - 16, 13.99, "The real pitch must shrink, not just the reported gap")
+        }
+        if let skin = compactSkin {
+            let stations = skin.stations.sorted { $0.centre.y < $1.centre.y }
+            for (first, next) in zip(stations, stations.dropFirst()) {
+                let extent = next.clock.radius + max(next.clock.dotRadius, next.clock.backWidth / 2)
+                let overlapsHorizontally = first.readout.maxX > next.centre.x - extent && first.readout.minX < next.centre.x + extent
+                if overlapsHorizontally {
+                    XCTAssertLessThanOrEqual(first.readout.maxY, next.centre.y - extent,
+                                             "A compact readout must not overlap the next clock")
                 }
             }
         }
