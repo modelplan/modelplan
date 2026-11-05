@@ -46,7 +46,7 @@ public struct EffectiveSettings: Equatable, Sendable {
         autoHide = p.autoHide; revealSeconds = Double(p.revealMilliseconds) / 1000
         showPercentages = p.showPercentages; sliverAlert = p.sliverAlert
         size = p.size; magnification = reduceMotion ? .none : p.magnification
-        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.redBelow
+        menuDisplay = p.menuDisplay; language = p.language; showProjectNames = p.showProjectNames; redBelow = p.effectiveRedBelow
         opening = e.v1NormalEntry || p.opening == .quick || reduceMotion || e.macOSMajor < 15 || !e.entranceAccepted ? .quick : .hold
         ignitionSeconds = opening == .hold ? 0.2 + 3 * Double(p.beatMilliseconds) / 1000 : nil
     }
