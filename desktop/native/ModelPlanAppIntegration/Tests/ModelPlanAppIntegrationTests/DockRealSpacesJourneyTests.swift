@@ -797,6 +797,139 @@ import XCTest
         XCTAssertEqual(try Data(contentsOf: storedURL), originalBytes)
     }
 
+    func testD11PhysicalPressAndCancelWithoutSaving() async throws {
+        let application = NSApplication.shared
+        let display = try XCTUnwrap(DockDisplayTopology.system().main)
+        let (app, store, storedURL) = try await makeProfile(displayID: display.id, edge: .bottom,
+                                                            declaredQuotas: [72, 53, 38])
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel as? PulseDockPanel)
+        let ready = try await wait(.seconds(12)) {
+            panel.isVisible && dock.interactionControllerRunning &&
+                dock.edgePresentation?.placement?.edge == .bottom &&
+                Set(dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("D-11 needs a visible native bottom panel with three synthetic readings") }
+        let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+        let controller = try XCTUnwrap(dock.interactionControllerForChecks)
+        let order = view.interactionTargets(edge: .bottom).map(\.id)
+        let first = try XCTUnwrap(order.first)
+        let last = try XCTUnwrap(order.last)
+        XCTAssertNotEqual(first, last)
+        let startStation = try XCTUnwrap(view.interactionAnchor(first))
+        let endStation = try XCTUnwrap(view.interactionAnchor(last))
+        let face = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+            stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+        }.first { view.backgroundDragDelegate?.backgroundCanDrag(local: $0) == true })
+        func screenPoint(_ local: CGPoint) -> CGPoint {
+            panel.convertPoint(toScreen: view.convert(local, to: nil))
+        }
+        let facePoint = screenPoint(face)
+        let firstPoint = screenPoint(CGPoint(x: startStation.midX, y: startStation.midY))
+        let lastPoint = screenPoint(CGPoint(x: endStation.midX, y: endStation.midY))
+        let frame = panel.frame
+        let before = await store.snapshot()
+        let bytes = try Data(contentsOf: storedURL)
+        let sweep = view.refreshSweepCountForChecks
+        let events = PointerEvents()
+        let previous = panel.receivedInput
+        var pressPoint: CGPoint?
+        var releasePoint: CGPoint?
+        panel.receivedInput = { type, timestamp in
+            previous?(type, timestamp)
+            switch type {
+            case .leftMouseDown: events.down += 1; pressPoint = NSEvent.mouseLocation
+            case .leftMouseDragged: events.drag += 1
+            case .leftMouseUp: events.up += 1; releasePoint = NSEvent.mouseLocation
+            default: break
+            }
+        }
+        defer { panel.receivedInput = previous }
+
+        func assertRestored(_ step: String) async throws {
+            XCTAssertTrue(panel.isVisible, step)
+            XCTAssertFalse(panel.isKeyWindow, step)
+            XCTAssertEqual(panel.frame, frame, step)
+            XCTAssertFalse(dock.edgePresentation?.moving == true, step)
+            XCTAssertFalse(controller.hasCapture, step)
+            XCTAssertNil(controller.presentation?.reorder, step)
+            XCTAssertEqual(view.interactionTargets(edge: .bottom).map(\.id), order, step)
+            XCTAssertEqual(view.refreshSweepCountForChecks, sweep, step)
+            XCTAssertFalse(app.settingsHost.application.editor.isSaving, step)
+            let saved = await store.snapshot()
+            XCTAssertEqual(saved.revision, before.revision, step)
+            XCTAssertEqual(try Data(contentsOf: storedURL), bytes, step)
+        }
+        func near(_ point: CGPoint?, _ target: CGPoint) -> Bool {
+            guard let point else { return false }
+            return hypot(point.x - target.x, point.y - target.y) <= 8
+        }
+
+        announce("D-11", "Click the widget body near \(facePoint) without moving, then release.")
+        guard try await wait(.seconds(30), until: { events.up == 1 }) else {
+            return XCTFail("No physical face click arrived")
+        }
+        XCTAssertTrue(near(pressPoint, facePoint) && near(releasePoint, facePoint))
+        XCTAssertEqual(events.drag, 0)
+        try await assertRestored("face click")
+
+        announce("D-11", "Press the same body point and hold still. Wait for the next prompt.")
+        guard try await wait(.seconds(30), until: { events.down == 2 && events.up == 1 }) else {
+            return XCTFail("No physical hold arrived")
+        }
+        XCTAssertTrue(near(pressPoint, facePoint))
+        let hold = ContinuousClock.now + .seconds(1)
+        while ContinuousClock.now < hold {
+            XCTAssertEqual(panel.frame, frame, "Face must stay put before the first drag event")
+            if events.up != 1 || events.drag != 0 { return XCTFail("Keep the face press still for the full second") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        announce("D-11", "Drag along the bottom rail and keep holding.")
+        guard try await wait(.seconds(25), until: {
+            events.drag > 0 && events.up == 1 && dock.edgePresentation?.moving == true && panel.frame != frame
+        }) else { return XCTFail("The held native panel did not move") }
+        announce("D-11", "Press physical Escape without letting go of the mouse. App active: \(application.isActive).")
+        guard try await wait(.seconds(20), until: {
+            events.up == 1 && dock.edgePresentation?.moving == false && panel.frame == frame
+        }) else { return XCTFail("The native panel did not restore before physical mouse-up") }
+        announce("D-11", "Release the mouse now.")
+        guard try await wait(.seconds(15), until: { events.up == 2 }) else {
+            return XCTFail("The post-Escape mouse-up did not arrive")
+        }
+        try await assertRestored("face Escape")
+
+        for escape in [true, false] {
+            let upBefore = events.up
+            let step = escape ? "nozzle Escape" : "nozzle outside release"
+            announce("D-11", "Drag the nozzle near \(firstPoint) towards \(lastPoint); keep holding for \(step).")
+            guard try await wait(.seconds(35), until: {
+                events.up == upBefore && near(pressPoint, firstPoint) && controller.hasCapture &&
+                    controller.presentation?.reorder != nil
+            }) else { return XCTFail("No physical reorder preview for \(step)") }
+            XCTAssertEqual(panel.frame, frame, step)
+            if escape {
+                announce("D-11", "Press physical Escape while still holding. App active: \(application.isActive).")
+                guard try await wait(.seconds(20), until: {
+                    events.up == upBefore && !controller.hasCapture && controller.presentation?.reorder == nil
+                }) else { return XCTFail("Nozzle capture remained after physical Escape") }
+                announce("D-11", "Release the mouse now.")
+            } else {
+                announce("D-11", "Move well above the widget and card, then release outside.")
+            }
+            guard try await wait(.seconds(20), until: { events.up == upBefore + 1 }) else {
+                return XCTFail("No physical mouse-up for \(step)")
+            }
+            if !escape {
+                let outside = try XCTUnwrap(releasePoint)
+                XCTAssertFalse(frame.insetBy(dx: -12, dy: -12).contains(outside))
+            }
+            try await assertRestored(step)
+        }
+    }
+
     func testD12NativeFullscreenResolutionAndWakeKeepSavedPlace() async throws {
         _ = NSApplication.shared
         let main = try XCTUnwrap(DockDisplayTopology.system().main)
