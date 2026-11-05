@@ -79,6 +79,14 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "Withdrawal retires the tracking owner")
         currentDelegate.menuWillOpen(current)
         XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "A retired surface cannot acquire a menu lock")
+        dock.setPresentationAllowed(true)
+        currentDelegate.menuDidClose(current)
+        currentDelegate.menuWillOpen(current)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "A menu from the old surface cannot reacquire tracking after restoration")
+        let restored = dock.menu(), restoredDelegate = try XCTUnwrap(restored.delegate as? DockSliverMenu)
+        restoredDelegate.menuWillOpen(restored)
+        XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen)
+        restoredDelegate.menuDidClose(restored)
     }
 
     func testNormalEntryStartsAfterPresentationAndOfficialCardCloses() async throws {
