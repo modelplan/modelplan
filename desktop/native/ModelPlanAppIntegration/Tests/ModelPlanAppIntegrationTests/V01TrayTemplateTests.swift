@@ -32,8 +32,9 @@ import XCTest
         try assertReferenceAlpha(image, slotHeight: 16)
     }
     func testV01StatusItemUsesOrbitFreeTemplateAtBothScales() throws {
-        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
-              ProcessInfo.processInfo.environment["RUNNER_ENVIRONMENT"] == "github-hosted" else {
+        // The native test partition routes this class to its GUI leg on either
+        // self-hosted or hosted Actions runners. Do not create a status item on a developer machine.
+        guard ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else {
             throw XCTSkip("The native status item requires an approved GUI session")
         }
         _ = NSApplication.shared
