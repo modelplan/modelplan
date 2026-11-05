@@ -294,7 +294,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
     /// Synthetic offscreen captures may select a deterministic backing scale.
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
-    private var permitted = false, retired = false, retiring = false, rendering = false, menuOpen = false
+    private var permitted = false, retired = false, retiring = false, rendering = false
+    private weak var trackedDockMenu: NSMenu?
+    private var menuOpen: Bool { trackedDockMenu != nil }
     private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -714,7 +716,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { clearLocateHighlight(); workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { retireTrackedDockMenu(); clearLocateHighlight(); workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
         bindInteractionInput(); interactionController?.refresh()
         syncDisplayFollower()
     }
@@ -1091,6 +1093,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
             attentionWasExpanded = false; pointerSurface.stop()
+            retireTrackedDockMenu()
             panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil {
@@ -1123,7 +1126,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
-        content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
+        // Keep the AppKit tracking instance attached while the surface redraws.
+        let contextualMenu = trackedDockMenu ?? menu()
+        content.menu = contextualMenu
+        content.subviews.forEach { $0.menu = contextualMenu }
         if let preview = value.snapPreview, let view = edgeViews[preview.edge],
            view.registeredMoveOutlinePath != nil || view.registeredMovePreviewImage != nil {
             if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
@@ -1308,16 +1314,20 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     func menu() -> NSMenu {
         let component = DockSliverMenu(labels: [:], handlers: [:])
         component.owner = self
-        component.onMenuActuallyOpen = { [weak self] open in
-            guard let self else { return }; self.menuOpen = open; self.edge.refresh()
-        }
         let menu = component.menu
+        component.onMenuActuallyOpen = { [weak self, weak menu] open in
+            guard let self, let menu else { return }
+            if open { self.menuWillOpen(menu) }
+            else { self.menuDidClose(menu) }
+        }
         component.retainWithMenu()
         var items: [DockMenuPresentationItem] = []
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.settings.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.contextClose.value(preferences.language),
+                               action: permitted ? { [weak self] in self?.closeContext() } : nil))
             items.append(.init(title: nil))
             let english = preferences.language == .english
             let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
@@ -1336,13 +1346,37 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         items.append(.init(title: nil))
         items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
-        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: EngineRowsText.contextClose.value(preferences.language), action: { [weak self] in self?.closeContext() }))
         items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language), action: { [weak self] in self?.hideDockMenu() }))
         component.replace(with: items)
         return menu
     }
-    public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
-    public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    public func menuWillOpen(_ menu: NSMenu) {
+        guard permitted, !retired, !retiring, ownsDockMenu(menu) else { return }
+        trackedDockMenu = menu
+        edge.refresh()
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        guard trackedDockMenu === menu else { return }
+        trackedDockMenu = nil
+        edge.refresh()
+    }
+
+    private func retireTrackedDockMenu() {
+        let menu = trackedDockMenu
+        trackedDockMenu = nil
+        menu?.cancelTracking()
+    }
+
+    private func closeContext() {
+        guard permitted, !retired, !retiring else { return }
+        retireTrackedDockMenu()
+        if let controller = interactionController, controller.isActive { controller.dismissCard() }
+        dismissCard()
+        edge.refresh()
+    }
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
@@ -1385,7 +1419,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
         acknowledgeCockpitOpening(); dismissCard(); showConsole()
     }
-    @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
+    @objc private func openSettings() {
+        guard permitted, !retired, !retiring else { return }
+        closeContext()
+        showSettings?()
+    }
     @objc private func hideDockMenu() {
         guard permitted,!retired else { return }
         if let requestHideDock { requestHideDock() } else { setPresentationAllowed(false) }
@@ -1406,7 +1444,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
-                enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
+                enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
+                dismissLabel: EngineRowsText.contextClose.value(preferences.language), at: now)
+    }
+    private func cardUsesSettings(_ id: String) -> Bool {
+        purpose == .production || model?.presentationRows[id] != nil
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, supplied: DockCardContent? = nil) {
@@ -1421,11 +1463,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
-            if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
-            self.dismissCard()
-            guard self.permitted, !self.retired else { return }
-            if self.model?.presentationRows[id] != nil { self.showSettings?() }
-            else { self.openConsole() }
+            if self.cardUsesSettings(id) { self.openSettings() }
+            else { self.closeContext(); self.openConsole() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
@@ -1433,7 +1472,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             self.dismissCard()
         }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
-        let unavailable = model?.presentationRows[id] == nil && !cockpitEntryEnabled
+        let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         do {
             try card.apply(content, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
@@ -1492,6 +1531,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func close() {
         guard !retired, !retiring else { return }
         retiring = true
+        retireTrackedDockMenu()
         let retireContent = onWillRetire; onWillRetire = nil
         retireContent?()
         withdrawAdmittedContent(privacy: true)
