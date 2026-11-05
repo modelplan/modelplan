@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanEngineClient
+import ModelPlanShell
 import ModelPlanWire
 @testable import ModelPlanSettings
 @testable import ModelPlanAppIntegration
