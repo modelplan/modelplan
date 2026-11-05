@@ -31,7 +31,7 @@ test('verified subscription preserves zero and unknown while ambiguity is withhe
  account.subscriptionRef=detail.subscriptionRef;d.subscriptions[0].subscriptionRef=detail.subscriptionRef;
  detail.today[0].bindingBasis='source-wide-current-binding';detail.today[0].observedOutputTokens=0;detail.today[0].generationTps=0;
  detail.credits.balance=0;detail.resetCounts[0].count=0;
- let out=prototypeEngineSupplement(account,d);assert.equal(out.todayTokens,0);assert.equal(out.todayAverageGenerationTps,0);assert.equal(out.reserveCredits.balance,0);assert.equal(out.resetCards[0].count,0);
+ let out=prototypeEngineSupplement(account,d);assert.equal(out.todayTokens,0);assert.equal(out.todayAverageGenerationTps,0);assert.equal(out.reserveCredits.balance,0);assert.equal(out.reserveCredits.unit,null);assert.equal(out.resetCards[0].count,0);
  detail.today[0].generationTps=null;detail.credits.balance=null;detail.resetCounts[0].count=null;
  out=prototypeEngineSupplement(account,d);assert.equal(out.todayAverageGenerationTps,null);assert.equal(out.reserveCredits.balance,null);assert.equal(out.resetCards[0].count,null);
  detail.today.push({...detail.today[0],source:'another'});assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);

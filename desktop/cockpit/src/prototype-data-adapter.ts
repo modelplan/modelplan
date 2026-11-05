@@ -5,7 +5,7 @@ import type {WireAccount,WireWindow,WireCockpitData,WireCockpitDetails} from '..
 export interface PrototypeEngineSupplement {
  readonly todayTokens:number|null; readonly todayAverageGenerationTps:number|null;
  readonly resetCards:WireCockpitDetails['subscriptions'][number]['resetCounts']|null;
- readonly reserveCredits:WireAccount['credits'];
+ readonly reserveCredits:{readonly balance:number|null;readonly unit:string|null}|null;
 }
 export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitData):PrototypeEngineSupplement {
  const ref=account.subscriptionRef;
@@ -17,7 +17,7 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
  const today=eligible.length===1&&detail?.today.length===1?eligible[0]:null;
  const wireCredits=detail?.credits;
  return {todayTokens:today?.observedOutputTokens??null,todayAverageGenerationTps:today?.generationTps??null,resetCards:detail?.resetCounts??null,
-  reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
+  reserveCredits:wireCredits?{balance:wireCredits.balance,unit:null}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
 
