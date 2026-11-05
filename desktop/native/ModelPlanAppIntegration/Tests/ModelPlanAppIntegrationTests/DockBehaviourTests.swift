@@ -154,6 +154,8 @@ import ModelPlanSettings
     func testRasterDefaultHostDragShowsPreviewAndRestoresAtBothScales() async throws {
         for scale in [1, 2] {
             let url = try temporaryURL(), folder = url.deletingLastPathComponent()
+            let settings = try SettingsStore(url: url)
+            try await settings.update { $0.autoHide = true }
             let context = try XCTUnwrap(CGContext(data: nil, width: 192, height: 320,
                 bitsPerComponent: 8, bytesPerRow: 768, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
@@ -268,7 +270,7 @@ import ModelPlanSettings
 
     func testPlacementProducerReportsActualSeamRecoveryAndClearsOnTopologyAndClose() async throws {
         let url = try temporaryURL(), store = try SettingsStore(url: url)
-        try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right }
+        try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right; $0.autoHide = true }
         let persisted = try Data(contentsOf: url)
         let appearance: StaticDockPreviewHost.Appearance = { view, rows, prefs in
             try view.applyCommunity(rows)
@@ -321,7 +323,9 @@ import ModelPlanSettings
     }
 
     func testItem2SliverRegistrationAndTenDwellRevealLeaveCycles() async throws {
-        let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
+        let url = try temporaryURL(), settings = try SettingsStore(url: url)
+        try await settings.update { $0.autoHide = true }
+        let f = try BehaviourFixture(url: url); defer { f.host.close() }
         await f.start()
         let panel = try f.panel(), placement = try XCTUnwrap(f.host.edgePresentation?.placement)
         XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
@@ -435,21 +439,21 @@ import ModelPlanSettings
         render(f, try feed(valid: -1))
         XCTAssertEqual(f.rows().count, 1)
         XCTAssertFalse((f.rows().first?.accessibilityValue() as? String ?? "").contains("37"))
-        XCTAssertTrue(try f.menuText().contains("stale"))
+        XCTAssertFalse(try f.menuText().contains("stale"), "Provider details belong in Diagnostics, not the Dock context menu")
         let absent = try feed(accounts: false, extras: ["connections": [["id": "codex", "installed": ["status": "no", "reason": "not-found"]]]])
         render(f, absent)
-        XCTAssertEqual(f.rows().count, 0); XCTAssertTrue(try f.menuText().contains("Tool not detected."))
+        XCTAssertEqual(f.rows().count, 0); XCTAssertFalse(try f.menuText().contains("Tool not detected."), "Provider details belong in Diagnostics, not the Dock context menu")
         let denied = try feed(accounts: false, extras: ["connections": [["id": "codex", "quotaAccess": ["blocked": "reader-consent-or-privacy"]]]])
         render(f, denied)
         XCTAssertEqual(f.rows().count, 0)
-        XCTAssertTrue(try f.menuText().contains("Usage access is blocked by consent or privacy settings."))
+        XCTAssertFalse(try f.menuText().contains("Usage access is blocked by consent or privacy settings."), "Provider details belong in Diagnostics, not the Dock context menu")
         let gap = try BehaviourFixture(url: temporaryURL(), capabilities: .init(unconnectedProviders: ["claude"]), neutralAppearance: false)
         defer { gap.host.close() }
         await gap.start(); try await gap.coordinator.editor.commit(.autoHide(false))
         try await gap.coordinator.editor.commit(.language(.english))
         render(gap, nil)
         XCTAssertEqual(gap.rows().count, 0)
-        XCTAssertTrue(try gap.menuText().contains("Reader connection is not complete yet."))
+        XCTAssertFalse(try gap.menuText().contains("Reader connection is not complete yet."), "Provider details belong in Diagnostics, not the Dock context menu")
         let labels = try gap.panel().contentView?.subviews.flatMap(\.subviews).compactMap { $0 as? NSTextField } ?? []
         XCTAssertTrue(labels.contains { $0.stringValue == "Reader connection is not complete yet. Open Settings to check connected tools." })
         report(6, "synthetic-local=37% stale=reason-only not-detected=0-rows no-consent=0-rows not-connected=0-rows demo-rows=0")

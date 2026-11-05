@@ -54,20 +54,21 @@ import XCTest
         var requests = [SettingsHostRequest](), commits = 0
         editor.onHostRequest = { requests.append($0) }; editor.onCommit = { _, _ in commits += 1 }
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() }, clipboard: clipboard)
-        await controller.prepare(); controller.selectPane("about")
+        await controller.prepare(); controller.selectPane("diagnostics")
         let revision = editor.snapshot!.revision
         let copy = try XCTUnwrap(controller.actionControl(key: .diagnostics))
         XCTAssertTrue(copy.sendAction(copy.action, to: copy.target))
+        let late = copy.onInvoke
         let payload = try XCTUnwrap(clipboard.writes.last)
         XCTAssertTrue(payload.contains("app=1.2.3")); XCTAssertTrue(payload.contains("cli=unknown"))
         for secret in ["/private", "account-private", "private-name", "gemini"] { XCTAssertFalse(payload.contains(secret)) }
+        controller.selectPane("about")
         XCTAssertTrue(strings(controller.window!.contentView!).contains(SettingsAbout.intelNote.english))
         XCTAssertTrue(strings(controller.window!.contentView!).contains { $0.contains("Example bundled notice text") })
         let link = try XCTUnwrap(controller.actionControl(key: .feedback))
         XCTAssertTrue(link.sendAction(link.action, to: link.target))
         XCTAssertEqual(requests.last?.intent, .openPublicLink(.feedback))
         XCTAssertEqual(editor.snapshot!.revision, revision); XCTAssertEqual(commits, 0)
-        let late = copy.onInvoke
         controller.selectPane("general"); late?(copy)
         XCTAssertEqual(clipboard.writes.count, 1, "retired copy control must not write again")
         controller.close()

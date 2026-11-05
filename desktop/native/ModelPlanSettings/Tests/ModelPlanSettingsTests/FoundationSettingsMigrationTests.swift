@@ -26,6 +26,26 @@ final class FoundationSettingsMigrationTests: XCTestCase {
             }
         }
     }
+    func testLegacyExplicitWidgetChoicesSurviveVisibleFirstDefault() throws {
+        for autoHide in [false, true] {
+            let files = try FoundationSettingsMigrationFixture()
+            let input = try files.input("legacy-widget.json", object: ["schemaVersion": 1, "preferences": [
+                "showDock": false, "autoHide": autoHide, "dockEdge": "bottom",
+                "dockDisplayID": "synthetic-missing", "dockAlongFraction": 0.25
+            ]])
+            let result = try Migration.prepare(product: .official, target: .absent,
+                legacy: { .init(officialSettings: input) })
+            guard case .create(let candidate) = result else { return XCTFail("Expected migrated candidate") }
+            let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: candidate.document) as? [String: Any])
+            let saved = try XCTUnwrap(document["settings"] as? [String: Any])
+            XCTAssertEqual(saved["showDock"] as? Bool, false)
+            XCTAssertEqual(saved["autoHide"] as? Bool, autoHide)
+            XCTAssertEqual(saved["dockEdge"] as? String, "bottom")
+            XCTAssertEqual(saved["dockDisplayID"] as? String, "synthetic-missing")
+            XCTAssertEqual(saved["dockAlongFraction"] as? Double, 0.25)
+            XCTAssertTrue(try files.originalsUnchanged())
+        }
+    }
     func testInvalidLegacyEdgeUsesRightWithoutImportingTheLosingProfile() throws {
         let edges: [Any?] = [nil, "unrecognized-edge", 17, NSNull()]
         for edge in edges {

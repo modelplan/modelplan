@@ -23,6 +23,8 @@ type nativeRefreshTransport func(*http.Request) (*http.Response, error)
 
 func (f nativeRefreshTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func (nativeRefreshTransport) ReaderSingleAttempt() {}
+
 func nativeRefreshHome(t *testing.T) string {
 	t.Helper()
 	home := consentAPIHome(t)
