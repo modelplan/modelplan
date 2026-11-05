@@ -2,6 +2,7 @@
 import Foundation
 import XCTest
 import ModelPlanCore
+import ModelPlanCockpitWeb
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -171,7 +172,9 @@ private actor EntrySyntheticClient: EngineClient {
         let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
         guard case .choice(let selected, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
         XCTAssertEqual(selected, "25")
-        for threshold in [40, 30, 25, 20, 15, 10] where options.contains(String(threshold)) {
+        let approvedChoices = [40, 30, 25, 20, 15, 10]
+        XCTAssertEqual(options, approvedChoices.map(String.init))
+        for threshold in approvedChoices {
             let option = String(threshold)
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
@@ -205,6 +208,41 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(restoredReadings[second]?.status, .critical)
         XCTAssertEqual(restoredReadings[first]?.readout, "75%")
 
+        await relaunched.composition.stop()
+        let savedStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await savedStore.update { $0.redBelow = 17 }
+        let file = root.appendingPathComponent("ModelPlan/settings.json")
+        let before = try Data(contentsOf: file)
+        let unsupported = try await start()
+        XCTAssertEqual(unsupported.composition.latestSettings?.effective.redBelow, 25)
+        let readings = unsupported.composition.dock.dockView.presentedReadingsForChecks
+        XCTAssertEqual(readings[first]?.status, .critical)
+        XCTAssertEqual(readings[first]?.readout, "75%")
+        XCTAssertEqual(try Data(contentsOf: file), before)
+    }
+
+    func testS11NativeBridgeUsesTheSharedThresholdChoices() throws {
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-s11", generation: 1)
+        let shell = CockpitShellState(closed: false, attached: true, forcedClosed: false, tier: .tall)
+        let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
+        func message(_ raw: String) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        }
+        for threshold in [40, 30, 25, 20, 15, 10, 17] {
+            let bridge = CockpitBridgeState(context: context)
+            let expected = threshold == 17 ? 25 : threshold
+            let appearance = CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: threshold)
+            let initial = try bridge.load(appearance, shell: shell)
+            XCTAssertEqual(try message(initial)["redBelow"] as? Int, expected, "load at " + String(threshold))
+            var receipt = try message(initial)
+            receipt["shell"] = nil; receipt["appearance"] = nil; receipt["redBelow"] = nil
+            receipt["type"] = "ready"; receipt["sequence"] = "1"; receipt["appearanceVersion"] = 2
+            receipt["capabilities"] = ["appearanceUpdates", "shellState", "shellActions"]
+            let ready = try JSONSerialization.data(withJSONObject: receipt)
+            _ = try bridge.accept(String(decoding: ready, as: UTF8.self), source: source)
+            let later = try bridge.setAppearance(appearance)
+            XCTAssertEqual(try message(later)["redBelow"] as? Int, expected, "appearance at " + String(threshold))
+        }
     }
 
     func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
