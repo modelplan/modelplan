@@ -14,7 +14,8 @@ final class StructureTests: XCTestCase {
         return directory.appendingPathComponent("preferences.json")
     }
     func testRegroupingAndOrderComeOnlyFromInputWithoutChangingPreferenceValues() throws {
-        let p = SettingsPreferences(), context = SettingsPageContext()
+        let p = SettingsPreferences()
+        var context = SettingsPageContext(); context.refreshHistory = [] // Include every connected row in this regrouping test.
         let original = try SettingsCatalogue.rows(preferences: p, context: context)
         let keys = Array(SettingKey.allCases.reversed())
         let structure = try SettingsStructure(panes: [

@@ -811,6 +811,7 @@ private actor ReserveJourneyClient: EngineClient {
             let empty = try await reserve(balance: 12.5, unit: "", english: english)
             XCTAssertEqual(empty?.value, "13")
             XCTAssertEqual(empty?.label, label)
+            XCTAssertEqual(empty?.detail, "")
             let unrecognized = try await reserve(balance: 12.5, unit: "PRIVATE-UNIT-CANARY", english: english)
             XCTAssertEqual(unrecognized?.value, "13")
             XCTAssertEqual(unrecognized?.label, label)

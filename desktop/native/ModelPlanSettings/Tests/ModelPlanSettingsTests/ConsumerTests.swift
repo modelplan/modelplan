@@ -33,7 +33,7 @@ final class ConsumerTests: XCTestCase {
     }
     func testPreferencesDriveRealDockReducers() throws {
         var p = SettingsPreferences(), e = SettingsEnvironment()
-        p.revealMilliseconds = 300
+        p.revealMilliseconds = 300; p.autoHide = true
         var effective = EffectiveSettings(p, environment: e)
         var reducer = DockVisibilityState(policy: effective.visibilityPolicy), input = DockPresence()
         input.pointer = .wake

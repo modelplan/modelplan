@@ -7,6 +7,8 @@ import ModelPlanSettings
     private weak var host: (any DockInteractionHostPort)?
     private let application: SettingsApplicationCoordinator
     private let controller: DockInteractionController
+    /// The product adapter resolves this displayed member to an admitted refresh request.
+    public var onActivate: ((String) -> Void)?
     private var active = false
     private var installed = false
     private var generation: UInt64 = 0
@@ -23,6 +25,10 @@ import ModelPlanSettings
         guard !installed, let host else { return }
         installed = true
         controller.onOrderRequest = { [weak self] request in self?.submit(request) }
+        controller.onActivate = { [weak self] id in
+            guard let self, self.active else { return }
+            self.onActivate?(id)
+        }
         host.installInteraction(controller)
     }
 
@@ -38,7 +44,8 @@ import ModelPlanSettings
         guard installed else { return }
         active = false; installed = false; generation &+= 1
         controller.onOrderRequest = nil
-        controller.stop(preservingPin: false)
+        controller.onActivate = nil
+        controller.stop()
         host?.uninstallInteraction(controller)
     }
 
