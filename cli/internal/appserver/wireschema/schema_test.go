@@ -363,3 +363,44 @@ func TestMemberRefreshGeneratedCapturesValidate(t *testing.T) {
 		}
 	}
 }
+
+// Optional forbidden-null fields accept omission but not an explicit JSON null.
+func TestForbiddenNullOptionalFields(t *testing.T) {
+	s := schema(t, "CockpitSubscriptionDetails")
+	raw, err := os.ReadFile("../../../../schema/app-cli/captures/WireCockpitSubscriptionDetails.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatal(err)
+	}
+	delete(value, "resetCards")
+	if err := validate(t, s, value); err != nil {
+		t.Fatalf("omitted: %v", err)
+	}
+	value["resetCards"] = nil
+	if err := validate(t, s, value); err == nil {
+		t.Fatal("forbidden resetCards null accepted")
+	}
+}
+
+func TestCockpitCreditsUnitNullPolicy(t *testing.T) {
+	s := schema(t, "CockpitCredits")
+	value := map[string]any{"balance": 42.5, "observedAt": "2026-10-29T12:00:00Z"}
+	if err := validate(t, s, value); err != nil {
+		t.Fatalf("omitted: %v", err)
+	}
+	for _, unit := range []any{"money", "credits"} {
+		value["unit"] = unit
+		if err := validate(t, s, value); err != nil {
+			t.Fatalf("valid %v: %v", unit, err)
+		}
+	}
+	for _, unit := range []any{nil, 7, "bogus"} {
+		value["unit"] = unit
+		if err := validate(t, s, value); err == nil {
+			t.Fatalf("invalid unit %v accepted", unit)
+		}
+	}
+}

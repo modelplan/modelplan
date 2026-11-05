@@ -50,4 +50,6 @@ test('C-08 C-12 admitted credit units show verified balance and never relabel mo
  const balance=page.locator('.pg-sub .cr-bal');await expect(balance).toHaveText('19,614');
  detail.credits.unit='money';expect(await receive(send('display',{data}))).toBe(true);await expect(balance).toHaveCount(0);
  delete detail.credits.unit;expect(await receive(send('display',{data}))).toBe(true);await expect(balance).toHaveCount(0);
+ for(const invalid of [null,12,'invalid']){detail.credits.unit=invalid;expect(await receive(send('display',{data}))).toBe(false);await expect(balance).toHaveCount(0);}
+ detail.credits.unit='credits';expect(await receive(send('display',{data}))).toBe(true);await expect(balance).toHaveText('19,614');
 });

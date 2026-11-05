@@ -81,14 +81,7 @@
           ]
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "route": {
           "enum": [
@@ -220,18 +213,11 @@
           "type": "string"
         },
         "unit": {
-          "anyOf": [
-            {
-              "enum": [
-                "money",
-                "credits"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "enum": [
+            "money",
+            "credits"
+          ],
+          "type": "string"
         }
       },
       "required": [
@@ -522,14 +508,7 @@
           ]
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "resetCounts": {
           "items": {
@@ -910,14 +889,7 @@
       },
       "properties": {
         "accessToken": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string"
         },
         "expiresAt": {
           "anyOf": [
@@ -996,18 +968,11 @@
           "type": "string"
         },
         "refreshDecisions": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/RefreshDecision"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "maxItems": 20
+          "items": {
+            "$ref": "#/$defs/RefreshDecision"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "scopes": {
           "items": {
@@ -2937,15 +2902,8 @@
           "minimum": 0
         },
         "earliestExpiresAt": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "format": "date-time",
+          "type": "string"
         },
         "items": {
           "items": {
@@ -3667,21 +3625,14 @@
           "type": "string"
         },
         "source": {
-          "anyOf": [
-            {
-              "enum": [
-                "local_history",
-                "runtime",
-                "saved_login",
-                "api_key",
-                "other"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "enum": [
+            "local_history",
+            "runtime",
+            "saved_login",
+            "api_key",
+            "other"
+          ],
+          "type": "string"
         },
         "validUntil": {
           "anyOf": [

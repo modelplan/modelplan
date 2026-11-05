@@ -38,3 +38,18 @@ test('verified subscription preserves zero and unknown while ambiguity is withhe
  detail.today.push({...detail.today[0],source:'another'});assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
  detail.today.pop();d.subscriptions=[];assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
 });
+
+test('forbidden-null fields reject explicit null while omission remains valid',()=>{
+ const d=withDetails();
+ delete d.details.subscriptions[0].resetCards;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),true);
+ d.details.subscriptions[0].resetCards=null;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),false);
+});
+
+test('credit unit rejects null and wrong types while allowing omission',()=>{
+ const d=withDetails(),credits=d.details.subscriptions[0].credits;
+ delete credits.unit;assert.equal(conforms(d,definitions.CockpitData,definitions),true);
+ for(const unit of ['money','credits']){credits.unit=unit;assert.equal(conforms(d,definitions.CockpitData,definitions),true);}
+ for(const unit of [null,7,'bogus']){credits.unit=unit;assert.equal(conforms(d,definitions.CockpitData,definitions),false);}
+});

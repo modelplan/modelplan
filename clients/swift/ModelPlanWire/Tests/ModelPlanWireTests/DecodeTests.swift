@@ -23,6 +23,19 @@ private struct CaptureIndex: Decodable {
 }
 
 final class DecodeTests: XCTestCase {
+    func testCockpitCreditUnitNullPolicy() throws {
+        var value = try object("WireCockpitCredits.json")
+        value.removeValue(forKey: "unit")
+        XCTAssertNoThrow(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
+        for unit in ["money", "credits"] {
+            value["unit"] = unit
+            XCTAssertNoThrow(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
+        }
+        for unit in [NSNull(), 7, "bogus"] as [Any] {
+            value["unit"] = unit
+            XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
+        }
+    }
     private var captures: URL {
         if let path = ProcessInfo.processInfo.environment["MODELPLAN_CAPTURE_DIR"] {
             return URL(fileURLWithPath: path)
