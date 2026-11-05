@@ -16,7 +16,7 @@ const notes:ReadonlyArray<readonly [string,string,string]>=[
  ['.lb-other','Other: remaining periods and scoped quotas; +N means more.','其他：其他周期和专项额度，+N 表示还有更多。'],
  ['.dk-fad','Faders: each is a model; drag or press an effort for a local comparison that leaves the session unchanged.','推杆：每个代表一个模型，拖动或点档位作本地比较，不会改会话。'],
  ['.mfd-pk','Main screen: page keys change pages; bottom keys select or return.','公共屏：页键切页，底键选项或返回原页。'],
- ['.ck-tape','Session record: running sessions come first; press a row for details.','会话记录：运行中的在前，按一行查看详情。'],
+ ['.ck-tape','Running sessions first, then last seen; -- means speed unavailable.','运行中的会话在前，其后为最近观察；-- 表示速率不可用。'],
  ['.ck-base .bz-line','Flame: this subscription is working now; it does not mean an alert.','火焰：表示这个订阅正在用，不表示额度告警。'],
 ];
 export function mountPrototypeHelp(root:HTMLElement,getLocale:()=>Locale,isActive:()=>boolean,isAttached:()=>boolean){
