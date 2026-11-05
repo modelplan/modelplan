@@ -1785,20 +1785,47 @@ public struct WireCockpitAlert: Codable, Sendable {
     }
 }
 
+public enum WireCockpitCreditUnit: Codable, Sendable, Equatable {
+    case `money`
+    case `credits`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "money": self = .`money`
+        case "credits": self = .`credits`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`money`: return "money"
+        case .`credits`: return "credits"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitCredits: Codable, Sendable {
+    public let `unit`: WireCockpitCreditUnit?
     public let `balance`: Double?
     public let `observedAt`: WireTimestamp
     private enum CodingKeys: String, CodingKey {
+        case `unit`
         case `balance`
         case `observedAt`
     }
-    public init(`balance`: Double? = nil, `observedAt`: WireTimestamp) throws {
+    public init(`unit`: WireCockpitCreditUnit? = nil, `balance`: Double? = nil, `observedAt`: WireTimestamp) throws {
+        self.`unit` = `unit`
         self.`balance` = `balance`
         self.`observedAt` = `observedAt`
         try validate()
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`unit`), try c.decodeNil(forKey: .`unit`) { throw WireDecodeError.invalidIdentity }
+        self.`unit` = try c.decodeIfPresent(WireCockpitCreditUnit.self, forKey: .`unit`)
         self.`balance` = try c.decodeIfPresent(Double.self, forKey: .`balance`)
         self.`observedAt` = try c.decode(WireTimestamp.self, forKey: .`observedAt`)
         try validate()
@@ -1806,6 +1833,7 @@ public struct WireCockpitCredits: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`unit`, forKey: .`unit`)
         try c.encode(`balance`, forKey: .`balance`)
         try c.encode(`observedAt`, forKey: .`observedAt`)
     }

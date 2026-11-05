@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 72 optional/nullable fields reachable from the production
+This inventory covers optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -56,6 +56,7 @@ containers and failure ID retain their required-key checks.
 | CockpitSubscriptionDetails.Credits | coalesced | The admitted producer uses null for unknown credits; generated decoding preserves that as no reading. |
 | CockpitResetCount.Count | coalesced | Null is an unknown count, distinct from zero; required-key validation is separate. |
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
+| CockpitCredits.Unit | forbidden | Omission means unknown; only a unit from the same admitted credit observation is emitted. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
 | CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |

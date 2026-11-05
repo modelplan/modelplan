@@ -202,3 +202,11 @@ const (
 	MemberRefreshNotGranted MemberRefreshReason = "not_granted"
 	MemberRefreshOffline    MemberRefreshReason = "offline"
 )
+
+// CockpitCreditUnit describes only explicitly reported, admitted unit kinds.
+type CockpitCreditUnit string
+
+const (
+	CockpitCreditMoney   CockpitCreditUnit = "money"
+	CockpitCreditCredits CockpitCreditUnit = "credits"
+)

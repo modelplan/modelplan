@@ -218,6 +218,20 @@
         "observedAt": {
           "format": "date-time",
           "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "enum": [
+                "money",
+                "credits"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
