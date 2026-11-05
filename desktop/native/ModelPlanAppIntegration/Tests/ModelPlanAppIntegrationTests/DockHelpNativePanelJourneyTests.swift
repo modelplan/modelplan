@@ -19,7 +19,7 @@ import ModelPlanDock
         let outside = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
         var pointer = outside
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
-            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: true,
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: true, cockpitEntryEnabled: true,
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id,
                 pointer: pointer) },
             deadlineNow: { wall },
@@ -45,6 +45,11 @@ import ModelPlanDock
         let grip = try XCTUnwrap(surface.mapAnchors.first { $0.id == "dock.grip.0" })
         let subscription = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.subscription." + id })
         let gripNode = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == grip.id })
+        let ignition = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? NSButton }
+            .first { $0.accessibilityIdentifier() == "dock.ignition" })
+        let ignitionAnchor = try XCTUnwrap(surface.mapAnchors.first { $0.id == "dock.ignition" })
+        XCTAssertTrue(ignition.window === panel)
+        XCTAssertTrue(ignition.isEnabled)
 
         func interaction(_ anchor: DockRequestedHelpAnchor, _ source: DockHelpInteraction.Source) throws -> DockHelpInteraction {
             let value = try XCTUnwrap(dock.currentDockHelpInteraction)
@@ -99,14 +104,38 @@ import ModelPlanDock
         XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(gripText, for: gripFocus, on: gripSurface))
         XCTAssertEqual(gripNode.accessibilityHelp(), gripText)
         gripNode.setAccessibilityFocused(true)
-        let beforeWithdrawal: [DockHelpInteraction?] = [gripPointer, ringFocus, nil, secondVisit, nil, gripFocus]
-        XCTAssertEqual(changes, beforeWithdrawal)
+        let throughGrip: [DockHelpInteraction?] = [gripPointer, ringFocus, nil, secondVisit, nil, gripFocus]
+        XCTAssertEqual(changes, throughGrip)
+        gripNode.setAccessibilityFocused(false)
+        XCTAssertNil(gripNode.accessibilityHelp())
 
+        ignition.setAccessibilityFocused(true)
+        let ignitionFocus = try interaction(ignitionAnchor, .keyboard)
+        let ignitionSurface = try XCTUnwrap(dock.currentDockHelpSurface)
+        let ignitionText = "Ignition\nOpen the cockpit."
+        XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(ignitionText, for: ignitionFocus, on: ignitionSurface))
+        XCTAssertEqual(ignition.accessibilityHelp(), ignitionText)
+        XCTAssertFalse(dock.setDockHelpAccessibilityExplanation(gripText, for: gripFocus, on: gripSurface))
+
+        dock.cockpitEntryEnabled = false
+        XCTAssertFalse(ignition.isEnabled)
+        XCTAssertNil(dock.currentDockHelpInteraction)
+        XCTAssertNil(ignition.accessibilityHelp())
+        XCTAssertFalse(dock.setDockHelpAccessibilityExplanation(ignitionText, for: ignitionFocus, on: ignitionSurface))
+        dock.cockpitEntryEnabled = true
+        XCTAssertNil(dock.currentDockHelpInteraction)
+        ignition.setAccessibilityFocused(true)
+        let nextIgnitionFocus = try interaction(ignitionAnchor, .keyboard)
+        let nextIgnitionSurface = try XCTUnwrap(dock.currentDockHelpSurface)
+        XCTAssertTrue(dock.setDockHelpAccessibilityExplanation(ignitionText, for: nextIgnitionFocus, on: nextIgnitionSurface))
+        let beforeWithdrawal = throughGrip + [nil, ignitionFocus, nil, nextIgnitionFocus]
+        XCTAssertEqual(changes, beforeWithdrawal)
         dock.setPresentationAllowed(false)
         XCTAssertFalse(panel.isVisible)
         XCTAssertNil(dock.currentDockHelpSurface)
         XCTAssertNil(dock.currentDockHelpInteraction)
         XCTAssertNil(gripNode.accessibilityHelp())
+        XCTAssertNil(ignition.accessibilityHelp())
         XCTAssertEqual(changes, beforeWithdrawal + [nil])
         XCTAssertFalse(dock.setDockHelpAccessibilityExplanation(gripText, for: gripFocus, on: gripSurface))
         dock.refreshPresence()
