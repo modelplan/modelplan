@@ -135,6 +135,50 @@ import ModelPlanSettings
             }
         }
     }
+    func testD09DisappearingDragDestinationCannotJumpOrSaveFallback() throws {
+        let topology = DragTopology()
+        var clock = 0.0
+        let controller = DockEdgeController(preference: .init(displayID: topology.a.id), clock: { clock },
+            scheduler: DragSchedule(), read: {
+                var sample = topology.read()
+                sample.presence.autoHide = false
+                sample.layouts = sample.displays.flatMap { display in
+                    DockEdgeGeometry.allowedEdges.map { edge in
+                        DockEdgeLayout(displayID: display.id, edge: edge, expandedSize: CGSize(width: 80, height: 160),
+                            sliverLength: 110, sliverThickness: 4, hoverRects: [])
+                    }
+                }
+                return sample
+            }, position: PulseDockPositioning.resolve)
+        var commits: [DockEdgePreference] = []
+        controller.onCommittedPlacement = { commits.append($0) }
+        controller.start()
+        defer { controller.stop() }
+        let initial = try XCTUnwrap(controller.presentation?.paintedFrame)
+        controller.dragRegions = .init(body: CGPath(rect: CGRect(origin: .zero, size: initial.size), transform: nil),
+            excludedControls: [])
+        clock = 1
+        let down = CGPoint(x: initial.midX, y: initial.midY)
+        XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: initial.width / 2, y: initial.height / 2), global: down))
+        controller.updateBackgroundMove(global: CGPoint(x: down.x, y: down.y + 24))
+        let held = try XCTUnwrap(controller.presentation)
+        XCTAssertTrue(held.moving)
+        let target = CGPoint(x: topology.b.frame.midX, y: topology.b.frame.midY)
+        controller.prepareDragDisplay = { display in
+            if display.id == topology.b.id { topology.active = [topology.a, topology.c] }
+        }
+
+        controller.updateBackgroundMove(global: target)
+        XCTAssertEqual(controller.presentation, held, "the last verified carry stays visible during a topology race")
+        XCTAssertTrue(controller.isBackgroundPressed)
+        XCTAssertTrue(commits.isEmpty)
+        topology.active = [topology.a, topology.b, topology.c]
+        controller.endBackgroundMove(global: target)
+        XCTAssertTrue(commits.isEmpty, "release cannot save a fallback when its destination disappears")
+        XCTAssertEqual(controller.preference.displayID, topology.a.id)
+        XCTAssertEqual(controller.presentation?.paintedFrame, initial)
+    }
+
     func testD08D10InnerStripWakeAndHotPlugPreserveIntentInBothModes() throws {
         defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
         for mode in [1, 2] {
