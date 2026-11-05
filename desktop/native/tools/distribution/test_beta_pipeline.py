@@ -58,6 +58,11 @@ print(signature.base64EncodedString())
                                      feed or self.feed, channel_name=channel, release_notes=self.notes,
                                      previous=previous)
 
+    def test_description_matches_minimum_macos(self):
+        item = ET.fromstring(self.appcast("42")).find("channel/item")
+        self.assertIn("macOS 15+", item.findtext("description"))
+        self.assertEqual(item.findtext("{http://www.andymatuschak.org/xml-namespaces/sparkle}minimumSystemVersion"), "15.0.0")
+
     def test_enclosure_has_real_signature_verifiable_with_throwaway_public_key(self):
         item = ET.fromstring(self.appcast('10')).find('channel/item')
         signature = item.find('enclosure').get(f'{{{release.NS}}}edSignature')

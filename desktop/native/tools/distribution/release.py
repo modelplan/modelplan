@@ -384,7 +384,7 @@ def appcast_bytes(info, archive, signature, download, feed, *, channel_name=None
     if channel_name == 'beta':
         ET.SubElement(item, f'{{{NS}}}channel').text = 'beta'
         ET.SubElement(item, f'{{{NS}}}releaseNotesLink').text = release_notes
-    ET.SubElement(item, 'description').text = 'Universal macOS 14+ binary. Intel execution untested; 3D may stutter.'
+    ET.SubElement(item, 'description').text = 'Universal macOS 15+ binary. Intel execution untested; 3D may stutter.'
     ET.SubElement(item, 'enclosure', {'url': download, f'{{{NS}}}edSignature': signature,
         'length': str(Path(archive).stat().st_size), 'type': 'application/octet-stream'})
     for old in sorted(old_items, key=lambda item: build_version(item.findtext(f'{{{NS}}}version')), reverse=True):
@@ -533,7 +533,7 @@ def adhoc_appcast(app, output, tool, *, previous=None):
                                     previous=previous))
     notes = ('# ModelPlan ' + info['CFBundleShortVersionString'] + ' (ad-hoc beta)\n\n'
              'Build: ' + info['CFBundleVersion'] + '\n\nSource commit: ' + env['GITHUB_SHA'] + '\n\n'
-             'Universal macOS 14+ build. Intel execution is untested; 3D may stutter.\n\n'
+             'Universal macOS 15+ build. Intel execution is untested; 3D may stutter.\n\n'
              'This beta is ad-hoc signed and is not notarized. Gatekeeper may block first open; '
              'after trying to open the app, use System Settings → Privacy & Security → Open Anyway '
              'and confirm the first-open prompt if you trust this release.\n\n'
