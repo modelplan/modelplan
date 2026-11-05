@@ -270,3 +270,16 @@ An absent deadline means the member-refresh capability or live grant is absent;
 `null` means the grant exists but the deadline or account binding is unknown.
 A timestamp in the past means the reader is already due. Every request still
 rechecks the provider-wide floor, backoff, budget, and current consent.
+
+### Cockpit live-session extension
+
+`cockpitLiveSessionV1` is an additive initialize capability used together with
+`cockpitDetailsV1`. Only clients declaring both receive the optional
+`details.sessions[].startedAt`, `effortStatus`, and `speedMode` fields.
+`startedAt` is an admitted local observation of a session's start and is
+omitted when missing or later than the last observation. `effortStatus` is
+`reported` only when the supported effort value was observed; absent means
+unknown. `speedMode` is `fast` or `priority` only when explicitly reported;
+its absence is not evidence of standard mode. This is a bounded local
+last-seen list, not a complete session history or evidence of an end time.
+The extension does not supply or infer a per-session account binding.

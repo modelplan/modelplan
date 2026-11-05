@@ -64,15 +64,18 @@ type CockpitToday struct {
 	BindingBasis         string   `json:"bindingBasis"`
 }
 type CockpitSession struct {
-	SessionRef      string    `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
-	Source          string    `json:"source"`
-	SubscriptionRef *string   `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
-	Model           string    `json:"model"`
-	Effort          *string   `json:"effort" null:"coalesced"`
-	ProjectLabel    *string   `json:"projectLabel" null:"coalesced"`
-	LastObservedAt  time.Time `json:"lastObservedAt"`
-	State           string    `json:"state"`
-	Rate            *float64  `json:"rate" null:"coalesced"`
+	StartedAt       *time.Time           `json:"startedAt,omitempty" null:"forbidden"`
+	EffortStatus    *CockpitEffortStatus `json:"effortStatus,omitempty" null:"forbidden"`
+	SpeedMode       *CockpitSpeedMode    `json:"speedMode,omitempty" null:"forbidden"`
+	SessionRef      string               `json:"sessionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Source          string               `json:"source"`
+	SubscriptionRef *string              `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16" null:"coalesced"`
+	Model           string               `json:"model"`
+	Effort          *string              `json:"effort" null:"coalesced"`
+	ProjectLabel    *string              `json:"projectLabel" null:"coalesced"`
+	LastObservedAt  time.Time            `json:"lastObservedAt"`
+	State           string               `json:"state"`
+	Rate            *float64             `json:"rate" null:"coalesced"`
 }
 type CockpitAlert struct {
 	Source           string  `json:"source"`

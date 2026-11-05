@@ -161,6 +161,16 @@ func CockpitDetailsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityCockpitLiveSessionV1 opts in to additive live-session provenance.
+const CapabilityCockpitLiveSessionV1 = "cockpitLiveSessionV1"
+
+type cockpitLiveSessionContextKey struct{}
+
+func CockpitLiveSessionEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitLiveSessionContextKey{}).(bool)
+	return enabled
+}
+
 // WindowSourcesEnabled reports the negotiated per-window provenance contract.
 const CapabilityWindowSources = "windowSourcesV1"
 

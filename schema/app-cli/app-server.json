@@ -409,6 +409,19 @@
             }
           ]
         },
+        "effortStatus": {
+          "anyOf": [
+            {
+              "enum": [
+                "reported"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "lastObservedAt": {
           "format": "date-time",
           "type": "string"
@@ -443,6 +456,31 @@
         },
         "source": {
           "type": "string"
+        },
+        "speedMode": {
+          "anyOf": [
+            {
+              "enum": [
+                "fast",
+                "priority"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "state": {
           "type": "string"

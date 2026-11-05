@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
+// Schema SHA-256: 4d3ec70d809f62d68319a4f8c3ff644bd6256d485388ca0dd184809d44e6359e
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -65,12 +65,15 @@ export type WireCockpitResetCount = {
 
 export type WireCockpitSession = {
   readonly "effort": string | null;
+  readonly "effortStatus"?: "reported" | null;
   readonly "lastObservedAt": string;
   readonly "model": string;
   readonly "projectLabel": string | null;
   readonly "rate": number | null;
   readonly "sessionRef": string;
   readonly "source": string;
+  readonly "speedMode"?: "fast" | "priority" | null;
+  readonly "startedAt"?: string | null;
   readonly "state": string;
   readonly "subscriptionRef": string | null;
 };
@@ -609,6 +612,19 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "effortStatus": {
+        "anyOf": [
+          {
+            "enum": [
+              "reported"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "lastObservedAt": {
         "format": "date-time",
         "type": "string"
@@ -643,6 +659,31 @@ export const definitions: Readonly<Record<string, Schema>> = {
       },
       "source": {
         "type": "string"
+      },
+      "speedMode": {
+        "anyOf": [
+          {
+            "enum": [
+              "fast",
+              "priority"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "startedAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       },
       "state": {
         "type": "string"
