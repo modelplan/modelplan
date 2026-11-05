@@ -104,6 +104,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var attentionSignals: [DockSubscriptionSignal] = []
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
+    private var pendingUserReveal = false
+    private var cockpitPresentationBlocked = false
     private var locateTask: Task<Void, Never>?
     private var locating = false
     public private(set) var menuNotice: DockNotice?
@@ -370,7 +372,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let catalogue = model?.inputs.map(\.id) ?? []
         let expanded = edge.presentation?.state == .expanded
         let active = permitted && !retired && !rendering && preferences.showDock &&
-            appearance != nil && view.interactionProjectionAvailable && model != nil
+            env.presence.cockpitClosed && appearance != nil && view.interactionProjectionAvailable && model != nil
         var inside: Bool?
         if let place, let pointer = env.pointer,
            let display = env.displays.first(where: { $0.id == place.displayID }) {
@@ -605,8 +607,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         edge.onPresent = { [weak self] value in self?.present(value) }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
-            if let id = value.displayID { self.commitDisplayPlacement?(id, next, value.alongFraction) }
-            self.commitPlacement?(next, value.alongFraction)
+            if let id = value.displayID, let commit = self.commitDisplayPlacement {
+                commit(id, next, value.alongFraction)
+            } else {
+                self.commitPlacement?(next, value.alongFraction)
+            }
         }
     }
     public func apply(_ value: SettingsApplication) {
@@ -618,7 +623,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        if !preferences.showDock { clearLocateHighlight(); dismissCard() }
+        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); dismissCard() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
@@ -957,6 +962,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         var presence = native.presence
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
         presence.lifecycleActive = permitted && !retired
+        presence.cockpitClosed = presence.cockpitClosed && !cockpitPresentationBlocked
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen; presence.locating = locating
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
@@ -1063,6 +1069,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private func present(_ value: DockEdgePresentation) {
         defer {
+            // The controller is still sampling during onPresent. Apply a queued
+            // reveal after this delivery so its own reveal intent can be sampled.
+            if pendingUserReveal, value.paintedFrame != nil {
+                Task { @MainActor [weak self] in self?.fulfillUserReveal() }
+            }
             publishDockHelpSurface(value)
             if !rendering { bindInteractionInput(); interactionController?.refresh() }
         }
@@ -1337,14 +1348,34 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
         publishAttention()
     }
+    func setCockpitPresentationBlocked(_ blocked: Bool) {
+        guard !retired, cockpitPresentationBlocked != blocked else { return }
+        cockpitPresentationBlocked = blocked
+        if blocked {
+            clearLocateHighlight()
+            edge.refresh()
+            dismissCard()
+        } else {
+            edge.restoreAfterCockpitClose()
+        }
+    }
+
     func revealForUser() {
-        guard permitted, !retired, preferences.showDock else { return }
+        guard !retired, preferences.showDock else { return }
+        pendingUserReveal = true
+        fulfillUserReveal()
+    }
+
+    private func fulfillUserReveal() {
+        guard pendingUserReveal, permitted, !retired, preferences.showDock,
+              edge.presentation?.paintedFrame != nil else { return }
         clearLocateHighlight(); locating = true; edge.reveal()
         guard let presentation = edge.presentation, presentation.state == .expanded,
               let placement = presentation.placement, let view = edgeViews[placement.edge],
               !view.bounds.isEmpty, let parent = view.layer else {
             locating = false; edge.refresh(); return
         }
+        pendingUserReveal = false
         let path = view.registeredMoveOutlinePath ?? CGPath(roundedRect: view.bounds.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 6, cornerHeight: 6, transform: nil)
         let mark = CAShapeLayer(); mark.name = "dock.locate-highlight"; mark.frame = view.bounds; mark.path = path
         mark.fillColor = NSColor.clear.cgColor; mark.strokeColor = NSColor.controlAccentColor.cgColor

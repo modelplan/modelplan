@@ -6,6 +6,7 @@ import ModelPlanSettings
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
+import ModelPlanCockpitWeb
 @testable import ModelPlanAppIntegration
 
 private actor LifecycleEngine: EngineClient {
@@ -440,6 +441,26 @@ private actor LifecycleEngine: EngineClient {
                            unblock: { workspace.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil) })
         try await exercise(block: { topology.cockpitClosed = false; app.composition.dock.refreshPresence() },
                            unblock: { topology.cockpitClosed = true; app.composition.dock.refreshPresence() })
+    }
+
+    func testDockWaitsForTheCockpitOpenAttemptAndRestoresAfterFailure() async throws {
+        let root = profile()
+        let app = try await make(root, topology: Topology()) { $0.theme = .night }
+        _ = start(app)
+        let saved = try expanded(app).frame
+        let owner = CockpitConsoleOwner(bundle: root, settingsStore: app.settingsHost.application.editor.store)
+        owner.coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+        let console = SharedEngineCockpitConsole(owner: owner, composition: app.composition,
+            isForeground: { false }, activate: {})
+        defer { console.hide() }
+        console.show()
+        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame, "Opening the cockpit blocks presentation immediately")
+        console.hide()
+        XCTAssertEqual(try expanded(app).frame, saved)
+        console.show()
+        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
+        try await wait { console.showTask == nil }
+        XCTAssertEqual(try expanded(app).frame, saved, "An unavailable cockpit releases the presentation gate")
     }
 
     func testD17FollowSamplesPreserveSavedPlace() async throws {
