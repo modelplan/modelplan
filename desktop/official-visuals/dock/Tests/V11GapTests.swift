@@ -4,6 +4,18 @@ import XCTest
 @testable import ModelPlanOfficialDock
 
 final class V11GapTests: XCTestCase {
+    private func readoutClearsClock(_ readout: CGRect, clock: CGRect) -> Bool {
+        let overlapsHorizontally = readout.maxX > clock.minX && readout.minX < clock.maxX
+        return !overlapsHorizontally || readout.maxY <= clock.minY
+    }
+
+    func testV11ClearanceGuardRejectsOverlappingBounds() {
+        let clock = CGRect(x: 20, y: 40, width: 20, height: 20)
+        XCTAssertFalse(readoutClearsClock(CGRect(x: 20, y: 35, width: 20, height: 10), clock: clock))
+        XCTAssertTrue(readoutClearsClock(CGRect(x: 20, y: 30, width: 20, height: 10), clock: clock))
+        XCTAssertTrue(readoutClearsClock(CGRect(x: 0, y: 35, width: 20, height: 10), clock: clock))
+    }
+
     func testV11VerticalStationsShrinkGapBeforeOverflow() throws {
         let subscriptions = (0..<3).map { T2Subscription(id: "synthetic-\($0)") }
         var compact: T2Geometry?
@@ -32,11 +44,10 @@ final class V11GapTests: XCTestCase {
             let stations = skin.stations.sorted { $0.centre.y < $1.centre.y }
             for (first, next) in zip(stations, stations.dropFirst()) {
                 let extent = next.clock.radius + max(next.clock.dotRadius, next.clock.backWidth / 2)
-                let overlapsHorizontally = first.readout.maxX > next.centre.x - extent && first.readout.minX < next.centre.x + extent
-                if overlapsHorizontally {
-                    XCTAssertLessThanOrEqual(first.readout.maxY, next.centre.y - extent,
-                                             "A compact readout must not overlap the next clock")
-                }
+                let clock = CGRect(x: next.centre.x - extent, y: next.centre.y - extent,
+                                   width: 2 * extent, height: 2 * extent)
+                XCTAssertTrue(readoutClearsClock(first.readout, clock: clock),
+                              "A compact readout must not overlap the next clock")
             }
         }
     }
