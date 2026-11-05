@@ -4,6 +4,23 @@ import ModelPlanDock
 import ModelPlanOfficialDock
 
 final class V08QuotaBandTests: XCTestCase {
+    func testV09VendorIdentityDoesNotChangeQuotaStatus() throws {
+        let bands: [(Double, DockQuotaStatus)] = [
+            (0, .critical), (25, .critical), (26, .warning),
+            (40, .warning), (41, .normal), (100, .normal)
+        ]
+        for vendor in ["cursor", "copilot", "opencode", "qwen"] {
+            for (remaining, expected) in bands {
+                let window = DockQuotaWindowInput(id: "synthetic", period: .fiveHour, label: "5h", remainingPercent: remaining, resetsAt: nil, durationSeconds: nil)
+                var input = DockInstrumentInput(id: "synthetic", name: "Synthetic", windows: [window])
+                input.dataState = .fresh
+                input.vendorResourceKey = vendor
+                let reading = try DockInstrumentProjection.evaluate(input, now: Date(timeIntervalSince1970: 0), redBelow: 25)
+                XCTAssertEqual(reading.status, expected, "\(vendor) at \(remaining)%")
+                XCTAssertEqual(reading.outer?.status, expected)
+            }
+        }
+    }
     func testV09StatusInksAreNotBrandOrVendorIdentityColours() throws {
         let coordinates = T2EdgeCoordinates(edge: .right, width: 300, height: 400, menuBarExclusion: 26)
         let geometry = try T2Geometry.make(subscriptions: [.init(id: "synthetic")], input: T2GeometryInput(coordinates: coordinates))
