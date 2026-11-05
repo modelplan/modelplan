@@ -1152,6 +1152,143 @@ import XCTest
         try await Task.sleep(for: .seconds(5))
     }
 
+    func testD19PhysicalSystemDockReservationsAndLegacyPlacement() async throws {
+        _ = NSApplication.shared
+        let side = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D19_SYSTEM_EDGE"]
+            .flatMap(SettingsDockEdge.init(rawValue:)), "Choose bottom, left or right in MODELPLAN_DOCK_D19_SYSTEM_EDGE")
+        let display = try XCTUnwrap(DockDisplayTopology.system().main)
+        let area = display.usableFrame
+        let reserve: CGFloat
+        switch side {
+        case .bottom: reserve = area.minY - display.frame.minY
+        case .left: reserve = area.minX - display.frame.minX
+        case .right: reserve = display.frame.maxX - area.maxX
+        }
+        guard reserve >= 8 else { return XCTFail("The physical macOS Dock must visibly reserve the \(side) edge") }
+
+        let (app, store, storedURL) = try await makeProfile(displayID: display.id, edge: .right,
+                                                            declaredQuotas: [72, 53, 38])
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        let host = app.composition.dock
+        let panel = try XCTUnwrap(host.nativePanel as? PulseDockPanel)
+        let ready = try await wait(.seconds(12)) {
+            panel.isVisible && host.edgePresentation?.placement?.displayID == display.id &&
+                Set(host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == [72, 53, 38]
+        }
+        guard ready else { return XCTFail("The native panel and readings must be visible") }
+
+        let events = PointerEvents()
+        let previous = panel.receivedInput
+        var releasePoint: CGPoint?
+        panel.receivedInput = { type, timestamp in
+            previous?(type, timestamp)
+            switch type {
+            case .leftMouseDown: events.down += 1
+            case .leftMouseDragged: events.drag += 1
+            case .leftMouseUp: events.up += 1; releasePoint = NSEvent.mouseLocation
+            default: break
+            }
+        }
+        defer { panel.receivedInput = previous }
+
+        func distance(_ point: CGPoint, from edge: DockEdge) -> CGFloat {
+            switch edge {
+            case .left: return abs(point.x - area.minX)
+            case .right: return abs(point.x - area.maxX)
+            case .bottom: return abs(point.y - area.minY)
+            case .top: return .infinity
+            }
+        }
+        let rails: [(DockEdge, SettingsDockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        func verifyDrop(_ label: String, target: (CGPoint) -> Bool,
+                        expected: (CGPoint) -> (DockEdge, SettingsDockEdge)) async throws {
+            let previousUp = events.up, previousDrag = events.drag
+            let before = await store.snapshot()
+            let bytes = try Data(contentsOf: storedURL)
+            announce("D-19 \(side)", "Drag the body to \(label), then hold.")
+            let held = try await wait(.seconds(35)) {
+                events.up == previousUp && events.drag > previousDrag && host.edgePresentation?.moving == true &&
+                    target(NSEvent.mouseLocation)
+            }
+            _ = try XCTUnwrap(held ? panel : nil, "No held gesture at \(label)")
+            XCTAssertEqual(try Data(contentsOf: storedURL), bytes, label)
+            announce("D-19 \(side)", "Release now and capture \(label).")
+            let editor = app.settingsHost.application.editor
+            let settled = try await wait(.seconds(15)) {
+                events.up == previousUp + 1 && host.edgePresentation?.moving == false && !editor.isSaving &&
+                    editor.snapshot?.revision == before.revision + 1
+            }
+            let point = try XCTUnwrap(settled ? releasePoint : nil, "No single settled release at \(label)")
+            XCTAssertTrue(target(point), label)
+            let (edge, setting) = expected(point)
+            let landed = try XCTUnwrap(host.edgePresentation?.placement)
+            let saved = await store.snapshot()
+            XCTAssertEqual(landed.displayID, display.id, label)
+            XCTAssertEqual(landed.edge, edge, label)
+            XCTAssertEqual(saved.revision, before.revision + 1, label)
+            XCTAssertEqual(saved.preferences.dockEdge, setting, label)
+            XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001, label)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertTrue(area.insetBy(dx: -1, dy: -1).contains(panel.frame), label)
+            switch edge {
+            case .left: XCTAssertEqual(panel.frame.minX, area.minX, accuracy: 1, label)
+            case .right: XCTAssertEqual(panel.frame.maxX, area.maxX, accuracy: 1, label)
+            case .bottom: XCTAssertEqual(panel.frame.minY, area.minY, accuracy: 1, label)
+            case .top: XCTFail("Top is not an allowed resting edge")
+            }
+            let start = edge == .bottom ? panel.frame.minX - area.minX : panel.frame.minY - area.minY
+            let end = edge == .bottom ? area.maxX - panel.frame.maxX : area.maxY - panel.frame.maxY
+            XCTAssertGreaterThanOrEqual(min(start, end), 23, label)
+            try await Task.sleep(for: .seconds(3))
+        }
+
+        for (edge, setting) in rails {
+            let lo = edge == .bottom ? area.minX : area.minY
+            let hi = edge == .bottom ? area.maxX : area.maxY
+            for station in [EdgeStation.low, .high] {
+                try await verifyDrop("\(edge) \(station.rawValue) usable corner", target: { point in
+                    area.contains(point) && distance(point, from: edge) <= 3 &&
+                        station.contains(edge == .bottom ? point.x : point.y, from: lo, to: hi)
+                }, expected: { _ in (edge, setting) })
+            }
+        }
+        let centre = area.insetBy(dx: area.width * 0.30, dy: area.height * 0.30)
+        try await verifyDrop("the middle of the display (slightly towards the right)", target: { point in
+            guard centre.contains(point), point.x > area.midX else { return false }
+            let distances = rails.map { distance(point, from: $0.0) }.sorted()
+            return distances[0] + 12 < distances[1]
+        }, expected: { point in
+            rails.min(by: { distance(point, from: $0.0) < distance(point, from: $1.0) }) ?? (.right, .right)
+        })
+        await app.stopNativeDockJourney()
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d19-floating-" + UUID().uuidString)
+        let legacy = root.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+        try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let legacyBytes = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1, "preferences": ["dockEdge": "floating", "dockDisplayID": display.id, "dockAlongFraction": 0.27],
+        ])
+        try legacyBytes.write(to: legacy)
+        let restoredStore = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let restored = makeDeviceApplication(root: root, executable: try reviewedExecutable(), store: restoredStore)
+        await restored.prepare()
+        restored.allowDockPresentation()
+        let restoredHost = restored.composition.dock
+        let restoredPanel = try XCTUnwrap(restoredHost.nativePanel)
+        let restoredVisible = try await wait(.seconds(6)) { restoredPanel.isVisible }
+        let placement = try XCTUnwrap(restoredVisible ? restoredHost.edgePresentation?.placement : nil)
+        XCTAssertEqual(placement.displayID, display.id)
+        XCTAssertEqual(placement.edge, .right)
+        XCTAssertEqual(placement.alongFraction, 0.27, accuracy: 0.001)
+        XCTAssertTrue(area.insetBy(dx: -1, dy: -1).contains(restoredPanel.frame))
+        XCTAssertEqual(try Data(contentsOf: legacy), legacyBytes)
+        announce("D-19 \(side)", "Capture the coordinate-less legacy fixture restored on the saved display’s right edge.")
+        try await Task.sleep(for: .seconds(5))
+    }
+
     func testD12NativeFullscreenResolutionAndWakeKeepSavedPlace() async throws {
         _ = NSApplication.shared
         let main = try XCTUnwrap(DockDisplayTopology.system().main)
