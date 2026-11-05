@@ -73,8 +73,10 @@ import ModelPlanWire
                         XCTAssertTrue(containsHan(title), "Chinese Settings title needs localized text: \(row.key.rawValue)")
                     }
                     for copy in [title, subtitle] {
-                        XCTAssertFalse(copy.localizedCaseInsensitiveContains("backend"), "Internal backend terminology is not user-facing copy")
-                        XCTAssertFalse(copy.localizedCaseInsensitiveContains("engine-owned"), "Internal ownership terminology is not user-facing copy")
+                        for term in ["backend", "engine-owned", "source scope", "read here", "observation", "fixture", "envelope"] {
+                            XCTAssertFalse(copy.localizedCaseInsensitiveContains(term),
+                                           "Internal terminology must not appear in Settings copy: \(row.key.rawValue)")
+                        }
                     }
                     for popup in row.choices.values where !popup.isHiddenOrHasHiddenAncestor {
                         for item in popup.itemArray {
