@@ -32,3 +32,19 @@ test('C-27 active engine-key text contrasts against both resolved pressed-metal 
   await page.locator('.ek-all').click();
  }
 });
+
+test('C-27 current quota bars contrast with the resolved LCD gradient in both themes',async({page})=>{
+ const {send,receive}=await open(page),data=currentSample();data.projection.rows=data.projection.rows.slice(0,1);data.subscriptions=[];
+ const w=data.projection.rows[0].accounts[0].windows[0];
+ for(const theme of ['night','day']){
+  expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);
+  for(const [remaining,level] of [[75,'ok'],[35,'mid'],[10,'low']]){
+   w.remainingPercent=remaining;expect(await receive(send('display',{data}))).toBe(true);
+   const cell=page.locator(`.eng-cols .qcell.lv-${level}`).first(),segment=cell.locator('.qbar i.on').first();await expect(segment).toBeVisible();
+   const values=await segment.evaluate(e=>({foreground:getComputedStyle(e).backgroundColor,gradient:getComputedStyle(e.closest('.eng-lcd')).backgroundImage}));
+   const colors=values.gradient.match(/rgba?\([^)]*\)/g);expect(colors?.length).toBeGreaterThanOrEqual(2);
+   const rgb=s=>s.match(/\d+(?:\.\d+)?/g).slice(0,3).map(Number),lum=s=>{const c=rgb(s).map(n=>n/255).map(n=>n<=0.04045?n/12.92:((n+0.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];};
+   for(const bg of colors){const a=lum(values.foreground),b=lum(bg);expect((Math.max(a,b)+.05)/(Math.min(a,b)+.05)).toBeGreaterThanOrEqual(3);}
+  }
+ }
+});
