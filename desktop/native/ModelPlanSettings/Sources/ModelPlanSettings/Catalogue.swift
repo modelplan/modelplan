@@ -234,7 +234,7 @@ public enum SettingsCatalogue {
         .init(.cliStatus,"CLI status","CLI状态","Read-only CLI availability.","CLI可用性的只读状态。"),
         .init(.architecture,"Architecture","架构","Intel is untested; 3D may stutter.","Intel未测试，3D效果可能卡顿。"),
         .init(.diagnostics,"Copy diagnostics","复制诊断","Versions, macOS, reader identifiers and error codes only.","仅含版本、macOS、读取器标识和错误代码。"),
-        .init(.readerDetails,"Reader status","读取状态","Source and observation times for admitted readers.","已授权读取器的来源与观察时间。"),
+        .init(.readerDetails,"Reader status","读取状态","Sources, last reads and next refresh times for permitted readers.","已授权读取器的来源、上次读取和下次刷新时间。"),
         .init(.refreshHistory,"Recent refreshes","最近刷新","Recent admitted refresh outcomes.","最近的已授权刷新结果。"),
         .init(.feedback,"Feedback","反馈","Open the public issue template; nothing is submitted automatically.","打开公开问题模板，不自动提交内容。"),
         .init(.licenses,"Third-party notices","第三方声明","The app adapter supplies bundled license notices.","由应用适配器提供随包许可证声明。"),
