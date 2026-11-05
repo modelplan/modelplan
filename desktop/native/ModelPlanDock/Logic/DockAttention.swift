@@ -135,7 +135,10 @@ public struct DockAttentionState: Sendable {
     public mutating func acknowledgeDockOpen(_ signals: [DockSubscriptionSignal], at now: Date) throws {
         try reconcile(signals, at: now)
         for s in signals {
-            if let n = DockNoticeProjection.selected(for: s, at: now) { sliverAcknowledgements.insert(n.key) }
+            if let notice = DockNoticeProjection.selected(for: s, at: now) {
+                sliverAcknowledgements.insert(notice.key)
+                menuAcknowledgements.insert(notice.key)
+            }
         }
     }
     public mutating func acknowledgeCockpitOpen(_ signals: [DockSubscriptionSignal], at now: Date) throws {
