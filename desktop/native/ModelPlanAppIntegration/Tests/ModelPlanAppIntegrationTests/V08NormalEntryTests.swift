@@ -53,6 +53,8 @@ private actor V08JourneyClient: EngineClient {
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"
         account["lastFailure"] = NSNull()
         windows[0].removeValue(forKey: "modelScope"); windows[0]["current"] = true
+        // Exercise the plan-wide session quota, not the capture's named synthetic pool.
+        windows[0]["limitKey"] = "main"; windows[0]["poolKey"] = "main"
         windows[0]["observedAt"] = "2026-12-01T00:00:00Z"; windows[0]["validUntil"] = "2028-12-01T00:00:00Z"
         windows[0]["resetsAt"] = "2028-12-01T00:00:00Z"; windows[0]["remainingPercent"] = remaining
         account["windows"] = [windows[0]]; row["accounts"] = [account]; rows[0] = row
