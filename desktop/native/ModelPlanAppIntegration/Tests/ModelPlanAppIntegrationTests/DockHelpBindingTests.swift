@@ -50,6 +50,7 @@ private actor DockHelpMemory: HintPreferenceWriting {
             anchors: [.findWidget: CGRect(x: 1, y: 1, width: 4, height: 4), .ringRefresh: CGRect(x: 9, y: 1, width: 4, height: 4)])
         try binding.update(surface, context: context, host: host)
         XCTAssertEqual(dock.offers.map(\.kind), [.findWidget])
+        await host.flushPersistence()
         host.dismiss(); clock.now = 1
         try binding.update(surface, context: context, host: host)
         XCTAssertEqual(dock.offers.map(\.kind), [.findWidget, .ringRefresh])
