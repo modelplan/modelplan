@@ -290,6 +290,10 @@ import ModelPlanMenuVerification
                 guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
                       [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
                 return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
+            }, statusRequestID: { [weak self] in
+                self?.statusHelpRequestID
+            }, statusDidDismiss: { [weak self] requestID in
+                self?.statusHelpDidDismiss(requestID)
             })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
