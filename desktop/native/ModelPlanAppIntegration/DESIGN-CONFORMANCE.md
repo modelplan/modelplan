@@ -10,17 +10,16 @@ Design source: `design/dock-pulse-defaults-20261027`,
   context actions are Open Cockpit, Settings, Hide Dock.
 - SPEC decided menu-bar icon / task 53: cap the template image at 16 pt and
   at the actual bar thickness. Do not resize the source resource.
-- SPEC §6.6, lines 372–377: Website, Methodology, Privacy, Check for updates,
-  Help, Settings, About, Quit. Help is directly above Settings.
+- The v1 menu places Help directly above Settings and keeps Website, Methodology,
+  Privacy, About and Quit. D16, S-03 and I-08 omit Check for updates even when
+  the helper advertises an update capability.
 - GLOSSARY Parts: Cockpit / 驾驶舱 replaces Console and Dock readings in labels.
 - An unreadable community row retains dimmed ink and its localized short reason
   on the face; fresh readings and withdrawn rows discard that reason.
 
-The Help item is disabled because the current engine Cockpit surface exposes no
-Option-map operation. Wiring that interaction remains a host follow-up; opening
-an ordinary Cockpit is not reported as Help delivery. Update checks remain
-disabled when the existing update service/host receiver is unavailable. Public
-links reuse Settings destinations; About opens the existing Settings pane.
+Help requests the Dock help map. Public links reuse Settings destinations.
+About opens the existing Settings pane. The status menu, widget entry and
+Command-comma use the shared Settings window host.
 
 Official appearance selection and artwork wiring are owned by M0's separate PR.
 No appearance provider or licensed asset selection changes here.
