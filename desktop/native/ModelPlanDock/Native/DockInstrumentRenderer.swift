@@ -72,7 +72,7 @@ public struct DockNozzlePose: Equatable, Sendable {
     private let supplementalResources:DockArtworkStore?
     private let material:Material?
     public init(resources:DockArtworkStore, supplementalResources:DockArtworkStore? = nil, material:Material? = nil){self.resources=resources;self.supplementalResources=supplementalResources;self.material=material}
-    public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int, poses: [String: DockNozzlePose] = [:], cachedBackground: CGImage? = nil) throws -> DockRenderResult {
+    public func render(skin:DockInstrumentSkin,readings:[String:DockInstrumentReading],notices:[String:DockNotice]=[:],scale:Int, poses: [String: DockNozzlePose] = [:], cachedBackground: CGImage? = nil, viewport: CGRect? = nil) throws -> DockRenderResult {
         func finite(_ p:CGPoint)->Bool{p.x.isFinite && p.y.isFinite && abs(p.x)<=1_000_000 && abs(p.y)<=1_000_000}
         func finiteRect(_ r:CGRect)->Bool{finite(r.origin) && r.width.isFinite && r.height.isFinite && r.width>0 && r.height>0 && r.width<=4096 && r.height<=4096}
         let ids=skin.stations.compactMap(\.subscriptionID)
@@ -84,12 +84,16 @@ public struct DockNozzlePose: Equatable, Sendable {
         // Static offscreen reference sampling may use 3x; the window host only admits native 1x/2x.
         // Animated official jets are supplied by the shared pooled-frame layer, not baked into static captures.
         // A static renderer must never silently replace them with the calibration triangle or an uncounted cache.
-        let width=Int(ceil(skin.bounds.width*CGFloat(scale))),height=Int(ceil(skin.bounds.height*CGFloat(scale)))
+        let canvas = viewport ?? skin.bounds
+        guard finiteRect(canvas), canvas.contains(skin.bounds) else { throw DockArtworkError.invalidManifest }
+        let skinWidth = Int(ceil(skin.bounds.width * CGFloat(scale)))
+        let skinHeight = Int(ceil(skin.bounds.height * CGFloat(scale)))
+        let width = Int(ceil(canvas.width * CGFloat(scale))), height = Int(ceil(canvas.height * CGFloat(scale)))
         guard width>0,height>0,width<=8192,height<=8192,width*height<=16_777_216,
               let c=CGContext(data:nil,width:width,height:height,bitsPerComponent:8,bytesPerRow:0,
                 space:CGColorSpace(name:CGColorSpace.sRGB)!,bitmapInfo:CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue) else{throw DockArtworkError.invalidManifest}
         c.translateBy(x:0,y:CGFloat(height));c.scaleBy(x:CGFloat(scale),y:-CGFloat(scale))
-        c.translateBy(x:-skin.bounds.minX,y:-skin.bounds.minY)
+        c.translateBy(x: -canvas.minX, y: -canvas.minY)
         c.setAllowsAntialiasing(true);c.setShouldAntialias(true);c.interpolationQuality = .high
         func ink(_ name:String) throws -> CGColor {guard let v=skin.palette[name],v.valid else{throw DockArtworkError.invalidManifest};return v.cg}
         func image(_ resource:String,_ rect:CGRect,preserveSourcePixels:Bool = false,fitVisibleGlyph:Bool = false) throws {
@@ -122,13 +126,13 @@ public struct DockNozzlePose: Equatable, Sendable {
             c.draw(image,in:CGRect(origin:.zero,size:target.size));c.restoreGState()
         }
         if let cachedBackground {
-            guard cachedBackground.width == width, cachedBackground.height == height else { throw DockArtworkError.invalidManifest }
+            guard cachedBackground.width == skinWidth, cachedBackground.height == skinHeight else { throw DockArtworkError.invalidManifest }
             c.saveGState(); c.translateBy(x: skin.bounds.minX, y: skin.bounds.maxY); c.scaleBy(x: 1, y: -1)
             c.draw(cachedBackground, in: CGRect(origin: .zero, size: skin.bounds.size)); c.restoreGState()
         } else {
             if let material {
                 let backing = try material(skin, scale)
-                guard backing.width == width, backing.height == height else { throw DockArtworkError.invalidManifest }
+                guard backing.width == skinWidth, backing.height == skinHeight else { throw DockArtworkError.invalidManifest }
                 c.saveGState();c.translateBy(x:skin.bounds.minX,y:skin.bounds.maxY);c.scaleBy(x:1,y:-1)
                 c.draw(backing,in:CGRect(origin:.zero,size:skin.bounds.size));c.restoreGState()
             } else if !skin.bodyPolygon.isEmpty {

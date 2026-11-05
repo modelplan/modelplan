@@ -430,21 +430,26 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         var poses = [String: DockNozzlePose]()
         for (member, station) in stations {
-            let scale: CGFloat, shift: CGFloat
+            let scale: CGFloat
+            let offset: CGPoint
             switch preferences.magnification {
             case .none: continue
             case .subtle:
-                guard member == id else { continue }
-                scale = 1.15; shift = 6
+                guard member == id, let hull = displayed.registeredHullBounds else { continue }
+                let dx = hull.midX - hovered.midX, dy = hull.midY - hovered.midY
+                let distance = hypot(dx, dy)
+                scale = 1.15
+                offset = distance > 0 ? CGPoint(x: 6 * dx / distance, y: 6 * dy / distance) : .zero
             case .strong:
                 guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
                 let centre = horizontal ? anchor.midX : anchor.midY
                 let influence = max(0, 1 - abs(along - centre) / (1.6 * station.pitch))
                 guard influence > 0 else { continue }
                 scale = (1000 * (1 + 0.5 * influence * influence * (3 - 2 * influence))).rounded() / 1000
-                shift = (scale - 1) * (diameter / 2 + 4)
+                let shift = (scale - 1) * (diameter / 2 + 4)
+                offset = CGPoint(x: station.inward.dx * shift, y: station.inward.dy * shift)
             }
-            poses[member] = .init(scale: scale, offset: .init(x: station.inward.dx * shift, y: station.inward.dy * shift))
+            poses[member] = .init(scale: scale, offset: offset)
         }
         displayed.setNozzlePoses(poses)
     }
