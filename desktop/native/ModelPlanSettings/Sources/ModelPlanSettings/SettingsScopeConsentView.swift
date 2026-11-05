@@ -51,7 +51,10 @@ import ModelPlanWire
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
-    private func label(_ text: SettingsText) { addArrangedSubview(NSTextField(wrappingLabelWithString: text.value(language))) }
+    @discardableResult private func label(_ text: SettingsText) -> NSTextField {
+        let field = NSTextField(wrappingLabelWithString: text.value(language))
+        addArrangedSubview(field); return field
+    }
     private func button(_ text: SettingsText, id: String, enabled: Bool = true,
                         action: @escaping @MainActor () async -> Void) -> ScopeConsentButton {
         let value = ScopeConsentButton(title: text.value(language), id: id, invoke: action)
@@ -150,6 +153,7 @@ import ModelPlanWire
                 label(.init("The current reading policy does not allow this path to be newly authorized. Existing permissions can still be revoked.", "当前读取策略不允许新增此路径的授权；仍可撤销已有权限。"))
             }
             label(controller.isAllowed(id) ? .init("Allowed", "已授权") : .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。"))
+                .setAccessibilityIdentifier("scope.state." + id)
             let selected = controller.selectedIDs.contains(id)
             let box = synchronousButton(.init("Allow this path", "授权此读取路径"), id: "scope.allow." + id, enabled: controller.canChoose(id)) { [weak self] in
                 self?.controller.choose(id, selected: !selected)
