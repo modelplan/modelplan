@@ -19,7 +19,8 @@ import ModelPlanDock
         let outside = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
         var pointer = outside
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
-            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: true, cockpitEntryEnabled: true,
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: true,
+            bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id,
                 pointer: pointer) },
             deadlineNow: { wall },
@@ -29,7 +30,11 @@ import ModelPlanDock
         let dock = app.composition.dock
         var changes: [DockHelpInteraction?] = []
         dock.dockHelpInteractionDidChange = { changes.append($0) }
-        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        await app.prepare()
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        app.allowDockPresentation()
+        await app.composition.start()
         let deadline = ContinuousClock.now + .seconds(2)
         while dock.currentDockHelpSurface == nil, ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
