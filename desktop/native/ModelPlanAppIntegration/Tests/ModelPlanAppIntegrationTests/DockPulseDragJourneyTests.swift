@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanEngineClient
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
@@ -123,15 +124,25 @@ import ModelPlanSettings
             let points = vertical.map { (DockEdge.left, CGPoint(x: r.minX + 1, y: $0)) } +
                 vertical.map { (DockEdge.right, CGPoint(x: r.maxX - 1, y: $0)) } +
                 horizontal.map { (DockEdge.bottom, CGPoint(x: $0, y: r.minY + 1)) }
-            for (edge, point) in points {
-                _ = try press()
-                let count = commits.count
-                controller.updateBackgroundMove(global: point)
-                controller.endBackgroundMove(global: point)
-                controller.endBackgroundMove(global: point)
-                XCTAssertEqual(commits.count, count + 1, "D-06")
-                XCTAssertEqual(commits.last?.displayID, screen.id, "D-07")
-                XCTAssertEqual(commits.last?.edge, edge, "D-07")
+            for source in [topology.a, topology.b, topology.c] where source.id != screen.id {
+                for (index, target) in points.enumerated() {
+                    let (edge, point) = target
+                    controller.setPreference(.init(displayID: source.id, edge: .right))
+                    _ = try press()
+                    let count = commits.count
+                    controller.updateBackgroundMove(global: point)
+                    controller.endBackgroundMove(global: point)
+                    controller.endBackgroundMove(global: point)
+                    let label = "D-07 mode \(mode), \(source.id) → \(screen.id), \(edge), target \(index % 3)"
+                    XCTAssertEqual(commits.count, count + 1, label)
+                    let committed = try XCTUnwrap(commits.last)
+                    XCTAssertEqual(committed.displayID, screen.id, label)
+                    XCTAssertEqual(committed.edge, edge, label)
+                    let length = edge == .bottom ? r.width : r.height
+                    // The 160-point rail is centred on its anchor and stops 24 points from each corner.
+                    let expected = [104 / length, 0.5, 1 - 104 / length][index % 3]
+                    XCTAssertEqual(committed.alongFraction, Double(expected), accuracy: 0.0001, label)
+                }
             }
         }
     }
@@ -257,6 +268,97 @@ import ModelPlanSettings
     }
     func testD04D06D07D09D11Mode1() throws { try exercise(1) }
     func testD04D06D07D09D11Mode2() throws { try exercise(2) }
+}
+
+@MainActor final class DockPulseDragPersistenceTests: XCTestCase {
+    func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
+        let topology = DragTopology()
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        func launch() async throws -> EngineDockMenuApplication {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"),
+                applicationVersion: "drag-persistence", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            return app
+        }
+
+        let a = topology.a.usableFrame, b = topology.b.usableFrame, c = topology.c.usableFrame
+        let targets: [(DockDisplayArea, DockEdge, CGPoint)] = [
+            (topology.b, .left, CGPoint(x: b.minX + 2, y: b.midY)),
+            (topology.c, .bottom, CGPoint(x: c.midX, y: c.minY + 2)),
+            (topology.a, .bottom, CGPoint(x: a.midX, y: a.minY + 2)),
+        ]
+        var app = try await launch()
+        for (destination, edge, point) in targets {
+            let host = app.composition.dock, view = host.dockView
+            let editor = app.settingsHost.application.editor
+            let before = try XCTUnwrap(editor.snapshot)
+            let presented = try XCTUnwrap(host.edgePresentation?.paintedFrame)
+            let drag = try XCTUnwrap(view.backgroundDragDelegate)
+            let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+                stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+            }.first { drag.backgroundCanDrag(local: $0) })
+            let down = CGPoint(x: presented.minX + local.x, y: presented.maxY - local.y)
+            topology.pointer = down
+            let arrival = ContinuousClock.now + .seconds(1)
+            var captured = drag.beginBackgroundMove(local: local, global: down)
+            while !captured && ContinuousClock.now < arrival {
+                try await Task.sleep(for: .milliseconds(20))
+                captured = drag.beginBackgroundMove(local: local, global: down)
+            }
+            XCTAssertTrue(captured)
+            guard captured else { return }
+            topology.pointer = point
+            drag.updateBackgroundMove(global: point)
+            XCTAssertEqual(editor.snapshot?.revision, before.revision)
+            drag.endBackgroundMove(global: point)
+            drag.endBackgroundMove(global: point)
+            try await waitForSettings(editor) {
+                editor.snapshot?.preferences.dockDisplayID == destination.id && !editor.isSaving
+            }
+            let saved = await app.foundationStore.snapshot()
+            XCTAssertEqual(saved.revision, before.revision + 1)
+            let landed = try XCTUnwrap(host.edgePresentation?.placement)
+            XCTAssertEqual(landed.edge, edge)
+            XCTAssertEqual(landed.displayID, destination.id)
+            XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001)
+            if edge == .bottom { XCTAssertEqual(landed.frame.minY, destination.usableFrame.minY, accuracy: 0.001) }
+            await app.composition.stop()
+            app = try await launch()
+            let restored = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+            XCTAssertEqual(restored.displayID, destination.id)
+            XCTAssertEqual(restored.edge, edge)
+            XCTAssertEqual(restored.alongFraction, saved.preferences.dockAlongFraction, accuracy: 0.0001)
+            XCTAssertEqual(restored.frame, landed.frame)
+
+            if destination.id == topology.c.id {
+                let restoredHost = app.composition.dock
+                let beforeHotPlug = await app.foundationStore.snapshot()
+                topology.active = [topology.a, topology.b]
+                NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                restoredHost.refreshPresence()
+                XCTAssertEqual(restoredHost.edgePresentation?.placement?.displayID, topology.a.id, "D-10 fallback")
+                let unplugged = await app.foundationStore.snapshot()
+                XCTAssertEqual(unplugged.revision, beforeHotPlug.revision)
+                XCTAssertEqual(unplugged.preferences.dockDisplayID, topology.c.id)
+
+                topology.active = [topology.a, topology.b, topology.c]
+                NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                restoredHost.refreshPresence()
+                XCTAssertEqual(restoredHost.edgePresentation?.placement?.displayID, topology.c.id, "D-10 return")
+                XCTAssertEqual(restoredHost.edgePresentation?.placement?.frame, restored.frame)
+                let reconnected = await app.foundationStore.snapshot()
+                XCTAssertEqual(reconnected.revision, beforeHotPlug.revision)
+                XCTAssertEqual(reconnected.preferences.dockDisplayID, beforeHotPlug.preferences.dockDisplayID)
+                XCTAssertEqual(reconnected.preferences.dockEdge, beforeHotPlug.preferences.dockEdge)
+                XCTAssertEqual(reconnected.preferences.dockAlongFraction, beforeHotPlug.preferences.dockAlongFraction)
+            }
+        }
+    }
 }
 
 #if MODELPLAN_DOCK_NATIVE_JOURNEY
