@@ -8,6 +8,7 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+cockpit_enabled=false
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
 credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
@@ -24,8 +25,9 @@ if [ "$credential_actual" != "$credential_sha" ]; then echo 'Credential helper p
 case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
+    --test-build) cockpit_enabled=true ;;
     --e2e-journey) identity_mode=unverified; configuration=debug ;;
-    *) echo 'Optional third argument must be --unverified or --e2e-journey (CI only)' >&2; exit 1 ;;
+    *) echo 'Optional third argument must be --unverified, --test-build or --e2e-journey (CI only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
@@ -65,6 +67,12 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
+if [ "$cockpit_enabled" = true ]; then
+    cockpit="$repo_root/desktop/cockpit/.tmp/community"
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --edition community
+    cp -R "$cockpit" "$app/Contents/Resources/Cockpit"
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --edition community --bundle "$app/Contents/Resources/Cockpit"
+fi
 # The Z.ai mark is authorized for beta use only; neutral distribution excludes it.
 mark_bundle="$app/Contents/Resources/ModelPlanDockResources_ModelPlanDockResources.bundle"
 mark_path=$(find "$mark_bundle" -type f -name zai-white.svg -print)
@@ -74,7 +82,7 @@ fi
 rm -- "$mark_path"
 cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
-cat > "$app/Contents/Info.plist" <<'PLIST'
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -87,7 +95,7 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
-<key>ModelPlanCockpitEntryEnabled</key><false/>
+<key>ModelPlanCockpitEntryEnabled</key><${cockpit_enabled}/>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>

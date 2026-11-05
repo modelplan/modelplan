@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import os
+import plistlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -38,6 +39,9 @@ class PackageNeutralFixture:
         visuals.mkdir(parents=True)
         (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
         (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')
+        cockpit = self.repo / 'desktop/cockpit/.tmp/community'
+        cockpit.mkdir(parents=True)
+        (cockpit / 'fixture.txt').write_text('synthetic cockpit')
         self.archives = root / 'archives'
         self.archives.mkdir()
         sums = []
@@ -96,6 +100,8 @@ elif name == 'xcrun':
     split = args.index('-output')
     Path(args[split + 1]).write_bytes(b''.join(Path(p).read_bytes() for p in args[2:split]))
 elif name == 'python3':
+    if args and args[0].endswith('/check-bundle-pins.py'):
+        raise SystemExit(int(os.environ.get('PACKAGING_COCKPIT_CHECK_EXIT', '0')))
     if args and args[0].endswith('/check_app_architectures.py'):
         raise SystemExit(0)
     if args and args[0].endswith('/embed_fixed_helper.py'):
@@ -181,6 +187,26 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
         self.assertTrue((resources / 'VISUAL-LICENSE.md').is_file())
         self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
+
+    def test_test_build_enables_cockpit_and_production_defaults_off(self):
+        result = self.fixture.run(arguments=('--test-build',))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        app = self.fixture.output / 'ModelPlan Community.app' / 'Contents'
+        self.assertTrue(plistlib.loads((app / 'Info.plist').read_bytes())['ModelPlanCockpitEntryEnabled'])
+        self.assertTrue((app / 'Resources/Cockpit/fixture.txt').is_file())
+        checks = [c for c in self.fixture.commands() if c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py')]
+        self.assertEqual(len(checks), 2)
+        with tempfile.TemporaryDirectory() as folder:
+            production = PackageNeutralFixture(Path(folder))
+            result = production.run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            info = production.output / 'ModelPlan Community.app' / 'Contents/Info.plist'
+            self.assertFalse(plistlib.loads(info.read_bytes())['ModelPlanCockpitEntryEnabled'])
+
+    def test_test_build_rejects_invalid_cockpit_before_signing(self):
+        result = self.fixture.run(arguments=('--test-build',), environment={'PACKAGING_COCKPIT_CHECK_EXIT': '1'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(c['command'] == 'codesign' for c in self.fixture.commands()))
 
     def test_flat_resource_bundle_excludes_beta_only_mark(self):
         result = self.fixture.run(environment={'PACKAGING_FLAT_BUNDLE': '1'})

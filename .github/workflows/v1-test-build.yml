@@ -1,0 +1,143 @@
+name: v1 test build
+on:
+  workflow_dispatch:
+    inputs:
+      pr_head:
+        description: 'Same-repository PR head ref, e.g. refs/pull/123/head'
+        type: string
+        required: true
+  schedule:
+    - cron: '17 3 * * *'
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.repository == 'modelplan/modelplan'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      source: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve immutable source
+        id: source
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_HEAD: ${{ inputs.pr_head }}
+          SCHEDULED_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = schedule ]; then
+            sha="$SCHEDULED_SHA"
+          else
+            [[ "$PR_HEAD" =~ ^refs/pull/([1-9][0-9]*)/head$ ]]
+            number="${BASH_REMATCH[1]}"
+            pr=$(gh api "repos/modelplan/modelplan/pulls/$number")
+            echo "$pr" | jq -e '.state == "open" and .base.ref == "main" and .head.repo.full_name == "modelplan/modelplan"' >/dev/null
+            sha=$(echo "$pr" | jq -r '.head.sha')
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout reviewed control tools
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: control
+          persist-credentials: false
+      - name: Checkout exact candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          path: subject
+          persist-credentials: false
+      - name: Validate checkout and reviewed helper pin
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          test "$(git -C subject rev-parse HEAD)" = "$SOURCE_SHA"
+          cmp control/desktop/native/credential-agent-artifact-pin.json subject/desktop/native/credential-agent-artifact-pin.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: subject/desktop/cockpit/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Select newest installed Xcode
+        run: |
+          python3 - <<'PY'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = [(tuple(map(int, re.findall(r'\d+', plistlib.loads((p / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']))), p) for p in Path('/Applications').glob('Xcode*.app')]
+          if not candidates: raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as out: out.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PY
+      - name: Fetch reviewed helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 control/desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
+      - name: Fetch pinned CLI
+        run: python3 control/desktop/native/tools/distribution/release.py fetch-cli --pin subject/desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
+      - name: Build canonical community cockpit
+        run: |
+          npm ci --prefix subject/desktop/cockpit --ignore-scripts
+          npm run build --prefix subject/desktop/cockpit
+      - name: Build ad-hoc test app through neutral packaging
+        run: bash subject/desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/candidate" --test-build
+      - name: Independently check output and archive
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/candidate/ModelPlan Community.app"
+          python3 control/desktop/native/tools/distribution/check_app_architectures.py --app "$app" --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$MODELPLAN_CREDENTIAL_AGENT_SHA256"
+          python3 control/desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --repo subject --edition community --bundle "$app/Contents/Resources/Cockpit"
+          codesign --verify --deep --strict "$app"
+          (cd subject/cli && go run ./internal/releaseguard/cmd --binary "$app/Contents/MacOS/ModelPlanCommunity")
+          mkdir "$RUNNER_TEMP/output"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$RUNNER_TEMP/output/ModelPlan-Community-test.zip"
+          python3 control/desktop/native/tools/distribution/candidate_manifest.py create --source "$SOURCE_SHA" --archive "$RUNNER_TEMP/output/ModelPlan-Community-test.zip" --info "$app/Contents/Info.plist" --manifest "$RUNNER_TEMP/output/manifest.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modelplan-v1-test-${{ steps.source.outputs.sha }}
+          path: ${{ runner.temp }}/output/
+          if-no-files-found: error
+          retention-days: 7
+  draft-prerelease:
+    if: github.event_name == 'schedule' && github.ref == 'refs/heads/main' && github.repository == 'modelplan/modelplan'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: modelplan-v1-test-${{ needs.build.outputs.source }}
+          path: candidate
+      - name: Verify receipt and fresh reviewed ledger handoff
+        env:
+          SOURCE_SHA: ${{ needs.build.outputs.source }}
+        run: |
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          python3 desktop/native/tools/distribution/candidate_manifest.py verify --source "$SOURCE_SHA" --archive candidate/ModelPlan-Community-test.zip --manifest candidate/manifest.json
+          python3 desktop/native/tools/distribution/verified_notes.py desktop/native/tools/distribution/verified-ledger.json candidate/notes.txt
+      - name: Create draft prerelease only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.build.outputs.source }}
+        run: gh release create "v1-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" --repo modelplan/modelplan --target "$SOURCE_SHA" --draft --prerelease --title 'v1 daily test build' --notes-file candidate/notes.txt candidate/ModelPlan-Community-test.zip candidate/manifest.json
