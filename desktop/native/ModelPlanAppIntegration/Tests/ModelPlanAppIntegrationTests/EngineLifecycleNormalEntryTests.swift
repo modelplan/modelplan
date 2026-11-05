@@ -2,6 +2,7 @@
 import AppKit
 import XCTest
 import ModelPlanSettings
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
@@ -10,7 +11,7 @@ import ModelPlanWire
 private actor LifecycleEngine: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     let store: EngineStore
-    let rows: WireRowsSnapshot
+    let rows: WireRowsSnapshot?
     private var current: EngineDeliveryContext?
     private var first: EngineDeliveryContext?
     private var starts = 0, stops = 0
@@ -22,7 +23,7 @@ private actor LifecycleEngine: EngineClient {
     private var stopGate: CheckedContinuation<Void, Never>?
     func holdNextStop() { holdStop = true }
     func releaseStop() { stopGate?.resume(); stopGate = nil }
-    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    init(store: EngineStore, rows: WireRowsSnapshot? = nil) { self.store = store; self.rows = rows }
     func counts() -> (Int, Int) { (starts, stops) }
     func start() async throws -> EngineDeliveryContext {
         starts += 1
@@ -38,6 +39,7 @@ private actor LifecycleEngine: EngineClient {
     }
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func publish(_ value: EngineDeliveryContext) async throws {
+        guard let rows else { return }
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: value.sessionID, storeEpoch: value.floor.storeEpoch, consentGeneration: value.floor.generation, data: rows), delivery: value), invalidRowCount: 0))
     }
     func publishOld() async throws { if let first { try await publish(first) } }
@@ -195,5 +197,182 @@ private actor LifecycleEngine: EngineClient {
         for _ in 0..<100 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.lifecyclePaused)
         await app.stopLifecycle()
+    }
+}
+
+/// Normal entry with detached native views. The admitted M1 run covers actual windows and displays.
+@MainActor final class DockPulsePlacementNormalEntryTests: XCTestCase {
+    private final class Topology {
+        var primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875))
+        let neighbour = DockDisplayArea(id: "B", frame: CGRect(x: 1512, y: -300, width: 2560, height: 1440),
+            visibleFrame: CGRect(x: 1512, y: -300, width: 2560, height: 1415))
+        var joined = false
+        var fullscreen = false
+        func read() -> DockEdgeEnvironment {
+            var presence = DockPresence()
+            presence.allowedOverFullscreen = !fullscreen
+            return .init(displays: joined ? [primary, neighbour] : [primary], layouts: [],
+                         primaryDisplayID: primary.id, pointer: CGPoint(x: 750, y: 450), presence: presence)
+        }
+    }
+
+    private func profile() -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-pulse-" + UUID().uuidString)
+        addTeardownBlock { if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) } }
+        return root
+    }
+
+    private func make(_ root: URL, topology: Topology, edit: ((inout SettingsPreferences) -> Void)? = nil)
+        async throws -> EngineDockMenuApplication {
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        if let edit { _ = try await store.update { edit(&$0) } }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
+            applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
+            settingsStore: store, createsNativePanels: false, dockEnvironment: topology.read,
+            makeClient: { _, store in LifecycleEngine(store: store) }, activateSettings: {})
+        await app.prepare()
+        addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
+        return app
+    }
+
+    private func start(_ app: EngineDockMenuApplication) -> NotificationCenter {
+        let workspace = NotificationCenter()
+        app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        return workspace
+    }
+
+    private func select(_ title: String, in menu: NSMenu) throws {
+        let item = try XCTUnwrap(menu.items.first { $0.title == title })
+        XCTAssertTrue(item.isEnabled, title)
+        _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action), with: item)
+    }
+
+    private func expanded(_ app: EngineDockMenuApplication) throws -> DockEdgePlacement {
+        let value = try XCTUnwrap(app.composition.dock.edgePresentation)
+        XCTAssertEqual(value.state, .expanded)
+        return try XCTUnwrap(value.placement)
+    }
+
+    private func wait(_ predicate: @escaping @MainActor () -> Bool, seconds: Double = 2) async throws {
+        let end = ContinuousClock.now + .seconds(seconds)
+        while !predicate() && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(predicate(), "Expected presentation did not arrive within the bound")
+    }
+
+    func testD01FreshProfileShowsEmptyStationBeforeRows() async throws {
+        let topology = Topology()
+        let app = try await make(profile(), topology: topology)
+        let launched = ContinuousClock.now
+        _ = start(app)
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        XCTAssertLessThan(ContinuousClock.now - launched, .seconds(2))
+        let place = try expanded(app)
+        XCTAssertEqual(place.displayID, "A")
+        XCTAssertEqual(place.edge, .right)
+        XCTAssertEqual(place.sliverFrame.midY, topology.primary.visibleFrame.midY, accuracy: 0.5)
+        XCTAssertNil(app.composition.store.snapshot.rows)
+        let skin = try XCTUnwrap(app.composition.dock.dockView.presentedSkinForChecks)
+        XCTAssertTrue(skin.stations.contains { $0.placeholderLabel != nil && $0.subscriptionID == nil })
+    }
+
+    func testD02RightEdgeSurvivesNeighbourDockMoveAndRelaunch() async throws {
+        let topology = Topology(); topology.joined = true
+        let root = profile()
+        let first = try await make(root, topology: topology) { $0.dockDisplayID = "A"; $0.dockEdge = .right }
+        first.allowDockPresentation()
+        XCTAssertEqual(try expanded(first).edge, .right)
+        first.composition.dock.close()
+        let app = try await make(root, topology: topology)
+        app.allowDockPresentation()
+        let original = topology.primary
+        let dockLeft = DockDisplayArea(id: "A", frame: original.frame,
+            visibleFrame: CGRect(x: 70, y: 0, width: 1442, height: 945))
+        for (display, joined) in [(original, true), (dockLeft, true), (original, true), (original, false), (original, true)] {
+            topology.primary = display; topology.joined = joined
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            let place = try expanded(app)
+            XCTAssertEqual(place.edge, .right)
+            XCTAssertEqual(place.displayID, "A")
+            XCTAssertEqual(place.frame.maxX, display.visibleFrame.maxX, accuracy: 0.5)
+            XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.dockEdge, .right)
+        }
+    }
+
+    func testD03BottomUsesVisibleFloorAndStableTopologyDoesNotJump() async throws {
+        let topology = Topology()
+        let app = try await make(profile(), topology: topology) { $0.dockEdge = .bottom }
+        app.allowDockPresentation()
+        let place = try expanded(app)
+        XCTAssertEqual(place.edge, .bottom)
+        XCTAssertEqual(place.frame.minY, topology.primary.visibleFrame.minY, accuracy: 0.5)
+        // AppKit supplies the same reserved visible frame for transient hide/reveal samples.
+        app.composition.dock.refreshPresence()
+        XCTAssertEqual(try expanded(app).frame, place.frame)
+    }
+
+    func testD12FullscreenResizeAndWakeKeepSavedPlace() async throws {
+        let topology = Topology()
+        let app = try await make(profile(), topology: topology) {
+            $0.dockDisplayID = "A"; $0.dockEdge = .bottom; $0.dockAlongFraction = 0.62
+        }
+        let workspace = start(app)
+        let before = try expanded(app)
+        topology.fullscreen = true; app.composition.dock.refreshPresence()
+        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
+        topology.fullscreen = false; app.composition.dock.refreshPresence()
+        XCTAssertEqual(try expanded(app).frame, before.frame)
+        topology.primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1280, height: 800),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1280, height: 693))
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let resized = try expanded(app)
+        XCTAssertEqual(resized.edge, .bottom)
+        XCTAssertEqual(resized.alongFraction, 0.62, accuracy: 0.001)
+        XCTAssertNotEqual(resized.frame.size, before.frame.size)
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        XCTAssertEqual(try expanded(app).frame, resized.frame)
+        XCTAssertNil(app.composition.store.snapshot.rows)
+    }
+
+    func testD14ShowRestoresHiddenExpandsStripAndHighlightsExpanded() async throws {
+        let topology = Topology(), root = profile()
+        let initial = try await make(root, topology: topology) { $0.motion = .on }
+        initial.allowDockPresentation()
+        let saved = try expanded(initial).frame
+        try select("Hide Quota Widget", in: initial.composition.dock.menu())
+        try await waitForSettings(initial.settingsHost.application.editor) { initial.settingsHost.application.editor.snapshot?.preferences.showDock == false }
+        initial.composition.dock.close()
+        let app = try await make(root, topology: topology)
+        _ = start(app)
+        XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
+        func show(_ application: EngineDockMenuApplication) throws {
+            try select("Show Quota Widget", in: XCTUnwrap(application.liveStatusMenu))
+        }
+        func highlight(_ application: EngineDockMenuApplication) -> CALayer? {
+            application.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        try show(app)
+        try await wait { highlight(app) != nil }
+        XCTAssertEqual(try expanded(app).frame, saved)
+        XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
+        let first = try XCTUnwrap(highlight(app))
+        XCTAssertTrue(first.animationKeys()?.isEmpty ?? true)
+        try show(app)
+        try await wait { highlight(app) != nil && highlight(app) !== first }
+        XCTAssertEqual(try expanded(app).frame, saved)
+
+        let strip = try await make(profile(), topology: topology) { $0.autoHide = true; $0.motion = .on }
+        _ = start(strip)
+        XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .sliver)
+        try show(strip)
+        try await wait { highlight(strip) != nil }
+        XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .expanded)
+        XCTAssertTrue(try XCTUnwrap(highlight(strip)).animationKeys()?.isEmpty ?? true)
+        try await wait({ strip.composition.dock.edgePresentation?.state == .sliver }, seconds: 4)
+        XCTAssertEqual(strip.settingsHost.application.editor.snapshot?.preferences.autoHide, true)
+        XCTAssertNil(strip.composition.store.snapshot.rows)
     }
 }
