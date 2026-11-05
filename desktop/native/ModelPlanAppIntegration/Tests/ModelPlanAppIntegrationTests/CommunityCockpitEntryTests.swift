@@ -106,6 +106,31 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(surface.shows,2)
         await app.composition.stop()
     }
+    // Salvaged from PR #465: actual menu and dock entrypoints share one visibility toggle.
+    @MainActor func testNormalEntryRapidDockMenuToggleRetainsShellSession() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("shell-toggle-"+UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        owner.shell.detached=true;owner.shell.shutterClosed=true
+        let origin=CGPoint(x:123,y:456);owner.shell.remember(origin,arrangement:"synthetic")
+        let client=RouteClient();var surface:SharedEngineCockpitConsole?
+        let app=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:settings,createsNativePanels:false,cockpitEntryEnabled:true,
+            makeClient:{_,_ in client},makeConsole:{ composition in
+                let value=SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+                surface=value;return value
+            },activateSettings:{})
+        app.composition.dock.setPresentationAllowed(true)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        _=app.perform(NSSelectorFromString("showConsoleMenu"))
+        XCTAssertFalse(try XCTUnwrap(surface).wantsVisible)
+        _=app.composition.dock.perform(NSSelectorFromString("openConsole"))
+        XCTAssertTrue(try XCTUnwrap(surface).wantsVisible)
+        XCTAssertTrue(owner.shell.detached);XCTAssertTrue(owner.shell.shutterClosed)
+        XCTAssertEqual(owner.shell.origin(for:"synthetic"),origin)
+        surface?.hide();await app.composition.stop()
+    }
     // #403 normal-entry journey: use the actual menu actions with a synthetic
     // console/client, without opening a panel or launching an engine process.
     @MainActor func testStatusAndDockMenusOpenSameEnabledConsole() async throws {
