@@ -123,6 +123,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         return (helpRingsAnchor(id) == nil ? "dock.nozzle." : "dock.rings.") + id
     }
 
+    @discardableResult public func setFocusedHelpExplanation(_ text: String?, for anchorID: String) -> Bool {
+        false
+    }
+
     public func helpRingsAnchor(_ id: String) -> CGRect? {
         guard !failed, !community, let skin,
               let station = skin.stations.first(where: { $0.subscriptionID == id }),

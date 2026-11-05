@@ -268,10 +268,20 @@ private actor EntrySyntheticClient: EngineClient {
 
         let nodes = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
         let subscription = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.subscription." + id })
+        let quotaValue = try XCTUnwrap(subscription.accessibilityValue() as? String)
+        let quotaHelp = subscription.accessibilityHelp()
+        let ringHelp = "额度环\n查看当前用量。"
         subscription.setAccessibilityFocused(true)
         XCTAssertEqual(view.focusedHelpAnchorID, "dock.rings." + id)
+        XCTAssertTrue(view.setFocusedHelpExplanation(ringHelp, for: "dock.rings." + id))
+        XCTAssertEqual(subscription.accessibilityHelp(), ringHelp)
+        XCTAssertEqual(subscription.accessibilityValue() as? String, quotaValue)
+        app.composition.dock.refreshDockContent()
+        XCTAssertEqual(subscription.accessibilityHelp(), ringHelp, "A same-target redraw preserves the active explanation")
         subscription.setAccessibilityFocused(false)
         XCTAssertNil(view.focusedHelpAnchorID)
+        XCTAssertEqual(subscription.accessibilityHelp(), quotaHelp)
+        XCTAssertFalse(view.setFocusedHelpExplanation(ringHelp, for: "dock.rings." + id))
 
         let notice = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.notice." + id })
         notice.setAccessibilityFocused(true)
@@ -291,10 +301,16 @@ private actor EntrySyntheticClient: EngineClient {
         let gripNode = try XCTUnwrap(nodes.first { $0.accessibilityIdentifier() == "dock.grip.0" })
         gripNode.setAccessibilityFocused(true)
         XCTAssertEqual(view.focusedHelpAnchorID, "dock.grip.0")
-        gripNode.setAccessibilityFocused(false)
-        XCTAssertNil(view.focusedHelpAnchorID)
+        let gripHelp = "Move the widget\nDrag the grip to another edge."
+        XCTAssertTrue(view.setFocusedHelpExplanation(gripHelp, for: "dock.grip.0"))
+        XCTAssertFalse(view.setFocusedHelpExplanation(nil, for: "dock.rings." + id))
+        XCTAssertEqual(gripNode.accessibilityHelp(), gripHelp)
+        XCTAssertTrue(view.setFocusedHelpExplanation(nil, for: "dock.grip.0"))
+        XCTAssertNil(gripNode.accessibilityHelp())
+        XCTAssertTrue(view.setFocusedHelpExplanation(gripHelp, for: "dock.grip.0"))
 
         app.composition.dock.close()
+        XCTAssertNil(gripNode.accessibilityHelp(), "Retirement must clear even a retained AX node")
         XCTAssertNil(view.helpAnchorID(atLocal: ring))
         XCTAssertNil(view.focusedHelpAnchorID)
     }
