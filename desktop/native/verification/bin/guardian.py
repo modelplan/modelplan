@@ -331,7 +331,13 @@ def main(argv=None):
     parser.add_argument('--subject-pid-file', type=Path, required=True, help='written by launch.py; the subject is stopped on exit')
     parser.add_argument('--interval', type=float, default=1.0)
     parser.add_argument('--reserve', type=float, default=30.0, help='seconds kept for cleanup before expiresAt (at least 25)')
+    parser.add_argument('--candidate-registry', type=Path, help='optional run-bound direct-mode scratch registry')
+    parser.add_argument('--candidate-parent', type=Path, help='approved parent for candidate scratch')
+    parser.add_argument('--candidate-cleanup-receipt', type=Path, help='new local cleanup receipt path')
     args = parser.parse_args(argv)
+    candidate_args = (args.candidate_registry, args.candidate_parent, args.candidate_cleanup_receipt)
+    if any(candidate_args) and not all(candidate_args):
+        parser.error('candidate registry, parent and cleanup receipt must be supplied together')
     flag = {'run': True}
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: flag.update(run=False))
@@ -341,7 +347,48 @@ def main(argv=None):
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(json.dumps(dict(error=type(error).__name__ if isinstance(error, OSError) else str(error))), file=sys.stderr)
         return 2
-    print(json.dumps(dict(guardian=outcome, subjectClosed=closed, subject=subject)))
+    result = dict(guardian=outcome, subjectClosed=closed, subject=subject)
+    if all(candidate_args) and finishable(outcome, closed, subject):
+        try:
+            import candidate_scratch
+            lease = json.loads(args.lease.read_text())
+            candidate = json.loads(args.candidate_registry.read_text())
+            registry = candidate.get('registry', candidate)
+            if subject == 'none':
+                # A missing PID file alone is not proof: the launcher could
+                # still be preparing. Require the run-bound receipt it writes
+                # only after launch.py exited before registering a subject.
+                proof_path = Path(candidate.get('noSubjectReceipt', ''))
+                if (not proof_path.is_absolute() or proof_path.is_symlink() or not proof_path.is_file()
+                        or candidate.get('subjectPidPath') != str(args.subject_pid_file)):
+                    raise ValueError('pre-registration exit unconfirmed')
+                with registration(args.subject_pid_file):
+                    proof = json.loads(proof_path.read_text())
+                    if (args.subject_pid_file.exists() or proof.get('runID') != lease['runID']
+                            or proof.get('epoch') != lease['epoch'] or proof.get('subjectPidPath') != str(args.subject_pid_file)
+                            or type(proof.get('launcherExit')) is not int or proof['launcherExit'] == 0):
+                        raise ValueError('pre-registration exit unconfirmed')
+                    root = candidate_scratch.validate_registry(registry, parent=args.candidate_parent,
+                                                               run_id=lease['runID'], epoch=lease['epoch'])
+                    if process_scan.scan(process_scan.scope_for(prefix=root), identity):
+                        raise ValueError('candidate process scope not empty')
+                    receipt = candidate_scratch.cleanup(registry, parent=args.candidate_parent,
+                                                        run_id=lease['runID'], epoch=lease['epoch'], subject_closed=True)
+            else:
+                reservation = json.loads(args.subject_pid_file.read_text())
+                receipt = candidate_scratch.cleanup_registered(
+                    registry, reservation, parent=args.candidate_parent,
+                    run_id=lease['runID'], epoch=lease['epoch'], subject_closed=closed,
+                    lookup=identity, scan=lambda scope: process_scan.scan(scope, identity))
+            with args.candidate_cleanup_receipt.open('x', encoding='utf-8') as stream:
+                json.dump(receipt, stream, sort_keys=True)
+                stream.flush(); os.fsync(stream.fileno())
+            result['candidateCleaned'] = True
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+            result['candidateCleaned'] = False
+            print(json.dumps(result), flush=True)
+            return 3
+    print(json.dumps(result))
     return 0 if finishable(outcome, closed, subject) else 3
 
 
