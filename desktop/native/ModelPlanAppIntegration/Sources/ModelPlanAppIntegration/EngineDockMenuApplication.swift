@@ -491,9 +491,7 @@ import ModelPlanMenuVerification
         if let status { component.attach(to: status) }
         if let button = status?.button {
             Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
-            noticeIndicator.frame = NSRect(x: max(0, button.bounds.width - 7), y: max(0, button.bounds.height - 7), width: 7, height: 7)
-            noticeIndicator.autoresizingMask = [.minXMargin, .minYMargin]
-            if noticeIndicator.superview !== button { button.addSubview(noticeIndicator) }
+            noticeIndicator.attach(to: button)
         }
         if let button = status?.button { applyStatusContent(to: button, detail: detail) }
         dockHelp?.refresh()

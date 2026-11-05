@@ -110,6 +110,11 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         animation.repeatCount=0;animation.repeatDuration=0;animation.isRemovedOnCompletion=true
         layer?.add(animation,forKey:"dock-notice-once")
     }
+    public func attach(to button: NSButton) {
+        frame = NSRect(x: max(0, button.bounds.width - 7), y: max(0, button.bounds.height - 7), width: 7, height: 7)
+        autoresizingMask = [.minXMargin, .minYMargin]
+        if superview !== button { button.addSubview(self) }
+    }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
     public override func draw(_ dirtyRect:NSRect){guard let notice else{return};let color=colors[notice.tone] ?? .secondaryLabelColor
         let path=NSBezierPath(ovalIn:bounds.insetBy(dx:1,dy:1));if notice.shape == .hollow{color.setStroke();path.lineWidth=1;path.stroke()}else{color.setFill();path.fill()}}
