@@ -8,6 +8,37 @@ import ModelPlanWire
 
 @MainActor final class S11SettingsLabelsJourneyTests: XCTestCase {
     private func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+    func testS11LegacyThresholdUsesSpecChoicesAndEffectiveDefault() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s11-legacy-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let directory = profile.appendingPathComponent("ModelPlan", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let legacy = #"{"schemaVersion":1,"settings":{"redBelow":16},"core":{"favouriteModelIDs":[]}}"#
+        try Data(legacy.utf8).write(to: directory.appendingPathComponent("settings.json"))
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment,
+            makeClient: { _, engineStore in SettingsJourneyClient(store: engineStore, rows: rows) }, activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await app.settingsHost.present(paneID: "dock", origin: .userInitiated)
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+        defer { window.close() }
+        let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
+        let critical = try XCTUnwrap(controller.choice(key: .redBelow))
+        // XCTest's default expected-failure option is strict: an unexpected pass must be reviewed.
+        XCTExpectFailure("S-11 product-missing: legacy threshold and offered values use the previous contract") {
+            XCTAssertEqual(critical.itemArray.compactMap { $0.representedObject as? String }, ["40", "30", "25", "20", "15", "10"])
+            XCTAssertEqual(critical.selectedItem?.representedObject as? String, "25")
+            XCTAssertEqual(app.composition.latestSettings?.effective.redBelow, 25)
+        }
+        await app.composition.stop()
+    }
     func testNormalSettingsKeepsThresholdAndPersistsPercentageBasis() async throws {
         for threshold in [25, 16] {
             let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s11-numbers-" + UUID().uuidString)
