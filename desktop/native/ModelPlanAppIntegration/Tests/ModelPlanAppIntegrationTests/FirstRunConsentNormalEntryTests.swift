@@ -85,8 +85,13 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertNil(views(try XCTUnwrap(window.contentView)).first { $0.accessibilityIdentifier() == "scope.allow.five.status" })
         try button("scope.selectAll").performClick(nil)
         XCTAssertEqual(app.scopeConsentEntry.controller.selectedIDs, ["one.local", "two.runtime"])
+        XCTAssertEqual(try button("scope.allow.one.local").state, .on)
+        XCTAssertEqual(try button("scope.allow.two.runtime").state, .on)
+        XCTAssertEqual(try button("scope.allow.three.browser").state, .off, "Select all must not include the browser-session reader")
         try button("scope.allow.one.local").performClick(nil)
         XCTAssertEqual(app.scopeConsentEntry.controller.selectedIDs, ["two.runtime"])
+        XCTAssertEqual(try button("scope.allow.one.local").state, .off)
+        XCTAssertEqual(try button("scope.allow.two.runtime").state, .on)
         let before = await engine.recorded(); XCTAssertTrue(before.isEmpty)
         try button("firstRun.done").performClick(nil)
         var recorded = await engine.recorded()
@@ -120,7 +125,9 @@ private actor FirstRunConsentEngine: EngineClient {
         XCTAssertFalse(settings.isHiddenOrHasHiddenAncestor)
         for (id, expected) in [("one.local", false), ("two.runtime", true), ("three.browser", false)] {
             let state = try XCTUnwrap(views(settings).first { $0.accessibilityIdentifier() == "scope.state." + id } as? NSTextField)
-            XCTAssertEqual(state.stringValue == "Allowed", expected, "Settings must show the accepted scope decision")
+            XCTAssertFalse(state.isHiddenOrHasHiddenAncestor)
+            XCTAssertEqual(state.stringValue, expected ? "Allowed" : "Not granted. Select this path and confirm to allow it.",
+                           "Settings must show the accepted scope decision")
         }
         settings.window?.close()
     }
