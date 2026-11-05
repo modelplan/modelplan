@@ -262,6 +262,12 @@ private actor EntrySyntheticClient: EngineClient {
             try XCTUnwrap(view.presentedImageForChecks?.dataProvider?.data) as Data
         }
         let resting = try pixels()
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let hull = try XCTUnwrap(view.registeredHullBounds)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        let restingWidth = try XCTUnwrap(view.presentedImageForChecks).width
+        XCTAssertGreaterThan(view.bounds.width, skin.bounds.width, "The view reserves hover space beyond the approved skin")
+        XCTAssertEqual(restingWidth, Int(ceil(skin.bounds.width * CGFloat(view.presentationBackingScale ?? 1))))
         let events = try XCTUnwrap(view.nozzleEventDelegate)
         events.hoverNozzle(id)
         XCTAssertNotEqual(try pixels(), resting, "Subtle hover must magnify the actual painted nozzle")
@@ -269,7 +275,13 @@ private actor EntrySyntheticClient: EngineClient {
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
         XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
-        XCTAssertLessThan(subtle.offset.x, 0, "right-edge magnification shifts toward the display centre")
+        let dx = hull.midX - nozzle.midX, dy = hull.midY - nozzle.midY
+        let distance = hypot(dx, dy)
+        XCTAssertGreaterThan(distance, 0)
+        XCTAssertEqual(subtle.offset.x, 6 * dx / distance, accuracy: 0.001)
+        XCTAssertEqual(subtle.offset.y, 6 * dy / distance, accuracy: 0.001)
+        XCTAssertGreaterThan(try XCTUnwrap(view.presentedImageForChecks).width, restingWidth)
+        XCTAssertTrue(view.isPainted(atLocal: CGPoint(x: nozzle.midX, y: nozzle.midY)))
         XCTAssertNil(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
         events.hoverNozzle(nil)
         XCTAssertEqual(try pixels(), resting)
