@@ -76,6 +76,50 @@ private actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"])
+        let before = await store.snapshot()
+        var options = OnboardingOptions(preferences: before.preferences)
+        XCTAssertFalse(options.readerConsent[.cursor])
+        options.readerConsent[.cursor] = true
+        let result = try await store.completeFirstRun(options: options, action: .done, host: .popup,
+                                                       capabilities: .init(), expectedRevision: before.revision)
+        XCTAssertTrue(result.snapshot.preferences.onboarding.completed)
+        XCTAssertEqual(result.snapshot.preferences.readerConsent, before.preferences.readerConsent)
+        let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"])
+        let restored = await reopened.snapshot()
+        XCTAssertTrue(restored.preferences.onboarding.completed)
+        XCTAssertEqual(restored.preferences.readerConsent, before.preferences.readerConsent)
+    }
+    func testLegacyFirstRunControllerChecksReaderAndFinishesWithoutPersistingConsent() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-controller-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"])
+        let before = await store.snapshot()
+        let editor = SettingsEditor(store: store)
+        let controller = SettingsFirstRunController(editor: editor, host: .popup, scopeConsentEntry: nil)
+        defer { controller.suspend(); controller.close() }
+        await controller.present()
+        let root = try XCTUnwrap(controller.window?.contentView)
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let views = descendants(root)
+        let reader = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.reader.cursor" } as? NSButton)
+        XCTAssertFalse(reader.isHiddenOrHasHiddenAncestor); XCTAssertTrue(reader.isEnabled)
+        XCTAssertEqual(reader.state, .off)
+        reader.performClick(nil)
+        XCTAssertEqual(reader.state, .on)
+        let done = try XCTUnwrap(views.first { $0.accessibilityIdentifier() == "firstRun.done" } as? NSButton)
+        XCTAssertTrue(done.isEnabled); done.performClick(nil)
+        var saved = await store.snapshot()
+        for _ in 0..<200 where !saved.preferences.onboarding.completed {
+            try await Task.sleep(for: .milliseconds(10)); saved = await store.snapshot()
+        }
+        XCTAssertTrue(saved.preferences.onboarding.completed)
+        XCTAssertEqual(saved.preferences.readerConsent, before.preferences.readerConsent)
+    }
+
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
@@ -105,8 +149,6 @@ private actor SettingsJourneyClient: EngineClient {
         let notifications = JourneyNotificationService()
         first.notificationAuthorizationService = notifications
         first.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: login))
-        let firstRun = JourneyFirstRunSurface()
-        first.makeFirstRunSurfaceWithConsent = { _, entry in firstRun.scopeEntry = entry; return firstRun }
         await first.prepare()
         first.composition.dock.setPresentationAllowed(true)
         await first.composition.start()
@@ -123,15 +165,20 @@ private actor SettingsJourneyClient: EngineClient {
         let facts = try WireDecoder.decode(WireConsentFacts.self, from: JSONSerialization.data(withJSONObject: consentObject))
         let delivery = try XCTUnwrap(first.composition.store.snapshot.delivery)
         await first.composition.store.consume(.response(requestID: .string("synthetic-consent"), .consent(.init(envelope: try .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch, consentGeneration: delivery.floor.generation, data: facts), delivery: delivery))))
+        let existingWindows = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
         await first.restoreFirstRunIfNeeded()
-        XCTAssertEqual(firstRun.shows, 1, "A fresh normal entry presents first run")
-        XCTAssertTrue(firstRun.scopeEntry === first.scopeConsentEntry, "First run must use the app's accepted consent controller")
-        XCTAssertNotNil(firstRun.scopeView, "First run must construct its own consent view")
-        XCTAssertTrue(firstRun.scopeView?.superview === firstRun.scopePresentation?.container, "The first-run consent view must be mounted in its actual presentation container")
-        XCTAssertFalse(firstRun.scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
+        let firstRunWindow = try XCTUnwrap(NSApplication.shared.windows.first { !existingWindows.contains(ObjectIdentifier($0)) && $0.isVisible })
+        addTeardownBlock { @MainActor in firstRunWindow.close() }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        func firstRunViews() throws -> [NSView] { descendants(try XCTUnwrap(firstRunWindow.contentView)) }
+        let scopeView = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "settings.scopeConsent" } as? SettingsScopeConsentView)
+        XCTAssertFalse(scopeView.isHiddenOrHasHiddenAncestor)
+        XCTAssertFalse(scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
         XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty, "Restoration must not select or grant any scope")
-        first.scopeConsentEntry.controller.selectAll()
-        XCTAssertEqual(first.scopeConsentEntry.controller.selectedIDs, ["codex.local_history", "cursor.saved_login"], "Select all must exclude browser and unknown paths")
+        let checkbox = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
+        XCTAssertTrue(checkbox.isEnabled); XCTAssertFalse(checkbox.isHiddenOrHasHiddenAncestor)
+        checkbox.performClick(nil)
+        XCTAssertEqual(first.scopeConsentEntry.controller.selectedIDs, ["codex.local_history"])
         let syntheticClient = try XCTUnwrap(first.composition.client as? SettingsJourneyClient)
         let grantsBeforeConfirmation = await syntheticClient.grantCount()
         XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
@@ -225,13 +272,19 @@ private actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         await editor.reload()
         let beforeDone = try XCTUnwrap(editor.snapshot)
-        let done = try await editor.completeFirstRun(options: .init(preferences: beforeDone.preferences),
-            action: .done, host: .popup, expectedRevision: beforeDone.revision)
-        XCTAssertTrue(done.snapshot.preferences.onboarding.completed)
+        let doneButton = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "firstRun.done" } as? NSButton)
+        XCTAssertTrue(doneButton.isEnabled); XCTAssertFalse(doneButton.isHiddenOrHasHiddenAncestor)
+        doneButton.performClick(nil)
+        var afterDone = await first.foundationStore.snapshot()
+        for _ in 0..<200 where !afterDone.preferences.onboarding.completed {
+            try await Task.sleep(for: .milliseconds(10)); afterDone = await first.foundationStore.snapshot()
+        }
+        XCTAssertTrue(afterDone.preferences.onboarding.completed)
+        XCTAssertEqual(afterDone.preferences.readerConsent, beforeDone.preferences.readerConsent)
         XCTAssertEqual(login.registrations, 1, "Completing first run must not repeat an already applied login choice")
-        let retiredScope = try XCTUnwrap(firstRun.scopeView)
-        firstRun.hide()
-        XCTAssertTrue(retiredScope.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
+        for _ in 0..<200 where firstRunWindow.isVisible { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(firstRunWindow.isVisible)
+        XCTAssertTrue(scopeView.arrangedSubviews.isEmpty, "Closing first run retires its presentation")
         let grantsAfterDone = await syntheticClient.grantCount()
         XCTAssertEqual(grantsAfterDone, 0, "Completing first run must not implicitly authorize selected scopes")
         XCTAssertFalse(first.scopeConsentEntry.view.arrangedSubviews.isEmpty, "Settings retains its separate consent view")

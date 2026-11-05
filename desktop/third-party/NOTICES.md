@@ -1017,7 +1017,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## CodexBar 0.81.0
+## CodexBar 0.83.0
 
 Licence: `MIT`.
 
@@ -1025,7 +1025,7 @@ Copyright (c) 2026 Peter Steinberger
 
 Used in: Pinned optional CodexBar compatibility helper (downloaded on consented use); Native Go provider adaptations, with original source revisions retained in the ported files.
 
-Source: https://github.com/steipete/CodexBar/releases/tag/v0.81.0
+Source: https://github.com/steipete/CodexBar/releases/tag/v0.83.0
 
 ### LICENSE
 
