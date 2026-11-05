@@ -2,7 +2,9 @@
 """Validate a packaged candidate's identity. This module does not launch it."""
 import hashlib
 import json
+import os
 import re
+import stat
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -48,6 +50,44 @@ def verify_archive(path, expected):
     if digest.hexdigest() != expected:
         raise ValueError("candidate archive sha256 mismatch")
     return digest.hexdigest()
+
+
+def stage_local_archive(source, destination, expected):
+    """Copy one local candidate into a fresh file; reject it before any unzip on mismatch.
+
+    No candidate is launched here. The destination must be inside scratch owned
+    by the caller; O_EXCL prevents replacement of an existing file or symlink.
+    """
+    if not isinstance(expected, str) or not SHA256.fullmatch(expected):
+        raise ValueError("invalid sha256")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    source_fd = os.open(source, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(source_fd).st_mode):
+            raise ValueError("candidate must be a regular file")
+        fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        created = os.fstat(fd)
+        try:
+            digest = hashlib.sha256()
+            with os.fdopen(fd, "wb") as target, os.fdopen(source_fd, "rb", closefd=False) as incoming:
+                for block in iter(lambda: incoming.read(1024 * 1024), b""):
+                    digest.update(block)
+                    target.write(block)
+                target.flush()
+                os.fsync(target.fileno())
+            if digest.hexdigest() != expected:
+                raise ValueError("candidate archive sha256 mismatch")
+        except BaseException:
+            try:
+                current = os.lstat(destination)
+                if current.st_dev == created.st_dev and current.st_ino == created.st_ino:
+                    os.unlink(destination)
+            except FileNotFoundError:
+                pass
+            raise
+        return digest.hexdigest()
+    finally:
+        os.close(source_fd)
 
 
 def read_config(path):

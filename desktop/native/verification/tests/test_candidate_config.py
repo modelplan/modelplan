@@ -40,6 +40,27 @@ class CandidateConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "launch denied"):
             candidate.require_isolation_proof({"isolated": True, "networkBlocked": True})
 
+    def test_stage_checks_hash_and_never_overwrites_an_existing_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source.zip"; source.write_bytes(b"synthetic")
+            target = Path(temp) / "target.zip"
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "mismatch"):
+                candidate.stage_local_archive(source, target, "a" * 64)
+            self.assertFalse(target.exists())
+            self.assertEqual(candidate.stage_local_archive(source, target, digest), digest)
+            self.assertEqual(target.read_bytes(), b"synthetic")
+            with self.assertRaises(FileExistsError):
+                candidate.stage_local_archive(source, target, digest)
+            self.assertEqual(target.read_bytes(), b"synthetic")
+
+    def test_stage_refuses_symlink_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = Path(temp) / "source.zip"; source.write_bytes(b"synthetic")
+            alias = Path(temp) / "alias.zip"; alias.symlink_to(source)
+            with self.assertRaises(OSError):
+                candidate.stage_local_archive(alias, Path(temp) / "target.zip", "a" * 64)
+
 
 if __name__ == "__main__":
     unittest.main()
