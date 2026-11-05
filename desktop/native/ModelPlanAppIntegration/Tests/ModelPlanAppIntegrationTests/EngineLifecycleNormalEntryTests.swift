@@ -699,13 +699,15 @@ private actor LifecycleEngine: EngineClient {
             isARepeat: false, keyCode: 126))
         first.keyDown(with: optionUp)
         let editor = app.settingsHost.application.editor
+        let announcement = "position \(index) of \(ids.count)"
         let deadline = ContinuousClock.now + .seconds(2)
-        while editor.snapshot?.preferences.subscriptions.order != order && ContinuousClock.now < deadline {
+        while (instrument.accessibilityValue() as? String)?.hasSuffix(announcement) != true && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         let saved = await editor.store.snapshot()
         XCTAssertEqual(saved.preferences.subscriptions.order, order)
-        XCTAssertTrue((instrument.accessibilityValue() as? String)?.hasSuffix("position \(index) of \(ids.count)") == true)
+        XCTAssertTrue((instrument.accessibilityValue() as? String)?.hasSuffix(announcement) == true,
+                      "Overflow keyboard reorder must announce its committed position")
 
         try toggle()
         XCTAssertNil(row(target, in: tray))
