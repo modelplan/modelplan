@@ -8,7 +8,7 @@
 
   public enum G1InspectionInputError: Error {
     case invalidClock, invalidPointer, alreadyBound, notBound, missingIsolatedLedger,
-      systemDeliveryNotEnabled
+      systemDeliveryNotEnabled, invalidMember
   }
   @MainActor private final class G1InspectionTimer: DockEdgeScheduling {
     var deadline: TimeInterval?, action: (@MainActor () -> Void)?
@@ -37,6 +37,8 @@
     public let displays: [DockDisplayArea]
     public let notificationLedgerURL: URL?
     private weak var app: EngineDockMenuApplication?
+    private var activityDelivery: EngineDeliveryContext?
+    private var activitySignals: [String: DockWorkingSignal] = [:]
     private var cockpitTimers: [UUID: (TimeInterval, @MainActor () -> Void)] = [:]
     var unixMilliseconds: UInt64 {
       UInt64(max(0, min(now.timeIntervalSince1970 * 1000, 8_640_000_000_000_000)).rounded(.down))
@@ -62,6 +64,7 @@
     fileprivate func bind(_ app: EngineDockMenuApplication) {
       timer.cancel()
       self.app = app
+      app.g1InspectionControls = self
     }
     fileprivate func environment() -> DockEdgeEnvironment {
       .init(displays: displays, layouts: [], primaryDisplayID: displays.first?.id, pointer: pointer)
@@ -129,6 +132,28 @@
     ) throws {
       guard let app else { throw G1InspectionInputError.notBound }
       try app.composition.applySessionActivityForChecks(values, delivery: delivery)
+      activityDelivery = delivery
+      activitySignals = Dictionary(uniqueKeysWithValues: values.compactMap { signal in
+        signal.subscriptionID.map { ($0, signal) }
+      })
+    }
+    /// A tool is the canonical row ID; a member must name exactly one admitted bound account.
+    public func setVerifiedSessionActivity(tool: String, member: String, active: Bool) throws {
+      guard let app else { throw G1InspectionInputError.notBound }
+      let composition = app.composition
+      guard let delivery = composition.store.snapshot.delivery,
+        composition.accountMembers.members.contains(where: {
+          $0.rowID == tool && $0.id == member && $0.isStable && $0.subscriptionRef == member
+        }) else { throw G1InspectionInputError.invalidMember }
+      let freshBoundIDs = Set(composition.accountMembers.members.filter { candidate in
+        candidate.isStable && candidate.subscriptionRef == candidate.id &&
+          composition.presentedContent.snapshot.inputs.contains { $0.id == candidate.id && $0.dataState == .fresh }
+      }.map(\.id))
+      var signals = activityDelivery == delivery ? activitySignals.filter { freshBoundIDs.contains($0.key) } : [:]
+      if active {
+        signals[member] = .init(subscriptionID: member, bindingVerified: true, fresh: true, observedOutput: true)
+      } else { signals.removeValue(forKey: member) }
+      try setVerifiedSessionActivity(signals.keys.sorted().compactMap { signals[$0] }, delivery: delivery)
     }
   }
 

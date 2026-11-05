@@ -63,6 +63,7 @@ import ModelPlanMenuVerification
     private let makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)?
     private var console: (any EngineRowsConsoleSurface)?
     #if DEBUG
+    var g1InspectionControls: G1InspectionControls?
     var g1CockpitSnapshotSource:(()->G1RenderedElement)?
     var g1ConfigureNativeCockpit:((Bool)->Void)?
     var g1BindInspectionControls:((G1InspectionControls)->Void)?

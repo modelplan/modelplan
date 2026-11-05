@@ -10,6 +10,29 @@ import XCTest
 }
 
 @MainActor final class G1RenderedSnapshotUnitTests: XCTestCase {
+  func testContractMappingDoesNotRelabelLocalOrCssFramesAsScreenCoordinates() {
+    var node = G1RenderedElement("observed", role: "AXButton")
+    node.frame = .init(x: 10, y: 20, width: 30, height: 40)
+    node.visible = true
+    node.text = "Actual text"; node.ink = .init(0.1, 0.2, 0.3)
+    node.interaction = .init(hover: true, press: true, disabled: true)
+    node.filters = ["observed-filter"]; node.effects = ["observed-effect"]
+    node.animationPhase = "closing"
+    let unmapped = G1ContractAdapter.element(node)
+    XCTAssertNil(unmapped.frame); XCTAssertEqual(unmapped.interaction,.disabled)
+    XCTAssertFalse(unmapped.enabled); XCTAssertEqual(unmapped.text,node.text)
+    XCTAssertEqual(unmapped.filters,["observed-filter","observed-effect"])
+    XCTAssertEqual(unmapped.transition,"closing")
+    node.coordinateSpace = "web-viewport-css-px-top-left"
+    XCTAssertNil(G1ContractAdapter.element(node).frame)
+    node.coordinateSpace = "screen"
+    XCTAssertEqual(G1ContractAdapter.element(node).frame,node.frame)
+    node.visible = false
+    XCTAssertNil(G1ContractAdapter.element(node).frame)
+    node.visible = true; node.coordinateSpace = "parent-local"
+    node.screenFrame = .init(x: 100, y: 200, width: 30, height: 40)
+    XCTAssertEqual(G1ContractAdapter.element(node).frame,node.screenFrame)
+  }
   func testSecureNativeFieldDoesNotExposeItsValueOrChangeTheControl() {
     let field = NSSecureTextField(frame: .init(x: 0, y: 0, width: 120, height: 24))
     field.stringValue = "synthetic-secret"

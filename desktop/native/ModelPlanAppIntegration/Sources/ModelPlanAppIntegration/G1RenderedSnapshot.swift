@@ -115,6 +115,8 @@
     public var identifier: String, role: String
     public var coordinateSpace = "parent-local"
     public var frame: CGRect?, visible: Bool?, text: String?
+    /// Observed native screen coordinates; absent for offscreen or unmapped web geometry.
+    public var screenFrame: CGRect?
     public var ink: G1RenderedColor?, fill: G1RenderedColor?, background: G1RenderedColor?,
       contrastAgainstParent: Double?
     public var assetSource: String?, layerRoles: [String] = [], zOrder: Double?
@@ -139,9 +141,42 @@
     public let deliveryRevision: UInt64?
     public let capturedAt: Date
     public func element(_ id: String) -> G1RenderedElement? { root.element(id) }
+    // Rev-2 facade; the detailed composition tree remains available for evidence metadata.
+    public var dock: G1Element { G1ContractAdapter.element(element("dock") ?? .init("dock", role: "quota-widget")) }
+    public var card: G1Element? {
+      guard let node = element("card"), node.attributes["hidden"] == "false" else { return nil }
+      return G1ContractAdapter.element(node)
+    }
+    public var settings: G1Element? {
+      guard let node = element("settings"), node.visible == true else { return nil }
+      return G1ContractAdapter.element(node)
+    }
+    public var cockpit: G1Element? {
+      guard let node = element("cockpit"), node.visible == true else { return nil }
+      return G1ContractAdapter.element(node)
+    }
+    // Not wired yet: absence is not an assertion that no product notices exist.
+    public var menu: G1Element? { nil }
+    public var statusItem: G1Element? { nil }
+    public var notices: [G1Notice] { [] }
+    private var contractRoots: [G1Element] { [dock] + [card, settings, cockpit, menu, statusItem].compactMap { $0 } }
+    public func find(_ id: String) -> G1Element? { contractRoots.lazy.compactMap { $0.find(id) }.first }
+    public func all(role: G1Role) -> [G1Element] { contractRoots.flatMap { $0.all(role: role) } }
   }
 
   @MainActor enum G1SnapshotReader {
+    static func screenRect(_ rect: CGRect?, in view: NSView) -> CGRect? {
+      guard let rect, !rect.isEmpty, let window = view.window, window.isVisible,
+        !view.isHiddenOrHasHiddenAncestor, view.alphaValue > 0 else { return nil }
+      return window.convertToScreen(view.convert(rect, to: nil))
+    }
+    /// These generated raster children use the instrument view's completed drawing coordinates.
+    static func screenMapped(_ node: G1RenderedElement, in view: NSView) -> G1RenderedElement {
+      var result = node
+      result.screenFrame = screenRect(node.frame, in: view)
+      result.children = node.children.map { screenMapped($0, in: view) }
+      return result
+    }
     static func paintBackdrop(
       _ rect: CGRect, earlier: ArraySlice<G1NativePaint>, over background: G1RenderedColor?,
       in view: NSView
@@ -164,6 +199,7 @@
       var node = G1RenderedElement(
         identifier, role: view.accessibilityRole()?.rawValue ?? String(describing: type(of: view)))
       node.frame = view.frame
+      node.screenFrame = screenRect(view.bounds, in: view)
       node.visible =
         !view.isHiddenOrHasHiddenAncestor && view.window?.isVisible == true
         && !view.visibleRect.isEmpty && view.alphaValue > 0
@@ -209,6 +245,7 @@
           if paint.frame.contains(view.bounds) { node.fill = color }
           var region = G1RenderedElement(identifier + "/paint\(index)", role: paint.role)
           region.frame = paint.frame
+          region.screenFrame = screenRect(paint.frame, in: view)
           region.fill = color
           region.background = paintBackdrop(
             paint.frame, earlier: painted.g1DrawnPaints[..<index], over: background, in: view)
@@ -301,6 +338,7 @@
     static func dock(_ host: StaticDockPreviewHost) -> G1RenderedElement {
       let view = host.g1SnapshotInstrumentView
       var root = native(view, id: "dock")
+      let nativeChildCount = root.children.count
       root.role = "quota-widget"
       root.identifier = "dock"
       func drawn(_ rect: CGRect, _ transform: CGAffineTransform) -> CGRect? {
@@ -483,6 +521,9 @@
         }
         root.children.append(node)
       }
+      for index in nativeChildCount..<root.children.count {
+        root.children[index] = screenMapped(root.children[index], in: view)
+      }
       host.g1AppendHostObservations(to: &root)
       return root
     }
@@ -618,10 +659,12 @@
       card.role = "card"
       var fragments = G1RenderedElement("card.fragments", role: "text-layout")
       fragments.frame = cardView.bounds
+      fragments.screenFrame = G1SnapshotReader.screenRect(cardView.bounds, in: cardView)
       for (id, rects) in cardView.renderedLineFragmentsForChecks.sorted(by: { $0.key < $1.key }) {
         for (index, rect) in rects.enumerated() {
           var line = G1RenderedElement("card.fragment." + id + ".\(index)", role: "text-fragment")
           line.frame = rect
+          line.screenFrame = G1SnapshotReader.screenRect(rect, in: cardView)
           line.attributes["textIdentifier"] = id
           fragments.children.append(line)
         }
