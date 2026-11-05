@@ -3,13 +3,49 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Hint80Tests: XCTestCase {
+    func testV1OffersOnlyTwoHintsAndNeverMarksUnavailableHintSeen() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true
+        try value.updateContext(context, at: 0)
+        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh, .ignition], at: 0))
+        XCTAssertTrue(value.preferences.seen.isEmpty)
+        context.ringRefreshAvailable = true
+        try value.updateContext(context, at: 1)
+        let ring = try XCTUnwrap(value.nextOffer(placeable: [.ringRefresh, .ignition], at: 1))
+        XCTAssertEqual(ring.kind, .ringRefresh)
+        try value.confirmShown(ring, at: 1); value.dismiss()
+        context.dockReveal = nil; context.widgetConcealed = true
+        try value.updateContext(context, at: 2)
+        XCTAssertNil(try value.nextOffer(placeable: [.findWidget], at: 2), "No hint without an actual status anchor")
+        context.statusAnchorAvailable = true
+        try value.updateContext(context, at: 3)
+        let find = try XCTUnwrap(value.nextOffer(placeable: [.findWidget], at: 3))
+        XCTAssertEqual(find.kind, .findWidget)
+        try value.confirmShown(find, at: 3); value.dismiss()
+        context.dockReveal = UUID(); context.widgetConcealed = false
+        try value.updateContext(context, at: 4)
+        for kind in FirstUseHintKind.allCases { value.request(kind) }
+        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 4))
+        XCTAssertEqual(value.preferences.seen, [.ringRefresh, .findWidget])
+    }
+    func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.ignitionAvailable = false
+        try value.updateContext(context, at: 0)
+        XCTAssertNil(value.reservedDockHint)
+        context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        XCTAssertEqual(value.reservedDockHint, .drag)
+        try value.beginDockRevealDwell(at: 1)
+        XCTAssertEqual(try value.nextOffer(placeable: [.drag], at: 1.5)?.kind, .drag)
+        XCTAssertFalse(value.preferences.seen.contains(.ignition))
+    }
     private func cockpit(seen: Set<FirstUseHintKind> = []) throws -> FirstUseHints {
         var value = FirstUseHints(preferences: .init(seen: seen))
         var context = HintContext(cockpitOpen: UUID()); context.captureReady = true
         try value.updateContext(context, at: 0); return value
     }
     func testNineKindPriorityDetachFirstOpenThenOptionOnNextOpen() throws {
-        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial])
+        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget])
         var value = try cockpit()
         let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach,.optionHelp], at: 0))
         XCTAssertEqual(detach.kind, .detach); try value.confirmShown(detach, at: 0); value.dismiss()

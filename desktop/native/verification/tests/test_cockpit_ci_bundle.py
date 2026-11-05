@@ -15,7 +15,7 @@ class CockpitCIBundleTests(unittest.TestCase):
         marker = '    - name: Build and verify the community cockpit for native GUI tests\n      run: |\n'
         self.assertEqual(text.count(marker), 1)
         block = text.split(marker, 1)[1].split('\n    - name:', 1)[0]
-        self.assertLess(text.index(marker), text.index('    - name: App settings application tests'))
+        self.assertLess(text.index(marker), text.index('    - name: App integration tests, GUI leg'))
         return '\n'.join(line[8:] for line in block.splitlines())
 
     def test_export_occurs_only_after_build_and_pin_check(self):

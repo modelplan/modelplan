@@ -481,10 +481,10 @@ import ModelPlanSettings
                 host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
                 if official { XCTAssertEqual(supplied.map(\.subscriptionID), [id]) }
                 XCTAssertNil(host.nativePanel)
-                host.dockView.onAction?(.subscription(id))
+                try presentSyntheticHostCard(host, id: id)
                 let labels = descendants(host.card).compactMap { $0 as? NSTextField }
                 let source = try XCTUnwrap(labels.first { $0.accessibilityIdentifier() == "dock.card.text.source" })
-                XCTAssertEqual(source.stringValue, accountRow ? "读取于 1 分钟内" : "读数时间未知")
+                XCTAssertEqual(source.stringValue, accountRow ? "刚刚" : "读数时间未知")
                 XCTAssertEqual(source.accessibilityLabel(), source.stringValue)
                 if !accountRow { XCTAssertTrue(labels.contains { $0.stringValue.contains("Keychain") }) }
                 let button = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
@@ -492,7 +492,7 @@ import ModelPlanSettings
                 let target = try XCTUnwrap(button.target as? NSObject), action = try XCTUnwrap(button.action)
                 _ = target.perform(action, with: button)
                 XCTAssertEqual(settings, 1); XCTAssertEqual(console, 0)
-                host.dockView.onAction?(.subscription(id))
+                try presentSyntheticHostCard(host, id: id)
                 let retained = try XCTUnwrap(descendants(host.card).compactMap { $0 as? NSButton }.first { $0.accessibilityIdentifier() == "dock.card.enter" })
                 XCTAssertEqual(retained.title, "设置")
                 let retainedTarget = try XCTUnwrap(retained.target as? NSObject), retainedAction = try XCTUnwrap(retained.action)
@@ -530,9 +530,9 @@ import ModelPlanSettings
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
             let titles = host.menu().items.map(\.title).joined(separator: " ")
-            XCTAssertTrue(titles.contains("Claude Code")); XCTAssertTrue(titles.contains("Keychain"))
+            XCTAssertFalse(titles.contains("Claude Code")); XCTAssertFalse(titles.contains("Keychain"), "The Dock context menu does not repeat provider diagnostics")
             XCTAssertFalse(titles.contains("native:")); XCTAssertFalse(titles.contains("consent_required"))
-            host.dockView.onAction?(.subscription(status.input.id))
+            try presentSyntheticHostCard(host, id: status.input.id)
             func labels(_ v: NSView) -> [NSTextField] { (v as? NSTextField).map { [$0] } ?? v.subviews.flatMap(labels) }
             XCTAssertTrue(labels(host.card).contains { $0.stringValue.contains("Keychain") })
             XCTAssertNil(host.nativePanel)
@@ -558,7 +558,7 @@ import ModelPlanSettings
             if !hide { _ = try await coordinator.editor.commit(.language(.english)) }
             var ready = StoreDiagnostics(); ready.personal = nil
             host.render(snapshot: joined, diagnostics: ready); host.setPresentationAllowed(true)
-            host.dockView.onAction?(.subscription("a"))
+            try presentSyntheticHostCard(host, id: "a")
             let enter = try XCTUnwrap(host.card.onEnter), revision = try XCTUnwrap(coordinator.latest).snapshot.revision
             enter("other", revision); enter("a", revision + 1)
             XCTAssertEqual(opens, 0, "identity/revision mismatches cannot enter")
@@ -569,7 +569,7 @@ import ModelPlanSettings
             _ = (try XCTUnwrap(live.target as? NSObject)).perform(try XCTUnwrap(live.action), with: live)
             XCTAssertEqual(opens, 1, "a current selector still enters once")
             opens = 0
-            host.dockView.onAction?(.subscription("a"))
+            try presentSyntheticHostCard(host, id: "a")
             let button = try retainedConsoleButton(in: host.card)
             let target = try XCTUnwrap(button.target as? NSObject), action = try XCTUnwrap(button.action)
             if hide { _ = try await coordinator.editor.commit(.showDock(false)) }

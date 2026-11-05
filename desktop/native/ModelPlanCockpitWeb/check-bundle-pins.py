@@ -36,14 +36,14 @@ def validate(repo, editions=('community', 'official'), bundle_root=None):
             raise ValueError('Unexpected canonical edition metadata')
         seen = set()
         for path in root.rglob('*'):
-            if is_appledouble(path):
-                continue
             if path.is_symlink():
                 raise ValueError('Linked build output')
+            if not path.is_dir() and not path.is_file():
+                raise ValueError('Special build output')
+            if is_appledouble(path):
+                continue
             if path == manifest or path.is_dir():
                 continue
-            if not path.is_file():
-                raise ValueError('Special build output')
             relative = path.relative_to(root).as_posix()
             if hashlib.sha256(path.read_bytes()).hexdigest() != value['files'].get(relative):
                 raise ValueError('Undeclared or changed canonical output')

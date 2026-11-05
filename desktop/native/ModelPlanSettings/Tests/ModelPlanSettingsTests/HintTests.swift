@@ -114,7 +114,7 @@ final class HintTests: XCTestCase {
         XCTAssertTrue(h.preferences.seen.isEmpty)
     }
     func testEveryHintHasItsExactPriorityAndOnlyConfirmedFlagIsSpent() throws {
-        let priority = FirstUseHintKind.allCases
+        let priority = FirstUseHintKind.allCases.filter { $0 != .ringRefresh && $0 != .findWidget }
         for index in priority.indices {
             let higher = Set(priority.prefix(index))
             var h = try open(2, dock: true, seen: higher), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())
@@ -198,7 +198,7 @@ final class HintTests: XCTestCase {
             XCTAssertTrue(h.preferences.seen.contains(kind)); XCTAssertTrue(h.cockpitBudgetUsed)
         }
     }
-    func testStorageOnlyContainsNineFlagsAndBoundedCounters() throws {
+    func testStorageContainsKnownFlagsAndBoundedCounters() throws {
         let p = FirstUseHintPreferences(seen: Set(FirstUseHintKind.allCases), opens: Int.max, reveals: Int.max)
         let data = try JSONEncoder().encode(p), dictionary = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(Set(dictionary.keys), ["seen","opens","reveals"])

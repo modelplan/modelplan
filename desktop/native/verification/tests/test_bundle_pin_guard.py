@@ -89,3 +89,14 @@ class BundlePinGuardTests(unittest.TestCase):
             os.mkfifo(root / 'desktop/cockpit/.tmp/community/pipe')
             with self.assertRaisesRegex(ValueError, 'Special build output'):
                 guard.validate(root, editions=('community',))
+
+    def test_appledouble_metadata_links_rejected_and_regular_files_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.fixture(root)
+            bundle = root / 'desktop/cockpit/.tmp/community'
+            (bundle / '._ordinary').write_bytes(b'synthetic metadata')
+            guard.validate(root, editions=('community',))
+            (bundle / '._linked').symlink_to(root / 'outside')
+            with self.assertRaisesRegex(ValueError, 'Linked build output'):
+                guard.validate(root, editions=('community',))
