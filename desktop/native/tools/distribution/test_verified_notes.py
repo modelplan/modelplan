@@ -18,3 +18,16 @@ class VerifiedNotesTests(unittest.TestCase):
             path.write_text(json.dumps({'date': '2026-11-05', 'verified': ['G3-1', 'arbitrary text']}))
             with self.assertRaises(ValueError):
                 render(path, date(2026, 11, 5))
+
+class LedgerSnapshotTests(unittest.TestCase):
+    def test_only_verified_status_is_exported(self):
+        from update_verified_handoff import snapshot
+        text = '''| G3-01 | private | x | x | x | x | VERIFIED (evidence) |
+| G3-02 | VERIFIED | x | x | x | x | TEST-PASS |
+| G3-03 | private | x | x | x | x | OPEN |
+'''
+        self.assertEqual(snapshot(text, date(2026, 11, 5)), {'date': '2026-11-05', 'verified': ['G3-01']})
+        with self.assertRaises(ValueError):
+            snapshot(text + text, date(2026, 11, 5))
+        with self.assertRaises(ValueError):
+            snapshot('missing', date(2026, 11, 5))
