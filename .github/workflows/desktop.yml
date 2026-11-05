@@ -163,6 +163,27 @@ jobs:
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
       - name: Assert packaged production wiring (known baseline failures remain red)
         run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified
+      # Interim until the v1 candidate workflow (#522) lands: the on-device lanes need the native app this job
+      # packages, not the legacy Tauri DMG above. Unverified consent identity, cockpit off, ad-hoc signed.
+      - name: Zip the packaged native app for on-device checks
+        if: always()
+        env:
+          # The PR head, not the synthetic merge commit a pull_request run checks out.
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          app="$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
+          [ -d "$app" ] || { echo "no packaged native app"; exit 0; }
+          mkdir -p "$RUNNER_TEMP/native-app"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app/ModelPlan-Community-native.zip"
+          printf '%s\n' "sourceSHA=$SOURCE_SHA" "runID=$GITHUB_RUN_ID" "runAttempt=$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/native-app/BUILD.txt"
+          (cd "$RUNNER_TEMP/native-app" && shasum -a 256 ModelPlan-Community-native.zip >> BUILD.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-app-unverified-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/native-app/
+          if-no-files-found: warn
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
