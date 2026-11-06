@@ -287,6 +287,36 @@ private actor P1SyntheticEngine: EngineClient {
         }
     }
 
+    /// MENU-12: an actually open widget menu protects the widget; when AppKit ends tracking without
+    /// the close callback, the flag clears anyway, so it never blocks the collapse.
+    func testMENU12OpenMenuProtectsAndAStaleFlagClears() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-menu12-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { p in p.autoHide = false; for _ in 0..<16 { p.onboarding.next() } }
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 50, y: 200)) },
+            makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(app); await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let host = app.composition.dock
+        XCTAssertNotNil(host.edgePresentation?.paintedFrame)
+        let menu = host.menu()
+        host.menuWillOpen(menu)
+        XCTAssertTrue(host.menuOpenForChecks, "an open widget menu protects the widget")
+        // AppKit ended tracking but the close callback was missed: the flag must not stay set.
+        NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        for _ in 0..<100 where host.menuOpenForChecks { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(host.menuOpenForChecks, "a stale menu flag clears with the end of tracking")
+        host.menuWillOpen(menu); host.menuDidClose(menu)
+        XCTAssertFalse(host.menuOpenForChecks)
+        await app.stopLifecycle(); host.close()
+    }
+
     func testFreshQuotaWidgetShowAndSavedChoicesOnNormalEntry() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("right-placement-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }

@@ -399,6 +399,10 @@ struct DockHelpInteraction: Equatable {
     private weak var trackedDockMenu: NSMenu?
     private var dockMenuGeneration: UInt64 = 0
     private var menuOpen: Bool { trackedDockMenu != nil }
+    /// MENU-12: an actually open menu protects the widget; the flag is also cleared by AppKit's own
+    /// end-of-tracking notice, so a missed close callback never keeps the widget from collapsing.
+    var menuOpenForChecks: Bool { menuOpen }
+    private var menuEndObserver: NSObjectProtocol?
     private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -1763,18 +1767,27 @@ struct DockHelpInteraction: Equatable {
     public func menuWillOpen(_ menu: NSMenu) {
         guard permitted, !retired, !retiring, edge.presentation?.paintedFrame != nil, ownsDockMenu(menu) else { return }
         trackedDockMenu = menu
+        if let menuEndObserver { NotificationCenter.default.removeObserver(menuEndObserver) }
+        menuEndObserver = NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: menu, queue: .main) { [weak self, weak menu] _ in
+            MainActor.assumeIsolated {
+                guard let self, let menu else { return }
+                self.menuDidClose(menu)
+            }
+        }
         edge.refresh()
     }
 
     public func menuDidClose(_ menu: NSMenu) {
         guard trackedDockMenu === menu else { return }
         trackedDockMenu = nil
+        if let menuEndObserver { NotificationCenter.default.removeObserver(menuEndObserver); self.menuEndObserver = nil }
         edge.refresh()
     }
 
     private func retireTrackedDockMenu() {
         let menu = trackedDockMenu
         trackedDockMenu = nil
+        if let menuEndObserver { NotificationCenter.default.removeObserver(menuEndObserver); self.menuEndObserver = nil }
         menu?.cancelTracking()
     }
 
