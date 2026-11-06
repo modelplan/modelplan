@@ -57,3 +57,21 @@ test('CKP-MFD-02 page keys show the active selection in both locales',async({pag
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  for(const [i,name] of ['总览','订阅','档位','去向'].entries())await expect(keys.nth(i)).toHaveAccessibleName(name);
 });
+
+test('CKP-MFD-03 LBL-2.2-03 option keys show choices and switch the active LED without moving',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data:currentSample()})])expect(await receive(raw)).toBe(true);
+ const slots=page.locator('.mfd-ok > *');await expect(slots).toHaveCount(3);
+ const boxes=await slots.evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}));
+ for(const box of boxes)expect(Math.abs(box.y-boxes[0].y)).toBeLessThanOrEqual(1);
+ const chart=page.locator('[data-opt="chart"]'),choices=chart.locator('[data-choice]');await expect(choices).toHaveCount(2);
+ await expect(choices.nth(0)).toHaveClass(/\bon\b/);await expect(choices.nth(1)).not.toHaveClass(/\bon\b/);
+ const led=await choices.nth(0).evaluate(e=>{const s=getComputedStyle(e,'::after');return {content:s.content,height:parseFloat(s.height),background:s.backgroundColor};});
+ expect(led.content).toBe('""');expect(led.height).toBeGreaterThan(0);expect(led.background).not.toBe('rgba(0, 0, 0, 0)');
+ await expect(chart).not.toContainText('▾');await expect(chart).not.toContainText('▼');
+ const before=await chart.boundingBox(),target=await choices.nth(1).boundingBox();expect(before).not.toBeNull();expect(target).not.toBeNull();
+ await page.mouse.click(target.x+target.width/2,target.y+target.height/2);
+ await expect(choices.nth(1)).toHaveClass(/\bon\b/);await expect(choices.nth(0)).not.toHaveClass(/\bon\b/);
+ const after=await chart.boundingBox();for(const k of ['x','y','width','height'])expect(Math.abs(after[k]-before[k])).toBeLessThanOrEqual(1);
+});
