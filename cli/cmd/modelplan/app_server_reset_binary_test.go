@@ -262,6 +262,13 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if rejected := detailsClient.call("cockpit/query", map[string]any{"redBelow": 16}); rejected["error"] == nil {
 		t.Fatal("unsupported threshold accepted")
 	}
+	cockpitOnly := startQueryBinaryCaps(t, binary, []string{"rows", "cockpit"})
+	if response := cockpitOnly.call("cockpit/query", map[string]any{}); response["result"] == nil || strings.Contains(string(response["result"]), `"details"`) {
+		t.Fatalf("cockpit-only query failed or exposed details: %s", response["error"])
+	}
+	if rejected := cockpitOnly.call("cockpit/query", map[string]any{"redBelow": 15}); rejected["result"] != nil || !strings.Contains(string(rejected["error"]), `"invalid_params"`) {
+		t.Fatalf("cockpit-only client accepted details threshold or returned wrong error: %s", rejected["error"])
+	}
 	legacy := startQueryBinaryCaps(t, binary, []string{"rows", "reset_events_v1"})
 	if rejected := legacy.call("cockpit/query", map[string]any{"redBelow": 15}); rejected["error"] == nil {
 		t.Fatal("legacy client accepted negotiated-only threshold")
