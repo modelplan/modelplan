@@ -23,7 +23,7 @@ class Releases(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.now = time.time()
         self.ledger = book.Ledger(self.root / 'ledger.jsonl', clock=lambda: self.now)
-        self.ident = self.ledger.request('M2', 'U11a', ['cold'])['id']
+        self.ident = self.ledger.request('M2', 'U11a', ['cold'], host='dev-mac')['id']
         self.lease = self.ledger.start(self.ident, 'M2', 'run', 'epoch', host='dev-mac')
         self.output = self.root / 'release.json'
 

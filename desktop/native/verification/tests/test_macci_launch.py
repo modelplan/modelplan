@@ -126,8 +126,8 @@ class Fixture(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.now = time.time()
         self.ledger = book.Ledger(self.root / 'ledger.jsonl', clock=lambda: self.now)
-        self.ident = self.ledger.request('V1', 'U11a', ['cold'])['id']
-        self.lease = self.ledger.start(self.ident, 'V1', 'run', 'epoch')
+        self.ident = self.ledger.request('V1', 'U11a', ['cold'], host='macci')['id']
+        self.lease = self.ledger.start(self.ident, 'V1', 'run', 'epoch', host='macci')
         self.output = self.root / 'release.json'
 
 

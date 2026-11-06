@@ -154,7 +154,7 @@ class M1Sequence(unittest.TestCase):
 
     def finish(self, ident, run_id, epoch):
         return self.book('finish', '--id', ident, '--lane', 'M1',
-                         '--run-id', run_id, '--epoch', epoch, '--cleaned')
+                         '--run-id', run_id, '--epoch', epoch, '--cleaned', '--host', 'dev-mac')
 
     def status(self):
         result = self.book('status')
