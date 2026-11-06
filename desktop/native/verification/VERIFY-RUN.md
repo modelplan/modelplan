@@ -55,7 +55,7 @@ FAIL stops the run before booking (every ID becomes `NOT-RUN reason=preflight-PF
 | PF-01 | Any name but `native-app-(unverified\|test\|verify)-<sha>` for this flavour and SHA: the legacy Tauri `Model-Plan-Community-macOS-arm64-unsigned`, any `.dmg`, any other name |
 | PF-02 | A run outside `modelplan/modelplan`, a workflow other than `desktop.yml`, `v1-test-build.yml` or `verify-batch.yml`, a run `head_sha` other than the expected SHA, a producing job that did not succeed, an expired artifact, an archive holding anything but `BUILD.txt` and the inner zip |
 | PF-03 | sha256 of the archive differing from the manifest or GitHub digest; inner zip differing from `BUILD.txt` |
-| PF-04 | `BUILD.txt` `sourceSHA` (or `flavour`) differing from the expected head; a PR head that moved or is not an ancestor of the integration SHA |
+| PF-04 | `BUILD.txt` `sourceSHA` (or `flavour`) differing from the expected head; the bundle's own `Info.plist` `ModelPlanPublicSource` (the built checkout's `git rev-parse HEAD`) missing or differing from that label, e.g. a pull_request merge-commit build labelled with the PR head; a PR head that moved or is not an ancestor of the integration SHA |
 | PF-05 | Not exactly one top-level `.app`; a symlink leaving it |
 | PF-06 | `CFBundleExecutable` not `ModelPlanCommunity`, a non-Mach-O executable, no arm64 slice, another bundle ID |
 | PF-07 | A missing SwiftPM resource bundle (cockpit bundle too for test/verify), not exactly one `zai-white.svg`, `Helpers/modelplan` not matching `Resources/modelplan.sha256` |

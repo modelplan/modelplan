@@ -242,6 +242,23 @@ def read_member(archive, name):
         return None
 
 
+def bundle_public_source(inner_bytes):
+    """The source commit the bundle itself records (Info.plist ModelPlanPublicSource, written by
+    package-neutral.sh from the checkout's real `git rev-parse HEAD`), or None when it cannot be read.
+    This is what binds the BUILD.txt label to the tree that was actually built."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner:
+            plists = [n for n in inner.namelist()
+                      if n.count('/') == 2 and n.endswith('.app/Contents/Info.plist')]
+            if len(plists) != 1:
+                return None
+            info = plistlib.loads(read_member(inner, plists[0]) or b'')
+    except Exception:
+        return None
+    value = info.get('ModelPlanPublicSource') if isinstance(info, dict) else None
+    return value if isinstance(value, str) else None
+
+
 def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir, work):
     """PF-01..PF-09 for one flavour. Returns the extracted .app path (or None)."""
     name = entry.get('name') if isinstance(entry, dict) else None
@@ -312,9 +329,16 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
           'sha256 mismatch between artifact archive, manifest digest, GitHub digest or BUILD.txt', **tag)
     source = fields.get('sourceSHA', '')
     build_flavour = fields.get('flavour')
-    source_ok = source == expected_sha and (build_flavour is None or build_flavour == flavour)
-    check(results, 'PF-04', source_ok, f'BUILD.txt sourceSHA={source or "missing"}'
-          + (f' flavour={build_flavour}' if build_flavour else ''), **tag)
+    # The label alone is not provenance: a pull_request run that built the synthetic merge commit
+    # can still be labelled with the PR head. The bundle's own recorded source (the built tree's
+    # HEAD) must equal both the label and the expected SHA; unreadable or different fails closed.
+    built = bundle_public_source(inner_bytes)
+    source_ok = (source == expected_sha and built == expected_sha
+                 and (build_flavour is None or build_flavour == flavour))
+    check(results, 'PF-04', source_ok, f'BUILD.txt sourceSHA={source or "missing"} '
+          f'bundle ModelPlanPublicSource={built or "missing"}'
+          + (f' flavour={build_flavour}' if build_flavour else '')
+          + ('' if built in (None, source) else ': the bundle was built from a different tree than its label'), **tag)
     try:
         inner = zipfile.ZipFile(io.BytesIO(inner_bytes))
         app = app_shape(inner)

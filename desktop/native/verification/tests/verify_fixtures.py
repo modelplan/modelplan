@@ -26,7 +26,7 @@ def fat(*cpus):
 
 def info(**changes):
     values = dict(CFBundleExecutable='ModelPlanCommunity', CFBundleIdentifier=preflight.BUNDLE_ID,
-                  ModelPlanCockpitEntryEnabled=False)
+                  ModelPlanCockpitEntryEnabled=False, ModelPlanPublicSource=SHA)
     values.update(changes)
     return {k: v for k, v in values.items() if v is not None}
 
