@@ -12,7 +12,7 @@
 // assertions below fail — that failure records the scenario gap.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,currentSample,pageId,shell} from '../fixture.mjs';
-import {visualFixture} from '../visual-fixture.mjs';
+import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 
 const open=async(page)=>{
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
@@ -62,4 +62,32 @@ test.fixme('C-09: fader banks page when more models are published than fit a ban
  expect(visible.filter(channel=>!channel.empty).length,'C-09: a bank holds three channels').toBe(3);
  const bankKeys=await page.evaluate(()=>[...document.querySelectorAll('.fd-bank button, [class*=bank] button')].map(b=>b.getAttribute('aria-label')??b.textContent.trim()));
  expect(bankKeys.length,'C-09: bank paging controls exist').toBeGreaterThanOrEqual(2);
+});
+
+// Named guard for the deck-side half of C-09, which is implemented today: with the
+// test-only direct deck adapter (established by visual-fixture, never loaded by the
+// production entry), admitted publication renders each model channel with its
+// recommendation and the published effort levels. The production-admission half
+// stays in the parked records above. Unskip nothing here — this runs.
+test('C-09 (deck contract via the test-only adapter): populated publication renders recommendation and effort data per channel',async({page})=>{
+ const {send,receive}=await open(page);
+ const fixture=visualFixture();
+ expect(await receive(send('display',{data:fixture.data}))).toBe(true);
+ await renderVisualDeck(page,fixture,'en');
+ const channels=await page.evaluate(()=>[...document.querySelectorAll('.fd-ch:not(.empty)')].map(ch=>{
+  const strip=ch.querySelector('.fd-strip');
+  return {model:ch.getAttribute('data-model'),
+   levels:[...ch.querySelectorAll('.st-bars .eb')].map(b=>b.getAttribute('data-l')),
+   recommended:[...ch.querySelectorAll('.st-bars .eb.rec')].map(b=>b.getAttribute('data-l')),
+   label:strip?.getAttribute('aria-label')??''};
+ }));
+ expect(channels.length,'C-09: one populated channel per published model').toBe(fixture.publication.faders.length);
+ for(const [index,channel] of channels.entries()){
+  const fader=fixture.publication.faders[index];
+  expect(channel.model,'C-09: channel bound to its published model slot').toBe('model'+index);
+  expect(fader.e.map(([name])=>name).every(name=>channel.levels.includes(name)),'C-09: '+fader.short+' shows its published effort levels on the shared ladder ('+JSON.stringify(channel.levels)+')').toBe(true);
+  expect(channel.recommended,'C-09: '+fader.short+' marks the recommended level').toEqual([fader.rec]);
+  expect(channel.label,'C-09: '+fader.short+' states the recommendation').toContain('recommended');
+  expect(channel.label,'C-09: '+fader.short+' states the local-comparison promise').toContain('Local comparison; your session stays unchanged');
+ }
 });
