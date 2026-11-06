@@ -1,10 +1,17 @@
 # Trusted Mac checks
 
-Hosted runners remain the default. The `MAC_CI_RUNNER_V2=self-hosted` repository
-variable opts the owner's same-repository checks into the dedicated Mac group.
-An external fork, another actor or rerun actor, a draft PR, an unsupported event,
-or an unset/other switch value uses hosted runners. Commit author text is not an
-identity check. The allowlisted account is `guanbear` (GitHub user ID `11829005`).
+Hosted runners remain the default. `MAC_CI_RUNNER_V2` now has a split mode: the
+value `split` runs a fixed, balanced task set (below) on the dedicated ordinary
+(non-GUI) Mac runners while every other Mac job stays on GitHub-hosted runners,
+so both pools work at the same time and no job runs twice. The value
+`self-hosted` keeps only the original four tasks (`native`, `native-headless`,
+`transport`, `sequences`) on the dedicated runners — it deliberately does NOT
+enable the newer tasks. `hosted`, an unset or any other value keeps everything
+hosted: that is the fallback when the dedicated runner is offline. An external
+fork, another actor or rerun actor, a draft PR, an unsupported event, or a
+switch value that does not name a task's pool uses hosted runners. Commit author
+text is not an identity check. The allowlisted account is `guanbear` (GitHub
+user ID `11829005`).
 
 ## Admission boundary
 
@@ -18,8 +25,26 @@ requires reviewing a new pin and updating the group restriction together.
 The reusable workflow accepts a fixed task selector and OS selector, not shell
 commands, checkout paths, credentials, environment overrides or arbitrary refs.
 Checkout uses the caller's GitHub-provided subject SHA with persisted Git
-credentials disabled. Signing, publication and packaging stay hosted; the
-macOS 14 is not tested in CI and not guaranteed (2026-11-02).
+credentials disabled. Signing and publication stay hosted; the ad-hoc neutral
+packaging lanes (`u10-candidate`, `distribution`) joined the reusable workflow
+on 2026-11-06 because they carry no signing secrets and need no GUI. macOS 14
+is not tested in CI and not guaranteed (2026-11-02).
+
+## The split task set (2026-11-06)
+
+Under `MAC_CI_RUNNER_V2=split` the dedicated ordinary runners take:
+`native` (GUI label), `native-headless`, `transport`, `sequences`,
+`u11-native` (U11 native cockpit), `dock-host-port` (Dock host port seam),
+`u14-drive` (engine Drive L1, macOS leg), `u10-candidate` (U10 candidate
+interface) and `distribution` (macOS distribution). The split was balanced on
+two days of measured medians so neither pool becomes the new bottleneck, and
+hosted minutes drop by the moved jobs' share. Callers route through
+`trusted-mac.yml`; the `U14 macOS skeleton` job cannot join because its
+evidence capture needs a window server (`tools/u14/macos_runner.py` writes
+`window.png`/`ax-tree.json`), and it stays hosted. One check name changes:
+the Dock host port seam's job is now `contracts (dock host port)` (the U10
+workflow already owns a `contracts` check name); every other moved job keeps
+its legacy check name.
 
 The runner's pre-job gate separately checks authenticated owner identity,
 repository, event, PR head repository and PR author. `github.workflow_ref` is

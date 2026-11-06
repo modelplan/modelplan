@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
-import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, draftGuardProblems, isWorkflowFile, macConcurrencyProblems, workflowProblems } from "../workflow-policy.mjs";
+import { ALLOWED_ROUTES, TRUSTED_MAC_ROUTE, draftGuardProblems, isWorkflowFile, macConcurrencyProblems, trustedMacCostProblems, workflowProblems } from "../workflow-policy.mjs";
 
 test("trusted Mac route is confined to the reviewed reusable workflow path", () => {
   const text = `jobs:\n  check:\n    ${TRUSTED_MAC_ROUTE}\n`;
@@ -171,6 +171,33 @@ test("macrevb-579-3 regressions: every matrix/runs-on expression form is recogni
   assert.ok(draftGuardProblems(allMac).length > 0, "an all-Mac collapse escaped the draft guard");
   assert.deepEqual(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ github.event.pull_request.draft && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n"), []);
   assert.ok(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ (github.event_name == 'merge_group') && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n").length > 0, "a merge_group-only ubuntu branch still runs macOS on drafts");
+});
+test("actions cost control: one reviewed pin, known tasks, no task booked twice", () => {
+  const pin = "8a22050adc0cbcc85e4159e54cbd50647245b6c0";
+  const call = (task) => `jobs:\n  a:\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@${pin}\n    with:\n      task: ${task}\n      os: macos-latest\n`;
+  const trusted = "jobs:\n  a:\n    if: ${{ inputs.task == 'native' }}\n    runs-on: macos-latest\n  b:\n    if: ${{ inputs.task == 'transport' }}\n    runs-on: macos-latest\n";
+  const files = (entries) => new Map([[".github/workflows/trusted-mac.yml", trusted], ...entries]);
+  // compliant: one pin, one defined task per caller
+  assert.deepEqual(trustedMacCostProblems(files([[".github/workflows/one.yml", call("native")], [".github/workflows/two.yml", call("transport")]])), []);
+  // a caller pinning a different commit than its peers (the #604 stale-pin failure mode)
+  assert.ok(trustedMacCostProblems(files([[".github/workflows/one.yml", call("native").replace(pin, "0".repeat(40))], [".github/workflows/two.yml", call("transport")]])).some((p) => p.includes("different commits")), "split pins accepted");
+  // a mutable ref (branch name) instead of an immutable commit
+  assert.ok(trustedMacCostProblems(files([[".github/workflows/one.yml", call("native").replace(pin, "main")]])).some((p) => p.includes("not an immutable")), "mutable pin accepted");
+  // an undefined task, and the same task requested twice in one workflow (double-booking both pools)
+  assert.ok(trustedMacCostProblems(files([[".github/workflows/one.yml", call("nope")]])).some((p) => p.includes('task "nope" is not defined')), "undefined task accepted");
+  assert.ok(trustedMacCostProblems(files([[".github/workflows/one.yml", call("native") + "  b:\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@" + pin + "\n    with:\n      task: native\n"]])).some((p) => p.includes('task "native" twice')), "double-booked task accepted");
+  // an expression-valued task (desktop's probe mode) carries no static name and is not a violation
+  assert.deepEqual(trustedMacCostProblems(files([[".github/workflows/one.yml", call("native") + "  b:\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@" + pin + "\n    with:\n      task: ${{ inputs.probe_mode == 'gui' && 'gui-probe' || 'probe' }}\n"]])), []);
+});
+
+test("actions cost control: this repository's trusted-mac callers pin one reviewed commit", () => {
+  const dir = new URL("../../.github/workflows/", import.meta.url);
+  const files = new Map();
+  for (const f of fs.readdirSync(dir)) {
+    if (!/\.(ya?ml)$/.test(f)) continue;
+    files.set(`.github/workflows/${f}`, fs.readFileSync(new URL(f, dir), "utf8"));
+  }
+  assert.deepEqual(trustedMacCostProblems(files), []);
 });
 test("v1 install guide matches the supported package and update policy", async () => {
   const { readFile } = await import("node:fs/promises");
