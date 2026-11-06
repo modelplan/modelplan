@@ -275,7 +275,7 @@ private actor EntrySyntheticClient: EngineClient {
             XCTAssertFalse(field.isHiddenOrHasHiddenAncestor)
             let font = try XCTUnwrap(field.font)
             let glyphs = (text as NSString).size(withAttributes: [.font: font])
-            let visible = dock.card.convert(field.visibleRect, from: field).intersection(dock.card.bounds)
+            let visible = dock.card.convert(field.bounds, from: field).intersection(dock.card.bounds)
             XCTAssertGreaterThanOrEqual(visible.width, floor(glyphs.width), "\(text) needs visible horizontal space")
             XCTAssertGreaterThanOrEqual(visible.height, floor(glyphs.height), "\(text) needs visible vertical space")
         }
