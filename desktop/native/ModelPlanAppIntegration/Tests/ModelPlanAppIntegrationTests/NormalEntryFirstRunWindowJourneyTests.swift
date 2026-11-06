@@ -80,7 +80,7 @@ import ModelPlanWire
         let settingsViews = descendants(first.scopeConsentEntry.view)
         let settingsSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
         XCTAssertEqual(settingsSwitch.state, .on, "a default-on reader shows on in Settings")
-        XCTAssertTrue(settingsViews.compactMap { $0 as? NSTextField }.contains { $0.stringValue.hasPrefix("On by default") })
+        XCTAssertTrue(settingsViews.compactMap { $0 as? NSTextField }.contains { $0.stringValue.hasPrefix("On by default") || $0.stringValue.hasPrefix("默认开启") })
         let browserSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.cursor.browser_session" } as? NSButton)
         XCTAssertEqual(browserSwitch.state, .off, "a sensitive reader stays off until the user allows it")
         let syntheticClient = try XCTUnwrap(first.composition.client as? SettingsJourneyClient)
