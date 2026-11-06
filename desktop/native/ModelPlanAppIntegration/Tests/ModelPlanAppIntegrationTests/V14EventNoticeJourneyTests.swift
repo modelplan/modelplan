@@ -81,6 +81,22 @@ private actor V14RowsClient: EngineClient {
         let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == "0123456789abcdef" })
         let diameter = try XCTUnwrap(station.eventHollowDiameter)
         XCTAssertEqual(diameter, 5 * station.diameter / 52, accuracy: 0.000001, "V-14: announced dot outer diameter at the reference scale")
+
+        let announcedID = try XCTUnwrap(events[0]["id"] as? String)
+        var confirmed = events[0]
+        confirmed["status"] = "confirmed"
+        confirmed["confirms"] = announcedID
+        confirmed["publishedAt"] = formatter.string(from: now.addingTimeInterval(-1))
+        projection["resetEvents"] = [events[0], confirmed]; data["projection"] = projection
+        let confirmedRows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        try await client.replaceRows(confirmedRows)
+        let confirmedNotice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertEqual(confirmedNotice.key.kind, .resetConfirmed)
+        XCTAssertEqual(confirmedNotice.tone, .blue)
+        XCTAssertEqual(confirmedNotice.shape, .solid)
+        let confirmedSkin = try XCTUnwrap(view.presentedSkinForChecks)
+        let confirmedStation = try XCTUnwrap(confirmedSkin.stations.first { $0.subscriptionID == "0123456789abcdef" })
+        XCTAssertEqual(try XCTUnwrap(confirmedStation.eventSolidDiameter), 5 * confirmedStation.diameter / 52, accuracy: 0.000001, "V-14: confirmed dot outer diameter at the reference scale")
         await entry.composition.stop()
     }
 }
