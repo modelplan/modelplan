@@ -56,6 +56,8 @@ jobs:
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
       - name: Build Apple silicon neutral app (ad-hoc only)
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
+      - name: Require the bundled helper to be the pinned CLI release
+        run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --app "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" --pin desktop/native/consent-cli-pin.json --require-release-identity
       - name: Reject known private SPI in the built release binary
         working-directory: cli
         run: go run ./internal/releaseguard/cmd --binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"
