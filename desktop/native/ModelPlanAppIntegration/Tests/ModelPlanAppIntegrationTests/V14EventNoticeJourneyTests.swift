@@ -12,12 +12,20 @@ private actor V14RowsClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
     let store: EngineStore, rows: WireRowsSnapshot
     let context = EngineDeliveryContext(sessionID: "v14-synthetic", floor: .init(storeEpoch: "v14-synthetic", generation: 1), revision: 1)
+    var revision: UInt64 = 1
     init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
     func start() async throws -> EngineDeliveryContext {
         await store.consume(.connection(.ready(context)))
         await store.consume(.context(context))
         await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
         return context
+    }
+    func replaceRows(_ rows: WireRowsSnapshot) async throws {
+        revision += 1
+        let next = EngineDeliveryContext(sessionID: context.sessionID, floor: context.floor, revision: revision)
+        await store.consume(.connection(.ready(next)))
+        await store.consume(.context(next))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: next.sessionID, storeEpoch: next.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: next), invalidRowCount: rows.projection.invalidRowCount))
     }
     func stop() async {}
     func retry() async throws -> EngineDeliveryContext { try await start() }
@@ -50,15 +58,21 @@ private actor V14RowsClient: EngineClient {
         events[0]["schedule"] = ["precision": "window", "from": formatter.string(from: now), "through": formatter.string(from: now.addingTimeInterval(3600))]
         projection["resetEvents"] = events; data["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        projection["resetEvents"] = []; data["projection"] = projection
+        let withoutEvents = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("v14-event-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
         let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
-        let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: settings, createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: CGPoint(x: 700, y: 450)) }, deadlineNow: { now }, makeClient: { _, store in V14RowsClient(store: store, rows: rows) }, activateSettings: {})
+        let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: settings, createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: CGPoint(x: 700, y: 450)) }, deadlineNow: { now }, makeClient: { _, store in V14RowsClient(store: store, rows: withoutEvents) }, activateSettings: {})
         entry.composition.currentDate = { now }
         defer { entry.composition.dock.close() }
         await entry.prepare(); entry.allowDockPresentation(); await entry.composition.start()
         let view = entry.composition.dock.dockView
+        _ = try XCTUnwrap(view.presentedSkinForChecks, "V-14: no-event control must inspect an active rendered skin")
+        XCTAssertNil(view.presentedNoticesForChecks["0123456789abcdef"], "V-14: no event must not create a notice")
+        let client = try XCTUnwrap(entry.composition.client as? V14RowsClient)
+        try await client.replaceRows(rows)
         let notice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
         XCTAssertEqual(notice.key.kind, .resetAnnounced)
         XCTAssertEqual(notice.tone, .blue)
