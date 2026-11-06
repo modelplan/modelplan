@@ -310,9 +310,19 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 }
 
 // ---- Stale-base guard (merge-when.sh) ----
-// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the same
-// component (first two path segments) since the head forked, those checks never saw the combination.
-const component = (p) => p.split("/").slice(0, 2).join("/");
+// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the
+// same module since the head forked, those checks never saw the combination. Module granularity
+// (owner 2026-11-06): desktop/native paths with five or more segments compare by the first five
+// (desktop/native/<Package>/<Sources|Tests>/<Module>); a package-root file compares by its package;
+// anything shallower stays at the desktop/native tree level; every other tree keeps the first two
+// segments; .github/workflows collapses to one token, so a workflow change on the base overlaps
+// only when the PR itself changes a workflow file.
+const component = (p) => {
+  const s = p.split("/");
+  if (s[0] === ".github" && s[1] === "workflows") return ".github/workflows";
+  if (s[0] === "desktop" && s[1] === "native") return s.slice(0, s.length >= 5 ? 5 : s.length === 4 ? 3 : 2).join("/");
+  return s.slice(0, 2).join("/");
+};
 export function staleOverlap(prFiles, baseFiles) {
   const mine = new Set(prFiles.map(component));
   return [...new Set(baseFiles.map(component))].filter((c) => mine.has(c) && !/^(docs|README\.md|NOTICE)/.test(c)).sort();

@@ -201,6 +201,22 @@ test("malformed scenario members fail PR and merge group despite valid evidence"
 test("stale-base guard and merge-group evaluation", () => {
   assert.deepEqual(R.staleOverlap(["desktop/native/A.swift", "docs/x.md"], ["desktop/native/B.swift", "docs/y.md", "cli/z.go"]), ["desktop/native"]);
   assert.deepEqual(R.staleOverlap(["cli/a.go"], ["desktop/native/B.swift"]), []);
+  // Module granularity (owner 2026-11-06): a desktop/native/<Package> path compares by its first
+  // five segments, so an unrelated native module on the base is not an overlap...
+  const mine = ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/App.swift"];
+  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanEngineStore/Sources/ModelPlanEngineStore/Store.swift"]), []);
+  // ...while the same five-segment module still is.
+  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Other.swift"]),
+    ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration"]);
+  // Shorter desktop/native paths: a package-root file is its package token (a module PR does not
+  // overlap it); files directly under desktop/native stay at tree level, like the legacy rule.
+  assert.deepEqual(R.staleOverlap(["desktop/native/ModelPlanAppIntegration/README.md"], ["desktop/native/ModelPlanAppIntegration/Other.md"]),
+    ["desktop/native/ModelPlanAppIntegration"]);
+  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanAppIntegration/README.md"]), []);
+  assert.deepEqual(R.staleOverlap(["desktop/native/A.swift"], ["desktop/native/B.swift"]), ["desktop/native"]);
+  // A base workflow change overlaps only when the PR itself changes a workflow file.
+  assert.deepEqual(R.staleOverlap(mine, [".github/workflows/desktop.yml"]), []);
+  assert.deepEqual(R.staleOverlap([mine[0], ".github/workflows/u11-native.yml"], [".github/workflows/desktop.yml"]), [".github/workflows"]);
   const ok = { state: R.SUCCESS, why: "ok" };
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, overlap: [], ...o });
   const qci = [run(".github/workflows/ci.yml")];
