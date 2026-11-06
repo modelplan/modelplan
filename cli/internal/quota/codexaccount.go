@@ -89,6 +89,13 @@ type accountSnap struct {
 	// logs to the account without a provider-name guess. No identity is kept here.
 	MeterRef string      `json:"meterRef,omitempty"`
 	Meters   []meterMark `json:"meters,omitempty"`
+	// Foreign: cycles Codex reported for a different login on this Mac (no reference is
+	// kept). A session-log reading of one of them is that other login's, never this one's.
+	Foreign []meterMark `json:"foreign,omitempty"`
+	// PlanSince/SincePlan: when ModelPlan first read this account on its current plan.
+	// Unbound session logs of a different plan written before then are superseded.
+	PlanSince time.Time `json:"planSince,omitempty"`
+	SincePlan string    `json:"sincePlan,omitempty"`
 }
 
 // meterMark: one window cycle of an account, known by its reset instant.
@@ -108,70 +115,166 @@ const (
 	meterSlack = time.Minute
 )
 
+// windowMarks: the cycles of a reading's windows.
+func windowMarks(windows []Window) []meterMark {
+	var marks []meterMark
+	for _, w := range windows {
+		if w.ResetsAt != nil && w.WindowMinutes > 0 {
+			marks = append(marks, meterMark{Limit: w.Limit, Kind: w.Kind, Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt.UTC()})
+		}
+	}
+	return marks
+}
+
 // withMeters: the account's marks after this reading, carrying earlier marks of the same
-// account forward (a different or unknown account starts afresh).
+// account forward. Marks of a different login move to Foreign. A cache written before the
+// marks existed contributes its windows as that login's marks.
 func withMeters(prev *accountSnap, s *accountSnap, now time.Time) {
 	if s.SubscriptionRef == "" || IdentityOff() {
-		if prev != nil && s.Status != "ok" {
-			s.MeterRef, s.Meters = prev.MeterRef, prev.Meters // a failed read proves nothing new
+		if prev != nil && s.Status != "ok" { // a failed read proves nothing new
+			s.MeterRef, s.Meters, s.Foreign, s.PlanSince, s.SincePlan = prev.MeterRef, prev.Meters, prev.Foreign, prev.PlanSince, prev.SincePlan
 		}
 		return
 	}
-	var marks []meterMark
-	add := func(m meterMark) {
+	add := func(list []meterMark, m meterMark) []meterMark {
 		if now.Sub(m.ResetsAt) > meterKeep {
-			return
+			return list
 		}
-		for _, x := range marks {
+		for _, x := range list {
 			if x.Limit == m.Limit && x.Kind == m.Kind && x.Minutes == m.Minutes && x.ResetsAt.Equal(m.ResetsAt) {
-				return
+				return list
 			}
 		}
-		marks = append(marks, m)
+		return append(list, m)
 	}
-	for _, w := range s.Windows {
-		if w.ResetsAt != nil && w.WindowMinutes > 0 {
-			add(meterMark{Limit: w.Limit, Kind: w.Kind, Minutes: w.WindowMinutes, ResetsAt: w.ResetsAt.UTC()})
+	var own, foreign []meterMark
+	for _, m := range windowMarks(s.Windows) {
+		own = add(own, m)
+	}
+	s.PlanSince, s.SincePlan = s.ObservedAt, s.Plan
+	if prev != nil {
+		prevRef, prevMarks, prevPlan, prevSince := prev.MeterRef, prev.Meters, prev.SincePlan, prev.PlanSince
+		if prevRef == "" && prev.Status == "ok" && prev.SubscriptionRef != "" {
+			prevRef, prevMarks, prevPlan, prevSince = prev.SubscriptionRef, windowMarks(prev.Windows), prev.Plan, prev.ObservedAt
+		}
+		switch {
+		case prevRef == s.SubscriptionRef:
+			for _, m := range prevMarks {
+				own = add(own, m)
+			}
+			if prevPlan == s.Plan && !prevSince.IsZero() && prevSince.Before(s.PlanSince) {
+				s.PlanSince = prevSince
+			}
+		case prevRef != "":
+			for _, m := range prevMarks {
+				foreign = add(foreign, m)
+			}
+		}
+		for _, m := range prev.Foreign {
+			foreign = add(foreign, m)
 		}
 	}
-	if prev != nil && prev.MeterRef == s.SubscriptionRef {
-		for _, m := range prev.Meters {
-			add(m)
+	mine := foreign[:0]
+	for _, m := range foreign {
+		if !containsMark(own, m) { // a cycle this account reported is never another login's
+			mine = append(mine, m)
 		}
 	}
-	if len(marks) > maxMeterMarks {
-		marks = marks[:maxMeterMarks] // current windows first, then the newest earlier marks
+	foreign = mine
+	if len(own) > maxMeterMarks {
+		own = own[:maxMeterMarks] // current windows first, then the newest earlier marks
 	}
-	s.MeterRef, s.Meters = s.SubscriptionRef, marks
+	if len(foreign) > maxMeterMarks {
+		foreign = foreign[:maxMeterMarks]
+	}
+	s.MeterRef, s.Meters, s.Foreign = s.SubscriptionRef, own, foreign
 }
 
-// sameMeter: a session-log account with no account binding of its own reports a window cycle
-// that Codex reported for the runtime reading's account.
+func containsMark(list []meterMark, m meterMark) bool {
+	for _, x := range list {
+		if x.Limit == m.Limit && x.Kind == m.Kind && x.Minutes == m.Minutes && x.ResetsAt.Equal(m.ResetsAt) {
+			return true
+		}
+	}
+	return false
+}
+
+// nearMark: a log window reports this cycle (relative-time logs may be off by meterSlack).
+func nearMark(w Window, m meterMark) bool {
+	if w.ResetsAt == nil || m.Limit != w.Limit || m.Kind != w.Kind || m.Minutes != w.WindowMinutes {
+		return false
+	}
+	d := w.ResetsAt.Sub(m.ResetsAt)
+	return d <= meterSlack && d >= -meterSlack
+}
+
+// overlapsMark: a log window reports a different cycle that overlaps this one in time. One
+// login's cycles of one window never overlap, so the log is not this login's.
+func overlapsMark(w Window, m meterMark) bool {
+	if w.ResetsAt == nil || m.Limit != w.Limit || m.Kind != w.Kind || m.Minutes != w.WindowMinutes || nearMark(w, m) {
+		return false
+	}
+	d := w.ResetsAt.Sub(m.ResetsAt)
+	if d < 0 {
+		d = -d
+	}
+	return d < time.Duration(m.Minutes)*time.Minute
+}
+
+// sameMeter: a session-log account with no account binding of its own reports window cycles
+// that Codex reported for the runtime reading's account, and none that disagrees with them
+// or that Codex reported for another login. A single matching reset is not enough when
+// another window of the same reading points elsewhere (macrevb-602-2).
 func sameMeter(local *Account, s *accountSnap) bool {
 	if s.SubscriptionRef == "" {
 		return false
 	}
-	marks := []meterMark{}
-	for _, w := range s.Windows {
-		if w.ResetsAt != nil && w.WindowMinutes > 0 {
-			marks = append(marks, meterMark{Limit: w.Limit, Kind: w.Kind, Minutes: w.WindowMinutes, ResetsAt: *w.ResetsAt})
-		}
-	}
+	marks := windowMarks(s.Windows)
 	if s.MeterRef == s.SubscriptionRef {
 		marks = append(marks, s.Meters...)
 	}
+	matched := false
 	for _, w := range local.Windows {
 		if w.ResetsAt == nil || w.WindowMinutes <= 0 {
 			continue
 		}
+		for _, m := range s.Foreign {
+			if nearMark(w, m) {
+				return false
+			}
+		}
+		hit, conflict := false, false
 		for _, m := range marks {
-			d := w.ResetsAt.Sub(m.ResetsAt)
-			if m.Limit == w.Limit && m.Kind == w.Kind && m.Minutes == w.WindowMinutes && d <= meterSlack && d >= -meterSlack {
-				return true
+			hit = hit || nearMark(w, m)
+			conflict = conflict || overlapsMark(w, m)
+		}
+		if conflict && !hit {
+			return false
+		}
+		matched = matched || hit
+	}
+	return matched
+}
+
+// supersededLogs: an unbound session-log account of a different plan whose newest reading
+// predates ModelPlan's first reading of the runtime account on its current plan, and which
+// reports no other login's cycle. It is the account before a plan change that ModelPlan did
+// not observe (macrevb-602-1); it is hidden, not bound, so no identity is claimed for it. A
+// log written after that first reading is shown on its own as usual.
+func supersededLogs(local *Account, s *accountSnap) bool {
+	if local.Source != "codex" || local.Via != "" || local.Subscription != nil || IdentityOff() ||
+		s.SubscriptionRef == "" || s.Plan == "" || local.Plan == "" || local.Plan == s.Plan ||
+		s.SincePlan != s.Plan || s.PlanSince.IsZero() || !local.ObservedAt.Before(s.PlanSince) {
+		return false
+	}
+	for _, w := range local.Windows {
+		for _, m := range s.Foreign {
+			if nearMark(w, m) {
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
@@ -645,6 +748,13 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		}
 	}
 	if a == nil {
+		kept := r.Accounts[:0]
+		for _, candidate := range r.Accounts {
+			if !supersededLogs(&candidate, s) {
+				kept = append(kept, candidate)
+			}
+		}
+		r.Accounts = kept
 		r.Accounts = append(r.Accounts, Account{Source: "codex", Plan: s.Plan, ObservedAt: s.ObservedAt, Windows: []Window{}})
 		a = &r.Accounts[len(r.Accounts)-1]
 		if !hadLocal {
@@ -658,10 +768,16 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	if s.Plan != "" && a.Plan != "" && s.Plan != a.Plan && s.ObservedAt.After(a.ObservedAt) {
 		a.Windows = []Window{} // the account changed plan since the logs were written
 	}
+	// An older runtime reading of a different plan says nothing about the newer plan's
+	// windows: none of them is merged or fills a gap (macrevb-602-3).
+	olderPlan := s.Plan != "" && a.Plan != "" && s.Plan != a.Plan && s.ObservedAt.Before(a.ObservedAt)
 	if s.Plan != "" && (a.Plan == "" || !s.ObservedAt.Before(a.ObservedAt)) {
 		a.Plan = s.Plan // an older runtime reading never undoes a newer plan (an upgrade)
 	}
 	for _, w := range s.Windows {
+		if olderPlan {
+			break
+		}
 		w.Origin = "runtime"
 		found := false
 		for i := range a.Windows {
