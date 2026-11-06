@@ -116,41 +116,49 @@ private actor V05SyntheticClient: EngineClient {
         XCTAssertFalse(dock.card.isHidden)
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
         for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings", "a retained reading is shown", "refresh when permitted"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限", "正在显示保留的旧读数", "在允许时刷新"])] {
-            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
-            let fields = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }
-            let texts = fields.map(\.stringValue)
-            XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")
-            let reserveLabel = try XCTUnwrap(fields.first { $0.stringValue == label })
-            let visibleBounds = reserveLabel.convert(reserveLabel.bounds, to: dock.card).intersection(dock.card.bounds)
-            XCTAssertGreaterThan(visibleBounds.width, 0, "The reserve label must have visible width inside the card")
-            XCTAssertGreaterThan(visibleBounds.height, 0, "The reserve label must have visible height inside the card")
-            XCTAssertGreaterThanOrEqual(visibleBounds.width + 1, reserveLabel.intrinsicContentSize.width,
-                                        "The reserve label must not be clipped horizontally")
-            XCTAssertEqual(texts.filter { $0 == "82,467" }.count, 1, "The synthetic rounded reserve with a thousands separator must be shown exactly once")
-            let reserveValue = try XCTUnwrap(fields.first { $0.stringValue == "82,467" })
-            let valueBounds = reserveValue.convert(reserveValue.bounds, to: dock.card).intersection(dock.card.bounds)
-            XCTAssertGreaterThan(valueBounds.height, 0, "The reserve value must have visible height inside the card")
-            XCTAssertGreaterThanOrEqual(valueBounds.width + 1, reserveValue.intrinsicContentSize.width,
-                                        "The reserve value must not be clipped horizontally")
-            XCTAssertTrue(visibleBounds.intersection(valueBounds).isEmpty,
-                          "The reserve label and value must not overlap")
-            XCTAssertFalse(texts.contains { $0.contains("≈") }, "The integer policy does not use an approximation marker")
-            for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
-            if let evidence {
-                let suffix = (retained ? "retained-" : "fresh-") + (language == .english ? "en" : "zh")
-                guard let bitmap = dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds),
-                      !dock.card.bounds.isEmpty else {
-                    try "Card bitmap unavailable.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
-                    XCTFail("The synthetic card cannot be rendered to an offscreen bitmap")
-                    continue
+            do {
+                _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+                if let evidence {
+                    let suffix = (retained ? "retained-" : "fresh-") + (language == .english ? "en" : "zh")
+                    do {
+                        if let bitmap = dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds), !dock.card.bounds.isEmpty {
+                            dock.card.cacheDisplay(in: dock.card.bounds, to: bitmap)
+                            if let png = bitmap.representation(using: .png, properties: [:]) {
+                                try png.write(to: evidence.appendingPathComponent("v05-card-\(suffix).png"), options: .atomic)
+                            } else {
+                                try "Card PNG encoding failed.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
+                                XCTFail("The synthetic card bitmap cannot be encoded")
+                            }
+                        } else {
+                            try "Card bitmap unavailable.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
+                            XCTFail("The synthetic card cannot be rendered to an offscreen bitmap")
+                        }
+                    } catch {
+                        XCTFail("Card evidence capture failed for \(language): \(error)")
+                    }
                 }
-                dock.card.cacheDisplay(in: dock.card.bounds, to: bitmap)
-                guard let png = bitmap.representation(using: .png, properties: [:]) else {
-                    try "Card PNG encoding failed.\n".write(to: evidence.appendingPathComponent("v05-card-\(suffix).txt"), atomically: true, encoding: .utf8)
-                    XCTFail("The synthetic card bitmap cannot be encoded")
-                    continue
-                }
-                try png.write(to: evidence.appendingPathComponent("v05-card-\(suffix).png"), options: .atomic)
+                let fields = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }
+                let texts = fields.map(\.stringValue)
+                XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")
+                let reserveLabel = try XCTUnwrap(fields.first { $0.stringValue == label })
+                let visibleBounds = reserveLabel.convert(reserveLabel.bounds, to: dock.card).intersection(dock.card.bounds)
+                XCTAssertGreaterThan(visibleBounds.width, 0, "The reserve label must have visible width inside the card")
+                XCTAssertGreaterThan(visibleBounds.height, 0, "The reserve label must have visible height inside the card")
+                XCTAssertGreaterThanOrEqual(visibleBounds.width + 1, reserveLabel.intrinsicContentSize.width,
+                                            "The reserve label must not be clipped horizontally")
+                XCTAssertEqual(texts.filter { $0 == "82,467" }.count, 1, "The synthetic rounded reserve with a thousands separator must be shown exactly once")
+                let reserveValue = try XCTUnwrap(fields.first { $0.stringValue == "82,467" })
+                let valueBounds = reserveValue.convert(reserveValue.bounds, to: dock.card).intersection(dock.card.bounds)
+                XCTAssertGreaterThan(valueBounds.height, 0, "The reserve value must have visible height inside the card")
+                XCTAssertGreaterThanOrEqual(valueBounds.width + 1, reserveValue.intrinsicContentSize.width,
+                                            "The reserve value must not be clipped horizontally")
+                XCTAssertTrue(visibleBounds.intersection(valueBounds).isEmpty,
+                              "The reserve label and value must not overlap")
+                XCTAssertFalse(texts.contains { $0.contains("≈") }, "The integer policy does not use an approximation marker")
+                for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
+
+            } catch {
+                XCTFail("Card check failed for \(language): \(error)")
             }
         }
         await app.composition.stop()
