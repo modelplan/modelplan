@@ -5,10 +5,11 @@ import AppKit
 
 @MainActor private final class Handler: PulsePanelMouseHandling {
     var accepts = true, downs = 0, drags = 0, ups = 0, cancels = 0
+    var hasPanelControlCapture = false
     func beginPanelMove(windowPoint: CGPoint, globalPoint: CGPoint) -> Bool { downs += 1; return accepts }
     func continuePanelMove(globalPoint: CGPoint) { drags += 1 }
     func finishPanelMove(globalPoint: CGPoint) { ups += 1 }
-    func cancelPanelMove() { cancels += 1 }
+    func cancelPanelMove() { cancels += 1; hasPanelControlCapture = false }
 }
 @MainActor final class PulsePanelInputRouteTests: XCTestCase {
     func testAcceptedNativeTransactionReleasesExactlyOnce() {
@@ -35,6 +36,19 @@ import AppKit
         route.cancel(); route.cancel()
         XCTAssertEqual(handler.cancels, 1)
         XCTAssertFalse(route.end(globalPoint: .zero)); XCTAssertEqual(handler.ups, 0)
+    }
+    func testViewOwnedControlCaptureCancelsOnceWithoutBecomingPanelMove() {
+        let route = PulsePanelInputRoute(), handler = Handler(); route.handler = handler
+        handler.accepts = false
+        XCTAssertFalse(route.begin(windowPoint: .zero, globalPoint: .zero, controlClick: false))
+        // NSPanel dispatches the declined press to the instrument view, which captures the nozzle.
+        handler.hasPanelControlCapture = true
+        XCTAssertFalse(route.drag(globalPoint: .zero))
+        route.cancel(); route.cancel()
+        XCTAssertFalse(handler.hasPanelControlCapture)
+        XCTAssertEqual(handler.cancels, 1)
+        XCTAssertFalse(route.end(globalPoint: .zero))
+        XCTAssertEqual(handler.ups, 0)
     }
     func testAsymmetricNotchUsesDisplayCentreAndMissingCasesFailClosed() {
         let frame = CGRect(x: 0, y: 0, width: 1800, height: 1125)
