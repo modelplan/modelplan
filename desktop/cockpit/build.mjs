@@ -59,7 +59,7 @@ if (official) {
     if(matches.length!==1)throw Error(`Porthole default fleet needs exactly one ${theme} ${layout} projection`);
     const p=matches[0];
     stills.projections.push({id:p.id,theme,layout,width:p.width,height:p.height,background:p.background,
-      models:p.models.map(m=>({id:m.id,body:layer(m.body),flame:layer(m.flame),halo:layer(m.halo)}))});
+      models:p.models.map(m=>({id:m.id,nozzle:m.nozzle??{x:m.root.x,y:(m.flame??m.body).top},body:layer(m.body),flame:layer(m.flame),halo:layer(m.halo)}))});
   }
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0\nexport default '+JSON.stringify(stills)+';\n');
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
