@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CoreGraphics
 import Foundation
 import XCTest
 import ModelPlanCore
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -326,6 +327,139 @@ actor EntrySyntheticClient: EngineClient {
         _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
         await surface.waitForShow()
         XCTAssertEqual(surface.pane, "diagnostics")
+    }
+
+    func testNormalEntryMagnifiesNozzleWithoutMovingItsReadout() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-magnification-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let readings = try Self.rows(weekly: 75, secondWeekly: 55)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: {
+                // Test each committed edge. This branch predates the bottom-reservation placement port.
+                let display = DockDisplayArea(id: "synthetic-display", frame: .init(x: 0, y: 0, width: 1440, height: 900),
+                    visibleFrame: .init(x: 0, y: 0, width: 1440, height: 875))
+                return .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: .init(x: 700, y: 400))
+            }, deadlineNow: { clock },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        await app.prepare()
+        let application = app.settingsHost.application
+        var environment = application.editor.environment
+        environment.reduceMotion = false
+        application.update(environment: environment)
+        app.allowDockPresentation()
+        await app.composition.start()
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+
+        let view = app.composition.dock.dockView
+        let id = "aaaaaaaaaaaaaaaa"
+        let restingReadout = try XCTUnwrap(view.helpReadoutAnchor(id))
+        func pixels() throws -> Data {
+            try XCTUnwrap(view.presentedImageForChecks?.dataProvider?.data) as Data
+        }
+        let resting = try pixels()
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let hull = try XCTUnwrap(view.registeredHullBounds)
+        let nozzle = try XCTUnwrap(view.interactionAnchor(id))
+        let restingWidth = try XCTUnwrap(view.presentedImageForChecks).width
+        let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
+        let viewportOrigin = CGPoint(x: station.centre.x - nozzle.midX, y: station.centre.y - nozzle.midY)
+        let scale = CGFloat(try XCTUnwrap(view.presentationBackingScale))
+        func crop(_ frame: CGRect, origin: CGPoint) throws -> Data {
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let region = frame.offsetBy(dx: -origin.x, dy: -origin.y)
+                .applying(.init(scaleX: scale, y: scale)).integral
+            let cropped = try XCTUnwrap(image.cropping(to: region))
+            XCTAssertEqual(cropped.width, Int(region.width))
+            XCTAssertEqual(cropped.height, Int(region.height))
+            // CGImage crops may retain parent storage. Compare tightly packed RGBA bytes.
+            let stride = cropped.width * 4
+            let context = try XCTUnwrap(CGContext(data: nil, width: cropped.width, height: cropped.height,
+                bitsPerComponent: 8, bytesPerRow: stride, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.setBlendMode(.copy)
+            context.interpolationQuality = .none
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+            return Data(bytes: try XCTUnwrap(context.data), count: stride * cropped.height)
+        }
+        let nozzleFrame = nozzle.offsetBy(dx: viewportOrigin.x, dy: viewportOrigin.y)
+        let restingNozzle = try crop(nozzleFrame, origin: skin.bounds.origin)
+        func inkMask(_ rgba: Data) -> Set<Int> {
+            // The fixture paints bright, neutral text over the dark backing.
+            // Ignore anti-aliased edge noise and lower-intensity material.
+            let pixels = Array(rgba)
+            return Set(stride(from: 0, to: pixels.count, by: 4).filter {
+                min(pixels[$0], pixels[$0 + 1], pixels[$0 + 2]) >= 220
+            })
+        }
+        let restingInk = inkMask(try crop(station.readout, origin: skin.bounds.origin))
+        XCTAssertFalse(restingInk.isEmpty, "The registered readout crop must contain painted glyphs")
+        func assertHoverPixels(line: UInt = #line) throws {
+            XCTAssertNotEqual(try crop(nozzleFrame, origin: viewportOrigin), restingNozzle,
+                              "Hover must transform pixels inside the registered nozzle, even with the viewport shift removed", line: line)
+            let hoverInk = inkMask(try crop(station.readout, origin: viewportOrigin))
+            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(1, restingInk.count / 50),
+                                     "The painted readout must stay fixed in the skin coordinate space", line: line)
+        }
+        XCTAssertGreaterThan(view.bounds.width, skin.bounds.width, "The view reserves hover space beyond the approved skin")
+        XCTAssertEqual(restingWidth, Int(ceil(skin.bounds.width * CGFloat(view.presentationBackingScale ?? 1))))
+        let events = try XCTUnwrap(view.nozzleEventDelegate)
+        events.hoverNozzle(id)
+        try assertHoverPixels()
+        XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
+        let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
+        XCTAssertEqual(subtle.scale, 1.15)
+        XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
+        let dx = hull.midX - nozzle.midX, dy = hull.midY - nozzle.midY
+        let distance = hypot(dx, dy)
+        XCTAssertGreaterThan(distance, 0)
+        XCTAssertEqual(subtle.offset.x, 6 * dx / distance, accuracy: 0.001)
+        XCTAssertEqual(subtle.offset.y, 6 * dy / distance, accuracy: 0.001)
+        XCTAssertGreaterThan(try XCTUnwrap(view.presentedImageForChecks).width, restingWidth)
+        XCTAssertTrue(view.isPainted(atLocal: CGPoint(x: nozzle.midX, y: nozzle.midY)))
+        XCTAssertNil(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
+        events.hoverNozzle(nil)
+        XCTAssertEqual(try pixels(), resting)
+
+        _ = try await application.editor.commit(SettingsB21Edit.magnification(.none))
+        events.hoverNozzle(id)
+        XCTAssertTrue(view.nozzlePosesForChecks.isEmpty)
+        XCTAssertEqual(try pixels(), resting)
+        _ = try await application.editor.commit(SettingsB21Edit.magnification(.strong))
+        events.hoverNozzle(id)
+        XCTAssertEqual(view.nozzlePosesForChecks[id]?.scale, 1.5)
+        let neighbour = try XCTUnwrap(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
+        XCTAssertGreaterThan(neighbour.scale, 1)
+        XCTAssertLessThan(neighbour.scale, 1.5)
+        XCTAssertEqual(view.helpReadoutAnchor(id), restingReadout)
+        try assertHoverPixels()
+        _ = try await application.editor.commit(SettingsB20Edit.motion(.on))
+        events.hoverNozzle(id)
+        XCTAssertTrue(view.nozzlePosesForChecks.isEmpty)
+        XCTAssertEqual(try pixels(), resting)
+
+        _ = try await application.editor.commit(SettingsB20Edit.motion(.system))
+        _ = try await application.editor.commit(SettingsB20Edit.size(.large))
+        let edges: [(SettingsDockEdge, DockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        for (edge, expectedPlacement) in edges {
+            _ = try await application.editor.commit(SettingsB21Edit.dockEdge(edge))
+            XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, expectedPlacement)
+            let edgeEvents = try XCTUnwrap(view.nozzleEventDelegate)
+            for hoveredID in ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"] {
+                edgeEvents.hoverNozzle(hoveredID)
+                XCTAssertEqual(view.nozzlePosesForChecks[hoveredID]?.scale, 1.5, "\(edge) \(hoveredID)")
+                for (id, pose) in view.nozzlePosesForChecks {
+                    let anchor = try XCTUnwrap(view.interactionAnchor(id))
+                    let width = anchor.width * pose.scale, height = anchor.height * pose.scale
+                    let posed = CGRect(x: anchor.midX + pose.offset.x - width / 2,
+                                       y: anchor.midY + pose.offset.y - height / 2, width: width, height: height)
+                    XCTAssertTrue(view.bounds.contains(posed), "\(edge) \(id) pose \(posed) outside \(view.bounds)")
+                }
+                edgeEvents.hoverNozzle(nil)
+            }
+        }
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {

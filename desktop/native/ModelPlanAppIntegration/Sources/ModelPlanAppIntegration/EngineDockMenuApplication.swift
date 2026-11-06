@@ -266,6 +266,7 @@ import ModelPlanMenuVerification
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         context.unavailableControls.removeValue(forKey: .sliverAlert)
+        context.unavailableControls.removeValue(forKey: .magnification)
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
