@@ -194,14 +194,14 @@ private actor G316Engine: EngineClient {
             let threshold = try XCTUnwrap(filtered.first { $0.key == .redBelow })
             let stack = try XCTUnwrap(threshold.superview as? NSStackView)
             let sectionLabels = stack.arrangedSubviews.compactMap { $0 as? NSTextField }.filter {
-                $0.accessibilityIdentifier()?.hasPrefix("settings.section.") == true
+                $0.accessibilityIdentifier().hasPrefix("settings.section.")
             }
             XCTAssertEqual(sectionLabels.count, 1, "Search must remove headings without matching rows")
             XCTAssertEqual(sectionLabels.first?.accessibilityIdentifier(), "settings.section.dock.numbers")
             controller.searchField.stringValue = ""
             controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
             XCTAssertGreaterThan(stack.arrangedSubviews.compactMap { $0 as? NSTextField }.filter {
-                $0.accessibilityIdentifier()?.hasPrefix("settings.section.dock.") == true
+                $0.accessibilityIdentifier().hasPrefix("settings.section.dock.")
             }.count, 1, "Clearing search must restore all visible Dock sections")
             await app.composition.stop()
         }
