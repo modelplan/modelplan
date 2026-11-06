@@ -144,3 +144,23 @@ test("macrev2-579-3 regressions: quoted on-keys, dynamic fromJSON matrices and r
     assert.ok(draftGuardProblems(bad).some((p) => p.includes("macOS job a")), bad);
   }
 });
+
+test("macrevb-579-3 regressions: every matrix/runs-on expression form is recognised as macOS", () => {
+  const group = "concurrency:\n  group: g-\${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}\n  cancel-in-progress: \${{ github.event_name == 'pull_request' }}\n";
+  const compliant = (jobs) => macConcurrencyProblems(`on:\n  pull_request:\n  push:\n${group}jobs:\n${jobs}`);
+  // form 3: block-sequence matrix entries (desktop.yml's native caller)
+  assert.deepEqual(compliant("  a:\n    strategy:\n      fail-fast: false\n      matrix:\n        os:\n        - macos-latest\n    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0\n    with:\n      task: native\n      os: ${{ matrix.os }}\n"), []);
+  // form 4a: a dynamic os expression with leading conditions BEFORE fromJSON (ci.yml's collapse) is
+  // recognised — with the correct group it is compliant, and without any group it is flagged
+  const ciCollapse = "  a:\n    strategy:\n      matrix:\n        os: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft)) && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n";
+  assert.deepEqual(compliant(ciCollapse), []);
+  assert.ok(macConcurrencyProblems(`on:\n  pull_request:\n  push:\njobs:\n${ciCollapse}`).length > 0, "ci.yml's collapse form escaped the concurrency policy");
+  // form 4b: a matrix forwarded from a job output, and the lowercase fromJson spelling
+  assert.deepEqual(compliant("  a:\n    strategy:\n      matrix: ${{ needs.wf.outputs.matrix }}\n    runs-on: ${{ matrix.os }}\n"), []);
+  assert.deepEqual(compliant("  a:\n    strategy:\n      matrix:\n        os: ${{ fromJson(needs.wf.outputs.matrix) }}\n    runs-on: ${{ matrix.os }}\n"), []);
+  // fail-closed backstop: a macOS mention anywhere (even only in a comment) requires the group
+  assert.ok(macConcurrencyProblems("on:\n  pull_request:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest # macOS runners are scarce\n").length > 0, "a macOS mention escaped the policy");
+  // workflow_call-only and workflow_dispatch-only files stay outside the rule even when they mention macOS
+  assert.deepEqual(macConcurrencyProblems("on:\n  workflow_call:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
+  assert.deepEqual(macConcurrencyProblems("on:\n  workflow_dispatch:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
+});

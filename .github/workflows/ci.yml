@@ -6,6 +6,7 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
+  workflow_dispatch:
 concurrency:
   group: public-ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

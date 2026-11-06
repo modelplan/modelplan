@@ -62,12 +62,26 @@ function topLevelBlock(text, key) {
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
 }
 
+// Every form a macOS job's runner selection takes in .github/workflows (macrevb-579-3):
+// 1. a literal `runs-on: macos-*` (or any runs-on line naming macOS);
+// 2. an inline os list naming macOS (`os: [ubuntu-latest, macos-latest]`);
+// 3. block-sequence matrix entries naming macOS (`os:` followed by `- macos-latest`, desktop.yml);
+// 4. a dynamic os/matrix expression of ANY shape — `fromJSON(` at the start of the expression
+//    (notices/u4b/u6 collapse), leading conditions before it (`ci.yml`:
+//    `os: ${{ (github.event_name == ...) && fromJSON('["ubuntu-latest"]') || fromJSON(..., "macos-latest") }}`),
+//    either spelling (fromJSON/fromJson), or a matrix forwarded from a job output
+//    (`matrix: ${{ needs.x.outputs.matrix }}`);
+// 5. the reusable macOS lane (`uses: .../trusted-mac.yml`).
+// The last line is fail-closed: a workflow that merely mentions macOS (even in a comment)
+// requires the concurrency shape, so no future expression form can escape the policy.
 function runsMacos(text) {
-  if (/^\s*runs-on:.*macos/m.test(text)) return true;
-  if (/^\s*(?:os|platform):\s*\[[^\]]*macos/m.test(text)) return true;
-  if (/^\s*os:\s*\$\{\{\s*fromJSON\(/m.test(text)) return true;   // dynamic matrix (notices/u4b/u6 collapse pattern)
-  if (/uses:.*workflows\/trusted-mac\.yml/.test(text)) return true;
-  return false;
+  if (/^\s*runs-on:[^\n]*macos/im.test(text)) return true;
+  if (/^\s*(?:os|platform):[^\n]*macos/im.test(text)) return true;
+  if (/^\s*-\s*[^\n]*macos/im.test(text) && /^\s*(?:os|platform|matrix):\s*$/im.test(text)) return true;
+  if (/^\s*(?:os|platform|matrix):\s*\$\{/im.test(text)) return true;
+  if (/matrix:\s*\$\{/im.test(text)) return true;
+  if (/uses:[^\n]*workflows\/trusted-mac\.yml/.test(text)) return true;
+  return /macos/i.test(text);
 }
 
 export function macConcurrencyProblems(text) {
@@ -76,7 +90,7 @@ export function macConcurrencyProblems(text) {
   if (!on || !/\b(pull_request|push)\b/.test(on) || !runsMacos(text)) return problems;
   const conc = topLevelBlock(text, "concurrency");
   if (!conc || !/^\s+group:/m.test(conc)) {
-    problems.push("macOS workflow has no concurrency group (group: <workflow>-${{ github.event.pull_request.number || github.ref }})");
+    problems.push('macOS workflow has no concurrency group (group: <workflow>-${{ github.event.pull_request.number && format(\'pr-{0}\', github.event.pull_request.number) || github.run_id }})');
     return problems;
   }
   const groupLine = conc.split("\n").find((l) => /^\s+group:/.test(l)) ?? "";
@@ -117,9 +131,13 @@ const DISPATCH_OR_NOT_DRAFT = "github.event_name == 'workflow_dispatch' || !gith
 const DISPATCH_ONLY_IF = /^\s*if:.*github\.event_name\s*==\s*'workflow_dispatch'/;  // a dispatch-only gate (extra owner conditions after it are fine)
 
 function jobRunsMacos(lines) {
-  return lines.some((l) => /^\s*runs-on:.*macos/.test(l))
-    || lines.some((l) => /^\s*os:.*\[.*macos/.test(l))
-    || lines.some((l) => /uses:.*workflows\/trusted-mac\.yml/.test(l));
+  // Same forms as runsMacos() above, scoped to one job's lines (macrevb-579-3); a
+  // block-sequence matrix entry is recognised at the file level, and a trusted-mac
+  // caller is always a macOS job regardless of its own runner lines.
+  return lines.some((l) => /^\s*runs-on:[^\n]*macos/i.test(l))
+    || lines.some((l) => /^\s*(?:os|platform):[^\n]*macos/i.test(l))
+    || lines.some((l) => /^\s*(?:os|platform|matrix):\s*\$\{/i.test(l))
+    || lines.some((l) => /uses:[^\n]*workflows\/trusted-mac\.yml/.test(l));
 }
 
 function jobDraftGuarded(lines) {
