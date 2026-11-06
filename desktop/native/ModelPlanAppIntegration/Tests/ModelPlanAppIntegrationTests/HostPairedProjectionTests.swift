@@ -443,7 +443,7 @@ actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try Self.rows(weekly: 75, secondWeekly: 55, sessionRemaining: 65)
+        let readings = try Self.rows(weekly: 75, secondWeekly: 55, sessionRemaining: 52.5)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
