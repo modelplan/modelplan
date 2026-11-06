@@ -840,6 +840,7 @@ import XCTest
         let firstPoint = screenPoint(CGPoint(x: startStation.midX, y: startStation.midY))
         let lastPoint = screenPoint(CGPoint(x: endStation.midX, y: endStation.midY))
         let frame = panel.frame
+        var originalKeyWindow: NSWindow?
         let before = await store.snapshot()
         let bytes = try Data(contentsOf: storedURL)
         let sweep = view.refreshSweepCountForChecks
@@ -862,6 +863,7 @@ import XCTest
             XCTAssertTrue(editorRemainsFrontmost(), "The synthetic editor must remain frontmost: " + step)
             XCTAssertTrue(panel.isVisible, step)
             XCTAssertFalse(panel.isKeyWindow, step)
+            XCTAssertTrue(application.keyWindow === originalKeyWindow, "Temporary keyboard focus must be released: " + step)
             XCTAssertEqual(panel.frame, frame, step)
             XCTAssertFalse(dock.edgePresentation?.moving == true, step)
             XCTAssertFalse(controller.hasCapture, step)
@@ -882,6 +884,7 @@ import XCTest
         guard try await wait(.seconds(30), until: editorRemainsFrontmost) else {
             return XCTFail("The admitted synthetic editor is not frontmost")
         }
+        originalKeyWindow = application.keyWindow
 
         announce("D-11", "Click the widget body near \(facePoint) without moving, then release.")
         guard try await wait(.seconds(30), until: { events.up == 1 }) else {
