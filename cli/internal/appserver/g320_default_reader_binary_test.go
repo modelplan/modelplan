@@ -20,6 +20,18 @@ import (
 // reads the runtime by default and the app's rows show ONE Codex account with a current
 // reading. No credential, network or real home is used.
 func TestG320FreshProfileShowsOneCodexAccountWithReading(t *testing.T) {
+	g320FreshProfileOneAccount(t, "pro", func(reset time.Time) time.Time { return reset }, "pro")
+}
+
+// macrevb-602-1 through the normal entry: the plan was upgraded (pro_100 -> pro_200) before
+// ModelPlan ever ran, so the newest session log still carries the old tier and an old cycle.
+// The app still shows one Codex account, on the new plan.
+func TestG320FreshProfileAfterUnobservedUpgradeShowsOneAccount(t *testing.T) {
+	g320FreshProfileOneAccount(t, "pro_100", func(reset time.Time) time.Time { return reset.Add(-2 * time.Hour) }, "pro_200")
+}
+
+func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(reset time.Time) time.Time, runtimePlan string) {
+	t.Helper()
 	bin := candidateBinary(t, "./cmd/modelplan")
 	runtimeHost := candidateBinary(t, "./internal/appserver/testdata/runtime")
 	home := t.TempDir()
@@ -38,7 +50,7 @@ func TestG320FreshProfileShowsOneCodexAccountWithReading(t *testing.T) {
 	if err := os.MkdirAll(day, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	line := fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","plan_type":"pro","primary":{"used_percent":9,"window_minutes":300,"resets_at":%d},"secondary":null}}}`+"\n", logAt.Format(time.RFC3339), reset.Unix())
+	line := fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","plan_type":%q,"primary":{"used_percent":9,"window_minutes":300,"resets_at":%d},"secondary":null}}}`+"\n", logAt.Format(time.RFC3339), logPlan, logReset(reset).Unix())
 	if err := os.WriteFile(filepath.Join(day, "rollout-"+logAt.Format("2006-01-02T15-04-05")+"-g320.jsonl"), []byte(line), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +58,7 @@ func TestG320FreshProfileShowsOneCodexAccountWithReading(t *testing.T) {
 		t.Fatal("fixture must start without consent decisions")
 	}
 	trace := filepath.Join(home, "runtime.jsonl")
-	c, stderr := candidateClient(t, bin, home, nil, []string{"MODELPLAN_U3B_RUNTIME_CALLS=" + trace, "MODELPLAN_U3B_RUNTIME_RESETS_AT=" + strconv.FormatInt(reset.Unix(), 10)})
+	c, stderr := candidateClient(t, bin, home, nil, []string{"MODELPLAN_U3B_RUNTIME_CALLS=" + trace, "MODELPLAN_U3B_RUNTIME_RESETS_AT=" + strconv.FormatInt(reset.Unix(), 10), "MODELPLAN_U3B_RUNTIME_PLAN=" + runtimePlan})
 	c.initialize(t)
 	c.send(t, 2, "rows/subscribe", wire.Empty{})
 	m := c.response(t, 2)
