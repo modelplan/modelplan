@@ -50,10 +50,20 @@ enum M5CreditsDisplayFormat {
         return formatter.string(from: NSNumber(value: value.rounded(.toNearestOrAwayFromZero)))
     }
 
-    /// A reported money balance without a currency follows the same grouped integer rule
-    /// as credits (R-08), so a raw floating-point value never reaches the card.
+    /// A reported money balance without a currency is grouped with at most two decimals, so a
+    /// raw floating-point value (14207.8550653333) never reaches the card while cents survive
+    /// (12.5 stays 12.5; credits alone are rounded to integers, R-08).
     static func moneyText(_ value: Double, english: Bool = true) -> String {
-        integerText(value, english: english) ?? String(value)
+        guard value.isFinite else { return String(value) }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: english ? "en_US" : "zh_CN")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 2
+        formatter.maximumIntegerDigits = 309
+        formatter.roundingMode = .halfUp
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
     }
 
     static func unknownUnitText(_ value: Double?, unit: Unit, knowledge: UnitKnowledge, english: Bool = true) -> NeutralResult {

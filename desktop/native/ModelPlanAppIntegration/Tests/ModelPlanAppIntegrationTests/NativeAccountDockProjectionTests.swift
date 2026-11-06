@@ -26,8 +26,10 @@ import ModelPlanSettings
         host.render(snapshot: joined, diagnostics: diagnostics)
         let nodes = (host.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
         XCTAssertEqual(host.purpose, .production)
-        XCTAssertEqual(nodes.count, 1)
-        XCTAssertEqual(nodes.first?.accessibilityValue() as? String, "75%")
+        // The painted move grip (#529, G3-11) is its own accessibility node; one subscription remains.
+        let members = nodes.filter { $0.accessibilityIdentifier().hasPrefix("dock.subscription.") }
+        XCTAssertEqual(members.count, 1)
+        XCTAssertEqual(members.first?.accessibilityValue() as? String, "75%")
         XCTAssertNil(host.nativePanel); XCTAssertNil(host.dockView.window)
         XCTAssertTrue(CommunityDockSnapshot(snapshot: joined, diagnostics: diagnostics, now: now).subscriptions.isEmpty)
     }

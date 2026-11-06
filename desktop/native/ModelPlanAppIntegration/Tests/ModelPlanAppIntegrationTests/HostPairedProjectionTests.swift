@@ -630,8 +630,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(chinese.hasPrefix("2 小时 14 分后重置"), chinese)
     }
 
-    /// G3-06 residual (DOCK-3.8-08, R-08): a money balance without a currency is shown as a
-    /// grouped integer, never as the raw floating-point value.
+    /// G3-06 residual (DOCK-3.8-08): a money balance without a currency is grouped with at
+    /// most two decimals, never the raw floating-point value.
     func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -650,10 +650,10 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "credits" })
         }
         XCTAssertEqual(try balance().label, "Balance")
-        XCTAssertEqual(try balance().value, "14,208")
+        XCTAssertEqual(try balance().value, "14,207.86")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
-        XCTAssertEqual(try balance().value, "14,208")
+        XCTAssertEqual(try balance().value, "14,207.86")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
@@ -924,7 +924,8 @@ actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try Self.rows(weekly: 75, secondWeekly: 55)
+        // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral ink.
+        let readings = try Self.rows(weekly: 75, fiveHour: 80, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
