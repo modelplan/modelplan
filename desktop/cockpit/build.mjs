@@ -46,6 +46,9 @@ if (official) {
   const assets=resolve(repo,'desktop/official-visuals');
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
+  // THROWAWAY SPIKE: the CSP forbids fetch, so the porthole placement table ships as a module.
+  {const m=JSON.parse(await readFile(resolve(assets,'runtime/porthole-stills/manifest.json'),'utf8'));
+   await writeFile(resolve(output,'src/porthole-data.js'),'export default '+JSON.stringify({defaultProjectionId:m.defaultProjectionId,projections:m.projections,animation:m.animation})+';\n');}
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');
   const strip=resolve(assets,'cockpit/strip'),stripCss=await readFile(resolve(strip,'strip.css'));
   if(createHash('sha256').update(stripCss).digest('hex')!=='812160e61c6ae795a6ddb15fa65106ccfb35422ee94ed4e2207e321e834d2deb')throw Error('Unapproved cockpit strip stylesheet');

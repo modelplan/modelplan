@@ -34,3 +34,20 @@
    without changing the artwork or the separately licensed source sheet. */
 :root[data-theme="day"] .ck-head::before,:root[data-theme="day"] .ck-head .key::before,:root[data-theme="day"] .shutter-slider::before,:root[data-theme="day"] .shutter-thumb,:root[data-theme="day"] .shutter-blind{filter:invert(.76) hue-rotate(180deg)}
 :root[data-theme="day"] .ck-head .detach-glyph{background:var(--silk-hi)}
+
+/* THROWAWAY SPIKE (session C): live porthole sprite composition */
+.ck-port .ck-field.ph-on{display:block!important;inset:0}
+.ph-live{position:absolute;inset:0;overflow:hidden;pointer-events:none;isolation:isolate}
+.ph-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.ph-layer{position:absolute;background-size:100% 100%;background-repeat:no-repeat}
+.ph-add{mix-blend-mode:plus-lighter;z-index:1}
+#cockpit .ph-live .ph-flicker{animation:ph-flicker .43s ease-in-out 0s infinite alternate!important}
+#cockpit .ph-live .ph-flicker.ph-d0{animation-duration:0.43s!important}
+#cockpit .ph-live .ph-flicker.ph-d1{animation-duration:0.50s!important}
+#cockpit .ph-live .ph-flicker.ph-d2{animation-duration:0.57s!important}
+#cockpit .ph-live .ph-flicker.ph-d3{animation-duration:0.64s!important}
+#cockpit .ph-live .ph-flicker.ph-l0{animation-delay:0.00s!important}
+#cockpit .ph-live .ph-flicker.ph-l1{animation-delay:-0.13s!important}
+#cockpit .ph-live .ph-flicker.ph-l2{animation-delay:-0.26s!important}
+@keyframes ph-flicker{from{opacity:.94;transform:scale(.985,.98)}to{opacity:1;transform:scale(1.015,1.02)}}
+@media (prefers-reduced-motion:reduce){#cockpit .ph-live .ph-flicker.ph-flicker{animation:none!important}}

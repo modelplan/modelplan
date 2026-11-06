@@ -17,6 +17,10 @@ on:
         type: choice
         options: [cli, gui]
         default: cli
+      porthole_spike:
+        description: THROWAWAY SPIKE (session C) - measure the live porthole only
+        type: boolean
+        default: false
       gui:
         description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
         type: boolean
@@ -28,8 +32,36 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  porthole-spike:
+    # THROWAWAY SPIKE (session C, 2026-11-06): never merged. Official cockpit bundle in a WKWebView,
+    # synthetic host messages, porthole off / still / live, CPU + energy + memory + rAF per state.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.porthole_spike }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: sw_vers; sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize; system_profiler SPDisplaysDataType | head -30
+      - working-directory: desktop/cockpit
+        run: |
+          npm ci --ignore-scripts
+          node build.mjs --official
+          node spike/make-messages.mjs "$RUNNER_TEMP/messages.json"
+          swiftc -O -o "$RUNNER_TEMP/PortholeHarness" spike/PortholeHarness.swift -framework AppKit -framework WebKit
+      - working-directory: desktop/cockpit
+        run: python3 spike/measure.py "$RUNNER_TEMP/PortholeHarness" "$PWD/.tmp" "$RUNNER_TEMP/messages.json" "$RUNNER_TEMP/porthole-spike" off,still,live,live
+      - if: always()
+        run: screencapture -x "$RUNNER_TEMP/porthole-spike/screen-after.png" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: porthole-spike
+          path: ${{ runner.temp }}/porthole-spike/
+          retention-days: 7
   app:
-    if: ${{ !inputs.mac_ci_probe }}
+    if: ${{ !inputs.mac_ci_probe && !inputs.porthole_spike }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,7 +85,7 @@ jobs:
           grep -q '"edition": "community"' app/dist/build-edition.json
           cmp app/dist/app.css app/style.css
   shell:
-    if: ${{ !inputs.mac_ci_probe }}
+    if: ${{ !inputs.mac_ci_probe && !inputs.porthole_spike }}
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest
     defaults:
@@ -79,7 +111,7 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   native-partition:
-    if: ${{ !inputs.mac_ci_probe }}
+    if: ${{ !inputs.mac_ci_probe && !inputs.porthole_spike }}
     # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
     # job: a class may run on the ordinary Mac runner only if its source uses no window server.
     runs-on: ubuntu-latest
@@ -93,7 +125,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !inputs.mac_ci_probe && !inputs.porthole_spike && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -195,7 +227,7 @@ jobs:
 
   native-headless:
     name: native-headless (macos-latest)
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ !inputs.mac_ci_probe && !inputs.porthole_spike && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: native-headless

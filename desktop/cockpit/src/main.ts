@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { CockpitBridge,type BridgeSource } from './bridge.js';
 import { mountCockpit } from './view.js';
+import { mountLivePorthole,type PortholeMode } from './porthole-live.js';
 declare global {interface Window {modelPlanCockpit?:{receive(raw:string):boolean;clear(raw:string):boolean;state():string};webkit?:{messageHandlers?:{cockpit?:{postMessage(message:string):void}}}}}
 const url=new URL(location.href),pageId=url.searchParams.get('pageId');
 const origin=url.protocol==='modelplan-cockpit:'&&url.hostname==='bundle'?'modelplan-cockpit://bundle':url.protocol==='http:'&&url.hostname==='127.0.0.1'?url.origin:null;
@@ -24,4 +25,8 @@ if(pageId&&origin&&root&&window.top===window) {
   document.addEventListener('click',event=>{if((event.target as Element).closest('a'))event.preventDefault();},{signal:listeners.signal});
   document.addEventListener('submit',event=>event.preventDefault(),{signal:listeners.signal});
   bridge.documentHidden(document.hidden);bridge.ready();
+  // THROWAWAY SPIKE: ?porthole=off|still|live selects the porthole composition for measurement.
+  const mode=(['off','still','live'].includes(url.searchParams.get('porthole')??'')?url.searchParams.get('porthole'):'off') as PortholeMode;
+  const field=root.querySelector<HTMLElement>('.ck-field');
+  if(field)void mountLivePorthole(field,mode,()=>Number(root.dataset.layout)||890).then(p=>{(window as unknown as {__porthole:unknown}).__porthole=p;});
 }
