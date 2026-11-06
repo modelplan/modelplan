@@ -56,10 +56,36 @@ private actor V14RowsClient: EngineClient {
         events[0]["publishedAt"] = formatter.string(from: now.addingTimeInterval(-60))
         events[0]["expiresAt"] = formatter.string(from: now.addingTimeInterval(3600))
         events[0]["schedule"] = ["precision": "window", "from": formatter.string(from: now), "through": formatter.string(from: now.addingTimeInterval(3600))]
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let captureRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        let captureProjection = try XCTUnwrap(captureRoot["projection"] as? [String: Any])
+        let captureRows = try XCTUnwrap(captureProjection["rows"] as? [[String: Any]])
+        let captureRow = try XCTUnwrap(captureRows.first)
+        let captureAccounts = try XCTUnwrap(captureRow["accounts"] as? [[String: Any]])
+        let captureAccount = try XCTUnwrap(captureAccounts.first)
+        let captureWindows = try XCTUnwrap(captureAccount["windows"] as? [[String: Any]])
+        var lowWindow = try XCTUnwrap(captureWindows.first)
+        lowWindow.removeValue(forKey: "modelScope")
+        lowWindow["limitKey"] = "main"; lowWindow["poolKey"] = "main"; lowWindow["current"] = true
+        lowWindow["remainingPercent"] = 10
+        lowWindow["observedAt"] = formatter.string(from: now.addingTimeInterval(-60))
+        lowWindow["validUntil"] = formatter.string(from: now.addingTimeInterval(3600))
+        lowWindow["resetsAt"] = formatter.string(from: now.addingTimeInterval(3600))
+        var fixtureRows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        guard !fixtureRows.isEmpty else { return XCTFail("V-14: synthetic row missing") }
+        var accounts = try XCTUnwrap(fixtureRows[0]["accounts"] as? [[String: Any]])
+        guard accounts.count >= 2 else { return XCTFail("V-14: synthetic control member missing") }
+        accounts[1]["valueState"] = "current"; accounts[1]["observedAt"] = formatter.string(from: now.addingTimeInterval(-60))
+        accounts[1]["freshUntil"] = formatter.string(from: now.addingTimeInterval(3600)); accounts[1]["windows"] = [lowWindow]
+        fixtureRows[0]["state"] = "fresh"; fixtureRows[0]["expiresAt"] = formatter.string(from: now.addingTimeInterval(3600))
+        fixtureRows[0]["accounts"] = accounts; projection["rows"] = fixtureRows
         projection["resetEvents"] = events; data["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
         projection["resetEvents"] = []; data["projection"] = projection
         let withoutEvents = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        XCTAssertEqual(rows.projection.invalidRowCount, 0)
+        XCTAssertEqual(withoutEvents.projection.invalidRowCount, 0)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("v14-event-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let settings = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
@@ -71,9 +97,13 @@ private actor V14RowsClient: EngineClient {
         let view = entry.composition.dock.dockView
         _ = try XCTUnwrap(view.presentedSkinForChecks, "V-14: no-event control must inspect an active rendered skin")
         XCTAssertNil(view.presentedNoticesForChecks["0123456789abcdef"], "V-14: no event must not create a notice")
+        let lowReading = try XCTUnwrap(view.presentedReadingsForChecks["fedcba9876543210"])
+        XCTAssertEqual(lowReading.status, .critical, "V-14: the control must really be low quota")
+        XCTAssertNil(view.presentedNoticesForChecks["fedcba9876543210"], "V-14: low quota alone is not an event")
         let client = try XCTUnwrap(entry.composition.client as? V14RowsClient)
         try await client.replaceRows(rows)
         let notice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertNil(view.presentedNoticesForChecks["fedcba9876543210"], "V-14: another member's event must not create a notice on the low-quota control")
         XCTAssertEqual(notice.key.kind, .resetAnnounced)
         XCTAssertEqual(notice.tone, .blue)
         XCTAssertEqual(notice.shape, .hollow)
