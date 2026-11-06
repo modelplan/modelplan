@@ -158,7 +158,10 @@ private actor G1BRowsClient: EngineClient {
             let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
             let screen = try XCTUnwrap(NSScreen.screens.enumerated().first { index, screen in
                 let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-                return (number?.stringValue ?? "session.\(index)") == placement.displayID
+                guard let number else { return "session.\(index)" == placement.displayID }
+                let id = CGDisplayCreateUUIDFromDisplayID(number.uint32Value)
+                    .map { CFUUIDCreateString(nil, $0.takeRetainedValue()) as String } ?? "session.\(number)"
+                return id == placement.displayID
             }?.element)
             XCTAssertTrue(screen.visibleFrame.contains(placement.frame), "The painted Dock must remain in NSScreen.visibleFrame")
             XCTAssertTrue(screen.visibleFrame.contains(placement.sliverFrame))

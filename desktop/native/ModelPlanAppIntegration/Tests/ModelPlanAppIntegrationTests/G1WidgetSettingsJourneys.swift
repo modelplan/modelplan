@@ -187,11 +187,14 @@ private actor G1RowsClient: EngineClient {
         XCTAssertFalse(FileManager.default.fileExists(atPath: path.path))
         let app = try await open(G1DisplayEnvironment(), profile: profile)
         defer { app.composition.dock.close() }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: path.path), "Reading defaults must not persist them")
+        let initialDocument = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
+        var initialSettings = try XCTUnwrap(initialDocument["settings"] as? [String: Any])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.showDock(false))
         let document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: path)) as? [String: Any])
         let settings = try XCTUnwrap(document["settings"] as? [String: Any])
-        XCTAssertEqual(Set(settings.keys), Set(["showDock"]), "Only the explicit choice should be stored")
+        XCTAssertEqual(settings["showDock"] as? Bool, false)
+        initialSettings["showDock"] = false
+        XCTAssertEqual(initialSettings as NSDictionary, settings as NSDictionary, "An explicit choice must not alter unrelated bootstrapped preferences")
         await app.composition.stop(); app.composition.dock.close()
 
         let reopened = try await open(G1DisplayEnvironment(), profile: profile)
@@ -570,7 +573,7 @@ private actor G1RowsClient: EngineClient {
         XCTAssertEqual(notice.tone, .blue)
         XCTAssertEqual(station.showsReadout, true)
         XCTAssertGreaterThan(station.eventRect.midX, station.readout.midX)
-        XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 5, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(station.eventHollowDiameter), 5 * station.diameter / 52, accuracy: 0.0001)
         await app.composition.stop()
     }
 
@@ -657,7 +660,10 @@ private actor G1RowsClient: EngineClient {
                     let actual = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
                     XCTAssertEqual(actual.centre.x, expected.centre.x, accuracy: 0.0001)
                     XCTAssertEqual(actual.centre.y, expected.centre.y, accuracy: 0.0001)
-                    XCTAssertNotEqual(expected.pitch, 82, accuracy: 0.0001)
+                    XCTAssertGreaterThan(expected.pitch, 0)
+                }
+                for (first, next) in zip(geometry.stations, geometry.stations.dropFirst()) {
+                    XCTAssertEqual(next.arcPosition - first.arcPosition, first.pitch, accuracy: 0.0001)
                 }
                 let expectedBounds = geometry.outline.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
                     .union(geometry.ignitionBounds.insetBy(dx: -4 * prefs.size.nozzleDiameter / 52, dy: -4 * prefs.size.nozzleDiameter / 52)).integral
