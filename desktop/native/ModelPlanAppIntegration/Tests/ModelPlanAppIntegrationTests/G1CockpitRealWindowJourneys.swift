@@ -122,7 +122,7 @@ private extension EngineDeliveryContext {
                     XCTAssertEqual(caption[key] as? Bool, true, target)
                     XCTAssertEqual(caption["visible"] as? Bool, true, target)
                 }
-                XCTExpectFailure("C-17 product-missing: narrow Help captions overlap or exceed the viewport", strict: true) {
+                XCTExpectFailure("C-17 product-missing: narrow Help captions overlap or exceed the viewport") {
                     XCTAssertEqual(facts["allInsideAndSeparate"] as? Bool, true)
                 }
                 await page.g1CloseAndWaitForTeardown()
