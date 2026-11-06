@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+// spec-cockpit C-05: live locale, theme and page-key focus.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,currentSample,pageId,shell} from '../fixture.mjs';
 
