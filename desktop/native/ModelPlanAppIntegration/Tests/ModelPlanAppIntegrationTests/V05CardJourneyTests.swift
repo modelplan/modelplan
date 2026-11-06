@@ -91,12 +91,14 @@ private actor V05SyntheticClient: EngineClient {
         let lcd = try XCTUnwrap(dock.card.readoutWindowForChecks, "the card has a readout window")
         XCTAssertEqual(lcd.minX, 11, accuracy: 0.5); XCTAssertEqual(lcd.width, 304 - 22, accuracy: 0.5)
         let quotaRow = try XCTUnwrap(dock.cardContent(for: id)?.rows.first { $0.kind == .quota || $0.kind == .extraQuota })
-        let cells = dock.card.rowCellsForChecks(quotaRow.id)
+        // The grid line itself (a time that does not fit the column wraps onto the next line).
+        let rowFrame = try XCTUnwrap(dock.card.rowFrameForChecks(quotaRow.id))
+        let cells = dock.card.rowCellsForChecks(quotaRow.id).filter { $0.minY < rowFrame.minY + 18 }
         XCTAssertGreaterThanOrEqual(cells.count, 3)
         XCTAssertEqual(cells.prefix(3).map { $0.width.rounded() }, [56, 78, 34], "label / bar / percent columns")
         XCTAssertEqual(cells[1].minX - cells[0].maxX, 5, accuracy: 0.5); XCTAssertEqual(cells[2].minX - cells[1].maxX, 5, accuracy: 0.5)
         XCTAssertEqual(cells[0].minX, lcd.minX + 7, accuracy: 0.5, "rows start inside the window's 7 pt padding")
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(dock.card.rowFrameForChecks(quotaRow.id)).height, 18)
+        XCTAssertGreaterThanOrEqual(rowFrame.height, 18)
         let nameField = try XCTUnwrap(views(dock.card).compactMap { $0 as? NSTextField }.first { $0.accessibilityIdentifier() == "dock.card.text.name" })
         XCTAssertEqual(nameField.font?.pointSize, 13)
         XCTAssertTrue(views(dock.card).compactMap { $0 as? NSButton }.filter { ["dock.card.enter", "dock.card.close"].contains($0.accessibilityIdentifier()) }.isEmpty, "D37: no card buttons")
