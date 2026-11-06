@@ -246,7 +246,8 @@ private actor LifecycleEngine: EngineClient {
         if let edit { _ = try await store.update { edit(&$0) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("synthetic-engine"),
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
-            settingsStore: store, createsNativePanels: native, dockEnvironment: topology.read,
+            settingsStore: store, createsNativePanels: native, bundleURL: root.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: topology.read,
             makeClient: { _, store in LifecycleEngine(store: store, rows: rows) }, activateSettings: {})
         beforePrepare?(app)
         await app.prepare()
@@ -462,23 +463,7 @@ private actor LifecycleEngine: EngineClient {
         let topology = Topology()
         topology.primary = .init(id: "A", frame: CGRect(x: 0, y: 0, width: 1470, height: 956),
             visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 860))
-        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
-        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
-        var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
-        let account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
-        let ids = (0..<30).map { String(format: "%016x", $0 + 1) }
-        row["surfaces"] = ["dock", "menu"]
-        row["expiresAt"] = "2099-01-01T00:00:00Z"
-        row["accounts"] = ids.map { id in
-            var member = account
-            member["subscriptionRef"] = id
-            return member
-        }
-        projection["rows"] = [row]
-        json["projection"] = projection
-        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        let (rows, ids) = try aliasedRows(memberCount: 30)
         let app = try await make(root, topology: topology, rows: rows, native: native) {
             $0.dockEdge = .right
             $0.size = .medium
@@ -503,6 +488,72 @@ private actor LifecycleEngine: EngineClient {
                 XCTAssertGreaterThanOrEqual(panel.frame.minY, available.minY + 23)
             }
         }
+    }
+
+    private func aliasedRows(memberCount: Int) throws -> (WireRowsSnapshot, [String]) {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(json["projection"] as? [String: Any])
+        var row = try XCTUnwrap((projection["rows"] as? [[String: Any]])?.first)
+        let account = try XCTUnwrap((row["accounts"] as? [[String: Any]])?.first)
+        let ids = (0..<memberCount).map { String(format: "%016x", $0 + 1) }
+        row["surfaces"] = ["dock", "menu"]
+        row["expiresAt"] = "2099-01-01T00:00:00Z"
+        row["accounts"] = ids.map { id in
+            var member = account
+            member["subscriptionRef"] = id
+            return member
+        }
+        projection["rows"] = [row]
+        json["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        return (rows, ids)
+    }
+
+    func testD18OptionArrowCommitsAndAnnouncesInBothModes() async throws {
+        try await checkKeyboardOrder(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD18NativeOptionArrowCommitsAndAnnouncesInBothModes() async throws {
+        _ = NSApplication.shared
+        try await checkKeyboardOrder(native: true)
+    }
+    #endif
+
+    private func checkKeyboardOrder(native: Bool) async throws {
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+        let (rows, ids) = try aliasedRows(memberCount: 2)
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            let root = profile()
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            if native { EngineRowsEntry.nativeJourneyProfile = root }
+            #endif
+            let app = try await make(root, topology: Topology(), rows: rows, native: native) { $0.motion = .on }
+            _ = start(app)
+            try await wait { !app.lifecyclePaused }
+            let view = app.composition.dock.dockView
+            let first = try XCTUnwrap(view.interactionTargets(edge: .right).first?.id)
+            let editor = app.settingsHost.application.editor
+            let before = await editor.store.snapshot()
+            view.keyboardTargetID = first
+            let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option,
+                timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+                characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 125))
+            view.keyDown(with: key)
+            try await waitForSettings(editor) { editor.snapshot?.preferences.subscriptions.order.last == first }
+            let after = await editor.store.snapshot()
+            XCTAssertEqual(Set(after.preferences.subscriptions.order), Set(ids))
+            XCTAssertEqual(after.revision, before.revision + 1)
+            XCTAssertTrue((view.accessibilityValue() as? String)?.contains("position 2 of 2") == true)
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        EngineRowsEntry.nativeJourneyProfile = nil
+        #endif
     }
 
     func testD03BottomUsesVisibleFloorAndStableTopologyDoesNotJump() async throws {
@@ -544,7 +595,11 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertEqual(app.composition.dock.dockView.layer?.contentsScale, 1)
         XCTAssertEqual(resized.edge, .bottom)
         XCTAssertEqual(resized.alongFraction, 0.62, accuracy: 0.001)
-        XCTAssertNotEqual(resized.frame.size, before.frame.size)
+        // A resolution change need not cross a logical size band. Backing scale and
+        // the resized display's anchor must still be applied to the live placement.
+        XCTAssertNotEqual(resized.frame.minX, before.frame.minX)
+        XCTAssertEqual(resized.frame.minY, topology.primary.visibleFrame.minY, accuracy: 0.5)
+        XCTAssertTrue(topology.primary.visibleFrame.contains(resized.frame))
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
@@ -603,6 +658,75 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertNil(strip.composition.store.snapshot.rows)
     }
 
+    func testD18ShowHighlightUsesEitherReduceMotionSource() async throws {
+        try await checkShowHighlightMotion(native: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD18NativeShowHighlightUsesEitherReduceMotionSource() async throws {
+        _ = NSApplication.shared
+        try await checkShowHighlightMotion(native: true)
+    }
+    #endif
+
+    private func checkShowHighlightMotion(native: Bool) async throws {
+        let root = profile()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if native { EngineRowsEntry.nativeJourneyProfile = root }
+        defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
+        #endif
+        let app = try await make(root, topology: Topology(), native: native) {
+            $0.autoHide = true
+            $0.motion = .system
+        }
+        _ = start(app)
+        let dock = app.composition.dock
+        let editor = app.settingsHost.application.editor
+        var system = editor.environment
+        func setSystemMotion(_ value: Bool) {
+            system.reduceMotion = value
+            app.updateSystemAccessibility(system)
+        }
+        func highlight() -> CALayer? {
+            dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        func show(after previous: CALayer? = nil) async throws -> CALayer {
+            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+            try await wait { highlight() != nil && highlight() !== previous }
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+            if native { XCTAssertTrue(dock.nativePanel?.isVisible == true) }
+            return try XCTUnwrap(highlight())
+        }
+
+        setSystemMotion(false)
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        let animated = try await show()
+        XCTAssertNotNil(animated.animation(forKey: "locate-pulse"), "With both sources off the real highlight animates")
+        let expandedFrame = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+
+        setSystemMotion(true)
+        XCTAssertEqual(editor.snapshot?.preferences.motion, .system)
+        XCTAssertTrue(editor.environment.reduceMotion)
+        XCTAssertNil(animated.animation(forKey: "locate-pulse"), "System Reduce Motion removes a running pulse")
+        XCTAssertTrue(highlight() === animated, "The active highlight remains visible and static")
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+        let systemOnly = try await show(after: animated)
+        XCTAssertTrue(systemOnly.animationKeys()?.isEmpty ?? true)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+
+        try await wait({ dock.edgePresentation?.state == .sliver }, seconds: 4)
+        _ = try await editor.commit(SettingsB20Edit.motion(.on))
+        setSystemMotion(false)
+        XCTAssertFalse(editor.environment.reduceMotion)
+        XCTAssertEqual(editor.snapshot?.preferences.motion, .on)
+        let appOnly = try await show(after: systemOnly)
+        XCTAssertTrue(appOnly.animationKeys()?.isEmpty ?? true)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, expandedFrame)
+        XCTAssertTrue(editor.snapshot?.preferences.autoHide == true)
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+    }
+
     func testD14ShowQueuesWhileSystemOrCockpitBlocks() async throws {
         let topology = Topology()
         let app = try await make(profile(), topology: topology) {
@@ -654,6 +778,121 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         try await wait { console.showTask == nil }
         XCTAssertEqual(try expanded(app).frame, saved, "An unavailable cockpit releases the presentation gate")
+    }
+
+    func testD18NormalEntryExposesBilingualControlLabels() async throws {
+        let (rows, ids) = try aliasedRows(memberCount: 2)
+        let app = try await make(profile(), topology: Topology(), rows: rows) {
+            $0.autoHide = true
+            $0.motion = .on
+        }
+        _ = start(app)
+        try await wait { !app.lifecyclePaused }
+        let dock = app.composition.dock
+        let member = try XCTUnwrap(ids.first)
+        let editor = app.settingsHost.application.editor
+        func button(_ id: String, in root: NSView) -> NSButton? {
+            if let button = root as? NSButton, button.accessibilityIdentifier() == id { return button }
+            return root.subviews.lazy.compactMap { button(id, in: $0) }.first
+        }
+
+        for (language, reveal, cockpit, settings, close) in [
+            (SettingsLanguage.english, "Show Quota Widget", "Open cockpit", "Settings", "Close"),
+            (.chinese, "显示额度挂件", "打开驾驶舱", "设置", "关闭"),
+        ] {
+            _ = try await editor.commit(SettingsB21Edit.language(language))
+            try await wait({ dock.edgePresentation?.state == .sliver }, seconds: 4)
+            let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+            let strip = try dock.prepareSliver(size: placement.sliverFrame.size)
+            XCTAssertEqual(strip.accessibilityLabel(), reveal)
+            XCTAssertTrue(strip.accessibilityPerformPress(), "VoiceOver can reveal the actual strip")
+            try await wait { dock.edgePresentation?.state == .expanded }
+            let view = dock.dockView
+            let nodes = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+            let subscriptions = nodes.filter { $0.accessibilityIdentifier()?.hasPrefix("dock.subscription.") == true }
+            XCTAssertEqual(subscriptions.count, ids.count)
+            for subscription in subscriptions {
+                XCTAssertFalse(try XCTUnwrap(subscription.accessibilityLabel()).isEmpty)
+            }
+            let holder = try XCTUnwrap(view.superview)
+            let ignition = try XCTUnwrap(holder.subviews.compactMap { $0 as? NSButton }.first)
+            XCTAssertEqual(ignition.accessibilityLabel(), cockpit)
+
+            let nozzle = try XCTUnwrap(subscriptions.first { $0.accessibilityIdentifier() == "dock.subscription." + member })
+            nozzle.setAccessibilityFocused(true)
+            try await wait { dock.detachedCardForChecks != nil }
+            let card = try XCTUnwrap(dock.detachedCardForChecks)
+            let settingsButton = try XCTUnwrap(button("dock.card.enter", in: card))
+            let closeButton = try XCTUnwrap(button("dock.card.close", in: card))
+            XCTAssertEqual(settingsButton.accessibilityLabel(), settings)
+            XCTAssertEqual(closeButton.accessibilityLabel(), close)
+            XCTAssertTrue(closeButton.accessibilityPerformPress(), "An accepted accessibility press reports dispatch")
+            XCTAssertNil(dock.detachedCardForChecks)
+            XCTAssertFalse(closeButton.accessibilityPerformPress(), "A retired card button cannot dispatch")
+            nozzle.setAccessibilityFocused(false)
+        }
+    }
+
+    func testD18OverflowRowsKeepAccessibleActionsAcrossReopening() async throws {
+        let topology = Topology()
+        let (rows, ids) = try aliasedRows(memberCount: 30)
+        let app = try await make(profile(), topology: topology, rows: rows) {
+            $0.dockEdge = .right
+            $0.autoHide = false
+            $0.motion = .on
+            for (index, id) in ids.enumerated() { $0.subscriptionSettings[id] = .init(alias: "Alias \(index)") }
+        }
+        app.allowDockPresentation()
+        await app.composition.start()
+        let dock = app.composition.dock, instrument = dock.dockView
+        let tray = try XCTUnwrap(dock.detachedOverflowForChecks)
+        func toggle() throws {
+            let node = try XCTUnwrap((instrument.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+                .first { $0.accessibilityIdentifier() == "dock.overflow" })
+            XCTAssertEqual(node.accessibilityLabel(), "More subscriptions")
+            XCTAssertTrue(node.accessibilityPerformPress())
+        }
+        func row(_ id: String, in root: NSView) -> NSView? {
+            if root.accessibilityIdentifier() == "dock.overflow." + id { return root }
+            return root.subviews.lazy.compactMap { row(id, in: $0) }.first
+        }
+
+        let before = dock.interactionEnvironment()
+        var order = try before.preferences.orderedIDs(in: before.catalogue)
+        let target = try XCTUnwrap(order.last)
+        XCTAssertTrue(before.overflowIDs.contains(target))
+        try toggle()
+        let first = try XCTUnwrap(row(target, in: tray))
+        XCTAssertFalse(try XCTUnwrap(first.accessibilityLabel()).isEmpty)
+        XCTAssertFalse(try XCTUnwrap(first.accessibilityHelp()).isEmpty)
+        XCTAssertTrue(first.acceptsFirstResponder, "Overflow must preserve keyboard focus after the initial closed state")
+        XCTAssertTrue(first.accessibilityPerformPress(), "An overflow row must retain its accessibility action")
+
+        let index = try XCTUnwrap(order.firstIndex(of: target))
+        XCTAssertGreaterThan(index, 0)
+        order.swapAt(index, index - 1)
+        let optionUp = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.option],
+            timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "",
+            isARepeat: false, keyCode: 126))
+        first.keyDown(with: optionUp)
+        let editor = app.settingsHost.application.editor
+        let announcement = "position \(index) of \(ids.count)"
+        let deadline = ContinuousClock.now + .seconds(2)
+        while (instrument.accessibilityValue() as? String)?.hasSuffix(announcement) != true && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let saved = await editor.store.snapshot()
+        XCTAssertEqual(saved.preferences.subscriptions.order, order)
+        XCTAssertTrue((instrument.accessibilityValue() as? String)?.hasSuffix(announcement) == true,
+                      "Overflow keyboard reorder must announce its committed position")
+
+        try toggle()
+        XCTAssertNil(row(target, in: tray))
+        XCTAssertFalse(first.accessibilityPerformPress(), "Retired controls cannot still act")
+        try toggle()
+        let reopened = try XCTUnwrap(row(target, in: tray))
+        XCTAssertTrue(reopened.acceptsFirstResponder)
+        XCTAssertTrue(reopened.accessibilityPerformPress())
     }
 
     func testD17FollowSamplesPreserveSavedPlace() async throws {

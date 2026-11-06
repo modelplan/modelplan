@@ -73,7 +73,7 @@ import ModelPlanShell
         XCTAssertEqual(controller.presentation?.placement?.displayID, display.id)
     }
 
-    func testOneControllerUsesBorrowedPositioningForPlacementPreviewReleaseAndStop() throws {
+    func testOneControllerUsesBorrowedPositioningForCarryReleaseAndStop() throws {
         var env = environment([display]); env.presence.autoHide = false
         var elapsed: TimeInterval = 0
         let scheduler = PulsePositionScheduler()
@@ -90,15 +90,15 @@ import ModelPlanShell
         XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: 20, y: 20), global: CGPoint(x: initial.frame.midX, y: initial.frame.midY)))
         let destination = CGPoint(x: display.usableFrame.minX, y: display.usableFrame.midY)
         controller.updateBackgroundMove(global: destination)
-        XCTAssertEqual(controller.presentation?.snapPreview?.edge, .left)
+        XCTAssertEqual(controller.presentation?.placement?.edge, .left)
         XCTAssertTrue(commits.isEmpty, "preview never persists")
         controller.endBackgroundMove(global: destination); controller.endBackgroundMove(global: destination)
         XCTAssertEqual(commits.count, 1); XCTAssertEqual(commits.first?.edge, .left)
-        XCTAssertGreaterThan(nearestCalls, 0); XCTAssertGreaterThan(fixedCalls, 0)
+        XCTAssertEqual(nearestCalls, 0); XCTAssertGreaterThan(fixedCalls, 0)
         let staleSample = scheduler.action
         controller.stop(); staleSample?()
         XCTAssertEqual(controller.presentation?.state, .suppressed(.lifecycle))
-        XCTAssertNil(controller.presentation?.snapPreview); XCTAssertNil(scheduler.action)
+        XCTAssertNil(controller.presentation?.placement); XCTAssertNil(scheduler.action)
         XCTAssertEqual(commits.count, 1, "stopped work cannot create a late commit")
     }
 }

@@ -9,6 +9,11 @@ import CryptoKit
     init(_ title:String,_ invoke:@escaping ()->Void){super.init(frame:.zero);self.title=title;self.invoke=invoke;bezelStyle = .rounded;target=self;action=#selector(pressed)}
     required init?(coder:NSCoder){fatalError()}
     @objc private func pressed(){invoke?()}
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled, !isHiddenOrHasHiddenAncestor, let invoke else { return false }
+        invoke()
+        return true
+    }
     func retire(){invoke=nil;focusChanged=nil;isEnabled=false;target=nil;action=nil}
 }
 /// Neutral complete card; official geometry/material/font/brand image is an injected appearance input.

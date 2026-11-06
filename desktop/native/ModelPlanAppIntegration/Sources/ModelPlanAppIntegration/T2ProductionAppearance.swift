@@ -32,8 +32,10 @@ import ModelPlanSettings
             let top = view.appearanceMenuBarExclusion
             let coords = T2EdgeCoordinates(edge: edge, width: budget.width, height: budget.height + top,
                                            menuBarExclusion: top)
+            // Use one raster origin for a given display and edge. Pulse places
+            // the resulting local geometry at the saved anchor.
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
-                showsPercentages: preferences.showPercentages, along: preferences.dockAlongFraction)
+                showsPercentages: preferences.showPercentages)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
             let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
                                           zaiMarkEnabled: view.zaiMarkEnabled)
