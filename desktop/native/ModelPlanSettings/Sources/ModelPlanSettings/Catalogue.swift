@@ -136,6 +136,20 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     }
+    /// The Quota Widget settings whose effect the widget itself applies. Each becomes usable in
+    /// v1 only once the widget reports that it consumes that key; until then the row keeps its
+    /// visible reason. The saved preferences are never changed here.
+    public static let widgetConsumedKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
+    /// Called by the Quota Widget host with the keys it applies (from the committed
+    /// `SettingsPreferences`: `magnification`, `showPercentages`, `sliverAlert`,
+    /// `showOverFullscreen`, `redBelow`). Keys outside `widgetConsumedKeys` are ignored.
+    public mutating func observeWidgetConsumers(_ keys: Set<SettingKey>) {
+        let dock = SettingsText("Unavailable until Quota Widget supports this setting.", "额度挂件支持此设置前不可用。")
+        for key in Self.widgetConsumedKeys {
+            if keys.contains(key) { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = dock }
+        }
+    }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
