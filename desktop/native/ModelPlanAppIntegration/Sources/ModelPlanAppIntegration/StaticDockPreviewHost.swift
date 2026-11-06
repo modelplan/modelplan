@@ -338,6 +338,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         return edgeViews[orientation] ?? dockView
     }
 
+    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    var detachedRenderedCarryViewForChecks: DockInstrumentView? { createsNativePanels ? nil : interactionView }
+    #endif
+
     private var cardHasKeyboardFocus: Bool {
         guard permitted, !retired, !card.isHidden, let id = cardID,
               let revision = cardPresentedRevision, let generation = cardPresentedGeneration,
