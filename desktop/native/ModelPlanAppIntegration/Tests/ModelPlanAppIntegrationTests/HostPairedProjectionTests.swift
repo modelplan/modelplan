@@ -76,7 +76,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -92,7 +92,7 @@ actor EntrySyntheticClient: EngineClient {
         var row = rows[0], accounts = try XCTUnwrap(row["accounts"] as? [[String: Any]])
         var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
         var session = windows[0]
-        row["consent"] = "allowed"; row["state"] = "fresh"; row["surfaces"] = ["dock"]
+        row["consent"] = "allowed"; row["state"] = readerFailed ? "failed" : "fresh"; row["surfaces"] = ["dock"]
         row["name"] = ["en": "Synthetic account", "zh": "合成账户"]
         row["expiresAt"] = "2027-01-01T00:00:00Z"
         row["stateAfterExpiry"] = ["state": "stale",
@@ -100,7 +100,7 @@ actor EntrySyntheticClient: EngineClient {
             "nextStep": NSNull()]
         if unbound { account["subscriptionRef"] = NSNull() }
         else { account["subscriptionRef"] = "aaaaaaaaaaaaaaaa" }
-        account["valueState"] = "current"
+        account["valueState"] = readerFailed ? "retained" : "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
         if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": "unknown"] }
@@ -959,6 +959,50 @@ actor EntrySyntheticClient: EngineClient {
                 edgeEvents.hoverNozzle(nil)
             }
         }
+    }
+
+    func testNormalMenuKeepsActionsAndLocalizesOneLinePerFailedReader() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-menu-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let healthy = try Self.rows(weekly: 75, secondWeekly: 55)
+        let failed = try Self.rows(weekly: 75, secondWeekly: 55, sequence: 8, readerFailed: true)
+        let surface = DiagnosticSettingsSurface()
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            cockpitEntryEnabled: true, dockEnvironment: normalEntryTestEnvironment, deadlineNow: { clock },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: healthy) },
+            makeSettingsSurface: { _ in surface }, activateSettings: {})
+        await app.prepare()
+        await app.composition.start()
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        let editor = app.settingsHost.application.editor
+
+        func items() throws -> [NSMenuItem] {
+            try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
+        }
+        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"]
+        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"]
+        XCTAssertEqual(try items().map(\.title), english)
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try items().map(\.title), chinese)
+
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+            consentGeneration: 1, data: failed), delivery: delivery)
+        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: failed.projection.invalidRowCount))
+        let zhProblem = "合成账户：读取失败 · 查看…"
+        XCTAssertEqual(try items().filter { $0.title == zhProblem }.count, 1)
+        XCTAssertEqual(try items().filter { $0.title != zhProblem }.map(\.title), chinese)
+        _ = try await editor.commit(SettingsB21Edit.language(.english))
+        let enProblem = "Synthetic account: Couldn't read · Details…"
+        XCTAssertEqual(try items().filter { $0.title == enProblem }.count, 1)
+        XCTAssertEqual(try items().filter { $0.title != enProblem }.map(\.title), english)
+        let problem = try XCTUnwrap(try items().first { $0.title == enProblem })
+        _ = try XCTUnwrap(problem.target as? NSObject).perform(try XCTUnwrap(problem.action), with: problem)
+        await surface.waitForShow()
+        XCTAssertEqual(surface.pane, "diagnostics")
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {

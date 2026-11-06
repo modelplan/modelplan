@@ -32,6 +32,25 @@ struct StatusNoticePresentation {
     private var lastAboutConnectionReady = false
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
+    private lazy var applicationSettingsItem: NSMenuItem = {
+        let item = settingsHost.menuItem(title: "Settings…")
+        item.isEnabled = false
+        item.keyEquivalent = ""
+        return item
+    }()
+    private let applicationQuitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    private(set) lazy var applicationMenu: NSMenu = {
+        let root = NSMenu()
+        let application = NSMenuItem(title: "ModelPlan", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        submenu.addItem(applicationSettingsItem)
+        submenu.addItem(.separator())
+        submenu.addItem(applicationQuitItem)
+        application.submenu = submenu
+        root.addItem(application)
+        return root
+    }()
     private var statusMenuComponent: DockStatusMenu?
     let noticeIndicator = DockNoticeIndicatorView(frame: .zero)
     public let cockpitEntryEnabled: Bool
@@ -403,6 +422,7 @@ struct StatusNoticePresentation {
     public func restoreFirstRunIfNeeded() async { await firstRunFlow?.restoreFirstRunIfNeeded() }
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        NSApp.mainMenu = applicationMenu
         NSApp.appearance = NSAppearance(named: .darkAqua)
         if accessibilityObserver == nil {
             accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -483,6 +503,12 @@ struct StatusNoticePresentation {
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
+        let settingsTitle = label("Settings…", "设置…")
+        let quitTitle = label("Quit", "退出")
+        applicationSettingsItem.title = settingsTitle
+        applicationSettingsItem.isEnabled = available && !terminating
+        applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
+        applicationQuitItem.title = quitTitle
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         let showTitle: String
@@ -505,7 +531,13 @@ struct StatusNoticePresentation {
         ]
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
-        var diagnosticFacts: [ProviderDiagnosticFact] = []
+        let content = composition.provider.dockContent
+        // Some reader failures publish an admitted provider row without any
+        // account. Such failures still need the same Diagnostics action.
+        var diagnosticFacts = (content.menuRows + content.dockRows).compactMap { row -> ProviderDiagnosticFact? in
+            guard row.state == .failed, row.accounts.isEmpty else { return nil }
+            return .init(providerID: row.id, name: english ? row.name.en : row.name.zh, condition: .failed)
+        }
         for member in composition.accountMembers.members {
             guard let row = admitted[member.id] else { continue }
             let condition: ProviderDiagnosticCondition
@@ -528,15 +560,12 @@ struct StatusNoticePresentation {
             menuItems.append(.init(title: summary,
                 action: available ? { [weak self] in Task { await self?.settingsHost.present(paneID: "diagnostics", origin: .userInitiated) } } : nil))
         }
-        if settings.editor.context.capabilities.updateServiceAvailable, settings.editor.onHostRequest != nil {
-            menuItems.append(.init(title: label("Check for updates", "检查更新"), action: { [weak self] in self?.checkForUpdates() }))
-        }
         menuItems += [
             .init(title: nil),
             .init(title: label("Help…", "说明…"), action: available ? { [weak self] in self?.showHelp() } : nil),
-            .init(title: label("Settings…", "设置…"), action: available ? { [weak self] in self?.settingsHost.action() } : nil),
+            .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
             .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
-            .init(title: label("Quit", "退出"), keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
+            .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
         LivePrivateMenus.scrubItems(menu)
         component.replace(with: menuItems)
@@ -605,7 +634,6 @@ struct StatusNoticePresentation {
         guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
         NSWorkspace.shared.open(link.url)
     }
-    @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
         if lifecyclePaused { lifecycleController?.retryPending(); return }
@@ -629,6 +657,8 @@ struct StatusNoticePresentation {
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
+        applicationSettingsItem.isEnabled = false
+        applicationSettingsItem.keyEquivalent = ""
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
