@@ -13,15 +13,20 @@ import ModelPlanCredentialAgent
                 credentialAgent: (any CredentialAgent)? = nil) {
         let store = EngineStore()
         self.store = store
+        self.client = Self.makeClient(configuration: configuration, initialFloor: initialFloor,
+                                      credentialAgent: credentialAgent, consumer: store)
+    }
+
+    /// Uses the caller's existing awaited event consumer; does not allocate a second store.
+    public static func makeClient(configuration: EngineClientConfiguration,
+                                  initialFloor: EngineConsentFloor? = nil,
+                                  credentialAgent: (any CredentialAgent)? = nil,
+                                  consumer: any EngineClientEventConsumer) -> ProcessEngineClient {
         if let credentialAgent {
-            self.client = ProcessEngineClient(
-                configuration: configuration, initialFloor: initialFloor,
-                credentialAgent: credentialAgent, consumer: store
-            )
-        } else {
-            self.client = CredentialAgentClientFactory.make(
-                configuration: configuration, initialFloor: initialFloor, consumer: store
-            )
+            return ProcessEngineClient(configuration: configuration, initialFloor: initialFloor,
+                                       credentialAgent: credentialAgent, consumer: consumer)
         }
+        return CredentialAgentClientFactory.make(configuration: configuration, initialFloor: initialFloor,
+                                                 consumer: consumer)
     }
 }
