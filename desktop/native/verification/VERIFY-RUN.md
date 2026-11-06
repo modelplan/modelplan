@@ -99,9 +99,13 @@ host. Tests inject a fake host; a real run never passes them by default.
   (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
   re-establishes and re-records the baseline.
 - `relaunch` stops the subject and starts it again inside the same segment with the same HOME,
-  environment and argv (direct launch mode only; the supervisor announces each launch token in its
-  JSON lines). `status-menu` drives only the fixed action IDs `refresh`, `settings`, `console`,
-  `quit` through `pointer_drive --status-menu-plan`; it needs a host prepared during setup:
+  environment and argv (direct launch mode only; each launch re-reserves the slot with the guardian
+  before its exec gate is released, and the supervisor announces every identifying field of the new
+  launch, evidence included, plus its token in its JSON lines). A relaunched subject is the one the
+  later steps of its ID and every later ID of the segment drive. `status-menu` drives only the fixed
+  action IDs `refresh`, `settings`, `console`, `quit` through `pointer_drive --status-menu-plan`, in
+  synthetic-profile segments only (the drive helper and the arrival observer validate synthetic
+  plans; a real-profile menu step is NOT-RUN); it needs a host prepared during setup:
   `MODELPLAN_VERIFICATION_POINTER_DRIVE` (the built helper, StatusMenu/README.md) and
   `MODELPLAN_VERIFICATION_ARRIVALS` (the subject's native observation JSONL the in-app arrival
   observer writes; a release build carries none). Hide/Show stay NOT-RUN: the app's status menu has

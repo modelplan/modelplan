@@ -115,6 +115,22 @@ def seconds(ids, steps):
     return SEGMENT_OVERHEAD + sum(steps[i]['estimatedSeconds'] for i in ids)
 
 
+def status_menu_plan(ctx, subject, item, action, output, arrivals, now=None, request_id=None):
+    """The pointer_drive --status-menu-plan payload for one fixed action. Its shape is the
+    producer-to-helper contract (StatusMenu/README.md): identity, lease/stop, the subject's exact
+    PID and bundle, the arrivals file to correlate, and the request window; synthetic profile only."""
+    now = time.time() if now is None else now
+    return dict(profile=ctx['profile'], runID=subject['runID'], epoch=subject['epoch'],
+                lease=subject['leasePath'], stop=subject['stopPath'], output=str(output),
+                subjectPID=subject['pid'], subjectBundle=subject['bundle'],
+                allowedRectangles=[], steps=[],
+                statusMenu=dict(itemName=item, openMenu=True, timeoutSeconds=10, arrivals=arrivals,
+                                request=dict(profile=ctx['profile'], runID=subject['runID'],
+                                             epoch=subject['epoch'], subjectPID=subject['pid'],
+                                             requestID=request_id or str(uuid.uuid4()).upper(), action=action,
+                                             notBefore=now - 1, expiresAt=now + 30)))
+
+
 class Actions:
     """Real step actions on macOS. Each returns a step record or raises NotRun / StopRun."""
 
@@ -206,6 +222,10 @@ title: n.isNil() ? null : ObjC.unwrap(n)}); } JSON.stringify(out);"""
             # hide/show have no fixed action ID in the app's menu (StatusMenuAction carries only
             # refresh/settings/console/quit); see VERIFY-RUN.md before adding one.
             raise NotRun(f'status-menu-action-{action}-has-no-fixed-action-id')
+        if self.ctx['profile'] != 'synthetic':
+            # The drive helper and the arrival observer validate synthetic plans only
+            # (status_menu_drive.swift, MenuContract.swift); a real-profile menu step is NOT-RUN.
+            raise NotRun('status-menu-synthetic-only')
         helper = os.environ.get('MODELPLAN_VERIFICATION_POINTER_DRIVE', '')
         arrivals = os.environ.get('MODELPLAN_VERIFICATION_ARRIVALS', '')
         # The lane builds pointer_drive with the StatusMenu sources during host preparation
@@ -219,16 +239,7 @@ title: n.isNil() ? null : ObjC.unwrap(n)}); } JSON.stringify(out);"""
             if not subject.get(key):
                 raise NotRun('status-menu-needs-a-live-segment')
         directory.mkdir(parents=True, exist_ok=False)
-        now = time.time()
-        plan = dict(profile=self.ctx['profile'], runID=subject['runID'], epoch=subject['epoch'],
-                    lease=subject['leasePath'], stop=subject['stopPath'], output=str(directory / 'menu-drive.jsonl'),
-                    subjectPID=subject['pid'], subjectBundle=subject['bundle'],
-                    allowedRectangles=[], steps=[],
-                    statusMenu=dict(itemName=item, openMenu=True, timeoutSeconds=10, arrivals=arrivals,
-                                    request=dict(profile=self.ctx['profile'], runID=subject['runID'],
-                                                 epoch=subject['epoch'], subjectPID=subject['pid'],
-                                                 requestID=str(uuid.uuid4()).upper(), action=action,
-                                                 notBefore=now - 1, expiresAt=now + 30)))
+        plan = status_menu_plan(self.ctx, subject, item, action, directory / 'menu-drive.jsonl', arrivals)
         plan_path = directory / 'menu-plan.json'
         plan_path.write_text(json.dumps(plan, indent=1, sort_keys=True))
         result = subprocess.run([helper, '--status-menu-plan', str(plan_path)], capture_output=True, text=True, timeout=120)
@@ -427,7 +438,9 @@ def check_markers(tree, ctx):
 
 
 def run_id(ident, step, segment, subject, ctx, actions, out):
-    """Execute one ID's steps. Returns (outcome, reason, receipt)."""
+    """Execute one ID's steps. Returns (outcome, reason, subject): a relaunch step replaces the
+    subject for this ID's later steps AND for the IDs that share its segment, so nothing after it
+    drives the terminated identity."""
     folder = out / ident
     folder.mkdir(exist_ok=True)
     records, outcome, reason, changed = [], 'PASS', None, []
@@ -508,7 +521,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
     if failed:  # the baseline was not re-established: a machine assertion, not a silent pass
         outcome, reason = 'FAIL', 'restore-failed-' + '-'.join(sorted(set(failed)))
     write_receipt(folder, ident, ctx, segment, records, outcome, reason)
-    return outcome, reason
+    return outcome, reason, subject
 
 
 def purge_captures(folder):
@@ -622,7 +635,7 @@ def execute(manifest, *, lane, layout, ids, out, artifacts_dir, scratch_parent, 
                     if stopped:
                         results[ident] = ('NOT-RUN', segment['flavour'], 'segment-stopped-' + stopped); continue
                     try:
-                        outcome, reason = run_id(ident, ctx['steps'][ident], segment, subject, ctx, actions, out)
+                        outcome, reason, subject = run_id(ident, ctx['steps'][ident], segment, subject, ctx, actions, out)
                         results[ident] = (outcome, segment['flavour'], reason)
                         if reason and str(reason).startswith('restore-failed'):
                             # The system baseline was not re-established: no later segment runs

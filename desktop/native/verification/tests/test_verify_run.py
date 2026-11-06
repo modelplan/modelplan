@@ -305,10 +305,50 @@ class VerifyRunTests(unittest.TestCase):
         ctx = dict(profile='synthetic', sha='a' * 40, layout='single',
                    markers=verify_run.account_markers(), displays=[], baseline={})
         step = dict(steps=[dict(name='again', action='relaunch'), dict(name='shot', action='capture-window')])
-        outcome, reason = verify_run.run_id('X-01', step, dict(flavour='release'),
-                                            dict(pid=111, registeredAt=0.0), ctx, Follow(), self.root)
+        outcome, reason, subject = verify_run.run_id('X-01', step, dict(flavour='release'),
+                                                     dict(pid=111, registeredAt=0.0), ctx, Follow(), self.root)
         self.assertEqual(outcome, 'REVIEW')
         self.assertEqual(captures, [999])  # the capture saw the relaunched subject, not the old one
+        self.assertEqual(subject['pid'], 999)  # and run_id hands the new subject back to the caller
+
+    def test_relaunched_subject_carries_to_the_later_ids_of_the_segment(self):
+        seen = []
+        class Carry(FakeActions):
+            # D-14 hides the window (expect-no-window) around its relaunch; fake that per step.
+            def __init__(self):
+                super().__init__(windows=lambda name: 'hidden' not in name)
+            def status_menu(self, subject, item, action, directory):
+                return {}
+            def relaunch(self, subject):
+                return subject | dict(pid=999)
+            def capture(self, subject, *args):
+                seen.append(subject['pid'])
+                return super().capture(subject, *args)
+        code, lines, readme = self.go(ids=('D-14', 'V-01'), actions=Carry())  # both running: one segment
+        self.assertEqual(code, 0)
+        self.assertEqual(seen[0], 123)   # before the relaunch: the launched subject
+        self.assertEqual(seen[-1], 999)  # V-01 runs after D-14's relaunch and drives the new subject
+
+    def test_status_menu_is_synthetic_only_and_the_plan_is_the_helper_contract(self):
+        ctx = dict(profile='synthetic')
+        subject = dict(runID='r', epoch='e', leasePath='/run/lease.json', stopPath='/run/STOP',
+                       pid=7, bundle='/app/ModelPlan.app')
+        plan = verify_run.status_menu_plan(ctx, subject, 'Quit / 退出', 'quit', Path('/out/menu-drive.jsonl'),
+                                           '/obs/native.jsonl', now=1000.0, request_id='UUID-1')
+        self.assertEqual(set(plan), {'profile', 'runID', 'epoch', 'lease', 'stop', 'output', 'subjectPID',
+                                     'subjectBundle', 'allowedRectangles', 'steps', 'statusMenu'})
+        self.assertEqual((plan['subjectPID'], plan['subjectBundle'], plan['lease'], plan['stop']),
+                         (7, '/app/ModelPlan.app', '/run/lease.json', '/run/STOP'))
+        menu = plan['statusMenu']
+        self.assertEqual((menu['itemName'], menu['openMenu'], menu['timeoutSeconds'], menu['arrivals']),
+                         ('Quit / 退出', True, 10, '/obs/native.jsonl'))
+        self.assertEqual(menu['request'], dict(profile='synthetic', runID='r', epoch='e', subjectPID=7,
+                                               requestID='UUID-1', action='quit', notBefore=999.0, expiresAt=1030.0))
+        # A real-profile menu step never builds a plan: the helper and observer are synthetic-only.
+        actions = verify_run.Actions(dict(profile='real'))
+        with self.assertRaises(verify_run.NotRun) as refused:
+            actions.status_menu(subject, 'Quit', 'quit', self.root / 'menu')
+        self.assertEqual(str(refused.exception), 'status-menu-synthetic-only')
 
     def test_output_must_be_new_and_outside_a_checkout(self):
         out = self.root / 'used'; out.mkdir(); (out / 'x').write_text('x')

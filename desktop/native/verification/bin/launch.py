@@ -80,7 +80,6 @@ def main():
         # is run scratch only, and the subject (the gate, same PID after exec) matches by PID plus start time.
         argv=c['argv'];scope=process_scan.scope_for(prefix=tmp)
     evidence=bundle['evidence'] if bundle else {}
-    launcher=mark_launching(pid_path,scope=scope,mode=mode)
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*argv]
@@ -95,30 +94,48 @@ def main():
         finally:raise SystemExit(3)
     for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
     def spawn():
-        child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=env)
-        try:
-            add_helper(pid_path,launcher,identity(child.pid)) # The gate is matched by PID plus start time.
-            register(pid_path,child.pid,launcher)
-            child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
-        except BaseException:
-            child.terminate() # never leave an unregistered child running ...
-            try:child.wait(10)
-            except subprocess.TimeoutExpired:child.kill();child.wait()
-            stop_child() # ... and end the launch by supervision, not by a traceback
+        # Every launch (first or relaunch) reserves the slot first: the guardian admits a second
+        # reservation only once the prior registered subject is gone, keeps the same controller
+        # identity, and only then accepts the helper and the new registration.
+        launcher=mark_launching(pid_path,scope=scope,mode=mode)
+        child=spawn_gated(gate,env,pid_path,launcher,stop_child)
         state['child']=child
         return child
     child=spawn()
     home_field=str(home) # real: the host user's own HOME; synthetic: the run-scratch home
-    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':mode,'profile':profile,'home':home_field,**evidence}),flush=True)
+    print(json.dumps(subject_line(c,child.pid,profile,home_field,evidence)),flush=True)
     # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
     # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
     def announce(token,pid):
-        print(json.dumps({'relaunch':token,'ownedPID':pid,'launchMode':mode,'profile':profile,'home':home_field}),flush=True)
+        print(json.dumps(subject_line(c,pid,profile,home_field,evidence,token=token)),flush=True)
     reason=supervise(child,c,spawn=spawn,announce=announce)
     child=state['child']
     print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,'launchMode':mode,'profile':profile}))
     raise SystemExit(0 if reason is None else 3)
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
+def spawn_gated(gate,env,pid_path,launcher,on_unregistered):
+    """Start one gated child and register it against a reservation this controller just made:
+    helper identity first, registration second, then release the exec gate. Any failure kills the
+    child and hands the failure to on_unregistered, so an unregistered subject never survives."""
+    child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=env)
+    try:
+        add_helper(pid_path,launcher,identity(child.pid)) # The gate is matched by PID plus start time.
+        register(pid_path,child.pid,launcher)
+        child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
+    except BaseException:
+        child.terminate() # never leave an unregistered child running ...
+        try:child.wait(10)
+        except subprocess.TimeoutExpired:child.kill();child.wait()
+        on_unregistered() # ... and end the launch by supervision, not by a traceback
+    return child
+def subject_line(c,pid,profile,home,evidence,token=None):
+    """One launch's JSON line for verify-run's consumer. A relaunch line repeats every identifying
+    field of the first line, evidence included (the consumer matches on bundle), plus its token."""
+    line=dict(runID=c['lease']['runID'],epoch=c['lease']['epoch'],ownedPID=pid,
+              launchMode=c.get('launchMode','direct'),profile=profile,home=home,**evidence)
+    if token is not None:
+        line['relaunch']=token
+    return line
 def make_bundle(c,binary,tmp):
     """Minimal .app around a byte-identical copy of the pinned binary (never a link: the scan and
     PID discovery match this exact path). Optional: bundleIdentifier, bundleUIElement (default true,
@@ -293,7 +310,14 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                     child.terminate() # ended deliberately: a relaunch step, not a crash
                     try:child.wait(10)
                     except subprocess.TimeoutExpired:child.kill();child.wait()
-                    child=spawn()
+                    try:
+                        child=spawn()
+                    except SystemExit:
+                        raise
+                    except BaseException:
+                        # the re-reservation or the registration refused the relaunch: end by
+                        # supervision (exit 3), never leak the slot or the subject
+                        raise SystemExit(3)
                     if announce is not None:announce(token,child.pid)
                     continue
             if child.poll() is None:

@@ -3,9 +3,11 @@
 launch.py, packaged_candidate's real template, the relaunch supervision seam, and the status-menu
 fixed action IDs. Linux-safe: every macOS-only path is injected or faked."""
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import time
@@ -16,9 +18,15 @@ BIN = Path(__file__).resolve().parents[1] / 'bin'
 sys.path.insert(0, str(BIN))
 
 import admission  # noqa: E402
+import guardian  # noqa: E402
 import launch  # noqa: E402
 import packaged_candidate  # noqa: E402
+import process_scan  # noqa: E402
 import verify_steps  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location('verify_run_mod', BIN / 'verify-run.py')
+verify_run = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(verify_run)
 
 
 def contract(profile, host):
@@ -219,3 +227,91 @@ class StepFileMenuActionTests(unittest.TestCase):
         self.assertEqual(verify_steps.problems(step('hide')), [])  # valid slug; refused at run time instead
         self.assertTrue(any('lowercase slug' in p and 'no fixed action ID' in p
                             for p in verify_steps.problems(step('Not A Slug'))))
+
+
+class RealGuardianRelaunchTests(unittest.TestCase):
+    """The supported relaunch through the actual guardian registration: re-reserve the slot once the
+    prior subject is gone, register the second gated child, and stop both with identity checks."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.run_dir = Path(self.temp.name) / 'run'; self.run_dir.mkdir()
+        self.pid_file = self.run_dir / 'subject.json'
+        self.scope = process_scan.scope_for(prefix=self.run_dir)
+        self.gate = [sys.executable, '-I', '-c', launch.GATE,
+                     sys.executable, '-c', 'import time; time.sleep(60)']
+        self.env = {'PATH': '/usr/bin:/bin'}
+
+    def fail_on_unregistered(self):
+        raise AssertionError('an unregistered child was left running')
+
+    def test_second_registration_needs_a_fresh_reservation(self):
+        launcher = guardian.mark_launching(self.pid_file, scope=self.scope, mode='direct')
+        first = launch.spawn_gated(self.gate, self.env, self.pid_file, launcher, self.fail_on_unregistered)
+        try:
+            state = json.loads(self.pid_file.read_text())
+            self.assertEqual((state['state'], state['pid']), ('running', first.pid))
+            # The failure this replaces: registering against the live running reservation.
+            with self.assertRaisesRegex(ValueError, 'scoped reservation not held by this controller'):
+                guardian.add_helper(self.pid_file, launcher, guardian.identity(os.getpid()))
+            # And the slot is not re-reservable while the subject is still alive.
+            with self.assertRaisesRegex(ValueError, 'another owned subject is still running'):
+                guardian.mark_launching(self.pid_file, scope=self.scope, mode='direct')
+            first.terminate(); first.wait(10)
+            # The supported relaunch: same controller, fresh reservation, second gated child.
+            second_launcher = guardian.mark_launching(self.pid_file, scope=self.scope, mode='direct')
+            second = launch.spawn_gated(self.gate, self.env, self.pid_file, second_launcher, self.fail_on_unregistered)
+            try:
+                state = json.loads(self.pid_file.read_text())
+                self.assertEqual((state['state'], state['pid']), ('running', second.pid))
+                self.assertNotEqual(second.pid, first.pid)
+                identities = [{k: state[k] for k in ('pid', 'startSeconds', 'startMicroseconds')}]
+                self.assertIn('scan', state)  # the guardian can still prove closure for the new child
+            finally:
+                second.terminate()
+                second.wait(10)
+            identities.append(guardian.identity(first.pid) or dict(pid=first.pid, startSeconds=0, startMicroseconds=0))
+            # Cleanup with identity checks: both launches are stopped and nothing matching survives.
+            self.assertTrue(guardian.stop_identities(identities, 5.0, guardian.identity, os.kill,
+                                                     time.monotonic, time.sleep))
+            self.assertIsNone(guardian.identity(second.pid))
+        finally:
+            if first.poll() is None:
+                first.terminate(); first.wait(10)
+
+
+class ProducerConsumerTests(unittest.TestCase):
+    """launch.py's JSON lines are verify-run's consumer contract: a relaunch line repeats every
+    identifying field of the first line, evidence (bundle) included, plus its token."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.run = Path(self.temp.name)
+
+    def session_with(self, lines, subject_record):
+        session = verify_run.Session(dict(profile='synthetic'), dict(flavour='release', ids=['D-14']), 1)
+        session.paths = dict(subjectPidPath=str(self.run / 'subject.json'), relaunchPath=str(self.run / 'relaunch'))
+        session.local = self.run
+        session.procs = {'run': type('R', (), {'poll': staticmethod(lambda: None)})()}
+        (self.run / 'launch.out').write_text('\n'.join(json.dumps(x) for x in lines) + '\n')
+        (self.run / 'subject.json').write_text(json.dumps(subject_record))
+        return session
+
+    def test_relaunch_line_resolves_in_await_subject_and_bundle_survives(self):
+        config = dict(lease=dict(runID='r', epoch='e'), launchMode='direct')
+        evidence = dict(subjectKind='app-zip', bundle='/app/ModelPlan.app')
+        first = launch.subject_line(config, 111, 'synthetic', '/run/home', evidence)
+        again = launch.subject_line(config, 222, 'synthetic', '/run/home', evidence, token=1)
+        self.assertEqual(again['bundle'], '/app/ModelPlan.app')
+        self.assertEqual(again['relaunch'], 1)
+        session = self.session_with([first, again], dict(state='running', pid=222))
+        subject = session.await_subject(1, deadline_seconds=1)
+        self.assertEqual((subject['pid'], subject['home'], subject['bundle']), (222, '/run/home', '/app/ModelPlan.app'))
+
+    def test_a_line_without_bundle_never_registers(self):
+        config = dict(lease=dict(runID='r', epoch='e'), launchMode='direct')
+        thin = dict(runID='r', epoch='e', ownedPID=222, launchMode='direct', profile='synthetic',
+                    home='/run/home', relaunch=1)  # evidence missing: the old bug
+        session = self.session_with([thin], dict(state='running', pid=222))
+        with self.assertRaises(verify_run.StopRun):
+            session.await_subject(1, deadline_seconds=1)
