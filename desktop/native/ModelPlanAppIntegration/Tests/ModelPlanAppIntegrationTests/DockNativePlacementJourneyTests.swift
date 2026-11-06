@@ -3,10 +3,25 @@
 import AppKit
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanCockpitWeb
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanWire
 @testable import ModelPlanAppIntegration
+
+@MainActor private final class D14DetachedCockpitPage: CockpitPageSurface {
+    let queryTicket: CockpitQueryTicket? = nil
+    var onReady: (() -> Void)?
+    var onIntent: ((CockpitIntent) -> Void)?
+    var onClosed: (() -> Void)?
+    private(set) var visible = false
+
+    func open() { visible = true }
+    func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+    func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+    func discard() { visible = false; onClosed?() }
+}
 
 /// Run on an admitted GUI session with a reviewed real CLI and isolated home.
 @MainActor final class DockNativePlacementJourneyTests: XCTestCase {
@@ -759,6 +774,85 @@ import ModelPlanSettings
                               unblock: { host.setCockpitPresentationBlocked(false) })
         try await checkEngine(app)
         XCTAssertEqual(replies.count, 0)
+    }
+
+    func testD14DetachedShowWaitsForTheActualCockpitAndRestoresTheEmptyStation() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-cockpit-" + UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let allowRows = root.appendingPathComponent("allow-rows")
+        let (relay, _, home) = try await makeRowsBarrier(in: root, releaseRowsWhen: allowRows)
+        try Data().write(to: allowRows)
+        let profile = root.appendingPathComponent("profile")
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await settings.update {
+            $0.motion = .on
+            $0.theme = .night
+            $0.dockAlongFraction = 0.62
+        }
+        let page = D14DetachedCockpitPage()
+        let cockpit = EngineCockpitCoordinator { _ in page }
+        let owner = CockpitConsoleOwner(bundle: profile, settingsStore: settings)
+        owner.coordinator = cockpit
+        let topology = Topology()
+        let app = EngineRowsEntry.make(configuration: configuration(relay, root: home),
+            settingsStore: settings, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            cockpitEntryEnabled: true, dockEnvironment: {
+                var sample = topology.read()
+                let available = topology.main.visibleFrame
+                sample.pointer = CGPoint(x: available.midX, y: available.midY)
+                return sample
+            }, makeConsole: { composition in
+                SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { false }, activate: {})
+            }, activateSettings: {})
+        cockpit.bind(client: app.composition.client)
+        addTeardownBlock { @MainActor in
+            await cockpit.shutdown()
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let ready = try await wait(5) { !app.lifecyclePaused && app.composition.store.snapshot.rows != nil }
+        XCTAssertTrue(ready, "The real engine must deliver its initial snapshot before cockpit entry is admitted")
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        await cockpit.consume(.context(delivery))
+
+        let host = app.composition.dock, editor = app.settingsHost.application.editor
+        let original = try XCTUnwrap(host.edgePresentation?.paintedFrame)
+        func highlight() -> CALayer? {
+            host.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        XCTAssertTrue(host.dockView.presentedReadingsForChecks.isEmpty)
+        XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+        for whileOpening in [true, false] {
+            _ = try await editor.commit(SettingsB21Edit.showDock(false))
+            app.showConsole()
+            XCTAssertFalse(page.visible, "Opening reserves the presentation gate synchronously")
+            if !whileOpening {
+                let opened = try await wait(2) { page.visible }
+                XCTAssertTrue(opened)
+            }
+            let menu = try XCTUnwrap(app.liveStatusMenu)
+            let index = try XCTUnwrap(menu.items.firstIndex { $0.title == "Show Quota Widget" && $0.isEnabled })
+            menu.performActionForItem(at: index)
+            try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == true && !editor.isSaving }
+            let opened = try await wait(2) { page.visible }
+            XCTAssertTrue(opened)
+            XCTAssertNil(host.edgePresentation?.paintedFrame)
+            XCTAssertNil(highlight())
+            cockpit.requestClose()
+            XCTAssertFalse(page.visible)
+            let restored = try await wait(2) { host.edgePresentation?.state == .expanded && highlight() != nil }
+            XCTAssertTrue(restored)
+            XCTAssertEqual(host.edgePresentation?.paintedFrame, original)
+            XCTAssertTrue(try XCTUnwrap(highlight()).animationKeys()?.isEmpty ?? true)
+            XCTAssertTrue(host.dockView.presentedReadingsForChecks.isEmpty)
+            XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+            XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+            let stored = await settings.snapshot()
+            XCTAssertTrue(stored.preferences.showDock)
+        }
     }
 
     func testD14PhysicalHideRelaunchAndShowWhileRowsAreWithheld() async throws {
