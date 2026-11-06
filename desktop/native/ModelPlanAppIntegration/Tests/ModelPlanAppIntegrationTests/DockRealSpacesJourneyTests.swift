@@ -172,6 +172,52 @@ import XCTest
         XCTAssertEqual(after.preferences.dockEdge, .right)
     }
 
+    private enum SystemDockRail: Equatable {
+        case unavailable, hidden, visible(CGRect)
+
+        static func observe(on screen: CGRect, from quartzFrames: [CGRect]) -> Self {
+            let candidates = quartzFrames.compactMap { bounds -> CGRect? in
+                let frame = CGRect(x: bounds.minX, y: screen.maxY - bounds.maxY,
+                                   width: bounds.width, height: bounds.height)
+                guard frame.width >= 120, (12...200).contains(frame.height),
+                      frame.width >= frame.height * 2,
+                      frame.minY >= screen.minY - 1, frame.minY <= screen.minY + 32,
+                      screen.insetBy(dx: -1, dy: -1).contains(frame) else { return nil }
+                return frame
+            }
+            guard let first = candidates.first else { return .hidden }
+            guard candidates.allSatisfy({ $0 == first }) else { return .unavailable }
+            return .visible(first)
+        }
+
+        static func read(on screen: CGRect) -> Self {
+            let apps = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
+            guard apps.count == 1, let dock = apps.first,
+                  let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                           kCGNullWindowID) as? [[String: Any]] else { return .unavailable }
+            let frames = windows.compactMap { window -> CGRect? in
+                guard (window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == dock.processIdentifier,
+                      (window[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 0 > 0,
+                      let bounds = window[kCGWindowBounds as String] as? [String: Any] else { return nil }
+                return CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            }
+            return observe(on: screen, from: frames)
+        }
+    }
+
+    func testD03SystemDockRailObservationRejectsAmbiguityAndIgnoresOtherGeometry() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let quartzDock = CGRect(x: 430, y: 823, width: 580, height: 72)
+        let expected = CGRect(x: 430, y: 5, width: 580, height: 72)
+        let centered = CGRect(x: 430, y: 310, width: 580, height: 72)
+        let clipped = CGRect(x: 430, y: 875, width: 580, height: 72)
+        XCTAssertEqual(SystemDockRail.observe(on: screen, from: []), .hidden)
+        XCTAssertEqual(SystemDockRail.observe(on: screen, from: [centered, clipped]), .hidden)
+        XCTAssertEqual(SystemDockRail.observe(on: screen, from: [quartzDock, quartzDock, centered]), .visible(expected))
+        XCTAssertEqual(SystemDockRail.observe(on: screen, from: [quartzDock, quartzDock.offsetBy(dx: 3, dy: 0)]),
+                       .unavailable)
+    }
+
     func testD03PhysicalBottomStaysStableWhenSystemDockAutoHides() async throws {
         _ = NSApplication.shared
         let initial = try XCTUnwrap(DockDisplayTopology.system().main)
@@ -186,6 +232,10 @@ import XCTest
         XCTAssertEqual(host.edgePresentation?.placement?.edge, .bottom)
         XCTAssertEqual(panel.frame.minY, initial.usableFrame.minY, accuracy: 1)
         XCTAssertTrue(initial.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame))
+        guard case .visible(let alwaysVisibleDock) = SystemDockRail.read(on: initial.frame) else {
+            throw XCTSkip("D-03: system Dock bounds unavailable or ambiguous before enabling auto-hide")
+        }
+        XCTAssertFalse(panel.frame.intersects(alwaysVisibleDock), "Visible system Dock and widget must not overlap")
         let before = await store.snapshot()
         let bytes = try Data(contentsOf: storedURL)
         announce("D-03", "Capture the widget above the visible macOS Dock. Then enable macOS Dock auto-hide.")
@@ -197,6 +247,8 @@ import XCTest
         }
         guard adjusted else { return XCTFail("The native bottom widget did not follow the new available floor") }
         let autoHidden = try XCTUnwrap(DockDisplayTopology.system().display(initial.id))
+        let hidden = try await wait(.seconds(20)) { SystemDockRail.read(on: autoHidden.frame) == .hidden }
+        guard hidden else { return XCTFail("The system Dock must be observed hidden before testing its reveal") }
         let settledFrame = panel.frame
         var moved = false
         let observer = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification,
@@ -209,11 +261,20 @@ import XCTest
             : max(autoHidden.frame.minX + 6, settledFrame.minX - 24)
         let wake = CGRect(x: triggerX - 12, y: autoHidden.frame.minY, width: 24, height: 4)
         let away = autoHidden.frame.insetBy(dx: autoHidden.frame.width * 0.15, dy: autoHidden.frame.height * 0.15)
-        func remainStable(_ duration: Duration, label: String) async throws {
+        func remainStable(_ duration: Duration, revealed: Bool) async throws {
             let end = ContinuousClock.now + duration
             while ContinuousClock.now < end {
-                XCTAssertEqual(panel.frame, settledFrame, label)
-                XCTAssertEqual(DockDisplayTopology.system().display(initial.id)?.usableFrame, autoHidden.usableFrame, label)
+                XCTAssertEqual(panel.frame, settledFrame)
+                XCTAssertEqual(DockDisplayTopology.system().display(initial.id)?.usableFrame, autoHidden.usableFrame)
+                switch SystemDockRail.read(on: autoHidden.frame) {
+                case .visible(let dockFrame):
+                    XCTAssertTrue(revealed, "The system Dock should remain hidden after withdrawal")
+                    XCTAssertFalse(panel.frame.intersects(dockFrame), "The revealed system Dock must not overlap the widget")
+                case .hidden:
+                    XCTAssertFalse(revealed, "The system Dock should remain revealed during capture")
+                case .unavailable:
+                    throw XCTSkip("D-03: system Dock bounds became unavailable or ambiguous")
+                }
                 try await Task.sleep(for: .milliseconds(30))
             }
         }
@@ -221,12 +282,19 @@ import XCTest
         guard try await wait(.seconds(35), until: { wake.contains(NSEvent.mouseLocation) }) else {
             return XCTFail("No physical system-Dock wake movement arrived")
         }
-        try await remainStable(.seconds(3), label: "system Dock revealed")
+        let revealed = try await wait(.seconds(8)) {
+            if case .visible = SystemDockRail.read(on: autoHidden.frame) { return true }
+            return false
+        }
+        guard revealed else { throw XCTSkip("D-03: no system Dock reveal was observed after the pointer reached the trigger") }
+        try await remainStable(.seconds(3), revealed: true)
         announce("D-03", "Move the pointer toward the display centre, let the system Dock hide and capture both positions.")
         guard try await wait(.seconds(25), until: { away.contains(NSEvent.mouseLocation) }) else {
             return XCTFail("No physical pointer withdrawal arrived")
         }
-        try await remainStable(.seconds(3), label: "system Dock auto-hidden")
+        let hiddenAgain = try await wait(.seconds(8)) { SystemDockRail.read(on: autoHidden.frame) == .hidden }
+        guard hiddenAgain else { return XCTFail("The revealed system Dock did not hide after pointer withdrawal") }
+        try await remainStable(.seconds(3), revealed: false)
         XCTAssertFalse(moved, "The widget must not move during the transient macOS Dock animation")
         XCTAssertEqual(host.edgePresentation?.placement?.edge, .bottom)
         let after = await store.snapshot()
