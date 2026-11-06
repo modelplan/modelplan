@@ -67,7 +67,7 @@ actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    static func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, readerFailed: Bool = false) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, secondWeekly: Double? = nil, sessionRemaining: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, readerFailed: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -96,6 +96,7 @@ actor EntrySyntheticClient: EngineClient {
         account["lastFailure"] = NSNull()
         session["id"] = "session:18000:main:main"; session["role"] = "session"
         session["durationSeconds"] = 18000; session["limitKey"] = "main"; session["poolKey"] = "main"
+        if let sessionRemaining { session["remainingPercent"] = sessionRemaining }
         session.removeValue(forKey: "modelScope"); session["current"] = true
         session["observedAt"] = "2026-12-01T00:00:00Z"
         session["validUntil"] = "2027-01-01T00:00:00Z"; session["resetsAt"] = "2027-01-01T00:00:00Z"
@@ -442,7 +443,7 @@ actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try Self.rows(weekly: 75, secondWeekly: 55)
+        let readings = try Self.rows(weekly: 75, secondWeekly: 55, sessionRemaining: 65)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
