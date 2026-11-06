@@ -6,6 +6,28 @@ import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 @MainActor final class RequestedHelpMapTests: XCTestCase {
+    func testStatusFocusTokenOnlyReturnsOnceForUserDismissal() {
+        for reason in [HelpUIDismissReason.escape, .pointer] {
+            let id = UUID()
+            var token = DockStatusHelpDismissal()
+            token.arm(id)
+            XCTAssertEqual(token.take(reason: reason), id)
+            XCTAssertNil(token.take(reason: reason), "A duplicate event must not restore focus twice")
+        }
+        for reason: HelpUIDismissReason? in [nil, .explicitButton] {
+            var token = DockStatusHelpDismissal()
+            token.arm(UUID())
+            XCTAssertNil(token.take(reason: reason), "Lifecycle withdrawal and other causes do not restore status focus")
+            XCTAssertNil(token.take(reason: .escape), "A withdrawn request cannot restore focus later")
+        }
+        var token = DockStatusHelpDismissal()
+        token.arm(nil)
+        XCTAssertNil(token.take(reason: .pointer), "A first-run or other non-status request has no status focus token")
+        let old = UUID(), replacement = UUID()
+        token.arm(old); token.arm(replacement)
+        XCTAssertEqual(token.take(reason: .escape), replacement, "A newer request supersedes the old focus token")
+        XCTAssertNil(token.take(reason: .pointer))
+    }
     private func input() -> HelpUIRenderInput {
         .init(sessionID: UUID(), viewport: CGSize(width: 600, height: 600), profile: .compact640,
               language: .english, anchors: [.init(id: "a", rect: CGRect(x: 10, y: 10, width: 20, height: 20)),
