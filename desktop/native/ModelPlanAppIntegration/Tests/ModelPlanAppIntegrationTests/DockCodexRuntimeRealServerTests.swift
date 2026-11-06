@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-#if MODELPLAN_DOCK_REAL_RUNTIME_JOURNEY
 import AppKit
 import ModelPlanDock
 import ModelPlanEngineClient
@@ -24,7 +23,16 @@ import XCTest
     }
 
     private func sandbox() throws -> (URL, URL, [String: String]) {
-        let executable = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
+        // The U11 workflow builds the real CLI from this commit and requires these journeys;
+        // the native legs have no Go toolchain and skip them (allowed skips in the partition).
+        let environmentValues = ProcessInfo.processInfo.environment
+        guard let executable = [environmentValues["MODELPLAN_DOCK_TEST_CLI"], environmentValues["MODELPLAN_U11_TEST_CLI"]]
+                .compactMap({ $0 }).first(where: { !$0.isEmpty }) else {
+            if environmentValues["MODELPLAN_U11_TEST_REQUIRED"] == "1" {
+                XCTFail("U11 must provide the real synthetic-test CLI"); throw CancellationError()
+            }
+            throw XCTSkip("Build the real synthetic-test CLI for the Codex runtime card journeys")
+        }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("codex-card-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try FileManager.default.removeItem(at: root) }
@@ -373,4 +381,3 @@ import XCTest
     }
 
 }
-#endif
