@@ -641,17 +641,74 @@ import ModelPlanShell
     #endif
 
     func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
+        try await exerciseD06(helper: nil)
+    }
+
+    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    func testD06RealServerDropsWriteOnceAndRestoreWithFreshDeliveryInBothModes() async throws {
+        let helper = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: [modeKey: mode])
+            XCTAssertEqual(UserDefaults.standard.integer(forKey: modeKey), mode)
+            try await exerciseD06(helper: helper)
+        }
+    }
+    #endif
+
+    private func exerciseD06(helper: URL?) async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let storedURL = profile.appendingPathComponent("ModelPlan/settings.json")
+        let environment = ["HOME": profile.path, "TMPDIR": profile.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+        if let helper {
+            let config = profile.appendingPathComponent(".config/modelplan")
+            try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+            let seed = Process()
+            seed.executableURL = helper
+            seed.arguments = ["consent", "init", "--json"]
+            seed.environment = environment
+            seed.standardInput = FileHandle.nullDevice
+            seed.standardOutput = FileHandle.nullDevice
+            seed.standardError = FileHandle.nullDevice
+            try seed.run()
+            let deadline = ContinuousClock.now + .seconds(5)
+            while seed.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            if seed.isRunning { seed.terminate(); return XCTFail("Temporary consent initialization timed out") }
+            XCTAssertEqual(seed.terminationStatus, 0)
+            let now = Date()
+            let iso = ISO8601DateFormatter()
+            let fixture: [String: Any] = ["schemaVersion": 1, "plans": [["planId": "synthetic-d06"]], "windows": [[
+                "planId": "synthetic-d06", "kind": "five_hour", "remainingPercent": 57, "resetMode": "rolling",
+                "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+                "resetAt": iso.string(from: now.addingTimeInterval(7_200))
+            ]]]
+            try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)
+        }
+
         func launch() async throws -> EngineDockMenuApplication {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
-            let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"),
-                applicationVersion: "drag-persistence", allowedEnvironment: [:]), settingsStore: store,
-                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: helper ?? profile.appendingPathComponent("not-launched"),
+                applicationVersion: "drag-persistence", allowedEnvironment: helper == nil ? [:] : environment,
+                offline: true, readOnly: true), settingsStore: store, createsNativePanels: false,
+                bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: topology.read, activateSettings: {})
             addTeardownBlock { @MainActor in await app.composition.stop() }
             await app.prepare()
             app.allowDockPresentation()
+            if helper != nil {
+                let delivery = try await app.composition.client.start()
+                let deadline = ContinuousClock.now + .seconds(5)
+                func hasReading() -> Bool {
+                    app.composition.dock.dockView.presentedReadingsForChecks.values.contains { $0.remainingPercent == 57 }
+                }
+                while !hasReading() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+                XCTAssertTrue(hasReading(), "The real server's declared quota must be rendered before using the widget")
+                XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+            }
             return app
         }
 
@@ -666,6 +723,8 @@ import ModelPlanShell
             let host = app.composition.dock, view = host.dockView
             let editor = app.settingsHost.application.editor
             let before = try XCTUnwrap(editor.snapshot)
+            let priorDelivery = app.composition.store.snapshot.delivery
+            let beforeBytes = helper == nil ? nil : try Data(contentsOf: storedURL)
             let presented = try XCTUnwrap(host.edgePresentation?.paintedFrame)
             let drag = try XCTUnwrap(view.backgroundDragDelegate)
             let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
@@ -684,6 +743,7 @@ import ModelPlanShell
             topology.pointer = point
             drag.updateBackgroundMove(global: point)
             XCTAssertEqual(editor.snapshot?.revision, before.revision)
+            if let beforeBytes { XCTAssertEqual(try Data(contentsOf: storedURL), beforeBytes) }
             drag.endBackgroundMove(global: point)
             drag.endBackgroundMove(global: point)
             try await waitForSettings(editor) {
@@ -696,8 +756,14 @@ import ModelPlanShell
             XCTAssertEqual(landed.displayID, destination.id)
             XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001)
             if edge == .bottom { XCTAssertEqual(landed.frame.minY, destination.usableFrame.minY, accuracy: 0.001) }
+            let savedBytes = helper == nil ? nil : try Data(contentsOf: storedURL)
             await app.composition.stop()
             app = try await launch()
+            if let savedBytes {
+                let freshDelivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+                XCTAssertNotEqual(freshDelivery.sessionID, try XCTUnwrap(priorDelivery).sessionID)
+                XCTAssertEqual(try Data(contentsOf: storedURL), savedBytes)
+            }
             let restored = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
             XCTAssertEqual(restored.displayID, destination.id)
             XCTAssertEqual(restored.edge, edge)
