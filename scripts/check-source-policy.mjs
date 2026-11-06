@@ -105,6 +105,14 @@ for (const p of tracked) {
   assert.ok(spdxReserved.test(text), `reserved visual must carry SPDX-License-Identifier: ${reserved.license}: ${p}`);
   assert.ok(!/SPDX-License-Identifier"?:\s*"?MIT\b/.test(text), `reserved visual must not carry an MIT header: ${p}`);
 }
+// Native status templates are explicit packaged copies of the reviewed reserved rasters.
+for (const [packaged, canonical] of [
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray.png", "desktop/official-visuals/icons/tray-outline.png"],
+  ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Resources/tray@2x.png", "desktop/official-visuals/icons/tray-outline@2x.png"],
+]) {
+  assert.ok(tracked.includes(packaged) && tracked.includes(canonical), `missing native tray copy: ${packaged}`);
+  assert.deepEqual(await read(packaged), await read(canonical), `native tray copy differs: ${packaged}`);
+}
 // The community build never reads the reserved prefix: only build.mjs's --official branch names it.
 for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p) && !p.startsWith("desktop/tests/") && !p.endsWith(".md"))) {
   const code = (await read(p)).toString().replace(/^\s*\/\/.*$/gm, "");
@@ -119,6 +127,12 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
   if (p === "desktop/native/tools/package-neutral.sh") {
     assert.equal(code.split("official-visuals").length, 2, "one native visual license reference");
     assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
+    continue;
+  }
+  if (p === "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/V01TrayTemplateTests.swift") {
+    assert.equal(code.split("official-visuals").length, 2, "one tray reference path in the native test");
+    assert.ok(code.includes('repo.appendingPathComponent("desktop/official-visuals/icons/" + name)'), "exact native tray reference directory");
+    assert.ok(code.includes('let name = scale == 1 ? "tray-outline.png" : "tray-outline@2x.png"'), "exact 1x/2x tray references");
     continue;
   }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
