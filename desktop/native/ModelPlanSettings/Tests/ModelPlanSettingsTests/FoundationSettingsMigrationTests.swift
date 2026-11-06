@@ -68,6 +68,36 @@ final class FoundationSettingsMigrationTests: XCTestCase {
             XCTAssertTrue(try files.originalsUnchanged())
         }
     }
+    func testD19FloatingPreservesValidFractionAndUsesCentreWhenMissing() throws {
+        for fraction: Double? in [nil, 0.25] {
+            let files = try FoundationSettingsMigrationFixture()
+            var preferences: [String: Any] = ["dockEdge": "floating", "dockDisplayID": "synthetic-display"]
+            if let fraction { preferences["dockAlongFraction"] = fraction }
+            let input = try files.input("floating.json", object: ["schemaVersion": 1, "preferences": preferences])
+            let result = try Migration.prepare(product: .official, target: .absent, legacy: { .init(officialSettings: input) })
+            guard case .create(let candidate) = result else { return XCTFail("Expected migrated settings") }
+            let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: candidate.document) as? [String: Any])
+            let settings = try XCTUnwrap(document["settings"] as? [String: Any])
+            XCTAssertEqual(settings["dockEdge"] as? String, "right")
+            XCTAssertEqual(settings["dockDisplayID"] as? String, "synthetic-display")
+            XCTAssertEqual(settings["dockAlongFraction"] as? Double, fraction ?? 0.5)
+        }
+    }
+    func testD19InvalidFractionForNonFloatingEdgeStillRejectsThatProfile() throws {
+        let files = try FoundationSettingsMigrationFixture()
+        let invalid = try files.input("invalid.json", #"{"schemaVersion":1,"preferences":{"dockEdge":"left","dockDisplayID":"synthetic-display","dockAlongFraction":2}}"#)
+        let fallback = try files.input("fallback.json", #"{"schemaVersion":1,"preferences":{"dockEdge":"bottom"}}"#)
+        let result = try Migration.prepare(product: .official, target: .absent, legacy: {
+            .init(officialSettings: invalid, communitySettings: fallback)
+        })
+        guard case .create(let candidate) = result else { return XCTFail("Expected fallback candidate") }
+        let document = try XCTUnwrap(try JSONSerialization.jsonObject(with: candidate.document) as? [String: Any])
+        let settings = try XCTUnwrap(document["settings"] as? [String: Any])
+        XCTAssertEqual(candidate.selection.settings, .communitySettings)
+        XCTAssertEqual(settings["dockEdge"] as? String, "bottom")
+        XCTAssertTrue(candidate.issues.contains { $0.source == .officialSettings && $0.failure == .invalidPreferences })
+        XCTAssertTrue(try files.originalsUnchanged())
+    }
     func testRowMappingMovesOrderHiddenAliasAndPinTogetherWhileKeepingUnmatchedIDs() throws {
         let files = try FoundationSettingsMigrationFixture()
         let input = try files.input("rows.json", #"{"schemaVersion":1,"preferences":{"subscriptions":{"order":["old.account","unmatched","old.hidden"],"hiddenIDs":["old.hidden","missing.hidden"]},"subscriptionSettings":{"old.account":{"alias":"Work","percentagePin":"week"},"missing.preference":{"alias":"Return","percentagePin":"5h"}}}}"#)
