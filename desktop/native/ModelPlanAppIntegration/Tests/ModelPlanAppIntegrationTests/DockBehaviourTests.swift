@@ -448,6 +448,40 @@ import ModelPlanSettings
         report(4, "commits=\(commits.count) edge=\(placement.edge) fraction=\(commit.2) restored-frame=\(savedFrame)")
     }
 
+    /// R64 M-2: carried off an edge, a click-through hairline marks the snap destination; it disappears
+    /// once the widget sits on that edge and on release. Prototype: face-view.js:23-25, face.css:136-137.
+    func testM2SnapPreviewOutlinesTheDestinationWhileCarried() async throws {
+        let url = try temporaryURL(), f = try BehaviourFixture(url: url)
+        defer { f.host.close() }
+        await f.start(); try f.reveal()
+        let panel = try f.panel()
+        XCTAssertNil(f.host.snapPreviewFrameForChecks)
+        let start = panel.convertPoint(toScreen: f.host.dockView.convert(CGPoint(x: 25, y: 30), to: nil))
+        f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
+        panel.sendEvent(try f.event(.leftMouseDown, global: start))
+        let middle = CGPoint(x: 600, y: 450)
+        f.inputs.pointer = middle
+        panel.sendEvent(try f.event(.leftMouseDragged, global: middle))
+        let carried = try XCTUnwrap(f.host.edgePresentation)
+        XCTAssertEqual(carried.moving, true)
+        let destination = try XCTUnwrap(carried.placement?.frame)
+        if let frame = carried.carriedFrame, abs(frame.minX - destination.minX) + abs(frame.minY - destination.minY) > 1 {
+            XCTAssertEqual(f.host.snapPreviewFrameForChecks, destination, "the hairline sits on the snap destination")
+        } else {
+            XCTAssertNil(f.host.snapPreviewFrameForChecks, "no outline while the widget already sits on its destination")
+        }
+        let edge = CGPoint(x: 1199, y: 450)
+        f.inputs.pointer = edge
+        panel.sendEvent(try f.event(.leftMouseDragged, global: edge))
+        if let frame = f.host.edgePresentation?.carriedFrame, let target = f.host.edgePresentation?.placement?.frame,
+           abs(frame.minX - target.minX) + abs(frame.minY - target.minY) <= 1 {
+            XCTAssertNil(f.host.snapPreviewFrameForChecks, "attached: no outline")
+        }
+        f.inputs.presence.mouseButtonDown = false
+        panel.sendEvent(try f.event(.leftMouseUp, global: edge))
+        XCTAssertNil(f.host.snapPreviewFrameForChecks, "release removes the outline")
+    }
+
     func testItem5TwoDisplaySelectionSurvivesRecreationAndPointerCrossing() async throws {
         let url = try temporaryURL(), f = try BehaviourFixture(url: url)
         defer { f.host.close() }
