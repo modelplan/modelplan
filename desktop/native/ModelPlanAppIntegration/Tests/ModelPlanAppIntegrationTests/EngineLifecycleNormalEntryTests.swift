@@ -709,6 +709,48 @@ private actor LifecycleEngine: EngineClient {
         }
     }
 
+    func testV11NormalEntryOverflowRowsRejectPointerDrag() async throws {
+        let (rows, ids) = try aliasedRows(memberCount: 30)
+        let app = try await make(profile(), topology: Topology(), rows: rows) {
+            $0.autoHide = false
+            $0.motion = .on
+        }
+        _ = start(app)
+        try await wait { !app.lifecyclePaused }
+        let dock = app.composition.dock, view = dock.dockView
+        let tray = try XCTUnwrap(dock.detachedOverflowForChecks)
+        let overflow = try XCTUnwrap((view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+            .first { $0.accessibilityIdentifier() == "dock.overflow" })
+        XCTAssertTrue(overflow.accessibilityPerformPress())
+        let target = try XCTUnwrap(ids.last)
+        func row(in root: NSView) -> NSView? {
+            if root.accessibilityIdentifier() == "dock.overflow." + target { return root }
+            return root.subviews.lazy.compactMap { row(in: $0) }.first
+        }
+        tray.layoutSubtreeIfNeeded()
+        let entry = try XCTUnwrap(row(in: tray))
+        let before = await app.settingsHost.application.editor.store.snapshot()
+        let swept = view.refreshSweepCountForChecks
+        let start = CGPoint(x: entry.bounds.midX - 8, y: entry.bounds.midY)
+        let end = CGPoint(x: start.x + 16, y: start.y)
+        XCTAssertTrue(entry.bounds.contains(start) && entry.bounds.contains(end))
+        func event(_ type: NSEvent.EventType, _ point: CGPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: entry.convert(point, to: nil),
+                modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 1,
+                clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1))
+        }
+        entry.mouseDown(with: try event(.leftMouseDown, start))
+        entry.mouseDragged(with: try event(.leftMouseDragged, end))
+        entry.mouseUp(with: try event(.leftMouseUp, end))
+        let after = await app.settingsHost.application.editor.store.snapshot()
+        XCTAssertEqual(after.revision, before.revision)
+        XCTAssertEqual(after.preferences.subscriptions.order, before.preferences.subscriptions.order)
+        XCTAssertEqual(view.refreshSweepCountForChecks, swept, "Dragging must not activate a row")
+        XCTAssertFalse(dock.interactionControllerForChecks?.hasCapture == true)
+        XCTAssertNil(dock.interactionControllerForChecks?.presentation?.reorder)
+        XCTAssertNotNil(row(in: tray), "The rejected drag keeps the overflow tray open")
+    }
+
     func testD18OverflowRowsKeepAccessibleActionsAcrossReopening() async throws {
         let topology = Topology()
         let (rows, ids) = try aliasedRows(memberCount: 30)

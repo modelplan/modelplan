@@ -1067,6 +1067,94 @@ import XCTest
         }
     }
 
+    func testV11PhysicalOverflowScrollsWithoutDraggingRows() async throws {
+        let application = NSApplication.shared
+        let display = try XCTUnwrap(DockDisplayTopology.system().main)
+        let quotas = Array(20..<84)
+        let (app, store, settingsURL) = try await makeProfile(displayID: display.id, edge: .right, declaredQuotas: quotas)
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        let host = app.composition.dock
+        guard try await wait(.seconds(15), until: {
+            host.nativePanel?.isVisible == true && host.interactionEnvironment().catalogue.count == quotas.count
+        }) else { return XCTFail("The reviewed helper did not deliver the full synthetic overflow fixture") }
+        XCTAssertFalse(host.dockView.interactionOverflowIDs.isEmpty)
+
+        func viewport() -> NSScrollView? {
+            application.windows.lazy.filter(\.isVisible).compactMap { $0.contentView as? NSScrollView }
+                .first { $0.documentView is DockOverflowTrayView }
+        }
+        announce("V-11", "Open the +N control using the physical pointer, then keep the tray visible.")
+        guard try await wait(.seconds(40), until: { viewport() != nil }) else { return XCTFail("The real overflow viewport never opened") }
+        let scroll = try XCTUnwrap(viewport())
+        let window = try XCTUnwrap(scroll.window)
+        let document = try XCTUnwrap(scroll.documentView as? DockOverflowTrayView)
+        let clip = scroll.contentView
+        XCTAssertTrue(scroll.drawsBackground)
+        XCTAssertEqual(scroll.backgroundColor.usingColorSpace(.deviceRGB)?.alphaComponent, 1)
+        XCTAssertGreaterThan(document.frame.height, clip.bounds.height, "The fixture must require scrolling")
+        XCTAssertTrue(display.visibleFrame.contains(window.frame))
+        let raster = try XCTUnwrap(scroll.bitmapImageRepForCachingDisplay(in: scroll.bounds))
+        scroll.cacheDisplay(in: scroll.bounds, to: raster)
+        let pixel = try XCTUnwrap(raster.colorAt(x: 2, y: raster.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
+        XCTAssertEqual(pixel.alphaComponent, 1, accuracy: 0.001, "The actual viewport background must be opaque")
+
+        let originalFrame = window.frame
+        let originalOrigin = clip.bounds.origin
+        announce("V-11", "Scroll down using the physical wheel or trackpad. Record the tray viewport.")
+        guard try await wait(.seconds(35), until: { clip.bounds.origin != originalOrigin }) else {
+            return XCTFail("No physical scrolling reached the actual overflow clip view")
+        }
+        XCTAssertEqual(window.frame, originalFrame)
+        XCTAssertEqual(viewport() === scroll, true)
+        let before = await store.snapshot()
+        let bytes = try Data(contentsOf: settingsURL)
+        let sweeps = host.dockView.refreshSweepCountForChecks
+        var down: CGPoint?
+        var completedDrag = false
+        var travelled = false
+        func row(at point: CGPoint, in view: NSView) -> NSView? {
+            guard !view.isHiddenOrHasHiddenAncestor else { return nil }
+            if view.accessibilityIdentifier().hasPrefix("dock.overflow."),
+               view.bounds.contains(view.convert(point, from: nil)) { return view }
+            return view.subviews.lazy.compactMap { row(at: point, in: $0) }.first
+        }
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { event in
+            MainActor.assumeIsolated {
+                guard event.window === window else { return event }
+                switch event.type {
+                case .leftMouseDown:
+                    let point = event.locationInWindow
+                    let inside = clip.bounds.contains(clip.convert(point, from: nil))
+                    down = inside && row(at: point, in: document) != nil ? point : nil
+                    travelled = false
+                case .leftMouseDragged:
+                    if let down, hypot(event.locationInWindow.x - down.x, event.locationInWindow.y - down.y) > 5 { travelled = true }
+                case .leftMouseUp:
+                    completedDrag = travelled && down != nil
+                    down = nil
+                default: break
+                }
+                return event
+            }
+        }
+        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
+        announce("V-11", "Press a visible overflow row, drag more than 5 points, and release inside the tray. Record that it stays put.")
+        guard try await wait(.seconds(40), until: { completedDrag }) else {
+            return XCTFail("No real row drag and release were observed in the overflow window")
+        }
+        XCTAssertTrue(window.isVisible)
+        XCTAssertEqual(window.frame, originalFrame)
+        XCTAssertFalse(host.interactionControllerForChecks?.hasCapture == true)
+        XCTAssertNil(host.interactionControllerForChecks?.presentation?.reorder)
+        XCTAssertEqual(host.dockView.refreshSweepCountForChecks, sweeps)
+        let after = await store.snapshot()
+        XCTAssertEqual(after.preferences.subscriptions.order, before.preferences.subscriptions.order)
+        XCTAssertEqual(after.revision, before.revision)
+        XCTAssertEqual(try Data(contentsOf: settingsURL), bytes)
+    }
+
     func testD18PhysicalVoiceOverReordersFace() async throws { try await exerciseVoiceOverReorder(overflow: false) }
     func testD18PhysicalVoiceOverReordersOverflow() async throws { try await exerciseVoiceOverReorder(overflow: true) }
 
