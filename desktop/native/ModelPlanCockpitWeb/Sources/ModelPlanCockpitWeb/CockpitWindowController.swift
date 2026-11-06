@@ -247,6 +247,45 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     guard !ending, web === page, page.url == pageURL, bridge.queryTicket == ticket else { return nil }
     return result as? String
   }
+  /// Fixed Help captions only: returns comparison booleans and geometry, never page text.
+  /// A navigation, context replacement or disposal invalidates the observation.
+  public func g1HelpCaptionFactsForChecks() async throws -> String? {
+    guard !ending, let ticket = bridge.queryTicket, let page = web, page.url == pageURL else { return nil }
+    let script = """
+    (() => {
+      const map = document.querySelector('#help-map');
+      if (!map || map.hidden) return JSON.stringify({open:false});
+      const choices = {
+        window: ['.ck-port', 'Window: the field view is unavailable.', '悬窗：场景视图暂不可用。'],
+        alert: ['[data-caution]', 'Alert lamp: indicates current alerts.', '注意灯：显示当前提醒状态。'],
+        record: ['.ck-tape', 'Running sessions first, then last seen; -- means speed unavailable.', '运行中的会话在前，其后为最近观察；-- 表示速率不可用。']
+      };
+      const nodes = Array.from(map.querySelectorAll('.an'));
+      const facts = {open:true}, rectangles = [];
+      for (const [key, [target, english, chinese]] of Object.entries(choices)) {
+        const selected = nodes.filter(element => element.getAttribute('data-target') === target);
+        const element = selected.length === 1 ? selected[0] : null;
+        const rect = element?.getBoundingClientRect(), style = element ? getComputedStyle(element) : null;
+        const visible = !!element && !!rect && rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        const inside = visible && rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+        if (rect) rectangles.push(rect);
+        facts[key] = {count:selected.length, matchesEnglish:element?.textContent === english,
+          matchesChinese:element?.textContent === chinese, visible, inside};
+      }
+      let separate = rectangles.length === 3;
+      for (let i=0; i<rectangles.length; i++) for (let j=i+1; j<rectangles.length; j++) {
+        const a=rectangles[i], b=rectangles[j];
+        if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) separate = false;
+      }
+      facts.allInsideAndSeparate = separate && Object.keys(choices).every(key => facts[key].inside);
+      return JSON.stringify(facts);
+    })()
+    """
+    let result = try await page.evaluateJavaScript(script)
+    guard !ending, web === page, page.url == pageURL, bridge.queryTicket == ticket else { return nil }
+    return result as? String
+  }
+
   /// Reads computed colours only for one currently rendered member. A missing,
   /// ambiguous or retired page/member returns nil, not an inferred colour.
   public func g1QuotaStatusColoursForChecks(memberKey: String) async throws -> [G1QuotaStatusColour]? {

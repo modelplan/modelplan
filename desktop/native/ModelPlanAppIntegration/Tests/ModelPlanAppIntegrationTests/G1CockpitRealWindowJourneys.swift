@@ -102,7 +102,8 @@ private extension EngineDeliveryContext {
         for language: SettingsLanguage in [.english, .chinese] {
             try await withLivePage(language: language) { _, _, page in
                 let web = try XCTUnwrap(page.verificationWebView)
-                let before = try XCTUnwrap(try await page.g1HelpCaptionFactsForChecks())
+                let initial = try await page.g1HelpCaptionFactsForChecks()
+                let before = try XCTUnwrap(initial)
                 let hidden = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(before.utf8)) as? [String: Any])
                 XCTAssertEqual(hidden["open"] as? Bool, false)
                 _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))")
