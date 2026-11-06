@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: MIT
+import AppKit
+import XCTest
+@_spi(DockResourceChecks) import ModelPlanDock
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanSettings
+import ModelPlanWire
+@testable import ModelPlanAppIntegration
+
+private actor V14RowsClient: EngineClient {
+    nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
+    let store: EngineStore, rows: WireRowsSnapshot
+    let context = EngineDeliveryContext(sessionID: "v14-synthetic", floor: .init(storeEpoch: "v14-synthetic", generation: 1), revision: 1)
+    init(store: EngineStore, rows: WireRowsSnapshot) { self.store = store; self.rows = rows }
+    func start() async throws -> EngineDeliveryContext {
+        await store.consume(.connection(.ready(context)))
+        await store.consume(.context(context))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context), invalidRowCount: rows.projection.invalidRowCount))
+        return context
+    }
+    func stop() async {}
+    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("synthetic")) }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
+
+@MainActor final class V14EventNoticeJourneyTests: XCTestCase {
+    func testV14NormalEntryAnnouncedEventHasFivePointHollowDot() async throws {
+        _ = NSApplication.shared
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/proposals/fixtures/app-journey-plan-scoped.json").standardizedFileURL
+        let document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: fixture)) as? [String: Any])
+        let result = try XCTUnwrap(document["result"] as? [String: Any])
+        var data = try XCTUnwrap(result["data"] as? [String: Any])
+        var projection = try XCTUnwrap(data["projection"] as? [String: Any])
+        var events = try XCTUnwrap(projection["resetEvents"] as? [[String: Any]])
+        XCTAssertFalse(events.isEmpty)
+        guard !events.isEmpty else { return }
+        let now = Date(), formatter = ISO8601DateFormatter()
+        events[0]["publishedAt"] = formatter.string(from: now.addingTimeInterval(-60))
+        events[0]["expiresAt"] = formatter.string(from: now.addingTimeInterval(3600))
+        events[0]["schedule"] = ["precision": "window", "from": formatter.string(from: now), "through": formatter.string(from: now.addingTimeInterval(3600))]
+        projection["resetEvents"] = events; data["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("v14-event-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let settings = try SettingsStore(url: directory.appendingPathComponent("settings.json"))
+        let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900), visibleFrame: .init(x: 0, y: 80, width: 1440, height: 820))
+        let entry = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: settings, createsNativePanels: false, dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: "synthetic", pointer: CGPoint(x: 700, y: 450)) }, deadlineNow: { now }, makeClient: { _, store in V14RowsClient(store: store, rows: rows) }, activateSettings: {})
+        entry.composition.currentDate = { now }
+        defer { entry.composition.dock.close() }
+        await entry.prepare(); entry.allowDockPresentation(); await entry.composition.start()
+        let view = entry.composition.dock.dockView
+        let notice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
+        XCTAssertEqual(notice.key.kind, .resetAnnounced)
+        XCTAssertEqual(notice.tone, .blue)
+        XCTAssertEqual(notice.shape, .hollow)
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == "0123456789abcdef" })
+        let diameter = try XCTUnwrap(station.eventHollowDiameter)
+        XCTAssertEqual(diameter, 5 * station.diameter / 52, accuracy: 0.000001, "V-14: announced dot outer diameter at the reference scale")
+        await entry.composition.stop()
+    }
+}
