@@ -187,6 +187,114 @@ actor EntrySyntheticClient: EngineClient {
         try await optionArrow(keyCode: 126, order: [first, second], announcement: "position 1 of 2")
     }
 
+    func testNormalSettingsQuotaControlsDriveTheDisplayedMembers() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("quota-settings-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try rows(weekly: 25, secondWeekly: 20)
+        func start() async throws -> EngineDockMenuApplication {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            return app
+        }
+        let app = try await start()
+        let editor = app.settingsHost.application.editor
+        let original = try XCTUnwrap(editor.snapshot)
+        let rows = try SettingsCatalogue.rows(preferences: original.preferences, context: editor.context)
+        for key in [SettingKey.redBelow, .showPercentages, .percentageMode, .percentagePin] {
+            XCTAssertEqual(rows.first { $0.key == key }?.availability, .available, key.rawValue)
+        }
+        XCTAssertEqual(original.preferences.redBelow, 25)
+
+        let view = app.composition.dock.dockView
+        let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
+        func reading(_ id: String) throws -> DockInstrumentReading { try XCTUnwrap(view.presentedReadingsForChecks[id]) }
+        XCTAssertEqual(try reading(first).readout, "25%")
+        XCTAssertEqual(try reading(first).status, .critical)
+        XCTAssertNotNil(view.helpReadoutAnchor(first))
+        let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
+        guard case .choice(let selected, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
+        XCTAssertEqual(selected, "25")
+        for threshold in [40, 30, 25, 20, 15, 10] where options.contains(String(threshold)) {
+            let option = String(threshold)
+            _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
+            XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
+            XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
+        }
+        _ = try await editor.commit(SettingsB20Edit.redBelow(20))
+        XCTAssertEqual(try reading(first).status, .warning)
+        XCTAssertEqual(try reading(second).readout, "20%")
+        XCTAssertEqual(try reading(second).status, .critical)
+        _ = try await editor.commit(SettingsB20Edit.percentagePin(first, .fiveHour))
+        XCTAssertEqual(try reading(first).selectedWindowID, "session:18000:main:main")
+        XCTAssertEqual(try reading(second).selectedWindowID, "weekly:604800:main:main")
+        _ = try await editor.commit(SettingsB20Edit.percentagePin(first, .week))
+        XCTAssertEqual(try reading(first).readout, "25%")
+        _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
+        XCTAssertEqual(try reading(first).readout, "75%")
+        XCTAssertEqual(try reading(second).readout, "80%")
+        XCTAssertEqual(try reading(second).status, .critical, "the threshold still applies to remaining quota")
+        _ = try await editor.commit(SettingsB20Edit.showPercentages(false))
+        XCTAssertNil(view.helpReadoutAnchor(first))
+        XCTAssertNil(view.helpReadoutAnchor(second))
+        _ = try await editor.commit(SettingsB20Edit.showPercentages(true))
+        XCTAssertNotNil(view.helpReadoutAnchor(first))
+        await app.composition.stop()
+
+        let relaunched = try await start()
+        let restored = try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot)
+        XCTAssertEqual(restored.preferences.redBelow, 20)
+        let restoredReadings = relaunched.composition.dock.dockView.presentedReadingsForChecks
+        XCTAssertEqual(restoredReadings[first]?.status, .warning)
+        XCTAssertEqual(restoredReadings[second]?.status, .critical)
+        XCTAssertEqual(restoredReadings[first]?.readout, "75%")
+
+    }
+
+    func testS11PulseBandsReachTheRenderedRingsReadoutsAndCardRows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-bands-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try rows(weekly: 50, secondWeekly: 51)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let dock = app.composition.dock, view = dock.dockView
+        let first = "aaaaaaaaaaaaaaaa", second = "bbbbbbbbbbbbbbbb"
+        let editor = app.settingsHost.application.editor
+        for id in [first, second] { _ = try await editor.commit(SettingsB20Edit.percentagePin(id, .week)) }
+
+        func assertBand(_ id: String, _ expected: DockQuotaStatus, line: UInt = #line) throws {
+            let reading = try XCTUnwrap(view.presentedReadingsForChecks[id], line: line)
+            XCTAssertEqual(reading.status, expected, line: line)
+            XCTAssertEqual(reading.inner?.status, expected, line: line)
+            let card = try XCTUnwrap(dock.cardContent(for: id, at: wall), line: line)
+            XCTAssertEqual(card.rows.first { $0.id == "quota:weekly:604800:main:main" }?.tone, expected, line: line)
+        }
+        try assertBand(first, .warning)
+        try assertBand(second, .normal)
+
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let lower = try rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
+        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+            consentGeneration: delivery.floor.generation, data: lower), delivery: delivery)
+        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: lower.projection.invalidRowCount))
+        try assertBand(first, .critical)
+        try assertBand(second, .critical)
+        _ = try await editor.commit(SettingsB20Edit.redBelow(10))
+        try assertBand(first, .warning)
+        try assertBand(second, .critical)
+    }
+
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-entry-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
