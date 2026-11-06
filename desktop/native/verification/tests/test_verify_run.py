@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -351,7 +352,12 @@ class VerifyRunTests(unittest.TestCase):
         first = session.await_subject(0)
         self.assertEqual((first['pid'], first['home']), (111, '/Users/tester'))
         (run / 'subject.json').write_text(json.dumps(dict(state='running', pid=222)))
-        second = session.relaunch(first | dict(runID='r', epoch='e', leasePath='l', stopPath='s'))
+        lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=1e12, guardianHeartbeatAt=time.time(),
+                     ownerPreempted=False, exclusive=True)
+        (run / 'lease.json').write_text(json.dumps(lease))   # authority stays live across the wait
+        second = session.relaunch(first | dict(runID='r', epoch='e', leasePath=str(run / 'lease.json'),
+                                               stopPath=str(run / 'STOP'),
+                                               leaseSnapshot={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')}))
         self.assertEqual(second['pid'], 222)  # a new launch ...
         self.assertEqual(second['home'], '/Users/tester')  # ... with the same real HOME
         self.assertEqual(second['runID'], 'r')
@@ -379,6 +385,66 @@ class VerifyRunTests(unittest.TestCase):
         self.assertEqual(outcome, 'REVIEW')
         self.assertEqual(captures, [999])  # the capture saw the relaunched subject, not the old one
         self.assertEqual(subject['pid'], 999)  # and run_id hands the new subject back to the caller
+
+    def test_a_stop_during_the_relaunch_wait_captures_and_changes_nothing(self):
+        # macrevb-574-6: STOP lands during the relaunch wait -> no capture follows, the appearance
+        # baseline is still restored, and the ID is NOT-RUN with the supervisor reason.
+        captures, appearances = [], []
+        class Stopped(FakeActions):
+            def set_appearance(self, value):
+                appearances.append(value)
+                super().set_appearance(value)
+            def relaunch(self, subject):
+                (self.root / 'midrelaunch-STOP').write_text('stop')  # STOP arrives during the wait
+                return subject | dict(pid=999)
+            def capture(self, subject, *args):
+                captures.append(subject['pid'])
+                return super().capture(subject, *args)
+        Stopped.root = self.root
+        ctx = dict(profile='real', sha='a' * 40, layout='single',
+                   markers=verify_run.account_markers(), displays=[], baseline=dict(appearance='light'))
+        lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=1e12, guardianHeartbeatAt=100.2,
+                     ownerPreempted=False, exclusive=True)
+        (self.root / 'mid-lease.json').write_text(json.dumps(lease))
+        live = dict(pid=111, registeredAt=0.0, leasePath=str(self.root / 'mid-lease.json'),
+                    stopPath=str(self.root / 'midrelaunch-STOP'),
+                    leaseSnapshot={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+        step = dict(steps=[dict(name='dark', action='set-appearance', value='dark'),
+                            dict(name='again', action='relaunch'),
+                            dict(name='shot', action='capture-window'),
+                            dict(name='darker', action='set-appearance', value='dark')])
+        with self.assertRaises(verify_run.StopRun) as stopped:
+            verify_run.run_id('X-01', step, dict(flavour='verify'), live, ctx, Stopped(), self.root)
+        self.assertIn('supervisor-stop-file', str(stopped.exception))
+        self.assertEqual(captures, [])                      # no capture after the STOP
+        self.assertEqual(appearances, ['dark', 'light'])    # the baseline was restored, nothing changed
+        receipt = json.loads((self.root / 'X-01' / 'receipt.json').read_text())
+        self.assertTrue(any(s.get('step') == 'restore' and s.get('value') == 'light' and s.get('restored')
+                            for s in receipt['steps']))
+
+    def test_the_relaunch_confirmation_wait_aborts_the_moment_authority_is_withdrawn(self):
+        run = self.root / 'waitrun'; run.mkdir()
+        session = verify_run.Session(dict(profile='real'), dict(flavour='verify', ids=['D-17']), 1)
+        session.paths = dict(subjectPidPath=str(run / 'subject.json'), relaunchPath=str(run / 'relaunch'))
+        session.local = run
+        session.procs = {'run': type('R', (), {'poll': staticmethod(lambda: None)})()}
+        lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=1e12, guardianHeartbeatAt=time.time() - 0.1,
+                     ownerPreempted=False, exclusive=True)
+        (run / 'lease.json').write_text(json.dumps(lease))
+        (run / 'subject.json').write_text(json.dumps(dict(state='running', pid=111)))
+        authority = dict(leasePath=str(run / 'lease.json'), stopPath=str(run / 'STOP'),
+                         leaseSnapshot={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+        began = time.monotonic()
+        with self.assertRaises(verify_run.StopRun) as stopped:   # no subject line yet: it would wait
+            session.await_subject(1, deadline_seconds=1, authority=authority)
+        self.assertIn('subject-never-registered', str(stopped.exception))  # authority intact: full wait
+        self.assertGreaterEqual(time.monotonic() - began, 0.8)   # it really waited (heartbeat still fresh)
+        (run / 'STOP').write_text('stop')                        # STOP lands during the wait
+        began = time.monotonic()
+        with self.assertRaises(verify_run.StopRun) as stopped:
+            session.await_subject(1, deadline_seconds=5, authority=authority)
+        self.assertIn('supervisor-stop-file', str(stopped.exception))
+        self.assertLess(time.monotonic() - began, 2)             # aborted long before the deadline
 
     def test_relaunched_subject_carries_to_the_later_ids_of_the_segment(self):
         seen = []

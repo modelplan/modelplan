@@ -367,16 +367,27 @@ class Session:
             [sys.executable, str(BIN / 'packaged_candidate.py'), 'run', '--registry', str(self.registry),
              '--receipt', str(local / 'candidate-receipt.json')],
             stdout=(local / 'launch.out').open('w'), stderr=subprocess.DEVNULL)
-        subject = self.await_subject(0)
+        subject = self.await_subject(0, authority=dict(
+            leasePath=paths['leasePath'], stopPath=paths['stopPath'],
+            leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')}))
         lease = json.loads(Path(paths['leasePath']).read_text())
         subject.update(runID=self.run_id, epoch=self.epoch, leasePath=paths['leasePath'], stopPath=paths['stopPath'],
                        leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
         return subject
 
-    def await_subject(self, token, deadline_seconds=30):
-        """The running subject of launch token `token` (0: the first launch; n: the n-th relaunch)."""
+    def await_subject(self, token, deadline_seconds=30, authority=None):
+        """The running subject of launch token `token` (0: the first launch; n: the n-th relaunch).
+        The wait is a blocking probe of its own: with `authority` (the subject's supervisor paths and
+        lease snapshot), each poll re-reads the stop file, lease and heartbeat, and the wait aborts
+        the moment the supervisor withdraws the run — a relaunch must not confirm or keep a subject
+        alive for a stopped segment, and nothing after the wait captures or changes a profile
+        (macrevb-574-6: the same re-check #567 applies between blocking probes and captures)."""
         deadline = time.time() + deadline_seconds
         while time.time() < deadline:
+            if authority is not None:
+                stopped = supervisor_state(authority, time.time())
+                if stopped:
+                    raise StopRun('supervisor-' + stopped)
             try:
                 record = json.loads(Path(self.paths['subjectPidPath']).read_text())
                 lines = [json.loads(x) for x in (self.local / 'launch.out').read_text().splitlines() if x.startswith('{')]
@@ -395,10 +406,14 @@ class Session:
 
     def relaunch(self, subject):
         """Ask launch.py's supervisor to respawn the subject with the same HOME, environment and
-        argv (direct mode, one supervised slot). Raises NotRun when no new launch confirms in time."""
+        argv (direct mode, one supervised slot). The confirmation wait re-reads the supervisor
+        authority on every poll: a STOP that lands during the wait aborts the relaunch before any
+        further capture or profile change; the recorded baseline is still restored by the caller."""
         self.relaunch_token += 1
         Path(self.paths['relaunchPath']).write_text(str(self.relaunch_token))
-        updated = self.await_subject(self.relaunch_token, deadline_seconds=60)
+        authority = {k: subject[k] for k in ('leasePath', 'stopPath', 'leaseSnapshot') if k in subject}
+        updated = self.await_subject(self.relaunch_token, deadline_seconds=60,
+                                     authority=authority or None)
         updated.update(runID=subject.get('runID'), epoch=subject.get('epoch'),
                        leasePath=subject.get('leasePath'), stopPath=subject.get('stopPath'))
         return updated
