@@ -101,7 +101,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         guard !community, !failed else { return [] }
         return orderedIDs.compactMap { id in
             guard let rect = stationRect(id) else { return nil }
-            return DockReorderTarget(id:id,along:Double(edge == .bottom ? rect.midX : rect.midY))
+            return DockReorderTarget(id:id,along:Double(edge.isHorizontal ? rect.midX : rect.midY))
         }
     }
     public var interactionOverflowIDs: Set<String> {

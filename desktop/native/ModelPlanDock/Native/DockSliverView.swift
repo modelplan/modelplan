@@ -202,7 +202,12 @@ public struct DockSliverResolvedColorSegment: Equatable {
     /// Only the neutral fallback is drawn here; supplied artwork and semantic segments stay intact.
     private func drawNeutralMetal(in c:CGContext){
         let edge:DockEdge
-        if bounds.width>bounds.height{edge = .bottom}
+        if bounds.width>bounds.height{
+            // A horizontal strip rests on the bottom or, below the menu bar, on the top edge.
+            if let frame=window?.frame,let screen=window?.screen?.visibleFrame{
+                edge=abs(frame.maxY-screen.maxY)<abs(frame.minY-screen.minY) ? .top:.bottom
+            }else{edge = .bottom}
+        }
         else if let frame=window?.frame,let screen=window?.screen?.visibleFrame{
             edge=abs(frame.minX-screen.minX)<abs(frame.maxX-screen.maxX) ? .left:.right
         }else{edge = .right}

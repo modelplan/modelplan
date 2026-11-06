@@ -373,7 +373,7 @@ do {
     }
     func layouts(_ displays:[DockDisplayArea],scale:CGFloat=1)->[DockEdgeLayout]{
         displays.flatMap{d in DockEdgeGeometry.allowedEdges.map{edge in
-            let size=edge == .bottom ? CGSize(width:240*scale,height:80*scale):CGSize(width:80*scale,height:240*scale)
+            let size=edge.isHorizontal ? CGSize(width:240*scale,height:80*scale):CGSize(width:80*scale,height:240*scale)
             return DockEdgeLayout(displayID:d.id,edge:edge,expandedSize:size,sliverLength:240*scale,sliverThickness:3*scale,hoverRects:[CGRect(origin:.zero,size:size)])
         }}
     }
@@ -382,12 +382,13 @@ do {
         for scale in [CGFloat(0.8),1,1.3]{for edge in DockEdgeGeometry.allowedEdges{
             let p=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:edge),displays:[d],layouts:layouts([d],scale:scale),pointer:nil,primaryID:d.id)!
             try expect(d.usableFrame.contains(p.frame) && d.usableFrame.contains(p.sliverFrame) && d.usableFrame.contains(p.wakeFrame),"all painted/wake frames stay usable")
-            let thickness=edge == .bottom ? p.sliverFrame.height:p.sliverFrame.width
-            let wake=edge == .bottom ? p.wakeFrame.height:p.wakeFrame.width
+            let thickness=edge.isHorizontal ? p.sliverFrame.height:p.sliverFrame.width
+            let wake=edge.isHorizontal ? p.wakeFrame.height:p.wakeFrame.width
             try expect(abs(thickness-3*scale)<0.0001 && wake==20,"registered sliver scales, physical wake does not")
-            let along=edge == .bottom ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
+            let along=edge.isHorizontal ? p.frame.minX-d.usableFrame.minX:p.frame.minY-d.usableFrame.minY
             try expect(along>=24,"physical hot-corner clearance")
-            try expect(p.edge != .top,"top never emitted")
+            try expect(p.edge == edge,"every allowed edge, the top one included, rests on itself")
+            if edge == .top { try expect(p.frame.maxY == d.usableFrame.maxY && p.sliverFrame.maxY == d.usableFrame.maxY,"the top edge rests flush with the usable top") }
         }}
     }
     try test("B07 Q8 seams: partial, negative, above and surrounded displays retain their edge"){
@@ -428,10 +429,15 @@ do {
             try expect(drop.frame != lower.frame,"an explicit nearest drag/drop may change along-edge position")
         }
     }
-    try test("B07 migration/drop: missing display, top normalization and no floating"){
+    try test("B07 migration/drop: missing display, top below the menu bar and no floating"){
         let f=CGRect(x:0,y:0,width:1000,height:800),d=DockDisplayArea(id:"primary",frame:f,visibleFrame:f)
         let top=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top),displays:[d],layouts:layouts([d]),pointer:nil,primaryID:d.id)!
-        try expect(top.edge == .right && top.frame.maxY==776,"top normalizes to nearest allowed registered position")
+        try expect(top.edge == .top && top.frame.maxY == 800 && top.wakeFrame.maxY == 800,"a saved top edge rests on the top edge (A-1106-4)")
+        let menuBar=DockDisplayArea(id:"primary",frame:f,visibleFrame:CGRect(x:0,y:0,width:1000,height:776))
+        let below=try DockEdgeGeometry.resolve(preference:.init(displayID:d.id,edge:.top,alongFraction:0.5),displays:[menuBar],layouts:layouts([menuBar]),pointer:nil,primaryID:d.id)!
+        try expect(below.edge == .top && below.frame.maxY == 776 && menuBar.visibleFrame.contains(below.frame),"the top edge sits below the menu bar, inside visibleFrame")
+        let dropTop=try DockEdgeGeometry.resolve(preference:.init(displayID:"removed"),displays:[menuBar],layouts:layouts([menuBar]),pointer:CGPoint(x:450,y:770),primaryID:d.id,nearest:true)!
+        try expect(dropTop.edge == .top && dropTop.frame.maxY == 776,"a drop near the top snaps to the top edge")
         let bottom=try DockEdgeGeometry.resolve(preference:.init(displayID:"removed"),displays:[d],layouts:layouts([d]),pointer:CGPoint(x:450,y:5),primaryID:d.id,nearest:true)!
         try expect(bottom.edge == .bottom && bottom.frame.minY==0,"nearest drop snaps, never floats")
         let reserved=DockDisplayArea(id:"primary",frame:f,visibleFrame:CGRect(x:0,y:50,width:1000,height:724))

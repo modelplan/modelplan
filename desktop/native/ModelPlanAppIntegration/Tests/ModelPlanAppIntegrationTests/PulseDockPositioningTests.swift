@@ -18,7 +18,7 @@ import ModelPlanShell
         .init(displays: displays, layouts: displays.flatMap { display in
             DockEdgeGeometry.allowedEdges.map { edge in
                 .init(displayID: display.id, edge: edge,
-                    expandedSize: edge == .bottom ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
+                    expandedSize: edge.isHorizontal ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
                     sliverLength: 140, sliverThickness: 4, hoverRects: [], alongAnchor: 73)
             }
         }, primaryDisplayID: display.id, pointer: CGPoint(x: -500, y: 200))
