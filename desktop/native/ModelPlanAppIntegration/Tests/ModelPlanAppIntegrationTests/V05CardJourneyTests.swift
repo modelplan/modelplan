@@ -158,6 +158,11 @@ private actor V05SyntheticClient: EngineClient {
                 for phrase in forbidden { XCTAssertFalse(texts.contains { $0.localizedCaseInsensitiveContains(phrase) }, "Diagnostic copy must not appear on the card") }
 
             } catch {
+                if let evidence {
+                    let suffix = (retained ? "retained-" : "fresh-") + (language == .english ? "en" : "zh")
+                    try? "Card language setup or field check failed; see test failure.\n".write(
+                        to: evidence.appendingPathComponent("v05-card-\(suffix)-failure.txt"), atomically: true, encoding: .utf8)
+                }
                 XCTFail("Card check failed for \(language): \(error)")
             }
         }
