@@ -762,6 +762,15 @@ struct DockHelpInteraction: Equatable {
         return cardArrow.points.map { window.convertPoint(toScreen: cardArrow.convert($0, to: nil)) }
     }
     private let container = StaticDockContainer()
+    /// R64 D-9: the surface state last put on screen, so a sliver <-> expanded change can animate.
+    private var presentedSurfaceState: DockSurfaceState?
+    private let collapseGhost = DockCollapseGhost()
+    var collapseAnimatingForChecks: Bool { collapseGhost.animatingForChecks }
+    private(set) var revealAnimationsForChecks = 0
+    var containerAnimationsForChecks: [String: CAAnimation] {
+        guard let layer = container.layer else { return [:] }
+        return Dictionary(uniqueKeysWithValues: (layer.animationKeys() ?? []).compactMap { key in layer.animation(forKey: key).map { (key, $0) } })
+    }
     private let consoleButton = DockIgnitionButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
@@ -1368,7 +1377,7 @@ struct DockHelpInteraction: Equatable {
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
-            attentionWasExpanded = false; pointerSurface.stop()
+            attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop()
             panel?.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil {
@@ -1378,6 +1387,14 @@ struct DockHelpInteraction: Equatable {
                 name: NSWindow.didChangeOcclusionStateNotification, object: newPanel)
         }
         guard let panel else { publishPlacementObservation(nil); return }
+        let previousState = panel.isVisible ? presentedSurfaceState : nil
+        let motionEdge = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
+        let reduceMotion = application?.effective.reduceMotion ?? true
+        // D-9 collapse: the last expanded image fades out sliding toward the edge, in its own
+        // click-through panel, while this panel shows the sliver at once (no state is delayed).
+        if value.state == .sliver, previousState == .expanded, panel.contentView === container, !value.moving {
+            collapseGhost.play(snapshotOf: container, frame: panel.frame, level: panel.level, edge: motionEdge, reduceMotion: reduceMotion)
+        } else if value.state == .expanded { collapseGhost.stop() }
         panel.level = value.moving ? .statusBar : .floating
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
@@ -1396,7 +1413,7 @@ struct DockHelpInteraction: Equatable {
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
             catch { pointerSurface.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
+        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); presentedSurfaceState = nil; collapseGhost.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
@@ -1418,6 +1435,11 @@ struct DockHelpInteraction: Equatable {
             panel.displayIfNeeded()
             panel.orderFrontRegardless()
         }
+        // D-9 reveal: the expanded content fades in from 14 pt toward the edge.
+        if panel.isVisible, value.state == .expanded, previousState == .sliver, !value.moving {
+            DockRevealMotion.reveal(container, edge: motionEdge, reduceMotion: reduceMotion); revealAnimationsForChecks += 1
+        }
+        presentedSurfaceState = panel.isVisible ? value.state : nil
         if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
         attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
@@ -2006,7 +2028,7 @@ struct DockHelpInteraction: Equatable {
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
         edgeViews = [:]; edgeGeometries = [:]; appearanceDisplay = nil
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil
-        panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
+        collapseGhost.stop(); panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; requestAutoCollapse=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
