@@ -2,6 +2,7 @@
 package readers
 
 import (
+	"crypto/tls"
 	"errors"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"net/http"
@@ -12,7 +13,16 @@ var (
 	ErrRequestNotAllowed    = errors.New("reader_request_not_allowed")
 	ErrReadExhausted        = errors.New("reader_request_set_exhausted")
 	ErrAuthorizationStopped = errors.New("reader_authorization_stopped")
+	ErrUnsafeTransport      = errors.New("reader_transport_not_single_attempt")
 )
+
+// SingleAttemptTransport is for explicitly reviewed, in-process transports.
+// Implementations must never retry or issue additional requests. The production
+// client uses *http.Transport; synthetic recorders use this contract in tests.
+type SingleAttemptTransport interface {
+	http.RoundTripper
+	ReaderSingleAttempt()
+}
 
 // ReadTransport enforces the first-batch fixed request set for one admitted read.
 // It records no credentials. The caller reserves the cross-process vendor budget
@@ -37,6 +47,27 @@ func NewReadTransport(scope string, next http.RoundTripper) *ReadTransport {
 	if next == nil {
 		next = http.DefaultTransport
 	}
+	if transport, ok := next.(*http.Transport); ok {
+		// A fresh HTTP/1 connection per stage prevents transparent retries on
+		// reused HTTP/1 connections and HTTP/2 stream/GOAWAY retries. Clone so
+		// the caller's proxy, trust roots, dialer and timeouts stay intact.
+		if transport.DialTLS != nil || transport.DialTLSContext != nil {
+			next = nil // a custom TLS dialer may negotiate an uncontrolled protocol
+		} else {
+			clone := transport.Clone()
+			clone.DisableKeepAlives = true
+			clone.ForceAttemptHTTP2 = false
+			clone.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+			clone.Protocols = new(http.Protocols)
+			clone.Protocols.SetHTTP1(true)
+			if clone.TLSClientConfig != nil {
+				clone.TLSClientConfig.NextProtos = []string{"http/1.1"}
+			}
+			next = clone
+		}
+	} else if _, ok := next.(SingleAttemptTransport); !ok {
+		next = nil
+	}
 	return &ReadTransport{scope: scope, next: next, stage: -1}
 }
 
@@ -54,6 +85,9 @@ func (t *ReadTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	if t.stopped != nil {
 		return nil, t.stopped
+	}
+	if t.next == nil {
+		return nil, ErrUnsafeTransport
 	}
 	pin, allowed := requestSet(t.scope, req)
 	if !allowed || req.URL.Scheme != "https" || req.URL.User != nil || req.URL.ForceQuery ||

@@ -111,22 +111,6 @@ private func shortTool(_ tool: String) -> String {
     }
 }
 
-public struct RecordStripPresentation: Sendable {
-    public let lines: [RecordLine]
-    public let overflow: Int
-    public let runningOverflow: Int
-    public var moreDestination: MainScreenContent? {
-        overflow > 0 ? .page(.init(.destinations, destinationsMode: .timeline)) : nil
-    }
-    public init(sessions: [InstrumentSession], height: Double, scope: InstrumentScope, showProjectNames: Bool,
-                now: Date, language: InstrumentLanguage) {
-        let rows = sessionLines(sessions, scope: scope, showProjectNames: showProjectNames, now: now, language: language)
-        let count = height >= 884 ? 5 : 3
-        lines = Array(rows.prefix(count)); overflow = max(0, rows.count - count)
-        runningOverflow = rows.dropFirst(count).filter(\.working).count
-    }
-}
-
 /// Project order/totals are supplied by the CLI. Combined totals cannot be relabelled as one account's totals.
 public struct InstrumentProject: Sendable {
     public let id: String

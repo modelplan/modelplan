@@ -18,8 +18,7 @@ release publication or secrets are part of this workflow.
   `ai.modelplan.candidate`. This is an interface-stage identity, not a commitment
   to the shipping identifier or a stable Keychain designated requirement.
 - Version comes from `desktop/package.json`; build number is the workflow run
-  number. Both app and bundled CLI contain arm64 and x86_64 slices. Intel execution
-  remains `not-run`.
+  number. The app and bundled CLI contain arm64 only. Intel execution is `unsupported`.
 - The existing `package-neutral.sh` compiles the production native executable and
   fetches no replacement engine. Its reviewed native CLI archive input comes from
   `desktop/native/consent-cli-pin.json` (v0.5.49), independently of plugin pins.
