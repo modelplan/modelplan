@@ -26,6 +26,58 @@ import ModelPlanSettings
     }
     #endif
 
+    private func stripPixels(_ view: DockSliverView) throws -> (width: Int, height: Int, bytes: [UInt8]) {
+        let scale = 2
+        let width = Int(ceil(view.bounds.width * CGFloat(scale)))
+        let height = Int(ceil(view.bounds.height * CGFloat(scale)))
+        let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height,
+            bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: view.isFlipped)
+        view.draw(view.bounds)
+        let data = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        return (width, height, Array(UnsafeBufferPointer(start: data, count: width * height * 4)))
+    }
+
+    private func assertConfirmedStripPaint(_ strip: DockSliverView, over baseline: (width: Int, height: Int, bytes: [UInt8])) throws {
+        let mark = try XCTUnwrap(strip.noticeMarks.first)
+        XCTAssertEqual(strip.noticeMarks.count, 1)
+        let confirmed = try stripPixels(strip)
+        XCTAssertEqual(confirmed.width, baseline.width)
+        XCTAssertEqual(confirmed.height, baseline.height)
+        guard confirmed.width == baseline.width, confirmed.height == baseline.height else { return }
+        XCTAssertGreaterThan(strip.bounds.width, strip.bounds.height)
+        let x = mark.position * strip.bounds.width * 2
+        let y = strip.bounds.midY * 2
+        guard (0..<confirmed.width).contains(Int(x)), (0..<confirmed.height).contains(Int(y)) else {
+            return XCTFail("The reset ink center must be inside the strip raster")
+        }
+        let center = (Int(y) * confirmed.width + Int(x)) * 4
+        let opaqueBlue = [159.0, 210.0, 255.0, 255.0]
+        for channel in 0..<4 {
+            let expected = 0.7 * opaqueBlue[channel] + 0.3 * Double(baseline.bytes[center + channel])
+            XCTAssertEqual(Double(confirmed.bytes[center + channel]), expected, accuracy: 3,
+                           "A fully covered pixel composites the 70%-opaque reset ink over the retained quota strip")
+        }
+        var painted = CGRect.null
+        for row in 0..<confirmed.height {
+            for column in 0..<confirmed.width {
+                let pixel = (row * confirmed.width + column) * 4
+                let difference = abs(Int(confirmed.bytes[pixel + 2]) - Int(baseline.bytes[pixel + 2]))
+                if difference > 10 { painted = painted.union(CGRect(x: column, y: row, width: 1, height: 1)) }
+            }
+        }
+        XCTAssertFalse(painted.isNull)
+        XCTAssertEqual(painted.midX, x, accuracy: 0.5)
+        XCTAssertEqual(painted.midY, y, accuracy: 0.5)
+        XCTAssertEqual(painted.width / 2, 4, accuracy: 0.5)
+        XCTAssertEqual(painted.height / 2, 4, accuracy: 0.5)
+    }
+
     private func exercise(native: Bool) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
@@ -118,6 +170,7 @@ import ModelPlanSettings
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update {
             $0.autoHide = true; $0.motion = .on
+            if !native { $0.dockEdge = .bottom; $0.size = .medium }
             $0.notifications.optedIn = true
             $0.notifications.kinds = [.official]
         }
@@ -213,6 +266,7 @@ import ModelPlanSettings
         try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+        let baseline = native ? nil : try stripPixels(strip())
 
         try publish([announced, confirmed])
         try await subscribe()
@@ -225,6 +279,7 @@ import ModelPlanSettings
         XCTAssertEqual(app.noticeIndicator.notice, confirmation)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
         XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
+        if let baseline { try assertConfirmedStripPaint(strip(), over: baseline) }
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
         try await subscribe()
