@@ -17,9 +17,13 @@ import ModelPlanSettings
     func testD20NativeStripPaintsOnlyTheAffectedPitches() async throws {
         try await exercise(native: true)
     }
+
+    func testD20PhysicalRevealAndSettingsToggleKeepQuotaPaintScoped() async throws {
+        try await exercise(native: true, physical: true)
+    }
     #endif
 
-    private func exercise(native: Bool) async throws {
+    private func exercise(native: Bool, physical: Bool = false) async throws {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
         let executable = URL(fileURLWithPath: path)
@@ -74,11 +78,13 @@ import ModelPlanSettings
         defer { if native { EngineRowsEntry.nativeJourneyProfile = nil } }
         #endif
         let pointer = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
+        let readDisplay: (@MainActor () -> DockEdgeEnvironment)?
+        if physical { readDisplay = nil }
+        else { readDisplay = { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) } }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d20",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"),
-            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
-            activateSettings: {})
+            dockEnvironment: readDisplay, activateSettings: { if physical { NSApplication.shared.activate() } })
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
         XCTAssertNil(app.loginServiceAdapter)
@@ -88,8 +94,11 @@ import ModelPlanSettings
         XCTAssertEqual(app.composition.store.snapshot.connection, .ready(delivery))
 
         let dock = app.composition.dock
-        func wait(_ description: String, until predicate: () -> Bool) async throws {
-            let deadline = ContinuousClock.now + .seconds(4)
+        func announce(_ message: String) {
+            if physical { FileHandle.standardOutput.write(Data(("D-20: " + message + "\n").utf8)) }
+        }
+        func wait(_ description: String, timeout: Duration = .seconds(4), until predicate: () -> Bool) async throws {
+            let deadline = ContinuousClock.now + timeout
             while !predicate(), ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
             XCTAssertTrue(predicate(), description)
         }
@@ -102,6 +111,10 @@ import ModelPlanSettings
             })
         }
         try await wait("Require all three real-server quota readings") { readings() == [ids[0]: 51, ids[1]: 40, ids[2]: 25] }
+        if physical {
+            announce("Move the pointer away from the native widget until it collapses.")
+            try await wait("The actual panel must collapse", timeout: .seconds(20)) { dock.edgePresentation?.state == .sliver }
+        }
         XCTAssertEqual(dock.edgePresentation?.state, .sliver)
         func currentStrip() throws -> DockSliverView {
             let placement = try XCTUnwrap(dock.edgePresentation?.placement)
@@ -110,7 +123,8 @@ import ModelPlanSettings
             if native {
                 let panel = try XCTUnwrap(dock.nativePanel)
                 XCTAssertTrue(panel.isVisible)
-                XCTAssertEqual(panel.frame.minY, display.visibleFrame.minY, accuracy: 1)
+                let floor = physical ? try XCTUnwrap(panel.screen).visibleFrame.minY : display.visibleFrame.minY
+                XCTAssertEqual(panel.frame.minY, floor, accuracy: 1)
                 return try XCTUnwrap(panel.contentView as? DockSliverView)
             }
             #endif
@@ -148,11 +162,22 @@ import ModelPlanSettings
         // overlap larger than a quarter of a 2x backing pixel.
         XCTAssertLessThanOrEqual(overlap * Double(strip.bounds.width), 0.125)
         let withAlerts = try capture()
-        XCTAssertTrue(strip.accessibilityPerformPress())
+        if physical {
+            announce("Capture the native strip with amber and red pitches. Then move the pointer into its wake zone.")
+            try await wait("Physical pointer wake", timeout: .seconds(30)) { dock.edgePresentation?.state == .expanded }
+            announce("Capture the expanded widget. Move away so it collapses again.")
+        } else {
+            XCTAssertTrue(strip.accessibilityPerformPress())
+        }
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
-        try await wait("The normal leave policy returns to the strip") { dock.edgePresentation?.state == .sliver }
+        try await wait("The normal leave policy returns to the strip", timeout: physical ? .seconds(25) : .seconds(4)) {
+            dock.edgePresentation?.state == .sliver
+        }
         XCTAssertTrue(try currentStrip() === strip)
-        XCTAssertEqual(try capture().tiffRepresentation, withAlerts.tiffRepresentation)
+        let recollapsed = try capture()
+        XCTAssertEqual(recollapsed.tiffRepresentation, withAlerts.tiffRepresentation)
+        announce("Capture the same two pitch colours after the reveal.")
+        if physical { try await Task.sleep(for: .seconds(4)) }
 
         try writeReadings([51, 52, 25])
         _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
@@ -162,7 +187,19 @@ import ModelPlanSettings
         try assertRole(52, nil)
         try assertRole(25, .critical)
         let improved = try capture()
-        _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        if physical {
+            announce("Capture the improved strip: amber is cleared, red is retained.")
+            try await Task.sleep(for: .seconds(4))
+            await app.settingsHost.present(paneID: "dock", origin: .userInitiated)
+            announce("In the native Settings window, turn Sliver alert color off. Then move away from the widget.")
+            let editor = app.settingsHost.application.editor
+            try await wait("The actual Settings toggle must commit", timeout: .seconds(35)) {
+                editor.snapshot?.preferences.sliverAlert == false && !editor.isSaving
+            }
+            try await wait("Return to the strip after Settings", timeout: .seconds(15)) { dock.edgePresentation?.state == .sliver }
+        } else {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
+        }
         XCTAssertTrue(try currentStrip() === strip)
         XCTAssertTrue(strip.quotaSegmentColorRolesForChecks.isEmpty)
         let neutral = try capture()
@@ -171,6 +208,17 @@ import ModelPlanSettings
         XCTAssertNotEqual(try sample(withAlerts, at: critical), try sample(neutral, at: critical), "Critical pitch is painted")
         XCTAssertEqual(try sample(improved, at: warning), try sample(neutral, at: warning), "Improvement clears only the warning paint")
         XCTAssertEqual(try sample(improved, at: critical), try sample(withAlerts, at: critical), "The critical pitch survives unrelated improvement")
+        announce("Capture the neutral strip after turning off the setting.")
+        if physical { try await Task.sleep(for: .seconds(4)) }
+
+        if let destination = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D20_OUTPUT"], !destination.isEmpty {
+            let output = URL(fileURLWithPath: destination, isDirectory: true)
+            for (name, bitmap) in [("01-alerts", withAlerts), ("02-recollapsed", recollapsed),
+                                   ("03-improved", improved), ("04-setting-off", neutral)] {
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                try png.write(to: output.appendingPathComponent(name + ".png"), options: .withoutOverwriting)
+            }
+        }
     }
 }
 #endif
