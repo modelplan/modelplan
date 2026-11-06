@@ -513,6 +513,8 @@ struct DockHelpInteraction: Equatable {
     private func updateNozzleMagnification() {
         let displayed = interactionView
         let views = [dockView] + alternateViews
+        // R64 D-2: poses ease over 0.12 s unless Reduce Motion is on (then magnification is off too).
+        for view in views { view.animatesPoses = application?.effective.reduceMotion == false }
         for view in views where view !== displayed { view.setNozzlePoses([:]) }
         guard permitted, !retired, edge.presentation?.state == .expanded, !edge.isBackgroundPressed,
               interactionController?.presentation?.reorder == nil, preferences.magnification != .none,

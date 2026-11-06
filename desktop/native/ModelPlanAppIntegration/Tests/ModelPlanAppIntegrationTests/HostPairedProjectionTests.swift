@@ -1009,6 +1009,9 @@ actor EntrySyntheticClient: EngineClient {
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
         XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
+        // R64 D-2: the pose eases over 0.12 s (prototype dock.css:38), not an instant swap.
+        XCTAssertTrue(view.animatesPoses)
+        XCTAssertEqual(try XCTUnwrap(view.lastPoseTransitionForChecks), 0.12, accuracy: 0.0001)
         // G3-29: on the right edge the ring moves left, away from the edge, not down onto its text.
         XCTAssertLessThan(subtle.offset.x, -5.5, "subtle hover grows outward from the screen edge")
         XCTAssertLessThan(abs(subtle.offset.y), 1.5, "subtle hover does not slide along the edge")
