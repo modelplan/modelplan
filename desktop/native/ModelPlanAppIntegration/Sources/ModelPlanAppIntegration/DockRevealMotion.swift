@@ -101,3 +101,46 @@ enum DockRevealMotion {
         panel?.orderOut(nil)
     }
 }
+
+/// R64 M-2: while the widget is carried away from an edge, a click-through hairline shows where it
+/// will snap (the destination face outline). Hidden when the widget sits on that edge already.
+/// Prototype: clients/official-visuals/dock-aftview-integration/face-view.js:23-25, face.css:136-137.
+@MainActor final class DockSnapPreview {
+    private final class OutlineView: NSView {
+        var path: CGPath?, stroke: NSColor = .white, lineWidth: CGFloat = 1, flipped = true
+        override var isFlipped: Bool { flipped }
+        override func draw(_ dirtyRect: NSRect) {
+            NSColor.clear.setFill(); bounds.fill(using: .copy)
+            guard let path, let context = NSGraphicsContext.current?.cgContext else { return }
+            context.addPath(path); context.setStrokeColor(stroke.cgColor); context.setLineWidth(lineWidth)
+            context.setLineJoin(.round); context.strokePath()
+        }
+    }
+    private var panel: NSPanel?
+    private let outline = OutlineView(frame: .zero)
+    private(set) var frameForChecks: CGRect?
+    var strokeForChecks: NSColor { outline.stroke }
+
+    func show(path: CGPath, flipped: Bool, frame: CGRect, stroke: NSColor, lineWidth: CGFloat, level: NSWindow.Level) {
+        let preview = panel ?? {
+            let value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            value.isOpaque = false; value.backgroundColor = .clear; value.hasShadow = false
+            value.ignoresMouseEvents = true; value.hidesOnDeactivate = false; value.isReleasedWhenClosed = false
+            value.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+            return value
+        }()
+        panel = preview
+        outline.path = path; outline.flipped = flipped; outline.stroke = stroke; outline.lineWidth = lineWidth
+        outline.frame = CGRect(origin: .zero, size: frame.size); outline.needsDisplay = true
+        if preview.contentView !== outline { preview.contentView = outline }
+        preview.level = level
+        preview.setFrame(frame, display: true)
+        preview.orderFrontRegardless()
+        frameForChecks = frame
+    }
+
+    func hide() {
+        frameForChecks = nil
+        panel?.orderOut(nil)
+    }
+}
