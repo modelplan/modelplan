@@ -183,6 +183,24 @@ import XCTest
             elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
             return try XCTUnwrap(dock.detachedCardForChecks)
         }
+        func capture(_ phase: String, card: DockCardView, windowID: String) throws {
+            guard let path = ProcessInfo.processInfo.environment["MODELPLAN_G3_13_CARD_CAPTURE_DIR"] else { return }
+            let output = URL(fileURLWithPath: path)
+            card.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(card.bitmapImageRepForCachingDisplay(in: card.bounds))
+            card.cacheDisplay(in: card.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: output.appendingPathComponent(phase + ".png"))
+            let row = "row.quota:" + windowID
+            let observation: [String: Any] = [
+                "phase": phase,
+                "value": text(row + ".value", in: card) ?? "",
+                "sourceAndAge": text(row + ".detail", in: card) ?? "",
+                "pixels": [bitmap.pixelsWide, bitmap.pixelsHigh],
+            ]
+            try JSONSerialization.data(withJSONObject: observation, options: [.prettyPrinted, .sortedKeys])
+                .write(to: output.appendingPathComponent(phase + ".json"))
+        }
         let card = try openCard()
         let window = try XCTUnwrap(account(in: app)?.windows.first)
         XCTAssertEqual(window.remainingPercent, 20)
@@ -193,6 +211,7 @@ import XCTest
         let retainedDetail = text(weekly + ".detail", in: card)
         XCTAssertTrue(retainedDetail?.contains("Tool runtime · 3h ago") == true,
                       "Retained window provenance: " + (retainedDetail ?? "missing"))
+        try capture("runtime-retained", card: card, windowID: window.id)
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         try FileManager.default.removeItem(at: hold)
@@ -211,6 +230,7 @@ import XCTest
         else { currentCard = try openCard() }
         XCTAssertEqual(text(weekly + ".value", in: currentCard), "70%")
         XCTAssertTrue(text(weekly + ".detail", in: currentCard)?.contains("Tool runtime · just now") == true)
+        try capture("runtime-recovered", card: currentCard, windowID: recovered.id)
 
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
