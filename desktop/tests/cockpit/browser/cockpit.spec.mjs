@@ -150,6 +150,16 @@ test('MOT-2.3-01 identical and timestamp-only deliveries do not restart motion; 
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   expect(await infiniteAnimations(page)).toEqual([]);
 });
+test('MOT-2.3-09 a quota change leaves cockpit module geometry unchanged',async({page})=>{
+  const {send}=await open(page),data=currentSample();await display(page,send,data);
+  const selectors=['.ck-head','.ck-eng','.ck-deck','.mfd-screen','.ck-tape','.eng-keys .ek[data-sub]'];
+  const geometry=()=>page.evaluate(selectors=>selectors.map(selector=>{const e=document.querySelector(selector);if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};}),selectors);
+  const before=await geometry();expect(before.every(Boolean)).toBe(true);
+  data.projection.rows[0].accounts[0].windows[0].remainingPercent=20;
+  expect(await receive(page,send('display',{data}))).toBe(true);
+  const after=await geometry();expect(after.every(Boolean)).toBe(true);
+  for(let i=0;i<selectors.length;i++)for(const key of ['x','y','width','height'])expect(Math.abs(before[i][key]-after[i][key]),`${selectors[i]} ${key}`).toBeLessThanOrEqual(0.5);
+});
 test('MOT-2.3-03 fixed keyboard-reachable actions have current context; reduced motion has no animations',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});
   const {send}=await open(page);await display(page,send);
