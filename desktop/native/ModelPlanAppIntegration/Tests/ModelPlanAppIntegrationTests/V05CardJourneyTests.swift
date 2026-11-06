@@ -95,6 +95,7 @@ private actor V05SyntheticClient: EngineClient {
         let rowFrame = try XCTUnwrap(dock.card.rowFrameForChecks(quotaRow.id))
         let cells = dock.card.rowCellsForChecks(quotaRow.id).filter { $0.minY < rowFrame.minY + 18 }
         XCTAssertGreaterThanOrEqual(cells.count, 3)
+        guard cells.count >= 3 else { return }
         XCTAssertEqual(cells.prefix(3).map { $0.width.rounded() }, [56, 78, 34], "label / bar / percent columns")
         XCTAssertEqual(cells[1].minX - cells[0].maxX, 5, accuracy: 0.5); XCTAssertEqual(cells[2].minX - cells[1].maxX, 5, accuracy: 0.5)
         XCTAssertEqual(cells[0].minX, lcd.minX + 7, accuracy: 0.5, "rows start inside the window's 7 pt padding")
