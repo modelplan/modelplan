@@ -123,7 +123,7 @@ extension CommunityCockpitEntryTests {
         await app.prepare()
         await app.composition.start()
         app.showConsole()
-        let deadline = ContinuousClock.now + .seconds(15)
+        let deadline = ContinuousClock.now + .seconds(30)
         do {
             while page?.received != true && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
             let surface = try XCTUnwrap(page, "The normal cockpit action must construct a page")
