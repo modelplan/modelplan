@@ -184,6 +184,46 @@ import ModelPlanSettings
         guard case .ready = store.snapshot.connection else { return XCTFail("The reviewed app-server must still be connected") }
     }
 
+    func testD01DetachedFreshFirstShowWithRealRowsWithheld() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d01-detached-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (executable, receipt, home) = try await makeRowsBarrier(in: root)
+        let profile = root.appendingPathComponent("profile")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: profile.path))
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let topology = Topology()
+        let app = EngineRowsEntry.make(configuration: configuration(executable, root: home),
+            settingsStore: settings, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { topology.read() }, activateSettings: {})
+        addTeardownBlock { @MainActor in
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        let store = app.composition.store
+        let replies = Replies()
+        let token = store.attach(replies)
+        defer { store.detach(token) }
+        await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let host = app.composition.dock
+        let shown = try await wait(2) { host.edgePresentation?.state == .expanded }
+        XCTAssertTrue(shown, "Fresh presentation must not wait on the real server's rows reply")
+        XCTAssertEqual(replies.count, 0)
+        let placement = try XCTUnwrap(host.edgePresentation?.placement)
+        XCTAssertEqual(placement.displayID, topology.main.id)
+        XCTAssertEqual(placement.edge, .right)
+        XCTAssertEqual(placement.alongFraction, 0.5, accuracy: 0.001)
+        XCTAssertNotNil(host.edgePresentation?.paintedFrame)
+        XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+
+        let subscribed = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(subscribed, "The launched app must send rows/subscribe to the withholding barrier")
+        try await checkEngine(app)
+        XCTAssertEqual(replies.count, 0)
+        XCTAssertNil(store.snapshot.rows)
+    }
+
     func testD01PhysicalFreshFirstShowWithRealRowsWithheld() async throws {
         try await physicalFirstShow(disabled: false)
     }
