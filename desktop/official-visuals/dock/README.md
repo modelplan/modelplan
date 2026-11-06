@@ -16,7 +16,7 @@ Current scope:
 | Requirements | Implementation and evidence |
 | --- | --- |
 | DOCK-3.1-05, DOCK-3.1-07, DOCK-3.1-08 | Pure T2 geometry, 36/44/52 points, default 44, D/52 scaling |
-| DOCK-3.1-12, DOCK-3.1-15, DOCK-3.1-16, DOCK-3.1-17 | Upright readout anchors, gap reduction before overflow, full-slice curvature |
+| DOCK-3.1-12, DOCK-3.1-15, DOCK-3.1-16, DOCK-3.1-17 | Upright readout anchors and full-slice curvature. Vertical layouts with percentage readouts do not yet reduce the gap before overflow; see `V11GapTests`. |
 | DOCK-3.1-23, DOCK-3.1-29 | Button area search and opposite-end grip; bottom ignition defaults to the right end |
 | DOCK-3.1-22, DOCK-3.1-24 | Shape-limited disabled ignition veil; normal-entry evidence: `P1ExactPlacementTests.testDisabledIgnitionVeilIsShapeLimitedOnNormalEntry`. Full device/visual acceptance remains unverified. |
 | DOCK-3.1-10, DOCK-3.1-11 | Isolated native gradient/grain face layer; pixel agreement remains unverified |
