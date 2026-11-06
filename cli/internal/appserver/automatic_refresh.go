@@ -45,8 +45,13 @@ func (s *RefreshScheduler) automatic() {
 		state, mode := admission.State(), admission.Mode()
 		scopes := liveRefreshScopes(state, mode)
 		runtimeGranted := false
-		for _, scope := range scopes {
-			if scope == consent.ScopeCodexRuntimeUsage {
+		for i := 0; i < len(scopes); i++ {
+			if scopes[i] == consent.ScopeCodexRuntimeUsage {
+				if quota.CodexAccountOff() { // the environment keeps Codex to its logs
+					scopes = append(scopes[:i], scopes[i+1:]...)
+					i--
+					continue
+				}
 				runtimeGranted = true
 			}
 		}

@@ -246,6 +246,9 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if cache == "" {
 		return errors.New("reader budget unavailable")
 	}
+	if off() {
+		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT") // before taking any shared lock
+	}
 	admission, err := consent.ReaderLockContext(ctx)
 	if err != nil {
 		return err
