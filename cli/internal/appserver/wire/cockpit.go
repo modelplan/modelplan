@@ -54,8 +54,9 @@ type CockpitResetCount struct {
 	ExpiresAt *time.Time `json:"expiresAt" null:"coalesced"`
 }
 type CockpitCredits struct {
-	Balance    *float64  `json:"balance" null:"coalesced"`
-	ObservedAt time.Time `json:"observedAt"`
+	Unit       *CockpitCreditUnit `json:"unit,omitempty" null:"forbidden"`
+	Balance    *float64           `json:"balance" null:"coalesced"`
+	ObservedAt time.Time          `json:"observedAt"`
 }
 type CockpitToday struct {
 	Source               string   `json:"source"`

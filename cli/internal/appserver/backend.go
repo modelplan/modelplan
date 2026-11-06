@@ -161,6 +161,16 @@ func CockpitDetailsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityCockpitCreditUnitsV1 opts in to credit observation units.
+const CapabilityCockpitCreditUnitsV1 = "cockpitCreditUnitsV1"
+
+type cockpitCreditUnitsContextKey struct{}
+
+func CockpitCreditUnitsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitCreditUnitsContextKey{}).(bool)
+	return enabled
+}
+
 // WindowSourcesEnabled reports the negotiated per-window provenance contract.
 const CapabilityWindowSources = "windowSourcesV1"
 

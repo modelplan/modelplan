@@ -153,6 +153,13 @@ DTO. Unknown bindings are not grouped. Context and covered scopes remain only in
 the envelope. See [cockpit query](../../docs/cockpit-query.md) for its admission and
 no-mutation contract, and the generated schema for exact field types.
 
+The server advertises `cockpitCreditUnitsV1`. A client declares it together
+with `cockpitDetailsV1` in `initialize` to receive the optional
+`details.subscriptions[].credits.unit` field. The unit is `credits` or `money`
+only when explicitly reported by the same admitted observation as the balance;
+an omitted unit is unknown and does not establish a currency. Clients without
+the additional capability receive the existing details shape without `unit`.
+
 ## Type sketch (Go wire DTOs)
 
 ```go
