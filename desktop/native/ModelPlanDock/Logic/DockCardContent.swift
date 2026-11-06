@@ -30,13 +30,13 @@ public struct DockCardContent:Equatable,Sendable {
 
 public enum DockCardProjection {
     /// Reuse the canonical Dock quota truth/readout rules. Other facts/copy come from the validated owner.
-    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",at now:Date)throws->DockCardContent{
-        _=try DockInstrumentProjection.evaluate(input,now:now)
+    public static func content(input:DockInstrumentInput,revision:UInt64=0,plan:String="",sourceAndAge:String="",stateLabel:String="",windowDetails:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],enterLabel:String="Open",dismissLabel:String="✕",redBelow:Double=25,at now:Date)throws->DockCardContent{
+        _=try DockInstrumentProjection.evaluate(input,now:now,redBelow:redBelow)
         var rows=[DockCardRow]()
         for window in input.windows{
             var scoped=input,cardWindow=window;cardWindow.isGeneral=true
             scoped.windows=[cardWindow];scoped.selectedWindowID=window.id
-            let reading=try DockInstrumentProjection.evaluate(scoped,now:now)
+            let reading=try DockInstrumentProjection.evaluate(scoped,now:now,redBelow:redBelow)
             rows.append(.init(id:"quota:"+window.id,kind:window.isGeneral && (window.period == .fiveHour || window.period == .week || window.period == .month) ? .quota:.extraQuota,label:window.label,value:reading.readout,detail:windowDetails[window.id] ?? "",remainingFraction:reading.remainingPercent.map{$0/100},tone:reading.status))
         }
         let result=DockCardContent(subscriptionID:input.id,revision:revision,name:input.name,plan:plan,sourceAndAge:sourceAndAge,stateLabel:stateLabel,rows:rows+additionalRows,links:links,enterLabel:enterLabel,dismissLabel:dismissLabel)

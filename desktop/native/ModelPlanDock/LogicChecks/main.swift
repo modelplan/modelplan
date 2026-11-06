@@ -297,7 +297,7 @@ do {
         try expect(result.outer?.windowID=="5h" && result.inner?.windowID=="month","when weekly is absent the inner ring uses the longest remaining window")
     }
     try test("B06 boundary status and unknown/stale/passed resets are not invented fuel") {
-        for (r,expected) in [(0.0,DockQuotaStatus.critical),(15.0,.critical),(16.0,.critical),(25.0,.critical),(25.01,.warning),(40.0,.warning),(41.0,.normal)] {
+        for (r,expected) in [(0.0,DockQuotaStatus.critical),(25.0,.critical),(25.01,.warning),(26.0,.warning),(50.0,.warning),(50.01,.normal),(51.0,.normal),(100.0,.normal)] {
             let w=DockQuotaWindowInput(id:"five",period:.fiveHour,label:"5h",remainingPercent:r,resetsAt:nil,durationSeconds:nil)
             var i=DockInstrumentInput(id:"sub",name:"Synthetic",windows:[w]);i.dataState = .fresh
             let p=try DockInstrumentProjection.evaluate(i,now:now)
@@ -314,7 +314,7 @@ do {
         try expect(try DockInstrumentProjection.evaluate(i,now:now).readout=="--","passed reset retires quota")
     }
     try test("configured critical thresholds include equality for saved and new choices") {
-        for threshold in [10.0, 16, 20, 25] {
+        for threshold in [40.0, 30, 25, 20, 15, 10] {
             for remaining in [threshold - 0.01, threshold, threshold + 0.01] {
                 let window = DockQuotaWindowInput(id:"quota",period:.fiveHour,label:"Quota",remainingPercent:remaining,resetsAt:nil,durationSeconds:nil)
                 var input = DockInstrumentInput(id:"sub",name:"Synthetic",windows:[window]);input.dataState = .fresh
