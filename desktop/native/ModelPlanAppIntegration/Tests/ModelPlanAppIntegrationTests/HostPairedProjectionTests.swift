@@ -76,7 +76,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -103,7 +103,7 @@ actor EntrySyntheticClient: EngineClient {
         account["valueState"] = readerFailed ? "retained" : "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
-        if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": "unknown"] }
+        if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": reserveUnit] }
         session["id"] = "session:18000:main:main"; session["role"] = "session"
         session["durationSeconds"] = 18000; session["limitKey"] = "main"; session["poolKey"] = "main"
         session.removeValue(forKey: "modelScope"); session["current"] = true
@@ -621,6 +621,32 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(try weekly().hasPrefix("resets in 2h 14m"), try weekly())
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(try weekly().hasPrefix("2 小时 14 分后重置"), try weekly())
+    }
+
+    /// G3-06 residual (DOCK-3.8-08, R-08): a money balance without a currency is shown as a
+    /// grouped integer, never as the raw floating-point value.
+    func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 14_207.8550653333, reserveUnit: "money")
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock
+        func balance() throws -> DockCardRow {
+            let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+            return try XCTUnwrap(content.rows.first { $0.id == "credits" })
+        }
+        XCTAssertEqual(try balance().label, "Balance")
+        XCTAssertEqual(try balance().value, "14,208")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try balance().label, "余额")
+        XCTAssertEqual(try balance().value, "14,208")
     }
 
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {

@@ -50,6 +50,12 @@ enum M5CreditsDisplayFormat {
         return formatter.string(from: NSNumber(value: value.rounded(.toNearestOrAwayFromZero)))
     }
 
+    /// A reported money balance without a currency follows the same grouped integer rule
+    /// as credits (R-08), so a raw floating-point value never reaches the card.
+    static func moneyText(_ value: Double, english: Bool = true) -> String {
+        integerText(value, english: english) ?? String(value)
+    }
+
     static func unknownUnitText(_ value: Double?, unit: Unit, knowledge: UnitKnowledge, english: Bool = true) -> NeutralResult {
         // The caller must establish that the unit is unknown; raw identifiers are not classified here.
         // Credits and money, or any explicitly identified currency, keep their own policies.
