@@ -1,4 +1,11 @@
 # SPDX-License-Identifier: MIT
+# MAC_CI_RUNNER_V2 selects the pool per task: 'split' runs the balanced task set below on the
+# dedicated ordinary (non-GUI) Mac runners and keeps every other Mac job on GitHub-hosted
+# runners, so both pools work at the same time; the legacy all-dedicated value keeps only the
+# original four tasks on the dedicated runners (new tasks are NOT enabled by it); 'hosted' or
+# any other value keeps everything hosted — the fallback when the dedicated runner is offline.
+# The task set lives in the canonical runs-on selector mirrored by scripts/workflow-policy.mjs;
+# the runner group admits exactly one reviewed commit of this file (docs/mac-ci.md).
 name: Trusted Mac checks
 'on':
   workflow_call:
@@ -15,7 +22,7 @@ permissions:
 jobs:
   native:
     if: ${{ inputs.task == 'native' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     name: native (${{ inputs.os }})
     timeout-minutes: 25
     env:
@@ -123,7 +130,7 @@ jobs:
     # parallel with the GUI leg above. desktop/native/tools/ci/native-test-partition.json decides
     # which XCTest classes run here; both legs prove they ran exactly their share.
     if: ${{ inputs.task == 'native-headless' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     name: native-headless (${{ inputs.os }})
     timeout-minutes: 25
     env:
@@ -240,7 +247,7 @@ jobs:
         echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   transport:
     if: ${{ inputs.task == 'transport' }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -327,7 +334,7 @@ jobs:
         echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   sequences:
     if: ${{ inputs.task == 'sequences' }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
@@ -376,9 +383,309 @@ jobs:
         printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
         mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
         echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  u11-native:
+    # The U11 native cockpit lane's macos-15 job (u11-native.yml): canonical web/native pin
+    # regression, real CLI build and EngineClient/protocol tests. No GUI, so it fits the
+    # ordinary (non-GUI) runner pool.
+    if: ${{ inputs.task == 'u11-native' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    name: native
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: cli/go.mod
+        cache: false
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Canonical web/native pin regression (no GUI)
+      run: |
+        npm ci --prefix desktop/cockpit --ignore-scripts
+        npm test --prefix desktop/cockpit
+        npm run build --prefix desktop/cockpit
+        npm run build:official --prefix desktop/cockpit
+        python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py
+    - name: Build the actual public CLI
+      working-directory: cli
+      run: |
+        mkdir -p ../.tmp
+        go build -o ../.tmp/u11-cli ./cmd/modelplan
+    - name: Native protocol, bundle and actual EngineClient regressions (no GUI)
+      env:
+        MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
+      run: swift test --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-native-build --jobs 2
+    - name: Compile production without test SPI
+      run: swift build --package-path desktop/native/ModelPlanCockpitWeb --scratch-path .tmp/u11-release-build --configuration release --jobs 2
+    - name: Compile wired verification host (not execution)
+      run: swift build --package-path desktop/native/verification --scratch-path .tmp/u11-host-build --jobs 2 -Xswiftc -DMODELPLAN_TEST_ONLY_SPI
+    - name: Compile actual product and guard its Dock/menu cockpit action (no windows)
+      env:
+        MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
+      run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 --filter CommunityCockpitEntryTests
+    - name: Public numerical receipt privacy
+      run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_public_receipts.py'
+    - name: Source policy
+      run: node scripts/check-source-policy.mjs
+    - name: Remove this job's completed scratch
+      if: ${{ always() }}
+      run: rm -rf -- .tmp
+  dock-host-port:
+    # The Dock host port seam lane's macos-15 job (dock-host-port.yml): host port lifecycle,
+    # identity and factory regressions. No GUI.
+    if: ${{ inputs.task == 'dock-host-port' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    name: contracts (dock host port)
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - name: Host port lifecycle, identity and factory regressions (no GUI)
+      run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/dock-host-port --filter '(DockInteractionHostPortTests|ProductionDockFactoryTests)' --jobs 2
+    - name: Remove this job's completed scratch
+      if: ${{ always() }}
+      run: rm -rf -- .tmp
+  u14-drive:
+    # The macOS leg of the U14 engine Drive L1 matrix (u14-engine-drive.yml); the ubuntu leg
+    # stays in that workflow. No GUI.
+    if: ${{ inputs.task == 'u14-drive' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    name: engine-drive (${{ inputs.os }})
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+        cache-dependency-path: cli/go.sum
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Prepare owned scratch
+      run: mkdir -p .tmp/engine-drive
+    - name: Driver contract regressions
+      env:
+        TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
+      run: python3 -m unittest discover -s tools/u14/engine_drive -p 'test_*.py' -v
+    - name: Fetch ordinary old released writers
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        python3 tools/u14/engine_drive/release.py --tag v0.5.46 --commit 3602d410b17f9376278413633abeec6e3572ee56 --output .tmp/engine-drive/old46
+        python3 tools/u14/engine_drive/release.py --tag v0.5.47 --commit f830589cc613daf16267c692b735c3a240ec4d2e --output .tmp/engine-drive/old47
+    - name: Build ordinary CLI without overlays
+      working-directory: cli
+      run: go build -trimpath -o ../.tmp/engine-drive/modelplan ./cmd/modelplan
+    - name: Execute engine Drive as L1
+      env:
+        TMPDIR: ${{ github.workspace }}/.tmp/engine-drive
+      run: |
+        exec python3 tools/u14/engine_drive/run.py --binary .tmp/engine-drive/modelplan --source-sha "$GITHUB_SHA" --old-release .tmp/engine-drive/old46/release.json --old-release .tmp/engine-drive/old47/release.json --level L1 --output .tmp/engine-drive/evidence
+    - name: Retain outcomes before cleanup
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-drive-L1-${{ inputs.os }}-${{ github.sha }}
+        path: .tmp/engine-drive/evidence/
+        if-no-files-found: warn
+        retention-days: 14
+      id: evidence
+    - name: Remove owned completed scratch
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
+      run: rm -rf .tmp/engine-drive
+    - name: Acknowledge preserved evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
+      shell: bash
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  u10-candidate:
+    # The U10 candidate interface lane's macOS packaging job (u10-candidate.yml): assembles and
+    # seals the ad-hoc candidate archive. No signing secrets and no GUI; actual signing and
+    # publication stay hosted. Checks out the exact PR head, like the caller did.
+    if: ${{ inputs.task == 'u10-candidate' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    permissions:
+      contents: read
+      actions: read
+    name: candidate
+    timeout-minutes: 35
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: cli/go.mod
+        cache: false
+    - name: Select newest installed Xcode for Swift 6 source
+      run: |
+        python3 - <<'PY'
+        import os, plistlib, re
+        from pathlib import Path
+        candidates = []
+        for app in Path('/Applications').glob('Xcode*.app'):
+            version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+            candidates.append((tuple(map(int, re.findall(r'\d+', version))), str(app)))
+        if not candidates:
+            raise SystemExit('No installed Xcode')
+        with open(os.environ['GITHUB_ENV'], 'a') as output:
+            output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+        PY
+    - name: Assemble and seal candidate, archive, and generate U14 manifest
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        mkdir -p .tmp/tmp
+        export TMPDIR="$GITHUB_WORKSPACE/.tmp/tmp"
+        python3 tools/u10/package_candidate.py \
+          --output "$GITHUB_WORKSPACE/.tmp/u10-candidate" \
+          --candidate-id "u10-$(git rev-parse HEAD)-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+          --build-number "$GITHUB_RUN_NUMBER"
+    - name: Upload run artifact only
+      uses: actions/upload-artifact@v4
+      with:
+        name: u10-interface-candidate-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+        path: |
+          .tmp/u10-candidate/ModelPlan-candidate-adhoc.zip
+          .tmp/u10-candidate/SHA256SUMS
+          .tmp/u10-candidate/packaging-receipt.json
+          .tmp/u10-candidate/evidence/
+        if-no-files-found: error
+        retention-days: 7
+      id: evidence
+    - name: Remove this job's candidate scratch
+      if: ${{ always() }}
+      run: rm -rf "$GITHUB_WORKSPACE/.tmp/u10-candidate" "$GITHUB_WORKSPACE/.tmp/tmp"
+    - name: Acknowledge preserved evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
+      shell: bash
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+  distribution:
+    # The macOS distribution lane's neutral-build job (macos-distribution.yml): synthetic
+    # release-gate tests, pinned helper/CLI fetch, ad-hoc neutral packaging and the private-SPI
+    # rejection. No signing secrets and no GUI; signing and publication stay hosted.
+    if: ${{ inputs.task == 'distribution' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    permissions:
+      contents: read
+      actions: read
+    name: neutral-build
+    timeout-minutes: 25
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - uses: actions/setup-go@v5
+      with:
+        go-version: '1.24'
+    - name: Select newest installed Xcode for Swift 6 source
+      run: |
+        python3 - <<'PY'
+        import os, plistlib, re
+        from pathlib import Path
+        candidates = []
+        for app in Path('/Applications').glob('Xcode*.app'):
+            version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+            candidates.append((tuple(map(int, re.findall(r'\d+', version))), str(app)))
+        if not candidates:
+            raise SystemExit('No installed Xcode')
+        with open(os.environ['GITHUB_ENV'], 'a') as output:
+            output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+        PY
+    - name: Test release gates with synthetic values only
+      run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
+    - name: Fetch the approved prebuilt credential helper
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
+    - name: Fetch CLI archives from the reviewed native consent pin
+      run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
+    - name: Build Apple silicon neutral app (ad-hoc only)
+      run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
+    - name: Require the bundled helper to be the pinned CLI release
+      run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --app "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" --pin desktop/native/consent-cli-pin.json --require-release-identity
+    - name: Reject known private SPI in the built release binary
+      working-directory: cli
+      run: go run ./internal/releaseguard/cmd --binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"
+    - name: Archive checked Apple silicon neutral app
+      run: |
+        mkdir -p "$RUNNER_TEMP/neutral-artifact"
+        ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-arm64-unsigned.zip"
+        python3 - <<'PY'
+        import hashlib, json, os
+        from pathlib import Path
+        root = Path(os.environ['RUNNER_TEMP']) / 'neutral-artifact'
+        archive = root / 'ModelPlan-Community-arm64-unsigned.zip'
+        (root / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
+        (root / 'build-receipt.json').write_text(json.dumps({
+            'edition': 'community', 'sourceCommit': os.environ['GITHUB_SHA'],
+            'signing': 'ad-hoc only, not Developer ID', 'notarized': False,
+            'minimumMacOS': '15.0', 'architectures': ['arm64'],
+            'intel': 'unsupported', 'updateCandidate': False
+        }, indent=2) + '\n')
+        PY
+    - uses: actions/upload-artifact@v4
+      with:
+        name: modelplan-macos-neutral-unsigned
+        path: ${{ runner.temp }}/neutral-artifact/
+        if-no-files-found: error
+        retention-days: 7
+      id: evidence
+    - name: Remove this job's runner scratch
+      # Hosted runners wipe RUNNER_TEMP themselves; the ordinary runner keeps it, so this job
+      # removes only its own directories there once the evidence is preserved.
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
+      run: rm -rf -- "$RUNNER_TEMP/neutral-build" "$RUNNER_TEMP/neutral-artifact" "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/credential-agent-input"
+    - name: Acknowledge preserved evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
+      shell: bash
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   probe:
     if: ${{ inputs.task == 'probe' && github.event_name == 'workflow_dispatch' }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     timeout-minutes: 5
     steps:
     - name: Validate native runner execution
@@ -391,7 +698,7 @@ jobs:
         echo "MAC_RUNNER_PROBE_OK"
   gui-probe:
     if: ${{ inputs.task == 'gui-probe' && github.event_name == 'workflow_dispatch' }}
-    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
+    runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '["native","native-headless","transport","sequences"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '["native","native-headless","transport","sequences","u11-native","dock-host-port","u14-drive","u10-candidate","distribution"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}
     timeout-minutes: 5
     steps:
     - name: Validate a real graphical session

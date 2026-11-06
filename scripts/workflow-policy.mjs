@@ -1,4 +1,4 @@
-export const TRUSTED_MAC_ROUTE = "runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}";
+export const TRUSTED_MAC_ROUTE = "runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && (inputs.os == 'macos-latest' || inputs.os == 'macos-15') && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (contains(fromJSON(vars.MAC_CI_RUNNER_V2 == 'self-hosted' && '[\"native\",\"native-headless\",\"transport\",\"sequences\"]' || vars.MAC_CI_RUNNER_V2 == 'split' && '[\"native\",\"native-headless\",\"transport\",\"sequences\",\"u11-native\",\"dock-host-port\",\"u14-drive\",\"u10-candidate\",\"distribution\"]' || '[]'), inputs.task) || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\",\"modelplan-mac-gui\"]' || '[\"self-hosted\",\"macOS\",\"ARM64\",\"modelplan-mac\"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || inputs.os == 'macos-15' && 'macos-15' || 'macos-latest') }}";
 // SPDX-License-Identifier: MIT
 // Runner and trigger rules for public workflows. Defence in depth only: the enforced boundaries
 // are the immutable reusable workflow selected by the runner group and the owner-only pre-job gate.
@@ -165,5 +165,44 @@ export function draftGuardProblems(text) {
       problems.push(`macOS job ${job.name} runs on draft PRs; add "if: github.event_name != 'pull_request' || !github.event.pull_request.draft" (or collapse the matrix to ubuntu on drafts)`);
     }
   }
+  return problems;
+}
+
+// Actions cost control (R71, owner 11-06): hosted Mac minutes are capped and the dedicated
+// pool is small, so the reusable-Mac callers must stay a single, reviewable population:
+// every caller pins the SAME immutable trusted-mac.yml commit (a stale pin re-admits an old
+// definition, as the merged-but-unpinned receipt change in #604 showed), every literal task
+// selector a caller passes exists in trusted-mac.yml, and no workflow requests the same task
+// twice — one PR run must never book the same Mac job on both pools.
+export function trustedMacPins(text) {
+  return [...text.matchAll(/uses:\s*modelplan\/modelplan\/\.github\/workflows\/trusted-mac\.yml@(\S+)/g)].map((m) => m[1]);
+}
+
+export function trustedMacTaskSelectors(text) {
+  // Literal `task:` inputs only; expression-valued tasks (desktop's probe mode) carry no
+  // static name and are checked by the reusable workflow itself.
+  return [...text.matchAll(/^[ \t]*task:[ \t]*([a-z0-9-]+)[ \t]*$/gm)].map((m) => m[1]);
+}
+
+export function trustedMacCostProblems(files, trustedMacPath = ".github/workflows/trusted-mac.yml") {
+  const problems = [];
+  const trusted = files.get(trustedMacPath) ?? "";
+  const defined = new Set([...trusted.matchAll(/inputs\.task == '([a-z0-9-]+)'/g)].map((m) => m[1]));
+  const pins = new Set();
+  for (const [path, text] of files) {
+    const filePins = trustedMacPins(text);
+    for (const pin of filePins) {
+      pins.add(pin);
+      if (!/^[0-9a-f]{40}$/.test(pin)) problems.push(`${path}: trusted-mac.yml pin "${pin}" is not an immutable 40-hex commit`);
+    }
+    if (path === trustedMacPath || filePins.length === 0) continue;
+    const seen = new Set();
+    for (const task of trustedMacTaskSelectors(text)) {
+      if (!defined.has(task)) problems.push(`${path}: trusted-mac task "${task}" is not defined in ${trustedMacPath}`);
+      if (seen.has(task)) problems.push(`${path}: requests trusted-mac task "${task}" twice — one run must never book the same Mac job on both pools`);
+      seen.add(task);
+    }
+  }
+  if (pins.size > 1) problems.push(`trusted-mac.yml callers pin ${pins.size} different commits (${[...pins].join(", ")}); all callers must move to the same reviewed pin together`);
   return problems;
 }
