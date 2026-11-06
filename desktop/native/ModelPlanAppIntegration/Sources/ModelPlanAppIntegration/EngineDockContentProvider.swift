@@ -374,10 +374,11 @@ public enum EngineDeadlineFacts {
                     remainingPercent: current ? window.remainingPercent : nil,
                     resetsAt: current ? date(window.resetsAt) : nil,
                     durationSeconds: window.durationSeconds.map { Double($0) })
-                // Only known plan-wide session and weekly limits participate.
+                // Only known plan-wide session, weekly and monthly limits participate.
                 // Named, unknown and model-scoped pools remain card-only.
                 let generalLimit = (period == .fiveHour && ["main", "five_hour"].contains(window.limitKey)) ||
-                    (period == .week && ["main", "weekly"].contains(window.limitKey))
+                    (period == .week && ["main", "weekly"].contains(window.limitKey)) ||
+                    (period == .month && ["main", "monthly"].contains(window.limitKey))
                 projected.isGeneral = window.modelScope == nil && window.poolKey == "main" && generalLimit
                 input.windows.append(projected)
             }

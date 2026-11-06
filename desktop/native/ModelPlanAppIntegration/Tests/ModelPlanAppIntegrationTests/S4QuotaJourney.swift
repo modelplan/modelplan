@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -63,7 +63,7 @@ private actor S4RowsClient: EngineClient {
         row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
         account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
         window["id"]="scope-check";window["role"]="session";window["limitKey"]="five_hour";window["poolKey"]="main"
-        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z"
+        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z";window["resetsAt"]="2099-01-01T00:00:00Z"
         window.removeValue(forKey:"modelScope");projection.removeValue(forKey:"resetEvents")
         func decode() throws -> WireDecoded<WireRowsSnapshot> {
             account["windows"]=[window];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
@@ -87,6 +87,7 @@ private actor S4RowsClient: EngineClient {
         }
         try require(try input().windows.first?.isGeneral == true,"an omitted scope must remain general")
         try require(entry.composition.rowEvents == .absentFromSchema,"omitted events must remain absent")
+        try require(try DockInstrumentProjection.evaluate(input(),now:Date()).remainingPercent == 41,"DOCK-3.7-06: the original personal reading must determine the ring")
         window["modelScope"]=["models":["opus"]]
         try await client.replaceRows(decode().value)
         try require(try input().windows.first?.isGeneral == false,"a valid scoped window must not become general")
@@ -112,6 +113,10 @@ private actor S4RowsClient: EngineClient {
         try await client.replaceRows(decode().value)
         guard case .available(let admitted)=entry.composition.rowEvents else { throw Failure(description:"valid event treated as absent") }
         try require(admitted.count == 1 && entry.composition.resetSignals.contains(where:{$0.reset?.id == admitted[0].id}),"valid event must reach the normal projection")
+        try require(try DockInstrumentProjection.evaluate(input(),now:Date()).remainingPercent == 41,"DOCK-3.7-06: a public announcement must not refill the personal ring")
+        window["remainingPercent"]=70
+        try await client.replaceRows(decode().value)
+        try require(try DockInstrumentProjection.evaluate(input(),now:Date()).remainingPercent == 70,"DOCK-3.7-06: a new personal reading must update the ring")
         for bad:Any in [NSNull(),"malformed",[["version":1]],[["version":"malformed"]]] {
             projection["resetEvents"]=bad
             try rejected("null or malformed events must reject the frame")
@@ -458,7 +463,7 @@ private actor S4RowsClient: EngineClient {
         try require(deliveries.count == 2, "a late confirmation must stay deduplicated after announcement expiry")
         await entry.composition.stop()
     }
-    static func roles(capture:URL) async throws {
+    static func roles(capture:URL,verifyMonthlyMinimum:Bool = false) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any]
         var row=(projection["rows"] as! [[String:Any]])[0]
@@ -477,7 +482,7 @@ private actor S4RowsClient: EngineClient {
         var scopedWeekly=window("model","weekly",2,604800);scopedWeekly["modelScope"]=["models":["opus"]]
         var special=window("review","weekly",1,604800);special["limitKey"]="code_review";special["poolKey"]="code_review"
         var unknown=window("unknown","session",3,18000);unknown["limitKey"]="other";unknown["poolKey"]="other"
-        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",80,2592000)]
+        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",12,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
@@ -485,11 +490,14 @@ private actor S4RowsClient: EngineClient {
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
-        await entry.prepare();await entry.composition.start()
+        await entry.prepare();entry.allowDockPresentation();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
-        try require(reading.remainingPercent == 24,"restricted and special-pool windows must not determine the general tightest")
+        try require(reading.remainingPercent == 12,"the tightest plan-wide reading must include the monthly window")
+        let rendered = entry.composition.dock.dockView.presentedReadingsForChecks[input.id]
+        try require(rendered?.selectedWindowID == "month" && rendered?.readout == "12%","normal Dock must paint the selected monthly value")
+        try require(input.windows.first(where:{$0.id == "month"})?.isGeneral == true,"a plan-wide monthly window must be general")
         try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
         try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
@@ -497,6 +505,18 @@ private actor S4RowsClient: EngineClient {
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
         try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
+        try require(card.rows.contains{$0.id == "quota:model" && $0.kind == .extraQuota && $0.value == "2%"},"DOCK-3.8-12: the model-scoped reading must appear in the card as an extra")
+        if verifyMonthlyMinimum {
+            guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+            account["windows"]=[window("five","session",63,18000),window("weekly","weekly",24,604800),window("month","monthly",10,2592000)]
+            row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            let changed=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+            try await client.replaceRows(changed)
+            guard let updated=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"DOCK-3.3-04: member disappeared") }
+            try require(try DockInstrumentProjection.evaluate(updated,now:Date()).remainingPercent == 10,"DOCK-3.3-04: monthly must determine the ring when it is the tightest general reading")
+            await entry.composition.stop()
+            return
+        }
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
         try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "Reset time passed","relative reset text must use presentation time, not cached projection time")
