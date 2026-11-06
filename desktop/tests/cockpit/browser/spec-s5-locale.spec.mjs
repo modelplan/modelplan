@@ -90,3 +90,17 @@ test('CKP-STRIP-07 Option help tracks detach state without moving the header',as
  await page.keyboard.down('Alt');await expect(help).toBeVisible();await expect(help.locator('[data-target="[data-detach]"]')).toContainText('Put back');
  await page.keyboard.up('Alt');await expect(help).toBeHidden();
 });
+
+test('CKP-STRIP-02 visible wordmark is ModelPlan with a red Plan in both themes',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell}))).toBe(true);
+ const wordmark=page.locator('.ck-brand .wordmark'),plan=wordmark.locator('b');
+ await expect(wordmark).toHaveText('ModelPlan');await expect(plan).toHaveText('Plan');await expect(wordmark).toBeVisible();
+ for(const theme of ['night','day']){
+  expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);
+  const box=await wordmark.boundingBox();expect(box).not.toBeNull();const png=await page.screenshot({clip:box,animations:'disabled'});
+  const red=await page.evaluate(async bytes=>{const image=await createImageBitmap(new Blob([new Uint8Array(bytes)],{type:'image/png'}));const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d');ctx.drawImage(image,0,0);const pixels=ctx.getImageData(0,0,image.width,image.height).data;let n=0;for(let i=0;i<pixels.length;i+=4){const x=(i/4)%image.width;if(x>=image.width*.4&&pixels[i]>90&&pixels[i]>pixels[i+1]*1.3&&pixels[i]>pixels[i+2]*1.3)n++;}return n;},[...png]);
+  expect(red,`${theme} must render red brand pixels`).toBeGreaterThan(5);
+ }
+});
