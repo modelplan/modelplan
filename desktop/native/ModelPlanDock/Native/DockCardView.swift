@@ -107,7 +107,7 @@ import CryptoKit
         var children:[NSView]=[head]
         for (id,text) in [("source",value.sourceAndAge),("state",value.stateLabel)] where !text.isEmpty{children.append(label(id,text))}
         for row in value.rows{
-            let l=label("row."+row.id+".label",row.label);if row.kind == .extraQuota{l.toolTip=row.label}
+            let l=label("row."+row.id+".label",row.label);if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
             let h=group("row."+row.id);var fields:[NSView]=[l]
             if row.kind == .quota || row.kind == .extraQuota{
                 usedBars.insert(row.id)

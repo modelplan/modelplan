@@ -76,7 +76,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -152,6 +152,11 @@ actor EntrySyntheticClient: EngineClient {
             session.removeValue(forKey: "source"); week.removeValue(forKey: "source")
         }
         windows = includeSession ? [session, week] : [week]
+        if extraWindow {
+            var extra = week
+            extra["id"] = "extra"; extra["role"] = "other"; extra["durationSeconds"] = 60; extra["remainingPercent"] = 1
+            windows.append(extra)
+        }
         if windowSources == .distinct || windowSources == .restrictedWithLegacyMember {
             session["source"] = "local_history"; session["observedAt"] = "2026-12-01T23:23:00Z"
             session["remainingPercent"] = 9
@@ -647,6 +652,38 @@ actor EntrySyntheticClient: EngineClient {
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
         XCTAssertEqual(try balance().value, "14,208")
+    }
+
+    /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
+    func testNormalCardShowsNoNativeTooltips() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("card-tooltips-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let readings = try Self.rows(weekly: 75, extraWindow: true)
+        var elapsed = 0.0
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        var pointer = CGPoint(x: 700, y: 450)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock, view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+        XCTAssertTrue(content.rows.contains { $0.kind == .extraQuota }, "precondition: the card has a scoped extra row")
+        func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
+        XCTAssertEqual(tooltips(dock.card), [])
     }
 
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
