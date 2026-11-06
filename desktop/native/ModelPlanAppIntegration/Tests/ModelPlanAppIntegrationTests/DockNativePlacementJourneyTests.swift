@@ -981,8 +981,10 @@ import ModelPlanSettings
                         }
                         XCTAssertEqual(nozzles.count + overflow, quotas.count, label)
                         if overflow > 0 { overflowCases += 1 }
-                        XCTAssertEqual(CGFloat(image.width), ceil(view.bounds.width * CGFloat(display.backingScale)), label)
-                        XCTAssertEqual(CGFloat(image.height), ceil(view.bounds.height * CGFloat(display.backingScale)), label)
+                        XCTAssertTrue(view.nozzlePosesForChecks.isEmpty, label)
+                        XCTAssertTrue(view.bounds.contains(try XCTUnwrap(view.registeredHullBounds, label)), label)
+                        XCTAssertEqual(CGFloat(image.width), ceil(skin.bounds.width * CGFloat(display.backingScale)), label)
+                        XCTAssertEqual(CGFloat(image.height), ceil(skin.bounds.height * CGFloat(display.backingScale)), label)
                         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery, label)
                         if let directory {
                             try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]), label)
@@ -1086,8 +1088,10 @@ import ModelPlanSettings
                     for nozzle in nozzles { XCTAssertEqual(nozzle.diameter, size.nozzleDiameter, accuracy: 0.001, label) }
                     XCTAssertEqual(nozzles.count + view.interactionOverflowIDs.count, quotas.count, label)
                     let raster = try XCTUnwrap(view.renderedPixelSize)
-                    XCTAssertEqual(raster.width, ceil(view.bounds.width * CGFloat(screen.backingScale)), label)
-                    XCTAssertEqual(raster.height, ceil(view.bounds.height * CGFloat(screen.backingScale)), label)
+                    XCTAssertTrue(view.nozzlePosesForChecks.isEmpty, "Keep the pointer off the widget for the resting capture: " + label)
+                    XCTAssertTrue(view.bounds.contains(try XCTUnwrap(view.registeredHullBounds, label)), label)
+                    XCTAssertEqual(raster.width, ceil(skin.bounds.width * CGFloat(screen.backingScale)), label)
+                    XCTAssertEqual(raster.height, ceil(skin.bounds.height * CGFloat(screen.backingScale)), label)
                     FileHandle.standardOutput.write(Data(("D-15: Capture " + label +
                         " at 100%. Native raster \(Int(raster.width))×\(Int(raster.height)).\n").utf8))
                     try await Task.sleep(for: .seconds(5))
