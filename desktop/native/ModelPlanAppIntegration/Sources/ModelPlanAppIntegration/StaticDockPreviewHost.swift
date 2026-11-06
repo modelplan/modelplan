@@ -780,7 +780,8 @@ struct DockHelpInteraction: Equatable {
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
         edge.prepareDragDisplay = { [weak self] display in
-            guard let self, self.appearanceDisplay != display, !self.rendering else { return }
+            // Also prepare the top-edge artwork once per carry on the same display (lazy, G3-27).
+            guard let self, self.appearanceDisplay != display || self.edgeViews[.top] == nil, !self.rendering else { return }
             self.rendering = true
             defer { self.rendering = false }
             self.rebuildPass(self.inputGeneration, carriedTo: display)
@@ -1089,7 +1090,10 @@ struct DockHelpInteraction: Equatable {
         // The official factory opts detached integration hosts into production
         // edge layouts; arbitrary injected appearances retain their own lifecycle.
         if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
-            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
+            // The top edge (G3-27) is drawn only while the widget rests there or is being carried:
+            // an official horizontal face is costly, and a resting widget never needs it otherwise.
+            let needsTop = selected == .top || carriedTo != nil || edge.isBackgroundPressed
+            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected && ($0 != .top || needsTop) }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
