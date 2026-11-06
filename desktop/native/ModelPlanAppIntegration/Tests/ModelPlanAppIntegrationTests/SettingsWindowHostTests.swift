@@ -214,7 +214,7 @@ import ModelPlanEngineClient
         XCTAssertTrue(app.settingsHost.application.editor.context.capabilities.updateServiceAvailable)
         let menu = try XCTUnwrap(app.liveStatusMenu)
         XCTAssertFalse(menu.items.contains { $0.title == "Check for updates" || $0.title == "检查更新" })
-        XCTAssertTrue(menu.items.contains { $0.title == "About" })
+        XCTAssertTrue(menu.items.contains { $0.title == "About ModelPlan" })
     }
 
     func testSuspendAlsoRetiresAnEntryStillQueuedOnTheMainActor() async throws {

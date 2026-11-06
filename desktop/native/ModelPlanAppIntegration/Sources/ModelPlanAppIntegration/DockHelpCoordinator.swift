@@ -100,7 +100,8 @@ struct DockStatusHelpDismissal {
                 let zh = language == .chinese
                 switch kind {
                 case .ringRefresh: return (zh ? "悬停查看详情 · 点击刷新" : "Hover to see details · click to refresh", zh ? "不再显示" : "Don't show again")
-                case .findWidget: return (zh ? "在菜单中选择“显示额度挂件”再次找到" : "Find it again from the menu: Show Quota Widget", zh ? "不再显示" : "Don't show again")
+                case .findWidget: return (zh ? "在菜单栏图标里勾选「显示额度挂件」可再次找到" : "Find it again from the menu bar icon: Show Quota Widget", zh ? "不再显示" : "Don't show again")
+                case .widgetOff: return (EngineRowsText.widgetTurnedOffHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
                 default: return nil
@@ -175,15 +176,18 @@ struct DockStatusHelpDismissal {
         guard !retired, !suspended, let binding else { return }
         if let mapSurface, surface != mapSurface { dismissRequestedMap() }
         let eligible = application.latest?.snapshot.preferences.onboarding.completed == true
-        let concealed: Bool
+        let concealed: Bool, turnedOff: Bool
         switch dock?.edgePresentation?.state {
-        case .sliver?, .suppressed(.userHidden)?: concealed = true
-        default: concealed = false
+        case .sliver?: concealed = true; turnedOff = false
+        case .suppressed(.userHidden)?: concealed = true; turnedOff = true
+        default: concealed = false; turnedOff = false
         }
         if eligible, concealed, let anchor = statusAnchor(), !anchor.frame.isEmpty {
-            if statusSurface?.anchors[.findWidget] != anchor.frame {
+            // G3-28: turning the widget off also anchors the one-time "turned off" hint here.
+            let anchors: [FirstUseHintKind: CGRect] = turnedOff ? [.findWidget: anchor.frame, .widgetOff: anchor.frame] : [.findWidget: anchor.frame]
+            if statusSurface?.anchors != anchors {
                 statusSurface = DockHelpSurface(revealID: UUID(), layoutID: UUID(), visible: true, dragging: false,
-                                                anchors: [.findWidget: anchor.frame])
+                                                anchors: anchors)
             }
         } else { statusSurface = nil }
         let admittedSurface = eligible ? (statusSurface ?? surface) : nil
@@ -193,6 +197,7 @@ struct DockStatusHelpDismissal {
         context.v1MinimalHints = true
         context.ringRefreshAvailable = statusSurface == nil && dock?.ringRefreshAvailable == true
         context.widgetConcealed = concealed
+        context.widgetTurnedOff = turnedOff
         context.statusAnchorAvailable = statusSurface != nil
         context.ignitionAvailable = dock?.cockpitEntryEnabled == true
         context.cardPinned = false
@@ -221,7 +226,7 @@ struct DockStatusHelpDismissal {
         var anchors = surface.mapAnchors.map { DockRequestedHelpAnchor(id: $0.id, region: $0.region, rect: local($0.rect), visible: $0.visible, caption: $0.caption) }
         if let status = statusAnchor(), viewport.contains(status.frame) {
             mapStatusFrame = status.frame
-            let caption = application.latest?.effective.language == .chinese ? "从菜单中选择“显示额度挂件”。" : "Choose Show Quota Widget from the menu."
+            let caption = application.latest?.effective.language == .chinese ? "在菜单栏图标里勾选「显示额度挂件」。" : "Choose Show Quota Widget from the menu bar icon."
             anchors.append(.init(id: "status.menu", region: .sliver, rect: local(status.frame), visible: true, caption: caption))
         } else { mapStatusFrame = nil }
         let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)

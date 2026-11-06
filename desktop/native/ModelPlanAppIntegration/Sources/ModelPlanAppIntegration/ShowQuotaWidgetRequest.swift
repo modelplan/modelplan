@@ -21,13 +21,24 @@ enum ShowQuotaWidgetOutcome: Equatable { case ready, unavailable, changed, faile
                         commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async -> ShowQuotaWidgetOutcome {
         await setVisible(true, editor: editor, commit: commit)
     }
-    /// Shared by Show and the widget's own Hide. Other writers share the one store outside
+    /// Shared by the status menu's checkable Show Quota Widget item and Help. Other writers share the one store outside
     /// the editor (the Help host saves its hint ledger while the widget is concealed), so a
     /// revision that moved before or during the request is re-read and the switch is saved on
     /// top of it instead of being dropped as stale. Only an opposite choice saved after this
     /// request wins over it.
     static func setVisible(_ visible: Bool, editor: SettingsEditor,
                            commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async -> ShowQuotaWidgetOutcome {
+        await write(\.showDock, to: visible, edit: .showDock(visible), editor: editor, commit: commit)
+    }
+    /// G3-28: the widget menu's Auto-Collapse item writes the same stored setting as
+    /// Settings' "鼠标离开后自动收起" switch, through the same bounded path as Show.
+    static func setAutoCollapse(_ on: Bool, editor: SettingsEditor,
+                                commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async -> ShowQuotaWidgetOutcome {
+        await write(\.autoHide, to: on, edit: .autoHide(on), editor: editor, commit: commit)
+    }
+    private static func write(_ key: KeyPath<SettingsPreferences, Bool>, to visible: Bool, edit: SettingsB21Edit,
+                            editor: SettingsEditor,
+                            commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)?) async -> ShowQuotaWidgetOutcome {
         guard editor.snapshot != nil else { return .unavailable }
         for attempt in 0..<attemptLimit {
             if attempt > 0 || editor.isSaving { await settle(editor) }
@@ -35,15 +46,15 @@ enum ShowQuotaWidgetOutcome: Equatable { case ready, unavailable, changed, faile
             let current = await editor.store.snapshot()
             if editor.snapshot?.revision != current.revision { await editor.reload() }
             guard !editor.isSaving, let loaded = editor.snapshot, loaded.revision == current.revision else { continue }
-            if loaded.preferences.showDock == visible { return .ready }
+            if loaded.preferences[keyPath: key] == visible { return .ready }
             do {
                 let saved: SettingsSnapshot
                 if let commit { saved = try await commit(editor) }
-                else { saved = try await editor.commit(SettingsB21Edit.showDock(visible)) }
+                else { saved = try await editor.commit(edit) }
                 let latest = await editor.store.snapshot()
                 if latest.revision != saved.revision || editor.snapshot?.revision != latest.revision { await editor.reload() }
                 // An opposite choice saved after this request is not overwritten.
-                return latest.preferences.showDock == visible ? .ready : .changed
+                return latest.preferences[keyPath: key] == visible ? .ready : .changed
             } catch SettingsError.staleRevision {
                 await editor.reload()
             } catch SettingsEditorError.editInProgress {

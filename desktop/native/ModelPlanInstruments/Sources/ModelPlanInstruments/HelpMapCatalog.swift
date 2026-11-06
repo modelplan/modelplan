@@ -56,7 +56,7 @@ public struct HelpMapCatalog: Sendable {
         case .number: return copy("数字：显示这个喷口当前选中周期的剩余额度。", "Number: quota left in the window selected for this nozzle.")
         case .eventDot: return copy("事件点：橙色风险、蓝色公开重置、白色正在用点数。", "Event dot: amber risk, blue public reset, white credits in use.")
         case .ignition: return copy("点火钮：点按打开驾驶舱。", "Ignition: tap to open the Cockpit.")
-        case .sliver: return copy("隐藏条：靠近稍停显示额度挂件，右键打开菜单。", "Sliver: rest near it to reveal the Quota Widget or right-click for its menu.")
+        case .sliver: return copy("细条：额度挂件收起后贴在边缘，靠近稍停即可展开，右键打开菜单。", "Sliver: rest near it to reveal the Quota Widget or right-click for its menu.")
         }
     }
 }

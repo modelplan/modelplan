@@ -157,11 +157,12 @@ struct StatusNoticePresentation {
             self.dockHelp?.refresh()
         }
         let application=settings
-        composition.dock.requestHideDock = { [weak application] in
-            // Same bounded path as Show: a hint-ledger write must not silently drop Hide.
+        composition.dock.requestAutoCollapse = { [weak application] on in
+            // G3-28: the same stored setting as Settings' auto-collapse switch, through the same
+            // bounded path as Show, so a hint-ledger write cannot silently drop the choice.
             Task { @MainActor in
                 guard let editor = application?.editor else { return }
-                _ = await ShowQuotaWidgetRequest.setVisible(false, editor: editor)
+                _ = await ShowQuotaWidgetRequest.setAutoCollapse(on, editor: editor)
             }
         }
         #if MODELPLAN_U6_DRIVE
@@ -542,25 +543,26 @@ struct StatusNoticePresentation {
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
         let settingsTitle = label("Settings…", "设置…")
-        let quitTitle = label("Quit", "退出")
+        // HIG: "Quit AppName" and "About AppName" in a menu bar extra's menu.
+        let quitTitle = EngineRowsText.quit.value(language)
         applicationSettingsItem.title = settingsTitle
         applicationSettingsItem.isEnabled = available && !terminating
         applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
         applicationQuitItem.title = quitTitle
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
-        let showTitle: String
-        switch showAvailability {
-        case .loading: showTitle = label("Show Quota Widget — Loading Settings", "显示额度挂件 — 正在载入设置")
-        case .saving: showTitle = label("Show Quota Widget — Saving Settings", "显示额度挂件 — 正在保存设置")
-        case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
-        }
+        // Owner HIG decision (11-06): one checkable item with a constant title. The checkmark
+        // shows the stored switch (the same one as Settings); choosing it toggles show/hide.
+        // While Settings load or save the item stays put and is only disabled.
+        let showTitle = EngineRowsText.showQuotaWidget.value(language)
+        let widgetShown = settings.editor.snapshot?.preferences.showDock ?? false
         var menuItems: [DockMenuPresentationItem] = []
         if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
         else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
         menuItems += [
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
-            .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
+            .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
+                  action: showAvailability == .ready ? { [weak self] in self?.setDockShown(!widgetShown) } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
@@ -603,7 +605,7 @@ struct StatusNoticePresentation {
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
                   action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
-            .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
+            .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
         LivePrivateMenus.scrubItems(menu)
@@ -692,23 +694,25 @@ struct StatusNoticePresentation {
     }
     private func showFeedbackText(_ language: SettingsLanguage) -> String? {
         switch showFeedback {
-        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择显示额度挂件。").value(language)
-        case .failed, .unavailable: return SettingsText("Could not show Quota Widget. Check Settings and try again.", "无法显示额度挂件，请检查设置后重试。").value(language)
+        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择「显示额度挂件」。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
     }
-    private func showDock() {
+    /// The status menu's checkable Show Quota Widget item (G3-18): unchecking turns the widget
+    /// off, checking turns it on and reveals it. The app keeps running either way.
+    private func setDockShown(_ shown: Bool) {
         guard ShowQuotaWidgetRequest.availability(paused: terminating,
                 loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
         showRequestInFlight = true; showFeedback = nil; renderMenu()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor)
+            let outcome = await ShowQuotaWidgetRequest.setVisible(shown, editor: self.settings.editor)
             self.showRequestInFlight = false
             guard !self.terminating else { return }
-            let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
+            let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != shown ? .changed : outcome
             self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
-            if currentOutcome == .ready { self.composition.dock.revealForUser() }
+            if currentOutcome == .ready && shown { self.composition.dock.revealForUser() }
             self.renderMenu()
         }
     }

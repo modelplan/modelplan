@@ -147,15 +147,12 @@ actor SettingsJourneyClient: EngineClient {
         let first = try makeApp(); defer { first.composition.dock.close() }
         await first.prepare(); first.allowDockPresentation()
         await first.composition.start()
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         XCTAssertFalse(first.composition.dock.interactionEnvironment().active)
-        try await showFromStatusMenu(first)
-        try await waitFor(first, shown: true)
+        try await chooseShowQuotaWidget(first, checked: false)
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         let editor = first.settingsHost.application.editor
         let snapshot = try XCTUnwrap(editor.snapshot)
         let settingsRows = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: nil)
@@ -163,8 +160,7 @@ actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.showDock(true))
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         await first.composition.stop()
         first.composition.dock.close()
         let reopened = try makeApp(); await reopened.prepare(); reopened.allowDockPresentation()
