@@ -151,6 +151,53 @@ test("CI at the head: newest run per workflow, parse-time failures, statuses, an
   assert.equal(evalPr({ comments: [], runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "a red head fails before reviews arrive");
 });
 
+test("ledger evidence: exact-head trusted comment required for every listed scenario", () => {
+  const docs = [file("docs/evidence.md")];
+  const ledger = (body, extra = {}) => pr({ title: "Fix G3-07", body, ...extra });
+  const mark = (id, sha = H) => `VERIFIED: ${id} @ ${sha} evidence=artifacts/run-1`;
+  assert.equal(evalPr({ p: ledger("Details"), files: docs }).state, R.FAILURE);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01"), {login:"other", id:1})] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD))] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, reviews: [review(mark("D-01"))] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({title:"Ordinary fix", body:""}), files: docs }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({title:"Ordinary", body:"Scenarios: D-01", head:{sha:H, ref:"fix/g3-12", repo:{full_name:"modelplan/modelplan"}}}), files: docs }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(`VERIFIED: D-01 @ ${H} evidence=`)] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("**Scenarios:** D-01, D-01"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"), {login:"guanbear",id:1})] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01\nScenarios: V-03"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS, "only the first declaration counts");
+  assert.equal(evalPr({ p: ledger("Scenarios: d-01"), files: docs }).state, R.FAILURE, "IDs follow the shell gate's uppercase format");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("V-03"))] }).state, R.PENDING, "ledger scenario needs its own evidence");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("G3-12")), comment(mark("V-03"))] }).state, R.SUCCESS, "numeric scenario prefixes match verified evidence");
+});
+
+test("merge group requires evidence for each member's own head", () => {
+  const docs = [file("docs/evidence.md")];
+  const first = evalPr({p:pr({title:"G3-01", body:"Scenarios: D-01"}), files:docs,
+    comments:[comment(`VERIFIED: D-01 @ ${H} evidence=first`)]});
+  const other = pr({title:"G3-02", body:"Scenarios: D-02", head:{sha:OLD, ref:"fix/g3-02", repo:{full_name:"modelplan/modelplan"}}});
+  const absent = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${H} evidence=wrong-head`)]});
+  const valid = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${OLD} evidence=second`)]});
+  const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}, overlap:[]});
+  const queueRuns = [run(".github/workflows/ci.yml")];
+  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
+});
+
+test("malformed scenario members fail PR and merge group despite valid evidence", () => {
+  const docs = [file("docs/evidence.md")];
+  const receipt = comment(`VERIFIED: V-01 @ ${H} evidence=fixture`);
+  for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
+    const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
+    assert.equal(result.state, R.FAILURE, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}, overlap:[]}], queueRuns:greenCi}).state, R.FAILURE, invalid);
+  }
+  const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
+  assert.equal(valid.state, R.SUCCESS);
+});
+
 test("stale-base guard and merge-group evaluation", () => {
   assert.deepEqual(R.staleOverlap(["desktop/native/A.swift", "docs/x.md"], ["desktop/native/B.swift", "docs/y.md", "cli/z.go"]), ["desktop/native"]);
   assert.deepEqual(R.staleOverlap(["cli/a.go"], ["desktop/native/B.swift"]), []);
@@ -242,6 +289,11 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
     const path = `.github/workflows/${f}`;
     assert.deepEqual(workflowProblems(readFileSync(join(root, path), "utf8"), path), [], path);
   }
+  for (const path of [...R.QUEUE_WORKFLOWS, ".github/workflows/merge-gates-probe.yml"]) {
+    assert.match(readFileSync(join(root, path), "utf8"), /^  merge_group:\s*$/m, `${path} must run for queue groups`);
+  }
+  const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
+  assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
   assert.match(gates, /actions\/checkout@[0-9a-f]{40} /, "the gate pins its action by commit");
   assert.doesNotMatch(gates, /^\s+(pull_request|merge_group|pull_request_review):/m, "the gate never runs PR code");

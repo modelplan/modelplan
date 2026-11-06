@@ -85,6 +85,27 @@ func TestEmptySnapshotHasNoNulls(t *testing.T) {
 	}
 }
 
+// A harness can ship an effort key before the publication lists it. The session then knows
+// the harness reported one without knowing which, so it must not draw ★ as the user's own.
+func TestReportedEffortNotInPublication(t *testing.T) {
+	d, r := fixture()
+	r.Accounts[0].Harness.Effort = "xhigh"
+	s := Build(Input{Report: r, Digest: d, State: store.State{PublicationID: "p1", CheckedAt: now}, Now: now})
+	cc := s.Sessions[0]
+	if cc.EffortStatus != "reported" {
+		t.Fatalf("the harness reported an effort: effortStatus = %s", cc.EffortStatus)
+	}
+	if cc.Effort != nil {
+		t.Errorf("an effort the publication does not list is unknown, not the ★ fallback: %+v", cc.Effort)
+	}
+	if cc.Recommended == nil || !cc.Recommended.Star || cc.Recommended.Key != "medium" {
+		t.Errorf("the ★ effort stays published: %+v", cc.Recommended)
+	}
+	if cc.VsRecommended != nil {
+		t.Errorf("vsRecommended is unknown, not \"at ★\": %+v", cc.VsRecommended)
+	}
+}
+
 // clocked builds the snapshot of one fixed set of readings at another clock time, as the CLI
 // does: the accounts' verdicts, the advice and the boundaries all from that time.
 func clocked(at time.Time, used float64) Snapshot {
