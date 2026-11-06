@@ -31,7 +31,7 @@ def info(**changes):
     return {k: v for k, v in values.items() if v is not None}
 
 
-def inner_zip(plist=None, exe=None, bundles=preflight.RESOURCE_BUNDLES, marks=1, helper=b'helper',
+def inner_zip(plist=None, exe=None, bundles=preflight.RESOURCE_BUNDLES, marks=0, helper=b'helper',
               pin=None, extra=(), symlink=None, top=(APP,)):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w') as archive:

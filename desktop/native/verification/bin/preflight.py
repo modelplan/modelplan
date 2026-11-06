@@ -242,6 +242,41 @@ def read_member(archive, name):
         return None
 
 
+# Where configure_beta_zai (tools/distribution/release.py) finds the Dock resource manifest.
+DOCK_MANIFESTS = ('Resources/manifest.json', 'Contents/Resources/Resources/manifest.json',
+                  'Contents/Resources/manifest.json', 'manifest.json')
+
+
+def mark_problems(inner, info, names, dock):
+    """PF-07's Z.ai mark policy, matching the producers: package-neutral.sh always removes the
+    beta-only mark and writes no `zaiMarkEnabled`; release.py configure_beta_zai sets the boolean and,
+    only when true, restores exactly one mark at the manifest's path with the manifest's bytes."""
+    marks = sorted(n for n in names if n.startswith(dock) and n.endswith('/zai-white.svg'))
+    enabled = info.get('zaiMarkEnabled', False)
+    if type(enabled) is not bool:
+        return ['zaiMarkEnabled is not a boolean']
+    if not enabled:
+        return [] if not marks else [f'{len(marks)} zai-white.svg mark(s) without zaiMarkEnabled '
+                                     '(neutral builds exclude the beta-only mark)']
+    if len(marks) != 1:
+        return [f'{len(marks)} zai-white.svg marks with zaiMarkEnabled (need exactly one)']
+    manifests = [dock + m for m in DOCK_MANIFESTS if dock + m in names]
+    if len(manifests) != 1:
+        return ['beta mark without exactly one Dock resource manifest']
+    try:
+        record = json.loads(read_member(inner, manifests[0]) or b'')['files']['logo-zai-white']
+    except (ValueError, KeyError, TypeError):
+        return ['beta mark manifest record unreadable']
+    root = manifests[0][:-len('manifest.json')]
+    if (not isinstance(record, dict) or record.get('betaOnly') is not True
+            or record.get('path') != 'Marks/zai-white.svg' or marks[0] != root + record['path']):
+        return ['beta mark is not at the manifest path']
+    data = read_member(inner, marks[0])
+    if data is None or len(data) != record.get('bytes') or sha256_bytes(data) != record.get('sha256'):
+        return ['beta mark bytes do not match the manifest record']
+    return []
+
+
 def bundle_public_source(inner_bytes):
     """The source commit the bundle itself records (Info.plist ModelPlanPublicSource, written by
     package-neutral.sh from the checkout's real `git rev-parse HEAD`), or None when it cannot be read.
@@ -363,12 +398,11 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
     resources = contents + 'Resources/'
     wanted = list(RESOURCE_BUNDLES) + ([COCKPIT_BUNDLE] if flavour in ('test', 'verify') else [])
     missing = [b for b in wanted if not any(n.startswith(resources + b + '/') for n in names)]
-    marks = [n for n in names if n.startswith(resources + RESOURCE_BUNDLES[2] + '/') and n.endswith('/zai-white.svg')]
     helper = read_member(inner, contents + 'Helpers/modelplan')
     pin = (read_member(inner, resources + 'modelplan.sha256') or b'').decode('ascii', 'replace').strip()
     helper_ok = helper is not None and SHA256.fullmatch(pin) and sha256_bytes(helper) == pin
     problems = ([f'missing {", ".join(missing)}'] if missing else []) + \
-               ([f'{len(marks)} zai-white.svg marks (need exactly one)'] if len(marks) != 1 else []) + \
+               mark_problems(inner, info, names, resources + RESOURCE_BUNDLES[2] + '/') + \
                ([] if helper_ok else ['Helpers/modelplan does not match Resources/modelplan.sha256'])
     check(results, 'PF-07', not problems, '; '.join(problems) or 'resource bundles and helper pin present', **tag)
     entry_flag = info.get('ModelPlanCockpitEntryEnabled')
