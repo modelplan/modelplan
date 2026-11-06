@@ -177,6 +177,36 @@ import ModelPlanSettings
             return try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
         }
         func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
+        func capture(_ phase: String) throws {
+            guard let directory = ProcessInfo.processInfo.environment["MODELPLAN_D21_CAPTURE_DIR"] else { return }
+            let root = URL(fileURLWithPath: directory)
+            let view = try strip()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: root.appendingPathComponent(phase + "-strip.png"))
+            let image = try XCTUnwrap(dock.dockView.presentedImageForChecks)
+            let faceRaster = NSBitmapImageRep(cgImage: image)
+            try XCTUnwrap(faceRaster.representation(using: .png, properties: [:]))
+                .write(to: root.appendingPathComponent(phase + "-face.png"))
+            func describe(_ notice: DockNotice?) -> [String: String] {
+                guard let notice else { return [:] }
+                return ["kind": String(describing: notice.key.kind),
+                        "tone": String(describing: notice.tone), "shape": String(describing: notice.shape)]
+            }
+            let report: [String: Any] = [
+                "phase": phase,
+                "stripNotices": view.noticeMarks.map { describe($0.notice) },
+                "faceNotice": describe(face()),
+                "menuNotice": describe(app.noticeIndicator.notice),
+                "remainingPercent": dock.dockView.presentedReadingsForChecks[member]?.remainingPercent ?? -1,
+                "quotaRoles": view.quotaSegmentColorRolesForChecks.map { $0.quotaRole.map { String(describing: $0) } ?? "none" },
+                "notifications": delivered,
+            ]
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                .write(to: root.appendingPathComponent(phase + ".json"))
+        }
+
 
         try await waitForEvent(eventID, "announced")
         let row = try XCTUnwrap(app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" })
@@ -195,6 +225,7 @@ import ModelPlanSettings
         XCTAssertEqual(quota.first?.remainingPercent, 30)
         XCTAssertEqual(quota.first?.quotaRole, .warning, "The fixture must have quota paint before acknowledging the notice")
         try await wait("Announced notice is delivered once") { delivered == [eventID] }
+        try capture("01-announced")
 
         XCTAssertTrue(initial.accessibilityPerformPress())
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
@@ -213,6 +244,7 @@ import ModelPlanSettings
         try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+        try capture("02-recollapsed")
 
         try publish([announced, confirmed])
         try await subscribe()
@@ -225,6 +257,7 @@ import ModelPlanSettings
         XCTAssertEqual(app.noticeIndicator.notice, confirmation)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
         XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
+        try capture("03-confirmed")
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
         try await subscribe()
@@ -233,6 +266,7 @@ import ModelPlanSettings
         XCTAssertNil(face())
         XCTAssertNil(app.noticeIndicator.notice)
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
+        try capture("04-restarted")
 
         let expiryID = "synthetic-d21-expiry"
         let expiry = at(60)
@@ -245,15 +279,18 @@ import ModelPlanSettings
         try await wait("A distinct event receives its own delivery") { delivered == [eventID, expiryID] }
         let expiringNotice = try XCTUnwrap(face())
         XCTAssertEqual(app.noticeIndicator.notice, expiringNotice)
+        try capture("05-next-announcement")
         app.showConsole()
         XCTAssertTrue(cockpit.shown)
         XCTAssertNil(app.noticeIndicator.notice)
         XCTAssertEqual(try strip().noticeMarks.first?.notice, expiringNotice)
+        try capture("06-cockpit-ack")
         wall = now.addingTimeInterval(61)
         dock.refreshDockContent()
         XCTAssertNil(face())
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
         XCTAssertEqual(delivered, [eventID, expiryID], "Expiry must not publish another notification")
+        try capture("07-expired")
     }
 }
 #endif
