@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, sevenMemberFixture: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, sevenMemberFixture: Bool = false, forceNight: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -217,7 +217,7 @@ private extension EngineDeliveryContext {
         if withoutDetails { fixture.removeValue(forKey: "details") }
         let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: fixture))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
-        _ = try await settings.update { $0.language = language; if reduceMotion { $0.motion = .on } }
+        _ = try await settings.update { $0.language = language; if reduceMotion { $0.motion = .on }; if forceNight { $0.theme = .night } }
         let configuration = EngineClientConfiguration(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         var fanout: CockpitStoreFanout?
         let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: configuration, settingsStore: settings, bundleURL: bundle, createsNativePanels: false, cockpitEntryEnabled: true) { _, consumer in
@@ -841,6 +841,75 @@ private extension EngineDeliveryContext {
             XCTExpectFailure("CKP-ENG-01: the community bundle does not supply the vendor logo") {
                 XCTAssertEqual(observed["logos"] as? Bool, true)
             }
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_ENG_04_allAndMemberShareScopeThroughNormalEntry() async throws {
+        try await withLivePage(forceNight: true) { _, coordinator, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const all = document.querySelector('.eng-keys')?.parentElement?.querySelector('.ek-all');
+              const member = document.querySelector('.eng-keys .ek[data-sub]');
+              const underline = all?.querySelector('.bl');
+              if (!all || !member || !underline) return null;
+              const rect = element => { const r=element.getBoundingClientRect(); return {x:r.x,y:r.y,w:r.width,h:r.height}; };
+              return JSON.stringify({allPressed:all.getAttribute('aria-pressed'), memberPressed:member.getAttribute('aria-pressed'),
+                underlineColor:getComputedStyle(underline).backgroundColor, underlineOpacity:parseFloat(getComputedStyle(underline).opacity),
+                all:rect(all), member:rect(member)});
+            })()
+            """
+            @MainActor func facts() async throws -> [String: Any]? {
+                guard let raw = try await web.evaluateJavaScript(script) as? String else { return nil }
+                return try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+            }
+            @MainActor func click(_ name: String, _ values: [String: Any]) throws {
+                let rect = try XCTUnwrap(values[name] as? [String: NSNumber])
+                let x = try XCTUnwrap(rect["x"]?.doubleValue), y = try XCTUnwrap(rect["y"]?.doubleValue)
+                let width = try XCTUnwrap(rect["w"]?.doubleValue), height = try XCTUnwrap(rect["h"]?.doubleValue)
+                let window = try XCTUnwrap(page.window)
+                let point = web.convert(CGPoint(x: x + width / 2, y: web.isFlipped ? y + height / 2 : web.bounds.height - y - height / 2), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                    window.sendEvent(event)
+                }
+            }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var initial: [String: Any]?
+            while ContinuousClock.now < deadline {
+                if let observed = try await facts() { initial = observed; break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let all = try XCTUnwrap(initial, "The normal entry did not render the synthetic member")
+            XCTAssertEqual(coordinator.selectedScope, "all")
+            XCTAssertEqual(all["allPressed"] as? String, "true")
+            XCTAssertEqual(all["underlineColor"] as? String, "rgb(233, 237, 240)")
+            XCTAssertEqual((all["underlineOpacity"] as? NSNumber)?.doubleValue ?? -1, 1, accuracy: 0.01)
+            try click("member", all)
+            let selectedDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var selected: [String: Any]?
+            while ContinuousClock.now < selectedDeadline {
+                if coordinator.selectedScope == "0123456789abcdef", let observed = try await facts(), observed["memberPressed"] as? String == "true" {
+                    selected = observed; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let member = try XCTUnwrap(selected, "The native scope did not follow the selected member")
+            XCTAssertEqual(member["allPressed"] as? String, "false")
+            XCTAssertLessThan((member["underlineOpacity"] as? NSNumber)?.doubleValue ?? 1, 1)
+            try click("all", member)
+            let allDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var restored: [String: Any]?
+            while ContinuousClock.now < allDeadline {
+                if coordinator.selectedScope == "all", let observed = try await facts(), observed["allPressed"] as? String == "true" {
+                    restored = observed; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertEqual(coordinator.selectedScope, "all")
+            XCTAssertEqual(restored?["allPressed"] as? String, "true")
         }
     }
     #endif
