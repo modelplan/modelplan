@@ -31,6 +31,33 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      web_only: ${{ steps.classify.outputs.web_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify PR changes
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          web_only=false
+          if [ "$EVENT_NAME" = pull_request ] && git show "$BASE_SHA:scripts/ci_web_only.py" > "$RUNNER_TEMP/ci_web_only.py" 2>/dev/null; then
+            result=$(python3 "$RUNNER_TEMP/ci_web_only.py" "$BASE_SHA" "$HEAD_SHA") || result=false
+            if [ "$result" = true ]; then web_only=true; fi
+          fi
+          echo "web_only=$web_only" >> "$GITHUB_OUTPUT"
+          if [ "$web_only" = true ]; then
+            echo 'Web-only PR: the Mac candidate job is skipped; Linux checks remain enabled.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Not confirmed web-only: the Mac candidate job condition is unchanged.' >> "$GITHUB_STEP_SUMMARY"
+          fi
   contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -62,8 +89,8 @@ jobs:
       contents: read
       actions: read
     # Drafts run portable contracts first; macOS starts when ready, or by manual dispatch.
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    needs: contracts
+    if: ${{ !cancelled() && needs.contracts.result == 'success' && needs.changes.outputs.web_only != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: [contracts, changes]
     runs-on: macos-latest
     timeout-minutes: 35
     env:
