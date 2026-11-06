@@ -69,7 +69,7 @@ jobs:
           swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 \
             -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter CommunityCockpitEntryTests 2>&1 | tee .tmp/u11-product-tests.log
           # Both real-CLI normal-entry journeys must have run and passed here (elsewhere they are allowed skips).
-          for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer; do
+          for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt; do
             grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests $test\]' passed" .tmp/u11-product-tests.log \
               || { echo "::error::CommunityCockpitEntryTests/$test did not run and pass"; exit 1; }
           done

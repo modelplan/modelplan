@@ -295,6 +295,7 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
                     result = self.fixture.run(arguments=arguments)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], False)
+                    self.assertNotIn('ModelPlanOwnerTestBuild', self.info())
                     resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
                     self.assertFalse((resources / 'Cockpit').exists())
                     self.assertFalse((resources / 'build-edition.json').exists())
@@ -304,6 +305,7 @@ class OwnerTestCockpitEntryTests(unittest.TestCase):
         result = self.fixture.run(arguments=('--owner-test',))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], True)
+        self.assertIs(self.info()['ModelPlanOwnerTestBuild'], True)
         resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
         self.assertEqual((resources / 'Cockpit/index.html').read_text(), 'synthetic official cockpit')
         self.assertEqual(json.loads((resources / 'build-edition.json').read_text())['edition'], 'official')

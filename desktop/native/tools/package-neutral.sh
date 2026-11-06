@@ -11,6 +11,7 @@ configuration=release
 # Owner D39/D-E: only owner test builds open the cockpit entry; release packages keep it closed (preflight PF-08)
 # until the owner accepts the cockpit.
 cockpit_entry=false
+owner_test_plist=''
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
 credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
@@ -28,7 +29,8 @@ case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
     --e2e-journey) identity_mode=unverified; configuration=debug ;;
-    --owner-test) identity_mode=unverified; cockpit_entry=true ;;
+    --owner-test) identity_mode=unverified; cockpit_entry=true
+        owner_test_plist='<key>ModelPlanOwnerTestBuild</key><true/>'$'\n' ;;
     *) echo 'Optional third argument must be --unverified, --e2e-journey or --owner-test (CI only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
@@ -103,7 +105,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>ModelPlanCockpitEntryEnabled</key><$cockpit_entry/>
-<key>NSHighResolutionCapable</key><true/>
+$owner_test_plist<key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST
