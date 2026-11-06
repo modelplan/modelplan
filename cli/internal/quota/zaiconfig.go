@@ -198,7 +198,11 @@ func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.T
 	}
 	client := *c
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	e := fetchZai(ctx, &client, region, key, now)
+	authorization := "Bearer " + key
+	if source.Tool == "zcode" {
+		authorization = key
+	}
+	e := fetchZaiAuthorization(ctx, &client, region, key, authorization, now)
 	if e.Status != "ok" {
 		// Existing parser messages can contain provider text; never propagate it.
 		state = "upstream_changed"
