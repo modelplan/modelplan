@@ -75,3 +75,18 @@ test('CKP-MFD-03 LBL-2.2-03 option keys show choices and switch the active LED w
  await expect(choices.nth(1)).toHaveClass(/\bon\b/);await expect(choices.nth(0)).not.toHaveClass(/\bon\b/);
  const after=await chart.boundingBox();for(const k of ['x','y','width','height'])expect(Math.abs(after[k]-before[k])).toBeLessThanOrEqual(1);
 });
+
+test('CKP-STRIP-07 Option help tracks detach state without moving the header',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data:currentSample()})])expect(await receive(raw)).toBe(true);
+ await expect(page.getByRole('button',{name:'?',exact:true})).toHaveCount(0);
+ const target=page.locator('[data-detach]'),before=await target.boundingBox();expect(before).not.toBeNull();
+ await page.keyboard.down('Alt');const help=page.locator('#help-map');await expect(help).toBeVisible();
+ await expect(help.locator('[data-target="[data-detach]"]')).toContainText('Detach');
+ const during=await target.boundingBox();for(const k of ['x','y','width','height'])expect(Math.abs(before[k]-during[k])).toBeLessThanOrEqual(1);
+ await page.keyboard.up('Alt');await expect(help).toBeHidden();
+ expect(await receive(send('shell',{...shell,attached:false}))).toBe(true);
+ await page.keyboard.down('Alt');await expect(help).toBeVisible();await expect(help.locator('[data-target="[data-detach]"]')).toContainText('Put back');
+ await page.keyboard.up('Alt');await expect(help).toBeHidden();
+});
