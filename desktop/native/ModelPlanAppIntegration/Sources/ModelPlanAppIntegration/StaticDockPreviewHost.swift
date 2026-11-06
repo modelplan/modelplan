@@ -532,7 +532,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
-            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
+            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: effectiveRedBelow) else { return nil }
             let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
@@ -829,7 +829,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             var value = passPreferences.applying(to: input)
             value.unavailableReason=next.presentationRows[input.id]?.reason
             if let signal = workingSignals[input.id] { value.working = signal }
-            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow)) else { return nil }
+            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: effectiveRedBelow) else { return nil }
             if !createsNativePanels, let fixtureStatus = comparisonStatuses[input.id] { return reading.comparisonFixture(status: fixtureStatus) }
             return reading
         }
@@ -1530,7 +1530,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let projected = memberSafePreferences.applying(to: input)
         let row = model?.presentationRows[id]
         let selected = row?.windowObservations == nil ? nil :
-            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: Double(preferences.redBelow)).selectedWindowID
+            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
         return try DockCardProjection.content(input: projected,
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
@@ -1540,7 +1540,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
-                dismissLabel: EngineRowsText.contextClose.value(preferences.language), at: now)
+                dismissLabel: EngineRowsText.contextClose.value(preferences.language),
+                redBelow: effectiveRedBelow, at: now)
     }
     private func cardUsesSettings(_ id: String) -> Bool {
         purpose == .production || model?.presentationRows[id] != nil

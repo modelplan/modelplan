@@ -113,7 +113,7 @@ public enum DockInstrumentProjection {
         }
         func status(_ r: Double?) -> DockQuotaStatus {
             guard let r else{return .unknown}
-            return r<=redBelow ? .critical : r<41 ? .warning : .normal
+            return r <= redBelow ? .critical : r <= 50 ? .warning : .normal
         }
         let general=input.windows.filter(\.isGeneral)
         // Match the study's ringWindows ordering by typed window length. Restricted
