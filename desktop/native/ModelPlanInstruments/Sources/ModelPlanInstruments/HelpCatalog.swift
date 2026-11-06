@@ -56,7 +56,7 @@ public struct HelpCatalog: Sendable {
             title = copy("点火钮", "Ignition")
             basis = copy("点按打开驾驶舱，长按点火；快速打开设置会跳过点火。", "Tap to open the Cockpit or hold to ignite; Always quick skips ignition.")
         case .sliver:
-            title = copy("隐藏条", "Sliver")
+            title = copy("细条", "Sliver")
             basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
         case .dockMove:
             title = copy("移动额度挂件", "Move the Quota Widget")

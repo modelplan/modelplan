@@ -224,54 +224,54 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertFalse(observed.recovering)
         XCTAssertEqual(placement.edge, .right)
         XCTAssertEqual(placement.frame.maxX, screen.usableFrame.maxX, accuracy: 0.01)
-        let showDock = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }, "The status menu must offer the locating action")
-        XCTAssertTrue(showDock.isEnabled)
-        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" })
+        // Owner decision 11-06: one checkable Show Quota Widget item; its checkmark is the saved switch.
+        let showDock = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }, "The status menu must offer the switch")
+        XCTAssertTrue(showDock.isEnabled); XCTAssertEqual(showDock.state, .on)
+        XCTAssertFalse(entry.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" })
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .off })
         let editor = entry.settingsHost.application.editor
         _ = try await editor.commit(SettingsB21Edit.autoHide(true))
         for _ in 0..<300 { if entry.composition.dock.edgePresentation?.state == .sliver { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "Auto-hide is an explicit saved option")
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .on }, "the widget menu follows Settings")
         var accessibility = SettingsEnvironment(); accessibility.reduceMotion = false
         entry.updateSystemAccessibility(accessibility)
         XCTAssertFalse(try XCTUnwrap(entry.composition.latestSettings).effective.reduceMotion)
-        let beforeShow = await store.snapshot()
-        let reveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(reveal.target as? NSObject)).perform(try XCTUnwrap(reveal.action), with: reveal)
+        // Unchecking turns the widget off; checking turns it on and locates it with the pulse.
+        try await chooseShowQuotaWidget(entry, checked: true)
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
+        try await chooseShowQuotaWidget(entry, checked: false)
         for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
         let animated = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
         XCTAssertTrue(animated.animationKeys()?.contains("locate-pulse") == true)
         accessibility.reduceMotion = true; entry.updateSystemAccessibility(accessibility)
         XCTAssertFalse(animated.animationKeys()?.contains("locate-pulse") == true)
-        let staticReveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(staticReveal.target as? NSObject)).perform(try XCTUnwrap(staticReveal.action), with: staticReveal)
-        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.first(where: { $0.name == "dock.locate-highlight" }) !== animated { break }; try await Task.sleep(for: .milliseconds(10)) }
-        let still = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
-        XCTAssertTrue(still.animationKeys()?.isEmpty ?? true, "Reduce Motion uses a static highlight")
         for _ in 0..<400 {
             if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) != true { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertFalse(entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true, "Locating highlight must expire")
         let afterReveal = await store.snapshot().preferences
-        XCTAssertTrue(afterReveal.autoHide); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
-        let afterShow = await store.snapshot()
-        XCTAssertEqual(afterShow.revision, beforeShow.revision, "Showing a visible widget must not change saved preferences")
+        XCTAssertTrue(afterReveal.autoHide); XCTAssertTrue(afterReveal.showDock); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
         for _ in 0..<400 {
             if entry.composition.dock.edgePresentation?.state == .sliver { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "The temporary reveal returns to the normal auto-hide rule")
+        // The Settings switch and the status checkmark are the same stored setting.
         _ = try await editor.commit(SettingsB21Edit.showDock(false))
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
-        let enable = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(enable.target as? NSObject)).perform(try XCTUnwrap(enable.action), with: enable)
-        for _ in 0..<300 { if entry.composition.dock.currentMenuBarPreferences?.showDock == true && entry.composition.dock.edgePresentation?.state == .expanded { break }; try await Task.sleep(for: .milliseconds(10)) }
+        try await chooseShowQuotaWidget(entry, checked: false)
+        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let staticReveal = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
+        XCTAssertTrue(staticReveal.animationKeys()?.isEmpty ?? true, "Reduce Motion uses a static highlight")
         XCTAssertTrue(try XCTUnwrap(entry.composition.dock.currentMenuBarPreferences).showDock)
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertNotNil(entry.liveStatusMenu?.items.first { $0.title == "显示额度挂件" && $0.isEnabled })
-        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "隐藏额度挂件" })
+        XCTAssertNotNil(entry.liveStatusMenu?.items.first { $0.title == "显示额度挂件" && $0.isEnabled && $0.state == .on })
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "自动收起" && $0.state == .on })
+        XCTAssertFalse(entry.composition.dock.menu().items.contains { $0.title.contains("隐藏") })
         _ = try await editor.commit(SettingsB21Edit.language(.english))
         _ = try await editor.commit(SettingsB21Edit.autoHide(false))
         _ = try await editor.commit(SettingsB21Edit.dockEdge(.left))

@@ -13,7 +13,7 @@ import ModelPlanSettings
         let names: [(HelpMapRegion, String, String)] = [
             (.window, "悬窗", "Window"), (.alert, "注意灯", "Alert lamp"),
             (.faders, "推杆", "Faders"), (.screen, "公共屏", "Main screen"),
-            (.ignition, "点火钮", "Ignition"), (.sliver, "隐藏条", "Sliver")
+            (.ignition, "点火钮", "Ignition"), (.sliver, "细条", "Sliver")
         ]
         for (region, zh, en) in names {
             XCTAssertTrue(chinese.sentence(region).hasPrefix(zh + "："), region.rawValue)

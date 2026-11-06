@@ -404,17 +404,17 @@ private actor LifecycleEngine: EngineClient {
             XCTAssertFalse(application.liveStatusMenu?.items.contains { $0.title == "Settings changed. Choose Show Quota Widget again." } ?? true)
         }
 
-        // In session: Hide from the widget menu, the hint ledger saves, then menu Show.
+        // In session: uncheck Show Quota Widget in the status menu, the hint ledger saves,
+        // then check it again (owner decision 11-06: no Hide item in the widget menu).
         try await ledgerWrite(app, .init(seen: [.ringRefresh]))
-        try select("Hide Quota Widget", in: app.composition.dock.menu())
-        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" || $0.title == "隐藏额度挂件" })
+        try await chooseShowQuotaWidget(app, checked: true)
         XCTAssertEqual(try showDockRow(app), .toggle(false))
         try await ledgerWrite(app, .init(seen: [.ringRefresh, .findWidget]))
         try await showFromMenu(app, hints: .init(seen: [.ringRefresh, .findWidget]))
 
-        // Relaunch hidden: the saved Hide is kept, then the same ledger write and menu Show.
-        try select("Hide Quota Widget", in: app.composition.dock.menu())
-        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        // Relaunch hidden: the saved switch is kept, then the same ledger write and menu Show.
+        try await chooseShowQuotaWidget(app, checked: true)
         await app.stopLifecycle(); app.composition.dock.close()
         let relaunched = try await make(root, topology: topology, rows: fixture)
         _ = start(relaunched)
@@ -620,8 +620,7 @@ private actor LifecycleEngine: EngineClient {
         let initial = try await make(root, topology: topology) { $0.motion = .on }
         initial.allowDockPresentation()
         let saved = try expanded(initial).frame
-        try select("Hide Quota Widget", in: initial.composition.dock.menu())
-        try await waitForSettings(initial.settingsHost.application.editor) { initial.settingsHost.application.editor.snapshot?.preferences.showDock == false }
+        try await chooseShowQuotaWidget(initial, checked: true)
         initial.composition.dock.close()
         let app = try await make(root, topology: topology)
         _ = start(app)

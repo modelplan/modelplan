@@ -16,7 +16,7 @@ import ModelPlanSettings
         let productionTitles = production.menu().items.map(\.title).joined(separator: " | ")
         XCTAssertTrue(productionTitles.contains("Quit ModelPlan"))
         XCTAssertFalse(productionTitles.contains("preview")); XCTAssertFalse(productionTitles.contains("自测"))
-        XCTAssertTrue(preview.menu().items.contains { $0.title.contains("Quit preview") })
+        XCTAssertTrue(preview.menu().items.contains { $0.title.contains("Quit Preview") })
         XCTAssertNil(production.nativePanel); XCTAssertNil(preview.nativePanel)
     }
     func testQuitMenuFollowsLoadedLanguageWithoutOpeningWindows() async throws {
@@ -27,7 +27,7 @@ import ModelPlanSettings
         let preview = StaticDockPreviewHost(purpose: .selfTest)
         defer { production.close(); preview.close() }
         let app = SettingsApplicationCoordinator(store: store) { value in production.apply(value); preview.apply(value) }
-        for (language, expectedProduction, expectedPreview) in [(SettingsLanguage.chinese, "退出 ModelPlan", "退出自测版"), (.english, "Quit ModelPlan", "Quit preview")] {
+        for (language, expectedProduction, expectedPreview) in [(SettingsLanguage.chinese, "退出 ModelPlan", "退出自测版"), (.english, "Quit ModelPlan", "Quit Preview")] {
             try await store.update { $0.language = language }
             await app.reload()
             for (host, title) in [(production, expectedProduction), (preview, expectedPreview)] {

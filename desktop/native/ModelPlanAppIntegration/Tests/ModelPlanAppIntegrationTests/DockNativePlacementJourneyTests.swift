@@ -128,11 +128,7 @@ import ModelPlanSettings
         launch(first)
         try await checkEngine(first)
         let original = try XCTUnwrap(first.composition.dock.nativePanel?.frame)
-        let hide = try XCTUnwrap(first.composition.dock.menu().items.first { $0.title == "Hide Quota Widget" })
-        _ = try XCTUnwrap(hide.target as? NSObject).perform(try XCTUnwrap(hide.action), with: hide)
-        try await waitForSettings(first.settingsHost.application.editor) {
-            first.settingsHost.application.editor.snapshot?.preferences.showDock == false
-        }
+        try await chooseShowQuotaWidget(first, checked: true)
         await first.stopNativeDockJourney()
         let second = try await make(root, topology)
         addTeardownBlock { @MainActor in await second.stopNativeDockJourney() }

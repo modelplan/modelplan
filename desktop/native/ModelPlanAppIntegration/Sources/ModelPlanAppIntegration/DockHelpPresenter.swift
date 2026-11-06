@@ -48,7 +48,7 @@ import ModelPlanSettings
         guard !retired, let surface = currentSurface(), surface.visible, !surface.dragging,
               context.dockReveal == surface.revealID, isCurrent(surface) else { return [] }
         let lang = language()
-        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget].filter {
+        return Set([FirstUseHintKind.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff].filter {
             surface.anchors[$0] != nil && copy($0, lang) != nil
         })
     }
@@ -68,11 +68,11 @@ import ModelPlanSettings
         layer.removeFromSuperview()
         guard let surface = currentSurface(), surface.visible, !surface.dragging,
               isCurrent(surface), let anchor = surface.anchors[offer.kind],
-              let screen = NSScreen.screens.first(where: { offer.kind == .findWidget ? $0.frame.intersects(anchor) : $0.visibleFrame.contains(anchor) }),
+              let screen = NSScreen.screens.first(where: { offer.kind == .findWidget || offer.kind == .widgetOff ? $0.frame.intersects(anchor) : $0.visibleFrame.contains(anchor) }),
               let policy = windowPolicy(surface),
               let words = copy(offer.kind, language()) else { return false }
         // The status item lies in the menu-bar area above visibleFrame; its real frame remains the anchor.
-        let viewport = offer.kind == .findWidget ? screen.frame : screen.visibleFrame
+        let viewport = offer.kind == .findWidget || offer.kind == .widgetOff ? screen.frame : screen.visibleFrame
         func local(_ rect: CGRect) -> CGRect {
             CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY,
                    width: rect.width, height: rect.height)

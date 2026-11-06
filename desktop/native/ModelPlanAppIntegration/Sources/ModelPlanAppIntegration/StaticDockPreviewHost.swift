@@ -146,7 +146,9 @@ struct DockHelpInteraction: Equatable {
     }
     public var showSettings: (() -> Void)?
     var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
-    public var requestHideDock:(() -> Void)?
+    /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
+    /// as Settings' auto-collapse switch; without an app the preview applies nothing.
+    public var requestAutoCollapse: ((Bool) -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -1600,38 +1602,36 @@ struct DockHelpInteraction: Equatable {
             else { self.menuDidClose(menu) }
         }
         component.retainWithMenu()
-        var items: [DockMenuPresentationItem] = []
-        if lifecycleSuspended {
-            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
-            items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.contextClose.value(preferences.language),
-                               action: permitted ? { [weak self] in self?.closeContext() } : nil))
-            if permitted {
-                items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language),
-                                   action: { [weak self] in self?.hideDockMenu() }))
-            }
-            items.append(.init(title: nil))
-            let english = preferences.language == .english
-            let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
-            items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
-            component.replace(with: items)
-            return menu
-        }
+        // G3-28 + owner HIG decision (11-06): [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q].
+        // No Hide item here: the widget is turned off from the status menu or Settings.
+        // "收起/Collapse" only names the edge-strip state.
         let english = application == nil || preferences.language == .english
         let quit: String
         switch (purpose, english) {
         case (.production, true): quit = "Quit ModelPlan"
         case (.production, false): quit = "退出 ModelPlan"
-        case (.selfTest, true): quit = "Quit preview"
+        case (.selfTest, true): quit = "Quit Preview"
         case (.selfTest, false): quit = "退出自测版"
         }
-        items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
+        let available = permitted && !lifecycleSuspended
+        var items: [DockMenuPresentationItem] = []
+        if lifecycleSuspended {
+            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
+            items.append(.init(title: nil))
+        } else if cockpitEntryEnabled {
+            items.append(.init(title: english ? "Open Cockpit" : "打开驾驶舱", action: { [weak self] in self?.openConsole() }))
+            items.append(.init(title: nil))
+        }
+        let autoCollapse = preferences.autoHide
+        items.append(.init(title: EngineRowsText.autoCollapse.value(preferences.language), accessibilityID: "dock.menu.autoCollapse",
+                           checked: autoCollapse,
+                           action: available && requestAutoCollapse != nil ? { [weak self] in self?.toggleAutoCollapseFromMenu(!autoCollapse) } : nil))
+        items.append(.init(title: EngineRowsText.settings.value(preferences.language), accessibilityID: "dock.menu.settings",
+                           keyEquivalent: available ? "," : "",
+                           action: available ? { [weak self] in self?.openSettings() } : nil))
         items.append(.init(title: nil))
-        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
-        items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
-        items.append(.init(title: EngineRowsText.contextClose.value(preferences.language), action: { [weak self] in self?.closeContext() }))
-        items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language), action: { [weak self] in self?.hideDockMenu() }))
+        items.append(.init(title: quit, accessibilityID: "dock.menu.quit", keyEquivalent: "q",
+                           target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         component.replace(with: items)
         return menu
     }
@@ -1727,9 +1727,9 @@ struct DockHelpInteraction: Equatable {
         closeContext()
         showSettings?()
     }
-    @objc private func hideDockMenu() {
-        guard permitted,!retired else { return }
-        if let requestHideDock { requestHideDock() } else { setPresentationAllowed(false) }
+    private func toggleAutoCollapseFromMenu(_ on: Bool) {
+        guard permitted, !retired, !lifecycleSuspended else { return }
+        requestAutoCollapse?(on)
     }
     @objc private func displaysChanged() {
         guard permitted, !retired else { return }
@@ -1873,7 +1873,7 @@ struct DockHelpInteraction: Equatable {
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
-        showConsole = nil; showSettings = nil; requestHideDock=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
+        showConsole = nil; showSettings = nil; requestAutoCollapse=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }
 

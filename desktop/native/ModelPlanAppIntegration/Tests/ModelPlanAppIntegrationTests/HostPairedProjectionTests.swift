@@ -1077,8 +1077,8 @@ actor EntrySyntheticClient: EngineClient {
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"]
+        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
+        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
@@ -1206,7 +1206,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
         let anchor = try XCTUnwrap(dockView.interactionAnchor(id))
@@ -1221,7 +1221,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户 · 账号 1")
-        XCTAssertEqual(card.stateLabel, "过期 · 4368小时前", "The stale badge follows the Chinese prototype while preserving the original observation age")
+        XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))
