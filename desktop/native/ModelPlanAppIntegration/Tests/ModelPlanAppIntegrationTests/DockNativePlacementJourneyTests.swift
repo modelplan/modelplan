@@ -31,19 +31,29 @@ import ModelPlanSettings
         func apply(_ snapshot: EngineStoreSnapshot) {}
         func clearPrivateViews(_ invalidation: EngineInvalidation) {}
     }
-    private func make(_ root: URL, _ topology: Topology, edit: ((inout SettingsPreferences) -> Void)? = nil)
-        async throws -> EngineDockMenuApplication {
-        let binary = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary))
+    private func make(_ root: URL, _ topology: Topology?, executable: URL? = nil, helperHome: URL? = nil,
+                      edit: ((inout SettingsPreferences) -> Void)? = nil) async throws -> EngineDockMenuApplication {
+        let executable = try executable ?? reviewedHelper()
         _ = NSApplication.shared
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         if let edit { _ = try await store.update { edit(&$0) } }
         EngineRowsEntry.nativeJourneyProfile = root
-        return EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
-            applicationVersion: "dock-native-journey", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path],
-            offline: true, readOnly: true), settingsStore: store, createsNativePanels: true,
-            dockEnvironment: topology.read, activateSettings: {})
+        return EngineRowsEntry.make(configuration: configuration(executable, root: helperHome ?? root),
+            settingsStore: store, createsNativePanels: true, bundleURL: root.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: topology.map { sample in { sample.read() } }, activateSettings: {})
+    }
+
+    private func reviewedHelper() throws -> URL {
+        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: path))
+        return URL(fileURLWithPath: path)
+    }
+
+    private func configuration(_ executable: URL, root: URL) -> EngineClientConfiguration {
+        .init(executableURL: executable, applicationVersion: "dock-native-journey",
+              allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin"],
+              offline: true, readOnly: true)
     }
     private func wait(_ seconds: Double, _ predicate: () -> Bool) async throws -> Bool {
         let end = ContinuousClock.now + .seconds(seconds)
@@ -88,6 +98,411 @@ import ModelPlanSettings
     }
     func testD01VisibleStatusToRealPanelBeforeRowsReplies() async throws { try await firstShow(disabled: false) }
     func testD01OrderInControlRejectsFirstShow() async throws { try await firstShow(disabled: true) }
+
+    #if MODELPLAN_DOCK_REAL_SPACES_JOURNEY
+    private func makeRowsBarrier(in root: URL) async throws -> (URL, URL, URL) {
+        let helper = try reviewedHelper()
+        let home = root.appendingPathComponent("engine-home")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let seed = Process()
+        seed.executableURL = helper
+        seed.arguments = ["consent", "init", "--json"]
+        seed.environment = configuration(helper, root: home).allowedEnvironment
+        seed.standardInput = FileHandle.nullDevice
+        seed.standardOutput = FileHandle.nullDevice
+        seed.standardError = FileHandle.nullDevice
+        try seed.run()
+        guard try await wait(5, { !seed.isRunning }) else {
+            seed.terminate()
+            throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Temporary consent setup timed out"])
+        }
+        guard seed.terminationStatus == 0 else {
+            throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Temporary consent setup failed"])
+        }
+        let executable = root.appendingPathComponent("withhold-rows")
+        let receipt = root.appendingPathComponent("subscribe-withheld")
+        let paths = try JSONEncoder().encode([helper.path, receipt.path])
+        let script = """
+        #!/usr/bin/python3
+        import base64
+        import json
+        import pathlib
+        import signal
+        import subprocess
+        import sys
+        import threading
+
+        helper, receipt = json.loads(base64.b64decode("\(paths.base64EncodedString())"))
+        server = subprocess.Popen([helper, *sys.argv[1:]], stdin=subprocess.PIPE)
+
+        def stop(signum, frame):
+            if server.poll() is None:
+                server.terminate()
+
+        signal.signal(signal.SIGTERM, stop)
+        signal.signal(signal.SIGINT, stop)
+
+        def forward():
+            try:
+                for raw in sys.stdin.buffer:
+                    if json.loads(raw).get("method") == "rows/subscribe":
+                        pathlib.Path(receipt).touch()
+                        continue
+                    server.stdin.write(raw)
+                    server.stdin.flush()
+            except BrokenPipeError:
+                pass
+            finally:
+                server.stdin.close()
+
+        threading.Thread(target=forward, daemon=True).start()
+        sys.exit(server.wait())
+        """
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        return (executable, receipt, home)
+    }
+
+    func testD01RowBarrierKeepsRealServerConnectedWithoutRows() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-row-barrier-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (executable, receipt, home) = try await makeRowsBarrier(in: root)
+        let store = EngineStore()
+        let client = ProcessEngineClient(configuration: configuration(executable, root: home), consumer: store)
+        addTeardownBlock { await client.stop() }
+        _ = try await client.start()
+        let replies = Replies()
+        let token = store.attach(replies)
+        defer { store.detach(token) }
+        let subscription = Task { try await client.subscribeRows(timeout: .seconds(2)) }
+        defer { subscription.cancel() }
+        let blocked = try await wait(1) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(blocked, "The actual production client must reach the barrier")
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(replies.count, 0)
+        XCTAssertNil(store.snapshot.rows)
+        guard case .ready = store.snapshot.connection else { return XCTFail("The reviewed app-server must still be connected") }
+    }
+
+    func testD01PhysicalFreshFirstShowWithRealRowsWithheld() async throws {
+        try await physicalFirstShow(disabled: false)
+    }
+
+    func testD01PhysicalOrderInControlNeverShowsWithRowsWithheld() async throws {
+        try await physicalFirstShow(disabled: true)
+    }
+
+    private func physicalFirstShow(disabled: Bool) async throws {
+        let application = NSApplication.shared
+        let previousMenu = application.mainMenu, previousAppearance = application.appearance
+        let previousPolicy = application.activationPolicy()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d01-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (executable, receipt, home) = try await makeRowsBarrier(in: root)
+        let profile = root.appendingPathComponent("profile")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: profile.path))
+        let screen = try XCTUnwrap(DockDisplayTopology.system().main)
+        let app = try await make(profile, nil, executable: executable, helperHome: home)
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+            application.mainMenu = previousMenu
+            application.appearance = previousAppearance
+            application.setActivationPolicy(previousPolicy)
+        }
+        let store = app.composition.store
+        let replies = Replies()
+        let token = store.attach(replies)
+        defer { store.detach(token) }
+        let host = app.composition.dock
+        host.suppressJourneyOrderIn = disabled
+        FileHandle.standardOutput.write(Data("D-01: Start recording before launch. Rows requests will be withheld from the real helper.\n".utf8))
+        launch(app)
+        let statusVisible = try await wait(2) { app.nativeJourneyStatusVisible }
+        XCTAssertTrue(statusVisible, "Start the first-show clock at the actual visible status item")
+        let ordered = try await wait(2) {
+            host.nativePanel.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+        }
+        XCTAssertEqual(ordered, !disabled)
+        XCTAssertEqual(replies.count, 0)
+        if !disabled {
+            let placement = try XCTUnwrap(host.edgePresentation?.placement)
+            let panel = try XCTUnwrap(host.nativePanel)
+            XCTAssertEqual(placement.displayID, screen.id)
+            XCTAssertEqual(placement.edge, .right)
+            XCTAssertEqual(panel.frame.maxX, screen.usableFrame.maxX, accuracy: 1)
+            XCTAssertEqual(panel.frame.minY + placement.layout.alongAnchor, screen.usableFrame.midY, accuracy: 1)
+            XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+            XCTAssertTrue(host.dockView.presentedReadingsForChecks.isEmpty)
+        }
+        try await checkEngine(app)
+        let blocked = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(blocked, "The app-server handshake must precede a real blocked subscription")
+        try await Task.sleep(for: .seconds(2))
+        XCTAssertEqual(replies.count, 0)
+        XCTAssertNil(store.snapshot.rows)
+        if disabled { XCTAssertFalse(host.nativePanel?.isVisible == true) }
+        else { XCTAssertTrue(host.nativePanel?.isVisible == true) }
+    }
+
+    private func promptD14(_ instruction: String) {
+        FileHandle.standardOutput.write(Data(("D-14: " + instruction + "\n").utf8))
+    }
+
+    private func preserveTestAppAppearance() {
+        let app = NSApplication.shared
+        let mainMenu = app.mainMenu, appearance = app.appearance
+        let policy = app.activationPolicy()
+        addTeardownBlock { @MainActor in
+            app.mainMenu = mainMenu
+            app.appearance = appearance
+            app.setActivationPolicy(policy)
+        }
+    }
+
+    private func watchPhysicalMenu(matching matches: @escaping (NSMenu) -> Bool, action: String,
+                                   until completed: () -> Bool) async throws {
+        var tracked = false
+        let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification,
+            object: nil, queue: .main) { note in
+                MainActor.assumeIsolated {
+                    if let menu = note.object as? NSMenu, matches(menu) { tracked = true }
+                }
+            }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        promptD14(action)
+        let applied = try await wait(45) { tracked && completed() }
+        _ = try XCTUnwrap(applied ? true : nil, "The physical menu action must complete: \(action)")
+    }
+
+    func testD14PhysicalHideRelaunchAndShowWhileRowsAreWithheld() async throws {
+        preserveTestAppAppearance()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (relay, _, home) = try await makeRowsBarrier(in: root)
+        let profile = root.appendingPathComponent("profile")
+        let first = try await make(profile, nil, executable: relay, helperHome: home) {
+            $0.motion = .on
+            $0.autoHide = false
+            $0.showDock = true
+            $0.dockEdge = .right
+        }
+        addTeardownBlock { @MainActor in
+            await first.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(first)
+        let visible = try await wait(8) { first.nativeJourneyStatusVisible && first.composition.dock.nativePanel?.isVisible == true }
+        let original = try XCTUnwrap(visible ? first.composition.dock.nativePanel?.frame : nil)
+        let firstEditor = first.settingsHost.application.editor
+        try await watchPhysicalMenu(matching: first.composition.dock.ownsDockMenu, action: "Right-click the visible widget and select Hide Quota Widget.") {
+            firstEditor.snapshot?.preferences.showDock == false && !firstEditor.isSaving &&
+                first.composition.dock.nativePanel?.isVisible != true
+        }
+        let hidden = await firstEditor.store.snapshot()
+        XCTAssertFalse(hidden.preferences.showDock)
+        XCTAssertNil(first.composition.store.snapshot.rows)
+        await first.stopNativeDockJourney()
+
+        let second = try await make(profile, nil, executable: relay, helperHome: home)
+        addTeardownBlock { @MainActor in
+            await second.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(second)
+        let editor = second.settingsHost.application.editor
+        let ready = try await wait(8) {
+            second.nativeJourneyStatusVisible && editor.snapshot?.preferences.showDock == false
+        }
+        XCTAssertTrue(ready)
+        XCTAssertFalse(second.composition.dock.nativePanel?.isVisible == true)
+        XCTAssertEqual(editor.snapshot?.revision, hidden.revision)
+        promptD14("Capture the still-hidden widget after reopening the same profile.")
+
+        let host = second.composition.dock
+        func highlight() -> CALayer? {
+            host.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        second.setActivityPaused(true)
+        let paused = try await wait(4) { second.lifecyclePaused && host.nativePanel?.isVisible != true }
+        XCTAssertTrue(paused)
+        let pausedMenu = try XCTUnwrap(second.liveStatusMenu)
+        XCTAssertTrue(pausedMenu.items.contains { $0.title == "Show Quota Widget" && $0.isEnabled })
+        try await watchPhysicalMenu(matching: { $0 === pausedMenu }, action: "In the status menu, select Show Quota Widget while presentation is paused.") {
+            editor.snapshot?.preferences.showDock == true && !editor.isSaving
+        }
+        XCTAssertEqual(editor.snapshot?.revision, hidden.revision + 1)
+        XCTAssertFalse(host.nativePanel?.isVisible == true)
+        XCTAssertNil(highlight())
+        second.setActivityPaused(false)
+        let revealed = try await wait(8) { host.nativePanel?.isVisible == true && highlight() != nil }
+        XCTAssertTrue(revealed)
+        XCTAssertEqual(host.nativePanel?.frame, original)
+        XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+        XCTAssertNil(second.composition.store.snapshot.rows)
+        let firstMark = try XCTUnwrap(highlight())
+        XCTAssertTrue(firstMark.animationKeys()?.isEmpty ?? true)
+        promptD14("Capture the empty widget restored to its original position with a static highlight.")
+
+        let showAgain = try XCTUnwrap(second.liveStatusMenu)
+        let shownRevision = editor.snapshot?.revision
+        try await watchPhysicalMenu(matching: { $0 === showAgain }, action: "Select Show Quota Widget again while the widget is already visible.") {
+            highlight().map { $0 !== firstMark } == true
+        }
+        XCTAssertEqual(host.nativePanel?.frame, original)
+        XCTAssertEqual(editor.snapshot?.revision, shownRevision)
+        XCTAssertTrue(try XCTUnwrap(highlight()).animationKeys()?.isEmpty ?? true)
+
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        promptD14("Move the pointer away from the widget until it collapses to the strip.")
+        let collapsed = try await wait(12) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(collapsed)
+        let stripMenu = try XCTUnwrap(second.liveStatusMenu)
+        let stripRevision = editor.snapshot?.revision
+        try await watchPhysicalMenu(matching: { $0 === stripMenu }, action: "With the strip collapsed, select Show Quota Widget in the status menu.") {
+            host.edgePresentation?.state == .expanded && highlight() != nil
+        }
+        XCTAssertTrue(try XCTUnwrap(highlight()).animationKeys()?.isEmpty ?? true)
+        promptD14("Keep the pointer away and capture the strip collapsing again by its normal rule.")
+        let recollapsed = try await wait(12) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(recollapsed)
+        XCTAssertEqual(editor.snapshot?.revision, stripRevision)
+        XCTAssertTrue(editor.snapshot?.preferences.autoHide == true)
+        XCTAssertNil(second.composition.store.snapshot.rows)
+    }
+
+    func testD14PhysicalSettingsToggleAndStatusMenuStayInSync() async throws {
+        preserveTestAppAppearance()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-settings-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (_, _, home) = try await makeRowsBarrier(in: root)
+        let app = try await make(root.appendingPathComponent("profile"), nil, executable: try reviewedHelper(),
+                                 helperHome: home) {
+            $0.autoHide = false
+            $0.onboarding.next()
+        }
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(app)
+        let ready = try await wait(12) {
+            app.nativeJourneyStatusVisible && !app.lifecyclePaused && app.composition.dock.nativePanel?.isVisible == true
+        }
+        guard ready else { return XCTFail("Settings needs the real native launch and a current engine delivery") }
+        let windowsBefore = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        let menu = try XCTUnwrap(app.liveStatusMenu)
+        func settingsWindow() -> NSWindow? {
+            NSApplication.shared.windows.first { !windowsBefore.contains(ObjectIdentifier($0)) && $0.isVisible && $0.title == "Settings" }
+        }
+        try await watchPhysicalMenu(matching: { $0 === menu }, action: "Open Settings from the native status menu and select the Quota Widget pane.") {
+            settingsWindow() != nil
+        }
+        let editor = app.settingsHost.application.editor
+        let frame = try XCTUnwrap(app.composition.dock.nativePanel?.frame)
+        for shown in [false, true] {
+            promptD14("In Settings, turn Show Quota Widget \(shown ? "on" : "off"). Capture the result.")
+            let applied = try await wait(45) {
+                editor.snapshot?.preferences.showDock == shown && !editor.isSaving &&
+                    (app.composition.dock.nativePanel?.isVisible == true) == shown
+            }
+            XCTAssertTrue(applied)
+            let stored = await editor.store.snapshot()
+            XCTAssertEqual(stored.preferences.showDock, shown)
+            XCTAssertTrue(app.liveStatusMenu?.items.contains { $0.title == "Show Quota Widget" && $0.isEnabled } == true)
+            if shown { XCTAssertEqual(app.composition.dock.nativePanel?.frame, frame) }
+        }
+    }
+    func testD15PhysicalRestingPanelRendersEveryDisplayEdgeAndSize() async throws {
+        preserveTestAppAppearance()
+        let topology = DockDisplayTopology.system()
+        guard topology.displays.count >= 2, topology.displays.indices.allSatisfy({ index in
+            topology.displays[..<index].allSatisfy { !$0.frame.intersects(topology.displays[index].frame) }
+        }) else { return XCTFail("D-15 needs at least two actual non-mirrored displays") }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d15-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (_, _, home) = try await makeRowsBarrier(in: root)
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        let quotas = [76, 58, 41, 25]
+        let ids = quotas.indices.map { "synthetic-d15-\($0)" }
+        let plans = ids.map { ["planId": $0] }
+        let windows: [[String: Any]] = zip(ids, quotas).map { id, remaining in
+            ["planId": id, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+             "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+             "resetAt": iso.string(from: now.addingTimeInterval(7_200))]
+        }
+        let settingsDirectory = home.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: settingsDirectory, withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "plans": plans, "windows": windows])
+        try data.write(to: settingsDirectory.appendingPathComponent("local.json"), options: .atomic)
+        let app = try await make(root.appendingPathComponent("profile"), nil, executable: try reviewedHelper(),
+                                 helperHome: home) {
+            $0.autoHide = false
+            $0.followActiveDisplay = false
+            $0.onboarding.next()
+        }
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+        }
+        launch(app)
+        let host = app.composition.dock
+        let ready = try await wait(12) {
+            app.nativeJourneyStatusVisible && !app.lifecyclePaused && host.nativePanel?.isVisible == true &&
+                Set(host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == Set(quotas.map(Double.init))
+        }
+        guard ready else { return XCTFail("The real helper must deliver the four synthetic readings") }
+        let panel = try XCTUnwrap(host.nativePanel)
+        let editor = app.settingsHost.application.editor
+        let edges: [(SettingsDockEdge, DockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        let requestedAppearance = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D15_THEME"] ?? "night"
+        let theme = try XCTUnwrap(SettingsTheme(rawValue: requestedAppearance))
+        _ = try await editor.commit(SettingsB20Edit.theme(theme))
+
+        for (index, screen) in topology.displays.enumerated() {
+            _ = try await editor.commit(SettingsB21Edit.dockDisplay(screen.id))
+            for (preference, edge) in edges {
+                _ = try await editor.commit(SettingsB21Edit.dockEdge(preference))
+                for size in [SettingsSize.small, .medium, .large] {
+                    _ = try await editor.commit(SettingsB20Edit.size(size))
+                    let label = "display \(index + 1), \(edge), \(size), \(theme)"
+                    let visible = try await wait(4) {
+                        panel.isVisible && panel.occlusionState.contains(.visible) &&
+                            host.edgePresentation?.placement?.displayID == screen.id &&
+                            host.edgePresentation?.placement?.edge == edge
+                    }
+                    XCTAssertTrue(visible, label)
+                    let place = try XCTUnwrap(host.edgePresentation?.placement)
+                    let view = try XCTUnwrap(panel.contentView?.subviews.compactMap { $0 as? DockInstrumentView }.first)
+                    XCTAssertEqual(view.appearanceDisplaySize, screen.usableFrame.size, label)
+                    XCTAssertEqual(view.presentationBackingScale, screen.backingScale, label)
+                    XCTAssertEqual(panel.frame.width, place.frame.width, accuracy: 1, label)
+                    XCTAssertEqual(panel.frame.height, place.frame.height, accuracy: 1, label)
+                    XCTAssertTrue(screen.usableFrame.insetBy(dx: -1, dy: -1).contains(panel.frame), label)
+                    switch edge {
+                    case .left: XCTAssertEqual(panel.frame.minX, screen.usableFrame.minX, accuracy: 1, label)
+                    case .right: XCTAssertEqual(panel.frame.maxX, screen.usableFrame.maxX, accuracy: 1, label)
+                    case .bottom: XCTAssertEqual(panel.frame.minY, screen.usableFrame.minY, accuracy: 1, label)
+                    case .top: XCTFail("Top is not an allowed resting edge")
+                    }
+                    let skin = try XCTUnwrap(view.presentedSkinForChecks)
+                    let nozzles = skin.stations.filter { $0.subscriptionID != nil }
+                    XCTAssertFalse(nozzles.isEmpty, label)
+                    for nozzle in nozzles { XCTAssertEqual(nozzle.diameter, size.nozzleDiameter, accuracy: 0.001, label) }
+                    XCTAssertEqual(nozzles.count + view.interactionOverflowIDs.count, quotas.count, label)
+                    let raster = try XCTUnwrap(view.renderedPixelSize)
+                    XCTAssertEqual(raster.width, ceil(view.bounds.width * CGFloat(screen.backingScale)), label)
+                    XCTAssertEqual(raster.height, ceil(view.bounds.height * CGFloat(screen.backingScale)), label)
+                    FileHandle.standardOutput.write(Data(("D-15: Capture " + label +
+                        " at 100%. Native raster \(Int(raster.width))×\(Int(raster.height)).\n").utf8))
+                    try await Task.sleep(for: .seconds(5))
+                }
+            }
+        }
+    }
+    #endif
 
     func testD02AndD03NativePanelTracksReservationsAndKeepsEdge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
