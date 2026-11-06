@@ -731,12 +731,14 @@ private actor S4RowsClient: EngineClient {
                 cards.append(card);visible += [card.name,card.plan,card.sourceAndAge,card.stateLabel,card.enterLabel,card.dismissLabel]
                 visible += card.rows.flatMap{[$0.label,$0.value,$0.detail]}
             }
+            let balanceLabels = cards.map { $0.rows.first { $0.id == "credits" && $0.kind == .reserve }?.label }
+            let expectedBalanceLabels = language == .chinese ? ["余额", "储备", "点数"] : ["Balance", "Reserve", "Credits"]
+            try require(balanceLabels == expectedBalanceLabels,"wire units must map to localized balance facts without inventing a currency")
             if language == .chinese {
                 try require(!visible.joined().unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
                 try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
                 try require(content.snapshot.inputs.first?.name == "合成工具 · 账号 1","duplicate member copy must use the account term consistently")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
-                try require(cards.map{$0.rows.first(where:{$0.kind == .reserve})?.label} == ["余额","储备","点数"],"wire units must map to localized facts without inventing a currency")
             } else {
                 try require(!visible.joined().unicodeScalars.contains{(0x3400...0x9FFF).contains(Int($0.value))},"English projection must not retain Chinese strings after language change")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5h"},"English quota row must use the glossary label")

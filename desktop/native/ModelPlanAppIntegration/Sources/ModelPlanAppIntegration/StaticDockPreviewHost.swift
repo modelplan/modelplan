@@ -79,6 +79,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public var showConsole: (() -> Void)?
     public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
     public var showSettings: (() -> Void)?
+    var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     public var requestHideDock:(() -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
@@ -1506,12 +1507,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
-                additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
+                additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
+                links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
                 dismissLabel: EngineRowsText.contextClose.value(preferences.language), at: now)
     }
     private func cardUsesSettings(_ id: String) -> Bool {
         purpose == .production || model?.presentationRows[id] != nil
+    }
+    private func currentCardSourceLinks(for id: String, at now: Date) -> [DockCardLink] {
+        guard let expiry = attentionSignals.first(where: { $0.id == id })?.reset?.expiresAt, now < expiry else { return [] }
+        return model?.presentationRows[id]?.links ?? []
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, supplied: DockCardContent? = nil) {
@@ -1524,6 +1530,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
+        card.onOpenURL = { [weak self] url in
+            guard let self, self.cardIsCurrent(id, revision: content.revision, token: token, feed: feed),
+                  EngineRowsEventDecoder.isHTTPSSourceURL(url),
+                  self.currentCardSourceLinks(for: id, at: self.currentDate()).contains(where: { $0.url == url }) else { return }
+            self.openCardSourceURL(url)
+        }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
             if self.cardUsesSettings(id) { self.openSettings() }
