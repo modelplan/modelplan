@@ -204,12 +204,12 @@ export function evidenceState(pr, items, head) {
   if (!/g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n")))
     return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const declaration = lines(body).find((line) => /^\s*\**Scenarios:?\**:?/i.test(line));
-  const scenarios = [...new Set(declaration?.match(/\b[A-Z]{1,3}-[0-9]{2}\b/g) ?? [])].sort();
+  const scenarios = [...new Set(declaration?.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g) ?? [])].sort();
   if (!scenarios.length) return { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
     for (const line of lines(item.body)) {
-      const match = /^VERIFIED: ([A-Z]{1,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
     }
   }
