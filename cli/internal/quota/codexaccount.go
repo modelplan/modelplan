@@ -90,13 +90,22 @@ type accountSnap struct {
 	MeterRef string      `json:"meterRef,omitempty"`
 	Meters   []meterMark `json:"meters,omitempty"`
 	// Foreign: cycles Codex reported for a different login on this Mac (no reference is
-	// kept). A session-log reading of one of them is that other login's, never this one's.
+	// kept). A cycle seen for two logins is ambiguous and binds neither.
 	Foreign []meterMark `json:"foreign,omitempty"`
-	// PlanSince/SincePlan: when ModelPlan first read this account on its current plan.
-	// Unbound session logs of a different plan written before then are superseded.
-	PlanSince time.Time `json:"planSince,omitempty"`
-	SincePlan string    `json:"sincePlan,omitempty"`
+	// Spans: when ModelPlan read which login (the same local references as SubscriptionRef),
+	// extended only by successful reads. Codex uses one login at a time, so a log written
+	// inside a login's span was written under that login.
+	Spans []loginSpan `json:"spans,omitempty"`
 }
+
+// loginSpan: ModelPlan read login Ref at From and every read until To reported it.
+type loginSpan struct {
+	Ref  string    `json:"ref"`
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+const maxLoginSpans = 8
 
 // meterMark: one window cycle of an account, known by its reset instant.
 type meterMark struct {
@@ -126,24 +135,19 @@ func windowMarks(windows []Window) []meterMark {
 	return marks
 }
 
-// withMeters: the account's marks after this reading, carrying earlier marks of the same
-// account forward. Marks of a different login move to Foreign. A cache written before the
-// marks existed contributes its windows as that login's marks.
+// withMeters: the account's marks and login spans after this reading, carrying earlier
+// marks of the same account forward. Marks of a different login move to Foreign. A cache
+// written before the marks existed contributes its windows and its reading time.
 func withMeters(prev *accountSnap, s *accountSnap, now time.Time) {
 	if s.SubscriptionRef == "" || IdentityOff() {
 		if prev != nil && s.Status != "ok" { // a failed read proves nothing new
-			s.MeterRef, s.Meters, s.Foreign, s.PlanSince, s.SincePlan = prev.MeterRef, prev.Meters, prev.Foreign, prev.PlanSince, prev.SincePlan
+			s.MeterRef, s.Meters, s.Foreign, s.Spans = prev.MeterRef, prev.Meters, prev.Foreign, prev.Spans
 		}
 		return
 	}
 	add := func(list []meterMark, m meterMark) []meterMark {
-		if now.Sub(m.ResetsAt) > meterKeep {
+		if now.Sub(m.ResetsAt) > meterKeep || containsMark(list, m) {
 			return list
-		}
-		for _, x := range list {
-			if x.Limit == m.Limit && x.Kind == m.Kind && x.Minutes == m.Minutes && x.ResetsAt.Equal(m.ResetsAt) {
-				return list
-			}
 		}
 		return append(list, m)
 	}
@@ -151,19 +155,20 @@ func withMeters(prev *accountSnap, s *accountSnap, now time.Time) {
 	for _, m := range windowMarks(s.Windows) {
 		own = add(own, m)
 	}
-	s.PlanSince, s.SincePlan = s.ObservedAt, s.Plan
+	var spans []loginSpan
 	if prev != nil {
-		prevRef, prevMarks, prevPlan, prevSince := prev.MeterRef, prev.Meters, prev.SincePlan, prev.PlanSince
+		prevRef, prevMarks := prev.MeterRef, prev.Meters
+		spans = append(spans, prev.Spans...)
 		if prevRef == "" && prev.Status == "ok" && prev.SubscriptionRef != "" {
-			prevRef, prevMarks, prevPlan, prevSince = prev.SubscriptionRef, windowMarks(prev.Windows), prev.Plan, prev.ObservedAt
+			prevRef, prevMarks = prev.SubscriptionRef, windowMarks(prev.Windows)
+			if len(spans) == 0 && !prev.ObservedAt.IsZero() {
+				spans = []loginSpan{{Ref: prev.SubscriptionRef, From: prev.ObservedAt, To: prev.ObservedAt}}
+			}
 		}
 		switch {
 		case prevRef == s.SubscriptionRef:
 			for _, m := range prevMarks {
 				own = add(own, m)
-			}
-			if prevPlan == s.Plan && !prevSince.IsZero() && prevSince.Before(s.PlanSince) {
-				s.PlanSince = prevSince
 			}
 		case prevRef != "":
 			for _, m := range prevMarks {
@@ -174,20 +179,28 @@ func withMeters(prev *accountSnap, s *accountSnap, now time.Time) {
 			foreign = add(foreign, m)
 		}
 	}
-	mine := foreign[:0]
-	for _, m := range foreign {
-		if !containsMark(own, m) { // a cycle this account reported is never another login's
-			mine = append(mine, m)
+	if n := len(spans); n > 0 && spans[n-1].Ref == s.SubscriptionRef && !s.ObservedAt.Before(spans[n-1].To) {
+		spans[n-1].To = s.ObservedAt
+	} else if n == 0 || !s.ObservedAt.Before(spans[n-1].To) {
+		spans = append(spans, loginSpan{Ref: s.SubscriptionRef, From: s.ObservedAt, To: s.ObservedAt})
+	}
+	kept := spans[:0]
+	for _, x := range spans {
+		if now.Sub(x.To) <= meterKeep {
+			kept = append(kept, x)
 		}
 	}
-	foreign = mine
+	spans = kept
+	if len(spans) > maxLoginSpans {
+		spans = spans[len(spans)-maxLoginSpans:]
+	}
 	if len(own) > maxMeterMarks {
 		own = own[:maxMeterMarks] // current windows first, then the newest earlier marks
 	}
 	if len(foreign) > maxMeterMarks {
 		foreign = foreign[:maxMeterMarks]
 	}
-	s.MeterRef, s.Meters, s.Foreign = s.SubscriptionRef, own, foreign
+	s.MeterRef, s.Meters, s.Foreign, s.Spans = s.SubscriptionRef, own, foreign, spans
 }
 
 func containsMark(list []meterMark, m meterMark) bool {
@@ -221,22 +234,30 @@ func overlapsMark(w Window, m meterMark) bool {
 	return d < time.Duration(m.Minutes)*time.Minute
 }
 
-// sameMeter: a session-log account with no account binding of its own reports window cycles
-// that Codex reported for the runtime reading's account, and none that disagrees with them
-// or that Codex reported for another login. A single matching reset is not enough when
-// another window of the same reading points elsewhere (macrevb-602-2).
-func sameMeter(local *Account, s *accountSnap) bool {
-	if s.SubscriptionRef == "" {
+// logBelongs: whether an unbound session-log account was written under the runtime
+// reading's login. Logs carry no account, so only evidence of which login was active when
+// each window was logged binds them (design-602-account-identity, macrevb-602-2):
+//   - E1: Codex's credential file was not rewritten since the window was logged (a login
+//     switch rewrites it); authAt is its modification time from a stat, never opened.
+//   - E2: ModelPlan read this login before and after the window was logged, and the
+//     window reports a cycle Codex reported for this login.
+//
+// Reset times, plans and ages never bind on their own. A window reporting a cycle seen for
+// another login (also one shared by two logins), or, on the same plan, an overlapping
+// different cycle of this login, vetoes the binding.
+func logBelongs(local *Account, s *accountSnap, authAt time.Time) bool {
+	if s.SubscriptionRef == "" || len(local.Windows) == 0 {
 		return false
 	}
 	marks := windowMarks(s.Windows)
 	if s.MeterRef == s.SubscriptionRef {
 		marks = append(marks, s.Meters...)
 	}
-	matched := false
+	samePlan := local.Plan == "" || s.Plan == "" || local.Plan == s.Plan
+	e1, e2 := !authAt.IsZero(), true
 	for _, w := range local.Windows {
-		if w.ResetsAt == nil || w.WindowMinutes <= 0 {
-			continue
+		if w.ResetsAt == nil || w.WindowMinutes <= 0 || w.ObservedAt.IsZero() {
+			return false
 		}
 		for _, m := range s.Foreign {
 			if nearMark(w, m) {
@@ -248,33 +269,41 @@ func sameMeter(local *Account, s *accountSnap) bool {
 			hit = hit || nearMark(w, m)
 			conflict = conflict || overlapsMark(w, m)
 		}
-		if conflict && !hit {
+		if samePlan && conflict && !hit {
 			return false
 		}
-		matched = matched || hit
-	}
-	return matched
-}
-
-// supersededLogs: an unbound session-log account of a different plan whose newest reading
-// predates ModelPlan's first reading of the runtime account on its current plan, and which
-// reports no other login's cycle. It is the account before a plan change that ModelPlan did
-// not observe (macrevb-602-1); it is hidden, not bound, so no identity is claimed for it. A
-// log written after that first reading is shown on its own as usual.
-func supersededLogs(local *Account, s *accountSnap) bool {
-	if local.Source != "codex" || local.Via != "" || local.Subscription != nil || IdentityOff() ||
-		s.SubscriptionRef == "" || s.Plan == "" || local.Plan == "" || local.Plan == s.Plan ||
-		s.SincePlan != s.Plan || s.PlanSince.IsZero() || !local.ObservedAt.Before(s.PlanSince) {
-		return false
-	}
-	for _, w := range local.Windows {
-		for _, m := range s.Foreign {
-			if nearMark(w, m) {
-				return false
-			}
+		if authAt.After(w.ObservedAt) {
+			e1 = false
+		}
+		if !hit || !inSpan(s.Spans, s.SubscriptionRef, w.ObservedAt) {
+			e2 = false
 		}
 	}
-	return true
+	return e1 || e2
+}
+
+// inSpan: ModelPlan read login ref at or before t and again at or after t, with no other
+// login read in between (spans are consecutive by construction).
+func inSpan(spans []loginSpan, ref string, t time.Time) bool {
+	for _, x := range spans {
+		if x.Ref == ref && !t.Before(x.From) && !t.After(x.To) {
+			return true
+		}
+	}
+	return false
+}
+
+// codexAuthChanged: the modification time of Codex's credential file, zero when there is
+// none (keyring storage) or it is not a regular file. Stat only; the file is never opened.
+func codexAuthChanged(codexHome string) time.Time {
+	if codexHome == "" {
+		return time.Time{}
+	}
+	fi, err := os.Lstat(filepath.Join(codexHome, "auth.json"))
+	if err != nil || !fi.Mode().IsRegular() {
+		return time.Time{}
+	}
+	return fi.ModTime()
 }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
@@ -696,6 +725,11 @@ func attachResetCardIdentities(s *accountSnap, r *rlResponse, cache string) {
 // and runtime readings. Otherwise the runtime reading stands alone.
 
 func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.Admission) {
+	applyAccountWith(r, cache, time.Time{}, now, admissions...)
+}
+
+// applyAccountWith: authAt is codexAuthChanged of the Codex home the logs came from.
+func applyAccountWith(r *Report, cache string, authAt time.Time, now time.Time, admissions ...consent.Admission) {
 	admission := consent.Capture()
 	if len(admissions) > 0 {
 		admission = admissions[0]
@@ -731,25 +765,18 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 		}
 	}
 	if a == nil && !IdentityOff() {
-		// Session logs carry no account, but they do carry the meters: a log reading of a
-		// window cycle Codex reported for this account is this account's reading (G3-20).
-		// A log account bound to another account is never joined.
+		// Session logs carry no account. Only evidence of which login was active when they
+		// were written joins them to this account (logBelongs, G3-20); without it they stay
+		// a separate, unbound account. A log account bound to another account is never joined.
 		for i := range r.Accounts {
 			candidate := &r.Accounts[i]
-			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && sameMeter(candidate, s) {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil && logBelongs(candidate, s, authAt) {
 				a = candidate
 				break
 			}
 		}
 	}
 	if a == nil {
-		kept := r.Accounts[:0]
-		for _, candidate := range r.Accounts {
-			if !supersededLogs(&candidate, s) {
-				kept = append(kept, candidate)
-			}
-		}
-		r.Accounts = kept
 		r.Accounts = append(r.Accounts, Account{Source: "codex", Plan: s.Plan, ObservedAt: s.ObservedAt, Windows: []Window{}})
 		a = &r.Accounts[len(r.Accounts)-1]
 		if !hadLocal {

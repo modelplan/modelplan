@@ -20,17 +20,27 @@ import (
 // reads the runtime by default and the app's rows show ONE Codex account with a current
 // reading. No credential, network or real home is used.
 func TestG320FreshProfileShowsOneCodexAccountWithReading(t *testing.T) {
-	g320FreshProfileOneAccount(t, "pro", func(reset time.Time) time.Time { return reset }, "pro")
+	g320FreshProfileAccounts(t, "pro", func(reset time.Time) time.Time { return reset }, "pro", -24*time.Hour, 1)
 }
 
 // macrevb-602-1 through the normal entry: the plan was upgraded (pro_100 -> pro_200) before
 // ModelPlan ever ran, so the newest session log still carries the old tier and an old cycle.
-// The app still shows one Codex account, on the new plan.
+// Codex's credential file was not rewritten since that log, so it was written under the
+// same login: the app shows one Codex account, on the new plan.
 func TestG320FreshProfileAfterUnobservedUpgradeShowsOneAccount(t *testing.T) {
-	g320FreshProfileOneAccount(t, "pro_100", func(reset time.Time) time.Time { return reset.Add(-2 * time.Hour) }, "pro_200")
+	g320FreshProfileAccounts(t, "pro_100", func(reset time.Time) time.Time { return reset.Add(-2 * time.Hour) }, "pro_200", -24*time.Hour, 1)
 }
 
-func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(reset time.Time) time.Time, runtimePlan string) {
+// macrevb-602-4 / macrev2-602-1 through the normal entry: another login's fresh reading on
+// another plan, and a sign-in after it (the credential file is newer than the log). Nothing
+// proves the log is the current login's, so the app keeps both readings visible.
+func TestG320FreshProfileOtherLoginReadingStaysVisible(t *testing.T) {
+	g320FreshProfileAccounts(t, "pro_100", func(reset time.Time) time.Time { return reset.Add(-2 * time.Hour) }, "pro_200", -30*time.Second, 2)
+}
+
+// g320FreshProfileAccounts: authAge is when Codex's credential file was last rewritten,
+// relative to now (the log is two minutes old); want is the expected Codex account count.
+func g320FreshProfileAccounts(t *testing.T, logPlan string, logReset func(reset time.Time) time.Time, runtimePlan string, authAge time.Duration, want int) {
 	t.Helper()
 	bin := candidateBinary(t, "./cmd/modelplan")
 	runtimeHost := candidateBinary(t, "./internal/appserver/testdata/runtime")
@@ -52,6 +62,15 @@ func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(rese
 	}
 	line := fmt.Sprintf(`{"timestamp":%q,"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","plan_type":%q,"primary":{"used_percent":9,"window_minutes":300,"resets_at":%d},"secondary":null}}}`+"\n", logAt.Format(time.RFC3339), logPlan, logReset(reset).Unix())
 	if err := os.WriteFile(filepath.Join(day, "rollout-"+logAt.Format("2006-01-02T15-04-05")+"-g320.jsonl"), []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Codex's credential file (synthetic, never opened): not rewritten since the log is the
+	// evidence that binds the log to the current login (design-602).
+	auth := filepath.Join(home, ".codex", "auth.json")
+	if err := os.WriteFile(auth, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(auth, now.Add(authAge), now.Add(authAge)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".config", "modelplan", "consent.json")); !os.IsNotExist(err) {
@@ -84,15 +103,16 @@ func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(rese
 		}
 		snapshot = next
 	}
-	if len(codex.Accounts) != 1 {
+	if len(codex.Accounts) != want {
 		for _, a := range codex.Accounts {
 			t.Logf("account route=%s value=%s windows=%d", a.Route, a.ValueState, len(a.Windows))
 		}
-		t.Fatalf("one signed-in Codex account shown as %d accounts", len(codex.Accounts))
+		t.Fatalf("Codex shown as %d accounts, want %d", len(codex.Accounts), want)
 	}
-	account := codex.Accounts[0]
-	if account.ValueState != rows.ValueStateCurrent {
-		t.Fatalf("Codex reading is not current: %s", account.ValueState)
+	for _, account := range codex.Accounts {
+		if account.ValueState != rows.ValueStateCurrent {
+			t.Fatalf("Codex reading (route %s) is not current: %s", account.Route, account.ValueState)
+		}
 	}
 	finishCandidate(t, c)
 	if stderr.Len() != 0 {

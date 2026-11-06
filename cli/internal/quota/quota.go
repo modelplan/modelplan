@@ -318,7 +318,7 @@ func Read(p Paths, now time.Time) Report {
 	add(readCodex(p.CodexHome, p.CodexThread))
 	add(readLocal(p.LocalFile, now))
 	if p.CodexHome != "" {
-		applyAccount(&r, p.Cache, now)
+		applyAccountWith(&r, p.Cache, codexAuthChanged(p.CodexHome), now)
 	}
 	applyCodexBar(&r, p, now)
 	applyNative(&r, p, now)

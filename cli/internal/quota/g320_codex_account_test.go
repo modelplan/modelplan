@@ -20,6 +20,22 @@ func g320Limits(plan string, primaryReset, weeklyReset time.Time) string {
  "secondary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":%d}}}}`, plan, primaryReset.Unix(), weeklyReset.Unix())
 }
 
+// g320Auth writes Codex's credential file (synthetic, never opened by the reader) as last
+// rewritten at the given time, i.e. the last sign-in or token refresh.
+func g320Auth(t *testing.T, codexHome string, at time.Time) {
+	t.Helper()
+	if err := os.MkdirAll(codexHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(codexHome, "auth.json")
+	if err := os.WriteFile(p, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, at, at); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // g320Rollout writes one Codex session log whose token_count line reports the meters.
 func g320Rollout(t *testing.T, codexHome string, at time.Time, plan string, primaryReset, weeklyReset time.Time) {
 	t.Helper()
@@ -61,6 +77,7 @@ func TestG320SessionLogsAndRuntimeOfOneAccountAreOneAccount(t *testing.T) {
 	cache := t.TempDir()
 	now := acctNow
 	primary, weekly := now.Add(3*time.Hour), now.Add(4*24*time.Hour)
+	g320Auth(t, codexHome, now.Add(-24*time.Hour)) // one login, signed in yesterday
 	g320Rollout(t, codexHome, now.Add(-10*time.Minute), "pro", primary, weekly)
 	bin, _ := fakeCodex(t, g320Limits("pro", primary, weekly))
 	if err := RefreshCodexAccount(context.Background(), cache, bin, now); err != nil {
@@ -87,12 +104,14 @@ func TestG320PlanUpgradeKeepsOneAccount(t *testing.T) {
 	cache := t.TempDir()
 	before := acctNow.Add(-2 * time.Hour)
 	oldPrimary, oldWeekly := before.Add(2*time.Hour), before.Add(3*24*time.Hour)
-	// Before the upgrade: the logs and a runtime reading show the 100 USD tier.
-	g320Rollout(t, codexHome, before.Add(-5*time.Minute), "pro_100", oldPrimary, oldWeekly)
+	// Before the upgrade: a runtime reading shows the 100 USD tier, and a Codex turn logged
+	// while ModelPlan was running shows the same cycles (E2: observed while active). No
+	// credential file, so only ModelPlan's own observation binds the logs.
 	bin, _ := fakeCodex(t, g320Limits("pro_100", oldPrimary, oldWeekly))
 	if err := RefreshCodexAccount(context.Background(), cache, bin, before); err != nil {
 		t.Fatal(err)
 	}
+	g320Rollout(t, codexHome, before.Add(5*time.Minute), "pro_100", oldPrimary, oldWeekly)
 	ref := loadAccount(cache).SubscriptionRef
 	if ref == "" {
 		t.Fatal("no account reference")
