@@ -25,6 +25,8 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    /// Normalized along-axis member pitch ranges registered by the active appearance.
+    public var quotaPitchRanges: [String: ClosedRange<Double>] = [:]
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -290,6 +292,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
     }
@@ -1315,6 +1318,29 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
+    private func quotaReadingsForSliver() -> [DockSliverQuotaInput] {
+        guard preferences.sliverAlert, let model else { return [] }
+        let inputs = Dictionary(uniqueKeysWithValues:model.inputs.map { ($0.id,$0) })
+        guard let order = try? memberSafePreferences.presentedSubscriptionIDs(model.inputs.map(\.id)) else { return [] }
+        let view = interactionView
+        let pitches = presentationGeometry.quotaPitchRanges
+        func ink(_ role:DockQuotaStatus) -> DockInk {
+            if let supplied = view.quotaInk(for:role) { return supplied }
+            let fallback:NSColor
+            switch role { case .warning: fallback = .systemYellow; case .critical: fallback = .systemRed; case .normal,.unknown: fallback = .secondaryLabelColor }
+            guard let rgb=fallback.usingColorSpace(.sRGB) else { return DockInk(0.5,0.5,0.5) }
+            return DockInk(Double(rgb.redComponent),Double(rgb.greenComponent),Double(rgb.blueComponent),Double(rgb.alphaComponent))
+        }
+        let now = currentDate()
+        return order.compactMap { id in
+            guard let input = inputs[id], let pitch=pitches[id] else { return nil }
+            // The model already withholds unproven values; evaluate expiry/selection again at presentation time.
+            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:effectiveRedBelow)
+            let status = reading?.status ?? .unknown
+            let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
+        }
+    }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
     func prepareSliver(size: CGSize, backingScale: Int? = nil) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
@@ -1333,7 +1359,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 ?? topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID)?.backingScale
                 ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
-                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language))
+                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language), quotaReadings: quotaReadingsForSliver())
             sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
