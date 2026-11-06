@@ -72,7 +72,8 @@ extension CommunityCockpitEntryTests {
     }
 
     #if MODELPLAN_TEST_ONLY_SPI
-    /// Full normal entry: real app-server, real page factory, real WKWebView page from the canonical official build.
+    /// The production page factory (`CockpitConsoleOwner.makePage`, which every menu and Dock route reaches through
+    /// the coordinator) on the packaged shapes, then the real WKWebView page from the canonical official build.
     @MainActor func testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt() async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
               FileManager.default.isExecutableFile(atPath: path) else { throw XCTSkip("The real synthetic-test CLI is not available") }
@@ -82,43 +83,32 @@ extension CommunityCockpitEntryTests {
         }
         for ownerTest in [true, false] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("owner-test-page-" + UUID().uuidString)
+                .resolvingSymlinksInPath()
             defer { try? FileManager.default.removeItem(at: root) }
-            let home = root.appendingPathComponent("home")
-            try FileManager.default.createDirectory(at: home.appendingPathComponent("Library/Caches/modelplan/observed"), withIntermediateDirectories: true)
             let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: ownerTest, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
             let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
-            let environment = ["HOME": home.path, "TMPDIR": home.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
-            var pages: [CockpitWindowController] = []
-            let previous = CommunityCockpitApplicationFactory.verificationPage
-            CommunityCockpitApplicationFactory.verificationPage = { pages.append($0) }
-            defer { CommunityCockpitApplicationFactory.verificationPage = previous }
-            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: home, preferredLanguages: ["en"])
-            // No cockpitEntryEnabled override: the packaged Info.plist decides, as in the shipped app.
-            let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-owner-test",
-                allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
-                createsNativePanels: false, bundleURL: app)
-            await entry.prepare()
-            await entry.composition.start()
-            entry.showConsole()
-            if ownerTest {
-                var state = "none"
-                let deadline = ContinuousClock.now + .seconds(30)
-                while ContinuousClock.now < deadline {
-                    if let web = pages.first?.verificationWebView {
-                        let result: Any? = try? await web.evaluateJavaScript(
-                            "document.querySelector('#cockpit.ck')&&window.modelPlanCockpit?window.modelPlanCockpit.state():'none'")
-                        if let value = result as? String { state = value; if state != "none" { break } }
-                    }
-                    try await Task.sleep(for: .milliseconds(50))
-                }
-                XCTAssertEqual(pages.count, 1, "the owner test package must construct the real cockpit page")
-                XCTAssertNotEqual(state, "none", "the official page must load and mount the cockpit")
-            } else {
-                try await Task.sleep(for: .seconds(3))
-                XCTAssertTrue(pages.isEmpty, "a release-shaped unverified bundle must not load the cockpit page")
+            guard ownerTest else {
+                XCTAssertThrowsError(try owner.makePage(context: context, executable: helper),
+                                     "a release-shaped unverified bundle must not get a cockpit page")
+                continue
             }
-            await entry.composition.stop()
-            for page in pages { page.discard() }
+            let page = try owner.makePage(context: context, executable: helper)
+            page.open()
+            var state = "none"
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ContinuousClock.now < deadline {
+                if let web = page.verificationWebView {
+                    let result: Any? = try? await web.evaluateJavaScript(
+                        "document.querySelector('#cockpit.ck')&&window.modelPlanCockpit?window.modelPlanCockpit.state():'none'")
+                    if let value = result as? String, value != "none" { state = value; break }
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertNotEqual(state, "none", "the official page must load from Resources/Cockpit and mount the cockpit")
+            page.discard()
         }
     }
     #endif
