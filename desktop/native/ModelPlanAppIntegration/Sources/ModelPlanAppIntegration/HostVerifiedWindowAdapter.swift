@@ -130,7 +130,7 @@ enum HostVerifiedWindowError: Error, Equatable {
                 resetCountExpiry: admitted ? row.resetCountExpiry : nil,
                 links: row.links,
                 windowObservations: row.windowObservations.map { observations in
-                    admitted ? observations.filter { provenIDs.contains($0.key) } : [:]
+                    admitted ? observations.filter { provenIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
                 },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
         }

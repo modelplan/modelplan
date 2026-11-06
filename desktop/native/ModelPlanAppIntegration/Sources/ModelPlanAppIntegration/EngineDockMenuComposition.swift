@@ -26,6 +26,7 @@ public struct EngineMenuRefreshResult {
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
+    private var cardReplacementMembers: Set<String> = []
     private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
     private let deadlineWall: @MainActor () -> Date
     private let deadlineElapsed: () -> TimeInterval
@@ -35,11 +36,14 @@ public struct EngineMenuRefreshResult {
             clear: { [weak self] in
                 guard let self else { return }
                 self.admittedCache.clear()
-                self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared)
-                // Rebuild from the empty, localized cache after scrubbing so the
-                // Dock menu has a next step even if no new projection is admitted.
-                self.dock.refreshDockContent()
-                self.menuDidChange?()
+                let keepCard = self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared,
+                                                                 keepingCardFor: self.cardReplacementMembers)
+                // On withdrawal or a failed replacement the empty cache still
+                // supplies the localized menu next step.
+                if !keepCard {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
             }, recompute: { [weak self] now in
                 guard let self else { return nil }
                 defer {
@@ -120,9 +124,31 @@ public struct EngineMenuRefreshResult {
         provider.dockContentDidChange = { [weak self] in
             guard let self else { return }
             self.adapter.scrubInvalidatedMenus()
+            let previous = self.pairedProjection.acceptedDelivery
             self.pairedProjection.invalidate()
             if self.pairedProjection.isProjecting { self.pendingProjectionReplacement = true; return }
-            if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            guard !self.deadlineLifecycleSuspended else { return }
+
+            let content = self.provider.dockContent
+            self.cardReplacementMembers = []
+            if let previous, self.store.snapshot.delivery == previous, content.status == .ready {
+                let catalogue = EngineAccountMemberCatalogue(rows: content.dockRows)
+                self.cardReplacementMembers = Set(catalogue.members.compactMap { member in
+                    guard member.subscriptionRef == member.id, member.isStable,
+                          member.row.state == .fresh || member.row.state == .stale,
+                          member.row.consent == .allowed || member.row.consent == .implicit || member.row.consent == .notRequired,
+                          member.account.valueState == .retained || member.account.valueState == .current else { return nil }
+                    return member.id
+                })
+            }
+            defer {
+                self.cardReplacementMembers = []
+                if self.dock.finishCardReplacement() {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
+            }
+            self.deadlineDriver.replace()
         }
     }
     public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
