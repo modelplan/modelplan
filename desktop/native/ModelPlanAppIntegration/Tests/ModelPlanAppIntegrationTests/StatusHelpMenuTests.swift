@@ -111,7 +111,18 @@ import ModelPlanEngineClient
             charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
         view.keyDown(with: key)
         XCTAssertEqual(view.focusedGripIndex, 0)
-        XCTAssertEqual(view.emphasizedGripFrameForChecks, grip.boundingBox)
+        // R64 D-5: the outline hugs the painted art inside the larger hit target.
+        let art = try XCTUnwrap(view.registeredGripArtRects.first)
+        XCTAssertEqual(view.emphasizedGripFrameForChecks, art)
+        XCTAssertTrue(grip.boundingBox.contains(art))
+        // Side edge: the hit box is the prototype's 44 x 30 (.dk-cap), scaled with the dock (rocket.css:44-46).
+        if let stationDiameter = view.presentedSkinForChecks?.stations.first?.diameter, view.bounds.width < view.bounds.height {
+            let unit = stationDiameter / 52
+            XCTAssertEqual(grip.boundingBox.height, 30 * unit, accuracy: 1)
+            XCTAssertLessThanOrEqual(grip.boundingBox.width, 44 * unit + 1)
+            XCTAssertGreaterThan(grip.boundingBox.width, 30 * unit)
+            XCTAssertEqual(art.width, 12 * unit, accuracy: 0.5); XCTAssertEqual(art.height, 24 * unit, accuracy: 0.5)
+        }
         _ = view.resignFirstResponder()
         XCTAssertNil(view.emphasizedGripFrameForChecks)
     }

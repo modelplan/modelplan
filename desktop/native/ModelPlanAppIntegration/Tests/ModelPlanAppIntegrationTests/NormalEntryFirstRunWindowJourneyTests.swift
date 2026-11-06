@@ -67,13 +67,25 @@ import ModelPlanWire
         XCTAssertFalse(scopeView.isHiddenOrHasHiddenAncestor)
         XCTAssertFalse(scopeView === first.scopeConsentEntry.view, "First run must not steal the Settings view")
         XCTAssertTrue(first.scopeConsentEntry.controller.selectedIDs.isEmpty, "Restoration must not select or grant any scope")
-        let checkbox = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
-        XCTAssertTrue(checkbox.isEnabled); XCTAssertFalse(checkbox.isHiddenOrHasHiddenAncestor)
-        checkbox.performClick(nil)
-        XCTAssertEqual(first.scopeConsentEntry.controller.selectedIDs, ["codex.local_history"])
+        // G3-19 / D27 (owner 11-06): standard readers are on by default with no prompt. A fresh profile's
+        // first-run sheet shows one line — what is read and where to turn it off — and no per-reader boxes.
+        XCTAssertTrue(try firstRunViews().compactMap { $0 as? NSButton }.filter { $0.accessibilityIdentifier().hasPrefix("scope.") }.isEmpty,
+                      "the first-run sheet has no per-reader choices")
+        let notice = try XCTUnwrap(try firstRunViews().first { $0.accessibilityIdentifier() == "scope.firstRun.notice" } as? NSTextField)
+        XCTAssertTrue(notice.stringValue.contains("Codex"), notice.stringValue)
+        XCTAssertTrue(notice.stringValue.contains("Settings › Data & Privacy"), notice.stringValue)
+        XCTAssertTrue(first.scopeConsentEntry.controller.isOnByDefault("codex.local_history"))
+        XCTAssertFalse(first.scopeConsentEntry.controller.isOnByDefault("cursor.browser_session"), "browser sessions ask when first needed")
+        // Settings lists the same reader as on, with an on switch; turning it off is a confirmed revoke.
+        let settingsViews = descendants(first.scopeConsentEntry.view)
+        let settingsSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.codex.local_history" } as? NSButton)
+        XCTAssertEqual(settingsSwitch.state, .on, "a default-on reader shows on in Settings")
+        XCTAssertTrue(settingsViews.compactMap { $0 as? NSTextField }.contains { $0.stringValue.hasPrefix("On by default") || $0.stringValue.hasPrefix("默认开启") })
+        let browserSwitch = try XCTUnwrap(settingsViews.first { $0.accessibilityIdentifier() == "scope.allow.cursor.browser_session" } as? NSButton)
+        XCTAssertEqual(browserSwitch.state, .off, "a sensitive reader stays off until the user allows it")
         let syntheticClient = try XCTUnwrap(first.composition.client as? SettingsJourneyClient)
         let grantsBeforeConfirmation = await syntheticClient.grantCount()
-        XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting or selecting must not grant permission")
+        XCTAssertEqual(grantsBeforeConfirmation, 0, "Presenting the first-run notice must not send a grant")
         let dock = first.composition.dock
         XCTAssertTrue(dock.interactionBindingInstalled, "Normal entry must install the real host port")
         XCTAssertTrue(dock.interactionEnvironment().active, "The normal entry must expose the official interaction projection")

@@ -861,15 +861,24 @@ actor EntrySyntheticClient: EngineClient {
         }
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
         XCTAssertTrue(text(dock.card).contains("2 resets · expire in 30h"))
+        // DOCK-3.8-11: the announced reset is its own section: the title spans the readout window in reset blue.
+        func fields(_ root: NSView) -> [NSTextField] { ((root as? NSTextField).map { [$0] } ?? []) + root.subviews.flatMap(fields) }
+        let resetTitle = try XCTUnwrap(fields(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.text.row.reset-event:") && $0.accessibilityIdentifier().hasSuffix(".label") })
+        XCTAssertGreaterThan(resetTitle.frame.width, 200, "the reset title is not squeezed into the label column")
+        let ink = try XCTUnwrap(resetTitle.textColor?.usingColorSpace(.sRGB))
+        XCTAssertEqual(ink.blueComponent, 1, accuracy: 0.02); XCTAssertEqual(ink.redComponent * 255, 0x9f, accuracy: 3)
         let content = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(content.links.map(\.url.absoluteString), [originalURL, aihotURL, officialURL, publicationURL])
         XCTAssertEqual(content.links.map(\.label), ["Original", "AIHot", "Official source", "Source"])
         func buttons(_ root: NSView) -> [NSButton] {
             (root as? NSButton).map { [$0] } ?? root.subviews.flatMap(buttons)
         }
-        let stack = try XCTUnwrap(dock.card.subviews.compactMap { $0 as? NSStackView }.first)
+        // Links flow in reading order: top to bottom, then left to right.
         func arrangedLinkLabels() -> [String] {
-            stack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title }
+            dock.card.subviews.compactMap { $0 as? NSButton }
+                .filter { $0.accessibilityIdentifier().hasPrefix("dock.card.link.") }
+                .sorted { $0.frame.minY != $1.frame.minY ? $0.frame.minY < $1.frame.minY : $0.frame.minX < $1.frame.minX }
+                .map(\.title)
         }
         XCTAssertEqual(arrangedLinkLabels(), content.links.map(\.label))
         let official = try XCTUnwrap(buttons(dock.card).first { $0.title == "Official source" })
@@ -1006,6 +1015,9 @@ actor EntrySyntheticClient: EngineClient {
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
         XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
+        // R64 D-2: the pose eases over 0.12 s (prototype dock.css:38), not an instant swap.
+        XCTAssertTrue(view.animatesPoses)
+        XCTAssertEqual(try XCTUnwrap(view.lastPoseTransitionForChecks), 0.12, accuracy: 0.0001)
         // G3-29: on the right edge the ring moves left, away from the edge, not down onto its text.
         XCTAssertLessThan(subtle.offset.x, -5.5, "subtle hover grows outward from the screen edge")
         XCTAssertLessThan(abs(subtle.offset.y), 1.5, "subtle hover does not slide along the edge")

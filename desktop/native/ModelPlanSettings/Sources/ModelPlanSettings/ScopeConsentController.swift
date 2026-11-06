@@ -196,6 +196,15 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
         facts = nil; rowsSummary = nil; selectedIDs = []; phase = .idle; changed()
     }
     public func isAllowed(_ id: String) -> Bool { facts?.scopes.first { $0.scope == id }?.state == .allowed }
+    /// D27 (owner 11-06): a standard reader the engine reads without a consent click — no saved
+    /// decision yet and on by the compiled policy (defaultCheck). Browser sessions always ask first.
+    public func isOnByDefault(_ id: String) -> Bool {
+        guard let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
+        return scope.state == .unset && scope.defaultCheck && scope.route.isKnown && scope.route != .knownUnknown &&
+            scope.route != .browserSession && !scope.retired && scope.disabledReason == nil
+    }
+    /// Whether ModelPlan reads this path now: explicitly allowed or on by default.
+    public func isReading(_ id: String) -> Bool { isAllowed(id) || isOnByDefault(id) }
     public func choose(_ id: String, selected: Bool) {
         guard canChoose(id) else { return }
         if selected { selectedIDs.insert(id) } else { selectedIDs.remove(id) }; phase = .idle; changed()

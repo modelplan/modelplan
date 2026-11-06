@@ -77,8 +77,17 @@ import ModelPlanSettings
         let grip = CGPoint(x: geometry.grip.x - hoverViewport.minX, y: geometry.grip.y - hoverViewport.minY)
         let unit = geometry.input.diameter / 52
         let scale = view.appliedGeometryScale
-        view.registerGripRects([CGRect(x: (grip.x - 10 * unit) * scale, y: (grip.y - 6 * unit) * scale,
-                                       width: 20 * unit * scale, height: 12 * unit * scale)])
+        // R64 D-5: the grip's hit target is the prototype's .dk-cap box, 44 x 30 on a side edge and
+        // 34 x 44 on a horizontal edge (scaled with the dock), clipped to the widget; the outline hugs
+        // the painted 10 x 22 / 22 x 10 art and its 1-unit stroke.
+        // Prototype: design-handoffs/opus-r7/src/rocket-r1/rocket.css:44-50, dock.css:33.
+        let hitSize = vertical ? CGSize(width: 44 * unit, height: 30 * unit) : CGSize(width: 34 * unit, height: 44 * unit)
+        let artSize = vertical ? CGSize(width: 12 * unit, height: 24 * unit) : CGSize(width: 24 * unit, height: 12 * unit)
+        func centred(_ size: CGSize) -> CGRect {
+            CGRect(x: (grip.x - size.width / 2) * scale, y: (grip.y - size.height / 2) * scale, width: size.width * scale, height: size.height * scale)
+        }
+        let hit = centred(hitSize).intersection(CGRect(origin: .zero, size: view.bounds.size))
+        view.registerGripRects([hit], art: [centred(artSize)])
         var result = StaticDockGeometry(hoverRects: [restingFrame], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
         let horizontal = edge == .bottom || edge == .top
