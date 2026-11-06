@@ -63,7 +63,7 @@ private actor S4RowsClient: EngineClient {
         row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
         account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
         window["id"]="scope-check";window["role"]="session";window["limitKey"]="five_hour";window["poolKey"]="main"
-        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z"
+        window["current"]=true;window["remainingPercent"]=41;window["validUntil"]="2099-01-01T00:00:00Z";window["resetsAt"]="2099-01-01T00:00:00Z"
         window.removeValue(forKey:"modelScope");projection.removeValue(forKey:"resetEvents")
         func decode() throws -> WireDecoded<WireRowsSnapshot> {
             account["windows"]=[window];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
