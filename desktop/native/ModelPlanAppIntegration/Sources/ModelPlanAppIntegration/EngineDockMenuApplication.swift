@@ -112,7 +112,11 @@ import ModelPlanMenuVerification
         }
         let application=settings
         composition.dock.requestHideDock = { [weak application] in
-            Task { _ = try? await application?.editor.commit(SettingsB21Edit.showDock(false)) }
+            // Same bounded path as Show: a hint-ledger write must not silently drop Hide.
+            Task { @MainActor in
+                guard let editor = application?.editor else { return }
+                _ = await ShowQuotaWidgetRequest.setVisible(false, editor: editor)
+            }
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -292,6 +296,10 @@ import ModelPlanMenuVerification
         renderMenu()
         interactionBinding?.install()
     }
+    private var dockPresentationGateOpen: Bool {
+        lifecycleController?.canRetry ?? !lifecyclePaused
+    }
+
     func allowDockPresentation() {
         guard !terminating else { return }
         composition.dock.setPresentationAllowed(true)
@@ -313,7 +321,10 @@ import ModelPlanMenuVerification
                 self.lifecyclePaused = false; self.composition.dock.resumeFromLifecycle(); self.composition.resumeDeadlines()
                 self.allowDockPresentation(); self.dockHelp?.resume(); self.renderMenu()
                 Task { [weak self] in await self?.restoreFirstRunIfNeeded() }
-            }, onGateOpen: { [weak self] in self?.renderMenu() })
+            }, onGateOpen: { [weak self] in
+                self?.allowDockPresentation()
+                self?.renderMenu()
+            })
         lifecycleController = controller
         controller.setActivityPaused(activityPaused)
         withdrawForLifecycle(); controller.start()
@@ -333,6 +344,8 @@ import ModelPlanMenuVerification
         if let liveStatusMenu { LivePrivateMenus.scrub(liveStatusMenu) }
         dockHelp?.suspend()
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
+        // A retry or engine failure can withdraw rows while the OS gate remains open.
+        if dockPresentationGateOpen { allowDockPresentation() }
         renderMenu()
     }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
@@ -401,7 +414,11 @@ import ModelPlanMenuVerification
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if EngineRowsEntry.nativeJourneyProfile == nil { status?.autosaveName = "ModelPlanCommunity.StatusItem" }
+        #else
         status?.autosaveName = "ModelPlanCommunity.StatusItem"
+        #endif
         status?.isVisible = true
         #if MODELPLAN_U6_DRIVE
         driveGuard?.observeStatusMenu(ownsStatusMenu: { [weak self] menu in
@@ -409,6 +426,7 @@ import ModelPlanMenuVerification
         }, currentStatusMenu: { [weak self] in self?.liveStatusMenu },
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
+        renderMenu()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     func renderMenu() {
@@ -431,7 +449,7 @@ import ModelPlanMenuVerification
         let english = language == .english
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
-        let showAvailability = ShowQuotaWidgetRequest.availability(paused: lifecyclePaused || terminating,
+        let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
         let showTitle: String
         switch showAvailability {
@@ -535,18 +553,17 @@ import ModelPlanMenuVerification
         }
     }
     private func showDock() {
-        guard ShowQuotaWidgetRequest.availability(paused: terminating || lifecyclePaused,
-                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready,
-              let revision = settings.editor.snapshot?.revision else { return }
+        guard ShowQuotaWidgetRequest.availability(paused: terminating,
+                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
         showRequestInFlight = true; showFeedback = nil; renderMenu()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor, expectedRevision: revision)
+            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor)
             self.showRequestInFlight = false
             guard !self.terminating else { return }
             let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
             self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
-            if currentOutcome == .ready && !self.lifecyclePaused { self.composition.dock.revealForUser() }
+            if currentOutcome == .ready { self.composition.dock.revealForUser() }
             self.renderMenu()
         }
     }
@@ -592,6 +609,26 @@ import ModelPlanMenuVerification
         }
         return .terminateLater
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var nativeJourneyStatusVisible: Bool {
+        guard let status, status.isVisible, let button = status.button, button.image != nil,
+              let window = button.window else { return false }
+        return window.isVisible && !button.isHiddenOrHasHiddenAncestor && button.bounds.width > 0
+    }
+
+    func stopNativeDockJourney() async {
+        terminating = true
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
+        interactionBinding?.stop()
+        firstRunFlow?.dispose()
+        dockHelp?.suspend()
+        await stopLifecycle()
+        await composition.stop()
+        await dockHelp?.dispose()
+    }
+    #endif
+
     public func applicationWillTerminate(_ notification: Notification) {
         #if MODELPLAN_U6_DRIVE
         driveGuard?.recordTerminateCompleted()
