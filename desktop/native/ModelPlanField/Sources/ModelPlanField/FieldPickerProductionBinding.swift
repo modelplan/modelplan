@@ -8,7 +8,7 @@ public struct FieldPickerHostInput: Sendable {
     public init(catalogue: FieldPickerCatalogue, savedValue: Data?) { self.catalogue = catalogue; self.savedValue = savedValue }
 }
 
-/// Required upper-owner ports. Implement using the existing selector/store/FieldCoordinator and
+/// Required upper-owner ports. Implement using the existing selector/store and
 /// M2 scope sprite provider. No no-op defaults: unavailable focus/still wiring must throw.
 @MainActor public protocol FieldPickerProductionHost: AnyObject {
     func fieldPickerInput() throws -> FieldPickerHostInput
