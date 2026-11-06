@@ -220,7 +220,23 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 		// The existing live ledger does not prove a per-session binding. #410 may
 		// supply that evidence; never substitute a source-wide current binding.
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		item := wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value}
+		if appserver.CockpitLiveSessionEnabled(ctx) {
+			if !session.StartedAt.IsZero() && !session.StartedAt.After(session.LastAt) && !session.StartedAt.After(now) {
+				observed := session.StartedAt
+				item.ObservedSince = &observed
+			}
+			if effort != nil && session.EffortStatus == "reported" {
+				status := wire.CockpitEffortReported
+				item.EffortStatus = &status
+			}
+			switch session.Speed {
+			case "fast", "priority":
+				mode := wire.CockpitSpeedMode(session.Speed)
+				item.SpeedMode = &mode
+			}
+		}
+		result.Sessions = append(result.Sessions, item)
 	}
 	return result, ctx.Err()
 }

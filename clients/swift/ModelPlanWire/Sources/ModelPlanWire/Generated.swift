@@ -1901,6 +1901,25 @@ public struct WireCockpitDetails: Codable, Sendable {
     }
 }
 
+public enum WireCockpitEffortStatus: Codable, Sendable, Equatable {
+    case `reported`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "reported": self = .`reported`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`reported`: return "reported"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitQueryParams: Codable, Sendable {
     public let `redBelow`: Int?
     private enum CodingKeys: String, CodingKey {
@@ -1960,6 +1979,9 @@ public struct WireCockpitResetCount: Codable, Sendable {
 }
 
 public struct WireCockpitSession: Codable, Sendable {
+    public let `observedSince`: WireTimestamp?
+    public let `effortStatus`: WireCockpitEffortStatus?
+    public let `speedMode`: WireCockpitSpeedMode?
     public let `sessionRef`: String
     public let `source`: String
     public let `subscriptionRef`: String?
@@ -1970,6 +1992,9 @@ public struct WireCockpitSession: Codable, Sendable {
     public let `state`: String
     public let `rate`: Double?
     private enum CodingKeys: String, CodingKey {
+        case `observedSince`
+        case `effortStatus`
+        case `speedMode`
         case `sessionRef`
         case `source`
         case `subscriptionRef`
@@ -1980,7 +2005,10 @@ public struct WireCockpitSession: Codable, Sendable {
         case `state`
         case `rate`
     }
-    public init(`sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
+    public init(`observedSince`: WireTimestamp? = nil, `effortStatus`: WireCockpitEffortStatus? = nil, `speedMode`: WireCockpitSpeedMode? = nil, `sessionRef`: String, `source`: String, `subscriptionRef`: String? = nil, `model`: String, `effort`: String? = nil, `projectLabel`: String? = nil, `lastObservedAt`: WireTimestamp, `state`: String, `rate`: Double? = nil) throws {
+        self.`observedSince` = `observedSince`
+        self.`effortStatus` = `effortStatus`
+        self.`speedMode` = `speedMode`
         self.`sessionRef` = `sessionRef`
         self.`source` = `source`
         self.`subscriptionRef` = `subscriptionRef`
@@ -1994,6 +2022,12 @@ public struct WireCockpitSession: Codable, Sendable {
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        if c.contains(.`observedSince`), try c.decodeNil(forKey: .`observedSince`) { throw WireDecodeError.invalidIdentity }
+        self.`observedSince` = try c.decodeIfPresent(WireTimestamp.self, forKey: .`observedSince`)
+        if c.contains(.`effortStatus`), try c.decodeNil(forKey: .`effortStatus`) { throw WireDecodeError.invalidIdentity }
+        self.`effortStatus` = try c.decodeIfPresent(WireCockpitEffortStatus.self, forKey: .`effortStatus`)
+        if c.contains(.`speedMode`), try c.decodeNil(forKey: .`speedMode`) { throw WireDecodeError.invalidIdentity }
+        self.`speedMode` = try c.decodeIfPresent(WireCockpitSpeedMode.self, forKey: .`speedMode`)
         self.`sessionRef` = try c.decode(String.self, forKey: .`sessionRef`)
         self.`source` = try c.decode(String.self, forKey: .`source`)
         self.`subscriptionRef` = try c.decodeIfPresent(String.self, forKey: .`subscriptionRef`)
@@ -2008,6 +2042,9 @@ public struct WireCockpitSession: Codable, Sendable {
     public func encode(to encoder: Encoder) throws {
         try validate()
         var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encodeIfPresent(`observedSince`, forKey: .`observedSince`)
+        try c.encodeIfPresent(`effortStatus`, forKey: .`effortStatus`)
+        try c.encodeIfPresent(`speedMode`, forKey: .`speedMode`)
         try c.encode(`sessionRef`, forKey: .`sessionRef`)
         try c.encode(`source`, forKey: .`source`)
         try c.encode(`subscriptionRef`, forKey: .`subscriptionRef`)
@@ -2024,6 +2061,28 @@ public struct WireCockpitSession: Codable, Sendable {
     }
 }
 
+public enum WireCockpitSpeedMode: Codable, Sendable, Equatable {
+    case `fast`
+    case `priority`
+    case unknown(String)
+    public init(rawValue: String) {
+        switch rawValue {
+        case "fast": self = .`fast`
+        case "priority": self = .`priority`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`fast`: return "fast"
+        case .`priority`: return "priority"
+        case .unknown(let value): return value
+        }
+    }
+    public var isKnown: Bool { if case .unknown = self { return false }; return true }
+    public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
+}
 public struct WireCockpitSubscription: Codable, Sendable {
     public let `subscriptionRef`: String
     public let `accounts`: [WireCockpitAccount]

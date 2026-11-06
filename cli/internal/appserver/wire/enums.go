@@ -202,3 +202,14 @@ const (
 	MemberRefreshNotGranted MemberRefreshReason = "not_granted"
 	MemberRefreshOffline    MemberRefreshReason = "offline"
 )
+
+type CockpitEffortStatus string
+
+const CockpitEffortReported CockpitEffortStatus = "reported"
+
+type CockpitSpeedMode string
+
+const (
+	CockpitSpeedFast     CockpitSpeedMode = "fast"
+	CockpitSpeedPriority CockpitSpeedMode = "priority"
+)
