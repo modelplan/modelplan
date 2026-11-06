@@ -35,6 +35,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
     @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
+    /// G3-32: the text runs of the last full render (fallback marks, readouts, aliases).
+    @_spi(DockResourceChecks) public private(set) var presentedTextMetricsForChecks: [DockGlyphMetric] = []
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }
@@ -432,7 +434,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
-            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
+            presentedTextMetricsForChecks=result.metrics;orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
             frame.size = viewport?.size ?? skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
