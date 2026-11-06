@@ -627,19 +627,24 @@ private actor LifecycleEngine: EngineClient {
         let editor = app.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.showDock, false)
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
-        func show(_ application: EngineDockMenuApplication) throws {
-            try select("Show Quota Widget", in: XCTUnwrap(application.liveStatusMenu))
+        // Owner decision 11-06: Show Quota Widget is a checkable switch. Locating a widget that is
+        // already on means turning it off and on again; turning it on expands and highlights it.
+        func show(_ application: EngineDockMenuApplication) async throws {
+            if application.settingsHost.application.editor.snapshot?.preferences.showDock == true {
+                try await chooseShowQuotaWidget(application, checked: true)
+            }
+            try await chooseShowQuotaWidget(application, checked: false)
         }
         func highlight(_ application: EngineDockMenuApplication) -> CALayer? {
             application.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
         }
-        try show(app)
+        try await show(app)
         try await wait { highlight(app) != nil }
         XCTAssertEqual(try expanded(app).frame, saved)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
         let first = try XCTUnwrap(highlight(app))
         XCTAssertTrue(first.animationKeys()?.isEmpty ?? true)
-        try show(app)
+        try await show(app)
         try await wait { highlight(app) != nil && highlight(app) !== first }
         XCTAssertEqual(try expanded(app).frame, saved)
         for shown in [false, true] {
@@ -656,7 +661,7 @@ private actor LifecycleEngine: EngineClient {
         let strip = try await make(profile(), topology: topology) { $0.autoHide = true; $0.motion = .on }
         _ = start(strip)
         XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .sliver)
-        try show(strip)
+        try await show(strip)
         try await wait { highlight(strip) != nil }
         XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .expanded)
         XCTAssertTrue(try XCTUnwrap(highlight(strip)).animationKeys()?.isEmpty ?? true)
@@ -698,7 +703,9 @@ private actor LifecycleEngine: EngineClient {
             dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
         }
         func show(after previous: CALayer? = nil) async throws -> CALayer {
-            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+            // The checkable switch: off, then on, which expands the widget and highlights it.
+            if editor.snapshot?.preferences.showDock == true { try await chooseShowQuotaWidget(app, checked: true) }
+            try await chooseShowQuotaWidget(app, checked: false)
             try await wait { highlight() != nil && highlight() !== previous }
             XCTAssertEqual(dock.edgePresentation?.state, .expanded)
             if native { XCTAssertTrue(dock.nativePanel?.isVisible == true) }
@@ -884,7 +891,8 @@ private actor LifecycleEngine: EngineClient {
         first.keyDown(with: optionUp)
         let editor = app.settingsHost.application.editor
         let announcement = "position \(index) of \(ids.count)"
-        let deadline = ContinuousClock.now + .seconds(2)
+        // The widget now renders four edge variants (top added, G3-27); allow the reorder pass more time.
+        let deadline = ContinuousClock.now + .seconds(8)
         while (instrument.accessibilityValue() as? String)?.hasSuffix(announcement) != true && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

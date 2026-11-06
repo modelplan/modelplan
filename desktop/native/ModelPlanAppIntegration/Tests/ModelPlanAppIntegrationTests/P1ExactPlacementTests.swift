@@ -200,10 +200,9 @@ private actor P1SyntheticEngine: EngineClient {
         let skin = try XCTUnwrap(view.presentedSkinForChecks)
         let cap = try XCTUnwrap(skin.fixedLayers.first { $0.resource.contains("cap-night-idle") }).rect
         let image = try XCTUnwrap(view.presentedImageForChecks)
-        let scale = CGFloat(view.presentationBackingScale ?? max(1, Int((CGFloat(image.width) / view.bounds.width).rounded())))
-        // The button and the cap share the ignition centre; that maps study space onto the view.
-        let local = view.convert(button.frame, from: container)
-        let origin = CGPoint(x: cap.midX - local.midX, y: cap.midY - local.midY)
+        // The resting image covers the skin bounds (as in HostPairedProjectionTests' crops).
+        let scale = CGFloat(image.width) / skin.bounds.width
+        let origin = skin.bounds.origin
         let core = cap.insetBy(dx: cap.width * 0.3, dy: cap.height * 0.3).offsetBy(dx: -origin.x, dy: -origin.y)
             .applying(.init(scaleX: scale, y: scale)).integral
         let cropped = try XCTUnwrap(image.cropping(to: core))

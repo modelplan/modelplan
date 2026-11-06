@@ -33,6 +33,31 @@ import XCTest
         XCTAssertNotNil(button.image, "Template image lookup: \(CommunityMenuBarResources.lastLookup)")
     }
 
+    /// G3-22 (owner Mac, build 5): the item exists but sits behind the notch of a full menu bar.
+    /// An icon-only item is square, and a covered item is announced in the widget menu and Settings.
+    func testCoveredStatusItemIsAnnouncedAndIconOnlyItemIsSquare() async throws {
+        let app = try await application()
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem()
+        app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        if button.title.isEmpty, button.image != nil {
+            XCTAssertEqual(app.statusLengthForTesting, NSStatusItem.squareLength, "an icon-only item uses the square length")
+            XCTAssertEqual(button.imagePosition, .imageOnly)
+        }
+        var visible = false
+        app.statusItemVisibility = { visible }
+        app.checkStatusItemVisibility()
+        let notice = "The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right."
+        let menu = app.composition.dock.menu().items
+        XCTAssertEqual(menu.first?.title, notice); XCTAssertFalse(menu.first?.isEnabled ?? true)
+        XCTAssertEqual(app.settingsHost.application.editor.context.statusItemNotice?.chinese, "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
+        visible = true
+        app.checkStatusItemVisibility()
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == notice }, "the notice clears once the icon is visible")
+        XCTAssertNil(app.settingsHost.application.editor.context.statusItemNotice)
+    }
+
     func testMissingTemplateImageFallsBackToAVisibleTitle() async throws {
         let app = try await application()
         defer { app.composition.dock.close() }

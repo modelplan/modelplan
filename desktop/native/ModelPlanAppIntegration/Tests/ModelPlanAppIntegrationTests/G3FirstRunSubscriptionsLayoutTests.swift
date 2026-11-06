@@ -113,9 +113,12 @@ private actor G3LayoutEngine: EngineClient {
         var problems: [String] = []
         for view in shown {
             let box = container(view)
-            let frame = view.convert(view.bounds, to: box)
+            // AppKit lays out alignment rectangles; a label's frame deliberately overhangs its
+            // alignment rectangle by a few points, which is not a visible spill.
+            let aligned = view.alignmentRect(forFrame: view.frame)
+            let frame = view.superview?.convert(aligned, to: box) ?? aligned
             if !box.bounds.insetBy(dx: -0.5, dy: -0.5).contains(frame) { problems.append("\(name(view)) spills outside its container") }
-            if let parent = view.superview, !parent.bounds.insetBy(dx: -0.5, dy: -0.5).contains(view.frame) {
+            if let parent = view.superview, !parent.bounds.insetBy(dx: -0.5, dy: -0.5).contains(aligned) {
                 problems.append("\(name(view)) spills outside \(name(parent))")
             }
             if let field = view as? NSTextField, !field.isEditable, let cell = field.cell {
@@ -129,7 +132,8 @@ private actor G3LayoutEngine: EngineClient {
         }
         for (index, first) in shown.enumerated() {
             for second in shown[(index + 1)...] where !first.isDescendant(of: second) && !second.isDescendant(of: first) {
-                let a = first.convert(first.visibleRect, to: nil), b = second.convert(second.visibleRect, to: nil)
+                let a = first.superview?.convert(first.alignmentRect(forFrame: first.frame), to: nil) ?? .null
+                let b = second.superview?.convert(second.alignmentRect(forFrame: second.frame), to: nil) ?? .null
                 let overlap = a.intersection(b)
                 if !overlap.isNull, overlap.width > 1, overlap.height > 1 { problems.append("\(name(first)) overlaps \(name(second))") }
             }
@@ -138,10 +142,13 @@ private actor G3LayoutEngine: EngineClient {
     }
     private func leadingEdgeProblems(_ views: [NSView], label: String) -> [String] {
         let visible = views.filter { !$0.isHiddenOrHasHiddenAncestor }
-        guard let reference = visible.first.map({ $0.convert($0.bounds, to: nil).minX }) else { return ["no visible \(label)"] }
+        func edge(_ view: NSView) -> CGFloat {
+            (view.superview?.convert(view.alignmentRect(forFrame: view.frame), to: nil) ?? view.frame).minX
+        }
+        guard let reference = visible.first.map(edge) else { return ["no visible \(label)"] }
         var problems: [String] = []
         for view in visible {
-            let x = view.convert(view.bounds, to: nil).minX
+            let x = edge(view)
             guard abs(x - reference) > 1 else { continue }
             let id = view.accessibilityIdentifier()
             let name = (view as? SettingsNativeRow).map { "row " + $0.key.rawValue } ?? (id.isEmpty ? String(describing: type(of: view)) : id)

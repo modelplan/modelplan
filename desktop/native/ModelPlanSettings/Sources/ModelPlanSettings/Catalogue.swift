@@ -137,6 +137,8 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
+    /// G3-22: the menu-bar icon is covered (full menu bar); Settings shows how to bring it back.
+    public var statusItemNotice: SettingsText?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var readerDiagnostics: [SettingsReaderDiagnostic] = []
