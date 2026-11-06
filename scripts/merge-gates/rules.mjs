@@ -204,6 +204,12 @@ export function evidenceState(pr, items, head) {
   if (!/g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n")))
     return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const declaration = lines(body).find((line) => /^\s*\**Scenarios:?\**:?/i.test(line));
+  // Reject malformed scenario-shaped tokens, including when a valid ID is also present.
+  // Free-text annotations remain allowed, but cannot hide a mistyped ID.
+  const candidates = declaration?.replace(/^\s*\**Scenarios:?\**:?/i, "")
+    .match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
+  if (candidates.some((id) => !/^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/.test(id)))
+    return { state: FAILURE, why: "Scenarios line contains malformed scenario IDs" };
   const scenarios = [...new Set(declaration?.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g) ?? [])].sort();
   if (!scenarios.length) return { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" };
   const verified = new Set();

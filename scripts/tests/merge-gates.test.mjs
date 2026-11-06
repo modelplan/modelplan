@@ -186,6 +186,18 @@ test("merge group requires evidence for each member's own head", () => {
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
 });
 
+test("malformed scenario members fail PR and merge group despite valid evidence", () => {
+  const docs = [file("docs/evidence.md")];
+  const receipt = comment(`VERIFIED: V-01 @ ${H} evidence=fixture`);
+  for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
+    const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
+    assert.equal(result.state, R.FAILURE, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}, overlap:[]}], queueRuns:greenCi}).state, R.FAILURE, invalid);
+  }
+  const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
+  assert.equal(valid.state, R.SUCCESS);
+});
+
 test("stale-base guard and merge-group evaluation", () => {
   assert.deepEqual(R.staleOverlap(["desktop/native/A.swift", "docs/x.md"], ["desktop/native/B.swift", "docs/y.md", "cli/z.go"]), ["desktop/native"]);
   assert.deepEqual(R.staleOverlap(["cli/a.go"], ["desktop/native/B.swift"]), []);
