@@ -529,8 +529,20 @@ func applyAccount(r *Report, cache string, now time.Time, admissions ...consent.
 	// available it is the only Codex account. Session logs carry no account, so they are not a
 	// second source: no guessing which login wrote them, no joining, no second row. Only the
 	// current session's harness (model, effort, allowance pool) carries over; the logs' plan,
-	// windows and credits do not. Without a live reading (no login, failed, older than
-	// accountKeep, or not permitted) the logs remain the Codex reading, as before.
+	// windows and credits do not.
+	// "Available" is CodexRuntimeAvailable, the predicate the scheduler uses to fall back to
+	// local history (macrev2-602-2): not turned off, a successful admitted reading within
+	// accountKeep, and at least one window not yet reset. Otherwise the session logs remain the
+	// Codex reading, as before; the unusable runtime snapshot is only shown when there are no
+	// logs at all.
+	live := CodexRuntimeAvailable(cache, admission, now)
+	if !live {
+		for _, candidate := range r.Accounts {
+			if candidate.Source == "codex" && candidate.Via == "" && candidate.Subscription == nil {
+				return
+			}
+		}
+	}
 	var harness *Harness
 	pool := ""
 	hadLocal := false

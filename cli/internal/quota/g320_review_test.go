@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // G3-20 under the owner's decision of 2026-11-06 (option B, design-602-account-identity):
@@ -243,4 +245,49 @@ func TestG320ReviewLiveAccountKeepsTheSessionHarnessOnly(t *testing.T) {
 		t.Fatalf("session harness not kept on the live account: %+v", a.Harness)
 	}
 	g320AssertLiveOnly(t, a, "pro", primary, weekly)
+}
+
+// macrev2-602-2: a successful, recent runtime reading that the scheduler nevertheless treats as
+// unavailable (runtime turned off, no windows, every window already reset) leaves the session
+// logs as the Codex reading: one unbound local account with its windows, and the unusable
+// runtime snapshot is not shown beside it.
+func TestG320ReviewUnavailableRuntimeKeepsLocalFallback(t *testing.T) {
+	primary, weekly := acctNow.Add(3*time.Hour), acctNow.Add(4*24*time.Hour)
+	noWindows := `{"rateLimitsByLimitId":{"codex":{"limitId":"codex","planType":"pro","primary":null,"secondary":null}}}`
+	for _, tc := range []struct {
+		name, result string
+		after        func(t *testing.T)
+	}{
+		{"runtime_disabled_after_capture", g320Limits("pro", primary, weekly), func(t *testing.T) { t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off") }},
+		{"no_runtime_windows", noWindows, func(*testing.T) {}},
+		{"all_runtime_windows_expired", g320Limits("pro", acctNow.Add(-time.Hour), acctNow.Add(-2*time.Hour)), func(*testing.T) {}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			isolateHome(t)
+			home, _ := os.UserHomeDir()
+			codexHome := filepath.Join(home, ".codex")
+			cache := t.TempDir()
+			bin, _ := fakeCodex(t, tc.result)
+			if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(-time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if s := loadAccount(cache); s == nil || s.Status != "ok" {
+				t.Fatalf("fixture must leave a successful recent runtime reading: %+v", s)
+			}
+			tc.after(t)
+			if CodexRuntimeAvailable(cache, consent.Capture(), acctNow) {
+				t.Fatal("fixture must make the scheduler treat the runtime as unavailable")
+			}
+			g320Rollout(t, codexHome, acctNow.Add(-10*time.Minute), "pro", primary, weekly)
+			accounts := g320Read(t, cache, codexHome, acctNow)
+			if len(accounts) != 1 || accounts[0].Via != "" || accounts[0].Subscription != nil || len(accounts[0].Windows) != 2 {
+				t.Fatalf("runtime unavailable: the local fallback must be the Codex reading, got %s", g320Summary(accounts))
+			}
+			for _, w := range accounts[0].Windows {
+				if w.Origin != "local_history" {
+					t.Fatalf("fallback window origin %q", w.Origin)
+				}
+			}
+		})
+	}
 }
