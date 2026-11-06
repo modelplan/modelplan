@@ -369,6 +369,94 @@ import ModelPlanShell
         }
     }
 
+    func testD19FirstExplicitDropAfterLegacyMigrationSurvivesReconstructedEntry() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-dock-drop-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let topology = DragTopology()
+        topology.active.removeAll { $0.id == topology.c.id }
+        let legacy = root.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+        let target = root.appendingPathComponent("ModelPlan/settings.json")
+        try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let bytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "preferences": [
+            "dockEdge": "floating", "dockDisplayID": topology.c.id, "dockAlongFraction": 0.27,
+        ]])
+        try bytes.write(to: legacy)
+
+        func launch() async throws -> (EngineDockMenuApplication, SettingsStore) {
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "d19-migrated-drop", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            return (app, store)
+        }
+
+        let (app, store) = try await launch()
+        let host = app.composition.dock
+        let migrated = await store.snapshot()
+        let migratedBytes = try Data(contentsOf: target)
+        XCTAssertEqual(migrated.preferences.dockDisplayID, topology.c.id)
+        XCTAssertEqual(migrated.preferences.dockEdge, .right)
+        XCTAssertEqual(migrated.preferences.dockAlongFraction, 0.27)
+        XCTAssertEqual(host.edgePresentation?.placement?.displayID, topology.a.id)
+
+        topology.active.append(topology.c)
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        host.refreshPresence()
+        let original = try XCTUnwrap(host.edgePresentation?.placement)
+        XCTAssertEqual(original.displayID, topology.c.id)
+        XCTAssertEqual(original.edge, .right)
+        XCTAssertEqual(original.alongFraction, 0.27, accuracy: 0.001)
+        XCTAssertEqual(try Data(contentsOf: target), migratedBytes)
+
+        let view = host.dockView
+        let drag = try XCTUnwrap(view.backgroundDragDelegate)
+        let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+            stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+        }.first { drag.backgroundCanDrag(local: $0) })
+        let down = CGPoint(x: original.frame.minX + local.x, y: original.frame.maxY - local.y)
+        topology.pointer = down
+        let arrival = ContinuousClock.now + .seconds(1)
+        while !drag.beginBackgroundMove(local: local, global: down) {
+            guard ContinuousClock.now < arrival else { return XCTFail("The restored widget must accept an ordinary face press") }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let destination = topology.b.usableFrame
+        let end = CGPoint(x: destination.minX + 2, y: destination.midY)
+        topology.pointer = end
+        drag.updateBackgroundMove(global: end)
+        XCTAssertEqual(host.edgePresentation?.placement?.displayID, topology.b.id)
+        XCTAssertEqual(try Data(contentsOf: target), migratedBytes)
+        drag.endBackgroundMove(global: end)
+        drag.endBackgroundMove(global: end)
+        let editor = app.settingsHost.application.editor
+        try await waitForSettings(editor) {
+            editor.snapshot?.revision == migrated.revision + 1 && !editor.isSaving
+        }
+        let landed = try XCTUnwrap(host.edgePresentation?.placement)
+        let saved = await store.snapshot()
+        let savedBytes = try Data(contentsOf: target)
+        XCTAssertEqual(landed.displayID, topology.b.id)
+        XCTAssertEqual(landed.edge, .left)
+        XCTAssertEqual(saved.revision, migrated.revision + 1)
+        XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001)
+        XCTAssertNotEqual(savedBytes, migratedBytes)
+        XCTAssertEqual(try Data(contentsOf: legacy), bytes)
+        await app.composition.stop()
+
+        let (reopened, reopenedStore) = try await launch()
+        XCTAssertEqual(reopened.composition.dock.edgePresentation?.placement, landed)
+        let retained = await reopenedStore.snapshot()
+        XCTAssertEqual(retained.revision, 0, "Reconstruction starts a new in-memory revision")
+        XCTAssertEqual(retained.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001)
+        XCTAssertEqual(retained.preferences.dockDisplayID, topology.b.id)
+        XCTAssertEqual(retained.preferences.dockEdge, .left)
+        XCTAssertEqual(try Data(contentsOf: target), savedBytes)
+        XCTAssertEqual(try Data(contentsOf: legacy), bytes)
+    }
+
     func testD19NormalDragKeepsCornerClearanceAndAvoidsSystemDock() async throws {
         try await exerciseD19(nativePanels: false)
     }
