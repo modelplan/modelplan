@@ -65,10 +65,12 @@ rerunning the old run is not a migration.
 
 ## Scratch and recovery
 
-After synthetic evidence uploads succeed, checks acknowledge
-`MODELPLAN_CI_ARTIFACTS_UPLOADED=1` for the completion hook. Missing acknowledgment
-retains the failure scene. Cleanup preserves the temporary root and dependency
-checkouts, bounding only generated compiler products. Hosted fallback is selected
+After a synthetic evidence upload produces an artifact ID, the job writes a
+receipt in its runner temporary directory. The completion hook checks the run
+ID, attempt, and job before pruning generated compiler products. A missing or
+mismatched receipt skips pruning. The workflows remove their own scratch only
+when the upload produced an artifact. Cleanup preserves dependency checkouts.
+Hosted fallback is selected
 before a job is queued: changing a variable does not retarget an existing queued
 job, and offline self-hosted jobs do not automatically migrate to hosted runners.
 Recover only the affected jobs after confirming ownership and delivery state.
