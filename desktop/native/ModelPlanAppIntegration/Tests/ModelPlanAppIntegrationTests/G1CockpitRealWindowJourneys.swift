@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(_ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -62,7 +62,7 @@ private extension EngineDeliveryContext {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
         let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: repo.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
-        _ = try await settings.update { $0.language = .english }
+        _ = try await settings.update { $0.language = language }
         let configuration = EngineClientConfiguration(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         var fanout: CockpitStoreFanout?
         let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: configuration, settingsStore: settings, bundleURL: bundle, createsNativePanels: false, cockpitEntryEnabled: true) { _, consumer in
@@ -97,6 +97,41 @@ private extension EngineDeliveryContext {
         let rect = try XCTUnwrap(facts[element] as? [String: Any], "Missing actual element: " + element)
         return try XCTUnwrap((rect[axis] as? NSNumber)?.doubleValue)
     }
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testC17NormalEntryHelpReadbackIsBoundedAndRetires() async throws {
+        for language: SettingsLanguage in [.english, .chinese] {
+            try await withLivePage(language: language) { _, _, page in
+                let web = try XCTUnwrap(page.verificationWebView)
+                let before = try XCTUnwrap(try await page.g1HelpCaptionFactsForChecks())
+                let hidden = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(before.utf8)) as? [String: Any])
+                XCTAssertEqual(hidden["open"] as? Bool, false)
+                _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))")
+                var facts: [String: Any] = [:]
+                for _ in 0..<100 {
+                    if let raw = try await page.g1HelpCaptionFactsForChecks(),
+                       let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                       value["open"] as? Bool == true { facts = value; break }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                XCTAssertEqual(facts["open"] as? Bool, true)
+                let key = language == .english ? "matchesEnglish" : "matchesChinese"
+                for target in ["window", "alert", "record"] {
+                    let caption = try XCTUnwrap(facts[target] as? [String: Any])
+                    XCTAssertEqual(caption["count"] as? Int, 1, target)
+                    XCTAssertEqual(caption[key] as? Bool, true, target)
+                    XCTAssertEqual(caption["visible"] as? Bool, true, target)
+                }
+                XCTExpectFailure("C-17 product-missing: narrow Help captions overlap or exceed the viewport", strict: true) {
+                    XCTAssertEqual(facts["allInsideAndSeparate"] as? Bool, true)
+                }
+                await page.g1CloseAndWaitForTeardown()
+                let retired = try await page.g1HelpCaptionFactsForChecks()
+                XCTAssertNil(retired, "A retired page must not return observations")
+            }
+        }
+    }
+    #endif
+
     func testG1_CKP_ENT_01_actualFadeAndOutline() async throws {
         try await withLivePage { _, _, page in
             let facts = try await self.geometry(page)
