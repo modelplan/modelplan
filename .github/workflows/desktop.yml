@@ -17,6 +17,10 @@ on:
         type: choice
         options: [cli, gui]
         default: cli
+      gui:
+        description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -158,7 +162,13 @@ jobs:
 
   native:
     name: native (${{ matrix.os }})
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    # The GUI-native job occupies the ONE GUI test machine (runner label modelplan-mac-gui), and GitHub
+    # schedules that machine FIFO with everything else, so urgent runs (owner test builds, ledger fixes)
+    # waited behind routine ones. It now runs ONLY when this workflow is dispatched with gui=true (the
+    # coordinator's ci-dispatch sends at most one such run at a time, highest priority first) or on a
+    # non-draft PR that carries the gui-ci label; pushes and ordinary pull_request events skip it.
+    # native-headless and the hosted app-smoke job still cover every push and ready PR head.
+    if: ${{ !inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci'))) }}
     strategy:
       fail-fast: false
       matrix:
