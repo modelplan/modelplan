@@ -22,6 +22,16 @@ import ModelPlanSettings
         let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "", hasEvent: view.appearanceNotices[$0.subscriptionID] != nil) }
         let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
         let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages, zaiMarkEnabled: view.zaiMarkEnabled)
+        // Reserve transparent inward canvas for strong hover. Keep the attached edge and the
+        // along-edge extent fixed so a mode change never moves the resting hull.
+        var hoverViewport = skin.bounds
+        let hoverRoom = ceil(preferences.size.nozzleDiameter / 2)
+        switch edge {
+        case .left: hoverViewport.size.width += hoverRoom
+        case .right: hoverViewport.origin.x -= hoverRoom; hoverViewport.size.width += hoverRoom
+        case .bottom: hoverViewport.origin.y -= hoverRoom; hoverViewport.size.height += hoverRoom
+        case .top: break
+        }
         let artwork = try T2BundledArtwork.records().mapValues { DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }
         let official = try DockArtworkStore(root: T2BundledArtwork.rootURL(), manifest: .init(files: artwork))
         let vendorManifest = try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: view.zaiMarkEnabled))
@@ -34,9 +44,11 @@ import ModelPlanSettings
         if let notice = geometry.overflow.compactMap({ notices[$0.id] }).min(by: { $0.rank < $1.rank }) {
             notices["__t2_overflow_notice__"] = notice
         }
-        try view.applyOfficial(skin: skin, rows: rows, notices: notices, renderer: renderer, scale: 1, locale: preferences.language.rawValue)
-        let button = try geometry.consoleButtonRect(in: skin.bounds)
-        var result = StaticDockGeometry(hoverRects: [view.bounds], consoleButton: button,
+        try view.applyOfficial(skin: skin, rows: rows, notices: notices, renderer: renderer, scale: 1, locale: preferences.language.rawValue,
+                               hoverViewport: hoverViewport)
+        let button = try geometry.consoleButtonRect(in: hoverViewport)
+        let restingFrame = skin.bounds.offsetBy(dx: -hoverViewport.minX, dy: -hoverViewport.minY)
+        var result = StaticDockGeometry(hoverRects: [restingFrame], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
         let horizontal = edge == .bottom || edge == .top
         for station in geometry.stations {
@@ -52,6 +64,10 @@ import ModelPlanSettings
             }
         }
         result.noticeUnit = geometry.input.diameter / 52
+        for station in geometry.stations {
+            guard let id = station.subscription?.id else { continue }
+            result.hoverStations[id] = .init(inward: station.inwardNormal, pitch: station.pitch)
+        }
         if let hull = view.registeredHullBounds {
             try result.registerSliver(hullBounds: hull, expandedSize: view.bounds.size, edge: preferences.dockEdge,
                                       scale: preferences.size.nozzleDiameter / 44)

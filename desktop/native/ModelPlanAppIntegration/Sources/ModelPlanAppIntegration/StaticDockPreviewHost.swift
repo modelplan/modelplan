@@ -12,6 +12,11 @@ import ModelPlanOfficialDock
 import ModelPlanCommunityHost
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
+struct DockHoverStation {
+    let inward: CGVector
+    let pitch: CGFloat
+}
+
 public struct StaticDockGeometry {
     public var hoverRects: [CGRect]
     public var sliverLength: CGFloat
@@ -25,6 +30,7 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    var hoverStations: [String: DockHoverStation] = [:]
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -406,6 +412,48 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
     }
 
+    private func updateNozzleMagnification() {
+        let displayed = interactionView
+        let views = [dockView] + alternateViews
+        for view in views where view !== displayed { view.setNozzlePoses([:]) }
+        guard permitted, !retired, edge.presentation?.state == .expanded, !edge.isBackgroundPressed,
+              interactionController?.presentation?.reorder == nil, preferences.magnification != .none,
+              application?.effective.reduceMotion == false, let id = interactionHoveredID,
+              let hovered = displayed.interactionAnchor(id) else { displayed.setNozzlePoses([:]); return }
+        let stations = presentationGeometry.hoverStations
+        let horizontal = edge.presentation?.placement?.edge == .bottom
+        let diameter = preferences.size.nozzleDiameter
+        var along = horizontal ? hovered.midX : hovered.midY
+        if let window = displayed.window, let pointer = environment().pointer {
+            let local = displayed.convert(window.convertPoint(fromScreen: pointer), from: nil)
+            along = horizontal ? local.x : local.y
+        }
+        var poses = [String: DockNozzlePose]()
+        for (member, station) in stations {
+            let scale: CGFloat
+            let offset: CGPoint
+            switch preferences.magnification {
+            case .none: continue
+            case .subtle:
+                guard member == id, let hull = displayed.registeredHullBounds else { continue }
+                let dx = hull.midX - hovered.midX, dy = hull.midY - hovered.midY
+                let distance = hypot(dx, dy)
+                scale = 1.15
+                offset = distance > 0 ? CGPoint(x: 6 * dx / distance, y: 6 * dy / distance) : .zero
+            case .strong:
+                guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
+                let centre = horizontal ? anchor.midX : anchor.midY
+                let influence = max(0, 1 - abs(along - centre) / (1.6 * station.pitch))
+                guard influence > 0 else { continue }
+                scale = (1000 * (1 + 0.5 * influence * influence * (3 - 2 * influence))).rounded() / 1000
+                let shift = (scale - 1) * (diameter / 2 + 4)
+                offset = CGPoint(x: station.inward.dx * shift, y: station.inward.dy * shift)
+            }
+            poses[member] = .init(scale: scale, offset: offset)
+        }
+        displayed.setNozzlePoses(poses)
+    }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -433,6 +481,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 guard let self, let view, self.interactionView === view else { return }
                 self.interactionHoverRevision &+= 1
                 self.interactionHoveredID = id
+                self.updateNozzleMagnification()
             }
             events.insideMainDrop = { [weak self, weak view] point in
                 guard let self, let view, self.interactionView === view, let window = view.window,
@@ -493,6 +542,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard permitted, !retired else { dismissCard(); overflowPanel?.orderOut(nil); return }
         let preview = value.reorder?.order
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
+        updateNozzleMagnification()
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
         } else {
@@ -1058,6 +1108,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             // presumed outside because the pointer may be over a separate card.
             self.edge.refresh()
             self.interactionController?.refresh()
+            self.updateNozzleMagnification()
         }
         return surface
     }
@@ -1084,6 +1135,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func present(_ value: DockEdgePresentation) {
         defer {
             publishDockHelpSurface(value)
+            updateNozzleMagnification()
             if !rendering { bindInteractionInput(); interactionController?.refresh() }
         }
         // Native panels and the no-window construction checks share this actual input binding.
