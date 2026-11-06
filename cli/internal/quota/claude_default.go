@@ -2,6 +2,8 @@
 package quota
 
 import (
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -12,10 +14,10 @@ import (
 // defaultClaudeGrant: Claude Code's own saved login is a standard reader, on by default
 // (owner decision D27, 2026-11-06, G3-19) for a user who has made no ModelPlan decision
 // about Claude Code. It admits the same native saved-login reader an explicit grant would,
-// for local profiles only. The Keychain keeps its own recorded choice: without one the
-// reader never touches the Keychain and reports its next step instead, so no macOS prompt
-// appears by default. A recorded Claude decision (allow, deny, other backend, environment
-// key) always takes precedence and goes through the ordinary grant loop.
+// for local profiles with their own saved-login file only. The Keychain keeps its own
+// recorded choice: the default never includes it, so no macOS prompt appears by default.
+// A recorded Claude decision (allow, deny, other backend, environment key) always takes
+// precedence and goes through the ordinary grant loop.
 func defaultClaudeGrant(state consent.State, mode, version string, routes map[string]detect.Entry) (ReaderGrant, bool) {
 	const id = "claude"
 	scope := consent.ScopeClaudeAccountUsageSavedLogin
@@ -37,8 +39,15 @@ func defaultClaudeGrant(state consent.State, mode, version string, routes map[st
 			current, effective := consent.Current()
 			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
 		}}
+	// Only a profile whose own saved-login file is present (stat only; it is opened at
+	// read time). A login kept only in the macOS Keychain, or delivered by the app's
+	// credential agent, needs the user's Keychain choice first; a default read there
+	// could only fail and would hold back the read that follows that choice.
 	for _, profile := range n.Profiles() {
-		if detect.LocalRoot(profile.Root) {
+		if !detect.LocalRoot(profile.Root) {
+			continue
+		}
+		if fi, err := os.Lstat(filepath.Join(profile.Root, ".credentials.json")); err == nil && fi.Mode().IsRegular() {
 			g.Profiles = append(g.Profiles, profile)
 		}
 	}

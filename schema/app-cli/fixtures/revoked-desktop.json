@@ -398,7 +398,7 @@
     "from": null,
     "recording": false
   },
-  "dataRevision": "74dc50e5b08cb1462c2f77c6a6c5334b1adf277afa8f630a43634553b8f0bd82",
+  "dataRevision": "643d40fc413fe859e4b25491941840a939647265b8eed0127b3d538428093343",
   "events": [],
   "generatedAt": "2030-01-02T03:04:05Z",
   "hourly": [],
@@ -536,13 +536,6 @@
     {
       "source": "user",
       "status": "missing"
-    },
-    {
-      "beta": true,
-      "errorCode": "file_missing",
-      "reason": "file_missing",
-      "source": "native:claude",
-      "status": "unavailable"
     }
   ],
   "subscriptions": [],

@@ -19,6 +19,13 @@ func TestG319ClaudeDefaultGrantYieldsToDecisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	fresh := consent.Empty()
+	// A Keychain-only (or credential-agent) login is not read by default.
+	if _, ok := defaultClaudeGrant(fresh, consent.Automatic, "0.5.53", nil); ok {
+		t.Fatal("no saved-login file, but a default grant was made")
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude", ".credentials.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	g, ok := defaultClaudeGrant(fresh, consent.Automatic, "0.5.53", nil)
 	if !ok || !g.SavedLogin || len(g.Profiles) != 1 {
 		t.Fatalf("fresh profile: grant=%t savedLogin=%t profiles=%d", ok, g.SavedLogin, len(g.Profiles))

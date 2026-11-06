@@ -22,13 +22,13 @@
       "windows": 0
     },
     {
-      "admitted": "yes",
+      "admitted": "no",
       "beta": true,
-      "consent": "granted",
+      "consent": "none",
       "detected": "yes",
       "last": "unknown",
       "provider": "claude",
-      "state": "unavailable:not_read",
+      "state": "unavailable:not_admitted",
       "windows": 0
     },
     {
