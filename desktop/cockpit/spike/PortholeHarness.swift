@@ -45,7 +45,7 @@ final class Harness: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         try? await Task.sleep(nanoseconds: 5_000_000_000)
         await hold("focused", 20)
         // Visible but unfocused: another app becomes frontmost; the window stays on screen.
-        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), configuration: .init())
+        _ = try? await NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"), configuration: .init())
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         say("KEY \(window.isKeyWindow) ACTIVE \(NSApp.isActive) VISIBLE \(window.isVisible) OCCLUSION \(window.occlusionState.contains(.visible))")
         await hold("unfocused", 20)
