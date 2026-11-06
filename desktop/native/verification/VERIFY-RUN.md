@@ -89,12 +89,16 @@ host. Tests inject a fake host; a real run never passes them by default.
   `capture-window` (owned-window PNG and AX tree through `tools/u14/macos_ax.swift`),
   `capture-menubar` (`width`, `height` declared for review only: the crop is the candidate's OWN
   status item, from accessibility on the candidate PID — the probe's `statusItem` bounds; without
-  them the step is NOT-RUN, never a broad system-region crop),
+  them the step is NOT-RUN, never a broad system-region crop; the AX position is already top-left
+  global coordinates, used unchanged for `screencapture -R`, and a rectangle outside the main
+  display's menu bar is refused),
   `set-appearance` (`value`), `status-menu` (`item`, `menuAction`), `relaunch`, `dwell` (`seconds`).
 - Before every step the runner re-reads the authoritative supervisor state (stop file, lease
   identity, revocation or takeover, guardian heartbeat, deadline — the same verdict launch.py's
-  own supervisor applies): once it stops, the ID is NOT-RUN, the segment aborts, and only bounded
-  cleanup and the recorded baseline restoration follow.
+  own supervisor applies), and again after every blocking call (AX probe, bounds probe, dwell)
+  immediately before the next capture or settings action and before the ID may complete: once it
+  stops, the ID is NOT-RUN, a probe that was in flight is discarded, the segment aborts, and only
+  bounded cleanup and the recorded baseline restoration follow.
 - A failed baseline restoration is a machine assertion: the ID ends FAIL
   (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
   re-establishes and re-records the baseline.

@@ -5,7 +5,9 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from verify_fixtures import SHA, FakeHost, manifest, write_artifact  # noqa: E402
@@ -40,18 +42,14 @@ class FakeSession:
 
 class FakeActions:
     def __init__(self, windows=True, at=100.5, dialogs=(), ax_text='Quota Widget', appearance=True,
-                 item_bounds=dict(x=1412, y=958, width=80, height=24), main_height=982):
+                 item_bounds=dict(x=1412, y=0, width=80, height=24), display=dict(width=1512, height=982)):
         self.windows, self.now, self.dialog_list = windows, at, list(dialogs)
         self.ax_text, self.appearance, self.calls = ax_text, appearance, []
-        self.item_bounds, self.main_height = item_bounds, main_height
+        self.item_bounds = item_bounds  # raw kAXPosition/kAXSize: top-left origin, as the probe reports
+        self.ctx = dict(profile='synthetic', markers=[], displays=[dict(main=True, x=0, y=0, **display)])
 
-    def status_item_rect(self, subject, directory):
-        report = self.capture(subject, directory, 5)
-        item = (report.get('ax') or {}).get('statusItem') if self.item_bounds is not False else None
-        if not item:
-            raise verify_run.NotRun('menubar-crop-needs-owned-status-item-bounds')
-        top = self.main_height - (item['y'] + item['height'])  # AX bottom-left origin -> crop top-left
-        return (int(item['x']), int(top), int(item['width']), int(item['height']))
+    # The production consumer, not a re-implementation: its coordinate handling is under test.
+    status_item_rect = verify_run.Actions.status_item_rect
 
     def capture(self, subject, directory, wait):
         directory.mkdir(parents=True)
@@ -59,9 +57,10 @@ class FakeActions:
         if shown:
             (directory / 'window.png').write_bytes(b'png')
             (directory / 'ax-tree.json').write_text(json.dumps(dict(windows=[dict(AXTitle=self.ax_text)])))
-        return dict(ax=dict(outcome='pass' if shown else 'timeout',
-                            statusItem=dict(x=1412, y=958, width=80, height=24)),  # the owned item's bounds
-                    screenshot=dict(outcome='pass' if shown else 'unsupported', reason='owned-app-unavailable'))
+        ax = dict(outcome='pass' if shown else 'timeout')
+        if self.item_bounds:
+            ax['statusItem'] = dict(self.item_bounds)  # the owned item's bounds
+        return dict(ax=ax, screenshot=dict(outcome='pass' if shown else 'unsupported', reason='owned-app-unavailable'))
 
     def menubar(self, rect, png):
         self.calls.append(('menubar', rect)); png.write_bytes(b'png')
@@ -170,6 +169,70 @@ class VerifyRunTests(unittest.TestCase):
         crops = [s for s in receipt['steps'] if s.get('action') == 'capture-menubar']
         self.assertTrue(all(c.get('region') == [1412, 0, 80, 24] and c.get('source') == 'owned-status-item'
                             for c in crops))
+
+    def test_capture_menubar_uses_raw_top_left_ax_bounds_on_a_1440_high_display(self):
+        # The probe reports raw kAXPosition (top-left origin, global); screencapture -R uses the
+        # same space, so the production crop and command must carry the AX rectangle unchanged.
+        commands = []
+
+        class RealCapture(FakeActions):
+            def menubar(self, rect, png):
+                def screencapture(command, **kwargs):
+                    commands.append(command)
+                    png.write_bytes(b'synthetic')
+                    return SimpleNamespace(returncode=0)
+                with patch.object(verify_run.subprocess, 'run', side_effect=screencapture):
+                    verify_run.Actions.menubar(self, rect, png)
+
+        actions = RealCapture(item_bounds=dict(x=2391.5, y=0, width=37.25, height=24),
+                              display=dict(width=2560, height=1440))
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertEqual(code, 0)
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertEqual(command[:3], ['/usr/sbin/screencapture', '-x', '-R2391,0,38,24'])
+
+    def test_capture_menubar_refuses_bounds_outside_the_menu_bar(self):
+        # A bottom-of-screen rectangle (what a wrong y-flip would produce) is never captured.
+        actions = FakeActions(item_bounds=dict(x=2400, y=1416, width=80, height=24), display=dict(width=2560, height=1440))
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertIn('reason=menubar-crop-outside-main-menu-bar', lines['V-01'])
+        self.assertEqual([c for c in actions.calls if c[0] == 'menubar'], [])
+
+    def test_stop_during_the_status_item_probe_takes_no_capture(self):
+        # STOP lands while V-01's final (dark) bounds probe is in flight: no screenshot follows,
+        # the probe output is discarded, the ID is stopped (not REVIEW/PASS) and the appearance
+        # baseline is still restored as bounded cleanup.
+        class StopDuringProbe(FakeActions):
+            def capture(self, subject, directory, wait):
+                report = super().capture(subject, directory, wait)
+                if directory.name == '05-dark.item':
+                    Path(subject['stopPath']).write_text('guardian-deadline')
+                return report
+        actions = StopDuringProbe()
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertEqual(code, 2)
+        self.assertTrue(lines['V-01'].startswith('NOT-RUN V-01'))
+        self.assertIn('reason=supervisor-stop-file', lines['V-01'])
+        menubar = [c for c in actions.calls if c[0] == 'menubar']
+        self.assertEqual(len(menubar), 1)  # only the light crop, taken before the STOP
+        self.assertFalse((self.out / 'V-01' / '05-dark.png').exists())
+        self.assertFalse((self.out / 'V-01' / '05-dark.item').exists())
+        receipt = json.loads((self.out / 'V-01' / 'receipt.json').read_text())
+        self.assertEqual(receipt['outcome'], 'NOT-RUN')
+        self.assertIn(dict(step='restore', setting='appearance', value='light', restored=True), receipt['steps'])
+
+    def test_stop_during_a_window_probe_discards_it_and_stops(self):
+        class StopDuringWindow(FakeActions):
+            def capture(self, subject, directory, wait):
+                report = super().capture(subject, directory, wait)
+                if directory.name.endswith('.probe'):
+                    Path(subject['stopPath']).write_text('owner-stop')
+                return report
+        code, lines, readme = self.go(ids=('D-01',), actions=StopDuringWindow())
+        self.assertEqual(code, 2)
+        self.assertIn('reason=supervisor-stop-file', lines['D-01'])
+        self.assertEqual(list(self.out.rglob('*.png')), [])
 
     def test_capture_menubar_without_owned_bounds_takes_no_system_region(self):
         actions = FakeActions(item_bounds=False)
