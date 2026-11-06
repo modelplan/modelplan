@@ -117,7 +117,7 @@ import ModelPlanSettings
             try write(json(["publicationId": publicationID, "manifestHash": hash(manifest),
                             "component": "client", "componentHash": component]), to: "state.json")
         }
-        try publish([announced])
+        try publish([])
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update {
@@ -173,7 +173,7 @@ import ModelPlanSettings
                 application.appearance = appearance
                 application.setActivationPolicy(policy)
             }
-            announce("Keep the pointer clear of the widget. Capture the first announced status icon and collapsed strip.")
+            announce("Keep the pointer clear of the widget until the initial personal reading is ready.")
             app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: application))
             try await wait("The real status item and fresh delivery must be present", timeout: .seconds(12)) {
                 app.nativeJourneyStatusVisible && !app.lifecyclePaused
@@ -212,7 +212,39 @@ import ModelPlanSettings
         }
         func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
 
+        try await subscribe()
+        let initialRing = try XCTUnwrap(dock.dockView.presentedReadingsForChecks[member])
+        XCTAssertEqual(initialRing.readout, "30%")
+        XCTAssertEqual(initialRing.outer?.fraction, 0.3)
+        XCTAssertNil(face())
+        func observationTime() -> String? {
+            app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }?
+                .accounts.first { $0.subscriptionRef == member }?.windows.first?.observedAt?.rawValue
+        }
+        XCTAssertEqual(observationTime(), observed)
+
+        func assertOriginalRing(file: StaticString = #filePath, line: UInt = #line) {
+            let reading = dock.dockView.presentedReadingsForChecks[member]
+            XCTAssertEqual(reading?.readout, initialRing.readout, file: file, line: line)
+            XCTAssertEqual(reading?.outer, initialRing.outer, file: file, line: line)
+            XCTAssertEqual(reading?.selectedWindowID, initialRing.selectedWindowID, file: file, line: line)
+            XCTAssertEqual(observationTime(), observed, file: file, line: line)
+        }
+        if physical {
+            announce("R-13 baseline: reveal, capture the personal ring at 30% without a reset dot, then move away.")
+            try await wait("The baseline ring must be visible", timeout: .seconds(30)) {
+                dock.edgePresentation?.state == .expanded && dock.nativePanel?.isVisible == true
+            }
+            assertOriginalRing()
+            try await wait("Return to the strip before publishing the announcement", timeout: .seconds(25)) {
+                dock.edgePresentation?.state == .sliver
+            }
+        }
+
+        try publish([announced])
+        try await subscribe()
         try await waitForEvent(eventID, "announced")
+        assertOriginalRing()
         let row = try XCTUnwrap(app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" })
         XCTAssertEqual(row.accounts.first?.windows.first?.remainingPercent, 30)
         XCTAssertEqual(row.accounts.first?.windows.first?.current, true)
@@ -246,7 +278,7 @@ import ModelPlanSettings
         if physical {
             announce("Capture the actual status item and hollow blue strip mark now.")
             try await Task.sleep(for: .seconds(5))
-            announce("Move into the wake zone to reveal once. Capture the visible face marker and cleared menu indicator.")
+            announce("Move into the wake zone. Capture the hollow face marker, unchanged 30% ring and cleared menu indicator.")
             try await wait("The physical pointer must reveal the native panel", timeout: .seconds(30)) {
                 dock.edgePresentation?.state == .expanded && dock.nativePanel?.isVisible == true
             }
@@ -265,6 +297,7 @@ import ModelPlanSettings
         // relies entirely on automatic acknowledgement from visible order-in.
         if !native { dock.acknowledgeDockReveal() }
         XCTAssertEqual(face(), announcement)
+        assertOriginalRing()
         XCTAssertNil(app.noticeIndicator.notice)
         announce("Move away and capture the re-collapsed strip. The quota segment remains.")
         try await wait("Return to the strip", timeout: physical ? .seconds(25) : .seconds(4)) { dock.edgePresentation?.state == .sliver }
@@ -276,6 +309,7 @@ import ModelPlanSettings
         try publish([announced, confirmed])
         try await subscribe()
         try await waitForEvent(eventID, "confirmed")
+        assertOriginalRing()
         let confirmation = try XCTUnwrap(face())
         XCTAssertEqual(confirmation.key.kind, .resetConfirmed)
         XCTAssertEqual(confirmation.tone, .blue)
@@ -290,13 +324,25 @@ import ModelPlanSettings
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
         try await subscribe()
-        XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.remainingPercent, 70)
+        let recoveredRing = try XCTUnwrap(dock.dockView.presentedReadingsForChecks[member])
+        XCTAssertEqual(recoveredRing.selectedWindowID, initialRing.selectedWindowID)
+        XCTAssertEqual(recoveredRing.readout, "70%")
+        XCTAssertEqual(recoveredRing.outer?.fraction, 0.7)
+        XCTAssertEqual(observationTime(), at(-10))
         XCTAssertNil(try strip().quotaSegmentColorRolesForChecks.first?.quotaRole, "The improved reading clears quota paint")
         XCTAssertNil(face())
         XCTAssertNil(app.noticeIndicator.notice)
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
-        announce("Capture the restarted reading with both the reset dot and recovered quota alert cleared.")
-        if physical { try await Task.sleep(for: .seconds(5)) }
+        if physical {
+            announce("R-13 update: reveal and capture the 70% personal ring and cleared reset dot, then move away.")
+            try await wait("The new personal ring must be visible", timeout: .seconds(30)) {
+                dock.edgePresentation?.state == .expanded && dock.nativePanel?.isVisible == true
+            }
+            XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.outer?.fraction, 0.7)
+            try await wait("Return to the strip before the expiry case", timeout: .seconds(25)) {
+                dock.edgePresentation?.state == .sliver
+            }
+        }
 
         let expiryID = "synthetic-d21-expiry"
         let expiry = at(60)
