@@ -427,6 +427,7 @@ private struct S1FlameManifest: Decodable {
                       reading.outer?.fraction == 0.75, reading.inner == nil, reading.vendorResourceKey == "claude", reading.jetEligible,
                       let skin = host.dockView.presentedSkinForChecks,
                       let station = skin.stations.first(where: { $0.subscriptionID == "claude" }), abs(station.diameter - 52) < 0.001,
+                      let nozzleFrame = host.dockView.interactionAnchor("claude"),
                       let layer = host.dockView.layer else { throw CocoaError(.featureUnsupported) }
                 let refName = "ref/handoffs__shared__s1-flame-frames__prototype-rotating-" + state + "-strip.png"
                 guard let reference = NSBitmapImageRep(data: try Data(contentsOf: output.appendingPathComponent(refName))),
@@ -439,8 +440,8 @@ private struct S1FlameManifest: Decodable {
                         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
                     context.translateBy(x: 0, y: CGFloat(h)); context.scaleBy(x: 2, y: -2)
                     host.dockView.displayIfNeeded(); layer.render(in: context)
-                    let crop = CGRect(x: ((station.centre.x - 26 - skin.bounds.minX) * 2).rounded(),
-                                      y: ((station.centre.y - 26 - skin.bounds.minY) * 2).rounded(), width: 104, height: 104)
+                    let crop = CGRect(x: (nozzleFrame.minX * 2).rounded(),
+                                      y: (nozzleFrame.minY * 2).rounded(), width: 104, height: 104)
                     guard let image = context.makeImage()?.cropping(to: crop), image.width == 104, image.height == 104,
                           let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
                     let native = NSBitmapImageRep(cgImage: image); var error = 0.0
