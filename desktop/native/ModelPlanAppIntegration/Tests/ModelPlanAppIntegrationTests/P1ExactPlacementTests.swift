@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
