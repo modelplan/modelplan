@@ -185,7 +185,7 @@ public struct EngineMenuRefreshResult {
         case .empty:
             fallback = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
         case .failed:
-            fallback = english ? "Readings unavailable. Check the engine connection in Settings." : "读数不可用，请在设置中检查引擎连接。"
+            fallback = EngineRowsText.readingServiceUnavailable.value(english ? .english : .chinese)
         case .cleared:
             fallback = english ? "Readings cleared. Check Settings to reconnect." : "读数已清除，请在设置中重新连接。"
         case .ready:

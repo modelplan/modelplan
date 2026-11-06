@@ -450,13 +450,24 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(initialDockMenu.items.contains { $0.title.contains("Loading") && $0.title.contains("Settings") })
         let store = try XCTUnwrap(acceptedStore)
         await store.consume(.connection(.stopped(.requested)))
-        XCTAssertTrue(app.composition.menuPresentation.detail.contains("unavailable"))
-        XCTAssertTrue(app.composition.menuPresentation.detail.contains("Settings"))
-        let failedDockMenu = app.composition.dock.menu()
-        XCTAssertFalse(failedDockMenu.items.contains { $0.title.contains("unavailable") && $0.title.contains("Settings") })
+        let projected = EngineDockContentProvider(source: app.composition.provider)
+        let status = NSButton()
+        func assertFailureCopy(_ expected: String, language: SettingsLanguage, line: UInt = #line) {
+            let detail = app.composition.menuPresentation.detail
+            app.applyStatusContent(to: status, detail: detail)
+            XCTAssertEqual(status.toolTip, expected, line: line)
+            XCTAssertEqual(status.accessibilityHelp(), expected, line: line)
+            XCTAssertEqual(app.composition.presentedContent.emptyText, expected, line: line)
+            projected.language = language.rawValue
+            let content = projected.makeContent(.init(snapshot: nil, diagnostics: .init(), now: Date()))
+            XCTAssertEqual(content.emptyText, expected, line: line)
+            XCTAssertEqual(content.menuStatusLines, [expected], line: line)
+            XCTAssertFalse(app.liveStatusMenu?.items.contains { $0.title == expected } ?? true, line: line)
+            XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == expected }, line: line)
+        }
+        assertFailureCopy("Readings unavailable. Check the reading service connection in Settings.", language: .english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertTrue(app.composition.menuPresentation.detail.contains("不可用"))
-        XCTAssertTrue(app.composition.menuPresentation.detail.contains("设置"))
+        assertFailureCopy("读数不可用，请在设置中检查读取服务连接。", language: .chinese)
         await app.composition.stop()
     }
 
