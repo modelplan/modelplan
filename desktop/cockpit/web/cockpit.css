@@ -52,3 +52,10 @@ html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .ck-tape .t-cu
 /* Keep inactive MFD page labels legible against night-mode key faces. */
 html[data-theme="night"] #cockpit .mfd-pk .pk:not(.on)>span{color:#a1aab3}
 html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
+
+/* Static porthole still (official edition; src/porthole-still.ts). The field shows only once painted. */
+.ck-port .ck-field[data-still=ready]{display:block!important;position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate}
+.ck-still-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.ck-still-layer{position:absolute;display:block;background-size:100% 100%;background-repeat:no-repeat}
+.ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
