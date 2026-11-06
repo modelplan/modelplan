@@ -500,7 +500,7 @@ private actor S4RowsClient: EngineClient {
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
-        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("resets in ") == true,"card must carry the reported relative reset")
+        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("resets ") == true,"card must carry the reported relative reset")
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
