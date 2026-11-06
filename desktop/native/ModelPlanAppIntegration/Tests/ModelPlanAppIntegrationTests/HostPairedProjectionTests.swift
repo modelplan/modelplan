@@ -377,6 +377,40 @@ private actor EntrySyntheticClient: EngineClient {
         assertStatus("")
     }
 
+    func testV17ReconstructedEntryRendersEachSavedStatusChoice() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-display-restored-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let fixture = try rows(weekly: 15, fiveHour: 9)
+        let samples: [(SettingsLanguage, MenuDisplay, String)] = [
+            (.english, .icon, ""), (.english, .tightest, "9%"), (.english, .twoWindows, "5h 9% Week 15%"),
+            (.chinese, .icon, ""), (.chinese, .tightest, "9%"), (.chinese, .twoWindows, "5h 9% 周 15%"),
+        ]
+        let seed = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        for (language, mode, expected) in samples {
+            _ = try await seed.update { $0.language = language; $0.menuDisplay = mode }
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: reopened, createsNativePanels: false,
+                dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            await app.composition.start()
+
+            let button = NSButton()
+            EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+            app.applyStatusContent(to: button, detail: "")
+            XCTAssertEqual(button.title, expected, "\(language) / \(mode)")
+            XCTAssertTrue(button.image?.isTemplate == true)
+            let saved = await reopened.snapshot()
+            XCTAssertEqual(saved.preferences.language, language)
+            XCTAssertEqual(saved.preferences.menuDisplay, mode)
+            await app.composition.stop()
+        }
+    }
+
     func testV17ExpiredOnlyReadingLeavesAnIconWithoutRevocation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-expiry-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
