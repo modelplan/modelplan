@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -162,9 +162,19 @@ private extension EngineDeliveryContext {
             details["subscriptions"] = subscriptions
             fixture["details"] = details
         }
+        if runningSession {
+            var details = try XCTUnwrap(fixture["details"] as? [String: Any])
+            var sessions = try XCTUnwrap(details["sessions"] as? [[String: Any]])
+            sessions[0]["source"] = "codex"
+            sessions[0]["model"] = "synthetic"
+            sessions[0]["state"] = "running"
+            details["sessions"] = sessions
+            details["sessionCoverage"] = "local-last-seen"
+            fixture["details"] = details
+        }
         let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: fixture))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
-        _ = try await settings.update { $0.language = language }
+        _ = try await settings.update { $0.language = language; if reduceMotion { $0.motion = .on } }
         let configuration = EngineClientConfiguration(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         var fanout: CockpitStoreFanout?
         let app = CommunityCockpitApplicationFactory.makeForChecks(configuration: configuration, settingsStore: settings, bundleURL: bundle, createsNativePanels: false, cockpitEntryEnabled: true) { _, consumer in
@@ -579,6 +589,49 @@ private extension EngineDeliveryContext {
                 try await Task.sleep(for: .milliseconds(20))
             }
             XCTAssertEqual(isBlank, true, "Missing 5h and weekly windows must remain empty")
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_MOT_03_reduceMotionKeepsGeometryAndStopsRunningCursor() async throws {
+        var baseline: (Double, Double)?
+        for reduced in [false, true] {
+            try await withLivePage(reduceMotion: reduced, runningSession: true) { _, _, page in
+                let web = try XCTUnwrap(page.verificationWebView)
+                let script = """
+                (() => {
+                  const root = document.querySelector('#cockpit');
+                  const cursor = document.querySelector('.ck-tape .t-cur');
+                  if (!root || !cursor) return null;
+                  const r = root.getBoundingClientRect();
+                  return JSON.stringify({width:r.width, height:r.height,
+                    reduced:document.documentElement.dataset.reduceMotion === 'true',
+                    cursorAnimation:getComputedStyle(cursor).animationName});
+                })()
+                """
+                let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+                var facts: [String: Any]?
+                while ContinuousClock.now < deadline {
+                    if let raw = try await web.evaluateJavaScript(script) as? String,
+                       let object = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                       !reduced || object["reduced"] as? Bool == true {
+                        facts = object
+                        break
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let observed = try XCTUnwrap(facts, "The normal entry did not render the synthetic running session")
+                let width = try XCTUnwrap((observed["width"] as? NSNumber)?.doubleValue)
+                let height = try XCTUnwrap((observed["height"] as? NSNumber)?.doubleValue)
+                if reduced {
+                    let previous = try XCTUnwrap(baseline)
+                    XCTAssertEqual(width, previous.0, accuracy: 1)
+                    XCTAssertEqual(height, previous.1, accuracy: 1)
+                    XCTAssertEqual(observed["cursorAnimation"] as? String, "none")
+                    XCTAssertEqual(page.g1OpenAnimationDurationForChecks, 0)
+                } else { baseline = (width, height) }
+            }
         }
     }
     #endif
