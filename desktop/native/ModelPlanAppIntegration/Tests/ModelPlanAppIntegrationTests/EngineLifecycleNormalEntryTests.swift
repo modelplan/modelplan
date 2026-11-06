@@ -7,7 +7,7 @@ import ModelPlanEngineStore
 import ModelPlanEngineClient
 import ModelPlanWire
 import ModelPlanCockpitWeb
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 private actor LifecycleEngine: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
@@ -247,6 +247,9 @@ private actor LifecycleEngine: EngineClient {
             applicationVersion: "test", allowedEnvironment: [:], offline: true, readOnly: true),
             settingsStore: store, createsNativePanels: native, dockEnvironment: topology.read,
             makeClient: { _, store in LifecycleEngine(store: store, rows: rows) }, activateSettings: {})
+        if ProcessInfo.processInfo.environment["MODELPLAN_D01_D03_CAPTURE_DIR"] != nil {
+            app.composition.dock.captureBackingScaleForChecks = 2
+        }
         await app.prepare()
         addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
         return app
@@ -277,6 +280,33 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertTrue(predicate(), "Expected presentation did not arrive within the bound")
     }
 
+    private func capturePlacement(_ name: String, app: EngineDockMenuApplication) throws {
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_D01_D03_CAPTURE_DIR"] else { return }
+        let root = URL(fileURLWithPath: path)
+        let dock = app.composition.dock
+        let presentation = dock.edgePresentation
+        var report: [String: Any] = ["hasRows": app.composition.store.snapshot.rows != nil]
+        report["state"] = presentation.map { String(describing: $0.state) } ?? "absent"
+        if let place = presentation?.placement {
+            report["display"] = place.displayID
+            report["edge"] = String(describing: place.edge)
+            report["placementFrame"] = NSStringFromRect(place.frame)
+        }
+        if let painted = presentation?.paintedFrame {
+            report["paintedFrame"] = NSStringFromRect(painted)
+        }
+        if presentation?.state == .expanded, presentation?.paintedFrame != nil,
+           let image = dock.dockView.presentedImageForChecks {
+            let bitmap = NSBitmapImageRep(cgImage: image)
+            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: root.appendingPathComponent(name + ".png"))
+            report["pixels"] = [image.width, image.height]
+            report["placeholder"] = dock.dockView.presentedSkinForChecks?.stations.contains { $0.placeholderLabel != nil } ?? false
+        }
+        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            .write(to: root.appendingPathComponent(name + ".json"))
+    }
+
     func testD01FreshProfileShowsEmptyStationBeforeRows() async throws {
         let topology = Topology()
         let app = try await make(profile(), topology: topology)
@@ -288,6 +318,7 @@ private actor LifecycleEngine: EngineClient {
         try await wait { app.composition.dock.edgePresentation?.state == .expanded }
         XCTAssertLessThan(ContinuousClock.now - launched, .seconds(2))
         XCTAssertEqual(replies.count, 0)
+        try capturePlacement("d01-initial", app: app)
         let place = try expanded(app)
         XCTAssertEqual(place.displayID, "A")
         XCTAssertEqual(place.edge, .right)
@@ -302,16 +333,21 @@ private actor LifecycleEngine: EngineClient {
         let root = profile()
         let first = try await make(root, topology: topology) { $0.dockDisplayID = "A"; $0.dockEdge = .right }
         first.allowDockPresentation()
+        try capturePlacement("d02-launch", app: first)
         XCTAssertEqual(try expanded(first).edge, .right)
         first.composition.dock.close()
         let app = try await make(root, topology: topology)
         app.allowDockPresentation()
+        try capturePlacement("d02-relaunch", app: app)
         let original = topology.primary
         let dockLeft = DockDisplayArea(id: "A", frame: original.frame,
             visibleFrame: CGRect(x: 70, y: 0, width: 1442, height: 945))
-        for (display, joined) in [(original, true), (dockLeft, true), (original, true), (original, false), (original, true)] {
+        for (step, display, joined) in [("bottom", original, true), ("left", dockLeft, true),
+                                        ("bottom-restored", original, true), ("display-off", original, false),
+                                        ("display-on", original, true)] {
             topology.primary = display; topology.joined = joined
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+            try capturePlacement("d02-" + step, app: app)
             let place = try expanded(app)
             XCTAssertEqual(place.edge, .right)
             XCTAssertEqual(place.displayID, "A")
@@ -389,6 +425,7 @@ private actor LifecycleEngine: EngineClient {
         let topology = Topology()
         let app = try await make(profile(), topology: topology) { $0.dockEdge = .bottom }
         app.allowDockPresentation()
+        try capturePlacement("d03-before-sample", app: app)
         let place = try expanded(app)
         XCTAssertEqual(place.edge, .bottom)
         XCTAssertEqual(place.frame.minY, topology.primary.visibleFrame.minY, accuracy: 0.5)
