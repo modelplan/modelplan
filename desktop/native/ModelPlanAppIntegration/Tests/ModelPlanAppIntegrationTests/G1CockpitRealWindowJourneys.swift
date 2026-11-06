@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, sevenMemberFixture: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -170,6 +170,47 @@ private extension EngineDeliveryContext {
             sessions[0]["state"] = "running"
             details["sessions"] = sessions
             details["sessionCoverage"] = "local-last-seen"
+            fixture["details"] = details
+        }
+        if sevenMemberFixture {
+            var projection = try XCTUnwrap(fixture["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            let seed = try XCTUnwrap((rows.first?["accounts"] as? [[String: Any]])?.first)
+            let bindingSeed = try XCTUnwrap((fixture["subscriptions"] as? [[String: Any]])?.first)
+            let refs = (1...7).map { String(format: "%016llx", UInt64($0)) }
+            var accounts: [[String: Any]] = []
+            var bindings: [[String: Any]] = []
+            for (index, ref) in refs.enumerated() {
+                var account = seed
+                account["subscriptionRef"] = ref
+                account["accountLocator"] = ref
+                var window = try XCTUnwrap((account["windows"] as? [[String: Any]])?.first)
+                window["id"] = "session:18000:main:main"
+                window["role"] = "session"
+                window["durationSeconds"] = 18000
+                window["limitKey"] = "main"
+                window["poolKey"] = "main"
+                window.removeValue(forKey: "modelScope")
+                window["remainingPercent"] = index == 6 ? 20 : 80
+                window["current"] = true
+                window["validUntil"] = "2099-01-01T00:00:00Z"
+                account["windows"] = [window]
+                accounts.append(account)
+                var binding = bindingSeed
+                var linked = try XCTUnwrap(binding["accounts"] as? [[String: Any]])
+                linked[0]["account"] = account
+                binding["subscriptionRef"] = ref
+                binding["accounts"] = linked
+                bindings.append(binding)
+            }
+            rows[0]["accounts"] = accounts
+            projection["rows"] = rows
+            fixture["projection"] = projection
+            fixture["subscriptions"] = bindings
+            var details = try XCTUnwrap(fixture["details"] as? [String: Any])
+            details["subscriptions"] = []
+            details["alerts"] = [["source": "codex", "subscriptionRef": refs[6],
+                                  "windowId": "session:18000:main:main", "severity": "critical", "remainingPercent": 20]]
             fixture["details"] = details
         }
         if withoutDetails { fixture.removeValue(forKey: "details") }
@@ -703,6 +744,62 @@ private extension EngineDeliveryContext {
                 XCTAssertEqual(xs[1] - xs[0], 42, accuracy: 1)
                 XCTAssertEqual(xs[2] - xs[1], 42, accuracy: 1)
             }
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_ENG_03_sevenMembersPageAndOffPageCaution() async throws {
+        try await withLivePage(sevenMemberFixture: true) { _, _, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const keys = document.querySelector('.eng-keys');
+              const led = document.querySelector('.eng-led[data-page="1"]');
+              if (!keys || !led) return null;
+              const r = led.getBoundingClientRect();
+              return JSON.stringify({members:keys.querySelectorAll('.ek[data-sub]').length,
+                empty:keys.querySelectorAll('.ek.ek-bay').length,
+                red:led.classList.contains('lv-red'), current:led.getAttribute('aria-current'),
+                x:r.x, y:r.y, width:r.width, height:r.height});
+            })()
+            """
+            @MainActor func readFacts() async throws -> [String: Any]? {
+                guard let raw = try await web.evaluateJavaScript(script) as? String else { return nil }
+                return try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+            }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var first: [String: Any]?
+            while ContinuousClock.now < deadline {
+                if let facts = try await readFacts(), (facts["members"] as? NSNumber)?.intValue == 6 {
+                    first = facts; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let observed = try XCTUnwrap(first, "The normal entry did not render the seven-member first page")
+            XCTAssertEqual(observed["red"] as? Bool, true, "The off-page critical member lights its page indicator")
+            XCTAssertEqual(observed["current"] as? String, "false")
+            let x = try XCTUnwrap((observed["x"] as? NSNumber)?.doubleValue)
+            let y = try XCTUnwrap((observed["y"] as? NSNumber)?.doubleValue)
+            let width = try XCTUnwrap((observed["width"] as? NSNumber)?.doubleValue)
+            let height = try XCTUnwrap((observed["height"] as? NSNumber)?.doubleValue)
+            let window = try XCTUnwrap(page.window)
+            let point = web.convert(CGPoint(x: x + width / 2, y: web.isFlipped ? y + height / 2 : web.bounds.height - y - height / 2), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
+            }
+            var second: [String: Any]?
+            let nextDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+            while ContinuousClock.now < nextDeadline {
+                if let facts = try await readFacts(), facts["current"] as? String == "true" {
+                    second = facts; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let next = try XCTUnwrap(second, "The real page did not advance to the second page")
+            XCTAssertEqual((next["members"] as? NSNumber)?.intValue, 1)
+            XCTAssertEqual((next["empty"] as? NSNumber)?.intValue, 5)
         }
     }
     #endif
