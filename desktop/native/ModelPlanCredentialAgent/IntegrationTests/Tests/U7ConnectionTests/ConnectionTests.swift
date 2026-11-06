@@ -15,6 +15,16 @@ private actor InjectedAgent: CredentialAgent {
     func count() -> Int { calls }
 }
 
+@MainActor private final class RecordingConsumer: EngineClientEventConsumer {
+    let store: EngineStore
+    private(set) var contexts = 0
+    init(store: EngineStore) { self.store = store }
+    func consume(_ event: EngineClientEvent) async {
+        if case .context = event { contexts += 1 }
+        await store.consume(event)
+    }
+}
+
 @MainActor final class ConnectionTests: XCTestCase {
     private func profile() throws -> URL {
         // Keep the packaged fixture under the checkout's real directory. Foundation
@@ -71,6 +81,41 @@ private actor InjectedAgent: CredentialAgent {
         XCTAssertEqual(calls, 1)
         await connection.client.stop()
     }
+    func testSharedConsumerFactoryPreservesInjectedAgentAndDelivery() async throws {
+        let home = try profile()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = EngineStore(), consumer = RecordingConsumer(store: store), agent = InjectedAgent()
+        let client = EngineStoreConnection.makeClient(configuration: config(home), credentialAgent: agent, consumer: consumer)
+        let current = try await client.start()
+        do {
+            _ = try await outcome(home)
+            XCTAssertGreaterThan(consumer.contexts, 0, "The caller's actual consumer must receive the current context")
+            XCTAssertEqual(store.snapshot.delivery, current)
+            XCTAssertTrue(client.isCurrent(current))
+            let calls = await agent.count()
+            XCTAssertEqual(calls, 1, "Explicit agent injection must not be replaced by the default")
+        } catch { await client.stop(); throw error }
+        await client.stop()
+        XCTAssertFalse(client.isCurrent(current))
+    }
+
+    func testSharedConsumerFactoryUsesDefaultDeny() async throws {
+        let home = try profile()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = EngineStore(), consumer = RecordingConsumer(store: store)
+        let client = EngineStoreConnection.makeClient(configuration: config(home), consumer: consumer)
+        let current = try await client.start()
+        do {
+            let result = try await outcome(home)
+            XCTAssertEqual(result["outcome"] as? String, "denied")
+            XCTAssertGreaterThan(consumer.contexts, 0)
+            XCTAssertEqual(store.snapshot.delivery, current)
+            XCTAssertTrue(client.isCurrent(current))
+        } catch { await client.stop(); throw error }
+        await client.stop()
+        XCTAssertFalse(client.isCurrent(current))
+    }
+
     func testFactoryLaunchesPinnedPackagedFixtureWithRealCurrentVeto() async throws {
         let home = try profile()
         defer { try? FileManager.default.removeItem(at: home) }
