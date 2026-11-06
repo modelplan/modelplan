@@ -58,7 +58,7 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-# The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
+# The native factory uses the reserved-licence outline tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
