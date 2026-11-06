@@ -100,6 +100,10 @@
           "leg": "headless",
           "reason": "requires the synthetic real CLI supplied and required by the U11 workflow"
         },
+        "CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI": {
+          "leg": "headless",
+          "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
+        },
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"

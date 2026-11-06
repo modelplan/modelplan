@@ -166,6 +166,31 @@ final class CommunityCockpitEntryTests:XCTestCase {
             throw error
         }
     }
+    @MainActor func testNormalEntryRejectsOutdatedCLI() async throws {
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"] else {
+            throw XCTSkip("Build the unversioned synthetic CLI for the normal-entry test")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g5-cli-version-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: path), applicationVersion: "synthetic",
+            allowedEnvironment: ["HOME":root.path,"TMPDIR":root.path,"PATH":"/usr/bin:/bin"],
+            minimumServerVersion: EngineRowsEntry.minimumAppServerVersion)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: settings, createsNativePanels: false)
+        await app.composition.start()
+        for _ in 0..<300 {
+            if case .stopped(.protocolMismatch) = app.composition.store.snapshot.connection { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        guard case .stopped(.protocolMismatch) = app.composition.store.snapshot.connection else {
+            await app.composition.stop()
+            XCTFail("normal entry admitted an outdated CLI")
+            return
+        }
+        XCTAssertNil(app.composition.store.snapshot.rows)
+        await app.composition.stop()
+    }
     @MainActor func testProductionPinsAdmitCanonicalBundles() async throws {
         var repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {

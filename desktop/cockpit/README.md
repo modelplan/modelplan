@@ -119,8 +119,9 @@ subscriptions triggers two finite 240 ms CSS opacity pulses (six steps per pulse
 do not restart it. The pulse decision compares the current DOM within render; the current displayed DTO is retained for deadline refresh and removed on clear or unload. A hidden, occluded or non-key page cancels the pulse;
 returning visible never replays it, and offscreen changes are not queued.
 Clear/unload cancel it and reduced motion creates no animation. Unused prototype
-animation declarations/keyframes are removed; the bundle has no infinite CSS
-animation declarations and schedules **no rAF, timeout or interval callbacks**.
+animation declarations/keyframes are removed; the only infinite CSS animation is
+the running-session cursor (CKP-STRIP-10), gated on an active, open, visible page and
+static under Reduce Motion; the bundle schedules **no rAF, timeout or interval callbacks**.
 
 Headless tests scan computed animation-iteration-count on every element and its
 pseudo-elements, plus runtime effect iterations, with negative controls for both

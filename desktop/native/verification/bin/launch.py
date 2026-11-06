@@ -28,15 +28,40 @@ def sha256(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def subject_env(home,tmp):
     # HOME alone does not move Foundation's Application Support/preferences: CFFIXED_USER_HOME does.
     return {'PATH':'/usr/bin:/bin','HOME':str(home),'CFFIXED_USER_HOME':str(home),'TMPDIR':str(tmp),'LANG':'en_US.UTF-8'}
+def real_home(tmp):
+    """The real profile (owner decision 2026-11-05, M1/V1 hosts only) keeps the host user's own
+    HOME and TMPDIR. This launcher never creates, moves, writes or deletes anything under it, and
+    refuses a HOME at or inside run scratch, which later cleanup removes."""
+    raw=os.getenv('HOME','')
+    if not raw or not Path(raw).is_absolute() or Path(raw)==Path('/'):
+        raise ValueError('real profile needs the host user\'s absolute HOME')
+    home=Path(raw).resolve();scratch=tmp.resolve()
+    if home==scratch or scratch in home.parents:
+        raise ValueError('real HOME must stay outside run scratch')
+    return home
+def real_env():
+    # Inherit the launcher's own environment (the bytes view carries every variable through
+    # unchanged, including provider keys); CFFIXED_USER_HOME is removed explicitly so no stray
+    # value can redirect Foundation paths: a real run must see the real profile, not a half-real
+    # one. Only this process's environment is read, never any other process's.
+    env={k.decode():v.decode('utf-8','surrogateescape') for k,v in os.environb.items() if k!=b'CFFIXED_USER_HOME'}
+    env.setdefault('PATH','/usr/bin:/bin')
+    return env
 def main():
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
     c=json.loads(a.config.read_text())
     if not a.execute:validate(c,time.time());print('Run contract valid; no process launched');return
     c=load_and_admit(c) # Read external records before creating synthetic resources.
     mode=c.get('launchMode','direct')
+    profile=c.get('profile','synthetic')
     if mode=='launchservices' and not Path(OPEN[0]).exists():raise ValueError('launchservices mode needs macOS '+OPEN[0])
-    home=Path(c['syntheticHome']);tmp=Path(c['syntheticTmp'])
-    home.mkdir(exist_ok=False);tmp.mkdir(exist_ok=False)
+    tmp=Path(c['syntheticTmp'])
+    if profile=='real':
+        home=real_home(tmp);env=real_env() # same HOME across every launch of this run, never redirected
+    else:
+        home=Path(c['syntheticHome']);env=subject_env(home,tmp)
+        home.mkdir(exist_ok=False)
+    tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if sha256(binary)!=c['binarySHA256']:raise ValueError('binary identity changed')
     kind=c.get('subjectKind','binary')
@@ -44,7 +69,7 @@ def main():
     else:bundle=make_bundle(c,binary,tmp) if mode=='launchservices' else None
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
-    if mode=='launchservices':return launch_services(c,bundle,pid_path,subject_env(home,tmp))
+    if mode=='launchservices':return launch_services(c,bundle,pid_path,env)
     # Until registered, the guardian reports closure unconfirmed unless its scope scan is empty.
     if bundle:
         # app-zip, direct: exec the extracted bundle's main executable itself; scoped by its exact path
@@ -55,30 +80,68 @@ def main():
         # is run scratch only, and the subject (the gate, same PID after exec) matches by PID plus start time.
         argv=c['argv'];scope=process_scan.scope_for(prefix=tmp)
     evidence=bundle['evidence'] if bundle else {}
-    launcher=mark_launching(pid_path,scope=scope,mode=mode)
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*argv]
-    child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=subject_env(home,tmp))
+    state={'child':None}
     def stop_child(*_):
-        child.terminate()
-        try:child.wait(10)
-        except subprocess.TimeoutExpired:child.kill();child.wait()
-        raise SystemExit(3)
+        child=state['child']
+        try:
+            if child is not None:
+                child.terminate()
+                try:child.wait(10)
+                except subprocess.TimeoutExpired:child.kill();child.wait()
+        finally:raise SystemExit(3)
     for sig in (signal.SIGTERM,signal.SIGINT,signal.SIGHUP):signal.signal(sig,stop_child)
+    def spawn():
+        # Every launch (first or relaunch) reserves the slot first: the guardian admits a second
+        # reservation only once the prior registered subject is gone, keeps the same controller
+        # identity, and only then accepts the helper and the new registration.
+        launcher=mark_launching(pid_path,scope=scope,mode=mode)
+        child=spawn_gated(gate,env,pid_path,launcher,stop_child,admit=lambda:stop_reason(c,time.time()))
+        state['child']=child
+        return child
+    child=spawn()
+    home_field=str(home) # real: the host user's own HOME; synthetic: the run-scratch home
+    print(json.dumps(subject_line(c,child.pid,profile,home_field,evidence)),flush=True)
+    # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
+    # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
+    def announce(token,pid):
+        print(json.dumps(subject_line(c,pid,profile,home_field,evidence,token=token)),flush=True)
+    reason=supervise(child,c,spawn=spawn,announce=announce)
+    child=state['child']
+    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,'launchMode':mode,'profile':profile}))
+    raise SystemExit(0 if reason is None else 3)
+GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
+class AuthorityWithdrawn(RuntimeError):pass
+def spawn_gated(gate,env,pid_path,launcher,on_unregistered,admit=None):
+    """Start one gated child and register it against a reservation this controller just made:
+    helper identity first, registration second, then (only while `admit` reports no stop reason)
+    release the exec gate. Any failure kills the child and hands the failure to on_unregistered,
+    so an unregistered subject, or one whose authority was withdrawn, never runs."""
+    child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=env)
     try:
         add_helper(pid_path,launcher,identity(child.pid)) # The gate is matched by PID plus start time.
         register(pid_path,child.pid,launcher)
+        reason=admit() if admit is not None else None # last authority read before the subject executes
+        if reason:raise AuthorityWithdrawn(reason)
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
-        stop_child() # Never leave an unregistered child running.
-    print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':mode,**evidence}),flush=True)
-    # Stay attached: stop the child on the stop file, a stale guardian heartbeat, revocation or the deadline,
-    # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
-    reason=supervise(child,c)
-    print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,'launchMode':mode}))
-    raise SystemExit(0 if reason is None else 3)
-GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
+        try:child.stdin.close() # EOF: the gate exits without exec'ing the subject
+        except OSError:pass
+        child.terminate() # never leave an unregistered child running ...
+        try:child.wait(10)
+        except subprocess.TimeoutExpired:child.kill();child.wait()
+        on_unregistered() # ... and end the launch by supervision, not by a traceback
+    return child
+def subject_line(c,pid,profile,home,evidence,token=None):
+    """One launch's JSON line for verify-run's consumer. A relaunch line repeats every identifying
+    field of the first line, evidence included (the consumer matches on bundle), plus its token."""
+    line=dict(runID=c['lease']['runID'],epoch=c['lease']['epoch'],ownedPID=pid,
+              launchMode=c.get('launchMode','direct'),profile=profile,home=home,**evidence)
+    if token is not None:
+        line['relaunch']=token
+    return line
 def make_bundle(c,binary,tmp):
     """Minimal .app around a byte-identical copy of the pinned binary (never a link: the scan and
     PID discovery match this exact path). Optional: bundleIdentifier, bundleUIElement (default true,
@@ -230,14 +293,48 @@ def stop_reason(c,now):
     if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
     if now>=lease['expiresAt']:return 'deadline'
     return None
-def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep):
-    while child.poll() is None:
-        reason=stop_reason(c,clock())
-        if reason:
-            child.terminate()
-            try:child.wait(10)
-            except subprocess.TimeoutExpired:child.kill();child.wait()
-            return reason
-        sleep(poll)
-    return None
+def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,announce=None):
+    """Stay attached until the subject ends by itself (returns None) or a stop condition fires
+    (returns its reason). With `spawn`, a relaunch marker (an increasing integer in the config's
+    relaunchPath) stops the current child and starts a fresh gated one with the same argv,
+    environment and HOME: one supervised slot, several launches, identities never mixed.
+    Authority is re-read after every blocking wait: a relaunch never spawns once the old child's
+    shutdown wait saw STOP, revocation or the deadline, and a child that ended while authority was
+    withdrawn is a supervised stop, never one that ended by itself."""
+    marker=Path(c['relaunchPath']) if spawn is not None and c.get('relaunchPath') else None
+    token=0
+    while True:
+        if child.poll() is None:
+            reason=stop_reason(c,clock())
+            if reason:
+                child.terminate()
+                try:child.wait(10)
+                except subprocess.TimeoutExpired:child.kill();child.wait()
+                return reason
+            if marker is not None:
+                try:value=int(marker.read_text().strip() or 0)
+                except (OSError,ValueError):value=0
+                if value>token:
+                    token=value
+                    child.terminate() # ended deliberately: a relaunch step, not a crash
+                    try:child.wait(10)
+                    except subprocess.TimeoutExpired:child.kill();child.wait()
+                    reason=stop_reason(c,clock()) # re-admit after the blocking shutdown wait
+                    if reason:return reason
+                    try:
+                        child=spawn()
+                    except SystemExit:
+                        raise
+                    except BaseException:
+                        # the re-reservation or the registration refused the relaunch: end by
+                        # supervision (exit 3), never leak the slot or the subject
+                        raise SystemExit(3)
+                    if announce is not None:announce(token,child.pid)
+                    continue
+            if child.poll() is None:
+                sleep(poll)
+                continue
+        # The child is gone. If authority was withdrawn meanwhile (e.g. the guardian closed the subject on
+        # STOP between two polls), that is a supervised stop, never a child that ended by itself.
+        return stop_reason(c,clock())
 if __name__=='__main__':main()
