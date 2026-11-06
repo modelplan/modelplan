@@ -41,10 +41,14 @@ private actor S04SyntheticClient: EngineClient {
             .compactMap { $0 as? HelpUILayerView }
             .filter { $0.window?.isVisible == true && !$0.isHiddenOrHasHiddenAncestor && $0.input?.firstUse != nil }
     }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    /// Real panels in an admitted GUI session. The native-journey profile isolates the reset
+    /// notification ledger and the status item (no system delivery, no autosaved position).
     func testNormalEntryShowsWidgetThenRingHintOnRealSurfaces() async throws {
-        throw XCTSkip("S-04 SEAM-NEEDED: EngineRowsEntry.isolatedNativeNotificationLedgerForChecks")
+        _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("s04-hints-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: profile) }
+        EngineRowsEntry.nativeJourneyProfile = profile
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -61,11 +65,9 @@ private actor S04SyntheticClient: EngineClient {
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         defer { app.composition.dock.close() }
         for _ in 0..<200 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        let first = liveHintLayers().first
-        XCTExpectFailure("S-04 product-missing: real visible-widget anchor is supplied by M2 #529") {
-            XCTAssertNotNil(first, "The first hint must appear on the real visible widget")
-        }
-        guard let first, let firstCard = first.input?.firstUse else { await app.composition.stop(); return }
+        // #529 supplies the real visible-widget anchor, so the first hint must now appear.
+        let first = try XCTUnwrap(liveHintLayers().first, "The first hint must appear on the real visible widget")
+        let firstCard = try XCTUnwrap(first.input?.firstUse)
         XCTAssertEqual(liveHintLayers().count, 1)
         XCTAssertEqual(firstCard.anchorID, "dock.findWidget")
         first.onAction?(.dismissHint(offerID: firstCard.offerID, reason: .explicitButton))
@@ -80,4 +82,5 @@ private actor S04SyntheticClient: EngineClient {
         XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a third automatic hint")
         await app.composition.stop()
     }
+    #endif
 }
