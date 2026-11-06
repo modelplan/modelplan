@@ -232,7 +232,16 @@ import XCTest
         try await blockedRefresh(in: denied, reason: .readOnly)
         XCTAssertNil(try denied.composition.dock.cardContent(for: ref))
     }
+    func testR01ExplicitLocalGrantShowsFourThenThreePercentWithSourceTime() async throws {
+        try await exerciseLocalHistory(initialRemaining: 4, updatedRemaining: 3, initialAge: 150, initialState: .current)
+    }
+
     func testR06LocalHistoryChangeReachesTheSameSubscribedMember() async throws {
+        try await exerciseLocalHistory(initialRemaining: 20, updatedRemaining: 70, initialAge: 3 * 3600 + 30, initialState: .retained)
+    }
+
+    private func exerciseLocalHistory(initialRemaining: Int, updatedRemaining: Int, initialAge: TimeInterval,
+                                      initialState: RowsValueState) async throws {
         let (root, helper, environment) = try sandbox()
         // Establish tool presence without a usable runtime executable.
         _ = try script("codex", in: root, "#!/bin/sh\nexit 64\n")
@@ -258,14 +267,14 @@ import XCTest
             bytes.append(10)
             return bytes
         }
-        let old = now.addingTimeInterval(-3 * 3600 - 30)
-        try line(used: 80, at: old).write(to: log)
+        let old = now.addingTimeInterval(-initialAge)
+        try line(used: 100 - initialRemaining, at: old).write(to: log)
         let report = try await command(["quota", "--json", "--offline"], helper: helper, environment: environment)
         let reportAccounts = try XCTUnwrap(report["accounts"] as? [[String: Any]])
         let directLocal = try XCTUnwrap(reportAccounts.first { $0["source"] as? String == "codex" },
                                        "The same explicit local grant must expose the fixture to CLI quota")
         let directWindow = try XCTUnwrap((directLocal["windows"] as? [[String: Any]])?.first)
-        XCTAssertEqual(directWindow["remainingPercent"] as? Double, 20)
+        XCTAssertEqual(directWindow["remainingPercent"] as? Double, Double(initialRemaining))
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
@@ -288,10 +297,28 @@ import XCTest
         let diagnostic = row.map { "\($0.state) / \($0.reason.code), routes: \($0.accounts.map(\.route))" } ?? "absent"
         let first = try XCTUnwrap(localAccount(), diagnostic)
         let firstWindow = try XCTUnwrap(first.windows.first)
-        XCTAssertEqual(first.valueState, .retained)
-        XCTAssertEqual(firstWindow.remainingPercent, 20)
+        XCTAssertEqual(first.valueState, initialState)
+        XCTAssertEqual(firstWindow.remainingPercent, Double(initialRemaining))
         XCTAssertEqual(firstWindow.source, .localHistory)
         XCTAssertEqual(firstWindow.observedAt?.rawValue, iso.string(from: old))
+
+        let dock = app.composition.dock, view = dock.dockView
+        let member = "codex#local_log"
+        func openLocalCard() throws -> DockCardView {
+            let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+            let anchor = try XCTUnwrap(view.interactionAnchor(member))
+            pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+                              y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+            try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(member)
+            elapsed += 0.251
+            try XCTUnwrap(dock.interactionControllerForChecks).refresh()
+            return try XCTUnwrap(dock.detachedCardForChecks)
+        }
+        if initialState == .current {
+            let initialCard = try openLocalCard()
+            XCTAssertEqual(text("row.quota:" + firstWindow.id + ".value", in: initialCard), "\(initialRemaining)%")
+            XCTAssertTrue(text("source", in: initialCard)?.contains("Local history · 2m ago") == true)
+        }
 
         func appendReading(used: Int, at observed: Date) throws {
             let handle = try FileHandle(forWritingTo: log)
@@ -300,13 +327,13 @@ import XCTest
             try handle.write(contentsOf: line(used: used, at: observed))
         }
         let fresh = Date()
-        try appendReading(used: 30, at: fresh)
+        try appendReading(used: 100 - updatedRemaining, at: fresh)
         func waitForFreshReading(timeout: Duration) async throws -> Bool {
             let end = ContinuousClock.now + timeout
-            while localAccount()?.windows.first?.remainingPercent != 70 && ContinuousClock.now < end {
+            while localAccount()?.windows.first?.remainingPercent != Double(updatedRemaining) && ContinuousClock.now < end {
                 try await Task.sleep(for: .milliseconds(20))
             }
-            return localAccount()?.windows.first?.remainingPercent == 70
+            return localAccount()?.windows.first?.remainingPercent == Double(updatedRemaining)
         }
         let deliveredOnAppend = try await waitForFreshReading(timeout: .seconds(6))
         XCTAssertTrue(deliveredOnAppend, "The existing subscription must receive the new local observation without a request")
@@ -317,21 +344,12 @@ import XCTest
         XCTAssertEqual(current.subscriptionRef, first.subscriptionRef)
         XCTAssertEqual(currentWindow.id, firstWindow.id)
         XCTAssertEqual(current.valueState, .current)
-        XCTAssertEqual(currentWindow.remainingPercent, 70)
+        XCTAssertEqual(currentWindow.remainingPercent, Double(updatedRemaining))
         XCTAssertEqual(currentWindow.source, .localHistory)
         XCTAssertEqual(currentWindow.observedAt?.rawValue, iso.string(from: fresh))
         XCTAssertNil(current.subscriptionRef, "Local history must not be linked to a runtime account")
-        let dock = app.composition.dock, view = dock.dockView
-        let member = "codex#local_log"
-        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
-        let anchor = try XCTUnwrap(view.interactionAnchor(member))
-        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
-                          y: placement.frame.maxY - anchor.midY + view.bounds.minY)
-        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(member)
-        elapsed += 0.251
-        try XCTUnwrap(dock.interactionControllerForChecks).refresh()
-        let card = try XCTUnwrap(dock.detachedCardForChecks)
-        XCTAssertEqual(text("row.quota:" + currentWindow.id + ".value", in: card), "70%")
+        let card = try openLocalCard()
+        XCTAssertEqual(text("row.quota:" + currentWindow.id + ".value", in: card), "\(updatedRemaining)%")
         XCTAssertTrue(text("source", in: card)?.contains("Local history · just now") == true)
 
         // Commit the denial from the same synthetic profile while the read-only
