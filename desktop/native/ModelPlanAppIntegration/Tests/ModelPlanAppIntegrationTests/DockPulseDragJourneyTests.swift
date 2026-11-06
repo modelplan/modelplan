@@ -640,8 +640,10 @@ import ModelPlanShell
     }
     #endif
 
-    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    #if DEBUG && MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
     func testD08NormalEntryWakesOnlyFromTheWidgetSideOfEachInnerEdge() async throws {
+        let helper = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: helper.path))
         let primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1400, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1400, height: 870), backingScale: 2)
         let right = DockDisplayArea(id: "B", frame: CGRect(x: 1400, y: -100, width: 1600, height: 1000),
@@ -662,19 +664,31 @@ import ModelPlanShell
             let middle = CGPoint(x: display.usableFrame.midX, y: display.usableFrame.midY)
             var pointer = middle
             let root = profile.appendingPathComponent(String(describing: edge))
+            let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
+            try await seedDeclaredQuota(helper: helper, profile: root, environment: environment, plan: "synthetic-d08")
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             _ = try await store.update {
                 $0.dockDisplayID = display.id; $0.dockEdge = preference; $0.autoHide = true
             }
-            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
-                applicationVersion: "d08-inner-edge", allowedEnvironment: [:]), settingsStore: store,
-                createsNativePanels: false, dockEnvironment: {
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: helper,
+                applicationVersion: "d08-inner-edge", allowedEnvironment: environment, offline: true, readOnly: true),
+                settingsStore: store, createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: {
                     .init(displays: [primary, right, below], layouts: [], primaryDisplayID: primary.id, pointer: pointer)
                 }, activateSettings: {})
             addTeardownBlock { @MainActor in await app.composition.stop() }
+            let clock = DockVisibilityTestClock()
+            EngineRowsEntry.installDockVisibilityTimingForChecks(on: app, clock: { clock.now }, scheduler: clock)
             await app.prepare()
             app.allowDockPresentation()
+            let delivery = try await app.composition.client.start()
             let host = app.composition.dock
+            func reading() -> Double? {
+                host.dockView.presentedReadingsForChecks.values.first?.remainingPercent
+            }
+            let rowsDeadline = ContinuousClock.now + .seconds(5)
+            while reading() != 57 && ContinuousClock.now < rowsDeadline { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(reading(), 57, label)
             let initial = try XCTUnwrap(host.edgePresentation?.placement, label)
             XCTAssertEqual(host.edgePresentation?.state, .sliver, label)
             XCTAssertEqual(initial.edge, edge, label)
@@ -696,8 +710,7 @@ import ModelPlanShell
             XCTAssertFalse(display.frame.contains(across), label)
             pointer = across
             host.refreshPresence()
-            try await Task.sleep(for: .milliseconds(before.preferences.revealMilliseconds + 50))
-            host.refreshPresence()
+            clock.advance(by: Double(before.preferences.revealMilliseconds + 50) / 1000)
             XCTAssertEqual(host.edgePresentation?.state, .sliver, "Neighbour-side control: " + label)
 
             pointer = middle
@@ -708,25 +721,25 @@ import ModelPlanShell
             XCTAssertTrue(initial.wakeFrame.contains(onStrip), label)
             pointer = onStrip
             host.refreshPresence()
-            let revealDeadline = ContinuousClock.now + .seconds(2)
-            while host.edgePresentation?.state != .expanded && ContinuousClock.now < revealDeadline {
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            clock.advance(by: Double(before.preferences.revealMilliseconds - 1) / 1000)
+            XCTAssertEqual(host.edgePresentation?.state, .sliver, label)
+            clock.advance(by: 0.002)
             XCTAssertEqual(host.edgePresentation?.state, .expanded, label)
             XCTAssertEqual(host.edgePresentation?.placement, initial, label)
             XCTAssertEqual(host.edgePresentation?.paintedFrame, initial.frame, label)
             XCTAssertTrue(display.usableFrame.contains(initial.frame), label)
-            try await Task.sleep(for: .milliseconds(550))
+            clock.advance(by: 0.55)
             XCTAssertEqual(host.edgePresentation?.state, .expanded, "The inner wake band counts as inside: " + label)
 
             pointer = middle
             host.refreshPresence()
-            let collapseDeadline = ContinuousClock.now + .seconds(2)
-            while host.edgePresentation?.state != .sliver && ContinuousClock.now < collapseDeadline {
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            clock.advance(by: 0.499)
+            XCTAssertEqual(host.edgePresentation?.state, .expanded, label)
+            clock.advance(by: 0.002)
             XCTAssertEqual(host.edgePresentation?.state, .sliver, label)
             XCTAssertEqual(host.edgePresentation?.paintedFrame, initial.sliverFrame, label)
+            XCTAssertEqual(reading(), 57, label)
+            XCTAssertEqual(app.composition.store.snapshot.delivery, delivery, label)
             let after = await store.snapshot()
             XCTAssertEqual(after.revision, before.revision, label)
             XCTAssertEqual(try Data(contentsOf: url), bytes, label)
@@ -735,6 +748,7 @@ import ModelPlanShell
                 "onStripPointer": NSStringFromPoint(onStrip), "neighbourControlPointer": NSStringFromPoint(across),
                 "stripFrame": NSStringFromRect(initial.sliverFrame), "wakeFrame": NSStringFromRect(initial.wakeFrame),
                 "expandedFrame": NSStringFromRect(initial.frame), "settingsRevision": after.revision,
+                "remainingPercent": try XCTUnwrap(reading()),
             ])
             await app.composition.stop()
         }
@@ -764,36 +778,38 @@ import ModelPlanShell
     }
     #endif
 
+    private func seedDeclaredQuota(helper: URL, profile: URL, environment: [String: String], plan: String) async throws {
+        let config = profile.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        let seed = Process()
+        seed.executableURL = helper
+        seed.arguments = ["consent", "init", "--json"]
+        seed.environment = environment
+        seed.standardInput = FileHandle.nullDevice
+        seed.standardOutput = FileHandle.nullDevice
+        seed.standardError = FileHandle.nullDevice
+        try seed.run()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while seed.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        if seed.isRunning { seed.terminate(); throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Temporary consent initialization timed out"]) }
+        XCTAssertEqual(seed.terminationStatus, 0)
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        let fixture: [String: Any] = ["schemaVersion": 1, "plans": [["planId": plan]], "windows": [[
+            "planId": plan, "kind": "five_hour", "remainingPercent": 57, "resetMode": "rolling",
+            "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+            "resetAt": iso.string(from: now.addingTimeInterval(7_200))
+        ]]]
+        try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)
+    }
+
     private func exerciseD06(helper: URL?) async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let storedURL = profile.appendingPathComponent("ModelPlan/settings.json")
         let environment = ["HOME": profile.path, "TMPDIR": profile.path, "PATH": "/usr/bin:/bin", "LANG": "C"]
-        if let helper {
-            let config = profile.appendingPathComponent(".config/modelplan")
-            try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
-            let seed = Process()
-            seed.executableURL = helper
-            seed.arguments = ["consent", "init", "--json"]
-            seed.environment = environment
-            seed.standardInput = FileHandle.nullDevice
-            seed.standardOutput = FileHandle.nullDevice
-            seed.standardError = FileHandle.nullDevice
-            try seed.run()
-            let deadline = ContinuousClock.now + .seconds(5)
-            while seed.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-            if seed.isRunning { seed.terminate(); return XCTFail("Temporary consent initialization timed out") }
-            XCTAssertEqual(seed.terminationStatus, 0)
-            let now = Date()
-            let iso = ISO8601DateFormatter()
-            let fixture: [String: Any] = ["schemaVersion": 1, "plans": [["planId": "synthetic-d06"]], "windows": [[
-                "planId": "synthetic-d06", "kind": "five_hour", "remainingPercent": 57, "resetMode": "rolling",
-                "observedAt": iso.string(from: now.addingTimeInterval(-10)),
-                "resetAt": iso.string(from: now.addingTimeInterval(7_200))
-            ]]]
-            try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)
-        }
+        if let helper { try await seedDeclaredQuota(helper: helper, profile: profile, environment: environment, plan: "synthetic-d06") }
 
         func launch() async throws -> EngineDockMenuApplication {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])

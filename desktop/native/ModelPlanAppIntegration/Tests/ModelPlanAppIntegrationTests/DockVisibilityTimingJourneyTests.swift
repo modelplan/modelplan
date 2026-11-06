@@ -6,7 +6,7 @@ import ModelPlanSettings
 import XCTest
 @testable import ModelPlanAppIntegration
 
-@MainActor private final class DockVisibilityTestClock: DockEdgeScheduling {
+@MainActor final class DockVisibilityTestClock: DockEdgeScheduling {
     private(set) var now: TimeInterval = 0
     private(set) var deadline: TimeInterval?
     private var action: (@MainActor () -> Void)?
@@ -19,6 +19,14 @@ import XCTest
     func cancel() {
         deadline = nil
         action = nil
+    }
+
+    func advance(by duration: TimeInterval) {
+        let end = now + duration
+        while let deadline, deadline <= end {
+            advance(to: deadline)
+        }
+        advance(to: end)
     }
 
     func advance(to time: TimeInterval) {
