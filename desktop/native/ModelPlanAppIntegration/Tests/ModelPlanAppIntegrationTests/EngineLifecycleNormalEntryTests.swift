@@ -475,7 +475,11 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertEqual(app.composition.dock.dockView.layer?.contentsScale, 1)
         XCTAssertEqual(resized.edge, .bottom)
         XCTAssertEqual(resized.alongFraction, 0.62, accuracy: 0.001)
-        XCTAssertNotEqual(resized.frame.size, before.frame.size)
+        // A resolution change need not cross a logical size band. Backing scale and
+        // the resized display's anchor must still be applied to the live placement.
+        XCTAssertNotEqual(resized.frame.minX, before.frame.minX)
+        XCTAssertEqual(resized.frame.minY, topology.primary.visibleFrame.minY, accuracy: 0.5)
+        XCTAssertTrue(topology.primary.visibleFrame.contains(resized.frame))
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
         workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
