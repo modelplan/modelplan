@@ -244,7 +244,14 @@ public struct DockSliverResolvedColorSegment: Equatable {
     }
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
-    public override func mouseDown(with event:NSEvent){if !failed,!isHiddenOrHasHiddenAncestor{onReveal?()}}
+    public override func mouseDown(with event:NSEvent) {
+        guard !failed, !isHiddenOrHasHiddenAncestor else { return }
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
+        onReveal?()
+    }
     public func dispose(){
         failed=true;quotaDrawing=[];noticeMarks=[];onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0
         setAccessibilityElement(false);setAccessibilityEnabled(false);setAccessibilityLabel(nil);needsDisplay=true

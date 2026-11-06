@@ -7,7 +7,8 @@ Design source: `design/dock-pulse-defaults-20261027`,
 
 - SPEC §2.2: Settings selects one language for visible labels and row reasons.
 - SPEC §3.6: placement changes persist through the shared Settings editor;
-  context actions are Open Cockpit, Settings, Hide Quota Widget.
+  context actions are Open Cockpit, Settings, Close, and Hide Quota Widget.
+  The hover card pairs Settings and Close. The paused menu retains Close and Quit.
 - SPEC decided menu-bar icon / task 53: cap the template image at 16 pt and
   at the actual bar thickness. Do not resize the source resource.
 - SPEC §6.6, lines 372–377: Website, Methodology, Privacy, Check for updates,

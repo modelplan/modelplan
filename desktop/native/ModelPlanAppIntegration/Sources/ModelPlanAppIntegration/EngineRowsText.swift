@@ -7,6 +7,8 @@ enum EngineRowsText {
     static let hideQuotaWidget = SettingsText("Hide Quota Widget", "隐藏额度挂件")
     static let refresh = SettingsText("Refresh", "刷新")
     static let settings = SettingsText("Settings…", "设置…")
+    static let contextSettings = SettingsText("Settings", "设置")
+    static let contextClose = SettingsText("Close", "关闭")
     static let cockpitMenu = SettingsText("Cockpit…", "驾驶舱…")
     static let cockpitAction = SettingsText("Cockpit", "驾驶舱")
     static let openCockpit = SettingsText("Open cockpit", "打开驾驶舱")
