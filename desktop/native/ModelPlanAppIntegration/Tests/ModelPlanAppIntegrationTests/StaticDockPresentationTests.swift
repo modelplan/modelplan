@@ -157,22 +157,37 @@ import ModelPlanSettings
         XCTAssertEqual(c.latest?.snapshot.preferences.redBelow, 25)
         XCTAssertFalse(try XCTUnwrap(c.latest).snapshot.preferences.followActiveDisplay)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        for threshold in [25, 20] {
-            try await c.commit(.redBelow(threshold))
-            let app = try XCTUnwrap(c.latest)
+        func assertBoundary(_ app: SettingsApplication, threshold: Int, line: UInt = #line) throws {
             for remaining in [Double(threshold) - 0.01, Double(threshold), Double(threshold) + 0.01] {
                 var input = DockInstrumentInput(id: "fixture", name: "Synthetic only", windows: [
                     .init(id: "reported", period: .fiveHour, label: "5h", remainingPercent: remaining,
                           resetsAt: now.addingTimeInterval(300), durationSeconds: 18000)])
                 input.dataState = .fresh
                 let reading = try app.dockReading(for: input, at: now)
-                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .warning)
-                XCTAssertEqual(reading.outer?.status, reading.status)
+                XCTAssertEqual(reading.status, remaining <= Double(threshold) ? .critical : .warning, line: line)
+                XCTAssertEqual(reading.outer?.status, reading.status, line: line)
             }
+        }
+        XCTAssertEqual(SettingsPreferences.redBelowChoices, [40, 30, 25, 20, 15, 10])
+        for threshold in [40, 30, 25, 20, 15, 10] {
+            try await c.commit(.redBelow(threshold))
+            try assertBoundary(XCTUnwrap(c.latest), threshold: threshold)
             let restarted = try SettingsStore(url: url)
             let saved = await restarted.snapshot()
             XCTAssertEqual(saved.preferences.redBelow, threshold)
         }
+
+        let legacy = try SettingsStore(url: url)
+        try await legacy.update { $0.redBelow = 16 }
+        let before = try Data(contentsOf: url)
+        let restored = SettingsApplicationCoordinator(store: try SettingsStore(url: url)) { _ in }
+        await restored.reload()
+        let effective = try XCTUnwrap(restored.latest)
+        XCTAssertEqual(effective.snapshot.preferences.redBelow, 16)
+        XCTAssertEqual(effective.effective.redBelow, 25)
+        try assertBoundary(effective, threshold: 25)
+        XCTAssertEqual(try Data(contentsOf: url), before)
+
     }
 
 }

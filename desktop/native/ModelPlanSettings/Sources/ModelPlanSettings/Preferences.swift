@@ -65,6 +65,9 @@ public struct ShortcutChord: Codable, Equatable, Sendable {
 /// App-owned choices only: no CLI snapshots, credentials, raw errors or inferred login/authorization state.
 /// The file is separate from Core's CommunityPreferences (locale/favourites); neither store overwrites the other.
 public struct SettingsPreferences: Codable, Sendable {
+    public static let redBelowChoices = [40, 30, 25, 20, 15, 10]
+    /// Preserve an existing stored value while projecting the supported v1 default.
+    public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var theme: SettingsTheme = .system
     public var size: SettingsSize = .medium
     public var motion: AccessibilityPreference = .system
@@ -141,7 +144,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public func validate() throws {
         func validID(_ id: String) -> Bool { !id.isEmpty && id.utf8.count <= 256 && !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
         guard dockAlongFraction.isFinite, (0...1).contains(dockAlongFraction), dockDisplayID.map(validID) ?? true,
-              [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
+              (0...100).contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
               [150, 200, 250].contains(beatMilliseconds),
               openShortcut.isValid || openShortcut.isUnassigned, dockShortcut.isValid || dockShortcut.isUnassigned,
               openShortcut.isUnassigned || dockShortcut.isUnassigned || openShortcut != dockShortcut,
