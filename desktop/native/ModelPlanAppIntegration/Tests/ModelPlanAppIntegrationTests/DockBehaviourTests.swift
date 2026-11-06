@@ -210,12 +210,12 @@ import ModelPlanSettings
             func gesture(_ local: CGPoint, to end: CGPoint, release: Bool = true) throws {
                 let start = panel.convertPoint(toScreen: view.convert(local, to: nil))
                 f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
-                view.mouseDown(with: try f.event(.leftMouseDown, global: start))
+                panel.sendEvent(try f.event(.leftMouseDown, global: start))
                 f.inputs.pointer = end
-                view.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
+                panel.sendEvent(try f.event(.leftMouseDragged, global: end))
                 if release {
                     f.inputs.presence.mouseButtonDown = false
-                    view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+                    panel.sendEvent(try f.event(.leftMouseUp, global: end))
                 }
             }
             let end = CGPoint(x: 1, y: 450)
@@ -236,9 +236,11 @@ import ModelPlanSettings
             XCTAssertNotEqual(panel.frame, originalFrame)
             XCTAssertTrue(panel.isVisible)
             XCTAssertEqual(panel.frame, f.host.edgePresentation?.paintedFrame)
+            // The drag crosses to an alternate edge view. AppKit still sends the release to the panel.
+            XCTAssertNil(view.window)
             f.inputs.presence.mouseButtonDown = false
-            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
-            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+            panel.sendEvent(try f.event(.leftMouseUp, global: end))
+            panel.sendEvent(try f.event(.leftMouseUp, global: end))
             XCTAssertEqual(commits.count, 1, "a completed native gesture commits once")
             XCTAssertFalse(f.host.edgePresentation?.moving ?? true)
             let commit = try XCTUnwrap(commits.first)
@@ -254,7 +256,7 @@ import ModelPlanSettings
             let restoredPanel = try restored.panel()
             XCTAssertEqual(restoredPanel.frame, savedFrame)
             restored.host.close(); XCTAssertFalse(restoredPanel.isVisible)
-            print("raster-host scale=\(scale) default-M44-right reveal=150ms preview=visible non-intercepting drop=1 restored=true closed=true")
+            print("raster-host scale=\(scale) default-M44-right reveal=150ms carry=visible non-intercepting drop=1 restored=true closed=true")
         }
     }
 
@@ -376,13 +378,13 @@ import ModelPlanSettings
         // This gesture targets the left edge, beside the macOS Dock.
         let end = CGPoint(x: 1, y: 450)
         f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
-        f.host.dockView.mouseDown(with: try f.event(.leftMouseDown, global: start))
+        panel.sendEvent(try f.event(.leftMouseDown, global: start))
         f.inputs.pointer = end
-        f.host.dockView.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
+        panel.sendEvent(try f.event(.leftMouseDragged, global: end))
         XCTAssertEqual(f.host.edgePresentation?.moving, true)
         XCTAssertEqual(f.host.edgePresentation?.placement?.edge, .left)
         f.inputs.presence.mouseButtonDown = false
-        f.host.dockView.mouseUp(with: try f.event(.leftMouseUp, global: end))
+        panel.sendEvent(try f.event(.leftMouseUp, global: end))
         XCTAssertEqual(commits.count, 1)
         let commit = try XCTUnwrap(commits.first)
         try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
