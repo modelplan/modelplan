@@ -21,7 +21,9 @@ import ModelPlanSettings
     }
 
     func testV14NormalEntryPaintsFivePointResetInkInBothPercentageModes() async throws {
-        try await exercise(native: false, measureFace: true)
+        for edge in [SettingsDockEdge.left, .right, .bottom] {
+            try await exercise(native: false, measureFace: true, captureEdge: edge)
+        }
     }
 
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
@@ -34,7 +36,8 @@ import ModelPlanSettings
     }
     #endif
 
-    private func exercise(native: Bool, physical: Bool = false, measureFace: Bool = false) async throws {
+    private func exercise(native: Bool, physical: Bool = false, measureFace: Bool = false,
+                          captureEdge: SettingsDockEdge = .right) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -129,7 +132,10 @@ import ModelPlanSettings
             $0.notifications.optedIn = true
             $0.notifications.kinds = [.official]
             if physical { $0.onboarding.next() }
-            if measureFace { $0.size = .large }
+            if measureFace {
+                $0.size = .large
+                $0.dockEdge = captureEdge
+            }
         }
         let dockEnvironment: (@MainActor () -> DockEdgeEnvironment)?
         if physical {
@@ -229,10 +235,24 @@ import ModelPlanSettings
                 let skin = try XCTUnwrap(view.presentedSkinForChecks)
                 let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == member })
                 XCTAssertEqual(station.diameter, 52, accuracy: 0.001)
+                let expectedEdge: DockEdge = captureEdge == .left ? .left : captureEdge == .bottom ? .bottom : .right
+                XCTAssertEqual(dock.edgePresentation?.placement?.edge, expectedEdge)
+                if !percentages {
+                    XCTAssertEqual(station.eventRect.midX, station.centre.x + 13, accuracy: 0.001)
+                    XCTAssertEqual(station.eventRect.midY, station.centre.y - 52 * 0.433013, accuracy: 0.001)
+                }
                 let image = try XCTUnwrap(view.presentedImageForChecks)
                 let region = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
                     .applying(.init(scaleX: 2, y: 2)).integral
                 let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: region)))
+                if let path = ProcessInfo.processInfo.environment["MODELPLAN_V14_CAPTURE_DIR"] {
+                    let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+                    let crop = try XCTUnwrap(image.cropping(to: region.insetBy(dx: -8, dy: -8).intersection(bounds)))
+                    let context = NSBitmapImageRep(cgImage: crop)
+                    let png = try XCTUnwrap(context.representation(using: .png, properties: [:]))
+                    let name = "\(captureEdge.rawValue)-\(kind)-\(percentages ? "readout" : "rim").png"
+                    try png.write(to: URL(fileURLWithPath: path).appendingPathComponent(name))
+                }
                 var blue: [CGPoint] = []
                 for y in 0..<bitmap.pixelsHigh {
                     for x in 0..<bitmap.pixelsWide {
@@ -247,7 +267,7 @@ import ModelPlanSettings
                 let minX = try XCTUnwrap(blue.map(\.x).min()), maxX = try XCTUnwrap(blue.map(\.x).max())
                 let minY = try XCTUnwrap(blue.map(\.y).min()), maxY = try XCTUnwrap(blue.map(\.y).max())
                 let width = maxX - minX + 1, height = maxY - minY + 1
-                print("V-14 \(kind) percentages=\(percentages) blue backing pixels \(width)×\(height)")
+                print("V-14 \(captureEdge.rawValue) \(kind) percentages=\(percentages) blue backing pixels \(width)×\(height)")
                 XCTAssertGreaterThanOrEqual(max(width, height), 8)
                 XCTAssertLessThanOrEqual(max(width, height), 11, "Five logical points with up to one backing pixel of sampling tolerance")
             }
