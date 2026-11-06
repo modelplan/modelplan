@@ -218,6 +218,39 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
     private var noticePulseLayers = [CALayer]()
+    /// M-1: the ring whose card is open glows softly outside its rim (colour and blur are an
+    /// appearance input). Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:68 (.dk-n.hot).
+    private var hotGlow: CALayer?
+    @_spi(DockResourceChecks) public private(set) var hotNozzleForChecks: String?
+    public func setHotNozzle(_ id: String?, glow colour: CGColor? = nil, blur: CGFloat = 7) {
+        guard id != hotNozzleForChecks || (id != nil && hotGlow == nil) else { return }
+        hotGlow?.removeFromSuperlayer(); hotGlow = nil; hotNozzleForChecks = nil
+        guard let id, let colour, blur.isFinite, blur > 0, !failed, !community, let root = layer,
+              let station = skin?.stations.first(where: { $0.subscriptionID == id }) else { return }
+        let size = station.diameter, room = blur * 2
+        let glow = CALayer()
+        glow.frame = CGRect(x: station.centre.x - size / 2 - layoutOrigin.x - room, y: station.centre.y - size / 2 - layoutOrigin.y - room,
+                            width: size + 2 * room, height: size + 2 * room)
+        let disc = CGRect(x: room, y: room, width: size, height: size)
+        glow.shadowPath = CGPath(ellipseIn: disc, transform: nil)
+        glow.shadowColor = colour.copy(alpha: 1)
+        glow.shadowOpacity = Float(colour.alpha)
+        glow.shadowRadius = blur / 2
+        glow.shadowOffset = .zero
+        // Only the halo outside the rim: the shadow never washes over the ring art itself.
+        let mask = CAShapeLayer()
+        let outside = CGMutablePath(); outside.addRect(glow.bounds); outside.addEllipse(in: disc)
+        mask.path = outside; mask.fillRule = .evenOdd
+        glow.mask = mask
+        glow.contentsScale = CGFloat(scale)
+        if let pose = nozzlePosesForChecks[id] {
+            glow.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y).scaledBy(x: pose.scale, y: pose.scale))
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        root.addSublayer(glow)
+        CATransaction.commit()
+        hotGlow = glow; hotNozzleForChecks = id
+    }
     @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
@@ -408,7 +441,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         needsDisplay = true
     }
     public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Draws only the changed pose over the existing static material. The model, registered
     /// pointer targets, readout geometry and refresh cadence remain in their original basis.
@@ -430,6 +463,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             imageUsesHoverViewport = usesViewport
         } else { refreshSweepOriginal = (painted, usesViewport) }
         CATransaction.begin(); CATransaction.setDisableActions(true)
+        if let hotGlow, let id = hotNozzleForChecks {
+            if let pose = poses[id] {
+                hotGlow.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y).scaledBy(x: pose.scale, y: pose.scale))
+            } else { hotGlow.setAffineTransform(.identity) }
+        }
         for (id, layer) in workingLayerParents {
             if let pose = poses[id] {
                 layer.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y)

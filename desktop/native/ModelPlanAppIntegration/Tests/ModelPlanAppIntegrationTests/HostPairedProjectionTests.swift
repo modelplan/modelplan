@@ -867,9 +867,12 @@ actor EntrySyntheticClient: EngineClient {
         func buttons(_ root: NSView) -> [NSButton] {
             (root as? NSButton).map { [$0] } ?? root.subviews.flatMap(buttons)
         }
-        let stack = try XCTUnwrap(dock.card.subviews.compactMap { $0 as? NSStackView }.first)
+        // Links flow in reading order: top to bottom, then left to right.
         func arrangedLinkLabels() -> [String] {
-            stack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title }
+            dock.card.subviews.compactMap { $0 as? NSButton }
+                .filter { $0.accessibilityIdentifier().hasPrefix("dock.card.link.") }
+                .sorted { $0.frame.minY != $1.frame.minY ? $0.frame.minY < $1.frame.minY : $0.frame.minX < $1.frame.minX }
+                .map(\.title)
         }
         XCTAssertEqual(arrangedLinkLabels(), content.links.map(\.label))
         let official = try XCTUnwrap(buttons(dock.card).first { $0.title == "Official source" })
