@@ -3,16 +3,24 @@
 import AppKit
 import CryptoKit
 import Foundation
+import ModelPlanCockpitWeb
+import ModelPlanWire
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
-@MainActor private final class ResetCockpitProbe: EngineRowsConsoleSurface {
-    private(set) var shown = false
-    func show() { shown = true }
-    func hide() {}
-    func render() {}
+@MainActor private final class ResetCockpitPage: CockpitPageSurface {
+    let queryTicket: CockpitQueryTicket? = nil
+    var onReady: (() -> Void)?
+    var onIntent: ((CockpitIntent) -> Void)?
+    var onClosed: (() -> Void)?
+    private(set) var visible = false
+
+    func open() { visible = true }
+    func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {}
+    func clearPrivateViews(adopting: CockpitEngineContext?) async {}
+    func discard() { visible = false; onClosed?() }
 }
 
 @MainActor final class DockResetRealServerTests: XCTestCase {
@@ -185,13 +193,22 @@ import ModelPlanSettings
             dockEnvironment = normalEntryTestEnvironment
         }
         var wall = now
-        let cockpit = ResetCockpitProbe()
+        let page = ResetCockpitPage()
+        let cockpit = EngineCockpitCoordinator { _ in page }
+        let owner = CockpitConsoleOwner(bundle: root, settingsStore: store)
+        owner.coordinator = cockpit
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d21",
             allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
-            dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
+            dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { composition in
+                SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { false }, activate: {})
+            },
             isolatedResetNotificationLedger: root.appendingPathComponent("test-notifications.json"), activateSettings: {})
-        addTeardownBlock { @MainActor in await app.composition.stop() }
+        addTeardownBlock { @MainActor in
+            await cockpit.shutdown()
+            await app.composition.stop()
+        }
+        cockpit.bind(client: app.composition.client)
         await app.prepare()
         XCTAssertNil(app.loginServiceAdapter)
         XCTAssertNil(app.notificationAuthorizationService)
@@ -300,10 +317,24 @@ import ModelPlanSettings
         try await wait("A distinct event receives its own delivery") { delivered == [eventID, expiryID] }
         let expiringNotice = try XCTUnwrap(face())
         XCTAssertEqual(app.noticeIndicator.notice, expiringNotice)
+        let beforeCockpit = try XCTUnwrap(dock.edgePresentation?.placement)
+        let beforeCockpitSettings = await store.snapshot()
+        await cockpit.consume(.context(delivery))
         app.showConsole()
-        XCTAssertTrue(cockpit.shown)
+        XCTAssertNil(dock.edgePresentation?.paintedFrame, "Opening the cockpit withdraws the widget synchronously")
         XCTAssertNil(app.noticeIndicator.notice)
-        XCTAssertEqual(try strip().noticeMarks.first?.notice, expiringNotice)
+        try await wait("The real cockpit coordinator opens the detached page") { page.visible }
+        XCTAssertNil(dock.edgePresentation?.paintedFrame)
+        cockpit.requestClose()
+        XCTAssertFalse(page.visible)
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, beforeCockpit.sliverFrame)
+        XCTAssertNil(app.noticeIndicator.notice, "Closing does not undo the menu acknowledgement")
+        XCTAssertEqual(try strip().noticeMarks.first?.notice, expiringNotice, "Opening the cockpit acknowledges only the menu notice")
+        XCTAssertEqual(face(), expiringNotice)
+        let afterCockpitSettings = await store.snapshot()
+        XCTAssertEqual(afterCockpitSettings.revision, beforeCockpitSettings.revision)
+        XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
         wall = now.addingTimeInterval(61)
         dock.refreshDockContent()
         XCTAssertNil(face())
