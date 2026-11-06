@@ -43,7 +43,7 @@ func Definitions() []ScopeDefinition {
 		// Claude Code's own saved login is a standard route too (owner decision D27,
 		// 2026-11-06, G3-19): read without a consent click. On macOS that login lives in
 		// the Keychain, whose read keeps its own recorded choice, so no Keychain prompt
-		// appears by default; the reader reports the Keychain next step instead.
+		// appears by default; a Keychain-only login waits for that choice.
 		if id == ScopeClaudeAccountUsageSavedLogin {
 			d.DefaultCheck = true
 		}
