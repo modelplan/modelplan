@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 BIN = Path(__file__).resolve().parent
 sys.path.insert(0, str(BIN))
@@ -58,6 +59,10 @@ EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 
 class NotRun(Exception):
     """This ID cannot run here; the reason goes into results.txt."""
+
+
+# What Session.await_subject produces for one launch; Session.relaunch swaps exactly these fields.
+RELAUNCH_IDENTITY = ('pid', 'bundle', 'home', 'registeredAt')
 
 
 def supervisor_state(subject, now):
@@ -128,12 +133,29 @@ def seconds(ids, steps):
     return SEGMENT_OVERHEAD + sum(steps[i]['estimatedSeconds'] for i in ids)
 
 
+def status_menu_plan(ctx, subject, item, action, output, arrivals, now=None, request_id=None):
+    """The pointer_drive --status-menu-plan payload for one fixed action. Its shape is the
+    producer-to-helper contract (StatusMenu/README.md): identity, lease/stop, the subject's exact
+    PID and bundle, the arrivals file to correlate, and the request window; synthetic profile only."""
+    now = time.time() if now is None else now
+    return dict(profile=ctx['profile'], runID=subject['runID'], epoch=subject['epoch'],
+                lease=subject['leasePath'], stop=subject['stopPath'], output=str(output),
+                subjectPID=subject['pid'], subjectBundle=subject['bundle'],
+                allowedRectangles=[], steps=[],
+                statusMenu=dict(itemName=item, openMenu=True, timeoutSeconds=10, arrivals=arrivals,
+                                request=dict(profile=ctx['profile'], runID=subject['runID'],
+                                             epoch=subject['epoch'], subjectPID=subject['pid'],
+                                             requestID=request_id or str(uuid.uuid4()).upper(), action=action,
+                                             notBefore=now - 1, expiresAt=now + 30)))
+
+
 class Actions:
     """Real step actions on macOS. Each returns a step record or raises NotRun / StopRun."""
 
     def __init__(self, ctx):
         self.ctx = ctx
         self.probe = None
+        self.relauncher = None  # the live segment's same-HOME respawn seam, set by execute()
 
     def ensure_probe(self):
         if self.probe is None:
@@ -221,13 +243,48 @@ title: n.isNil() ? null : ObjC.unwrap(n)}); } JSON.stringify(out);"""
 
     def status_menu(self, subject, item, action, directory):
         if action not in verify_steps.STATUS_MENU_ACTIONS:
-            raise NotRun(f'status-menu-action-{action}-has-no-arrival-receipt')
-        # The fixed actions need pointer_drive --status-menu-plan plus the in-app arrival observer, which only a
-        # test build compiled with MODELPLAN_TEST_ONLY_SPI carries (StatusMenu/README.md). Not wired here yet.
-        raise NotRun('status-menu-drive-not-wired')
+            # hide/show have no fixed action ID in the app's menu (StatusMenuAction carries only
+            # refresh/settings/console/quit); see VERIFY-RUN.md before adding one.
+            raise NotRun(f'status-menu-action-{action}-has-no-fixed-action-id')
+        if self.ctx['profile'] != 'synthetic':
+            # The drive helper and the arrival observer validate synthetic plans only
+            # (status_menu_drive.swift, MenuContract.swift); a real-profile menu step is NOT-RUN.
+            raise NotRun('status-menu-synthetic-only')
+        helper = os.environ.get('MODELPLAN_VERIFICATION_POINTER_DRIVE', '')
+        arrivals = os.environ.get('MODELPLAN_VERIFICATION_ARRIVALS', '')
+        # The lane builds pointer_drive with the StatusMenu sources during host preparation
+        # (StatusMenu/README.md); the arrivals file is the subject's own native observation JSONL.
+        # A release build carries no observer, so without both the ID is NOT-RUN, never guessed.
+        if not helper or not Path(helper).is_file():
+            raise NotRun('status-menu-pointer-helper-not-built-on-this-host')
+        if not arrivals or not Path(arrivals).is_file():
+            raise NotRun('status-menu-arrivals-observer-not-configured-on-this-host')
+        for key in ('runID', 'epoch', 'leasePath', 'stopPath'):
+            if not subject.get(key):
+                raise NotRun('status-menu-needs-a-live-segment')
+        directory.mkdir(parents=True, exist_ok=False)
+        plan = status_menu_plan(self.ctx, subject, item, action, directory / 'menu-drive.jsonl', arrivals)
+        plan_path = directory / 'menu-plan.json'
+        plan_path.write_text(json.dumps(plan, indent=1, sort_keys=True))
+        result = subprocess.run([helper, '--status-menu-plan', str(plan_path)], capture_output=True, text=True, timeout=120)
+        rows = []
+        for line in (directory / 'menu-drive.jsonl').read_text().splitlines() if (directory / 'menu-drive.jsonl').exists() else []:
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                pass
+        outcome = next((r.get('outcome') for r in reversed(rows) if r.get('event') == 'status-menu-result'
+                        or r.get('type') == 'status-menu-result'), None)
+        if result.returncode != 0 or outcome != 'arrived':
+            raise NotRun(f'status-menu-outcome-{outcome or "no-result"}')
+        return dict(plan=plan_path.name, rows=len(rows))
 
     def relaunch(self, subject):
-        raise NotRun('relaunch-with-the-same-home-not-supported-by-packaged_candidate')
+        """Respawn the segment's subject with the same HOME, environment and argv (direct mode).
+        Returns the new subject identity for the steps that follow."""
+        if self.relauncher is None:
+            raise NotRun('relaunch-needs-a-live-direct-mode-segment')
+        return self.relauncher(subject)
 
     def sleep(self, value):
         time.sleep(value)
@@ -252,6 +309,7 @@ class Session:
         self.ctx, self.segment, self.index = ctx, segment, index
         self.procs = {}
         self.booking = None
+        self.relaunch_token = 0
 
     def tool(self, name, *args, capture=True):
         result = subprocess.run([sys.executable, str(BIN / name), *args], capture_output=capture, text=True, timeout=120)
@@ -261,9 +319,6 @@ class Session:
 
     def open(self):
         ctx = self.ctx
-        if ctx['profile'] != 'synthetic':
-            # The shared launch helpers (admission, launch.py, packaged_candidate) admit only profile synthetic.
-            raise NotRun('real-profile-launch-not-supported-by-shared-helpers')
         lane, minutes = ctx['lane'], min(20, math.ceil(seconds(self.segment['ids'], ctx['steps']) / 60))
         local = Path(ctx['scratchParent']) / f'verify-{ctx["batch"]}-{self.index:02d}-{secrets.token_hex(4)}'
         local.mkdir()
@@ -281,12 +336,17 @@ class Session:
                           '--epoch', self.epoch)
         self.started = True
         paths = {k: str(local / v) for k, v in (('leasePath', 'lease.json'), ('releasePath', 'release.json'),
-                 ('stopPath', 'STOP'), ('subjectPidPath', 'subject.json'), ('candidateCleanupReceipt', 'cleanup.json'))}
+                 ('stopPath', 'STOP'), ('subjectPidPath', 'subject.json'), ('candidateCleanupReceipt', 'cleanup.json'),
+                 ('relaunchPath', 'relaunch'))}
         Path(paths['leasePath']).write_text(json.dumps(lease))
         archive = Path(ctx['work']) / self.segment['flavour'] / preflight.INNER
         digest = preflight.sha256_file(archive)
         (local / 'pin.json').write_text(json.dumps(dict(sourceSHA=ctx['sha'], sha256=digest)))
-        template = dict(profile='synthetic', host=ctx['host'], launchMode='direct', requiredSeconds=60,
+        # The profile is the manifest's: synthetic segments get their throwaway HOME under the
+        # candidate scratch, real segments (M1/V1 only, gated in preflight and admission) keep the
+        # host user's HOME. Every guard (booking, guardian, release, single controller, cleanup)
+        # is identical for both profiles.
+        template = dict(profile=ctx['profile'], host=ctx['host'], launchMode='direct', requiredSeconds=60,
                         expectedLease={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')},
                         booking=dict(id=self.booking, lane=lane, unit=ctx['batch'], scenario=self.segment['ids'][0]),
                         **paths)
@@ -311,24 +371,65 @@ class Session:
             [sys.executable, str(BIN / 'packaged_candidate.py'), 'run', '--registry', str(self.registry),
              '--receipt', str(local / 'candidate-receipt.json')],
             stdout=(local / 'launch.out').open('w'), stderr=subprocess.DEVNULL)
-        deadline = time.time() + 30
+        subject = self.await_subject(0, authority=dict(
+            leasePath=paths['leasePath'], stopPath=paths['stopPath'],
+            leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')}))
+        lease = json.loads(Path(paths['leasePath']).read_text())
+        subject.update(runID=self.run_id, epoch=self.epoch, leasePath=paths['leasePath'], stopPath=paths['stopPath'],
+                       leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+        return subject
+
+    def await_subject(self, token, deadline_seconds=30, authority=None):
+        """The running subject of launch token `token` (0: the first launch; n: the n-th relaunch).
+        The wait is a blocking probe of its own: with `authority` (the subject's supervisor paths and
+        lease snapshot), each poll re-reads the stop file, lease and heartbeat, and the wait aborts
+        the moment the supervisor withdraws the run — a relaunch must not confirm or keep a subject
+        alive for a stopped segment, and nothing after the wait captures or changes a profile
+        (macrevb-574-6: the same re-check #567 applies between blocking probes and captures)."""
+        deadline = time.time() + deadline_seconds
         while time.time() < deadline:
+            if authority is not None:
+                stopped = supervisor_state(authority, time.time())
+                if stopped:
+                    raise StopRun('supervisor-' + stopped)
             try:
-                record = json.loads(Path(paths['subjectPidPath']).read_text())
-                lines = [json.loads(x) for x in (local / 'launch.out').read_text().splitlines() if x.startswith('{')]
-                started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x), None)
-                if record.get('state') == 'running' and started:
-                    home = json.loads(self.registry.read_text())['registry']['root'] + '/home'
-                    lease = json.loads(Path(paths['leasePath']).read_text())
-                    return dict(pid=record['pid'], bundle=started['bundle'], home=home, registeredAt=time.time(),
-                                leasePath=paths['leasePath'], stopPath=paths['stopPath'],
-                                leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+                record = json.loads(Path(self.paths['subjectPidPath']).read_text())
+                lines = [json.loads(x) for x in (self.local / 'launch.out').read_text().splitlines() if x.startswith('{')]
+                wanted = token if token else None
+                started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x
+                                and (wanted is None or x.get('relaunch', 0) == wanted)), None)
+                if record.get('state') == 'running' and started and record.get('pid') == started.get('ownedPID'):
+                    if authority is not None:  # the reads above block too: re-check before confirming
+                        stopped = supervisor_state(authority, time.time())
+                        if stopped:
+                            raise StopRun('supervisor-' + stopped)
+                    return dict(pid=record['pid'], bundle=started['bundle'], home=started.get('home') or '',
+                                registeredAt=time.time())
             except (OSError, ValueError, KeyError):
                 pass
             if self.procs['run'].poll() is not None:
                 break
             time.sleep(0.2)
         raise StopRun('subject-never-registered')
+
+    def relaunch(self, subject):
+        """Ask launch.py's supervisor to respawn the subject with the same HOME, environment and
+        argv (direct mode, one supervised slot). The confirmation wait re-reads the supervisor
+        authority on every poll: a STOP that lands during the wait aborts the relaunch before any
+        further capture or profile change; the recorded baseline is still restored by the caller."""
+        self.relaunch_token += 1
+        Path(self.paths['relaunchPath']).write_text(str(self.relaunch_token))
+        authority = {k: subject[k] for k in ('leasePath', 'stopPath', 'leaseSnapshot') if k in subject}
+        fresh = self.await_subject(self.relaunch_token, deadline_seconds=60,
+                                   authority=authority or None)
+        # Producer/consumer contract (macrevb-574-8): the replacement is the original subject with
+        # only the launch identity swapped. Every field later steps and require_authority read
+        # (runID, epoch, supervisor paths and the ORIGINAL authorized lease snapshot) is carried
+        # unchanged; the snapshot is never re-read from the live lease, so a replaced lease still
+        # fails closed as lease-identity-changed.
+        updated = dict(subject)
+        updated.update({k: fresh[k] for k in RELAUNCH_IDENTITY})
+        return updated
 
     def close(self):
         """Stop, wait for both supervisors, finish only on confirmed closure. Returns a closure record."""
@@ -385,7 +486,9 @@ def check_markers(tree, ctx):
 
 
 def run_id(ident, step, segment, subject, ctx, actions, out):
-    """Execute one ID's steps. Returns (outcome, reason, receipt)."""
+    """Execute one ID's steps. Returns (outcome, reason, subject): a relaunch step replaces the
+    subject for this ID's later steps AND for the IDs that share its segment, so nothing after it
+    drives the terminated identity."""
     folder = out / ident
     folder.mkdir(exist_ok=True)
     records, outcome, reason, changed = [], 'PASS', None, []
@@ -439,13 +542,15 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 actions.set_appearance(item['value'])
                 changed.append(('appearance', ctx['baseline'].get('appearance', 'light')))  # only what actually changed
             elif kind == 'status-menu':
-                actions.status_menu(subject, item['item'], item['menuAction'], folder / label)
+                record.update(actions.status_menu(subject, item['item'], item['menuAction'], folder / label) or {})
             elif kind == 'relaunch':
-                actions.relaunch(subject)
+                subject = actions.relaunch(subject)
+                record.update(pid=subject['pid'], relaunchedAt=subject['registeredAt'], home=subject.get('home'))
             elif kind == 'dwell':
                 actions.sleep(item['seconds'])
             require_authority(subject, actions)  # after the step's blocking work, before completion
             after = actions.dialogs()
+            require_authority(subject, actions)  # the dialog query blocks too (osascript)
             fresh = [d for d in after if d not in before]
             if fresh:
                 titles = '; '.join(f'{d.get("owner")}: {d.get("title") or "(untitled)"}' for d in fresh)
@@ -453,7 +558,6 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 if ctx['profile'] == 'real' and all(d.get('owner') in KEYCHAIN_OWNERS for d in fresh):
                     raise NotRun('keychain-prompt-open-grant-it-during-host-setup')
                 raise StopRun('system-dialog: ' + titles, isolation=ctx['profile'] == 'synthetic')
-            require_authority(subject, actions)  # the dialog query blocks too (osascript)
             if outcome == 'FAIL':
                 break
     except NotRun as error:
@@ -463,6 +567,9 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
             purge_captures(folder)
         restore(changed, actions, records)
         write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', str(error))
+        raise
+    except BaseException:
+        restore(changed, actions, records)  # any other exit still re-establishes the baseline
         raise
     failed = restore(changed, actions, records)
     if failed:  # the baseline was not re-established: a machine assertion, not a silent pass
@@ -475,7 +582,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
         write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', 'supervisor-' + stopped)
         raise StopRun('supervisor-' + stopped)
     write_receipt(folder, ident, ctx, segment, records, outcome, reason)
-    return outcome, reason
+    return outcome, reason, subject
 
 
 def purge_captures(folder):
@@ -582,13 +689,14 @@ def execute(manifest, *, lane, layout, ids, out, artifacts_dir, scratch_parent, 
                     results[ident] = ('NOT-RUN', segment['flavour'], 'run-stopped-' + stopped)
                 continue
             current = (session or Session)(ctx, segment, index)
+            actions.relauncher = getattr(current, 'relaunch', None)  # same-HOME respawn for `relaunch` steps
             try:
                 subject = current.open()
                 for ident in segment['ids']:
                     if stopped:
                         results[ident] = ('NOT-RUN', segment['flavour'], 'segment-stopped-' + stopped); continue
                     try:
-                        outcome, reason = run_id(ident, ctx['steps'][ident], segment, subject, ctx, actions, out)
+                        outcome, reason, subject = run_id(ident, ctx['steps'][ident], segment, subject, ctx, actions, out)
                         results[ident] = (outcome, segment['flavour'], reason)
                         if reason and str(reason).startswith('restore-failed'):
                             # The system baseline was not re-established: no later segment runs
