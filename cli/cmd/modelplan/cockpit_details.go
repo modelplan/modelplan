@@ -81,7 +81,15 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		}
 		if c := account.Credits; c != nil && !c.ObservedAt.IsZero() && !c.ObservedAt.After(now) && (c.Balance == nil || !math.IsNaN(*c.Balance) && !math.IsInf(*c.Balance, 0) && *c.Balance >= 0) {
 			if out.Credits == nil || c.ObservedAt.After(out.Credits.ObservedAt) {
-				out.Credits = &wire.CockpitCredits{Balance: c.Balance, ObservedAt: c.ObservedAt}
+				chosen := &wire.CockpitCredits{Balance: c.Balance, ObservedAt: c.ObservedAt}
+				if appserver.CockpitCreditUnitsEnabled(ctx) {
+					switch c.Unit {
+					case "money", "credits":
+						unit := wire.CockpitCreditUnit(c.Unit)
+						chosen.Unit = &unit
+					}
+				}
+				out.Credits = chosen
 			}
 		}
 	}

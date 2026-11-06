@@ -23,6 +23,22 @@ private struct CaptureIndex: Decodable {
 }
 
 final class DecodeTests: XCTestCase {
+    func testCockpitCreditUnitNullPolicy() throws {
+        var value = try object("WireCockpitCredits.json")
+        value.removeValue(forKey: "unit")
+        XCTAssertNoThrow(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
+        for unit in ["money", "credits"] {
+            value["unit"] = unit
+            XCTAssertNoThrow(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)))
+        }
+        value["unit"] = NSNull()
+        XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)), "explicit null")
+        value["unit"] = 7
+        XCTAssertThrowsError(try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value)), "wrong type")
+        value["unit"] = "bogus"
+        let future = try WireDecoder.decode(WireCockpitCredits.self, from: encoded(value))
+        XCTAssertEqual(future.unit, .unknown("bogus"), "future display enum")
+    }
     private var captures: URL {
         if let path = ProcessInfo.processInfo.environment["MODELPLAN_CAPTURE_DIR"] {
             return URL(fileURLWithPath: path)
@@ -115,7 +131,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 89)
+        XCTAssertEqual(fields, 90)
     }
 
     func testModelScopeAndResetEventsRejectMalformedValues() throws {

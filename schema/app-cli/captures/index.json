@@ -536,6 +536,14 @@
       "type": "WireCockpitCredits",
       "optional": [
         {
+          "field": "unit",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "balance",
           "omission": true,
           "null": true,

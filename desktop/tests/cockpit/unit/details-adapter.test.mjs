@@ -31,9 +31,25 @@ test('verified subscription preserves zero and unknown while ambiguity is withhe
  account.subscriptionRef=detail.subscriptionRef;d.subscriptions[0].subscriptionRef=detail.subscriptionRef;
  detail.today[0].bindingBasis='source-wide-current-binding';detail.today[0].observedOutputTokens=0;detail.today[0].generationTps=0;
  detail.credits.balance=0;detail.resetCounts[0].count=0;
- let out=prototypeEngineSupplement(account,d);assert.equal(out.todayTokens,0);assert.equal(out.todayAverageGenerationTps,0);assert.equal(out.reserveCredits.balance,0);assert.equal(out.resetCards[0].count,0);
+ let out=prototypeEngineSupplement(account,d);assert.equal(out.todayTokens,0);assert.equal(out.todayAverageGenerationTps,0);assert.equal(out.reserveCredits.balance,0);assert.equal(out.reserveCredits.unit,'money');assert.equal(out.resetCards[0].count,0);
+ delete detail.credits.unit;assert.equal(prototypeEngineSupplement(account,d).reserveCredits.unit,null);
  detail.today[0].generationTps=null;detail.credits.balance=null;detail.resetCounts[0].count=null;
  out=prototypeEngineSupplement(account,d);assert.equal(out.todayAverageGenerationTps,null);assert.equal(out.reserveCredits.balance,null);assert.equal(out.resetCards[0].count,null);
  detail.today.push({...detail.today[0],source:'another'});assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
  detail.today.pop();d.subscriptions=[];assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
+});
+
+test('forbidden-null fields reject explicit null while omission remains valid',()=>{
+ const d=withDetails();
+ delete d.details.subscriptions[0].resetCards;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),true);
+ d.details.subscriptions[0].resetCards=null;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),false);
+});
+
+test('credit unit rejects null and wrong types while allowing omission',()=>{
+ const d=withDetails(),credits=d.details.subscriptions[0].credits;
+ delete credits.unit;assert.equal(conforms(d,definitions.CockpitData,definitions),true);
+ for(const unit of ['money','credits']){credits.unit=unit;assert.equal(conforms(d,definitions.CockpitData,definitions),true);}
+ for(const unit of [null,7,'bogus']){credits.unit=unit;assert.equal(conforms(d,definitions.CockpitData,definitions),false);}
 });
