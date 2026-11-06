@@ -13,6 +13,28 @@ import ModelPlanWire
 /// These inherited main regressions create actual first-run windows.
 /// They remain on the default GUI leg, separate from no-window Settings journeys.
 @MainActor final class NormalEntryFirstRunWindowJourneyTests: XCTestCase {
+    func testSET_9_29NormalEntryHidesUnavailableSettings() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-hidden-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await app.settingsHost.present(paneID: "general", origin: .userInitiated)
+        let window = try XCTUnwrap(NSApplication.shared.windows.first { !before.contains(ObjectIdentifier($0)) && $0.isVisible })
+        defer { window.close(); app.composition.dock.close() }
+        func visibleText(_ view: NSView) -> [String] {
+            guard !view.isHiddenOrHasHiddenAncestor else { return [] }
+            return ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap(visibleText)
+        }
+        let text = visibleText(try XCTUnwrap(window.contentView))
+        for title in ["Language", "Menu-bar display", "Open cockpit shortcut", "Toggle Quota Widget shortcut", "Show hints again"] {
+            XCTAssertFalse(text.contains(title), "SET-9-29: unavailable \(title) must not appear in the normal Settings window")
+        }
+        XCTAssertFalse(text.contains { $0.contains("Unavailable until") })
+    }
     func testNormalEntrySettingsAndDragUpdateTheDockAndSurviveRelaunch() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("settings-journey-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
