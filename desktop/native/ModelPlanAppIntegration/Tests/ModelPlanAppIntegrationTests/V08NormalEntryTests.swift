@@ -39,7 +39,7 @@ private actor V08JourneyClient: EngineClient {
 }
 
 @MainActor final class V08NormalEntryTests: XCTestCase {
-    private func fixture(_ remaining: Double) throws -> WireRowsSnapshot {
+    private func fixture(_ remaining: Double, vendor: String = "openai") throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
@@ -47,6 +47,7 @@ private actor V08JourneyClient: EngineClient {
         var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
         var row = rows[0], accounts = try XCTUnwrap(row["accounts"] as? [[String: Any]])
         var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
+        row["vendorKey"] = vendor
         row["id"] = "codex"; row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
         row["expiresAt"] = "2028-12-01T00:00:00Z"
         account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
@@ -94,6 +95,18 @@ private actor V08JourneyClient: EngineClient {
                 XCTAssertEqual(ink.r, rgb.0 / 255, accuracy: 0.000001)
                 XCTAssertEqual(ink.g, rgb.1 / 255, accuracy: 0.000001)
                 XCTAssertEqual(ink.b, rgb.2 / 255, accuracy: 0.000001)
+            }
+        }
+        // The production row-to-reading path must retain vendor identity without
+        // making the quota status depend on the vendor's visual identity.
+        _ = try await app.settingsHost.application.editor.commit(SettingsB20Edit.redBelow(25))
+        for vendor in ["openai", "claude"] {
+            for (remaining, expected) in [(51.0, DockQuotaStatus.normal), (50.0, .warning), (25.0, .critical)] {
+                try await client.replaceRows(fixture(remaining, vendor: vendor))
+                let reading = try XCTUnwrap(view.presentedReadingsForChecks["aaaaaaaaaaaaaaaa"])
+                XCTAssertEqual(reading.vendorResourceKey, vendor)
+                XCTAssertEqual(reading.status, expected, "vendor=\(vendor), remaining=\(remaining)")
+                XCTAssertEqual(reading.outer?.status, expected)
             }
         }
         await app.composition.stop()
