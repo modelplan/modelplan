@@ -40,6 +40,11 @@ func Definitions() []ScopeDefinition {
 		if id == ScopeOpenCodeV2LocalHistory {
 			d.DefaultCheck = false
 		}
+		// The GLM Coding Plan key a user saved in their own tool (ZCode's provider file)
+		// is a standard route, on by default (owner decision 2026-11-06, G3-21).
+		if id == ScopeZaiAccountUsageAPIKey {
+			d.DefaultCheck = true
+		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
 		out = append(out, d)
 	}
