@@ -260,7 +260,7 @@ test('display and appearance receive the bridge clock, while ticks use the host-
 test('redBelow is optional, validated and logged on load and appearance without weakening strict keys',()=>{
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
-  for(const [input,expected,warn] of [[10,10,false],[16,16,false],[20,20,false],[25,25,false],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
+  for(const [input,expected,warn] of [[10,10,false],[15,15,false],[20,20,false],[25,25,false],[30,30,false],[40,40,false],[16,25,true],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
    const seen=[],view={clear(){},configure(_a,n){seen.push(n);},updateAppearance(_a,_now,n){seen.push(n);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{redBelow:input},before=logs.length;
