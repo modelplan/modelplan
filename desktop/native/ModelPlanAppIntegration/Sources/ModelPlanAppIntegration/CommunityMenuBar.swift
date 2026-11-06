@@ -45,7 +45,14 @@ struct CommunityMenuBarProjector: CommunityMenuBarProviding {
         if let app { bundle = Bundle(url: app.appendingPathComponent("Contents/Resources/" + bundleName)) }
         else { bundle = .module }
         guard let url = bundle?.url(forResource: "tray", withExtension: "png", subdirectory: "Resources"),
-              let image = NSImage(contentsOf: url) else { return nil }
+              let retinaURL = bundle?.url(forResource: "tray@2x", withExtension: "png", subdirectory: "Resources"),
+              let data = try? Data(contentsOf: url), let retinaData = try? Data(contentsOf: retinaURL),
+              let one = NSBitmapImageRep(data: data), let two = NSBitmapImageRep(data: retinaData),
+              one.pixelsWide == 16, one.pixelsHigh == 16, two.pixelsWide == 32, two.pixelsHigh == 32 else { return nil }
+        let logicalSize = NSSize(width: 16, height: 16)
+        one.size = logicalSize; two.size = logicalSize
+        let image = NSImage(size: logicalSize)
+        image.addRepresentation(one); image.addRepresentation(two)
         image.isTemplate = true; return image
     }
 }

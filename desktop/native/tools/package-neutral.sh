@@ -36,7 +36,9 @@ archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
 export CLANG_MODULE_CACHE_PATH="$output_dir/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$output_dir/module-cache"
+# Both pinned CLI inputs still feed the existing consent-identity receipt; only arm64 is built and bundled.
 for architecture in arm64 x86_64; do
+    if [ "$architecture" = arm64 ]; then
     if [ "$configuration" = debug ]; then
         swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
             --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration debug \
@@ -46,6 +48,7 @@ for architecture in arm64 x86_64; do
     swift build --package-path "$app_package" --scratch-path "$output_dir/build-$architecture" \
         --cache-path "$output_dir/spm-cache" --disable-sandbox --configuration release \
         --triple "$architecture-apple-macosx14.0" --jobs 2 --product ModelPlanCommunityApp
+    fi
     fi
     archive_arch=$architecture
     if [ "$architecture" = x86_64 ]; then archive_arch=amd64; fi
@@ -58,7 +61,7 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
-# The native factory uses the unchanged MIT tray template from this SwiftPM resource bundle.
+# The native factory uses the reserved-licence outline tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanDockResources_ModelPlanDockResources.bundle" "$app/Contents/Resources/"
@@ -69,9 +72,8 @@ if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" 
     echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
 fi
 rm -- "$mark_path"
-xcrun lipo -create "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" \
-    "$output_dir/build-x86_64/x86_64-apple-macosx/$configuration/ModelPlanCommunityApp" -output "$app/Contents/MacOS/ModelPlanCommunity"
-xcrun lipo -create "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan" -output "$app/Contents/Helpers/modelplan"
+cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
+cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -83,11 +85,11 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>ModelPlanCockpitEntryEnabled</key><false/>
 <key>NSHighResolutionCapable</key><true/>
-<key>NSHumanReadableCopyright</key><string>MIT community software. Intel untested; 3D may stutter.</string>
+<key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST
 cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
@@ -96,6 +98,13 @@ cp "$repo_root/THIRD-PARTY-TRADEMARKS.md" "$app/Contents/Resources/THIRD-PARTY-T
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
 python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
     --expected-sha256 "$credential_sha" --universal "$app"
+# Refuse malformed, Intel or universal executables before sealing the app.
+for executable in "$app/Contents/MacOS/ModelPlanCommunity" "$app/Contents/Helpers/modelplan"; do
+    architecture=$(xcrun lipo -archs "$executable")
+    if [ "$architecture" != arm64 ]; then echo 'Bundled executable must contain exactly arm64' >&2; exit 1; fi
+done
+python3 "$native_root/tools/distribution/check_app_architectures.py" --app "$app" \
+    --main "$app/Contents/MacOS/ModelPlanCommunity" --approved-helper-sha256 "$credential_sha"
 codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
 shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
 python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \
