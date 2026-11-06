@@ -90,7 +90,7 @@ private actor V05SyntheticClient: EngineClient {
         // Plate 304 with 10/11 padding, a dark readout window inset 11 pt, fixed 56/78/34 grid, header name 13 semibold.
         let lcd = try XCTUnwrap(dock.card.readoutWindowForChecks, "the card has a readout window")
         XCTAssertEqual(lcd.minX, 11, accuracy: 0.5); XCTAssertEqual(lcd.width, 304 - 22, accuracy: 0.5)
-        let quotaRow = try XCTUnwrap(dock.cardContent(for: id)?.rows.first { $0.kind == .quota })
+        let quotaRow = try XCTUnwrap(dock.cardContent(for: id)?.rows.first { $0.kind == .quota || $0.kind == .extraQuota })
         let cells = dock.card.rowCellsForChecks(quotaRow.id)
         XCTAssertGreaterThanOrEqual(cells.count, 3)
         XCTAssertEqual(cells.prefix(3).map { $0.width.rounded() }, [56, 78, 34], "label / bar / percent columns")
