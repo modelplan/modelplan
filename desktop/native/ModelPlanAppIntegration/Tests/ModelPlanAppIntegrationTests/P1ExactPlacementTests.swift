@@ -222,6 +222,71 @@ private actor P1SyntheticEngine: EngineClient {
         await app.stopLifecycle(); app.composition.dock.close()
     }
 
+    /// G3-30: the expanded widget's face touches the screen edge exactly like the prototype
+    /// (geometry.js: attached side at depth 0, first ring's outer edge 14 x D/52 from the edge).
+    /// The collapsed strip and its 20 pt wake band are never part of the expanded window; the only
+    /// extra window area is the transparent ceil(D/2) hover canvas on the screen side.
+    func testG330ExpandedFaceTouchesTheScreenEdgeAtEverySize() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        for size in SettingsSize.allCases {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-g330-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            _ = try await store.update { p in
+                p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size
+                for _ in 0..<16 { p.onboarding.next() }
+            }
+            let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795))
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+                makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+            protect(app)
+            await app.prepare()
+            app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+            for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+            let host = app.composition.dock
+            let presentation = try XCTUnwrap(host.edgePresentation)
+            XCTAssertEqual(presentation.state, .expanded, "\(size)")
+            let placement = try XCTUnwrap(presentation.placement)
+            let d = size.nozzleDiameter, unit = d / 52
+            // The window is flush with the screen edge and holds only the face plus the hover canvas.
+            XCTAssertEqual(placement.frame.maxX, screen.usableFrame.maxX, accuracy: 0.01, "\(size) window flush")
+            XCTAssertEqual(try XCTUnwrap(presentation.paintedFrame), placement.frame, "\(size) expanded paints the face frame, not the strip")
+            let face = try XCTUnwrap(placement.globalHoverRects.first)
+            XCTAssertEqual(face.maxX, screen.usableFrame.maxX, accuracy: 0.01, "\(size) face touches the screen edge")
+            XCTAssertEqual(placement.frame.width - face.width, ceil(d / 2), accuracy: 0.5, "\(size) only the transparent hover canvas is added, on the screen side")
+            // Visible face depth matches the prototype formula (D/2+14s)+(D/2+3s)+7s plus at most the 8s arc sagitta.
+            let freeDepth = d + 24 * unit
+            XCTAssertGreaterThanOrEqual(face.width, freeDepth - 0.5, "\(size) face depth")
+            XCTAssertLessThanOrEqual(face.width, freeDepth + 8 * unit + 1.5, "\(size) face depth")
+            // Rings: the first ring's outer edge sits 14 x D/52 from the screen edge (arc adds at most 8 x D/52).
+            let view = host.dockView
+            let ids = host.interactionEnvironment().catalogue
+            XCTAssertFalse(ids.isEmpty)
+            for id in ids {
+                guard let ring = view.interactionAnchor(id) else { continue }
+                let gap = view.bounds.maxX - ring.maxX
+                XCTAssertGreaterThanOrEqual(gap, 14 * unit - 0.75, "\(size) \(id) ring to screen edge")
+                XCTAssertLessThanOrEqual(gap, 22 * unit + 0.75, "\(size) \(id) ring to screen edge")
+            }
+            // The resting raster is opaque in its edge-most column at a station: nothing transparent
+            // (strip, wake band) separates the face from the screen edge.
+            let skin = try XCTUnwrap(view.presentedSkinForChecks)
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil })
+            let scale = CGFloat(image.width) / skin.bounds.width
+            let row = Int(((station.centre.y - skin.bounds.minY) * scale).rounded(.down))
+            let pixel = try XCTUnwrap(image.cropping(to: CGRect(x: image.width - 1, y: row, width: 1, height: 1)))
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            XCTAssertGreaterThan(rgba[3], 200, "\(size) the face is painted up to the screen edge")
+            await app.stopLifecycle(); host.close()
+        }
+    }
+
     func testFreshQuotaWidgetShowAndSavedChoicesOnNormalEntry() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("right-placement-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
