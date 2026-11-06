@@ -604,8 +604,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
-    /// DOCK-3.8-07 / V-18: the card's reset time uses the glossary relative format in both languages.
-    func testNormalCardResetTimeUsesTheGlossaryRelativeFormat() async throws {
+    /// DOCK-3.8-07 / D40: the card's reset time uses the prototype's compact form in both languages.
+    func testNormalCardResetTimeUsesTheCompactPrototypeFormat() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -624,10 +624,10 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
         }
         let english = try weekly()
-        XCTAssertTrue(english.hasPrefix("resets in 2h 14m"), english)
+        XCTAssertTrue(english.hasPrefix("resets 2h14"), english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try weekly()
-        XCTAssertTrue(chinese.hasPrefix("2 小时 14 分后重置"), chinese)
+        XCTAssertTrue(chinese.hasPrefix("2h14 后重置"), chinese)
     }
 
     /// G3-06 residual (DOCK-3.8-08): a money balance without a currency is grouped with at
