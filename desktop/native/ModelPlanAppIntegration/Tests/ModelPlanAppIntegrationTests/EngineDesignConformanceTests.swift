@@ -55,7 +55,7 @@ import ModelPlanEngineClient
             for language in [SettingsLanguage.chinese,.english] {
                 try await store.update { $0.language=language };await entry.prepare();entry.allowDockPresentation()
                 let en=language == .english
-                // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q]; no Hide item.
+                // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings…] — [Quit ModelPlan]; no Hide item, no shortcuts (D37).
                 let dock=entry.composition.dock.menu().items
                 let dockTitles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
                 let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
@@ -65,9 +65,11 @@ import ModelPlanEngineClient
                 let storedAutoHide=await store.snapshot().preferences.autoHide
                 XCTAssertEqual(toggle.state,storedAutoHide ? .on : .off)
                 let settings=try XCTUnwrap(dock.first { $0.title == (en ? "Settings…" : "设置…") })
-                XCTAssertEqual(settings.keyEquivalent,",");XCTAssertEqual(settings.keyEquivalentModifierMask,[.command])
+                // D37 (11-06): the widget's contextual menu shows no shortcut hints.
+                XCTAssertEqual(settings.keyEquivalent,"")
                 let quit=try XCTUnwrap(dock.last)
-                XCTAssertEqual(quit.keyEquivalent,"q");XCTAssertEqual(quit.keyEquivalentModifierMask,[.command])
+                XCTAssertEqual(quit.keyEquivalent,"")
+                XCTAssertTrue(dock.allSatisfy { $0.keyEquivalent.isEmpty }, "no item in the widget menu carries a shortcut")
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
                 XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About ModelPlan","Quit ModelPlan"]:["网站","方法论","隐私","说明…","设置…","关于 ModelPlan","退出 ModelPlan"])
                 XCTAssertFalse(titles.contains { $0.contains(" / ") })

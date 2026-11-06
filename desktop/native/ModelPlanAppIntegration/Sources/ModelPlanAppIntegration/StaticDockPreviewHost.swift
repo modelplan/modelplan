@@ -1630,7 +1630,8 @@ struct DockHelpInteraction: Equatable {
             else { self.menuDidClose(menu) }
         }
         component.retainWithMenu()
-        // G3-28 + owner HIG decision (11-06): [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q].
+        // G3-28 + owner HIG decision (11-06): [Auto-Collapse ✓, Settings…] — [Quit ModelPlan].
+        // D37 (11-06): no shortcut hints in this contextual menu; ⌘, and ⌘Q stay in the status menu.
         // No Hide item here: the widget is turned off from the status menu or Settings.
         // "收起/Collapse" only names the edge-strip state.
         let english = application == nil || preferences.language == .english
@@ -1659,10 +1660,9 @@ struct DockHelpInteraction: Equatable {
                            checked: autoCollapse,
                            action: available && requestAutoCollapse != nil ? { [weak self] in self?.toggleAutoCollapseFromMenu(!autoCollapse) } : nil))
         items.append(.init(title: EngineRowsText.settings.value(preferences.language), accessibilityID: "dock.menu.settings",
-                           keyEquivalent: available ? "," : "",
                            action: available ? { [weak self] in self?.openSettings() } : nil))
         items.append(.init(title: nil))
-        items.append(.init(title: quit, accessibilityID: "dock.menu.quit", keyEquivalent: "q",
+        items.append(.init(title: quit, accessibilityID: "dock.menu.quit",
                            target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         component.replace(with: items)
         return menu
