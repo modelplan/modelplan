@@ -248,6 +248,13 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	if details["result"] == nil || !strings.Contains(string(details["result"]), `"details"`) || !strings.Contains(string(details["result"]), `"synthetic-announcement"`) || strings.Contains(string(details["result"]), `"links"`) {
 		t.Fatalf("negotiated cockpit details missing: %s", details["error"])
 	}
+	var publishedEnvelope wire.Envelope[wire.CockpitData]
+	if err := json.Unmarshal(details["result"], &publishedEnvelope); err != nil || publishedEnvelope.Data.Details == nil || publishedEnvelope.Data.Details.Publication == nil {
+		t.Fatalf("verified publication absent from negotiated cockpit details: %s, %v", details["result"], err)
+	}
+	if got := publishedEnvelope.Data.Details.Publication; got.PublicationID != id || got.Source != "client" || got.Models == nil || len(got.Models) != 0 || got.Truncated {
+		t.Fatalf("unexpected verified empty lineup: %+v", got)
+	}
 	encodedDetails, err := json.Marshal(details)
 	if err != nil {
 		t.Fatal(err)
@@ -270,6 +277,29 @@ func TestResetEventsVerifiedPublicationRealBinary(t *testing.T) {
 	}
 	if strings.Contains(string(old["result"]), "resetEvents") {
 		t.Fatal("unnegotiated client received reset events")
+	}
+	// Cache corruption and absence must omit the field on the real query path.
+	if err := os.WriteFile(st.ObjectPath(hash), []byte(`{"tampered":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	assertNoPublication := func(label string) {
+		t.Helper()
+		response := detailsClient.call("cockpit/query", map[string]any{})
+		var envelope wire.Envelope[wire.CockpitData]
+		if err := json.Unmarshal(response["result"], &envelope); err != nil || envelope.Data.Details == nil || envelope.Data.Details.Publication != nil {
+			t.Fatalf("%s publication not omitted: %s %s", label, response["result"], response["error"])
+		}
+	}
+	assertNoPublication("tampered")
+	if err := st.SaveState(store.State{}); err != nil {
+		t.Fatal(err)
+	}
+	assertNoPublication("absent")
+	if err := os.WriteFile(st.ObjectPath(hash), blob, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveState(store.State{PublicationID: id, ManifestHash: syntheticHash(manifest), Component: "client", ComponentHash: hash}); err != nil {
+		t.Fatal(err)
 	}
 	assertChanged(p, consent.ScopeCursorLocalHistory, "old-link-capability", false)
 	assertChanged(linked, consent.ScopeCodexLocalHistory, "new-link-capability", true)

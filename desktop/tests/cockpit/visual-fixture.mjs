@@ -17,7 +17,7 @@ export function visualFixture(){
  const sessions=[
   {sessionRef:'0000000000000001',source:'Codex',subscriptionRef:null,model:'Sol 6.1',effort:'High',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'running',rate:null},
   {sessionRef:'0000000000000002',source:'Claude',subscriptionRef:null,model:'Opus 5.5',effort:'High',projectLabel:'desktop',lastObservedAt:'2026-10-20T14:05:00Z',state:'running',rate:null},
-  {sessionRef:'0000000000000003',source:'Claude',subscriptionRef:null,model:'GLM-5.3',effort:'Max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'observed',rate:null},
+  {sessionRef:'0000000000000003',source:'Claude',subscriptionRef:null,model:'GLM-5.3',effort:'Max',projectLabel:'modelPlans',lastObservedAt:'2026-10-20T14:05:00Z',state:'idle',rate:null},
  ];
  data.details={version:1,sources:['local-history'],subscriptions,sessions,sessionCoverage:'local-last-seen',resetEvents:[],alerts:[]};
  const faders=[

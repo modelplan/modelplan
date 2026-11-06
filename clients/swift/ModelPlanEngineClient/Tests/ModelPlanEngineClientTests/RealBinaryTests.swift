@@ -295,6 +295,30 @@ extension RealBinaryTests {
         XCTAssertTrue(observed12)
         do { _ = try await client.retry(); XCTFail("major mismatch restarted") } catch {}
     }
+
+    func testMinimumCLIVersionAtRealHandshake() async throws {
+        for (mode, accepted) in [("server-too-old", false), ("server-malformed", false), ("server-malformed-metadata", false), ("server-supported", true)] {
+            let binary = try binary(); let home = try home(); let probe = EventProbe()
+            try cli(binary, home: home, arguments: ["consent", "init", "--json"])
+            let executable = try proxy(home, binary: binary, mode: mode)
+            let config = EngineClientConfiguration(executableURL: executable, applicationVersion: "synthetic-u4b",
+                allowedEnvironment: environment(home), minimumServerVersion: "0.5.52")
+            let client = ProcessEngineClient(configuration: config, consumer: probe)
+            if accepted {
+                _ = try await client.start()
+                try await eventually { await probe.rowCount() > 0 }
+            } else {
+                do { _ = try await client.start(); XCTFail("unsupported helper was admitted") }
+                catch EngineClientError.protocolMismatch {} catch { XCTFail("unexpected error: \(error)") }
+                try await eventually { await probe.stopped(.protocolMismatch) }
+                let delays = await probe.crashDelays()
+                let rows = await probe.rowCount()
+                XCTAssertTrue(delays.isEmpty)
+                XCTAssertEqual(rows, 0)
+            }
+            await client.stop()
+        }
+    }
 }
 
 
