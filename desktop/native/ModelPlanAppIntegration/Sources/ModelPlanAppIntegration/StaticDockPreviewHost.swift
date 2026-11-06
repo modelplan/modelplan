@@ -363,14 +363,23 @@ struct DockHelpInteraction: Equatable {
         guard controller.advanceJourneyHoverDwell(for:id) else{return false}
         return !card.isHidden && cardID == id
     }
+    /// The user's route from an open card to Settings: the card's enter button where the card has
+    /// one, otherwise (production, D37) the widget menu's Settings… item.
     public func journeyPressCardEnter() -> Bool {
         guard CommunityJourneyCI.enabled, !card.isHidden else { return false }
         func find(_ view: NSView) -> NSButton? {
             if let button = view as? NSButton, button.accessibilityIdentifier() == "dock.card.enter" { return button }
             return view.subviews.lazy.compactMap(find).first
         }
-        guard let button = find(card), button.isEnabled else { return false }
-        button.performClick(nil)
+        if let button = find(card) {
+            guard button.isEnabled else { return false }
+            button.performClick(nil)
+            return true
+        }
+        let title = EngineRowsText.settings.value(preferences.language)
+        guard let item = menu().items.first(where: { $0.title == title }), item.isEnabled,
+              let action = item.action, let target = item.target as? NSObject else { return false }
+        _ = target.perform(action, with: item)
         return true
     }
     #endif
@@ -748,6 +757,7 @@ struct DockHelpInteraction: Equatable {
             guard let self else { return false }
             return self.acceptsInstrumentAction(from: self.dockView, source: source)
         }
+        dockView.onEscape = { [weak self] in self?.closeHeldCard() ?? false }
         sliver.onReveal = { [weak self] in self?.edge.reveal() }
         connectEdge()
         let refresh: () -> Void = { [weak self] in
@@ -1102,6 +1112,7 @@ struct DockHelpInteraction: Equatable {
                     guard passIsCurrent(generation) else { return }
                     bindEmptyStation(to: view)
                     view.onAction = dockView.onAction
+                    view.onEscape = dockView.onEscape
                     view.permitsAction = { [weak self, weak view] _, source in
                         guard let self, let view else { return false }
                         return self.acceptsInstrumentAction(from: view, source: source)
@@ -1825,7 +1836,11 @@ struct DockHelpInteraction: Equatable {
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         do {
-            try card.apply(content, style: Self.prototypeCardStyle, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
+            var style = Self.prototypeCardStyle
+            // D37 (11-06): the production card has no Settings/Close buttons (prototype card);
+            // Settings is in the widget's right-click menu.
+            style.showsActions = purpose != .production
+            try card.apply(content, style: style, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         guard createsNativePanels else { return }
@@ -1872,6 +1887,15 @@ struct DockHelpInteraction: Equatable {
                 } else { outsideSince = clock.now }
             }
         }
+    }
+    /// Esc on a keyboard-focused ring closes its open card; the ring keeps the focus and the
+    /// card stays closed until focus or hover moves to another ring.
+    private func closeHeldCard() -> Bool {
+        guard permitted, !retired, !card.isHidden, cardID != nil else { return false }
+        if let controller = interactionController, controller.isActive { controller.dismissCard() }
+        dismissCard()
+        edge.refresh()
+        return true
     }
     private func dismissCard() {
         fallbackCardLeaveTask?.cancel(); fallbackCardLeaveTask = nil

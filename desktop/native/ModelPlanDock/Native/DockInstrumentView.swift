@@ -45,6 +45,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         return skin?.palette[status.rawValue]
     }
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
+    /// Esc while a ring holds keyboard focus: the host closes that ring's card and keeps the focus
+    /// (owner D37: a held card closes with Esc). Returns false when there was nothing to close.
+    public var onEscape:(()->Bool)?
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
     /// Separate empty-state action; never routed through subscription/overflow interaction.
     public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
@@ -404,7 +407,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Draws only the changed pose over the existing static material. The model, registered
@@ -697,6 +700,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
     public override func keyDown(with event:NSEvent){
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
+        if modifiers.isEmpty, event.keyCode == 53, keyboardTargetID != nil, onEscape?() == true { return }
         if modifiers.isEmpty, event.keyCode == 48, keyboardNavigationEnabled, !registeredGripRects.isEmpty {
             let backward = event.modifierFlags.contains(.shift)
             let next = focusedGripIndex.map { $0 + (backward ? -1 : 1) } ?? (backward ? registeredGripRects.count - 1 : 0)
