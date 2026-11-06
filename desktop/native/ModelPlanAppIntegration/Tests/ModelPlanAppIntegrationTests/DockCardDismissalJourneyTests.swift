@@ -193,8 +193,10 @@ private actor CardDismissalClient: EngineClient {
         pointer = CGPoint(x: frame.midX, y: frame.midY)
         nozzle.hoverNozzle(memberID)
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
-        try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
-        XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the official Dock card")
+        XCTAssertFalse(dock.card.isHidden)
+        // D37 (11-06): the production card is the prototype card: no Settings or Close buttons.
+        XCTAssertNil(button(dock.card, id: "dock.card.enter"), "The card has no Settings button")
+        XCTAssertNil(button(dock.card, id: "dock.card.close"), "The card has no Close button")
         nozzle.hoverNozzle(nil)
         let focused = try XCTUnwrap((dock.dockView.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
             .first { $0.accessibilityIdentifier() == "dock.subscription." + memberID })
@@ -205,23 +207,32 @@ private actor CardDismissalClient: EngineClient {
         XCTAssertTrue(focused.accessibilityPerformPress(), "VoiceOver activation reaches the ring action")
         XCTAssertEqual(dock.dockView.refreshSweepCountForChecks, beforeAccessiblePress + 1)
         XCTAssertEqual(refresh.requests, [memberID], "The deferred floor applies to VoiceOver too")
+        // D37: Esc closes the keyboard-held card; the ring keeps keyboard focus and the card stays closed.
+        XCTAssertFalse(dock.card.isHidden)
+        XCTAssertEqual(dock.dockView.keyboardTargetID, memberID)
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        dock.dockView.keyDown(with: escape)
+        XCTAssertTrue(dock.card.isHidden, "Esc closes the card held by keyboard focus")
+        XCTAssertEqual(dock.dockView.keyboardTargetID, memberID, "Esc keeps the ring's focus")
+        dock.interactionControllerForChecks?.refresh()
+        try await Task.sleep(for: .milliseconds(350))
+        dock.interactionControllerForChecks?.refresh()
+        XCTAssertTrue(dock.card.isHidden, "The closed card does not reopen while focus stays on the same ring")
         focused.setAccessibilityFocused(false)
-        try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
         var navigations = 0
         dock.showSettings = { navigations += 1 }; dock.showConsole = { navigations += 1 }
         // Member identity rule: the same verified member ID reopens the card.
         nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
-        try XCTUnwrap(button(dock.card, id: "dock.card.enter")).performClick(nil)
-        XCTAssertTrue(dock.card.isHidden, "Enter must close the Dock card before navigation")
-        XCTAssertEqual(navigations, 1)
+        XCTAssertFalse(dock.card.isHidden, "The same member reopens its card")
 
         for (language, settings, close) in [(SettingsLanguage.english, "Settings", "Close"), (.chinese, "设置", "关闭")] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
             nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
             for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertEqual(button(dock.card, id: "dock.card.enter")?.title, settings)
-            XCTAssertEqual(button(dock.card, id: "dock.card.close")?.accessibilityLabel(), close)
+            XCTAssertNil(button(dock.card, id: "dock.card.enter"))
+            XCTAssertNil(button(dock.card, id: "dock.card.close"))
             // Owner HIG decision 11-06: the widget menu has Settings… (no Close; a menu closes itself).
             let menu = dock.menu()
             let menuSettings = settings + "…"

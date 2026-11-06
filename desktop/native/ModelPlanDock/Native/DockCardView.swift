@@ -21,6 +21,10 @@ import CryptoKit
     public var width:CGFloat=300,padding:CGFloat=12,fontSize:CGFloat=12,brandSize:CGFloat=16
     /// The ten-segment quota bar: size and gap between segments.
     public var barSize=CGSize(width:96,height:10),barGap:CGFloat=2
+    /// The footer's enter/close buttons. The production widget card has none (owner D37, 11-06):
+    /// an unpinned card closes when the pointer leaves, a keyboard-held card closes with Esc,
+    /// and Settings lives in the widget's right-click menu.
+    public var showsActions=true
     public var background:NSColor = .windowBackgroundColor,ink:NSColor = .labelColor,track:NSColor = .separatorColor
     public var quota:[DockQuotaStatus:NSColor]=[.normal:.controlAccentColor,.warning:.systemOrange,.critical:.systemRed,.unknown:.secondaryLabelColor]
     public init(){}
@@ -132,10 +136,12 @@ import CryptoKit
                 guard let self,self.current(value,token:token) else{return};self.onOpenURL?(link.url)
             })
         }
-        let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
-        enter.isEnabled = enterDisabledReason == nil;enter.setAccessibilityHelp(enterDisabledReason)
-        let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
-        let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
+        if style.showsActions{
+            let enter=button("enter",value.enterLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onEnter?(value.subscriptionID,value.revision)}
+            enter.isEnabled = enterDisabledReason == nil;enter.setAccessibilityHelp(enterDisabledReason)
+            let close=button("close",value.dismissLabel){[weak self] in guard let self,self.current(value,token:token) else{return};self.onDismiss?()}
+            let footer=group("footer");arrange(footer,[enter,close]);children.append(footer)
+        }
         setAccessibilityRole(.group);setAccessibilityLabel(value.name);setAccessibilityHelp(nil)
         arrange(stack,children)
         for id in Array(buttons.keys) where !usedButtons.contains(id){buttons.removeValue(forKey:id)?.retire()}
