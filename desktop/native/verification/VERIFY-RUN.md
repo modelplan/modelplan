@@ -98,7 +98,10 @@ host. Tests inject a fake host; a real run never passes them by default.
   own supervisor applies), and again after every blocking call (AX probe, bounds probe, dwell)
   immediately before the next capture or settings action and before the ID may complete: once it
   stops, the ID is NOT-RUN, a probe that was in flight is discarded, the segment aborts, and only
-  bounded cleanup and the recorded baseline restoration follow.
+  bounded cleanup and the recorded baseline restoration follow. The boundary is explicit:
+  authority is re-checked after the last blocking observation (including the final dialog query
+  and baseline restoration) and before the ID's result and receipt are written; any STOP observed
+  up to that point makes the ID NOT-RUN `supervisor-*` and the run exit 2.
 - A failed baseline restoration is a machine assertion: the ID ends FAIL
   (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
   re-establishes and re-records the baseline.

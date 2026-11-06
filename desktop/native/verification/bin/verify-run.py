@@ -544,6 +544,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 if ctx['profile'] == 'real' and all(d.get('owner') in KEYCHAIN_OWNERS for d in fresh):
                     raise NotRun('keychain-prompt-open-grant-it-during-host-setup')
                 raise StopRun('system-dialog: ' + titles, isolation=ctx['profile'] == 'synthetic')
+            require_authority(subject, actions)  # the dialog query blocks too (osascript)
             if outcome == 'FAIL':
                 break
     except NotRun as error:
@@ -557,6 +558,13 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
     failed = restore(changed, actions, records)
     if failed:  # the baseline was not re-established: a machine assertion, not a silent pass
         outcome, reason = 'FAIL', 'restore-failed-' + '-'.join(sorted(set(failed)))
+    # The boundary: authority is re-checked after the last blocking observation (dialog query,
+    # restoration) and before the result and receipt are written. Any STOP observed up to here
+    # makes the ID NOT-RUN and stops the run (exit 2); restoration has already run.
+    stopped = supervisor_state(subject, actions.clock())
+    if stopped:
+        write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', 'supervisor-' + stopped)
+        raise StopRun('supervisor-' + stopped)
     write_receipt(folder, ident, ctx, segment, records, outcome, reason)
     return outcome, reason, subject
 
