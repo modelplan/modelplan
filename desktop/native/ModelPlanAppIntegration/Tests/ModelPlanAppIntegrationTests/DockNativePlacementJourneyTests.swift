@@ -100,7 +100,7 @@ import ModelPlanSettings
     func testD01OrderInControlRejectsFirstShow() async throws { try await firstShow(disabled: true) }
 
     #if MODELPLAN_DOCK_REAL_SPACES_JOURNEY
-    private func makeRowsBarrier(in root: URL) async throws -> (URL, URL, URL) {
+    private func makeRowsBarrier(in root: URL, releaseRowsWhen marker: URL? = nil) async throws -> (URL, URL, URL) {
         let helper = try reviewedHelper()
         let home = root.appendingPathComponent("engine-home")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -121,7 +121,7 @@ import ModelPlanSettings
         }
         let executable = root.appendingPathComponent("withhold-rows")
         let receipt = root.appendingPathComponent("subscribe-withheld")
-        let paths = try JSONEncoder().encode([helper.path, receipt.path])
+        let paths = try JSONEncoder().encode([helper.path, receipt.path, marker?.path])
         let script = """
         #!/usr/bin/python3
         import base64
@@ -131,8 +131,9 @@ import ModelPlanSettings
         import subprocess
         import sys
         import threading
+        import time
 
-        helper, receipt = json.loads(base64.b64decode("\(paths.base64EncodedString())"))
+        helper, receipt, marker = json.loads(base64.b64decode("\(paths.base64EncodedString())"))
         server = subprocess.Popen([helper, *sys.argv[1:]], stdin=subprocess.PIPE)
 
         def stop(signum, frame):
@@ -147,7 +148,12 @@ import ModelPlanSettings
                 for raw in sys.stdin.buffer:
                     if json.loads(raw).get("method") == "rows/subscribe":
                         pathlib.Path(receipt).touch()
-                        continue
+                        if marker is None:
+                            continue
+                        while not pathlib.Path(marker).exists():
+                            if server.poll() is not None:
+                                return
+                            time.sleep(0.01)
                     server.stdin.write(raw)
                     server.stdin.flush()
             except BrokenPipeError:
@@ -313,6 +319,127 @@ import ModelPlanSettings
         promptD14(action)
         let applied = try await wait(45) { tracked && completed() }
         _ = try XCTUnwrap(applied ? true : nil, "The physical menu action must complete: \(action)")
+    }
+
+    func testD12DetachedRealServerScrubsRowsAndRestoresResizedPlacementAfterWake() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d12-detached-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let allowRows = root.appendingPathComponent("allow-rows")
+        let (relay, receipt, home) = try await makeRowsBarrier(in: root, releaseRowsWhen: allowRows)
+        let config = home.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        let time = Date(), iso = ISO8601DateFormatter()
+        func writeReading(_ remaining: Int, offset: TimeInterval) throws {
+            let plan = "d12-offline-reading"
+            let data: [String: Any] = ["schemaVersion": 1, "plans": [["planId": plan]], "windows": [[
+                "planId": plan, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+                "observedAt": iso.string(from: time.addingTimeInterval(offset)),
+                "resetAt": iso.string(from: time.addingTimeInterval(7_200)),
+            ]]]
+            try JSONSerialization.data(withJSONObject: data)
+                .write(to: config.appendingPathComponent("local.json"), options: .atomic)
+        }
+        try writeReading(40, offset: -20)
+        try Data().write(to: allowRows)
+
+        let profile = root.appendingPathComponent("profile")
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await settings.update {
+            $0.dockEdge = .bottom
+            $0.dockDisplayID = "A"
+            $0.dockAlongFraction = 0.62
+            $0.autoHide = false
+        }
+        var display = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875), backingScale: 2)
+        var fullscreen = false
+        let app = EngineRowsEntry.make(configuration: configuration(relay, root: home), settingsStore: settings,
+            createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: {
+                var presence = DockPresence()
+                presence.allowedOverFullscreen = !fullscreen
+                return .init(displays: [display], layouts: [], primaryDisplayID: display.id,
+                             pointer: CGPoint(x: display.usableFrame.midX, y: display.usableFrame.midY), presence: presence)
+            }, activateSettings: {})
+        let workspace = NotificationCenter()
+        let store = app.composition.store
+        let replies = Replies()
+        let token = store.attach(replies)
+        defer { store.detach(token) }
+        addTeardownBlock { @MainActor in
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        await app.prepare()
+        app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let dock = app.composition.dock
+        func rendered() -> [Double] {
+            dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent).sorted()
+        }
+        let readInitial = try await wait(6) { rendered() == [40] }
+        XCTAssertTrue(readInitial)
+        XCTAssertGreaterThan(replies.count, 0)
+        let originalDelivery = try XCTUnwrap(store.snapshot.delivery)
+        let original = try XCTUnwrap(dock.edgePresentation?.placement)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, original.frame)
+        XCTAssertEqual(dock.dockView.layer?.contentsScale, 2)
+        let saved = await settings.snapshot()
+        let url = profile.appendingPathComponent("ModelPlan/settings.json")
+        let originalSettings = try Data(contentsOf: url)
+
+        fullscreen = true
+        dock.refreshPresence()
+        XCTAssertNil(dock.edgePresentation?.paintedFrame)
+        fullscreen = false
+        dock.refreshPresence()
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, original.frame)
+        XCTAssertEqual(rendered(), [40])
+
+        display = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1280, height: 800),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1280, height: 693))
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let resized = try XCTUnwrap(dock.edgePresentation?.placement)
+        XCTAssertEqual(resized.edge, .bottom)
+        XCTAssertEqual(resized.alongFraction, 0.62, accuracy: 0.0001)
+        XCTAssertNotEqual(resized.frame.minX, original.frame.minX)
+        XCTAssertEqual(resized.frame.minY, display.usableFrame.minY, accuracy: 0.01)
+        XCTAssertTrue(display.usableFrame.contains(resized.frame))
+        XCTAssertEqual(dock.dockView.layer?.contentsScale, 1)
+        XCTAssertEqual(rendered(), [40])
+
+        try FileManager.default.removeItem(at: allowRows)
+        workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
+        XCTAssertNil(dock.edgePresentation?.paintedFrame)
+        XCTAssertTrue(rendered().isEmpty)
+        let stopped = try await wait(5) { store.snapshot.connection == .stopped(.requested) }
+        guard stopped else { return XCTFail("The previous server must retire before staging the next reading") }
+        XCTAssertNil(store.snapshot.rows)
+        let beforeWake = replies.count
+        try FileManager.default.removeItem(at: receipt)
+        try writeReading(70, offset: -5)
+        workspace.post(name: NSWorkspace.didWakeNotification, object: nil)
+        let woke = try await wait(2) { dock.edgePresentation?.paintedFrame != nil }
+        XCTAssertTrue(woke)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, resized.frame)
+        XCTAssertNotNil(dock.dockView.emptyStationRectForChecks)
+        let requestHeld = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(requestHeld)
+        try await checkEngine(app)
+        XCTAssertTrue(rendered().isEmpty)
+        XCTAssertNil(store.snapshot.rows)
+        XCTAssertEqual(replies.count, beforeWake)
+
+        try Data().write(to: allowRows)
+        let readFresh = try await wait(6) { rendered() == [70] }
+        XCTAssertTrue(readFresh)
+        XCTAssertGreaterThan(replies.count, beforeWake)
+        XCTAssertNotEqual(try XCTUnwrap(store.snapshot.delivery).sessionID, originalDelivery.sessionID)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, resized.frame)
+        XCTAssertEqual(dock.edgePresentation?.placement?.edge, .bottom)
+        let after = await settings.snapshot()
+        XCTAssertEqual(after.revision, saved.revision)
+        XCTAssertEqual(after.preferences.dockAlongFraction, 0.62)
+        XCTAssertEqual(try Data(contentsOf: url), originalSettings)
     }
 
     func testD14DetachedRealServerRestoresAndQueuesShowWithoutRowsReplies() async throws {
