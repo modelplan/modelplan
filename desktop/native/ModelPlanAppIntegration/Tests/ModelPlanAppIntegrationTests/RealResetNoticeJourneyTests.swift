@@ -9,7 +9,7 @@ import ModelPlanSettings
 
 /// Exercises the ordinary app-server and production Dock with an isolated, synthetic home.
 @MainActor final class RealResetNoticeJourneyTests: XCTestCase {
-    private enum FixtureError: Error { case noBinary, malformedImage, timeout }
+    private enum FixtureError: Error { case noBinary, malformedImage, timeout, missingEvents }
     private func json(_ object: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
     }
@@ -68,7 +68,7 @@ import ModelPlanSettings
         guard let bytes = context.data else { throw FixtureError.malformedImage }
         return Data(bytes: bytes, count: crop.width * crop.height * 4)
     }
-    func testRealAppServerResetNoticesReachProductionDockAndClear() async throws {
+    func testR12RealAppServerPublicEventReachesCorrespondingDockAndClears() async throws {
         guard let binary = ProcessInfo.processInfo.environment["MODELPLAN_ENGINE_TEST_BINARY"] else {
             throw XCTSkip("Real engine binary is required for this end-to-end test")
         }
@@ -88,6 +88,14 @@ import ModelPlanSettings
             let dock = app.composition.dock
             try await eventually { dock.dockView.presentedNoticesForChecks.values.contains { $0.key.kind == .resetAnnounced && $0.shape == .hollow && $0.tone == .blue } }
             let notice = try XCTUnwrap(dock.dockView.presentedNoticesForChecks.values.first { $0.key.kind == .resetAnnounced })
+            guard case let .available(events) = app.composition.rowEvents else {
+                XCTFail("R-12 requires events from the real app-server rows snapshot")
+                throw FixtureError.missingEvents
+            }
+            let event = try XCTUnwrap(events.first { $0.id == "synthetic-reset" && $0.status == "announced" })
+            XCTAssertEqual(event.rowID, "codex", "the public event must be bound to the corresponding CLI row")
+            XCTAssertEqual(notice.key.sourceIDs, [event.id], "the Dock notice must derive from the admitted public event")
+            XCTAssertTrue(app.composition.resetSignals.contains { $0.id == notice.key.subscriptionID && $0.reset?.id == event.id })
             let skin = try XCTUnwrap(dock.dockView.presentedSkinForChecks)
             let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == notice.key.subscriptionID })
             XCTAssertGreaterThan(station.eventRect.midX, station.readout.midX, "notice appears after the percentage")
