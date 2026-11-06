@@ -359,6 +359,19 @@ recording-provider admission and stopped stdout). The U14 bundle records exact
 source/binary/overlay hashes and outcomes. Native agent prompting and signed app
 supervision require their own device evidence; Linux engine checks do not earn it.
 
+### Cockpit public model data
+
+For a client that negotiated `cockpitDetailsV1`, `details.publication` is an
+optional verified-cache projection. It contains `contractVersion`,
+`publicationId`, `publishedAt`, `source`, `truncated`, and `models`. Each
+model carries `id`, `name`, `developerId`, `recommended`, and `efforts`; each
+effort carries `effort`, `label`, `star`, nullable `ability`, `cost`, and `time`,
+plus optional `multiplier` and `provisional`. Missing values stay absent or null;
+no relative multiplier is calculated. The producer uses only current admitted
+readings to select matching vendors, preserves the verified publication model-array
+order, emits at most three models and sets `truncated` when more match. The
+current publication does not contain a global cross-vendor ranking.
+
 ### Public reset event capability
 
 The server advertises `resetEvents` when the verified-publication source is
