@@ -9,11 +9,13 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/appserver/queries"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
 type sharedCockpit struct {
-	backend appserver.Backend
-	cache   string
+	backend          appserver.Backend
+	cache            string
+	publicationStore *store.Store
 }
 
 func (s sharedCockpit) AdmitCockpit(ctx context.Context, stamp appserver.Stamp) (queries.CockpitAdmission, error) {

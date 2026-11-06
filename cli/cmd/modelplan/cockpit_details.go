@@ -29,6 +29,13 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	if f.StoreEpoch != admission.Stamp.Epoch || f.Generation != admission.Stamp.Generation {
 		return result, appserver.ProtocolError{Code: wire.CodeConsentChanged}
 	}
+	// Publication is public but still comes from the verified local cache. The
+	// enclosing cockpit query rechecks the consent fence before delivery.
+	published, err := loadCockpitPublication(ctx, s.publicationStore)
+	if err != nil {
+		return result, err
+	}
+	result.Publication = selectCockpitPublication(published, view.Projection)
 	now := time.Now()
 	redBelow := admission.RedBelow
 	if redBelow == 0 {

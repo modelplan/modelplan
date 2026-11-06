@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 2fef9ac111168235c713417b3442f1dca8ddb912039c9698fd0cd3949c3efd41
+// Schema SHA-256: dbf8a95455a128c7fb02116ba0ab71b39014700ef5e83b05b104a7bb1e015b8f
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -53,12 +53,41 @@ export type WireCockpitData = {
 
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
+  readonly "publication"?: WireCockpitPublication | null;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
   readonly "sessions": ReadonlyArray<WireCockpitSession>;
   readonly "sources": ReadonlyArray<string>;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionDetails>;
   readonly "version": number;
+};
+
+export type WireCockpitPublication = {
+  readonly "contractVersion": number;
+  readonly "models": ReadonlyArray<WireCockpitPublicationModel>;
+  readonly "publicationId": string;
+  readonly "publishedAt": string;
+  readonly "source": string;
+  readonly "truncated": boolean;
+};
+
+export type WireCockpitPublicationEffort = {
+  readonly "ability": number | null;
+  readonly "cost": number | null;
+  readonly "effort": string;
+  readonly "label": string;
+  readonly "multiplier"?: number | null;
+  readonly "provisional"?: boolean;
+  readonly "star": boolean;
+  readonly "time": number | null;
+};
+
+export type WireCockpitPublicationModel = {
+  readonly "developerId": string;
+  readonly "efforts": ReadonlyArray<WireCockpitPublicationEffort>;
+  readonly "id": string;
+  readonly "name": string;
+  readonly "recommended": string;
 };
 
 export type WireCockpitQueryParams = {
@@ -563,6 +592,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 128,
         "type": "array"
       },
+      "publication": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CockpitPublication"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "resetEvents": {
         "items": {
           "$ref": "#/$defs/ResetEvent"
@@ -609,6 +648,157 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "sessionCoverage",
       "resetEvents",
       "alerts"
+    ],
+    "type": "object"
+  },
+  "CockpitPublication": {
+    "additionalProperties": false,
+    "properties": {
+      "contractVersion": {
+        "maximum": 1,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "models": {
+        "items": {
+          "$ref": "#/$defs/CockpitPublicationModel"
+        },
+        "maxItems": 3,
+        "type": "array"
+      },
+      "publicationId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "publishedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "source": {
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "contractVersion",
+      "publicationId",
+      "publishedAt",
+      "source",
+      "models",
+      "truncated"
+    ],
+    "type": "object"
+  },
+  "CockpitPublicationEffort": {
+    "additionalProperties": false,
+    "properties": {
+      "ability": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cost": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "effort": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+      },
+      "label": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "multiplier": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "provisional": {
+        "type": "boolean"
+      },
+      "star": {
+        "type": "boolean"
+      },
+      "time": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "effort",
+      "label",
+      "star",
+      "ability",
+      "cost",
+      "time"
+    ],
+    "type": "object"
+  },
+  "CockpitPublicationModel": {
+    "additionalProperties": false,
+    "properties": {
+      "developerId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "efforts": {
+        "items": {
+          "$ref": "#/$defs/CockpitPublicationEffort"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "recommended": {
+        "maxLength": 64,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "developerId",
+      "recommended",
+      "efforts"
     ],
     "type": "object"
   },
