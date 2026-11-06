@@ -63,7 +63,7 @@ async function infiniteAnimations(page) {
 async function finishMotion(page) {
   await page.evaluate(()=>Promise.all(document.getAnimations().map(a=>a.finished.catch(()=>{}))));
 }
-test('real WebKit callback counts stay zero; finite opacity motion stops on every visibility gate',async({page},info)=>{
+test('MOT-2.3-08 real WebKit callback counts stay zero; finite opacity motion stops on every visibility gate',async({page},info)=>{
   const {send}=await open(page);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>resolve())));
   expect(await page.evaluate(()=>window.__counts.callbacks)).toBeGreaterThan(0);
@@ -131,7 +131,7 @@ test('computed animation iteration counts reject infinity, including pseudo-elem
   await probe.evaluate(node=>node.remove());
   expect(await infiniteAnimations(page)).toEqual([]);
 });
-test('identical and timestamp-only deliveries do not restart motion; hidden changes are not queued',async({page})=>{
+test('MOT-2.3-01 identical and timestamp-only deliveries do not restart motion; hidden changes are not queued',async({page})=>{
   const {send}=await open(page),initial=currentSample();await display(page,send,initial);
   await page.evaluate(()=>window.__firstPulse=document.getAnimations()[0]);
   expect(await receive(page,send('display',{data:structuredClone(initial)}))).toBe(true);
@@ -150,7 +150,7 @@ test('identical and timestamp-only deliveries do not restart motion; hidden chan
   expect(await page.evaluate(()=>document.getAnimations().length)).toBe(0);
   expect(await infiniteAnimations(page)).toEqual([]);
 });
-test('fixed keyboard-reachable actions have current context; reduced motion has no animations',async({page})=>{
+test('MOT-2.3-03 fixed keyboard-reachable actions have current context; reduced motion has no animations',async({page})=>{
   await page.emulateMedia({reducedMotion:'reduce'});
   const {send}=await open(page);await display(page,send);
   await page.getByRole('button',{name:'Settings',exact:true}).focus();await page.keyboard.press('Enter');
