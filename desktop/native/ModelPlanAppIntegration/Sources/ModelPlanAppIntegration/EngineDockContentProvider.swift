@@ -287,14 +287,11 @@ public enum EngineDeadlineFacts {
     }
 
     private func resetEventLinks(_ event: EngineResetEvent) -> [DockCardLink] {
-        event.sourceLinks.map { source in
-            let label: String
-            switch source.kind {
-            case "publication": label = english ? "Source" : "来源"
-            case "aihot": label = "AIHot"
-            default: label = english ? "Original" : "原文"
-            }
-            return DockCardLink(label: label, url: source.url)
+        let order = english
+            ? [("original", "Original"), ("aihot", "AIHot"), ("official", "Official source"), ("publication", "Source")]
+            : [("aihot", "AIHot"), ("official", "官方来源"), ("original", "原文"), ("publication", "来源")]
+        return order.flatMap { kind, label in
+            event.sourceLinks.filter { $0.kind == kind }.map { DockCardLink(label: label, url: $0.url) }
         }
     }
 

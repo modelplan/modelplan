@@ -30,7 +30,8 @@ public struct EngineResetEvent:Equatable,Sendable {
 public enum EngineRowsEventDecoder {
     static func isHTTPSSourceURL(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && url.host?.isEmpty == false &&
-            url.user == nil && url.password == nil
+            url.user == nil && url.password == nil && url.port == nil &&
+            url.query == nil && url.fragment == nil
     }
 
     public static func decode(_ rows:WireRowsSnapshot?) -> EngineRowsEventState {
@@ -48,12 +49,15 @@ public enum EngineRowsEventDecoder {
             guard seen.insert(event.rowId+"#"+event.id+"#"+event.status.rawValue).inserted else { return nil }
             var sourceLinks = [EngineResetSourceLink](), seenURLs = Set<URL>()
             if event.source.kind == "publication" {
-                let candidates = [("publication", event.source.url)] + (event.source.links ?? []).prefix(8).map { ($0.type, Optional($0.url)) }
-                for (kind, raw) in candidates where sourceLinks.count < 8 {
-                    guard ["publication", "aihot", "original"].contains(kind), let raw, raw.utf8.count <= 2048,
-                          let url = URL(string: raw), isHTTPSSourceURL(url), seenURLs.insert(url).inserted else { continue }
-                    sourceLinks.append(.init(kind:kind,url:url))
+                func appendLink(kind: String, raw: String) {
+                    guard sourceLinks.count < 8, raw.utf8.count <= 2048,
+                          let url = URL(string: raw), isHTTPSSourceURL(url), seenURLs.insert(url).inserted else { return }
+                    sourceLinks.append(.init(kind: kind, url: url))
                 }
+                for link in (event.source.links ?? []).prefix(8) where ["aihot", "official", "original"].contains(link.type) {
+                    appendLink(kind: link.type, raw: link.url)
+                }
+                if let url = event.source.url { appendLink(kind: "publication", raw: url) }
             }
             let from = event.schedule.flatMap { date($0.from) }, through = event.schedule.flatMap { date($0.through) }
             let scheduled: Bool

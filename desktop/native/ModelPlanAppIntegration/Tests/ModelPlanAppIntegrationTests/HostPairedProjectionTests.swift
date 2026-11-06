@@ -65,7 +65,14 @@ private actor EntrySyntheticClient: EngineClient {
 }
 
 @MainActor final class HostPairedProjectionTests: XCTestCase {
-    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, resetCardClock: Date? = nil, resetConfirmed: Bool = false) throws -> WireRowsSnapshot {
+    private struct ResetFactsFixture {
+        var count = 2
+        var expiresIn: TimeInterval = 108_000
+        var retainedPartial = false
+        var restarted = false
+    }
+
+    private func rows(weekly: Double, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init()) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -124,9 +131,16 @@ private actor EntrySyntheticClient: EngineClient {
                 event.removeValue(forKey: "schedule")
             }
             projection["resetEvents"] = [event]
-            account["resetCards"] = ["state": "complete", "count": 2,
-                "earliestExpiresAt": stamp.string(from: wall.addingTimeInterval(108000)),
-                "truncated": false, "sources": []]
+            account["resetCards"] = ["state": resetFacts.retainedPartial ? "partial" : "complete",
+                "count": resetFacts.count, "earliestExpiresAt": stamp.string(from: wall.addingTimeInterval(resetFacts.expiresIn)),
+                "truncated": resetFacts.retainedPartial, "sources": []]
+            if resetFacts.retainedPartial { account["valueState"] = "retained" }
+            if resetFacts.restarted {
+                let fresh = stamp.string(from: wall.addingTimeInterval(-5))
+                account["observedAt"] = fresh
+                session["observedAt"] = fresh
+                week["observedAt"] = fresh
+            }
         }
         windows = [session, week]; account["windows"] = windows; accounts = [account]
         if let secondWeekly {
@@ -263,6 +277,18 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(second.value.signals.first?.reset?.id, "reset-two")
     }
 
+    func testResetSourceURLRejectsUnsafeAddressParts() throws {
+        for raw in [
+            "http://status.openai.com/incidents/demo",
+            "https://user:password@status.openai.com/incidents/demo",
+            "https://status.openai.com:8443/incidents/demo",
+            "https://status.openai.com/incidents/demo?token=canary",
+            "https://status.openai.com/incidents/demo#fragment",
+        ] {
+            XCTAssertFalse(EngineRowsEventDecoder.isHTTPSSourceURL(try XCTUnwrap(URL(string: raw))), raw)
+        }
+    }
+
     func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -319,6 +345,11 @@ private actor EntrySyntheticClient: EngineClient {
         func buttons(_ root: NSView) -> [NSButton] {
             (root as? NSButton).map { [$0] } ?? root.subviews.flatMap(buttons)
         }
+        let stack = try XCTUnwrap(dock.card.subviews.compactMap { $0 as? NSStackView }.first)
+        func arrangedLinkLabels() -> [String] {
+            stack.arrangedSubviews.compactMap { ($0 as? NSButton)?.title }
+        }
+        XCTAssertEqual(arrangedLinkLabels(), content.links.map(\.label))
         let official = try XCTUnwrap(buttons(dock.card).first { $0.title == "Official source" })
         official.performClick(nil)
         XCTAssertEqual(opened.map(\.absoluteString), [officialURL])
@@ -331,22 +362,34 @@ private actor EntrySyntheticClient: EngineClient {
         let chinese = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(chinese.links.map(\.url.absoluteString), [aihotURL, officialURL, originalURL, publicationURL])
         XCTAssertEqual(chinese.links.map(\.label), ["AIHot", "官方来源", "原文", "来源"])
+        XCTAssertEqual(arrangedLinkLabels(), chinese.links.map(\.label))
         oldAction(try XCTUnwrap(URL(string: officialURL)))
         XCTAssertEqual(opened.count, 1, "rebuilding the card retires the old link action")
 
         let store = app.composition.store
         let delivery = try XCTUnwrap(store.snapshot.delivery)
-        let confirmed = try rows(weekly: 75, sequence: 8, resetCardClock: wall, resetConfirmed: true)
-        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
-            consentGeneration: delivery.floor.generation, data: confirmed), delivery: delivery)
-        await store.consume(.rowsChanged(reply, invalidRowCount: confirmed.projection.invalidRowCount))
-        let refreshedDelegate = try XCTUnwrap(view.nozzleEventDelegate)
-        refreshedDelegate.hoverNozzle(nil)
-        refreshedDelegate.hoverNozzle(id)
-        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
-        XCTAssertFalse(dock.card.isHidden)
+        func render(_ snapshot: WireRowsSnapshot) async throws {
+            let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+                consentGeneration: delivery.floor.generation, data: snapshot), delivery: delivery)
+            await store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
+            let delegate = try XCTUnwrap(view.nozzleEventDelegate)
+            delegate.hoverNozzle(nil)
+            delegate.hoverNozzle(id)
+            elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+            XCTAssertFalse(dock.card.isHidden)
+        }
+        try await render(rows(weekly: 75, sequence: 8, resetCardClock: wall, resetConfirmed: true))
         XCTAssertTrue(text(dock.card).contains("已重置 · 等读数"))
         XCTAssertFalse(text(dock.card).contains("预告 17:00 重置"))
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
+        try await render(rows(weekly: 75, sequence: 9, resetCardClock: wall, resetConfirmed: true,
+            resetFacts: .init(count: 1, expiresIn: 12 * 60, retainedPartial: true)))
+        XCTAssertTrue(text(dock.card).contains("1 reset · expire in 12m"))
+        XCTAssertTrue(text(dock.card).contains("Reported subset · Details truncated · Last known reading"))
+        try await render(rows(weekly: 75, sequence: 10, resetCardClock: wall, resetConfirmed: true,
+            resetFacts: .init(count: 1, expiresIn: -60, restarted: true)))
+        XCTAssertTrue(text(dock.card).contains("Reset confirmed"))
+        XCTAssertTrue(text(dock.card).contains("1 reset · expired"))
         let confirmedAction = try XCTUnwrap(dock.card.onOpenURL)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery, nextFloor: nil)))
         XCTAssertTrue(dock.card.isHidden)
