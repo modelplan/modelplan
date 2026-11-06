@@ -34,7 +34,7 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
   public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil) {
-    if let redBelow, [10, 16, 20, 25].contains(redBelow) {
+    if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
       self.redBelow = 25
