@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "D-14",
+  "spec": "spec-dock",
+  "summary": "Hide from the real status menu, relaunch, the widget stays hidden, then Show Quota Widget from the status menu brings it back.",
+  "flavours": ["release", "test"],
+  "profiles": ["synthetic", "real"],
+  "layout": "any",
+  "launch": "running",
+  "estimatedSeconds": 90,
+  "systemSettings": [],
+  "steps": [
+    {"name": "shown-before", "action": "wait-window", "timeoutSeconds": 10},
+    {"name": "hide", "action": "status-menu", "item": "Hide Quota Widget", "menuAction": "hide"},
+    {"name": "hidden", "action": "expect-no-window", "timeoutSeconds": 3},
+    {"name": "relaunch", "action": "relaunch"},
+    {"name": "hidden-after-relaunch", "action": "expect-no-window", "timeoutSeconds": 5},
+    {"name": "menubar", "action": "capture-menubar", "width": 480, "height": 40},
+    {"name": "show", "action": "status-menu", "item": "Show Quota Widget", "menuAction": "show"},
+    {"name": "shown-again", "action": "wait-window", "timeoutSeconds": 5},
+    {"name": "widget", "action": "capture-window"}
+  ],
+  "review": "After relaunch the widget is still hidden and the status icon remains; after Show the widget is back in its place."
+}

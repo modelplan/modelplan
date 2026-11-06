@@ -30,8 +30,18 @@ def prepare(archive, manifest, template, parent, registry_path):
     candidate_config.verify_archive(archive, digest)
     with Path(template).open(encoding="utf-8") as stream:
         config = json.load(stream)
-    if config.get("profile") != "synthetic" or config.get("launchMode", "direct") != "direct":
-        raise ValueError("direct synthetic launch template required")
+    profile = config.get("profile", "synthetic")
+    if profile not in ("synthetic", "real") or config.get("launchMode", "direct") != "direct":
+        raise ValueError("direct synthetic or real launch template required")
+    if profile == "real":
+        # Real-profile runs (owner decision 2026-11-05) keep the host user's HOME; cleanup removes
+        # only the scratch root below `parent`, so that HOME must never sit inside it.
+        raw = os.environ.get("HOME", "")
+        if not raw or not Path(raw).is_absolute():
+            raise ValueError("real profile needs the host user's absolute HOME")
+        home, scratch = Path(raw).resolve(), Path(parent).resolve()
+        if home == scratch or scratch in home.parents:
+            raise ValueError("real HOME must stay outside candidate scratch")
     for key in ("leasePath", "releasePath", "stopPath", "subjectPidPath", "candidateCleanupReceipt"):
         if not isinstance(config.get(key), str) or not Path(config[key]).is_absolute():
             raise ValueError(key + " must be an absolute local path")
@@ -42,12 +52,18 @@ def prepare(archive, manifest, template, parent, registry_path):
     registry = candidate_scratch.create(parent, run_id, epoch)
     root = Path(registry["root"])
     try:
-        config.update(subjectKind="app-zip", launchMode="direct", argv=[str(Path(archive).resolve())],
-                      binarySHA256=digest, syntheticHome=str(root / "home"), syntheticTmp=str(root / "tmp"))
+        # A synthetic segment gets its throwaway HOME under the scratch root; a real segment keeps
+        # the host user's HOME (never created, moved or deleted here) and only the extraction
+        # scratch is run-local. Both record the mode so receipts never mislabel a real run.
+        config.update(subjectKind="app-zip", launchMode="direct", profile=profile,
+                      argv=[str(Path(archive).resolve())],
+                      binarySHA256=digest, syntheticTmp=str(root / "tmp"))
+        if profile == "synthetic":
+            config["syntheticHome"] = str(root / "home")
         config_path = root / "launch.json"
         with config_path.open("x", encoding="utf-8") as stream:
             json.dump(config, stream, sort_keys=True)
-        record = {"registry": registry, "sourceSHA": source, "packageSHA256": digest,
+        record = {"registry": registry, "sourceSHA": source, "packageSHA256": digest, "profile": profile,
                   "launchConfig": str(config_path), "stopPath": config["stopPath"],
                   "subjectPidPath": config["subjectPidPath"],
                   "noSubjectReceipt": str(Path(str(registry_path) + ".no-subject.json")),
@@ -104,6 +120,7 @@ def run(record, receipt_path, *, runner=subprocess.run, clock=time.time, wait=ti
                and cleanup.get("runID") == registry["runID"] and cleanup.get("epoch") == registry["epoch"]
                and not Path(registry["root"]).exists())
     receipt = {"sourceSHA": record["sourceSHA"], "packageSHA256": record["packageSHA256"],
+               "profile": record.get("profile", "synthetic"),
                "startedAt": started, "stoppedAt": clock(), "launchExit": status, "cleaned": cleaned,
                "error": failure}
     with Path(receipt_path).open("x", encoding="utf-8") as stream:
