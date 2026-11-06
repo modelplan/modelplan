@@ -666,6 +666,10 @@ import XCTest
     func testD08PhysicalInnerStripWakesWithoutCrossingDisplays() async throws {
         _ = NSApplication.shared
         let topology = DockDisplayTopology.system()
+        let requestedEdge = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D08_EDGE"]
+        guard requestedEdge.map({ ["left", "right", "bottom"].contains($0) }) ?? true else {
+            return XCTFail("MODELPLAN_DOCK_D08_EDGE must be left, right or bottom")
+        }
         var candidate: (display: DockDisplayArea, edge: SettingsDockEdge, along: Double)?
         displays: for display in topology.displays {
             for adjacent in topology.displays where adjacent.id != display.id {
@@ -676,16 +680,24 @@ import XCTest
                 } else if abs(display.frame.minX - adjacent.frame.maxX) < 0.5 &&
                     abs(display.usableFrame.minX - display.frame.minX) < 0.5 {
                     edge = .left
+                } else if abs(display.frame.minY - adjacent.frame.maxY) < 0.5 &&
+                    abs(display.usableFrame.minY - display.frame.minY) < 0.5 {
+                    edge = .bottom
                 } else { continue }
-                let lower = max(display.usableFrame.minY, adjacent.frame.minY)
-                let upper = min(display.usableFrame.maxY, adjacent.frame.maxY)
+                guard requestedEdge.map({ $0 == edge.rawValue }) ?? true else { continue }
+                let vertical = edge != .bottom
+                let available = display.usableFrame
+                let minimum = vertical ? available.minY : available.minX
+                let maximum = vertical ? available.maxY : available.maxX
+                let lower = max(minimum, vertical ? adjacent.frame.minY : adjacent.frame.minX)
+                let upper = min(maximum, vertical ? adjacent.frame.maxY : adjacent.frame.maxX)
                 guard upper - lower >= 350 else { continue }
-                let along = Double(((lower + upper) / 2 - display.usableFrame.minY) / display.usableFrame.height)
+                let along = Double(((lower + upper) / 2 - minimum) / (maximum - minimum))
                 candidate = (display, edge, along)
                 break displays
             }
         }
-        let target = try XCTUnwrap(candidate, "D-08 needs two side-by-side displays with a usable shared edge")
+        let target = try XCTUnwrap(candidate, "D-08 needs two displays with the requested usable shared edge")
         let (app, store, storedURL) = try await makeProfile(displayID: target.display.id, edge: target.edge,
             declaredQuotas: [72, 53, 38], autoHide: true, along: target.along)
         await app.prepare()
@@ -709,9 +721,16 @@ import XCTest
         let panel = try XCTUnwrap(dock.nativePanel)
         XCTAssertTrue(panel.contentView is DockSliverView)
         XCTAssertEqual(placement.displayID, target.display.id)
-        XCTAssertEqual(placement.edge, target.edge == .left ? .left : .right)
+        let expectedEdge: DockEdge = switch target.edge {
+        case .left: .left
+        case .right: .right
+        case .bottom: .bottom
+        }
+        XCTAssertEqual(placement.edge, expectedEdge)
         XCTAssertEqual(panel.frame.minX, placement.sliverFrame.minX, accuracy: 1)
         XCTAssertEqual(panel.frame.maxX, placement.sliverFrame.maxX, accuracy: 1)
+        XCTAssertEqual(panel.frame.minY, placement.sliverFrame.minY, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxY, placement.sliverFrame.maxY, accuracy: 1)
         let wake = placement.wakeFrame.insetBy(dx: 2, dy: 6)
         XCTAssertFalse(wake.isEmpty)
         XCTAssertTrue(target.display.frame.contains(wake))
