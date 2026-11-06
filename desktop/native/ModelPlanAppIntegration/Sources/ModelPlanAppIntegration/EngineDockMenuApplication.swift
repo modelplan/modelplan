@@ -327,7 +327,8 @@ struct StatusNoticePresentation {
                 guard !frame.isNull, !frame.isInfinite, frame.width > 0, frame.height > 0,
                       [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) else { return nil }
                 return DockStatusHelpAnchor(frame: frame, sharing: window.sharingType, collection: window.collectionBehavior)
-            })
+            }, statusRequestID: { [weak self] in self?.statusHelpRequestID },
+               statusDidDismiss: { [weak self] id in self?.statusHelpDidDismiss(id) })
             dockHelpSetupInProgress = false
             if terminating { await help?.dispose(); return }
             if dockHelp == nil { dockHelp = help }

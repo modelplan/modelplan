@@ -750,6 +750,11 @@ struct DockHelpInteraction: Equatable {
     }
     private func bindEmptyStation(to view: DockInstrumentView) {
         view.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
+        // G3-10: the grip, ignition and event dot raise no other host event on hover.
+        view.onHelpPointerMoved = { [weak self, weak view] in
+            guard let self, let view, self.interactionView === view else { return }
+            self.publishDockHelpInteraction()
+        }
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }

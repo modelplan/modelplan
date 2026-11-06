@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import XCTest
+import ModelPlanDock
 import ModelPlanInstruments
+import ModelPlanSettings
 @testable import ModelPlanAppIntegration
 
 /// G3-10 / S-07: each hovered or focused Quota Widget element has its catalogue explanation,
@@ -24,5 +27,29 @@ import ModelPlanInstruments
             XCTAssertFalse(catalog.explanation(.dockMove).body.contains(language == .chinese ? "预览" : "preview"),
                            "the widget itself is carried; there is no snap preview (owner 11-05)")
         }
+    }
+
+    /// G3-10: the grip, ignition and event dot raise no nozzle-hover change, so the widget must
+    /// report every pointer move and exit for the help owner to re-sample the hovered element.
+    func testNormalEntryWidgetReportsPointerMovesToTheHelpOwner() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hover-explanation-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store,
+            createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let view = app.composition.dock.dockView
+        XCTAssertNotNil(view.onHelpPointerMoved, "the normal entry connects pointer moves to the help owner")
+        var reports = 0
+        view.onHelpPointerMoved = { reports += 1 }
+        let event = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: 4, y: 4), modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        view.mouseMoved(with: event)
+        view.mouseMoved(with: event)
+        XCTAssertEqual(reports, 2)
+        view.mouseExited(with: event)
+        XCTAssertEqual(reports, 3)
     }
 }

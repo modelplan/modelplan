@@ -120,5 +120,85 @@ private actor S04SyntheticClient: EngineClient {
         XCTAssertNil(app.shownDockExplanationForChecks, "leaving the grip clears its explanation")
         await app.composition.stop()
     }
+
+    /// Normal entry on real panels with the real display topology; only the pointer is supplied.
+    private func journeyApplication(_ name: String, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
+        EngineRowsEntry.nativeJourneyProfile = profile
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var records = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        records[0]["surfaces"] = ["dock", "menu"]; records[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+        projection["rows"] = records; root["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
+            dockEnvironment: {
+                let topology = DockDisplayTopology.system()
+                return .init(displays: topology.displays, layouts: [], primaryDisplayID: topology.primaryID, pointer: pointer())
+            },
+            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        return (app, profile)
+    }
+
+    /// G3-10 on real panels: the pointer resting on the painted grip shows the move explanation
+    /// after the dwell, with no keyboard focus; leaving the widget clears it. Before the fix,
+    /// moving onto the grip raised no host event, so no hover explanation ever appeared.
+    func testG310PointerOnGripShowsItsExplanationAndLeavingClearsIt() async throws {
+        var pointer: CGPoint? = CGPoint(x: -10_000, y: -10_000)
+        let (app, profile) = try await journeyApplication("g310-pointer", pointer: { pointer })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView
+        for _ in 0..<300 where dock.currentDockHelpSurface?.mapAnchors.contains(where: { $0.id == "dock.grip.0" }) != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let grip = try XCTUnwrap(dock.currentDockHelpSurface?.mapAnchors.first { $0.id == "dock.grip.0" }?.rect)
+        let panel = try XCTUnwrap(view.window)
+        pointer = CGPoint(x: grip.midX, y: grip.midY)
+        let moved = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: panel.convertPoint(fromScreen: pointer!),
+            modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+        view.mouseMoved(with: moved)
+        XCTAssertNil(view.focusedGripIndex, "the pointer path, not keyboard focus")
+        XCTAssertEqual(dock.currentDockHelpInteraction?.anchor.id, "dock.grip.0")
+        XCTAssertNil(app.shownDockExplanationForChecks, "the explanation waits for the dwell")
+        for _ in 0..<200 where app.shownDockExplanationForChecks == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.shownDockExplanationForChecks, HelpCatalog(.english).explanation(.dockMove).accessibleDescription)
+        pointer = CGPoint(x: -10_000, y: -10_000)
+        view.mouseExited(with: moved)
+        for _ in 0..<200 where app.shownDockExplanationForChecks != nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(app.shownDockExplanationForChecks, "leaving clears the explanation")
+        await app.composition.stop()
+    }
+
+    /// G3-12 / S-06 on real panels: Help from the status menu presents the map, and the user's
+    /// dismissal returns the request to the status item (focus return). Before the fix the
+    /// coordinator was built without the status request, so no dismissal ever reached it.
+    func testG312StatusHelpMapDismissalReturnsToTheStatusItem() async throws {
+        let (app, profile) = try await journeyApplication("g312-focus", pointer: { nil })
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil || !app.dockHelpInstalled { try await Task.sleep(for: .milliseconds(10)) }
+        let help = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Help…" })
+        _ = try XCTUnwrap(help.target as? NSObject).perform(try XCTUnwrap(help.action), with: help)
+        func mapLayer() -> HelpUILayerView? {
+            NSApplication.shared.windows.filter(\.isVisible).flatMap { $0.contentView.map(descendants) ?? [] }
+                .compactMap { $0 as? HelpUILayerView }.first { $0.presentation?.mapHeader != nil }
+        }
+        for _ in 0..<300 where mapLayer() == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let map = try XCTUnwrap(mapLayer(), "Help presents the map over the visible widget")
+        XCTAssertNotNil(app.statusHelpRequestID)
+        map.onAction?(.dismissMap(reason: .escape, returnFocusID: nil))
+        for _ in 0..<200 where app.statusHelpRequestID != nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(app.statusHelpRequestID, "the Escape dismissal reaches the status item exactly once")
+        XCTAssertNil(mapLayer())
+        await app.composition.stop()
+    }
     #endif
 }
