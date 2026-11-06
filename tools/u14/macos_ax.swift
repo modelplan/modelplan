@@ -89,9 +89,12 @@ import UniformTypeIdentifiers
                 var report: [String: Any] = ["outcome": "pass", "reason": "owned-windows-observed",
                                              "nodes": nodes, "truncated": truncated]
                 // The app's own status item, when it shows exactly one: the only menu-bar region a
-                // verification crop may take (its bounds, in AX screen coordinates).
-                if let extras = value(element, "AXExtrasMenuBar") as? AXUIElement,
-                   let items = value(extras, kAXChildrenAttribute) as? [AXUIElement], items.count == 1 {
+                // verification crop may take (its bounds, in AX global coordinates: origin at the main
+                // display's top-left corner, the same space as screencapture -R).
+                // A CF type cannot be conditionally downcast in Swift; check its type ID instead.
+                if let rawExtras = value(element, "AXExtrasMenuBar"), CFGetTypeID(rawExtras) == AXUIElementGetTypeID(),
+                   let items = value(unsafeBitCast(rawExtras, to: AXUIElement.self), kAXChildrenAttribute) as? [AXUIElement],
+                   items.count == 1 {
                     var bounds: [String: Any] = ["items": items.count]
                     if let raw = value(items[0], kAXPositionAttribute), CFGetTypeID(raw) == AXValueGetTypeID() {
                         var point = CGPoint.zero

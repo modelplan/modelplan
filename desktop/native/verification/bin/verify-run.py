@@ -34,6 +34,7 @@ import verify_steps  # noqa: E402
 
 SEGMENT_SECONDS = 1200
 SEGMENT_OVERHEAD = 180  # start, guardian, release, launch, cleanup reserve
+MENU_BAR_MAX = 64  # points: a status item's bottom edge lies within the top menu bar
 OUTCOMES = ('PASS', 'FAIL', 'REVIEW', 'NOT-RUN')
 ISOLATION_SYNTHETIC = (
     "Synthetic HOME and CFFIXED_USER_HOME under run scratch; no consent grant exists, so no personal reader "
@@ -70,6 +71,19 @@ def supervisor_state(subject, now):
             return 'authority-missing-' + key.lower()[:-4]
     return launch.stop_reason(dict(stopPath=subject['stopPath'], leasePath=subject['leasePath'],
                                    lease=subject.get('leaseSnapshot') or {}), now)
+
+
+def require_authority(subject, actions, discard=None):
+    """Raise StopRun when the supervisor withdrew authority. Called before every step and again
+    after every blocking call (AX probe, dwell, menu drive), immediately before the next capture or
+    settings action and before an ID may complete: a STOP that lands during a probe must not be
+    followed by a capture or a PASS/REVIEW. `discard` (a probe folder) is deleted first: what the
+    probe produced while authority was being withdrawn is not retained as evidence."""
+    stopped = supervisor_state(subject, actions.clock())
+    if stopped:
+        if discard is not None:
+            shutil.rmtree(discard, ignore_errors=True)
+        raise StopRun('supervisor-' + stopped)
 
 
 class StopRun(Exception):
@@ -180,7 +194,6 @@ class Actions:
         tree = directory / 'ax-tree.json'
         if self.ctx['profile'] == 'synthetic' and tree.exists():
             check_markers(tree, self.ctx)
-        main = next(d for d in self.ctx['displays'] if d.get('main'))
         if ax.get('outcome') != 'pass' or not isinstance(item, dict):
             raise NotRun('menubar-crop-needs-owned-status-item-bounds')
         try:
@@ -190,10 +203,17 @@ class Actions:
             raise NotRun('menubar-crop-needs-owned-status-item-bounds')
         if w <= 0 or h <= 0:
             raise NotRun('menubar-crop-needs-owned-status-item-bounds')
-        top = main['height'] - (y + h)  # AX origin is the main display's bottom-left corner
-        rect = (max(0, int(round(x))), max(0, int(round(top))), int(math.ceil(w)), int(math.ceil(h)))
-        if rect[2] <= 0 or rect[3] <= 0:
-            raise NotRun('menubar-crop-needs-owned-status-item-bounds')
+        # kAXPositionAttribute is already in global screen coordinates with the origin at the main
+        # display's TOP-left corner, the same space screencapture -R uses: no flip. The rectangle
+        # must lie inside the main display's menu bar; anything else is not the owned item and is
+        # refused rather than clamped or guessed.
+        main = next((d for d in self.ctx['displays'] if d.get('main')), None)
+        if main is None:
+            raise NotRun('menubar-crop-needs-main-display')
+        rect = (int(math.floor(x)), int(math.floor(y)), int(math.ceil(w)), int(math.ceil(h)))
+        if (rect[0] < 0 or rect[1] < 0 or rect[0] + rect[2] > main['width']
+                or rect[1] + rect[3] > min(main['height'], MENU_BAR_MAX)):
+            raise NotRun('menubar-crop-outside-main-menu-bar')
         return rect
 
     def dialogs(self):
@@ -447,11 +467,9 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
     try:
         before = []  # any dialog on screen counts, including one that was already open
         for number, item in enumerate(step['steps'], 1):
-            stopped = supervisor_state(subject, actions.clock())
-            if stopped:
-                # No step, capture or System Events action runs after the supervisor (stop file,
-                # revoked lease, dead guardian heartbeat or deadline) withdrew the run's authority.
-                raise StopRun('supervisor-' + stopped)
+            # No step, capture or System Events action runs after the supervisor (stop file,
+            # revoked lease, dead guardian heartbeat or deadline) withdrew the run's authority.
+            require_authority(subject, actions)
             label = f'{number:02d}-{item["name"]}'
             record = dict(step=label, action=item['action'], startedAt=actions.clock())
             records.append(record)
@@ -459,6 +477,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
             if kind in ('wait-window', 'expect-no-window', 'capture-window'):
                 wait = int(math.ceil(item.get('timeoutSeconds', 5)))
                 report = actions.capture(subject, folder / (label + '.probe'), wait)
+                require_authority(subject, actions, discard=folder / (label + '.probe'))
                 windows = (report.get('ax') or {}).get('outcome') == 'pass'
                 shot = report.get('screenshot') or {}
                 png = folder / (label + '.probe') / 'window.png'
@@ -486,6 +505,8 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 # PID: a broad right-hand menu-bar region can carry the host user's name (fast user
                 # switching), so without the owned item's bounds the step is NOT-RUN, never guessed.
                 rect = actions.status_item_rect(subject, folder / (label + '.item'))
+                # The bounds probe blocks: authority is re-read before the separate screenshot.
+                require_authority(subject, actions, discard=folder / (label + '.item'))
                 record.update(png=label + '.png', region=list(rect), source='owned-status-item')
                 actions.menubar(rect, folder / (label + '.png'))
                 outcome = 'REVIEW' if outcome == 'PASS' else outcome
@@ -499,6 +520,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 record.update(pid=subject['pid'], relaunchedAt=subject['registeredAt'], home=subject.get('home'))
             elif kind == 'dwell':
                 actions.sleep(item['seconds'])
+            require_authority(subject, actions)  # after the step's blocking work, before completion
             after = actions.dialogs()
             fresh = [d for d in after if d not in before]
             if fresh:
