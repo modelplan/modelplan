@@ -93,8 +93,13 @@ actor SettingsJourneyClient: EngineClient {
         for choice in [MenuDisplay.icon, .twoWindows, .tightest] {
             _ = try await store.update { $0.menuDisplay = choice }
             let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
-            let saved = await reopened.snapshot()
-            XCTAssertEqual(saved.preferences.menuDisplay, choice, "Explicit choices must survive reopening")
+            let relaunched = EngineRowsEntry.make(configuration: config, settingsStore: reopened, createsNativePanels: false,
+                bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+                activateSettings: {})
+            await relaunched.prepare()
+            XCTAssertEqual(try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot).preferences.menuDisplay,
+                           choice, "Explicit choices must survive reconstruction through the normal entry")
+            relaunched.composition.dock.close()
         }
     }
 
