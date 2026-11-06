@@ -45,3 +45,13 @@ test('macrev2-532-2 clear resets acknowledgement and unload refuses stale replay
  expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(lamp).not.toHaveClass(/\blit|\bflash/);expect(await receive(send('display',{data}))).toBe(false);
  expect(await receive(send('display',{viewRevision:'4',data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);expect(await receive(send('unload',{viewRevision:'4'}))).toBe(true);await expect(page.locator('[data-caution]')).toHaveCount(0);expect(await page.evaluate(()=>typeof window.modelPlanCockpit)).toBe('undefined');
 });
+
+test('C-14 duplicate alerts cue the highest severity regardless of delivery order',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});await page.clock.setFixedTime(new Date('2026-11-03T12:00:00Z'));await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data,row=data.projection.rows[0],account=row.accounts[0],window=account.windows[0],lamp=page.locator('[data-caution]');
+ const warning={severity:'warning',source:row.id,subscriptionRef:account.subscriptionRef,windowId:window.id,remainingPercent:35},critical={...warning,severity:'critical',remainingPercent:20};data.details.alerts=[warning];
+ for(const raw of [send('load',{appearance,shell,redBelow:25}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ await expect(lamp).toHaveClass(/\bflash\b/);await lamp.click();await expect(lamp).not.toHaveClass(/\bflash\b/);
+ data.details.alerts=[critical,warning];expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);await expect(lamp).toHaveClass(/\bflash\b/);
+ await lamp.click();data.details.alerts=[warning,critical];expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
+});
