@@ -1288,6 +1288,11 @@ actor EntrySyntheticClient: EngineClient {
         let button = NSButton(), icon = NSImage(size: .init(width: 16, height: 16))
         EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
         let editor = app.settingsHost.application.editor
+        // MENU-04: the person can choose the display in Settings, not only through a commit.
+        XCTAssertNil(app.currentSettingsContext.unavailableControls[.menuDisplay])
+        let settingsRows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+        let menuDisplayRow = try XCTUnwrap(settingsRows.first { $0.key == .menuDisplay })
+        XCTAssertEqual(menuDisplayRow.availability, .available, "the menu-bar display control must be usable")
         func assertStatus(_ expected: String, line: UInt = #line) {
             app.applyStatusContent(to: button, detail: "")
             XCTAssertEqual(button.title, expected, line: line)
@@ -1295,6 +1300,14 @@ actor EntrySyntheticClient: EngineClient {
         }
         _ = try await editor.commit(SettingsB21Edit.menuDisplay(.tightest))
         assertStatus("9%")
+        // MENU-06: with the default tightest title, the reset dot stays at the icon's top right
+        // instead of moving to the end of "9%".
+        button.sizeToFit()
+        app.noticeIndicator.attach(to: button)
+        let iconRect = try XCTUnwrap(button.cell?.imageRect(forBounds: button.bounds))
+        XCTAssertEqual(app.noticeIndicator.frame.maxX, iconRect.maxX, accuracy: 0.5)
+        XCTAssertLessThan(app.noticeIndicator.frame.maxX, button.bounds.maxX - 8, "the dot must not sit after the percentage")
+        app.noticeIndicator.removeFromSuperview()
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
         _ = try await editor.commit(SettingsB20Edit.percentagePin("aaaaaaaaaaaaaaaa", .week))
         assertStatus("9%")

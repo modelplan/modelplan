@@ -593,9 +593,12 @@ struct StatusNoticePresentation {
         if let status { component.attach(to: status) }
         if let button = status?.button {
             Self.configureStatusButton(button,image:CommunityMenuBarResources.templateImage(),barThickness:NSStatusBar.system.thickness); button.contentTintColor = nil
+        }
+        if let button = status?.button {
+            applyStatusContent(to: button, detail: detail)
+            // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
-        if let button = status?.button { applyStatusContent(to: button, detail: detail) }
         dockHelp?.refresh()
         #if MODELPLAN_U6_DRIVE
         if let button = status?.button { driveGuard?.observeStatusButton(button) }
