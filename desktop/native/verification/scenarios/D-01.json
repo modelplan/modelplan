@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "D-01",
+  "spec": "spec-dock",
+  "summary": "First launch on a fresh support folder: the Quota Widget appears, centred on the main display, within 2 s of the menu-bar icon, showing the empty station.",
+  "flavours": ["release", "test"],
+  "profiles": ["synthetic"],
+  "layout": "any",
+  "launch": "fresh",
+  "estimatedSeconds": 45,
+  "systemSettings": [],
+  "steps": [
+    {"name": "widget-appears", "action": "wait-window", "timeoutSeconds": 10, "budgetSeconds": 2},
+    {"name": "menubar", "action": "capture-menubar", "width": 480, "height": 40},
+    {"name": "widget", "action": "capture-window"}
+  ],
+  "review": "Menu-bar crop shows the status icon; the widget capture shows the empty station, centred. The machine time runs from subject registration and includes probe latency, so a value above 2 s is REVIEW, not FAIL."
+}
