@@ -185,7 +185,7 @@ public final class CockpitBridgeState {
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
-    historyTools = Set<String>(), actionRequests = Set<UUID>()
+    historyTools = Set<String>()
   private struct Pending {
     let kind: String
     let sequence: UInt64
@@ -358,7 +358,6 @@ public final class CockpitBridgeState {
     historyTools.removeAll()
     scopeMembers.removeAll()
     pending.removeAll()
-    actionRequests.removeAll()
     latestDisplayRequest = nil; cancelDeadlineReports()
     retiredEpochs.removeAll()
     retiredSessions.removeAll()
@@ -423,12 +422,13 @@ public final class CockpitBridgeState {
       return .deadlinePending(id)
     }
     if type == "action" {
+      // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect"
       let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        visibility.active, actionRequests.count < 1024, !actionRequests.contains(id)
+        visibility.active
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -450,7 +450,6 @@ public final class CockpitBridgeState {
         intent = .openHistory(tool)
       default: throw CockpitBridgeError.invalidMessage
       }
-      actionRequests.insert(id)
       pageSequence = sequence
       return .action(intent)
     }

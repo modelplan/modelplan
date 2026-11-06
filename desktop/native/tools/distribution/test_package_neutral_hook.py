@@ -89,11 +89,15 @@ elif name == 'swift':
         duplicate.parent.mkdir(parents=True)
         duplicate.write_text('synthetic duplicate')
 elif name == 'xcrun':
+    if args[:2] == ['lipo', '-archs']:
+        print(os.environ.get('PACKAGING_ARCHS', 'arm64')); raise SystemExit(0)
     if args[:2] != ['lipo', '-create']:
         raise SystemExit('unsupported fixture xcrun command')
     split = args.index('-output')
     Path(args[split + 1]).write_bytes(b''.join(Path(p).read_bytes() for p in args[2:split]))
 elif name == 'python3':
+    if args and args[0].endswith('/check_app_architectures.py'):
+        raise SystemExit(0)
     if args and args[0].endswith('/embed_fixed_helper.py'):
         raise SystemExit(int(os.environ.get('PACKAGING_EMBED_EXIT', '0')))
     if args and args[0].endswith('/check_embedded_agent.py'):
@@ -235,6 +239,32 @@ class PackageNeutralHookTests(unittest.TestCase):
         result = self.fixture.run(environment={'PACKAGING_FINAL_CHECK_EXIT': '48'})
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.fixture.commands()[-1]['command'], 'python3')
+
+
+class AppleSiliconPackageTests(unittest.TestCase):
+    def test_neutral_package_builds_and_embeds_only_arm64(self):
+        with tempfile.TemporaryDirectory() as root:
+            fixture = PackageNeutralFixture(Path(root))
+            result = fixture.run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            commands = fixture.commands()
+            builds = [c for c in commands if c['command'] == 'swift' and 'build' in c['args']]
+            self.assertEqual(len(builds), 1)
+            self.assertIn('arm64-apple-macosx14.0', builds[0]['args'])
+            embed = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/embed_fixed_helper.py'))
+            self.assertIn('--universal', embed['args'])
+            check = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/check_app_architectures.py'))
+            self.assertEqual(check['args'][check['args'].index('--approved-helper-sha256') + 1], fixture.credential_sha)
+            self.assertFalse(any(c['command'] == 'xcrun' and c['args'][:2] == ['lipo', '-create'] for c in commands))
+
+    def test_intel_or_universal_executable_stops_before_app_seal(self):
+        for archs in ('x86_64', 'arm64 x86_64', ''):
+            with self.subTest(archs=archs), tempfile.TemporaryDirectory() as root:
+                fixture = PackageNeutralFixture(Path(root))
+                result = fixture.run(environment={'PACKAGING_ARCHS': archs})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('exactly arm64', result.stderr)
+                self.assertFalse(any(c['command'] == 'codesign' for c in fixture.commands()))
 
 
 if __name__ == '__main__':
