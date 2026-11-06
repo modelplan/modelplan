@@ -914,6 +914,57 @@ private extension EngineDeliveryContext {
     }
     #endif
 
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_ENG_05_shortcutsHaveVisibleAndAccessibleHints() async throws {
+        try await withLivePage(forceNight: true) { _, _, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const all = document.querySelector('.ek-all');
+              const member = document.querySelector('.eng-keys .ek[data-sub]');
+              if (!all || !member) return null;
+              const digit = member.querySelector('.ki');
+              const help = document.querySelector('#help-map:not([hidden])');
+              const helpText = help?.textContent ?? '';
+              return JSON.stringify({one:digit?.textContent?.trim() === '1' && getComputedStyle(digit).display !== 'none',
+                zero:all.querySelector('.ki')?.textContent?.trim() === '0',
+                ariaOne:/\\b1\\b/.test(member.getAttribute('aria-label') ?? ''),
+                titleOne:/\\b1\\b/.test(member.getAttribute('title') ?? ''),
+                helpOpen:!!help, helpZero:/\\b0\\b/.test(helpText), helpOne:/\\b1\\b/.test(helpText)});
+            })()
+            """
+            @MainActor func read() async throws -> [String: Any]? {
+                guard let raw = try await web.evaluateJavaScript(script) as? String else { return nil }
+                return try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any]
+            }
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var facts: [String: Any]?
+            while ContinuousClock.now < deadline {
+                if let value = try await read() { facts = value; break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let initial = try XCTUnwrap(facts, "The normal entry did not render the synthetic engine keys")
+            XCTAssertEqual(initial["one"] as? Bool, true)
+            XCTExpectFailure("CKP-ENG-05: the All key lacks its zero silkscreen") { XCTAssertEqual(initial["zero"] as? Bool, true) }
+            XCTExpectFailure("CKP-ENG-05: the member accessible name drops the shortcut digit") { XCTAssertEqual(initial["ariaOne"] as? Bool, true) }
+            XCTExpectFailure("CKP-ENG-05: the member tooltip drops the shortcut digit") { XCTAssertEqual(initial["titleOne"] as? Bool, true) }
+            _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))")
+            let helpDeadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var help: [String: Any]?
+            while ContinuousClock.now < helpDeadline {
+                if let value = try await read(), value["helpOpen"] as? Bool == true { help = value; break }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let opened = try XCTUnwrap(help, "The synthetic Option help did not open")
+            XCTExpectFailure("CKP-ENG-05: the Option map omits the All and member digit hints") {
+                XCTAssertEqual(opened["helpZero"] as? Bool, true)
+                XCTAssertEqual(opened["helpOne"] as? Bool, true)
+            }
+            _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keyup',{key:'Alt'}))")
+        }
+    }
+    #endif
+
     func testG1_CKP_ENT_01_actualFadeAndOutline() async throws {
         try await withLivePage { _, _, page in
             let facts = try await self.geometry(page)
