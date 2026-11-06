@@ -76,13 +76,14 @@ struct PulsePanelDrag {
         return .init(displayID: display.id, edge: edge, alongFraction: Double(max(0, min(1, along / length))))
     }
 
-    mutating func carry(pointer: CGPoint, display: DockDisplayArea, layouts: [DockEdgeLayout])
-        -> (DockEdgePreference, attached: Bool) {
+    /// The edge the carried panel shows at `pointer`, and whether it is attached.
+    /// Carry and release share this decision so a release commits the edge the
+    /// user saw: a held rail wins at a corner even when another edge is nearer.
+    private func attachment(pointer: CGPoint, display: DockDisplayArea, layouts: [DockEdgeLayout])
+        -> (edge: DockEdge, attached: Bool) {
         let visible = display.usableFrame
         let nearest = Self.nearest(to: pointer, visible: visible)
         let snaps = Self.distance(from: nearest, pointer: pointer, visible: visible) <= snapDistance
-        var edge = nearest
-        var attached = alwaysAttached || snaps
         // The held rail takes precedence over another edge entering snap range at a corner.
         if !alwaysAttached, heldDisplay == display.id, let heldEdge,
            let layout = layouts.first(where: { $0.displayID == display.id && $0.edge == heldEdge }) {
@@ -90,18 +91,25 @@ struct PulsePanelDrag {
                                  y: pointer.y - grab.y * layout.expandedSize.height)
             let rail = CGPoint(x: heldEdge == .right ? origin.x + layout.expandedSize.width : origin.x, y: origin.y)
             if Self.distance(from: heldEdge, pointer: rail, visible: visible) < breakDistance {
-                edge = heldEdge
-                attached = true
+                return (heldEdge, true)
             }
         }
+        return (nearest, alwaysAttached || snaps)
+    }
+
+    mutating func carry(pointer: CGPoint, display: DockDisplayArea, layouts: [DockEdgeLayout])
+        -> (DockEdgePreference, attached: Bool) {
+        let (edge, attached) = attachment(pointer: pointer, display: display, layouts: layouts)
         heldDisplay = attached ? display.id : nil
         heldEdge = attached ? edge : nil
         let layout = layouts.first { $0.displayID == display.id && $0.edge == edge }
         return (preference(display: display, edge: edge, pointer: pointer, layout: layout, useGrab: !alwaysAttached), attached)
     }
 
+    /// Commits the edge the carry shows at the release point (the held rail
+    /// while attached), and the nearest edge only for a floating release.
     func release(pointer: CGPoint, display: DockDisplayArea, layouts: [DockEdgeLayout]) -> DockEdgePreference {
-        let edge = Self.nearest(to: pointer, visible: display.usableFrame)
+        let edge = attachment(pointer: pointer, display: display, layouts: layouts).edge
         let layout = layouts.first { $0.displayID == display.id && $0.edge == edge }
         return preference(display: display, edge: edge, pointer: pointer, layout: layout, useGrab: !alwaysAttached)
     }

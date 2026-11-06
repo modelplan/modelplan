@@ -380,6 +380,113 @@ import ModelPlanShell
     }
     #endif
 
+    /// Review P2-1: dragging down the right rail into the bottom-right corner
+    /// keeps showing the right edge in mode 1 (strong snap), so the release must
+    /// save the right edge, not the nearer bottom edge. Mode 2 shows and saves
+    /// the nearest edge. Either way the saved edge equals the shown edge.
+    func testD04CornerReleaseSavesTheShownEdgeInBothModes() async throws {
+        try await exerciseCornerRelease(nativePanels: false)
+    }
+
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    func testD04NativeCornerReleaseSavesTheShownEdgeInBothModes() async throws {
+        _ = NSApplication.shared
+        try await exerciseCornerRelease(nativePanels: true)
+    }
+    #endif
+
+    private func exerciseCornerRelease(nativePanels: Bool) async throws {
+        let topology = DragTopology()
+        let frame = CGRect(x: 0, y: 0, width: 1600, height: 900)
+        let available = CGRect(x: 0, y: 72, width: 1600, height: 804)
+        let display = DockDisplayArea(id: "A", frame: frame, visibleFrame: available)
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-corner-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": mode])
+            topology.active = [display]
+            topology.pointer = CGPoint(x: available.midX, y: available.midY)
+            let root = profile.appendingPathComponent(String(mode))
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            if nativePanels { EngineRowsEntry.nativeJourneyProfile = root }
+            defer { if nativePanels { EngineRowsEntry.nativeJourneyProfile = nil } }
+            #endif
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: nativePanels, dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            let label = "corner release, mode \(mode)"
+            let host = app.composition.dock
+            let editor = app.settingsHost.application.editor
+            XCTAssertEqual(host.edgePresentation?.placement?.edge, .right, label)
+            let view = host.dockView
+            let drag = try XCTUnwrap(view.backgroundDragDelegate, label)
+            let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+                stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+            }.first { drag.backgroundCanDrag(local: $0) }, label)
+            let start = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
+            let panel: NSPanel?
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            panel = nativePanels ? try XCTUnwrap(host.nativePanel) : nil
+            #else
+            panel = nil
+            #endif
+            let down = panel.map { $0.convertPoint(toScreen: view.convert(local, to: nil)) }
+                ?? CGPoint(x: start.minX + local.x, y: start.maxY - local.y)
+            // Slide straight down the right rail into the bottom-right corner:
+            // the rail stays on the right edge, while the pointer ends nearer
+            // the bottom edge (4 pt) than the right edge.
+            let corner = CGPoint(x: down.x, y: available.minY + 4)
+            XCTAssertGreaterThan(start.maxX - corner.x, 8, "precondition: the bottom edge is nearer, " + label)
+            let revision = try XCTUnwrap(editor.snapshot?.revision)
+            topology.pointer = down
+            if let panel {
+                func send(_ type: NSEvent.EventType, at point: CGPoint) throws {
+                    panel.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: type,
+                        location: panel.convertPoint(fromScreen: point), modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                        context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)))
+                }
+                try await Task.sleep(for: .milliseconds(320))
+                try send(.leftMouseDown, at: down)
+                topology.pointer = corner
+                try send(.leftMouseDragged, at: corner)
+            } else {
+                let arrival = ContinuousClock.now + .seconds(1)
+                while !drag.beginBackgroundMove(local: local, global: down) {
+                    guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget: " + label) }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                topology.pointer = corner
+                drag.updateBackgroundMove(global: corner)
+            }
+            let shown = try XCTUnwrap(host.edgePresentation?.placement?.edge, label)
+            XCTAssertEqual(shown, mode == 1 ? .right : .bottom,
+                           "mode 1 holds the right rail; mode 2 attaches to the nearest edge, " + label)
+            if let panel {
+                func up() throws {
+                    panel.sendEvent(try XCTUnwrap(NSEvent.mouseEvent(with: .leftMouseUp,
+                        location: panel.convertPoint(fromScreen: corner), modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+                        context: nil, eventNumber: 1, clickCount: 1, pressure: 0)))
+                }
+                try up()
+            } else {
+                drag.endBackgroundMove(global: corner)
+            }
+            try await waitForSettings(editor) { editor.snapshot?.revision == revision + 1 && !editor.isSaving }
+            let saved = await store.snapshot()
+            XCTAssertEqual(saved.preferences.dockEdge.rawValue, String(describing: shown),
+                           "the release saves the edge that was shown, " + label)
+            XCTAssertEqual(host.edgePresentation?.placement?.edge, shown, "the widget rests where it was shown, " + label)
+            await app.composition.stop()
+        }
+    }
+
     private func exerciseD19(nativePanels: Bool) async throws {
         let topology = DragTopology()
         let frame = CGRect(x: 0, y: 0, width: 1600, height: 900)
