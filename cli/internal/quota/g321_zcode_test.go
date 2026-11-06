@@ -66,7 +66,7 @@ func TestG321FreshProfileReadsZCodeCodingPlanByDefault(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.Host != "api.z.ai" || r.URL.Path != "/api/monitor/usage/quota/limit" || !strings.Contains(r.Header.Get("Authorization"), "zcode-key-canary") {
+		if r.Host != "api.z.ai" || r.URL.Path != "/api/monitor/usage/quota/limit" || r.Header.Get("Authorization") != "zcode-key-canary" {
 			t.Errorf("unexpected request host=%s path=%s", r.Host, r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25,"nextResetTime":1792152000000}]}}`))
