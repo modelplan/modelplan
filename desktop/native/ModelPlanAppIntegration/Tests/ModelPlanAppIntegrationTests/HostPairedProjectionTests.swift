@@ -357,6 +357,7 @@ private actor EntrySyntheticClient: EngineClient {
             XCTAssertEqual(button.title, expected, line: line)
             XCTAssertTrue(button.image?.isTemplate == true, line: line)
         }
+        assertStatus("9%")
         _ = try await editor.commit(SettingsB21Edit.menuDisplay(.tightest))
         assertStatus("9%")
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
