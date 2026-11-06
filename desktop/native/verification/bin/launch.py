@@ -239,5 +239,7 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep):
             except subprocess.TimeoutExpired:child.kill();child.wait()
             return reason
         sleep(poll)
-    return None
+    # The child is gone. If authority was withdrawn meanwhile (e.g. the guardian closed the subject on
+    # STOP between two polls), that is a supervised stop, never a child that ended by itself.
+    return stop_reason(c,clock())
 if __name__=='__main__':main()

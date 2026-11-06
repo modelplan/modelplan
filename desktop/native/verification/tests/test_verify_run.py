@@ -234,6 +234,37 @@ class VerifyRunTests(unittest.TestCase):
         self.assertIn('reason=supervisor-stop-file', lines['D-01'])
         self.assertEqual(list(self.out.rglob('*.png')), [])
 
+    def test_stop_during_the_final_dialog_query_is_not_a_completed_run(self):
+        # STOP lands while the production dialog query (osascript) of V-01's LAST step is in
+        # flight: the ID must not complete as REVIEW/PASS; it is NOT-RUN supervisor-*, exit 2,
+        # and the appearance baseline is still restored.
+        steps = len(json.loads((BIN.parent / 'scenarios' / 'V-01.json').read_text())['steps'])
+
+        class StopDuringLastDialogs(FakeActions):
+            queries = 0
+
+            def dialogs(self):
+                self.queries += 1
+                def osascript(command, **kwargs):
+                    self.calls.append(('osascript', command[0]))
+                    if self.queries == steps:
+                        Path(FakeSession.lease['stopPath']).write_text('guardian-deadline')
+                    return SimpleNamespace(returncode=0, stdout='[]')
+                with patch.object(verify_run.subprocess, 'run', side_effect=osascript):
+                    return verify_run.Actions.dialogs(self)
+
+        actions = StopDuringLastDialogs()
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertEqual(actions.queries, steps)  # the STOP really landed in the final query
+        self.assertEqual(code, 2)
+        self.assertTrue(lines['V-01'].startswith('NOT-RUN V-01'))
+        self.assertIn('reason=supervisor-stop-file', lines['V-01'])
+        receipt = json.loads((self.out / 'V-01' / 'receipt.json').read_text())
+        self.assertEqual(receipt['outcome'], 'NOT-RUN')
+        self.assertNotIn(receipt['outcome'], ('PASS', 'REVIEW'))
+        self.assertEqual(receipt['reason'], 'supervisor-stop-file')
+        self.assertIn(dict(step='restore', setting='appearance', value='light', restored=True), receipt['steps'])
+
     def test_capture_menubar_without_owned_bounds_takes_no_system_region(self):
         actions = FakeActions(item_bounds=False)
         code, lines, readme = self.go(ids=('V-01',), actions=actions)
