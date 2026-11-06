@@ -107,6 +107,29 @@ import ModelPlanWire
         }
         return .init(tool.english + " · " + route.english, tool.chinese + " · " + route.chinese)
     }
+    /// D27 / G3-19: first launch shows one line — what is read and where to turn it off — and no
+    /// per-reader choices. Sensitive (browser-session) readers ask when they are first needed.
+    private func renderFirstRunNotice() {
+        label(.init("Reading usage", "读取用量"), heading: true)
+        var tools: [SettingsText] = []
+        for scope in controller.facts?.scopes ?? [] where scope.detected && controller.isReading(scope.scope) {
+            let name = toolName(scope.tool)
+            if !tools.contains(name) { tools.append(name) }
+        }
+        let names = tools.map(\.english), zh = tools.map(\.chinese)
+        let text: SettingsText = names.isEmpty
+            ? .init("ModelPlan reads usage from the coding tools it finds on this Mac. Turn any of them off in Settings › Data & Privacy.",
+                    "ModelPlan 会读取本机找到的编程工具的用量。可在 设置 › 数据与隐私 中关闭。")
+            : .init("ModelPlan reads usage from " + names.joined(separator: ", ") + " on this Mac. Turn any of them off in Settings › Data & Privacy.",
+                    "ModelPlan 会读取本机 " + zh.joined(separator: "、") + " 的用量。可在 设置 › 数据与隐私 中关闭。")
+        label(text, secondary: true)
+        arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
+    }
+    private func toolName(_ tool: String) -> SettingsText {
+        let name = ["gemini": "Gemini", "cursor": "Cursor", "codex": "Codex", "claude": "Claude Code",
+                    "zai": "Z.ai", "opencode": "OpenCode", "minimax": "MiniMax", "kimi": "Kimi"][tool]
+        return name.map { SettingsText($0, $0) } ?? .init("Other tool", "其他工具")
+    }
     private func render() {
         for button in buttons {
             (button as? ScopeConsentButton)?.retire(); (button as? ConnectionButton)?.retire()
@@ -114,6 +137,7 @@ import ModelPlanWire
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
         wrappingLabels = []
+        if firstRun { renderFirstRunNotice(); return }
         label(.init("Reading permissions", "读取权限"), heading: true)
         switch controller.notice {
         case .none: break
@@ -185,12 +209,28 @@ import ModelPlanWire
             } else if scope.disabledReason != nil {
                 label(.init("This path cannot be newly allowed under the engine's current policy. Existing permissions can still be revoked.", "引擎当前策略不允许新增授权；仍可撤销已有权限。"))
             }
-            label(controller.isAllowed(id) ? .init("Allowed", "已授权") : .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。"), secondary: true)
-            let selected = controller.selectedIDs.contains(id)
-            let box = synchronousButton(.init("Allow this path", "授权此读取路径"), id: "scope.allow." + id, enabled: controller.canChoose(id)) { [weak self] in
-                self?.controller.choose(id, selected: !selected)
+            // D27: a standard reader is on by default; its row says so and its switch is on.
+            let status: SettingsText
+            if controller.isAllowed(id) { status = .init("On", "已开启") }
+            else if controller.isOnByDefault(id) { status = .init("On by default. Turn it off to stop reading this path.", "默认开启；关闭后不再读取此路径。") }
+            else if scope.state == .denied { status = .init("Off. Turn it on to read this path.", "已关闭；打开后才会读取此路径。") }
+            else { status = .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。") }
+            label(status, secondary: true)
+            let box: ConnectionButton
+            if controller.isReading(id) {
+                // Turning a reading path off is a confirmed revoke (the engine records the refusal).
+                let switchable = controller.canMutate && scope.detected && !scope.retired && !scope.cleanupPending
+                box = synchronousButton(.init("Read this path", "读取此路径"), id: "scope.allow." + id, enabled: switchable) { [weak self] in
+                    self?.controller.requestRevoke(id)
+                }
+                box.setButtonType(.switch); box.state = .on
+            } else {
+                let selected = controller.selectedIDs.contains(id)
+                box = synchronousButton(.init("Allow this path", "授权此读取路径"), id: "scope.allow." + id, enabled: controller.canChoose(id)) { [weak self] in
+                    self?.controller.choose(id, selected: !selected)
+                }
+                box.setButtonType(.switch); box.state = selected ? .on : .off
             }
-            box.setButtonType(.switch); box.state = selected ? .on : .off
             // One line per path: the choice, then its saved-permission actions (Settings only).
             if firstRun { line([box]) }
             else {
