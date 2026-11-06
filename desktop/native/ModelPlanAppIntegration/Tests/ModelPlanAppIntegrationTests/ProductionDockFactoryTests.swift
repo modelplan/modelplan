@@ -34,7 +34,7 @@ import ModelPlanSettings
                 let item = try XCTUnwrap(host.menu().items.first { $0.title == title })
                 XCTAssertEqual(item.action, #selector(NSApplication.terminate(_:)))
                 XCTAssertTrue(item.target === NSApplication.shared, "Quit must reach the application termination route")
-                XCTAssertEqual(item.keyEquivalent, "q")
+                XCTAssertEqual(item.keyEquivalent, "", "D37: no shortcut hint in the widget menu")
                 XCTAssertNil(host.nativePanel)
             }
         }
