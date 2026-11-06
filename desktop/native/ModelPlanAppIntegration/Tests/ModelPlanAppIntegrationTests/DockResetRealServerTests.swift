@@ -24,9 +24,13 @@ import ModelPlanSettings
     func testD21NativeOrderInAcknowledgesTheResetNotice() async throws {
         try await exercise(native: true)
     }
+
+    func testD21PhysicalRevealAndNativeStatusNotice() async throws {
+        try await exercise(native: true, physical: true)
+    }
     #endif
 
-    private func exercise(native: Bool) async throws {
+    private func exercise(native: Bool, physical: Bool = false) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -120,9 +124,13 @@ import ModelPlanSettings
             $0.autoHide = true; $0.motion = .on
             $0.notifications.optedIn = true
             $0.notifications.kinds = [.official]
+            if physical { $0.onboarding.next() }
         }
-        let dockEnvironment: @MainActor () -> DockEdgeEnvironment
-        if native {
+        let dockEnvironment: (@MainActor () -> DockEdgeEnvironment)?
+        if physical {
+            _ = NSApplication.shared
+            dockEnvironment = nil
+        } else if native {
             _ = NSApplication.shared
             let screen = try XCTUnwrap(NSScreen.main)
             let display = DockDisplayArea(id: "synthetic", frame: screen.frame, visibleFrame: screen.visibleFrame)
@@ -133,27 +141,53 @@ import ModelPlanSettings
         }
         var wall = now
         let cockpit = ResetCockpitProbe()
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if physical { EngineRowsEntry.nativeJourneyProfile = root }
+        #endif
         let app = EngineRowsEntry.make(configuration: .init(executableURL: executable, applicationVersion: "synthetic-d21",
             allowedEnvironment: env, offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
             dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
             isolatedResetNotificationLedger: root.appendingPathComponent("test-notifications.json"), activateSettings: {})
-        addTeardownBlock { @MainActor in await app.composition.stop() }
-        await app.prepare()
-        XCTAssertNil(app.loginServiceAdapter)
-        XCTAssertNil(app.notificationAuthorizationService)
         var delivered: [String] = []
         app.composition.setResetNotificationDelivery { event, title in
             XCTAssertEqual(title, "Official extra reset")
             delivered.append(event)
         }
-        app.allowDockPresentation()
-        let delivery = try await app.composition.client.start()
-        func wait(_ description: String, until predicate: () -> Bool) async throws {
-            let end = ContinuousClock.now + .seconds(4)
+        func announce(_ message: String) {
+            if physical { FileHandle.standardOutput.write(Data(("D-21: " + message + "\n").utf8)) }
+        }
+        func wait(_ description: String, timeout: Duration = .seconds(4), until predicate: () -> Bool) async throws {
+            let end = ContinuousClock.now + timeout
             while !predicate(), ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(10)) }
             XCTAssertTrue(predicate(), description)
         }
+        if physical {
+            #if MODELPLAN_DOCK_NATIVE_JOURNEY
+            let application = NSApplication.shared
+            let menu = application.mainMenu, appearance = application.appearance, policy = application.activationPolicy()
+            addTeardownBlock { @MainActor in
+                await app.stopNativeDockJourney()
+                EngineRowsEntry.nativeJourneyProfile = nil
+                application.mainMenu = menu
+                application.appearance = appearance
+                application.setActivationPolicy(policy)
+            }
+            announce("Keep the pointer clear of the widget. Capture the first announced status icon and collapsed strip.")
+            app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: application))
+            try await wait("The real status item and fresh delivery must be present", timeout: .seconds(12)) {
+                app.nativeJourneyStatusVisible && !app.lifecyclePaused
+            }
+            #endif
+        } else {
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+        }
+        XCTAssertNil(app.loginServiceAdapter)
+        XCTAssertNil(app.notificationAuthorizationService)
+        let delivery = try await app.composition.client.start()
+
         func waitForEvent(_ id: String, _ status: String) async throws {
             try await wait("The real server must publish the " + status + " event") {
                 guard case .available(let events) = app.composition.rowEvents else { return false }
@@ -184,8 +218,21 @@ import ModelPlanSettings
         XCTAssertEqual(row.accounts.first?.windows.first?.current, true)
         XCTAssertEqual(row.state, .fresh, "A current cached runtime reading must be admitted to the Dock. Producer reason: " + String(describing: row.reason.code))
         guard row.state == .fresh else { return }
+        if physical {
+            try await wait("The native strip must collapse", timeout: .seconds(12)) { dock.edgePresentation?.state == .sliver }
+            XCTAssertNotNil(app.noticeIndicator.window)
+            XCTAssertFalse(app.noticeIndicator.isHiddenOrHasHiddenAncestor)
+        }
         let initial = try strip()
-        let announcement = try XCTUnwrap(initial.noticeMarks.first?.notice)
+        let mark = try XCTUnwrap(initial.noticeMarks.first)
+        XCTAssertEqual(mark.unit, 44.0 / 52.0, accuracy: 0.001, "The medium strip uses the nominal four-point reset dot")
+        let announcement = mark.notice
+        func raster(_ strip: DockSliverView) throws -> Data {
+            let image = try XCTUnwrap(strip.bitmapImageRepForCachingDisplay(in: strip.bounds))
+            strip.cacheDisplay(in: strip.bounds, to: image)
+            return try XCTUnwrap(image.representation(using: .png, properties: [:]))
+        }
+        let announcedPixels = try raster(initial)
         XCTAssertEqual(announcement.key.kind, .resetAnnounced)
         XCTAssertEqual(announcement.tone, .blue)
         XCTAssertEqual(announcement.shape, .hollow)
@@ -196,7 +243,16 @@ import ModelPlanSettings
         XCTAssertEqual(quota.first?.quotaRole, .warning, "The fixture must have quota paint before acknowledging the notice")
         try await wait("Announced notice is delivered once") { delivered == [eventID] }
 
-        XCTAssertTrue(initial.accessibilityPerformPress())
+        if physical {
+            announce("Capture the actual status item and hollow blue strip mark now.")
+            try await Task.sleep(for: .seconds(5))
+            announce("Move into the wake zone to reveal once. Capture the visible face marker and cleared menu indicator.")
+            try await wait("The physical pointer must reveal the native panel", timeout: .seconds(30)) {
+                dock.edgePresentation?.state == .expanded && dock.nativePanel?.isVisible == true
+            }
+        } else {
+            XCTAssertTrue(initial.accessibilityPerformPress())
+        }
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
         if native {
@@ -210,9 +266,12 @@ import ModelPlanSettings
         if !native { dock.acknowledgeDockReveal() }
         XCTAssertEqual(face(), announcement)
         XCTAssertNil(app.noticeIndicator.notice)
-        try await wait("Return to the strip") { dock.edgePresentation?.state == .sliver }
+        announce("Move away and capture the re-collapsed strip. The quota segment remains.")
+        try await wait("Return to the strip", timeout: physical ? .seconds(25) : .seconds(4)) { dock.edgePresentation?.state == .sliver }
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+        let acknowledgedPixels = try raster(strip())
+        XCTAssertNotEqual(announcedPixels, acknowledgedPixels, "Clearing the reset dot must change the drawn strip")
 
         try publish([announced, confirmed])
         try await subscribe()
@@ -223,7 +282,10 @@ import ModelPlanSettings
         XCTAssertEqual(confirmation.shape, .solid)
         XCTAssertEqual(try strip().noticeMarks.first?.notice, confirmation)
         XCTAssertEqual(app.noticeIndicator.notice, confirmation)
+        XCTAssertNotEqual(try raster(strip()), acknowledgedPixels, "The confirmed mark must restore painted pixels")
         XCTAssertEqual(try strip().quotaSegmentColorRolesForChecks, quota)
+        announce("Capture the confirmed solid mark and status indicator before the restarted reading arrives.")
+        if physical { try await Task.sleep(for: .seconds(5)) }
         XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
@@ -233,6 +295,8 @@ import ModelPlanSettings
         XCTAssertNil(face())
         XCTAssertNil(app.noticeIndicator.notice)
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
+        announce("Capture the restarted reading with both the reset dot and recovered quota alert cleared.")
+        if physical { try await Task.sleep(for: .seconds(5)) }
 
         let expiryID = "synthetic-d21-expiry"
         let expiry = at(60)
@@ -249,11 +313,15 @@ import ModelPlanSettings
         XCTAssertTrue(cockpit.shown)
         XCTAssertNil(app.noticeIndicator.notice)
         XCTAssertEqual(try strip().noticeMarks.first?.notice, expiringNotice)
+        announce("Capture the still-present strip mark after the isolated cockpit acknowledgement.")
+        if physical { try await Task.sleep(for: .seconds(4)) }
         wall = now.addingTimeInterval(61)
         dock.refreshDockContent()
         XCTAssertNil(face())
         XCTAssertTrue(try strip().noticeMarks.isEmpty)
         XCTAssertEqual(delivered, [eventID, expiryID], "Expiry must not publish another notification")
+        announce("Capture the strip after expiry.")
+        if physical { try await Task.sleep(for: .seconds(4)) }
     }
 }
 #endif
