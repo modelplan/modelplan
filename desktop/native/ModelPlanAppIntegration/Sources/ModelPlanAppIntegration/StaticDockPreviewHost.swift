@@ -1397,6 +1397,8 @@ struct DockHelpInteraction: Equatable {
         }
         guard let panel else { publishPlacementObservation(nil); return }
         let previousState = panel.isVisible ? presentedSurfaceState : nil
+        // Record now: AppKit can re-enter present() while this one orders the panel in.
+        presentedSurfaceState = value.state
         let motionEdge = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
         let reduceMotion = application?.effective.reduceMotion ?? true
         // D-9 collapse: the last expanded image fades out sliding toward the edge, in its own
