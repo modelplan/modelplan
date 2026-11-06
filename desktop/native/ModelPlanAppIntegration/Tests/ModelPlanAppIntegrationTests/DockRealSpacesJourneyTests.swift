@@ -544,8 +544,8 @@ import XCTest
             let lo = horizontal ? usable.minX : usable.minY
             let hi = horizontal ? usable.maxX : usable.maxY
             let axis: (CGPoint) -> CGFloat = { horizontal ? $0.x : $0.y }
-            func inTarget(_ point: CGPoint) -> Bool {
-                guard destination.frame.contains(point), station.contains(axis(point), from: lo, to: hi) else { return false }
+            func onTargetRail(_ point: CGPoint) -> Bool {
+                guard destination.frame.contains(point) else { return false }
                 switch edge {
                 case .left: return (usable.minX...usable.minX + 4).contains(point.x)
                 case .right: return (usable.maxX - 4...usable.maxX).contains(point.x)
@@ -560,19 +560,29 @@ import XCTest
                     throw EdgeTargetFailure.wrongStartPlacement
                 }
                 let previous = panel.receivedInput
-                var pressOnSource = false
+                var pressedAt: CGPoint?
                 var releasedAt: CGPoint?
                 panel.receivedInput = { type, event in
                     previous?(type, event)
-                    if type == .leftMouseDown { pressOnSource = source.frame.contains(NSEvent.mouseLocation) }
+                    if type == .leftMouseDown {
+                        let point = NSEvent.mouseLocation
+                        pressedAt = source.frame.contains(point) ? point : nil
+                    }
                     if type == .leftMouseUp { releasedAt = NSEvent.mouseLocation }
                 }
                 defer { panel.receivedInput = previous }
-                announce(label, "\(edge) \(station.rawValue): drag from source, aim within 4 pt of the destination rail, and hold")
+                let aim = station == .midpoint && mode == 1 ? "align the widget anchor with the rail midpoint" : "aim the pointer at the target"
+                announce(label, "\(edge) \(station.rawValue): drag from source, \(aim), keep the pointer within 4 pt of the destination rail, and hold")
                 let held = try await wait(.seconds(35)) {
-                    pressOnSource && releasedAt == nil && host.edgePresentation?.moving == true &&
-                        host.edgePresentation?.placement?.displayID == destination.id &&
-                        panel.isVisible && inTarget(NSEvent.mouseLocation)
+                    let pointer = NSEvent.mouseLocation
+                    guard pressedAt != nil, releasedAt == nil, host.edgePresentation?.moving == true,
+                          let placement = host.edgePresentation?.placement, placement.displayID == destination.id,
+                          placement.edge == edge,
+                          panel.isVisible, onTargetRail(pointer) else { return false }
+                    let coordinate = station == .midpoint && mode == 1
+                        ? (horizontal ? placement.sliverFrame.midX : placement.sliverFrame.midY)
+                        : axis(pointer)
+                    return station.contains(coordinate, from: lo, to: hi)
                 }
                 let unchanged = try Data(contentsOf: storedURL) == originalBytes
                 guard held else { throw EdgeTargetFailure.pointerDidNotReachTarget }
@@ -589,13 +599,28 @@ import XCTest
                 let length = horizontal ? layout.expandedSize.width : layout.expandedSize.height
                 let lowAnchor = lo + 24 + max(layout.alongAnchor, layout.sliverLength / 2)
                 let highAnchor = hi - 24 - max(length - layout.alongAnchor, layout.sliverLength / 2)
-                let expected = (max(lowAnchor, min(highAnchor, axis(release))) - lo) / (hi - lo)
+                var aimedAnchor = axis(release)
+                if mode == 1 {
+                    let press = try XCTUnwrap(pressedAt)
+                    let original = horizontal ? start.frame.minX : start.frame.minY
+                    let span = horizontal ? start.frame.width : start.frame.height
+                    let grab = (axis(press) - original) / span
+                    aimedAnchor += layout.alongAnchor - grab * length
+                }
+                let expectedAnchor = max(lowAnchor, min(highAnchor, aimedAnchor))
+                let expected = (expectedAnchor - lo) / (hi - lo)
+                let reachedStation: Bool
+                switch station {
+                case .midpoint: reachedStation = station.contains(expectedAnchor, from: lo, to: hi)
+                case .low: reachedStation = station.contains(axis(release), from: lo, to: hi) && expectedAnchor == lowAnchor
+                case .high: reachedStation = station.contains(axis(release), from: lo, to: hi) && expectedAnchor == highAnchor
+                }
                 let frame = panel.frame
                 let frameStart = horizontal ? frame.minX : frame.minY
                 let frameEnd = horizontal ? frame.maxX : frame.maxY
                 let crossDistance: CGFloat = edge == .left ? frame.minX - usable.minX :
                     edge == .right ? usable.maxX - frame.maxX : frame.minY - usable.minY
-                let savedCorrectly = unchanged && inTarget(release) && landing.displayID == destination.id &&
+                let savedCorrectly = unchanged && onTargetRail(release) && reachedStation && landing.displayID == destination.id &&
                     landing.edge == edge && saved.revision == before.revision + 1 &&
                     saved.preferences.dockDisplayID == destination.id && saved.preferences.dockEdge == setting &&
                     abs(saved.preferences.dockAlongFraction - expected) <= 0.002
