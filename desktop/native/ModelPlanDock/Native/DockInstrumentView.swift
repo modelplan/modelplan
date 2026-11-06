@@ -63,6 +63,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// element is under the pointer; repeated samples over one element stay silent there.
     public var onHelpPointerMoved: (() -> Void)?
     public private(set) var registeredGripRects: [CGRect] = []
+    /// The painted grip art for each registered grip; the focus/hover outline hugs it while the
+    /// hit target (registeredGripRects) may be larger (R64 D-5).
+    public private(set) var registeredGripArtRects: [CGRect] = []
     public private(set) var focusedGripIndex: Int? {
         didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); helpFocusChanged() } }
     }
@@ -70,10 +73,16 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     private var gripOutline: CAShapeLayer?
     @_spi(DockResourceChecks) public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
 
-    public func registerGripRects(_ rects: [CGRect]) {
-        let valid = rects.filter { !$0.isEmpty && bounds.contains($0) && isPainted(atLocal: CGPoint(x: $0.midX, y: $0.midY)) }
-        guard registeredGripRects != valid else { return }
+    public func registerGripRects(_ rects: [CGRect], art: [CGRect]? = nil) {
+        let arts = art.flatMap { $0.count == rects.count ? $0 : nil } ?? rects
+        let pairs = zip(rects, arts).filter { hit, art in
+            !hit.isEmpty && !art.isEmpty && bounds.contains(hit) && hit.contains(CGPoint(x: art.midX, y: art.midY)) &&
+                isPainted(atLocal: CGPoint(x: art.midX, y: art.midY))
+        }
+        let valid = pairs.map(\.0)
+        guard registeredGripRects != valid || registeredGripArtRects != pairs.map(\.1) else { return }
         registeredGripRects = valid
+        registeredGripArtRects = pairs.map(\.1)
         hoveredGripIndex = nil
         focusedGripIndex = nil
         updateGripEmphasis()
@@ -90,7 +99,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         outline.frame = bounds
-        outline.path = CGPath(roundedRect: registeredGripRects[index], cornerWidth: 3, cornerHeight: 3, transform: nil)
+        let art = registeredGripArtRects.indices.contains(index) ? registeredGripArtRects[index] : registeredGripRects[index]
+        outline.path = CGPath(roundedRect: art, cornerWidth: 3, cornerHeight: 3, transform: nil)
         outline.fillColor = NSColor.clear.cgColor
         outline.strokeColor = NSColor.systemOrange.cgColor
         outline.lineWidth = 2
@@ -432,7 +442,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
         setAccessibilityValue(nil)
-        clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; community = false; failed = true
+        clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; registeredGripArtRects = []; community = false; failed = true
         restingInstrumentImage = nil
         imageUsesHoverViewport = false
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
@@ -440,7 +450,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Draws only the changed pose over the existing static material. The model, registered
