@@ -237,7 +237,7 @@ private actor S4RowsClient: EngineClient {
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
         try await inspect?(entry)
         entry.composition.dock.acknowledgeDockReveal()
-        try require(entry.noticeIndicator.notice == nil, "opening Dock must clear the indicator without cockpit")
+        try require(entry.noticeIndicator.notice == nil, "opening the widget must clear the menu-bar indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }
@@ -350,7 +350,7 @@ private actor S4RowsClient: EngineClient {
         try require(cockpitOpened.menuNotice == nil && cockpitOpened.dots.count == 1,"opening cockpit must acknowledge only the menu notice")
         try attention.acknowledge(.dockRevealed,signals:signals,at:clock)
         let acknowledged=try attention.project(signals,stationBySubscription:stations,at:clock)
-        try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge both indicators")
+        try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge the strip dots")
         try require(DockNoticeProjection.selected(for:matching,at:clock) != nil,"acknowledgement must not erase the Dock-face notice")
         // Simulate a slow host before delivering the confirmation. Its expiry
         // is based on the controlled delivery time, not journey wall time.

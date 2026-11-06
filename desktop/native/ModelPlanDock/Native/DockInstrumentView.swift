@@ -34,6 +34,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }
+    /// Quota consumers share the ink of the current successful instrument appearance.
+    /// Reading/label overrides are not quota colours; failed/community appearances have no supplied ink.
+    public func quotaInk(for status:DockQuotaStatus) -> DockInk? {
+        guard !failed, !community else { return nil }
+        return skin?.palette[status.rawValue]
+    }
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
     /// Separate empty-state action; never routed through subscription/overflow interaction.
