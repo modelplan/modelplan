@@ -16,7 +16,8 @@ import (
 )
 
 // A real server wakes an admitted local reader when a three-hour-old runtime
-// cannot satisfy freshness. Runtime and unbound local accounts stay distinct.
+// cannot satisfy freshness. Under owner decision B (#602) the unavailable runtime
+// is then not an account: the fresh, unbound local logs are the only Codex account.
 func TestStaleCodexRuntimeFallbackPublishesRealBinary(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "modelplan")
 	if out, err := exec.Command("go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
@@ -141,11 +142,12 @@ func TestStaleCodexRuntimeFallbackPublishesRealBinary(t *testing.T) {
 			if err := json.Unmarshal(msg["params"], &update); err != nil {
 				t.Fatal(err)
 			}
-			freshLocal, staleRuntime := false, false
+			freshLocal, runtimeShown, accounts := false, false, 0
 			for _, row := range update.Data.Projection.Rows {
 				if row.ID != "codex" {
 					continue
 				}
+				accounts += len(row.Accounts)
 				for _, account := range row.Accounts {
 					if account.Route == "local_log" && account.ObservedAt != nil && !account.ObservedAt.Before(now) {
 						for _, window := range account.Windows {
@@ -154,16 +156,19 @@ func TestStaleCodexRuntimeFallbackPublishesRealBinary(t *testing.T) {
 							}
 						}
 					}
-					if account.Route == "runtime_rpc" && account.ObservedAt != nil && account.ObservedAt.Equal(old) {
-						staleRuntime = true
+					if account.Route == "runtime_rpc" {
+						runtimeShown = true
 					}
 				}
 			}
-			if freshLocal && staleRuntime {
+			if freshLocal {
+				if runtimeShown || accounts != 1 {
+					t.Fatalf("unavailable runtime shown beside the local fallback (%d accounts)", accounts)
+				}
 				return
 			}
 		case <-timeout:
-			t.Fatal("local fallback did not publish fresh local data while keeping the old runtime separate")
+			t.Fatal("local fallback did not publish fresh local data")
 		}
 	}
 }

@@ -113,9 +113,11 @@ func TestCodexRuntimeAvailabilityUsesWindowObservation(t *testing.T) {
 	}
 }
 
-// A provider name does not bind local logs to a runtime account. In particular,
-// a fresh local fallback may not silently rejuvenate an unrelated stale runtime.
-func TestStaleRuntimeAndUnboundFreshLocalRemainSeparate(t *testing.T) {
+// Owner decision B (#602, D35): a runtime reading that is no longer available
+// (here three hours old, past the freshness interval) is not an account beside
+// fresh local logs; the logs are the Codex reading, unbound. The old runtime is
+// neither shown nor rejuvenated by the local observation.
+func TestStaleRuntimeYieldsToUnboundFreshLocalFallback(t *testing.T) {
 	isolateHome(t)
 	cache := t.TempDir()
 	now := time.Now().UTC()
@@ -127,27 +129,15 @@ func TestStaleRuntimeAndUnboundFreshLocalRemainSeparate(t *testing.T) {
 	}
 	report := Report{Accounts: []Account{{Source: "codex", ObservedAt: now, Windows: []Window{{Kind: "weekly", UsedPercent: &usedLocal, ObservedAt: now}}}}}
 	applyAccount(&report, cache, now)
-	if len(report.Accounts) != 2 {
-		t.Fatalf("unbound sources merged: %+v", report.Accounts)
+	if len(report.Accounts) != 1 {
+		t.Fatalf("stale runtime shown beside the local fallback: %+v", report.Accounts)
 	}
-	var runtime, local *Account
-	for i := range report.Accounts {
-		a := &report.Accounts[i]
-		if a.Via == "codex-account" {
-			runtime = a
-		} else if a.Source == "codex" {
-			local = a
-		}
+	local := &report.Accounts[0]
+	if local.Via == "codex-account" || local.Subscription != nil {
+		t.Fatalf("local fallback bound to the stale runtime login: %+v", local)
 	}
-	if runtime == nil || local == nil {
-		t.Fatal("separate local and runtime accounts required")
-	}
-	Evaluate(runtime, now)
 	Evaluate(local, now)
-	if !runtime.Stale || !runtime.ObservedAt.Equal(old) || len(runtime.Windows) != 1 || *runtime.Windows[0].UsedPercent != usedRuntime {
-		t.Fatal("stale runtime reading was overwritten")
-	}
 	if local.Stale || !local.ObservedAt.Equal(now) || len(local.Windows) != 1 || *local.Windows[0].UsedPercent != usedLocal {
-		t.Fatal("fresh local reading was lost")
+		t.Fatal("fresh local reading was lost or overwritten by the stale runtime")
 	}
 }
