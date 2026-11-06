@@ -24,6 +24,7 @@ enum SettingsWords {
         case "right": pair = ("Right", "右侧")
         case "left": pair = ("Left", "左侧")
         case "bottom": pair = ("Bottom", "底部")
+        case "top": pair = ("Top", "顶部")
         case "none": pair = ("None", "无")
         case "subtle": pair = ("Subtle", "轻微")
         case "strong": pair = ("Strong", "明显")

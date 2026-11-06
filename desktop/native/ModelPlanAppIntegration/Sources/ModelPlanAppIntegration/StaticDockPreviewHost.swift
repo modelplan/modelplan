@@ -56,9 +56,9 @@ public struct StaticDockGeometry {
     public mutating func registerSliver(hullBounds: CGRect, expandedSize: CGSize, edge: SettingsDockEdge,
                                        parameters: DockSliverParameters = .current, scale: CGFloat = 1) throws {
         guard !hullBounds.isNull, !hullBounds.isEmpty else { throw DockEdgeError.invalidGeometry }
-        let metrics = try parameters.resolve(fullSpan: edge == .bottom ? hullBounds.width : hullBounds.height, scale: scale)
+        let metrics = try parameters.resolve(fullSpan: edge.isHorizontal ? hullBounds.width : hullBounds.height, scale: scale)
         sliverLength = metrics.length; sliverThickness = metrics.thickness
-        sliverAlongAnchor = edge == .bottom ? hullBounds.midX : expandedSize.height - hullBounds.midY
+        sliverAlongAnchor = edge.isHorizontal ? hullBounds.midX : expandedSize.height - hullBounds.midY
     }
 }
 
@@ -396,7 +396,7 @@ struct DockHelpInteraction: Equatable {
     private var lastDisplayChoices: [SettingsDisplayChoice] = []
     private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
     private var edgeViews: [DockEdge: DockInstrumentView] = [:]
-    private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
+    private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
     func ownsDockMenu(_ menu: NSMenu) -> Bool {
         if menu.delegate === self { return true }
         return (menu.delegate as? DockSliverMenu)?.owner === self
@@ -507,7 +507,7 @@ struct DockHelpInteraction: Equatable {
               application?.effective.reduceMotion == false, let id = interactionHoveredID,
               let hovered = displayed.interactionAnchor(id) else { displayed.setNozzlePoses([:]); return }
         let stations = presentationGeometry.hoverStations
-        let horizontal = edge.presentation?.placement?.edge == .bottom
+        let horizontal = edge.presentation?.placement?.edge.isHorizontal == true
         let diameter = preferences.size.nozzleDiameter
         var along = horizontal ? hovered.midX : hovered.midY
         if let window = displayed.window, let pointer = environment().pointer {
@@ -673,7 +673,7 @@ struct DockHelpInteraction: Equatable {
         overflowScroll.hasVerticalScroller = true; overflowScroll.drawsBackground = true
         overflowScroll.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         let x = preferences.dockEdge == .left ? anchor.maxX + 12 : anchor.minX - size.width - 12
-        let y = preferences.dockEdge == .bottom ? anchor.maxY + 12 : anchor.midY - size.height / 2
+        let y = preferences.dockEdge == .bottom ? anchor.maxY + 12 : preferences.dockEdge == .top ? anchor.minY - size.height - 12 : anchor.midY - size.height / 2
         overflowPanel.contentView = overflowScroll
         overflowPanel.setFrame(CGRect(x: max(safe.minX, min(x, safe.maxX - size.width)),
             y: max(safe.minY, min(y, safe.maxY - size.height)), width: size.width, height: size.height), display: true)
@@ -1047,7 +1047,7 @@ struct DockHelpInteraction: Equatable {
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
-        // so a right-edge Community Dock can actually preview and drop on the left or bottom.
+        // so a right-edge Community Dock can actually preview and drop on the left, bottom or top.
         if appearance == nil {
             for orientation in DockEdgeGeometry.allowedEdges where orientation != selected {
                 var candidate = geometry
@@ -1152,8 +1152,12 @@ struct DockHelpInteraction: Equatable {
         // The gate samples current geometry and can synchronously switch the displayed edge.
         return !createsNativePanels || view.superview === container
     }
-    private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
-    private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
+    private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge {
+        switch value { case .left: return .left; case .right: return .right; case .bottom: return .bottom; case .top: return .top }
+    }
+    private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge {
+        switch value { case .left: return .left; case .right: return .right; case .bottom: return .bottom; case .top: return .top }
+    }
     private var visibilityPolicy: DockVisibilityPolicy {
         var value = DockVisibilityPolicy()
         value.revealDwell = Double(preferences.revealMilliseconds) / 1000
@@ -1535,7 +1539,7 @@ struct DockHelpInteraction: Equatable {
     }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
-        return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)) == .bottom
+        return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)).isHorizontal
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }

@@ -15,7 +15,7 @@ enum PulseDockPositioning {
         case .left: edge = .left
         case .right: edge = .right
         case .bottom: edge = .bottom
-        case .top: return nil
+        case .top: edge = .top
         }
         guard let frame = PulseDockPlacementGeometry.frame(edge: edge, in: display.usableFrame,
             size: eligible.layout.expandedSize, anchor: eligible.layout.alongAnchor,

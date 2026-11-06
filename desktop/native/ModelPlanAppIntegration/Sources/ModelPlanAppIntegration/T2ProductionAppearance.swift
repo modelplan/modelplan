@@ -16,10 +16,11 @@ import ModelPlanSettings
         case .left: edge = .left
         case .right: edge = .right
         case .bottom: edge = .bottom
+        case .top: edge = .top
         }
         let subscriptions = rows.map { T2Subscription(id: $0.subscriptionID, alias: $0.alias ?? "", hasEvent: view.appearanceNotices[$0.subscriptionID] != nil) }
-        let vertical = edge != .bottom
-        let nativeEdge: DockEdge = edge == .left ? .left : edge == .right ? .right : .bottom
+        let vertical = edge == .left || edge == .right
+        let nativeEdge: DockEdge = edge == .left ? .left : edge == .right ? .right : edge == .top ? .top : .bottom
         let room = PulseRestingPlacement.frameRoom(CGRect(origin: .zero, size: screen), edge: nativeEdge)
         let hoverRoom = ceil(preferences.size.nozzleDiameter / 2)
         var budget = screen
@@ -35,8 +36,9 @@ import ModelPlanSettings
                                            menuBarExclusion: top)
             // Use one raster origin for a given display and edge. Pulse places
             // the resulting local geometry at the saved anchor.
+            // The top edge mirrors the bottom-edge layout (A-1106-4): the ignition sits at the same end.
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
-                showsPercentages: preferences.showPercentages)
+                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
             let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
                                           zaiMarkEnabled: view.zaiMarkEnabled)
@@ -54,7 +56,7 @@ import ModelPlanSettings
         case .left: hoverViewport.size.width += hoverRoom
         case .right: hoverViewport.origin.x -= hoverRoom; hoverViewport.size.width += hoverRoom
         case .bottom: hoverViewport.origin.y -= hoverRoom; hoverViewport.size.height += hoverRoom
-        case .top: break
+        case .top: hoverViewport.size.height += hoverRoom
         }
         let artwork = try T2BundledArtwork.records().mapValues { DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }
         let official = try DockArtworkStore(root: T2BundledArtwork.rootURL(), manifest: .init(files: artwork))

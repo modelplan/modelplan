@@ -201,7 +201,7 @@ public enum SettingsCatalogue {
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
         .init(.dockDisplay,"Preferred display","偏好显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
         .init(.dockPosition,"Preferred along-edge position","偏好沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
-        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
+        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom, left or top (below the menu bar).","选择右侧、底部、左侧或顶部（菜单栏下方）。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader status.","本地读取器的只读状态。"),
         .init(.optionalReaders,"Local reader choices","本地读取器选择","Legacy app choices only; not shared CLI authorization.","仅为旧版本地选择，不代表 CLI 共享授权。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),

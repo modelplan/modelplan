@@ -35,7 +35,7 @@ import ModelPlanShell
         defer { UserDefaults.standard.register(defaults: ["ModelPlanDockDragMode": 1]) }
         let topology = DragTopology()
         let layout: (DockDisplayArea, DockEdge) -> DockEdgeLayout = { screen, edge in
-            .init(displayID: screen.id, edge: edge, expandedSize: edge == .bottom ?
+            .init(displayID: screen.id, edge: edge, expandedSize: edge.isHorizontal ?
                 CGSize(width: 160, height: 80) : CGSize(width: 80, height: 160),
                 sliverLength: 110, sliverThickness: 4, hoverRects: [])
         }
@@ -126,7 +126,9 @@ import ModelPlanShell
             let horizontal = [r.minX + 30, r.midX, r.maxX - 30]
             let points = vertical.map { (DockEdge.left, CGPoint(x: r.minX + 1, y: $0)) } +
                 vertical.map { (DockEdge.right, CGPoint(x: r.maxX - 1, y: $0)) } +
-                horizontal.map { (DockEdge.bottom, CGPoint(x: $0, y: r.minY + 1)) }
+                horizontal.map { (DockEdge.bottom, CGPoint(x: $0, y: r.minY + 1)) } +
+                // G3-27 / A-1106-4: the top edge below the menu bar is a destination on every display.
+                horizontal.map { (DockEdge.top, CGPoint(x: $0, y: r.maxY - 1)) }
             for source in [topology.a, topology.b, topology.c] where source.id != screen.id {
                 for (index, target) in points.enumerated() {
                     let (edge, point) = target
@@ -141,7 +143,7 @@ import ModelPlanShell
                     let committed = try XCTUnwrap(commits.last)
                     XCTAssertEqual(committed.displayID, screen.id, label)
                     XCTAssertEqual(committed.edge, edge, label)
-                    let length = edge == .bottom ? r.width : r.height
+                    let length = edge.isHorizontal ? r.width : r.height
                     // The 160-point rail is centred on its anchor and stops 24 points from each corner.
                     let expected = [104 / length, 0.5, 1 - 104 / length][index % 3]
                     XCTAssertEqual(committed.alongFraction, Double(expected), accuracy: 0.0001, label)
@@ -542,6 +544,9 @@ import ModelPlanShell
                     (.right, .init(x: available.maxX - 2, y: available.maxY - 14), true),
                     (.bottom, .init(x: available.minX + 14, y: available.minY + 2), false),
                     (.bottom, .init(x: available.maxX - 14, y: available.minY + 2), true),
+                    // G3-27: release at the top, below the menu bar, in both drag modes.
+                    (.top, .init(x: available.minX + 14, y: available.maxY - 2), false),
+                    (.top, .init(x: available.maxX - 14, y: available.maxY - 2), true),
                     (.bottom, .init(x: available.midX, y: available.midY), nil),
                 ]
                 for (edge, point, upperEnd) in targets {
@@ -601,11 +606,14 @@ import ModelPlanShell
                     case .left: XCTAssertEqual(painted.minX, available.minX, accuracy: 0.001, label)
                     case .right: XCTAssertEqual(painted.maxX, available.maxX, accuracy: 0.001, label)
                     case .bottom: XCTAssertEqual(painted.minY, available.minY, accuracy: 0.001, label)
-                    case .top: XCTFail(label)
+                    case .top:
+                        XCTAssertEqual(painted.maxY, available.maxY, accuracy: 0.001, label)
+                        XCTAssertEqual(observed.sliverFrame.maxY, available.maxY, accuracy: 0.001, label)
+                        XCTAssertEqual(saved.preferences.dockEdge, .top, label)
                     }
                     if let upperEnd {
                         let occupied = painted.union(observed.sliverFrame)
-                        let clearance = edge == .bottom
+                        let clearance = edge.isHorizontal
                             ? (upperEnd ? available.maxX - occupied.maxX : occupied.minX - available.minX)
                             : (upperEnd ? available.maxY - occupied.maxY : occupied.minY - available.minY)
                         XCTAssertEqual(clearance, 24, accuracy: 0.001, label)
@@ -768,7 +776,10 @@ import ModelPlanShell
         let a = topology.a.usableFrame, b = topology.b.usableFrame, c = topology.c.usableFrame
         let targets: [(DockDisplayArea, DockEdge, CGPoint)] = [
             (topology.b, .left, CGPoint(x: b.minX + 2, y: b.midY)),
+            // G3-27: the top edge below the menu bar is saved and restored like the others.
+            (topology.a, .top, CGPoint(x: a.midX - 200, y: a.maxY - 2)),
             (topology.c, .bottom, CGPoint(x: c.midX, y: c.minY + 2)),
+            (topology.b, .top, CGPoint(x: b.midX + 100, y: b.maxY - 2)),
             (topology.a, .bottom, CGPoint(x: a.midX, y: a.minY + 2)),
         ]
         var app = try await launch()
@@ -806,6 +817,11 @@ import ModelPlanShell
             XCTAssertEqual(landed.displayID, destination.id)
             XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001)
             if edge == .bottom { XCTAssertEqual(landed.frame.minY, destination.usableFrame.minY, accuracy: 0.001) }
+            if edge == .top {
+                XCTAssertEqual(landed.frame.maxY, destination.usableFrame.maxY, accuracy: 0.001)
+                XCTAssertTrue(destination.visibleFrame.contains(landed.frame), "the top edge rests below the menu bar")
+                XCTAssertEqual(saved.preferences.dockEdge, .top)
+            }
             await app.composition.stop()
             app = try await launch()
             let restored = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)

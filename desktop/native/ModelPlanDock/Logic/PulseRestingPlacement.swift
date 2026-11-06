@@ -16,7 +16,7 @@ public enum PulseRestingPlacement {
     }
 
     public static func frameRoom(_ available: CGRect, edge: DockEdge, corner: CGFloat = 24) -> CGRect {
-        edge == .bottom ? available.insetBy(dx: corner, dy: 0) : available.insetBy(dx: 0, dy: corner)
+        edge.isHorizontal ? available.insetBy(dx: corner, dy: 0) : available.insetBy(dx: 0, dy: corner)
     }
 
     static func resolve(preference: DockEdgePreference, display: DockDisplayArea?, layouts: [DockEdgeLayout],
@@ -24,22 +24,12 @@ public enum PulseRestingPlacement {
         guard let display else { return nil }
         let visible = display.usableFrame
         let fraction = max(0, min(1, preference.alongFraction))
-        let edge: DockEdge
-        let point: CGPoint?
-        if preference.edge == .top {
-            let x = visible.minX + fraction * visible.width
-            let left = x - visible.minX, right = visible.maxX - x
-            edge = visible.height < min(left, right) ? .bottom : (left < right ? .left : .right)
-            point = CGPoint(x: x, y: visible.maxY)
-        } else {
-            edge = preference.edge
-            point = nil
-        }
+        let edge = preference.edge
         let room = frameRoom(visible, edge: edge, corner: corner)
         guard !room.isEmpty,
               let layout = layouts.first(where: { $0.displayID == display.id && $0.edge == edge }) else { return nil }
-        let interval = edge == .bottom ? room.minX...room.maxX : room.minY...room.maxY
-        return candidate(layout, on: display, fraction: fraction, point: point, wake: wake, intervals: [interval])
+        let interval = edge.isHorizontal ? room.minX...room.maxX : room.minY...room.maxY
+        return candidate(layout, on: display, fraction: fraction, point: nil, wake: wake, intervals: [interval])
     }
 
     /// AppKit can constrain the first order-in. Keep the granted size and reapply
@@ -55,13 +45,13 @@ public enum PulseRestingPlacement {
         case .left: origin = .init(x: room.minX, y: y)
         case .right: origin = .init(x: room.maxX - granted.width, y: y)
         case .bottom: origin = .init(x: x, y: room.minY)
-        case .top: return nil
+        case .top: origin = .init(x: x, y: room.maxY - granted.height)
         }
         return CGRect(origin: origin, size: granted.size)
     }
 
     private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,fraction:Double,point:CGPoint?,wake:CGFloat,intervals:[ClosedRange<CGFloat>])->DockEdgePlacement?{
-        let u=d.usableFrame,vertical=p.edge != .bottom
+        let u=d.usableFrame,vertical = !p.edge.isHorizontal
         let along=vertical ? p.expandedSize.height:p.expandedSize.width
         let cross=vertical ? p.expandedSize.width:p.expandedSize.height
         let before=max(p.alongAnchor,p.sliverLength/2),after=max(along-p.alongAnchor,p.sliverLength/2)
@@ -86,7 +76,10 @@ public enum PulseRestingPlacement {
             frame=CGRect(x:centre-p.alongAnchor,y:u.minY,width:along,height:cross)
             sliver=CGRect(x:centre-p.sliverLength/2,y:u.minY,width:p.sliverLength,height:p.sliverThickness)
             wakeRect=CGRect(x:sliver.minX,y:u.minY,width:sliver.width,height:wake)
-        case .top:return nil
+        case .top:
+            frame=CGRect(x:centre-p.alongAnchor,y:u.maxY-cross,width:along,height:cross)
+            sliver=CGRect(x:centre-p.sliverLength/2,y:u.maxY-p.sliverThickness,width:p.sliverLength,height:p.sliverThickness)
+            wakeRect=CGRect(x:sliver.minX,y:u.maxY-wake,width:sliver.width,height:wake)
         }
         let actual=Double((centre-(vertical ? u.minY:u.minX))/span)
         return .init(displayID:d.id,edge:p.edge,alongFraction:actual,frame:frame,sliverFrame:sliver,wakeFrame:wakeRect,layout:p)
