@@ -453,6 +453,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
+    /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
+    /// The host turns this off under Reduce Motion. Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:38
+    /// (.dk-u transition transform .12s ease-out).
+    public var animatesPoses = false
+    public static let poseTransitionDuration: CFTimeInterval = 0.12
+    @_spi(DockResourceChecks) public private(set) var lastPoseTransitionForChecks: CFTimeInterval?
     /// Draws only the changed pose over the existing static material. The model, registered
     /// pointer targets, readout geometry and refresh cadence remain in their original basis.
     public func setNozzlePoses(_ poses: [String: DockNozzlePose]) {
@@ -468,11 +474,24 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         }
         nozzlePosesForChecks = poses
         let usesViewport = !poses.isEmpty && hoverViewport != nil
+        let animated = animatesPoses && window != nil
+        lastPoseTransitionForChecks = animatesPoses ? Self.poseTransitionDuration : nil
+        if animated, refreshSweepOriginal == nil, let layer {
+            // The re-rendered pose cross-fades in; the flame layers below follow with the same curve.
+            let fade = CATransition()
+            fade.type = .fade; fade.duration = Self.poseTransitionDuration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "dock.pose")
+        }
         if refreshSweepOriginal == nil {
             image = painted
             imageUsesHoverViewport = usesViewport
         } else { refreshSweepOriginal = (painted, usesViewport) }
-        CATransaction.begin(); CATransaction.setDisableActions(true)
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(Self.poseTransitionDuration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        } else { CATransaction.setDisableActions(true) }
         if let hotGlow, let id = hotNozzleForChecks {
             if let pose = poses[id] {
                 hotGlow.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y).scaledBy(x: pose.scale, y: pose.scale))
