@@ -30,7 +30,13 @@ import ModelPlanWire
         try await exercise(native: true)
     }
 
-    private func exercise(native: Bool) async throws {
+    #if MODELPLAN_DOCK_REAL_STRIP_JOURNEY
+    func testD22PhysicalPointerMeasuresWakeAndLeaveOnEachSize() async throws {
+        try await exercise(native: true, physicalPointer: true)
+    }
+    #endif
+
+    private func exercise(native: Bool, physicalPointer: Bool = false) async throws {
         let binary = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary))
         let display: DockDisplayArea
@@ -76,12 +82,15 @@ import ModelPlanWire
         owner.coordinator = cockpit
         let outside = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
         var pointer = outside
+        let readDisplay: (@MainActor () -> DockEdgeEnvironment)?
+        if physicalPointer { readDisplay = nil }
+        else { readDisplay = { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) } }
         if native { EngineRowsEntry.nativeJourneyProfile = root }
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
             applicationVersion: "dock-cockpit-return", allowedEnvironment: environment,
             offline: true, readOnly: true), settingsStore: store, createsNativePanels: native,
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
-            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            dockEnvironment: readDisplay,
             makeConsole: { composition in
                 SharedEngineCockpitConsole(owner: owner, composition: composition, isForeground: { false }, activate: {})
             }, activateSettings: {})
@@ -104,6 +113,12 @@ import ModelPlanWire
         }
         while !observedQuota() && ContinuousClock.now < rowsDeadline { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertTrue(observedQuota(), "Require the real app-server's declared quota in the rendered widget")
+        #if MODELPLAN_DOCK_REAL_STRIP_JOURNEY
+        if physicalPointer {
+            try await observePhysicalWakeAndLeave(app, store: store, root: root)
+            return
+        }
+        #endif
         // The fake page uses the real delivery and borrowed client without a WebKit window.
         await cockpit.consume(.context(delivery))
 
@@ -177,5 +192,96 @@ import ModelPlanWire
             }
         }
     }
+
+    #if MODELPLAN_DOCK_REAL_STRIP_JOURNEY
+    private func observePhysicalWakeAndLeave(_ app: EngineDockMenuApplication, store: SettingsStore, root: URL) async throws {
+        let dock = app.composition.dock
+        let panel = try XCTUnwrap(dock.nativePanel)
+        let editor = app.settingsHost.application.editor
+        let stored = root.appendingPathComponent("ModelPlan/settings.json")
+        func announce(_ instruction: String) {
+            FileHandle.standardOutput.write(Data(("D-22: " + instruction + "\n").utf8))
+        }
+        func wait(_ duration: Duration, until predicate: () -> Bool) async throws -> Bool {
+            let deadline = ContinuousClock.now + duration
+            while !predicate() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(8)) }
+            return predicate()
+        }
+        func target(_ point: CGPoint) -> CGRect {
+            CGRect(x: point.x - 0.6, y: point.y - 3, width: 1.2, height: 6)
+        }
+        func staysCollapsed(at point: CGPoint, label: String) async throws {
+            announce("Hold the pointer at \(point) for \(label).")
+            let region = target(point)
+            let reached = try await wait(.seconds(30)) { region.contains(NSEvent.mouseLocation) }
+            _ = try XCTUnwrap(reached ? panel : nil, "The physical pointer did not reach \(label)")
+            let end = ContinuousClock.now + .milliseconds(550)
+            while ContinuousClock.now < end {
+                XCTAssertTrue(region.contains(NSEvent.mouseLocation), label)
+                XCTAssertTrue(panel.isVisible, label)
+                XCTAssertEqual(dock.edgePresentation?.state, .sliver, label)
+                try await Task.sleep(for: .milliseconds(15))
+            }
+        }
+
+        for size in [SettingsSize.small, .medium, .large] {
+            _ = try await editor.commit(SettingsB20Edit.size(size))
+            announce("Move clear of the widget to settle the \(size) strip. Use the displayed screen coordinates for the precision steps.")
+            let collapsed = try await wait(.seconds(18)) { panel.isVisible && dock.edgePresentation?.state == .sliver }
+            let placement = try XCTUnwrap(collapsed ? dock.edgePresentation?.placement : nil)
+            XCTAssertEqual(placement.edge, .right)
+            let screen = try XCTUnwrap(DockDisplayTopology.system().display(placement.displayID))
+            let rail = screen.usableFrame.maxX, middle = placement.sliverFrame.midY
+            let beyond = placement.sliverFrame.maxY + 19 < screen.usableFrame.maxY
+                ? placement.sliverFrame.maxY + 19 : placement.sliverFrame.minY - 19
+            XCTAssertTrue(screen.usableFrame.contains(CGPoint(x: rail - 19, y: beyond)))
+            let before = await store.snapshot()
+            let bytes = try Data(contentsOf: stored)
+            try await staysCollapsed(at: CGPoint(x: rail - 21, y: middle), label: "\(size) at 21 pt depth")
+            try await staysCollapsed(at: CGPoint(x: rail - 19, y: beyond), label: "\(size) past the strip end")
+            let wakePoint = CGPoint(x: rail - 19, y: middle)
+            announce("Move to \(wakePoint) at 19 pt depth and capture the expanded widget.")
+            let expanded = try await wait(.seconds(30)) {
+                target(wakePoint).contains(NSEvent.mouseLocation) && dock.edgePresentation?.state == .expanded && panel.isVisible
+            }
+            XCTAssertTrue(expanded)
+            let openFrame = panel.frame
+            func isInside() -> Bool {
+                let pointer = NSEvent.mouseLocation
+                return placement.wakeFrame.contains(pointer) || placement.globalHoverRects.contains { $0.contains(pointer) }
+            }
+
+            announce("Leave the entire widget and wake zone, then return to the same wake point after about 400 ms.")
+            let left = try await wait(.seconds(25)) { !isInside() }
+            guard left else { return XCTFail("No physical pointer leave was observed") }
+            let shortStart = ContinuousClock.now
+            let cameBack = try await wait(.milliseconds(470)) { isInside() }
+            let absence = shortStart.duration(to: ContinuousClock.now)
+            XCTAssertTrue(cameBack, "Return before the 500 ms grace")
+            XCTAssertGreaterThanOrEqual(absence, .milliseconds(350))
+            XCTAssertLessThanOrEqual(absence, .milliseconds(450))
+            XCTAssertTrue(placement.wakeFrame.contains(NSEvent.mouseLocation))
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertEqual(panel.frame, openFrame, "A return to the wake band cancels the pending hide")
+
+            announce("Now leave both areas continuously. Capture the panel collapsing after the grace.")
+            let leftAgain = try await wait(.seconds(25)) { !isInside() }
+            guard leftAgain else { return XCTFail("No second physical leave was observed") }
+            let longStart = ContinuousClock.now
+            let hidden = try await wait(.seconds(2)) { dock.edgePresentation?.state == .sliver }
+            let untilHidden = longStart.duration(to: ContinuousClock.now)
+            XCTAssertTrue(hidden)
+            XCTAssertFalse(isInside())
+            XCTAssertGreaterThanOrEqual(untilHidden, .milliseconds(480))
+            XCTAssertLessThanOrEqual(untilHidden, .milliseconds(750))
+            let after = await store.snapshot()
+            XCTAssertEqual(after.revision, before.revision)
+            XCTAssertEqual(try Data(contentsOf: stored), bytes)
+            announce("Capture \(size): measured leave \(untilHidden), short return \(absence).")
+            try await Task.sleep(for: .seconds(3))
+        }
+    }
+    #endif
 }
 #endif
