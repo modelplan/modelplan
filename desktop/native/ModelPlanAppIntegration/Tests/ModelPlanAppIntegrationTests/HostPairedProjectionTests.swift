@@ -256,6 +256,7 @@ actor EntrySyntheticClient: EngineClient {
         application.update(environment: environment)
         _ = try await application.editor.commit(SettingsB20Edit.motion(.on))
         try await optionArrow(keyCode: 126, order: [first, second], announcement: "position 1 of 2")
+    }
 
     func testNormalSettingsQuotaControlsDriveTheDisplayedMembers() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("quota-settings-" + UUID().uuidString)
