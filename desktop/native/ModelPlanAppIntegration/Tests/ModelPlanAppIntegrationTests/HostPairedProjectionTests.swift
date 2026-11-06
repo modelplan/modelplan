@@ -289,6 +289,58 @@ private actor EntrySyntheticClient: EngineClient {
         }
     }
 
+    func testNormalOpenCardUpdatesReportedResetExpiryWithoutNewRows() async throws {
+        for (language, labels) in [
+            ("en", ["1 reset · expire in 12m", "1 reset · expire in 9m", "1 reset · expired"]),
+            ("zh", ["重置 1 次 · 12 分钟后到期", "重置 1 次 · 9 分钟后到期", "重置 1 次 · 已到期"]),
+        ] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-expiry-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: [language])
+            let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T16:00:00Z"))
+            var wall = start
+            let snapshot = try rows(weekly: 75, resetCardClock: start, resetFacts: .init(count: 1, expiresIn: 12 * 60))
+            let display = DockDisplayArea(id: "synthetic", frame: .init(x: 0, y: 0, width: 1440, height: 900),
+                visibleFrame: .init(x: 0, y: 0, width: 1440, height: 880))
+            var pointer = CGPoint(x: 700, y: 450)
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings,
+                createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+                deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+                makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+            let dock = app.composition.dock, view = dock.dockView
+            let id = "aaaaaaaaaaaaaaaa"
+            let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+            let anchor = try XCTUnwrap(view.interactionAnchor(id))
+            pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+                              y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+            try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+            let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+            let revision = try XCTUnwrap(app.settingsHost.application.editor.snapshot?.revision)
+
+            func text(_ view: NSView) -> [String] {
+                (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap(text)
+            }
+            for (offset, label) in zip([0.0, 180, 720], labels) {
+                wall = start.addingTimeInterval(offset)
+                let deadline = ContinuousClock.now + .seconds(2)
+                while (dock.card.isHidden || !text(dock.card).contains(label)) && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                XCTAssertFalse(dock.card.isHidden, language)
+                XCTAssertTrue(text(dock.card).contains(label), "Expected drawn label: " + label)
+                XCTAssertEqual(try dock.cardContent(for: id, at: wall)?.rows.first { $0.id == "reset-count" }?.label, label)
+                XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+                XCTAssertEqual(app.composition.store.snapshot.rows?.sequence, snapshot.sequence)
+                XCTAssertEqual(app.settingsHost.application.editor.snapshot?.revision, revision)
+            }
+            await app.composition.stop()
+        }
+    }
+
     func testNormalCardAdmitsOnlyVerifiedResetFactsAndLinks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-card-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
