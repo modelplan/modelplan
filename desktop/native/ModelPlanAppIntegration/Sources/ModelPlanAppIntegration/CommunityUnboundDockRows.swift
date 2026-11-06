@@ -15,13 +15,14 @@ public struct DockContentRow: Sendable {
     public let resetTimes:[String:Date]
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
+    let resetCountExpiry: Date?
     public let links: [DockCardLink]
     public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],links:[DockCardLink]=[],cardReadingState:DockCardReadingState?=nil) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.links=links
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.resetCountExpiry=resetCountExpiry;self.links=links
         self.cardReadingState = cardReadingState ?? {
             switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
         }()
@@ -42,6 +43,27 @@ public struct DockContentRow: Sendable {
         case .errorLastGood: return english ? "Read failed · showing " + age : "读取失败 · 保留 " + age + "的读数"
         case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
         }
+    }
+    func cardAdditionalRows(at now: Date, english: Bool) -> [DockCardRow] {
+        guard let expiry = resetCountExpiry,
+              let index = additionalRows.firstIndex(where: { $0.id == "reset-count" }) else { return additionalRows }
+        let seconds = expiry.timeIntervalSince(now)
+        guard seconds.isFinite, seconds < Double(Int.max) else { return additionalRows }
+        let suffix: String
+        if seconds <= 0 {
+            suffix = english ? "expired" : "已到期"
+        } else {
+            let hours = seconds >= 3600
+            let quantity = Int(ceil(seconds / (hours ? 3600 : 60)))
+            let duration = hours ? (english ? "\(quantity)h" : "\(quantity) 小时") :
+                (english ? "\(quantity)m" : "\(quantity) 分钟")
+            suffix = english ? "expire in " + duration : duration + "后到期"
+        }
+        var rows = additionalRows
+        let row = rows[index]
+        rows[index] = .init(id: row.id, kind: row.kind, label: row.label + " · " + suffix, value: row.value,
+                            detail: row.detail, remainingFraction: row.remainingFraction, tone: row.tone)
+        return rows
     }
     public func resetDetails(at now:Date,english:Bool) -> [String:String] {
         input.windows.reduce(into:[:]) { result,window in

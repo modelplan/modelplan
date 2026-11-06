@@ -194,9 +194,8 @@ public enum EngineDeadlineFacts {
                     label: resetEventTitle(event, restarted: signal.reset?.restartedReading == true), value: "",
                     detail: english ? "The announcement does not mean your account has reset." : "公告不等于你的账户已重置"))
             }
-            if let facts = resetCountRow(member, now: context.now) {
-                reserve.append(facts)
-            }
+            let resetCount = resetCountRow(member, now: context.now)
+            if let resetCount { reserve.append(resetCount.row) }
             if (row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired),
                account.valueState == .current || account.valueState == .retained,
                let credits=account.credits,let balance=credits.balance,balance.isFinite,balance >= 0 {
@@ -244,7 +243,7 @@ public enum EngineDeadlineFacts {
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,links: preferred.map(resetEventLinks) ?? [],cardReadingState:cardState)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,resetCountExpiry:resetCount?.expiry,links: preferred.map(resetEventLinks) ?? [],cardReadingState:cardState)
         }
         let status: String
         switch value.status {
@@ -295,27 +294,15 @@ public enum EngineDeadlineFacts {
         }
     }
 
-    private func resetCountRow(_ member: EngineAccountMember, now: Date) -> DockCardRow? {
+    private func resetCountRow(_ member: EngineAccountMember, now: Date) -> (row: DockCardRow, expiry: Date?)? {
         let row = member.row, account = member.account
         guard row.consent == .allowed || row.consent == .implicit || row.consent == .notRequired,
               account.valueState == .current || account.valueState == .retained,
               let facts = account.resetCards, facts.state == .complete || facts.state == .partial,
               facts.count != nil || facts.earliestExpiresAt != nil else { return nil }
-        var title = facts.count.map { count in
+        let title = facts.count.map { count in
             english ? (count == 1 ? "1 reset" : "\(count) resets") : "重置 \(count) 次"
         } ?? (english ? "Resets" : "重置")
-        if let expiry = date(facts.earliestExpiresAt) {
-            let seconds = expiry.timeIntervalSince(now)
-            if seconds <= 0 {
-                title += english ? " · expired" : " · 已到期"
-            } else {
-                let hours = seconds >= 3600
-                let quantity = Int(ceil(seconds / (hours ? 3600 : 60)))
-                let duration = hours ? (english ? "\(quantity)h" : "\(quantity) 小时") :
-                    (english ? "\(quantity)m" : "\(quantity) 分钟")
-                title += english ? " · expire in " + duration : " · " + duration + "后到期"
-            }
-        }
         var details: [String] = []
         if facts.state == .partial { details.append(english ? "Reported subset" : "已报告部分") }
         if facts.truncated { details.append(english ? "Details truncated" : "明细已截断") }
@@ -324,7 +311,8 @@ public enum EngineDeadlineFacts {
             (date(account.freshUntil).map { now >= $0 } ?? false) {
             details.append(english ? "Last known reading" : "上次读数")
         }
-        return .init(id: "reset-count", kind: .reserve, label: title, value: "", detail: details.joined(separator: " · "))
+        return (.init(id: "reset-count", kind: .reserve, label: title, value: "", detail: details.joined(separator: " · ")),
+                date(facts.earliestExpiresAt))
     }
 
     private func sourceState(_ member:EngineAccountMember,now:Date) -> SubscriptionSourceState {
