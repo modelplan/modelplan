@@ -204,6 +204,7 @@ private extension EngineDeliveryContext {
                 bindings.append(binding)
             }
             rows[0]["accounts"] = accounts
+            rows[0]["vendorKey"] = "openai"
             projection["rows"] = rows
             fixture["projection"] = projection
             fixture["subscriptions"] = bindings
@@ -800,6 +801,46 @@ private extension EngineDeliveryContext {
             let next = try XCTUnwrap(second, "The real page did not advance to the second page")
             XCTAssertEqual((next["members"] as? NSNumber)?.intValue, 1)
             XCTAssertEqual((next["empty"] as? NSNumber)?.intValue, 5)
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_ENG_01_sixColumnsMatchOrderAndKeys() async throws {
+        try await withLivePage(sevenMemberFixture: true) { _, _, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const keys = Array.from(document.querySelectorAll('.eng-keys .ek[data-sub]'));
+              const columns = Array.from(document.querySelectorAll('.eng-cols > .ec[data-col]'));
+              if (keys.length !== 6 || columns.length !== 6) return null;
+              const expected = Array.from({length:6}, (_,i) => (i+1).toString(16).padStart(16, '0'));
+              return JSON.stringify({ordered:keys.every((k,i) => k.dataset.col === expected[i] && columns[i].dataset.col === expected[i]),
+                widths:keys.map(k => k.getBoundingClientRect().width),
+                names:keys.every(k => { const n=k.querySelector('.ek-name'); return !!n && !!n.textContent.trim() && getComputedStyle(n).display !== 'none'; }),
+                logos:keys.every(k => { const img=k.querySelector('img.lamp'); return !!img && img.complete && img.naturalWidth > 0; })});
+            })()
+            """
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var facts: [String: Any]?
+            while ContinuousClock.now < deadline {
+                if let raw = try await web.evaluateJavaScript(script) as? String,
+                   let object = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] {
+                    facts = object; break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let observed = try XCTUnwrap(facts, "The normal entry did not render six synthetic columns")
+            XCTAssertEqual(observed["ordered"] as? Bool, true)
+            let widths = try XCTUnwrap(observed["widths"] as? [NSNumber])
+            XCTAssertEqual(widths.count, 6)
+            for width in widths { XCTAssertEqual(width.doubleValue, 88, accuracy: 2) }
+            XCTExpectFailure("CKP-ENG-01: the community six-slot layout hides account names") {
+                XCTAssertEqual(observed["names"] as? Bool, true)
+            }
+            XCTExpectFailure("CKP-ENG-01: the community bundle does not supply the vendor logo") {
+                XCTAssertEqual(observed["logos"] as? Bool, true)
+            }
         }
     }
     #endif
