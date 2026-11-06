@@ -39,6 +39,10 @@ private extension EngineDeliveryContext {
     var storeEpochForG1: String { floor.storeEpoch }
 }
 
+@MainActor private final class G1CloseProgressProbe {
+    var mainTurnBeforeDisposal: Bool?
+}
+
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
     private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, sevenMemberFixture: Bool = false, forceNight: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
@@ -1080,6 +1084,18 @@ private extension EngineDeliveryContext {
             let width = try XCTUnwrap((close["width"] as? NSNumber)?.doubleValue)
             let height = try XCTUnwrap((close["height"] as? NSNumber)?.doubleValue)
             let window = try XCTUnwrap(page.window)
+            let initialFrame = window.frame
+            let reduce = facts["reduceMotion"] as? Bool == true
+            #if MODELPLAN_TEST_ONLY_SPI
+            let progress = G1CloseProgressProbe()
+            if !reduce {
+                page.verificationCloseStarted = { [weak page] _ in
+                    DispatchQueue.main.async {
+                        progress.mainTurnBeforeDisposal = page.map { !$0.g1PageStateForChecks.disposed } ?? false
+                    }
+                }
+            }
+            #endif
             let web = try XCTUnwrap(window.contentView?.subviews.first { $0 is WKWebView } as? WKWebView)
             let local = web.convert(CGPoint(x: x + width / 2, y: web.isFlipped ? y + height / 2 : web.bounds.height - y - height / 2), to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
@@ -1091,8 +1107,17 @@ private extension EngineDeliveryContext {
                 try await Task.sleep(for: .milliseconds(20))
             }
             let duration = try XCTUnwrap(page.g1CloseAnimationDurationForChecks)
-            let reduce = facts["reduceMotion"] as? Bool == true
             XCTAssertEqual(duration, reduce ? 0 : 0.12, accuracy: 0.001)
+            XCTAssertEqual(window.frame.origin.x, initialFrame.origin.x, accuracy: 0.5, "Closing must not move the cockpit back to an anchor")
+            XCTAssertEqual(window.frame.origin.y, initialFrame.origin.y, accuracy: 0.5, "Closing must not move the cockpit back to an anchor")
+            #if MODELPLAN_TEST_ONLY_SPI
+            if !reduce {
+                while progress.mainTurnBeforeDisposal == nil && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                XCTAssertEqual(progress.mainTurnBeforeDisposal, true, "The main queue must progress before the fade completes")
+            }
+            #endif
             while !page.g1PageStateForChecks.disposed && ContinuousClock.now < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
