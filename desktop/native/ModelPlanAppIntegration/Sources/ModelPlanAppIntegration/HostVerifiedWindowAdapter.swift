@@ -129,6 +129,9 @@ enum HostVerifiedWindowError: Error, Equatable {
                 additionalRows: admitted ? row.additionalRows : row.additionalRows.filter { $0.kind == .notice && $0.id.hasPrefix("reset-event:") },
                 resetCountExpiry: admitted ? row.resetCountExpiry : nil,
                 links: row.links,
+                windowObservations: row.windowObservations.map { observations in
+                    admitted ? observations.filter { provenIDs.contains($0.key) } : [:]
+                },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,

@@ -501,7 +501,7 @@ private actor S4RowsClient: EngineClient {
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
-        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "Reset time passed","relative reset text must use presentation time, not cached projection time")
+        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Reset time passed") == true,"relative reset text must use presentation time, not cached projection time")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Saved",percentagePin:.week)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
@@ -543,7 +543,12 @@ private actor S4RowsClient: EngineClient {
     static func members(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
-        var first=(row["accounts"] as! [[String:Any]])[0],second=first
+        var first=(row["accounts"] as! [[String:Any]])[0]
+        var window=(first["windows"] as! [[String:Any]])[0]
+        window.removeValue(forKey:"modelScope");window["limitKey"]="five_hour";window["poolKey"]="main"
+        window["current"]=true;window["resetsAt"]="2099-01-01T00:00:00Z";window["validUntil"]="2099-01-01T00:00:00Z"
+        first["windows"]=[window]
+        var second=first
         first["subscriptionRef"]="0123456789abcdef";second["subscriptionRef"]="fedcba9876543210"
         first["credits"]=["balance":42.5,"unit":"credits"];second["credits"]=["balance":7,"unit":"credits"]
         row["state"]="fresh";row["expiresAt"]="2099-01-01T00:00:00Z"
@@ -566,7 +571,7 @@ private actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
-        try require(firstCard.sourceAndAge.contains("Saved sign-in"),"card header must retain its localized reported source")
+        try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
         try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")
@@ -603,7 +608,7 @@ private actor S4RowsClient: EngineClient {
               let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"unknown-facts member/card missing") }
         try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
-        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
+        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "-- · Unknown source · Reading time unknown","unknown reset time and unproved provenance must stay unknown")
         try require(card.sourceAndAge.contains("Reading time unknown"),"missing reading time must not use rendering time")
         await entry.composition.stop()
     }
