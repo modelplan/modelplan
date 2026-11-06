@@ -377,6 +377,9 @@ private actor P1SyntheticEngine: EngineClient {
                     report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
                     XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
                     XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
+                    // The card measures its gap from the painted clock ring (prototype card.js:154-163).
+                    let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
+                    XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
                 }
                 await app.stopLifecycle(); app.composition.dock.close()
             }

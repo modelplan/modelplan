@@ -122,6 +122,15 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         return Set(orderedIDs).subtracting(skin?.stations.compactMap(\.subscriptionID) ?? [])
     }
     public func interactionAnchor(_ id: String) -> CGRect? { stationRect(id) }
+    /// The painted clock ring (dot circle plus its back stroke) the card measures its gap and
+    /// arrow from, not the smaller nozzle box. View-local points; the nozzle box where no
+    /// official skin is shown. Prototype: opus-r7/src/rocket-r1/card.js:154-163 (renderedRing).
+    public func cardRingAnchor(_ id: String) -> CGRect? {
+        guard !community, !failed, let s = skin?.stations.first(where: { $0.subscriptionID == id }) else { return stationRect(id) }
+        let radius = max(s.diameter / 2, s.clock.radius + s.clock.backWidth / 2)
+        return CGRect(x: s.centre.x - radius - layoutOrigin.x, y: s.centre.y - radius - layoutOrigin.y,
+                      width: 2 * radius, height: 2 * radius)
+    }
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,

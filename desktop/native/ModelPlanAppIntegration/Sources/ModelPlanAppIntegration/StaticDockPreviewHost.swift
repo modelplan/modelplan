@@ -1958,11 +1958,12 @@ struct DockHelpInteraction: Equatable {
         guard let cardPanel, let panelFrame = panel?.frame,
               let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { dismissCard(); return }
         let view = interactionView
-        guard let local = view.interactionAnchor(id), let window = view.window else { dismissCard(); return }
+        guard let local = view.cardRingAnchor(id), let window = view.window else { dismissCard(); return }
         let anchor = window.convertToScreen(view.convert(local, to: nil))
+        let hull = view.registeredHullBounds.map { window.convertToScreen(view.convert($0, to: nil)) }
         let actualEdge = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
-        guard let frame = HostCardPlacement.place(anchor: anchor, size: card.frame.size,
-                                                  available: screen.visibleFrame, edge: actualEdge) else {
+        guard let frame = HostCardPlacement.place(ring: anchor, hull: hull, unit: preferences.size.nozzleDiameter / 52,
+                                                  size: card.frame.size, available: screen.visibleFrame, edge: actualEdge) else {
             dismissCard(); return
         }
         // The plate plus its pointer arrow toward the ring (prototype card.js place()).
