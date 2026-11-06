@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 name: U6 engine store core
 on:
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -20,15 +21,16 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: u6-engine-store-core-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: u6-engine-store-core-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   sequences:
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(github.event_name == 'pull_request' && github.event.pull_request.draft && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@12967690f9010fd3f76875a8857125d123e3c50f
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: sequences
       os: ${{ matrix.os }}

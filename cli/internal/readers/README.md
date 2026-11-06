@@ -2,11 +2,19 @@
 # Reader admission and fixed request sets
 
 Production account-usage readers create one `NewReadClient` per logical read.
-It preserves the injected transport/proxy and timeout, removes ambient cookies,
+It preserves the standard transport's proxy, TLS trust and timeout settings,
+uses fresh HTTP/1 connections to prevent automatic wire retries, removes ambient cookies,
 and stops redirect following. Its `NewReadTransport` pins the request set,
 serializes attempts and latches HTTP 401/403 or a redirect for the lifetime of
 that read. Helpers share that transport; constructing another client to retry a
 rejection would reset its budget and is forbidden.
+
+Custom transports must explicitly implement the reviewed
+`SingleAttemptTransport` contract and must not retry or issue extra requests;
+unmarked transports and custom TLS dialers fail closed. The marker is a trust
+contract for compiled, reviewed callers, not proof about arbitrary code. The
+socket-free `readertest` recorder and local fixture adapters implement it for
+tests. Services that require HTTP/2 cannot be read through this guarded path.
 
 | Scope prefix / route | HTTPS authority | Fixed requests, in order | Maximum |
 | --- | --- | --- | --- |

@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: MIT
+# Publishes the `modelplan-gates` commit status: the review gates (tier, VERDICT, GLMREV, DESIGN,
+# VERDICT-CARRY and exact-head VERIFIED scenario evidence) plus green CI for a PR head, and for a
+# merge-queue group the same for every PR in it plus
+# a clean-merge proof and the group's own CI. Rules: scripts/merge-gates/rules.mjs.
+# Every trigger here runs the default branch's copy of this file and of the rules, never a PR's copy.
+name: merge-gates
+on:
+  issue_comment:
+    types: [created, edited, deleted]
+  workflow_run:
+    # Re-evaluate when a PR's or a group's checks finish, and when the probe signals a PR event,
+    # a review or a new merge-queue group. Names must match each workflow's `name:`.
+    workflows:
+      - merge-gates probe
+      - ci
+      - source-policy
+      - third-party notices
+      - desktop
+      - e2e-journey
+      - macOS distribution
+      - Dock host port seam
+      - Official Dock geometry
+      - Official visual pack
+      - Transport fuzz
+      - U10 candidate interface
+      - U11a aggregation
+      - U11 cockpit web
+      - U11 native cockpit
+      - U14 engine Drive L1
+      - U14 harness
+      - U14 macOS skeleton
+      - U4b engine client
+      - U4 Swift wire
+      - U6 engine store core
+      - U7 credential agent
+      - U7 prebuilt universal helper
+      - Verification pointer helper
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Re-evaluate one PR head
+        type: string
+        default: ""
+      group_sha:
+        description: Re-evaluate one merge-group commit
+        type: string
+        default: ""
+permissions:
+  contents: read
+  statuses: write
+  pull-requests: read
+  actions: read
+concurrency:
+  # One evaluation per PR or group at a time; a newer event supersedes a queued older one.
+  group: merge-gates-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_sha || github.event.issue.number || inputs.pr || inputs.group_sha || github.run_id }}
+  cancel-in-progress: true
+jobs:
+  gates:
+    # Only trusted comments can change a gate, and only PR and merge-queue runs carry gates (main pushes do
+    # not), so nothing else starts a job.
+    if: >-
+      ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.user.login == 'guanbear')
+      || (github.event_name == 'workflow_run' && contains(fromJSON('["pull_request","pull_request_review","merge_group"]'), github.event.workflow_run.event))
+      || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: scripts/merge-gates
+      - run: node scripts/merge-gates/evaluate.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -5,6 +5,7 @@ import ModelPlanCockpitWeb
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanDock
 
 /// Keep #332's single showConsole route and one protocol client/store.
 /// Clear the existing synchronous sinks first, then await WK clear/disposal,
@@ -22,8 +23,8 @@ import ModelPlanSettings
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"917e68e0361879b5caf3f110f42ddf0cd2bf10f8d81ffa6e1ac2d9659586efd7",
-        "official":"1ab7f6c83d9d7d1c27c2a9c744ab9a6372db02a5622e417dd4d10cf630075b9f",
+        "community":"68a39a62421138b355938c10f435ae4521dfe94298005125fcc54b7326c0ca6a",
+        "official":"a70782c421f419167ac29a3e1a6181158fc2c6990cd14a41aa1f4488f5f2bf53",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -31,6 +32,9 @@ import ModelPlanSettings
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
                             cockpitEntryEnabled: Bool? = nil,
+                            dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
+                            deadlineNow: @escaping @MainActor () -> Date = { Date() },
+                            deadlineElapsed: (() -> TimeInterval)? = nil, deadlineScheduling: (any DockEdgeScheduling)? = nil,
                             makeClient: (@MainActor (EngineClientConfiguration, EngineStore) -> any EngineClient)? = nil,
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
@@ -38,12 +42,12 @@ import ModelPlanSettings
         // Preserve the existing injected-client/console seam used by its callers.
         if let makeClient {
             return EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,makeClient:makeClient,
+                createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
-            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,
+            createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
                     guard let owner else { throw CockpitBridgeError.unavailable }
@@ -58,6 +62,7 @@ import ModelPlanSettings
                 if let makeConsole { return makeConsole(composition) }
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
+        owner.anchor = { [weak application] in application?.cockpitAnchor }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -69,6 +74,8 @@ import ModelPlanSettings
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
     var pageFailure: (() -> Void)?
+    var anchor: (() -> CGRect?)?
+    let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
@@ -80,7 +87,8 @@ import ModelPlanSettings
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
-        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance)
+        let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
+            shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
@@ -136,6 +144,11 @@ struct CockpitUnavailableNotice {
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
                 case .openHistory:self.unavailable(history:true)
+                case .close:self.owner.coordinator?.requestClose()
+                case .detach,.putBack,.shutterToggle,.scopeSelect:
+                    // The page owns shell controls; the coordinator validates and
+                    // consumes scope selection. An unexpected escape fails closed.
+                    self.hide()
                 }
             }
             activate()

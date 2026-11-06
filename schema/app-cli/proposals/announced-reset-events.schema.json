@@ -133,6 +133,28 @@
         }
       }
     },
+    "ProposedResetLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "url"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "aihot",
+            "original",
+            "official"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9/_-]*)?$"
+        }
+      }
+    },
     "ProposedResetSource": {
       "type": "object",
       "additionalProperties": false,
@@ -143,6 +165,14 @@
       "properties": {
         "kind": {
           "const": "publication"
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/ProposedResetLink"
+          }
         },
         "publicationId": {
           "type": "string",

@@ -1058,6 +1058,34 @@ public enum RowsResetEventStatus: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws { self.init(rawValue: try decoder.singleValueContainer().decode(String.self)) }
     public func encode(to encoder: Encoder) throws { var c = encoder.singleValueContainer(); try c.encode(rawValue) }
 }
+public struct RowsResetLink: Codable, Sendable {
+    public let `type`: String
+    public let `url`: String
+    private enum CodingKeys: String, CodingKey {
+        case `type`
+        case `url`
+    }
+    public init(`type`: String, `url`: String) throws {
+        self.`type` = `type`
+        self.`url` = `url`
+        try validate()
+    }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.`type` = try c.decode(String.self, forKey: .`type`)
+        self.`url` = try c.decode(String.self, forKey: .`url`)
+        try validate()
+    }
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(`type`, forKey: .`type`)
+        try c.encode(`url`, forKey: .`url`)
+    }
+    private func validate() throws {
+    }
+}
+
 public enum RowsResetMode: Codable, Sendable, Equatable {
     case `fixed`
     case `rolling`
@@ -1120,15 +1148,18 @@ public struct RowsResetSource: Codable, Sendable {
     public let `kind`: String
     public let `publicationId`: String
     public let `url`: String?
+    public let `links`: [RowsResetLink]?
     private enum CodingKeys: String, CodingKey {
         case `kind`
         case `publicationId`
         case `url`
+        case `links`
     }
-    public init(`kind`: String, `publicationId`: String, `url`: String? = nil) throws {
+    public init(`kind`: String, `publicationId`: String, `url`: String? = nil, `links`: [RowsResetLink]? = nil) throws {
         self.`kind` = `kind`
         self.`publicationId` = `publicationId`
         self.`url` = `url`
+        self.`links` = `links`
         try validate()
     }
     public init(from decoder: Decoder) throws {
@@ -1136,6 +1167,7 @@ public struct RowsResetSource: Codable, Sendable {
         self.`kind` = try c.decode(String.self, forKey: .`kind`)
         self.`publicationId` = try c.decode(String.self, forKey: .`publicationId`)
         self.`url` = try? c.decodeIfPresent(String.self, forKey: .`url`)
+        self.`links` = try? c.decodeIfPresent([RowsResetLink].self, forKey: .`links`)
         try validate()
     }
     public func encode(to encoder: Encoder) throws {
@@ -1144,6 +1176,7 @@ public struct RowsResetSource: Codable, Sendable {
         try c.encode(`kind`, forKey: .`kind`)
         try c.encode(`publicationId`, forKey: .`publicationId`)
         try c.encodeIfPresent(`url`, forKey: .`url`)
+        try c.encodeIfPresent(`links`, forKey: .`links`)
     }
     private func validate() throws {
         try WireValidation.identity(`publicationId`)

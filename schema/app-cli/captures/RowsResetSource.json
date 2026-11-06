@@ -1,4 +1,10 @@
 {
   "kind": "publication",
-  "publicationId": "0123456789abcdef01234567"
+  "publicationId": "0123456789abcdef01234567",
+  "links": [
+    {
+      "type": "aihot",
+      "url": "https://aihot.news/codex-reset"
+    }
+  ]
 }

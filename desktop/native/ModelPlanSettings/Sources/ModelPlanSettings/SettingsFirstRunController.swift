@@ -208,9 +208,7 @@ import AppKit
                 if self.generation == expectedGeneration { self.suspend(); self.close() }
             } catch {
                 guard self.active, self.generation == expectedGeneration else { return }
-                self.errorMessage = (error as? SettingsError) == .staleRevision
-                    ? SettingsWords.text("Settings changed. Review these choices and try again.", "设置已更改，请检查这些选项后重试。", self.editor.snapshot?.preferences.language ?? .chinese)
-                    : SettingsWords.text("Could not save. Your choices are kept here; try again.", "无法保存。此处保留了你的选择，请重试。", self.editor.snapshot?.preferences.language ?? .chinese)
+                self.errorMessage = FirstRunSaveError.message(error, language: self.editor.snapshot?.preferences.language ?? .chinese)
                 await self.editor.reload(); self.baseRevision = self.editor.snapshot?.revision
             }
         }

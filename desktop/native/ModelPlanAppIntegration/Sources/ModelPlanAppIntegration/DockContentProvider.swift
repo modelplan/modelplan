@@ -18,6 +18,14 @@ public struct DockContentContext: Sendable {
     }
 }
 
+/// Timing facts for the same already-admitted content projection.
+/// `none` is not a claim of perpetual validity; nil on DockContent means unsupported.
+public enum DockContentRecomputeDeadline: Equatable, Sendable {
+    case scheduled(Date, hasUnknownDeadline: Bool)
+    case unknown
+    case none
+}
+
 /// Rendering value only. nil overrides retain legacy text; empty menuStatusLines
 /// intentionally suppress legacy status copy. A provider never changes placement.
 public struct DockContent: Sendable {
@@ -26,11 +34,14 @@ public struct DockContent: Sendable {
     public let emptyText: String?
     /// Provider-owned semantic signals; presentation is selected by the host.
     public let signals: [DockSubscriptionSignal]
+    /// nil means the provider has not supplied the deadline contract, not `.none`.
+    public let recomputeDeadline: DockContentRecomputeDeadline?
     public init(snapshot: CommunityDockSnapshot, menuStatusLines: [String]? = nil,
-                emptyText: String? = nil, signals: [DockSubscriptionSignal] = []) {
+                emptyText: String? = nil, signals: [DockSubscriptionSignal] = [],
+                recomputeDeadline: DockContentRecomputeDeadline? = nil) {
         self.snapshot = snapshot
         self.menuStatusLines = menuStatusLines
-        self.emptyText = emptyText; self.signals = signals
+        self.emptyText = emptyText; self.signals = signals; self.recomputeDeadline = recomputeDeadline
     }
 }
 
