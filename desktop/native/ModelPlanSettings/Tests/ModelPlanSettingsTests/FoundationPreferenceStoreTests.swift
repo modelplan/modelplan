@@ -183,7 +183,7 @@ import XCTest
     func testInvalidAndConsentEditsDoNotChangeDiskOrMemory() async throws {
         let f = try Fixture(), store = try SettingsStore(foundationAt: f.root, product: .official)
         let bytes = try Data(contentsOf: f.location.target)
-        do { try await store.update { $0.redBelow = 17 }; XCTFail("invalid settings") } catch {}
+        do { try await store.update { $0.redBelow = 101 }; XCTFail("invalid settings") } catch {}
         do { try await store.update { $0.readerConsent[.gemini] = true }; XCTFail("consent belongs to engine") }
         catch { XCTAssertEqual(error as? FoundationPreferenceError, .engineOwnedConsent) }
         do { try await store.updateCore(.init(favouriteModelIDs: [String(repeating: "x", count: 40000)])); XCTFail("oversized core") } catch {}

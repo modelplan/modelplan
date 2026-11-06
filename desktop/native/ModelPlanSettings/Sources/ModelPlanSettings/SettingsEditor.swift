@@ -23,7 +23,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
             if let id = subscriptionID, !id.isEmpty, let v = PercentagePin(rawValue: value) {
                 self = .percentagePin(id, v); return
             }
-        case .redBelow: if let v = Int(value), [10, 16, 20, 25].contains(v) { self = .redBelow(v); return }
+        case .redBelow: if let v = Int(value), SettingsPreferences.redBelowChoices.contains(v) { self = .redBelow(v); return }
         case .sliverAlert: if let v = Bool(value) { self = .sliverAlert(v); return }
         default: break
         }
@@ -38,7 +38,9 @@ public enum SettingsB20Edit: Equatable, Sendable {
         case .transparency(let v): p.transparency = v
         case .percentageMode(let v): p.percentageMode = v
         case .showPercentages(let v): p.showPercentages = v
-        case .redBelow(let v): p.redBelow = v
+        case .redBelow(let v):
+            guard SettingsPreferences.redBelowChoices.contains(v) else { throw SettingsError.invalidPreference }
+            p.redBelow = v
         case .sliverAlert(let v): p.sliverAlert = v
         case .percentagePin(let id, let v):
             var setting = p.subscriptionSettings[id] ?? .init()

@@ -144,7 +144,7 @@ final class FoundationSettingsMigrationTests: XCTestCase {
             (.data(Data("not-json".utf8)), .invalidJSON),
             (.data(Data(#"{"schemaVersion":99,"preferences":{}}"#.utf8)), .unsupportedSchema),
             (.data(Data(repeating: 32, count: SettingsStore.maximumBytes + 1)), .tooLarge),
-            (.data(Data(#"{"schemaVersion":1,"preferences":{"redBelow":17}}"#.utf8)), .invalidPreferences)]
+            (.data(Data(#"{"schemaVersion":1,"preferences":{"redBelow":101}}"#.utf8)), .invalidPreferences)]
         for (primary, failure) in failures {
             let files = try FoundationSettingsMigrationFixture()
             let secondary = try files.input("secondary.json", #"{"schemaVersion":1,"preferences":{"theme":"day","dockEdge":"left"}}"#)

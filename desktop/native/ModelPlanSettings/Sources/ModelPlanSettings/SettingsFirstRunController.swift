@@ -17,6 +17,7 @@ import AppKit
     private(set) var readerButtons: [OptionalReaderID: NSButton] = [:]
     private let titleLabel = NSTextField(labelWithString: "")
     private let privacy = NSTextField(wrappingLabelWithString: "")
+    private let recommendation = NSTextField(wrappingLabelWithString: "")
     private let subscriptions = NSTextField(wrappingLabelWithString: "")
     private let readerStack = NSStackView()
     private lazy var connectionsView = SettingsConnectionsView(editor: editor, firstRun: true)
@@ -95,8 +96,9 @@ import AppKit
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false; document.addSubview(stack)
         titleLabel.font = .systemFont(ofSize: 24, weight: .semibold)
-        privacy.font = .systemFont(ofSize: 14); subscriptions.font = .systemFont(ofSize: 13)
+        privacy.font = .systemFont(ofSize: 14); recommendation.font = .systemFont(ofSize: 13); subscriptions.font = .systemFont(ofSize: 13)
         titleLabel.setAccessibilityIdentifier("firstRun.title");privacy.setAccessibilityIdentifier("firstRun.privacy")
+        recommendation.setAccessibilityIdentifier("firstRun.publicRecommendation")
         subscriptions.setAccessibilityIdentifier("firstRun.subscriptions")
         readerStack.orientation = .vertical; readerStack.alignment = .leading; readerStack.spacing = 10
         for id in OptionalReaderID.allCases {
@@ -120,7 +122,7 @@ import AppKit
         window.initialFirstResponder=focusOrder.first
         let buttons = NSStackView(views: [doneButton,helpButton]); buttons.spacing = 12
         let firstRunScopes = scopePresentation?.container ?? NSStackView()
-        for view in [titleLabel,privacy,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
+        for view in [titleLabel,privacy,recommendation,subscriptions,firstRunScopes,connectionsView,readerStack,login,status,buttons] {
             stack.addArrangedSubview(view)
             if view !== buttons { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         }
@@ -147,13 +149,14 @@ import AppKit
             window?.title = SettingsWords.text("First run", "首次运行", language)
             titleLabel.stringValue = SettingsWords.text("Set up ModelPlan", "设置 ModelPlan", language)
             privacy.stringValue = page.privacy.value(language)
+            recommendation.stringValue = page.publicRecommendation.value(language)
             connectionsView.apply(language: language)
             connectionsView.isHidden = scopeConsentEntry != nil
             scopePresentation?.apply(language: language)
             readerStack.isHidden = scopeConsentEntry != nil || editor.connections.isAvailable
-            subscriptions.isHidden = editor.connections.isAvailable
+            subscriptions.isHidden = scopeConsentEntry == nil && editor.connections.isAvailable
             subscriptions.stringValue = page.subscriptions.isEmpty
-                ? SettingsWords.text("No subscriptions detected yet. You can finish now.", "尚未检测到订阅，可以直接完成。", language)
+                ? SettingsWords.text("No subscriptions found", "未检测到订阅", language)
                 : SettingsWords.text("Subscriptions detected", "已检测到的订阅", language) + "\n" + page.subscriptions.map { [$0.name.value(language),$0.plan].filter { !$0.isEmpty }.joined(separator: " · ") }.joined(separator: "\n")
             for id in OptionalReaderID.allCases {
                 guard let reader = page.readers.first(where: { $0.id.rawValue == id.rawValue }) else { continue }

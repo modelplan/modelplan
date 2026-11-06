@@ -17,6 +17,7 @@ public struct OptionHelpState: Equatable, Sendable {
 }
 public struct FirstRunPage: Sendable {
     public let privacy = SettingsText("Nothing on this Mac is uploaded; only public data is downloaded", "不上传任何本机数据，只下载公开数据")
+    public let publicRecommendation = SettingsText("Recommendations use public data.", "推荐基于公开数据。")
     public let loginSubtitle = SettingsText("You can turn this off in Settings", "可随时在设置里关闭")
     public let done = SettingsText("Done", "完成"), seeWhatsHere = SettingsText("See what's here", "看看都有什么")
     public let subscriptions: [SettingsSubscription]
@@ -67,7 +68,7 @@ enum FirstRunSaveError {
             return SettingsText("Settings are busy. Try again.", "设置正在使用中，请重试。").value(language)
         }
         if (error as? FoundationPreferenceError) == .engineOwnedConsent {
-            return SettingsText("Reading permissions are managed by the engine. Use Connections to change them.", "读取权限由引擎管理，请在连接中更改。").value(language)
+            return SettingsText("Reading permissions are managed by the reading service. Use Connections to change them.", "读取权限由读取服务管理，请在连接中更改。").value(language)
         }
         return SettingsText("Could not save. Your choices are kept here; check the settings storage.", "无法保存。此处保留了你的选择，请检查设置存储。").value(language)
     }
