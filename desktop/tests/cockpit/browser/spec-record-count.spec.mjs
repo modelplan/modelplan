@@ -27,3 +27,16 @@ for(const locale of ['en','zh-CN'])test(`LBL-2.2-17 today and live speed help id
  await expect(help.locator('[data-target=".lb-t,.qrow-t,.qaverage"]')).toContainText(locale==='en'?'today’s average':'今日平均');
  await page.keyboard.up('Alt');await expect(help).toBeHidden();
 });
+
+test('CKP-STRIP-09 running rows and overflow use only delivered live-session facts',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data,base=data.details.sessions[0];
+ data.details.sessions=Array.from({length:7},(_,i)=>({...base,sessionRef:(i+1).toString(16).padStart(16,'0'),model:`Synthetic ${i+1}`,rate:i===0?58:null}));
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(4);
+ for(let i=0;i<4;i++)await expect(rows.nth(i).locator('.t-model')).toHaveText(`Synthetic ${i+1}`);
+ await expect(rows.first().locator('.t-live')).toHaveText('58 t/s');
+ await expect(page.locator('.ck-tape .t-overflow')).toHaveText('3 more running');
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(page.locator('.ck-tape .t-overflow')).toHaveText('另有 3 个会话运行中');
+});
