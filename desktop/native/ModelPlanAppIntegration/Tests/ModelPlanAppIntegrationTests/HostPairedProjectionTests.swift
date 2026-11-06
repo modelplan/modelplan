@@ -953,7 +953,7 @@ actor EntrySyntheticClient: EngineClient {
         }
         let resting = try pixels()
         let skin = try XCTUnwrap(view.presentedSkinForChecks)
-        let hull = try XCTUnwrap(view.registeredHullBounds)
+        XCTAssertNotNil(view.registeredHullBounds)
         let nozzle = try XCTUnwrap(view.interactionAnchor(id))
         let restingWidth = try XCTUnwrap(view.presentedImageForChecks).width
         let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
@@ -1006,11 +1006,13 @@ actor EntrySyntheticClient: EngineClient {
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
         XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
-        let dx = hull.midX - nozzle.midX, dy = hull.midY - nozzle.midY
-        let distance = hypot(dx, dy)
-        XCTAssertGreaterThan(distance, 0)
-        XCTAssertEqual(subtle.offset.x, 6 * dx / distance, accuracy: 0.001)
-        XCTAssertEqual(subtle.offset.y, 6 * dy / distance, accuracy: 0.001)
+        // G3-29: on the right edge the ring moves left, away from the edge, not down onto its text.
+        XCTAssertLessThan(subtle.offset.x, -5.5, "subtle hover grows outward from the screen edge")
+        XCTAssertLessThan(abs(subtle.offset.y), 1.5, "subtle hover does not slide along the edge")
+        let grown = CGRect(x: nozzle.midX + subtle.offset.x - nozzle.width * subtle.scale / 2,
+                           y: nozzle.midY + subtle.offset.y - nozzle.height * subtle.scale / 2,
+                           width: nozzle.width * subtle.scale, height: nozzle.height * subtle.scale)
+        XCTAssertFalse(grown.intersects(try XCTUnwrap(view.helpReadoutAnchor(id))), "the magnified ring never covers its readout")
         XCTAssertGreaterThan(try XCTUnwrap(view.presentedImageForChecks).width, restingWidth)
         XCTAssertTrue(view.isPainted(atLocal: CGPoint(x: nozzle.midX, y: nozzle.midY)))
         XCTAssertNil(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
