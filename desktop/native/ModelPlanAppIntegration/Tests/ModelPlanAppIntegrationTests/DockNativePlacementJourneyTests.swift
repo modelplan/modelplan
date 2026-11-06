@@ -315,6 +315,154 @@ import ModelPlanSettings
         _ = try XCTUnwrap(applied ? true : nil, "The physical menu action must complete: \(action)")
     }
 
+    func testD14DetachedRealServerRestoresAndQueuesShowWithoutRowsReplies() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-detached-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let (relay, receipt, home) = try await makeRowsBarrier(in: root)
+        let profile = root.appendingPathComponent("profile")
+        let topology = Topology()
+        let workspace = NotificationCenter()
+        let replies = Replies()
+
+        func launch(initial: Bool = false) async throws -> EngineDockMenuApplication {
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            if initial {
+                _ = try await settings.update {
+                    $0.motion = .on
+                    $0.dockAlongFraction = 0.62
+                }
+            }
+            let app = EngineRowsEntry.make(configuration: configuration(relay, root: home),
+                settingsStore: settings, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: {
+                    var sample = topology.read()
+                    let available = topology.main.visibleFrame
+                    sample.pointer = CGPoint(x: available.midX, y: available.midY)
+                    return sample
+                }, activateSettings: {})
+            let token = app.composition.store.attach(replies)
+            addTeardownBlock { @MainActor in
+                app.composition.store.detach(token)
+                await app.stopLifecycle()
+                app.composition.dock.close()
+            }
+            await app.prepare()
+            app.startLifecycle(workspace: workspace, local: NotificationCenter(), lockEvents: NotificationCenter(),
+                displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+            return app
+        }
+
+        func select(_ title: String, in menu: NSMenu) throws {
+            let index = try XCTUnwrap(menu.items.firstIndex { $0.title == title && $0.isEnabled })
+            menu.performActionForItem(at: index)
+        }
+        func show(_ app: EngineDockMenuApplication) throws {
+            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+        }
+        func highlight(_ app: EngineDockMenuApplication) -> CALayer? {
+            app.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
+        }
+        func checkShown(_ app: EngineDockMenuApplication, at savedFrame: CGRect) async throws {
+            let host = app.composition.dock
+            let shown = try await wait(2) {
+                host.edgePresentation?.state == .expanded && highlight(app) != nil
+            }
+            XCTAssertTrue(shown)
+            XCTAssertEqual(host.edgePresentation?.paintedFrame, savedFrame)
+            XCTAssertTrue(try XCTUnwrap(highlight(app)).animationKeys()?.isEmpty ?? true)
+            XCTAssertNotNil(host.dockView.emptyStationRectForChecks)
+            XCTAssertEqual(replies.count, 0)
+            XCTAssertNil(app.composition.store.snapshot.rows)
+        }
+
+        let first = try await launch(initial: true)
+        let firstHost = first.composition.dock
+        let original = try XCTUnwrap(firstHost.edgePresentation?.paintedFrame)
+        let subscribed = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(subscribed)
+        try await checkEngine(first)
+        XCTAssertEqual(replies.count, 0)
+        try select("Hide Quota Widget", in: firstHost.menu())
+        try await waitForSettings(first.settingsHost.application.editor) {
+            first.settingsHost.application.editor.snapshot?.preferences.showDock == false
+        }
+        XCTAssertNil(firstHost.edgePresentation?.paintedFrame)
+        await first.stopLifecycle()
+        firstHost.close()
+        try FileManager.default.removeItem(at: receipt)
+
+        let app = try await launch()
+        let host = app.composition.dock, editor = app.settingsHost.application.editor
+        let subscribedAgain = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+        XCTAssertTrue(subscribedAgain, "The reopened profile must use a new real server subscription")
+        try await checkEngine(app)
+        XCTAssertEqual(editor.snapshot?.preferences.showDock, false)
+        XCTAssertNil(host.edgePresentation?.paintedFrame)
+
+        try show(app)
+        try await checkShown(app, at: original)
+        XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
+        let highlightBefore = try XCTUnwrap(highlight(app))
+        let revisionBefore = editor.snapshot?.revision
+        try show(app)
+        let newHighlight = try await wait(2) { highlight(app).map { $0 !== highlightBefore } ?? false }
+        XCTAssertTrue(newHighlight)
+        try await checkShown(app, at: original)
+        XCTAssertEqual(editor.snapshot?.revision, revisionBefore, "Show on an expanded widget must only highlight")
+
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        let collapsed = try await wait(4) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(collapsed)
+        let stripRevision = editor.snapshot?.revision
+        try show(app)
+        try await checkShown(app, at: original)
+        XCTAssertEqual(editor.snapshot?.revision, stripRevision)
+        XCTAssertEqual(editor.snapshot?.preferences.autoHide, true)
+        let collapsedAgain = try await wait(4) { host.edgePresentation?.state == .sliver }
+        XCTAssertTrue(collapsedAgain)
+
+        func checkSettings(_ shown: Bool) async throws {
+            _ = try await editor.commit(SettingsB21Edit.showDock(shown))
+            let settings = await editor.store.snapshot()
+            XCTAssertEqual(settings.preferences.showDock, shown)
+            let rows = try SettingsCatalogue.rows(preferences: settings.preferences, context: editor.context, paneID: "dock")
+            XCTAssertEqual(rows.first { $0.key == .showDock }?.value, .toggle(shown))
+            XCTAssertEqual(host.edgePresentation?.paintedFrame != nil, shown)
+            XCTAssertEqual(app.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }?.isEnabled, true)
+        }
+        try await checkSettings(false)
+        try await checkSettings(true)
+
+        func blockedShow(reconnects: Bool, block: () -> Void, unblock: () -> Void) async throws {
+            try await checkSettings(false)
+            block()
+            if reconnects { try FileManager.default.removeItem(at: receipt) }
+            try show(app)
+            try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == true && !editor.isSaving }
+            XCTAssertNil(host.edgePresentation?.paintedFrame)
+            XCTAssertNil(highlight(app))
+            unblock()
+            try await checkShown(app, at: original)
+            if reconnects {
+                let resubscribed = try await wait(5) { FileManager.default.fileExists(atPath: receipt.path) }
+                XCTAssertTrue(resubscribed, "The resumed app must resubscribe to the real server")
+                try await checkEngine(app)
+                XCTAssertEqual(replies.count, 0)
+            }
+        }
+        try await blockedShow(reconnects: true,
+                              block: { workspace.post(name: NSWorkspace.willSleepNotification, object: nil) },
+                              unblock: { workspace.post(name: NSWorkspace.didWakeNotification, object: nil) })
+        try await blockedShow(reconnects: true,
+                              block: { workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil) },
+                              unblock: { workspace.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil) })
+        try await blockedShow(reconnects: false,
+                              block: { host.setCockpitPresentationBlocked(true) },
+                              unblock: { host.setCockpitPresentationBlocked(false) })
+        try await checkEngine(app)
+        XCTAssertEqual(replies.count, 0)
+    }
+
     func testD14PhysicalHideRelaunchAndShowWhileRowsAreWithheld() async throws {
         preserveTestAppAppearance()
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d14-" + UUID().uuidString)
