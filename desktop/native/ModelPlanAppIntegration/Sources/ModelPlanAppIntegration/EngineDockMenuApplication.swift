@@ -423,7 +423,6 @@ struct StatusNoticePresentation {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         NSApp.mainMenu = applicationMenu
-        NSApp.appearance = NSAppearance(named: .darkAqua)
         if accessibilityObserver == nil {
             accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
@@ -484,6 +483,7 @@ struct StatusNoticePresentation {
     }
 
     func renderMenu() {
+        guard !terminating else { return }
         let language = composition.latestSettings?.effective.language ?? .english
         let component: DockStatusMenu
         if let current = statusMenuComponent { component = current }
@@ -654,9 +654,8 @@ struct StatusNoticePresentation {
             await composition.refresh()
         }
     }
-    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminating else { return .terminateLater }
-        terminating = true; settings.editor.onHostRequest = nil
+    private func retireApplicationSurfaces() {
+        settings.editor.onHostRequest = nil
         applicationSettingsItem.isEnabled = false
         applicationSettingsItem.keyEquivalent = ""
         dockHelp?.suspend()
@@ -664,6 +663,12 @@ struct StatusNoticePresentation {
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
         interactionBinding?.stop(); firstRunFlow?.dispose(); settingsHost.suspend(); scopeConsentEntry.suspend(); console?.hide()
         statusMenuComponent?.dispose(); statusMenuComponent = nil; liveStatusMenu = nil
+    }
+
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminating else { return .terminateLater }
+        terminating = true
+        retireApplicationSurfaces()
         Task {
             if lifecycleController != nil { await stopLifecycle(); composition.dock.close() }
             else { await composition.stop() }
@@ -682,13 +687,11 @@ struct StatusNoticePresentation {
     func stopNativeDockJourney() async {
         terminating = true
         if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
-        if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver) }
-        interactionBinding?.stop()
-        firstRunFlow?.dispose()
-        dockHelp?.suspend()
+        retireApplicationSurfaces()
         await stopLifecycle()
         await composition.stop()
         await dockHelp?.dispose()
+        dockHelp = nil
     }
     #endif
 
