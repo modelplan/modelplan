@@ -40,3 +40,14 @@ test('CKP-STRIP-09 running rows and overflow use only delivered live-session fac
  expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
  await expect(page.locator('.ck-tape .t-overflow')).toHaveText('另有 3 个会话运行中');
 });
+
+test('CKP-STRIP-11 running records expose plain facts without done or error state indicators',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ data.details.sessions[0].source='Codex';data.details.sessions[0].model='Synthetic Model';data.details.sessions[0].projectLabel='synthetic-project';
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ const row=page.locator('.ck-tape .t-observed').first();await expect(row).toBeVisible();
+ await expect(row.locator('.t-tool')).toHaveText('Codex');await expect(row.locator('.t-model')).toHaveText('Synthetic Model');await expect(row.locator('.t-proj')).toHaveText('synthetic-project');await expect(row.locator('.t-time')).toHaveText('Running');
+ await expect(row.locator('.t-state,.t-status,[data-session-state],svg,canvas,img')).toHaveCount(0);
+ await expect(row).not.toContainText(/\b(done|error)\b/i);
+});
