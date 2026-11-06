@@ -350,11 +350,11 @@ private actor P1SyntheticEngine: EngineClient {
                 let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
                 let image = try XCTUnwrap(view.presentedImageForChecks, label)
                 png(image, "resting-right-\(label)")
-                if let layer = view.layer, view.bounds.width > 0,
-                   let context = CGContext(data: nil, width: Int(view.bounds.width * 2), height: Int(view.bounds.height * 2), bitsPerComponent: 8, bytesPerRow: 0,
-                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
-                    context.scaleBy(x: 2, y: 2); layer.render(in: context)
-                    if let full = context.makeImage() { png(full, "expanded-right-\(label)") }
+                // The whole expanded view (face plus the transparent hover canvas), drawn by AppKit.
+                if view.bounds.width > 0, let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(view.bounds.width * 2), pixelsHigh: Int(view.bounds.height * 2),
+                       bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) {
+                    rep.size = view.bounds.size; view.cacheDisplay(in: view.bounds, to: rep)
+                    if let full = rep.cgImage { png(full, "expanded-view-right-\(label)") }
                 }
                 let d = size.nozzleDiameter, unit = d / 52
                 let stations = skin.stations.filter { $0.subscriptionID != nil }.sorted { $0.centre.y < $1.centre.y }
