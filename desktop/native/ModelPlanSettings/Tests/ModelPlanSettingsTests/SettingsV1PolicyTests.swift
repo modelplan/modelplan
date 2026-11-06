@@ -36,7 +36,7 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertEqual(effective.opening, .quick, "V1 opens quickly even with a retained hold preference")
         XCTAssertNil(effective.ignitionSeconds)
     }
-    func testV1NoEffectControlsAreDisabledWithVisibleReasons() throws {
+    func testSET_9_29V1HidesUnavailableAndKeepsDeferredControlsHidden() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
         XCTAssertFalse(rows.contains { $0.key == .automaticUpdates || $0.key == .updateStatus })
@@ -46,18 +46,22 @@ final class SettingsV1PolicyTests: XCTestCase {
             .projectNames, .language, .fullscreen, .redBelow,
             .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache]
         for key in keys {
-            let row = try XCTUnwrap(rows.first { $0.key == key }, "Missing visible key: \(key)")
-            XCTAssertEqual(row.availability, .serviceUnavailable, "A no-effect control must not remain enabled: \(key)")
-            XCTAssertTrue(row.subtitle.english.contains("Unavailable"), "Provide an English visible reason: \(key)")
-            XCTAssertTrue(row.subtitle.chinese.contains("不可用"), "Provide a Chinese visible reason: \(key)")
+            XCTAssertFalse(rows.contains { $0.key == key }, "SET-9-29 hides unavailable \(key)")
         }
         for key in [SettingKey.size, .dockEdge, .dockDisplay, .dockPosition, .percentageMode] {
             XCTAssertEqual(try XCTUnwrap(rows.first { $0.key == key }).availability, .available)
         }
+        context.unavailableControls.removeValue(forKey: .menuDisplay)
+        for key in [SettingKey.forecast, .expiring, .stale, .automaticUpdates, .updateStatus] {
+            context.unavailableControls.removeValue(forKey: key)
+        }
+        let connected = try SettingsCatalogue.rows(preferences: .init(), context: context)
+        XCTAssertEqual(connected.first { $0.key == .menuDisplay }?.availability, .available)
+        XCTAssertFalse(connected.contains { [.forecast, .expiring, .stale, .automaticUpdates, .updateStatus].contains($0.key) })
     }
 
     @MainActor func testDisabledControlsShowReasonAndDoNotClaimShortcutWorks() async throws {
-        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        var context = SettingsPageContext(); context.configureV1NormalEntry(); context.v1NormalEntry = false
         let preferences = SettingsPreferences(), snapshot = SettingsSnapshot(revision: 0, preferences: preferences)
         let rows = try SettingsCatalogue.rows(preferences: preferences, context: context)
         let target = V1RowTarget()

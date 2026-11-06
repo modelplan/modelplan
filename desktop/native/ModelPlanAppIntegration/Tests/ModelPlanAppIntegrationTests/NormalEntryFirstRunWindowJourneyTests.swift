@@ -156,8 +156,7 @@ import ModelPlanWire
         XCTAssertFalse(visible.contains { [.theme, .opening, .countdown].contains($0.key) })
         XCTAssertEqual(visible.first { $0.key == .motion }?.availability, .available)
         XCTAssertEqual(visible.first { $0.key == .transparency }?.availability, .available)
-        XCTAssertEqual(visible.first { $0.key == .openShortcut }?.availability, .serviceUnavailable)
-        XCTAssertTrue(visible.first { $0.key == .openShortcut }?.subtitle.english.contains("Unavailable") == true)
+        XCTAssertFalse(visible.contains { $0.key == .openShortcut }, "SET-9-29 hides the unavailable shortcut")
         for key in [SettingKey.login, .notificationConsent, .feedback, .websiteLink, .methodologyLink, .privacyLink, .repositoryLink] {
             XCTAssertEqual(visible.first { $0.key == key }?.availability, .available, "Connected S3 services must enable their controls: \(key)")
         }
@@ -253,8 +252,7 @@ import ModelPlanWire
         let unavailableEditor = unavailable.settingsHost.application.editor
         let unavailableRows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(unavailableEditor.snapshot).preferences, context: unavailableEditor.context)
         for key in [SettingKey.login, .notificationConsent] {
-            XCTAssertEqual(unavailableRows.first { $0.key == key }?.availability, .serviceUnavailable)
-            XCTAssertTrue(unavailableRows.first { $0.key == key }?.subtitle.english.contains("Unavailable") == true)
+            XCTAssertFalse(unavailableRows.contains { $0.key == key }, "SET-9-29 hides unavailable system services")
         }
         XCTAssertEqual(unavailableLogin.registrations, 0); XCTAssertEqual(unavailableNotifications.requests, 0)
         await unavailable.composition.stop()
