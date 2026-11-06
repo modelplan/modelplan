@@ -44,7 +44,8 @@ import XCTest
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings,
             createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
             dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
-            deadlineElapsed: { clock.now }, deadlineScheduling: clock, activateSettings: {})
+            activateSettings: {})
+        EngineRowsEntry.installDockVisibilityTimingForChecks(on: app, clock: { clock.now }, scheduler: clock)
         addTeardownBlock { @MainActor in await app.composition.stop() }
         await app.prepare()
         app.allowDockPresentation()
@@ -61,6 +62,21 @@ import XCTest
         clock.advance(to: 0.151)
         XCTAssertEqual(dock.edgePresentation?.state, .expanded)
         XCTAssertEqual(dock.edgePresentation?.paintedFrame, placement.frame)
+
+        pointer = CGPoint(x: display.visibleFrame.midX, y: display.visibleFrame.midY)
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.reveal(300))
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.midY)
+        dock.refreshPresence()
+        let nextSample = try XCTUnwrap(clock.deadline)
+        XCTAssertEqual(nextSample, 0.301, accuracy: 0.0001)
+        clock.advance(to: nextSample)
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        XCTAssertEqual(try XCTUnwrap(clock.deadline), 0.451, accuracy: 0.0001)
+        clock.advance(to: 0.450)
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        clock.advance(to: 0.452)
+        XCTAssertEqual(dock.edgePresentation?.state, .expanded)
     }
 }
 #endif

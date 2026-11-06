@@ -39,4 +39,12 @@ import ModelPlanEngineClient
         app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels, isolatedLedger: ledger)
         return app
     }
+    #if DEBUG
+    /// Install before prepare. Quota freshness and visibility use separate schedulers.
+    static func installDockVisibilityTimingForChecks(on app: EngineDockMenuApplication,
+        clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {
+        app.composition.installDockVisibilityTimingForChecks(clock: clock, scheduler: scheduler)
+    }
+    #endif
+
 }
