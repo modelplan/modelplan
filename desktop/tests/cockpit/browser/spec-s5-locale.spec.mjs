@@ -15,3 +15,22 @@ test('C-05 live locale switches document language and accessible controls withou
  await checkFit();await checkNames(zh);
  expect(await receive(send('appearance',appearance))).toBe(true);await expect(page.locator('html')).toHaveAttribute('data-theme','night');await expect(page.locator('html')).toHaveAttribute('lang','en');await expect(page.getByRole('button',{name:'Subscription',exact:true})).toBeFocused();await checkNames(en);
 });
+
+test('LBL-2.2-16 ALERT remains English on the lamp in both locales',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell}))).toBe(true);
+ const lamp=page.locator('.s6-alert');await expect(lamp).toBeVisible();
+ await expect(lamp.locator('span')).toHaveText('ALERT');await expect(lamp).toHaveAccessibleName('Alert inactive');
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(lamp.locator('span')).toHaveText('ALERT');await expect(lamp).toHaveAccessibleName('告警未激活');
+});
+
+test('CKP-STRIP-04 alert lamp is rectangular and shares the header key height',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands();expect(await page.evaluate(raw=>window.modelPlanCockpit.receive(raw),send('load',{appearance,shell}))).toBe(true);
+ const lamp=page.locator('.s6-alert'),key=page.locator('[data-settings]');await expect(lamp).toBeVisible();await expect(key).toBeVisible();
+ const sizes=await page.evaluate(()=>{const a=document.querySelector('.s6-alert').getBoundingClientRect(),b=document.querySelector('[data-settings]').getBoundingClientRect();return {width:a.width,height:a.height,keyHeight:b.height};});
+ expect(sizes.width).toBeGreaterThan(sizes.height);expect(Math.abs(sizes.height-sizes.keyHeight)).toBeLessThanOrEqual(1);
+ await expect(lamp.locator('span')).toHaveText('ALERT');await expect(lamp).toHaveAccessibleName('Alert inactive');
+});
