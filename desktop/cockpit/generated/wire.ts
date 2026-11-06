@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
+// Schema SHA-256: c80a357a5a7b797da6148dfbffb7e00095dc5b5e942672247e22edbdf4b74845
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -12,7 +12,7 @@ export type WireAccount = {
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
   readonly "refreshNotBefore"?: string | null | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "resetCards"?: WireResetCards;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
   readonly "valueState": "current" | "retained" | "none";
@@ -82,7 +82,7 @@ export type WireCockpitSubscription = {
 
 export type WireCockpitSubscriptionDetails = {
   readonly "credits": WireCockpitCredits | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "resetCards"?: WireResetCards;
   readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
   readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
@@ -169,7 +169,7 @@ export type WireResetCardSource = {
 
 export type WireResetCards = {
   readonly "count": number | null;
-  readonly "earliestExpiresAt"?: string | null;
+  readonly "earliestExpiresAt"?: string;
   readonly "items"?: ReadonlyArray<WireResetCardItem>;
   readonly "sources": ReadonlyArray<WireResetCardSource>;
   readonly "state": string;
@@ -239,7 +239,7 @@ export type WireWindow = {
   readonly "resetMode": "fixed" | "rolling" | "unknown";
   readonly "resetsAt": string | null;
   readonly "role": "session" | "daily" | "weekly" | "monthly" | "other";
-  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other" | null;
+  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other";
   readonly "validUntil": string | null;
 };
 
@@ -324,14 +324,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "route": {
         "enum": [
@@ -708,14 +701,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "resetCounts": {
         "items": {
@@ -1237,15 +1223,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "minimum": 0
       },
       "earliestExpiresAt": {
-        "anyOf": [
-          {
-            "format": "date-time",
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "format": "date-time",
+        "type": "string"
       },
       "items": {
         "items": {
@@ -1654,21 +1633,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "source": {
-        "anyOf": [
-          {
-            "enum": [
-              "local_history",
-              "runtime",
-              "saved_login",
-              "api_key",
-              "other"
-            ],
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "enum": [
+          "local_history",
+          "runtime",
+          "saved_login",
+          "api_key",
+          "other"
+        ],
+        "type": "string"
       },
       "validUntil": {
         "anyOf": [
