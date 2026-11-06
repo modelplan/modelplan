@@ -202,8 +202,8 @@ private actor G1SettingsEngine: EngineClient {
         let app = try await entry(locale: "en-US", profileURL: profile, startsComposition: false)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.onboarding.completed, false)
         launch(app)
-        let window = try XCTUnwrap(try await firstRunWindow(after: before, seconds: 5),
-                                   "The normal launch must present the first-run sheet on a fresh profile")
+        let presented = try await firstRunWindow(after: before, seconds: 5)
+        let window = try XCTUnwrap(presented, "The normal launch must present the first-run sheet on a fresh profile")
         addTeardownBlock { @MainActor in window.close() }
         XCTAssertFalse(app.lifecyclePaused)
         let done = try control("firstRun.done", in: window, as: NSButton.self)
