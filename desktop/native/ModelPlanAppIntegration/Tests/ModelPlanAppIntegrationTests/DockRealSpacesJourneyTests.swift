@@ -803,6 +803,11 @@ import XCTest
 
     func testD11PhysicalPressAndCancelWithoutSaving() async throws {
         let application = NSApplication.shared
+        let foregroundBundle = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D11_FOREGROUND_BUNDLE"],
+            "Supply the admitted synthetic editor's bundle identifier")
+        func editorRemainsFrontmost() -> Bool {
+            !application.isActive && NSWorkspace.shared.frontmostApplication?.bundleIdentifier == foregroundBundle
+        }
         let display = try XCTUnwrap(DockDisplayTopology.system().main)
         let (app, store, storedURL) = try await makeProfile(displayID: display.id, edge: .bottom,
                                                             declaredQuotas: [72, 53, 38])
@@ -854,6 +859,7 @@ import XCTest
         defer { panel.receivedInput = previous }
 
         func assertRestored(_ step: String) async throws {
+            XCTAssertTrue(editorRemainsFrontmost(), "The synthetic editor must remain frontmost: " + step)
             XCTAssertTrue(panel.isVisible, step)
             XCTAssertFalse(panel.isKeyWindow, step)
             XCTAssertEqual(panel.frame, frame, step)
@@ -870,6 +876,11 @@ import XCTest
         func near(_ point: CGPoint?, _ target: CGPoint) -> Bool {
             guard let point else { return false }
             return hypot(point.x - target.x, point.y - target.y) <= 8
+        }
+
+        announce("D-11", "Activate the admitted synthetic editor and leave it frontmost throughout this test.")
+        guard try await wait(.seconds(30), until: editorRemainsFrontmost) else {
+            return XCTFail("The admitted synthetic editor is not frontmost")
         }
 
         announce("D-11", "Click the widget body near \(facePoint) without moving, then release.")
@@ -895,9 +906,10 @@ import XCTest
         guard try await wait(.seconds(25), until: {
             events.drag > 0 && events.up == 1 && dock.edgePresentation?.moving == true && panel.frame != frame
         }) else { return XCTFail("The held native panel did not move") }
-        announce("D-11", "Press physical Escape without letting go of the mouse. App active: \(application.isActive).")
+        XCTAssertTrue(editorRemainsFrontmost(), "Body carry must not activate ModelPlan")
+        announce("D-11", "Press physical Escape without letting go of the mouse or switching apps.")
         guard try await wait(.seconds(20), until: {
-            events.up == 1 && dock.edgePresentation?.moving == false && panel.frame == frame
+            editorRemainsFrontmost() && events.up == 1 && dock.edgePresentation?.moving == false && panel.frame == frame
         }) else { return XCTFail("The native panel did not restore before physical mouse-up") }
         announce("D-11", "Release the mouse now.")
         guard try await wait(.seconds(15), until: { events.up == 2 }) else {
@@ -915,9 +927,10 @@ import XCTest
             }) else { return XCTFail("No physical reorder preview for \(step)") }
             XCTAssertEqual(panel.frame, frame, step)
             if escape {
-                announce("D-11", "Press physical Escape while still holding. App active: \(application.isActive).")
+                XCTAssertTrue(editorRemainsFrontmost(), "Nozzle reorder must not activate ModelPlan")
+                announce("D-11", "Press physical Escape while still holding, with the editor frontmost.")
                 guard try await wait(.seconds(20), until: {
-                    events.up == upBefore && !controller.hasCapture && controller.presentation?.reorder == nil
+                    editorRemainsFrontmost() && events.up == upBefore && !controller.hasCapture && controller.presentation?.reorder == nil
                 }) else { return XCTFail("Nozzle capture remained after physical Escape") }
                 announce("D-11", "Release the mouse now.")
             } else {
