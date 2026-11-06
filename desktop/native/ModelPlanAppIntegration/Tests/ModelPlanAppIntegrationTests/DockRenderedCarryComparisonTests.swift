@@ -24,6 +24,14 @@ import ModelPlanSettings
 
 @MainActor final class DockRenderedCarryComparisonTests: XCTestCase {
     func testD04DetachedRealServerCarriesRenderedWidgetAcrossDisplays() async throws {
+        try await exercise(releaseOnMixedScale: false)
+    }
+
+    func testD05DetachedRealServerRerasterizesAndSavesOnTheDestination() async throws {
+        try await exercise(releaseOnMixedScale: true)
+    }
+
+    private func exercise(releaseOnMixedScale: Bool) async throws {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_D04_CAPTURE_DIR"])
         let output = URL(fileURLWithPath: path, isDirectory: true)
         let helper = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
@@ -109,6 +117,53 @@ import ModelPlanSettings
                 captured = drag.beginBackgroundMove(local: local, global: down)
             }
             guard captured else { return XCTFail("Mode \(mode) did not capture the actual host's background") }
+
+            if releaseOnMixedScale {
+                func capture(_ name: String, at display: DockDisplayArea, moving: Bool) throws {
+                    let current = try XCTUnwrap(host.edgePresentation)
+                    let frame = try XCTUnwrap(current.paintedFrame)
+                    let raster = try XCTUnwrap(host.detachedRenderedCarryViewForChecks?.presentedImageForChecks)
+                    XCTAssertEqual(current.state, .expanded)
+                    XCTAssertEqual(current.moving, moving)
+                    XCTAssertEqual(current.placement?.displayID, display.id)
+                    XCTAssertEqual(current.placement?.edge, .right)
+                    XCTAssertTrue(display.usableFrame.insetBy(dx: -0.01, dy: -0.01).contains(frame))
+                    XCTAssertEqual(CGFloat(raster.width), frame.width * CGFloat(display.backingScale), accuracy: 1)
+                    XCTAssertEqual(CGFloat(raster.height), frame.height * CGFloat(display.backingScale), accuracy: 1)
+                    XCTAssertEqual(serverReading(), 40)
+                    let prefix = "mode-\(mode)-" + name
+                    try XCTUnwrap(NSBitmapImageRep(cgImage: raster).representation(using: .png, properties: [:]))
+                        .write(to: output.appendingPathComponent(prefix + ".png"))
+                    let report: [String: Any] = [
+                        "display": display.id, "edge": "right", "frame": NSStringFromRect(frame),
+                        "scale": display.backingScale, "pixels": [raster.width, raster.height],
+                    ]
+                    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                        .write(to: output.appendingPathComponent(prefix + ".json"))
+                }
+                let before = await store.snapshot()
+                try capture("a-2x-pressed", at: topology.a, moving: false)
+                let destination = topology.b.usableFrame
+                let target = CGPoint(x: destination.maxX - 12, y: destination.midY)
+                topology.pointer = target
+                drag.updateBackgroundMove(global: target)
+                try capture("b-1x-held", at: topology.b, moving: true)
+                XCTAssertEqual(try Data(contentsOf: storedURL), bytes)
+
+                drag.endBackgroundMove(global: target)
+                let editor = app.settingsHost.application.editor
+                try await waitForSettings(editor) {
+                    editor.snapshot?.preferences.dockDisplayID == topology.b.id && !editor.isSaving
+                }
+                let after = await store.snapshot()
+                XCTAssertEqual(after.revision, before.revision + 1)
+                XCTAssertEqual(after.preferences.dockEdge, .right)
+                XCTAssertEqual(host.edgePresentation?.placement?.alongFraction,
+                               after.preferences.dockAlongFraction)
+                try capture("b-1x-released", at: topology.b, moving: false)
+                await app.composition.stop()
+                continue
+            }
 
             let itinerary: [(String, DockDisplayArea, CGPoint)] = [
                 ("a-rest", topology.a, down),
