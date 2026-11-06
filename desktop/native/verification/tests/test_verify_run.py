@@ -304,9 +304,15 @@ class VerifyRunTests(unittest.TestCase):
                 return super().capture(subject, *args)
         ctx = dict(profile='synthetic', sha='a' * 40, layout='single',
                    markers=verify_run.account_markers(), displays=[], baseline={})
+        lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=1e12, guardianHeartbeatAt=100.2,
+                     ownerPreempted=False, exclusive=True)
+        (self.root / 'direct-lease.json').write_text(json.dumps(lease))
+        live = dict(pid=111, registeredAt=0.0, leasePath=str(self.root / 'direct-lease.json'),
+                    stopPath=str(self.root / 'direct-STOP'),
+                    leaseSnapshot={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
         step = dict(steps=[dict(name='again', action='relaunch'), dict(name='shot', action='capture-window')])
         outcome, reason, subject = verify_run.run_id('X-01', step, dict(flavour='release'),
-                                                     dict(pid=111, registeredAt=0.0), ctx, Follow(), self.root)
+                                                     live, ctx, Follow(), self.root)
         self.assertEqual(outcome, 'REVIEW')
         self.assertEqual(captures, [999])  # the capture saw the relaunched subject, not the old one
         self.assertEqual(subject['pid'], 999)  # and run_id hands the new subject back to the caller
