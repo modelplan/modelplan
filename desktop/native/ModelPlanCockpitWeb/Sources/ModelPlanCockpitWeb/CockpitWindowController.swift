@@ -254,7 +254,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     let script = """
     (() => {
       const map = document.querySelector('#help-map');
-      if (!map || map.hidden) return JSON.stringify({open:false});
+      if (!map) return JSON.stringify({open:false});
+      for (let parent=map; parent; parent=parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (parent.hidden || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return JSON.stringify({open:false});
+      }
       const choices = {
         window: ['.ck-port', 'Window: the field view is unavailable.', '悬窗：场景视图暂不可用。'],
         alert: ['[data-caution]', 'Alert lamp: indicates current alerts.', '注意灯：显示当前提醒状态。'],
