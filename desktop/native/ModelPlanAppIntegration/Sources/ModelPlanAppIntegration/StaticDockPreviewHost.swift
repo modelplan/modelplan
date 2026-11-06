@@ -556,6 +556,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
+    #if DEBUG
+    private var visibilityTimingForChecks: (clock: () -> TimeInterval, scheduler: any DockEdgeScheduling)?
+
+    func installVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {
+        precondition(!permitted && !retired && edge.presentation == nil, "Install visibility timing before preparing the app")
+        let preference = edge.preference
+        visibilityTimingForChecks = (clock, scheduler)
+        edge = makeEdge(preference: preference, policy: visibilityPolicy)
+        connectEdge()
+    }
+    #endif
+
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
                             contentProvider: (any DockContentProvider)? = nil) {
         self.init(appearance: appearance, currentDate: currentDate, createsNativePanels: true, sliverParameters: sliverParameters, readerCapabilities: readerCapabilities, contentProvider: contentProvider)
@@ -963,6 +975,12 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private func makeEdge(preference: DockEdgePreference = .init(), policy: DockVisibilityPolicy = .init()) -> DockEdgeController {
         let read: () -> DockEdgeEnvironment = { [weak self] in self?.environment() ?? .init(displays: [], layouts: []) }
+        #if DEBUG
+        if let timing = visibilityTimingForChecks {
+            return DockEdgeController(preference: preference, policy: policy, clock: timing.clock,
+                                      scheduler: timing.scheduler, read: read, position: PulseDockPositioning.resolve)
+        }
+        #endif
         if let elapsedClock, let edgeScheduling {
             return DockEdgeController(preference: preference, policy: policy, clock: elapsedClock, scheduler: edgeScheduling, read: read, position: PulseDockPositioning.resolve)
         }
