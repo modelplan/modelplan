@@ -86,7 +86,7 @@ import XCTest
             "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int), "allow": [scope], "deny": [String]()
         ])
         _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
-        var healthy = try decode(Data(contentsOf: snapshot))
+        let healthy = try decode(Data(contentsOf: snapshot))
         XCTAssertEqual(healthy["status"] as? String, "ok")
 
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
@@ -106,21 +106,40 @@ import XCTest
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
+        func capture(_ phase: String, _ locale: String) throws {
+            guard let path = ProcessInfo.processInfo.environment["MODELPLAN_D24_CAPTURE_DIR"] else { return }
+            let visible = try items()
+            let report: [String: Any] = [
+                "phase": phase, "locale": locale,
+                "state": row().map { String(describing: $0.state) } ?? "absent",
+                "accounts": row()?.accounts.count ?? 0,
+                "items": visible.map { ["title": $0.title, "enabled": $0.isEnabled] },
+                "selectedPanes": surface.shown,
+            ]
+            let output = URL(fileURLWithPath: path).appendingPathComponent(phase + "-" + locale + ".json")
+            try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(to: output)
+        }
         XCTAssertEqual(row()?.state, .fresh)
         XCTAssertEqual(row()?.accounts.first?.windows.first?.remainingPercent, 75)
         let editor = app.settingsHost.application.editor
+        try capture("healthy", "en")
         let english = try items().map(\.title)
         XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"])
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        try capture("healthy", "zh")
         let chinese = try items().map(\.title)
         XCTAssertEqual(chinese, ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"])
 
         // Backdate the synthetic fixture and reservation to exercise a second
         // real reader call without changing the production refresh interval.
-        let due = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-360))
-        healthy["observedAt"] = due
-        try encode(healthy).write(to: snapshot, options: .atomic)
-        try encode(["schemaVersion": 1, "nextAttemptAt": due]).write(to: attempts, options: .atomic)
+        func makeDue(_ original: [String: Any], seconds: TimeInterval) throws {
+            let due = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-seconds))
+            var fixture = original
+            fixture["observedAt"] = due
+            try encode(fixture).write(to: snapshot, options: .atomic)
+            try encode(["schemaVersion": 1, "nextAttemptAt": due]).write(to: attempts, options: .atomic)
+        }
+        try makeDue(healthy, seconds: 360)
         try Data().write(to: failed)
         _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
         let failure = try decode(Data(contentsOf: snapshot))
@@ -133,6 +152,7 @@ import XCTest
         XCTAssertEqual(failedRow.state, .failed, "Producer result: " + String(describing: failedRow.reason.code))
         XCTAssertTrue(failedRow.accounts.isEmpty, "The real failed provider need not retain an account")
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        try capture("failed", "zh")
         let zhProblem = failedRow.name.zh + "：读取失败 · 查看…"
         XCTAssertEqual(try items().filter { $0.title == zhProblem }.count, 1)
         XCTAssertEqual(try items().filter { $0.title != zhProblem }.map(\.title), chinese)
@@ -141,12 +161,29 @@ import XCTest
         XCTAssertEqual(try items().filter { $0.title == enProblem }.count, 1)
         XCTAssertEqual(try items().filter { $0.title != enProblem }.map(\.title), english)
         let menu = try XCTUnwrap(app.liveStatusMenu)
-        let index = try XCTUnwrap(menu.items.firstIndex { $0.title == enProblem })
-        let shown = expectation(description: "The problem opens Settings Diagnostics")
-        surface.onShow = { shown.fulfill() }
-        menu.performActionForItem(at: index)
-        await fulfillment(of: [shown], timeout: 2)
+        if let index = menu.items.firstIndex(where: { $0.title == enProblem }) {
+            let shown = expectation(description: "The problem opens Settings Diagnostics")
+            surface.onShow = { shown.fulfill() }
+            menu.performActionForItem(at: index)
+            await fulfillment(of: [shown], timeout: 2)
+        }
+        try capture("failed", "en")
         XCTAssertEqual(surface.shown, ["diagnostics"])
+
+        try makeDue(failure, seconds: 3_600)
+        try FileManager.default.removeItem(at: failed)
+        _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
+        let recovery = ContinuousClock.now + .seconds(5)
+        while row()?.state != .fresh && ContinuousClock.now < recovery {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        XCTAssertEqual(row()?.state, .fresh)
+        try capture("recovered", "en")
+        XCTAssertEqual(try items().map(\.title), english)
+        _ = try await editor.commit(SettingsB21Edit.language(.chinese))
+        try capture("recovered", "zh")
+        XCTAssertEqual(try items().map(\.title), chinese)
     }
 }
 #endif
