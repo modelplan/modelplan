@@ -123,21 +123,25 @@ func TestG320PlanUpgradeKeepsOneAccount(t *testing.T) {
 	}
 }
 
-func TestG320OtherAccountLogsStaySeparate(t *testing.T) {
+// Owner decision B: logs of another login (different cycles) are not a second account while
+// the live reading works; only the active login is shown, with its own windows.
+func TestG320LoginSwitchShowsOnlyTheActiveLogin(t *testing.T) {
 	isolateHome(t)
 	home, _ := os.UserHomeDir()
 	codexHome := filepath.Join(home, ".codex")
 	cache := t.TempDir()
 	now := acctNow
-	// Logs of another account: different cycles. Only the runtime reading has an account.
-	g320Rollout(t, codexHome, now.Add(-10*time.Minute), "pro", now.Add(90*time.Minute), now.Add(2*24*time.Hour))
-	bin, _ := fakeCodex(t, g320Limits("pro", now.Add(3*time.Hour), now.Add(4*24*time.Hour)))
+	g320Rollout(t, codexHome, now.Add(-10*time.Minute), "plus", now.Add(90*time.Minute), now.Add(2*24*time.Hour))
+	primary, weekly := now.Add(3*time.Hour), now.Add(4*24*time.Hour)
+	bin, _ := fakeCodex(t, g320Limits("pro", primary, weekly))
 	if err := RefreshCodexAccount(context.Background(), cache, bin, now); err != nil {
 		t.Fatal(err)
 	}
-	if accounts := codexAccounts(ReadPermitted(Paths{Cache: cache, CodexHome: codexHome}, now)); len(accounts) != 2 {
-		t.Fatalf("readings of different meters were joined: %s", g320Summary(accounts))
+	accounts := codexAccounts(ReadPermitted(Paths{Cache: cache, CodexHome: codexHome}, now))
+	if len(accounts) != 1 {
+		t.Fatalf("live reading available: only the active login, got %s", g320Summary(accounts))
 	}
+	g320AssertLiveOnly(t, accounts[0], "pro", primary, weekly)
 }
 
 func TestG320OlderRuntimePlanNeverUndoesUpgrade(t *testing.T) {
