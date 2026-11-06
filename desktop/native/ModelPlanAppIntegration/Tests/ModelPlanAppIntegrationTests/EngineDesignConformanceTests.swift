@@ -57,10 +57,10 @@ import ModelPlanEngineClient
                 let en=language == .english
                 // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q]; no Hide item.
                 let dock=entry.composition.dock.menu().items
-                let titles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
+                let dockTitles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
                 let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
-                XCTAssertEqual(titles,enabled ? [en ? "Open Cockpit" : "打开驾驶舱","—"]+group : group)
-                XCTAssertFalse(titles.contains { $0.contains("Hide") || $0.contains("隐藏") || $0.contains("Close") || $0.contains("关闭") })
+                XCTAssertEqual(dockTitles,enabled ? [en ? "Open Cockpit" : "打开驾驶舱","—"]+group : group)
+                XCTAssertFalse(dockTitles.contains { $0.contains("Hide") || $0.contains("隐藏") || $0.contains("Close") || $0.contains("关闭") })
                 let toggle=try XCTUnwrap(dock.first { $0.title == (en ? "Auto-Collapse" : "自动收起") })
                 let storedAutoHide=await store.snapshot().preferences.autoHide
                 XCTAssertEqual(toggle.state,storedAutoHide ? .on : .off)
