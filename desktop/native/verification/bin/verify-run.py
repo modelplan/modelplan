@@ -61,6 +61,10 @@ class NotRun(Exception):
     """This ID cannot run here; the reason goes into results.txt."""
 
 
+# What Session.await_subject produces for one launch; Session.relaunch swaps exactly these fields.
+RELAUNCH_IDENTITY = ('pid', 'bundle', 'home', 'registeredAt')
+
+
 def supervisor_state(subject, now):
     """The authoritative supervisor state before any step: the stop file, the lease's identity,
     revocation or takeover, the guardian heartbeat (within supervision's tolerance) and the
@@ -395,6 +399,10 @@ class Session:
                 started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x
                                 and (wanted is None or x.get('relaunch', 0) == wanted)), None)
                 if record.get('state') == 'running' and started and record.get('pid') == started.get('ownedPID'):
+                    if authority is not None:  # the reads above block too: re-check before confirming
+                        stopped = supervisor_state(authority, time.time())
+                        if stopped:
+                            raise StopRun('supervisor-' + stopped)
                     return dict(pid=record['pid'], bundle=started['bundle'], home=started.get('home') or '',
                                 registeredAt=time.time())
             except (OSError, ValueError, KeyError):
@@ -412,10 +420,15 @@ class Session:
         self.relaunch_token += 1
         Path(self.paths['relaunchPath']).write_text(str(self.relaunch_token))
         authority = {k: subject[k] for k in ('leasePath', 'stopPath', 'leaseSnapshot') if k in subject}
-        updated = self.await_subject(self.relaunch_token, deadline_seconds=60,
-                                     authority=authority or None)
-        updated.update(runID=subject.get('runID'), epoch=subject.get('epoch'),
-                       leasePath=subject.get('leasePath'), stopPath=subject.get('stopPath'))
+        fresh = self.await_subject(self.relaunch_token, deadline_seconds=60,
+                                   authority=authority or None)
+        # Producer/consumer contract (macrevb-574-8): the replacement is the original subject with
+        # only the launch identity swapped. Every field later steps and require_authority read
+        # (runID, epoch, supervisor paths and the ORIGINAL authorized lease snapshot) is carried
+        # unchanged; the snapshot is never re-read from the live lease, so a replaced lease still
+        # fails closed as lease-identity-changed.
+        updated = dict(subject)
+        updated.update({k: fresh[k] for k in RELAUNCH_IDENTITY})
         return updated
 
     def close(self):
@@ -537,6 +550,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 actions.sleep(item['seconds'])
             require_authority(subject, actions)  # after the step's blocking work, before completion
             after = actions.dialogs()
+            require_authority(subject, actions)  # the dialog query blocks too (osascript)
             fresh = [d for d in after if d not in before]
             if fresh:
                 titles = '; '.join(f'{d.get("owner")}: {d.get("title") or "(untitled)"}' for d in fresh)
@@ -544,7 +558,6 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                 if ctx['profile'] == 'real' and all(d.get('owner') in KEYCHAIN_OWNERS for d in fresh):
                     raise NotRun('keychain-prompt-open-grant-it-during-host-setup')
                 raise StopRun('system-dialog: ' + titles, isolation=ctx['profile'] == 'synthetic')
-            require_authority(subject, actions)  # the dialog query blocks too (osascript)
             if outcome == 'FAIL':
                 break
     except NotRun as error:
@@ -554,6 +567,9 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
             purge_captures(folder)
         restore(changed, actions, records)
         write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', str(error))
+        raise
+    except BaseException:
+        restore(changed, actions, records)  # any other exit still re-establishes the baseline
         raise
     failed = restore(changed, actions, records)
     if failed:  # the baseline was not re-established: a machine assertion, not a silent pass

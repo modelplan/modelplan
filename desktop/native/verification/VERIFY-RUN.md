@@ -95,20 +95,26 @@ host. Tests inject a fake host; a real run never passes them by default.
   `set-appearance` (`value`), `status-menu` (`item`, `menuAction`), `relaunch`, `dwell` (`seconds`).
 - Before every step the runner re-reads the authoritative supervisor state (stop file, lease
   identity, revocation or takeover, guardian heartbeat, deadline — the same verdict launch.py's
-  own supervisor applies), and again after every blocking call (AX probe, bounds probe, dwell)
-  immediately before the next capture or settings action and before the ID may complete: once it
+  own supervisor applies), and again after every blocking call (AX probe, bounds probe, dwell,
+  menu drive, relaunch confirmation wait, dialog query) immediately before the next capture or settings action and before the ID may complete: once it
   stops, the ID is NOT-RUN, a probe that was in flight is discarded, the segment aborts, and only
   bounded cleanup and the recorded baseline restoration follow. The boundary is explicit:
   authority is re-checked after the last blocking observation (including the final dialog query
   and baseline restoration) and before the ID's result and receipt are written; any STOP observed
-  up to that point makes the ID NOT-RUN `supervisor-*` and the run exit 2.
+  up to that point makes the ID NOT-RUN `supervisor-*` and the run exit 2. Any other exit from an
+  ID (an unexpected error included) still restores the recorded baseline first.
 - A failed baseline restoration is a machine assertion: the ID ends FAIL
   (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
   re-establishes and re-records the baseline.
 - `relaunch` stops the subject and starts it again inside the same segment with the same HOME,
   environment and argv (direct launch mode only; each launch re-reserves the slot with the guardian
-  before its exec gate is released, and the supervisor announces every identifying field of the new
-  launch, evidence included, plus its token in its JSON lines). A relaunched subject is the one the
+  before its exec gate is released; the supervisor re-reads authority after the old child's
+  shutdown wait and never spawns once it stopped, and the gate is released only after one more
+  authority read following registration, so a revoked run never executes a replacement; and the supervisor announces every identifying field of the new
+  launch, evidence included, plus its token in its JSON lines). The replacement subject is the
+  original one with only `pid`, `bundle`, `home` and `registeredAt` swapped: run ID, epoch,
+  supervisor paths and the originally authorized lease snapshot carry over unchanged, so a valid
+  relaunch continues under the same lease and a replaced lease still fails closed. A relaunched subject is the one the
   later steps of its ID and every later ID of the segment drive. `status-menu` drives only the fixed
   action IDs `refresh`, `settings`, `console`, `quit` through `pointer_drive --status-menu-plan`, in
   synthetic-profile segments only (the drive helper and the arrival observer validate synthetic

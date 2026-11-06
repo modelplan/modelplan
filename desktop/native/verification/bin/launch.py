@@ -98,7 +98,7 @@ def main():
         # reservation only once the prior registered subject is gone, keeps the same controller
         # identity, and only then accepts the helper and the new registration.
         launcher=mark_launching(pid_path,scope=scope,mode=mode)
-        child=spawn_gated(gate,env,pid_path,launcher,stop_child)
+        child=spawn_gated(gate,env,pid_path,launcher,stop_child,admit=lambda:stop_reason(c,time.time()))
         state['child']=child
         return child
     child=spawn()
@@ -113,16 +113,22 @@ def main():
     print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,'launchMode':mode,'profile':profile}))
     raise SystemExit(0 if reason is None else 3)
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
-def spawn_gated(gate,env,pid_path,launcher,on_unregistered):
+class AuthorityWithdrawn(RuntimeError):pass
+def spawn_gated(gate,env,pid_path,launcher,on_unregistered,admit=None):
     """Start one gated child and register it against a reservation this controller just made:
-    helper identity first, registration second, then release the exec gate. Any failure kills the
-    child and hands the failure to on_unregistered, so an unregistered subject never survives."""
+    helper identity first, registration second, then (only while `admit` reports no stop reason)
+    release the exec gate. Any failure kills the child and hands the failure to on_unregistered,
+    so an unregistered subject, or one whose authority was withdrawn, never runs."""
     child=subprocess.Popen(gate,stdin=subprocess.PIPE,env=env)
     try:
         add_helper(pid_path,launcher,identity(child.pid)) # The gate is matched by PID plus start time.
         register(pid_path,child.pid,launcher)
+        reason=admit() if admit is not None else None # last authority read before the subject executes
+        if reason:raise AuthorityWithdrawn(reason)
         child.stdin.write(b'g');child.stdin.close() # Registered: release the gate.
     except BaseException:
+        try:child.stdin.close() # EOF: the gate exits without exec'ing the subject
+        except OSError:pass
         child.terminate() # never leave an unregistered child running ...
         try:child.wait(10)
         except subprocess.TimeoutExpired:child.kill();child.wait()
@@ -291,7 +297,10 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
     """Stay attached until the subject ends by itself (returns None) or a stop condition fires
     (returns its reason). With `spawn`, a relaunch marker (an increasing integer in the config's
     relaunchPath) stops the current child and starts a fresh gated one with the same argv,
-    environment and HOME: one supervised slot, several launches, identities never mixed."""
+    environment and HOME: one supervised slot, several launches, identities never mixed.
+    Authority is re-read after every blocking wait: a relaunch never spawns once the old child's
+    shutdown wait saw STOP, revocation or the deadline, and a child that ended while authority was
+    withdrawn is a supervised stop, never one that ended by itself."""
     marker=Path(c['relaunchPath']) if spawn is not None and c.get('relaunchPath') else None
     token=0
     while True:
@@ -310,6 +319,8 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                     child.terminate() # ended deliberately: a relaunch step, not a crash
                     try:child.wait(10)
                     except subprocess.TimeoutExpired:child.kill();child.wait()
+                    reason=stop_reason(c,clock()) # re-admit after the blocking shutdown wait
+                    if reason:return reason
                     try:
                         child=spawn()
                     except SystemExit:
