@@ -9,6 +9,7 @@ import ModelPlanPrimitives
 import ModelPlanSettings
 import ModelPlanInstruments
 import ModelPlanOfficialDock
+import ModelPlanDockResources
 import ModelPlanCommunityHost
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
@@ -691,21 +692,75 @@ struct DockHelpInteraction: Equatable {
             y: max(safe.minY, min(y, safe.maxY - size.height)), width: size.width, height: size.height), display: true)
         overflowPanel.orderFrontRegardless()
     }
-    /// G3-31: the accepted r7 card measurements (plate 304 wide, 11-point padding, 20-point
-    /// vendor mark, 78 x 7 ten-segment bar with 1.5-point gaps). Material and colours are not ported yet.
+    /// G3-31 / G3-05 (R64 D-3, D-4): the accepted r7 card, from the official visuals package
+    /// (QuotaWidgetCardGeometry measurements, QuotaWidgetCardMaterial values); no new art.
     static var prototypeCardStyle: DockCardStyle {
+        typealias M = QuotaWidgetCardMaterial
+        func colour(_ c: M.RGBA) -> NSColor { NSColor(srgbRed: c.red, green: c.green, blue: c.blue, alpha: c.alpha) }
         var style = DockCardStyle()
         style.width = QuotaWidgetCardGeometry.plateWidth
         style.padding = QuotaWidgetCardGeometry.plateHorizontalPadding
+        style.verticalPadding = QuotaWidgetCardGeometry.plateVerticalPadding
+        style.plateRadius = QuotaWidgetCardGeometry.plateRadius
         style.brandSize = QuotaWidgetCardGeometry.headingIconSize
+        style.headerGap = QuotaWidgetCardGeometry.headingGap
+        style.headerBottomGap = QuotaWidgetCardGeometry.headingBottomGap
+        style.windowRadius = QuotaWidgetCardGeometry.lcdRadius
+        style.windowPadding = NSEdgeInsets(top: QuotaWidgetCardGeometry.lcdVerticalPadding, left: QuotaWidgetCardGeometry.lcdHorizontalPadding,
+                                           bottom: QuotaWidgetCardGeometry.lcdVerticalPadding, right: QuotaWidgetCardGeometry.lcdHorizontalPadding)
+        style.columns = QuotaWidgetCardGeometry.rowFixedColumns
+        style.columnGap = QuotaWidgetCardGeometry.rowColumnGap
+        style.rowMinimumHeight = QuotaWidgetCardGeometry.rowMinimumHeight
         style.barSize = CGSize(width: QuotaWidgetCardGeometry.rowFixedColumns[1], height: QuotaWidgetCardGeometry.barHeight)
         style.barGap = QuotaWidgetCardGeometry.barSegmentGap
+        style.nameFontSize = M.nameFontSize; style.smallFontSize = M.smallFontSize; style.readoutSize = M.valueFontSize
+        style.background = colour(M.plate); style.seam = colour(M.seam)
+        style.window = colour(M.window); style.windowSeam = colour(M.windowSeam)
+        style.ink = colour(M.ink); style.muted = colour(M.muted); style.track = colour(M.ghost)
+        style.quota = [.normal: colour(M.normal), .warning: colour(M.warning), .critical: colour(M.critical), .unknown: colour(M.muted)]
+        style.readoutFont = cardReadoutFont(size: M.valueFontSize); style.readoutSmallFont = cardReadoutFont(size: M.smallFontSize)
         return style
+    }
+    /// The bundled LCD face (JetBrains Mono, the dock readout font); nil falls back to the system mono.
+    private static var cardFonts: [CGFloat: NSFont] = [:]
+    private static func cardReadoutFont(size: CGFloat) -> NSFont? {
+        if let font = cardFonts[size] { return font }
+        guard let store = cardResourceStore(zaiMarkEnabled: false),
+              let font = try? store.font(QuotaWidgetCardMaterial.readoutFontResource, size: size) else { return nil }
+        let value = font as NSFont
+        cardFonts[size] = value
+        return value
+    }
+    private static var cardStores: [Bool: DockArtworkStore] = [:]
+    private static func cardResourceStore(zaiMarkEnabled: Bool) -> DockArtworkStore? {
+        if let store = cardStores[zaiMarkEnabled] { return store }
+        guard let data = try? DockThirdPartyResources.manifestData(zaiMarkEnabled: zaiMarkEnabled),
+              let manifest = try? JSONDecoder().decode(DockResourceManifest.self, from: data),
+              let root = try? DockThirdPartyResources.rootURL(),
+              let store = try? DockArtworkStore(root: root, manifest: manifest) else { return nil }
+        cardStores[zaiMarkEnabled] = store
+        return store
+    }
+    /// The card header's vendor mark: the same checked mark the ring shows (no new art).
+    private func cardBrandImage(_ id: String) -> NSImage? {
+        let view = interactionView
+        guard let key = view.presentedReadingsForChecks[id]?.vendorResourceKey,
+              let resource = view.presentedSkinForChecks?.stations.first(where: { $0.subscriptionID == id })?.glyphs[key],
+              let store = Self.cardResourceStore(zaiMarkEnabled: view.zaiMarkEnabled),
+              let image = try? store.image(resource, maximumPixelSize: 64) else { return nil }
+        let size = QuotaWidgetCardGeometry.headingIconSize
+        return NSImage(cgImage: image, size: NSSize(width: size, height: size))
     }
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
+    private let cardChrome = NSView(frame: .zero), cardArrow = HostCardArrowView(frame: .zero)
+    /// The card's pointer arrow polygon in screen coordinates while a native card panel is shown.
+    var cardArrowForChecks: [CGPoint]? {
+        guard let window = cardArrow.window, !cardArrow.isHidden, cardArrow.points.count == 3 else { return nil }
+        return cardArrow.points.map { window.convertPoint(toScreen: cardArrow.convert($0, to: nil)) }
+    }
     private let container = StaticDockContainer()
     private let consoleButton = DockIgnitionButton(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
@@ -1835,17 +1890,24 @@ struct DockHelpInteraction: Equatable {
         }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
+        var style = Self.prototypeCardStyle
+        // D37 (11-06): the production card has no Settings/Close buttons (prototype card);
+        // Settings is in the widget's right-click menu.
+        style.showsActions = purpose != .production
         do {
-            var style = Self.prototypeCardStyle
-            // D37 (11-06): the production card has no Settings/Close buttons (prototype card);
-            // Settings is in the widget's right-click menu.
-            style.showsActions = purpose != .production
-            try card.apply(content, style: style, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
+            try card.apply(content, style: style, brandImage: cardBrandImage(id), enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
+        // M-1: the ring whose card is open glows (only on the presented edge view).
+        for view in edgeViews.values where view !== interactionView { view.setHotNozzle(nil) }
+        let glow = QuotaWidgetCardMaterial.hotGlow
+        interactionView.setHotNozzle(id, glow: CGColor(srgbRed: glow.red, green: glow.green, blue: glow.blue, alpha: glow.alpha),
+                                     blur: QuotaWidgetCardMaterial.hotGlowBlur)
         guard createsNativePanels else { return }
         if cardPanel == nil {
             let panel = makePanel(); cardPanel = panel
+            // The plate's drop shadow (prototype face.css:52 0 8px 24px #0007) comes from the window server.
+            panel.hasShadow = true
             NotificationCenter.default.addObserver(self, selector: #selector(cardKeyStateChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: panel)
             NotificationCenter.default.addObserver(self, selector: #selector(cardKeyStateChanged(_:)), name: NSWindow.didResignKeyNotification, object: panel)
         }
@@ -1859,8 +1921,24 @@ struct DockHelpInteraction: Equatable {
                                                   available: screen.visibleFrame, edge: actualEdge) else {
             dismissCard(); return
         }
-        cardPanel.contentView = card
-        cardPanel.setFrame(frame, display: true)
+        // The plate plus its pointer arrow toward the ring (prototype card.js place()).
+        if card.superview !== cardChrome { card.removeFromSuperview(); cardChrome.addSubview(card) }
+        if cardArrow.superview !== cardChrome { cardChrome.addSubview(cardArrow, positioned: .above, relativeTo: card) }
+        let pointer = HostCardPointer.layout(plate: frame, ring: anchor)
+        let chromeFrame = pointer?.panel ?? frame
+        card.setFrameOrigin(CGPoint(x: frame.minX - chromeFrame.minX, y: frame.minY - chromeFrame.minY))
+        if let pointer {
+            let xs = pointer.arrow.map(\.x), ys = pointer.arrow.map(\.y)
+            let box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!).insetBy(dx: -1, dy: -1)
+            cardArrow.frame = box.offsetBy(dx: -chromeFrame.minX, dy: -chromeFrame.minY)
+            cardArrow.setArrow(pointer.arrow.map { CGPoint(x: $0.x - box.minX, y: $0.y - box.minY) },
+                               fill: style.background, seam: style.seam)
+            cardArrow.isHidden = false
+        } else { cardArrow.isHidden = true; cardArrow.setArrow([], fill: style.background, seam: nil) }
+        cardChrome.frame = CGRect(origin: .zero, size: chromeFrame.size)
+        if cardPanel.contentView !== cardChrome { cardPanel.contentView = cardChrome }
+        cardPanel.setFrame(chromeFrame, display: true)
+        cardPanel.invalidateShadow()
         cardPanel.orderFrontRegardless(); edge.refresh()
     }
     private func cardIsCurrent(_ id: String, revision: UInt64, token: UInt64, feed: UInt64) -> Bool {
@@ -1902,6 +1980,7 @@ struct DockHelpInteraction: Equatable {
         cardGeneration &+= 1; cardID = nil; cardPresentedRevision = nil; cardPresentedGeneration = nil
         card.isHidden = true
         card.dispose(); cardPanel?.orderOut(nil)
+        dockView.setHotNozzle(nil); edgeViews.values.forEach { $0.setHotNozzle(nil) }
         if let current = edge.presentation { publishDockHelpSurface(current) }
     }
     public func close() {
