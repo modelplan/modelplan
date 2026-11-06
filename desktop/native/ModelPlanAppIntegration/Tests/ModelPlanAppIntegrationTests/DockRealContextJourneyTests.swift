@@ -88,7 +88,7 @@ import XCTest
         let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-d13",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
             createsNativePanels: physical, bundleURL: root.appendingPathComponent("Synthetic.app"),
-            dockEnvironment: readDisplay, deadlineElapsed: readElapsed, makeSettingsSurface: makeSurface,
+            dockEnvironment: readDisplay, deadlineNow: { now }, deadlineElapsed: readElapsed, makeSettingsSurface: makeSurface,
             activateSettings: { if physical { NSApplication.shared.activate() } })
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
         if physical { EngineRowsEntry.isolatesD13NativeNotifications = false }
@@ -154,7 +154,26 @@ import XCTest
             openCard()
             let menu = dock.menu()
             let actions = menu.items.filter { $0.title == settingsTitle || $0.title == closeTitle }
+            if let directory = ProcessInfo.processInfo.environment["MODELPLAN_D13_CAPTURE_DIR"] {
+                let locale = language == .english ? "en" : "zh"
+                let output = URL(fileURLWithPath: directory)
+                dock.card.layoutSubtreeIfNeeded()
+                let bitmap = try XCTUnwrap(dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds))
+                dock.card.cacheDisplay(in: dock.card.bounds, to: bitmap)
+                try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                    .write(to: output.appendingPathComponent(locale + ".png"))
+                let footer = [button("dock.card.enter", in: dock.card)?.title, button("dock.card.close", in: dock.card)?.title]
+                    .compactMap { $0 }
+                let metadata: [String: Any] = [
+                    "menu": menu.items.filter { !$0.isSeparatorItem }.map { ["title": $0.title, "enabled": $0.isEnabled] },
+                    "cardActions": footer, "cardPoints": [dock.card.bounds.width, dock.card.bounds.height],
+                    "pixels": [bitmap.pixelsWide, bitmap.pixelsHigh]
+                ]
+                try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys])
+                    .write(to: output.appendingPathComponent(locale + ".json"))
+            }
             XCTAssertEqual(actions.map(\.title), [settingsTitle, closeTitle])
+            if ProcessInfo.processInfo.environment["MODELPLAN_D13_BEFORE"] == "1" { continue }
             let settingsButton = try XCTUnwrap(button("dock.card.enter", in: dock.card))
             XCTAssertEqual(settingsButton.title, settingsTitle)
             let closeButton = try XCTUnwrap(button("dock.card.close", in: dock.card))
@@ -185,6 +204,7 @@ import XCTest
             menu.performActionForItem(at: closeIndex)
             XCTAssertTrue(dock.card.isHidden)
         }
+        if ProcessInfo.processInfo.environment["MODELPLAN_D13_BEFORE"] == "1" { return }
         XCTAssertEqual(builds, 1)
         XCTAssertEqual(settingsSurface.shown.count, 4)
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
