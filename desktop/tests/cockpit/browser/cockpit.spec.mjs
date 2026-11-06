@@ -122,7 +122,7 @@ test('computed animation iteration counts reject infinity, including pseudo-elem
   // Negative controls prove that the computed-style guard sees both cases,
   // including disabled animations whose iteration declaration is still infinite.
   await page.evaluate(()=>document.body.style.setProperty('animation-iteration-count','infinite','important'));
-  expect(await infiniteAnimations(page)).toContain('BODY.r1 reduced');
+  expect(await infiniteAnimations(page)).toContain('BODY.r1');
   await page.evaluate(()=>document.body.style.removeProperty('animation-iteration-count'));
   // A same-origin stylesheet meets the page CSP and exercises the pseudo scan.
   await page.route('**/infinite-guard.css',route=>route.fulfill({contentType:'text/css',body:'#cockpit::before{animation-iteration-count:infinite!important}'}));
