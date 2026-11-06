@@ -118,19 +118,19 @@ private actor G1BEngine: EngineClient {
     func testG1_LBL_2_2_07_ChineseMenusDoNotLeakEnglish() async throws {
         let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
         let menu = try XCTUnwrap(app.liveStatusMenu)
-        // The first status row and provider rows contain externally supplied data.
-        // Check the app-owned actions separately, without treating vendor names as UI copy.
-        let expected = ["刷新", "即将推出", "网站", "方法论", "隐私", "检查更新", "说明…", "设置…", "关于", "退出"]
+        // This healthy synthetic fixture has no provider diagnostics or update action.
+        let expected = ["刷新", "显示额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"]
         let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
         let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
-        XCTAssertEqual(Array(statusTitles.dropFirst()), expected)
-        XCTAssertEqual(Array(dockTitles.suffix(3)), ["即将推出", "设置…", "隐藏挂件"])
+        XCTAssertEqual(statusTitles, expected)
+        XCTAssertEqual(Array(dockTitles.suffix(3)), ["即将推出", "设置…", "隐藏额度挂件"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(english.count, 1)
-        XCTAssertNotEqual(Array(english.dropFirst()), expected, "The check must reject English app-owned actions")
+        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"])
+        XCTAssertNotEqual(english, expected, "The check must reject English app-owned actions")
     }
 
     func testG1_LBL_2_2_15_MenuCopyOmitsInternalVocabulary() async throws {
