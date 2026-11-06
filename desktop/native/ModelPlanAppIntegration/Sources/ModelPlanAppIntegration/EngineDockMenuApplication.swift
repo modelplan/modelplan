@@ -211,12 +211,15 @@ import ModelPlanMenuVerification
         guard let button = status?.button, let window = button.window else { return nil }
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
-    public func showConsole() {
+    public func showConsole() { presentConsole(revealOnly: false) }
+
+    private func presentConsole(revealOnly: Bool) {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()
         if console == nil { console = makeConsole?(composition) ?? EngineRowsConsole(composition: composition) }
         if let value = composition.latestSettings { console?.applySettings(value) }
-        console?.show()
+        if revealOnly { console?.reveal() }
+        else { console?.show() }
     }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
@@ -364,7 +367,7 @@ import ModelPlanMenuVerification
                 switch effect {
                 case .revealDock: composition.dock.setPresentationAllowed(true)
                 case .returnToSettings: Task { [weak self] in await self?.settingsHost.present() }
-                case .openCockpit: showConsole()
+                case .openCockpit: presentConsole(revealOnly: true)
                 case .latchOptionHelp: showHelp()
                 case .closeFirstRunPopup: break
                 }
