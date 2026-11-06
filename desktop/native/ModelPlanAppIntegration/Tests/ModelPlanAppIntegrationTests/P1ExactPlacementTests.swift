@@ -173,7 +173,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertEqual(after.dockAlongFraction, preview.alongFraction, accuracy: 0.000001)
         await reopened.stopLifecycle(); reopened.composition.dock.close()
     }
-    func testDisabledIgnitionVeilIsShapeLimitedOnNormalEntry() async throws {
+    func testG323DisabledIgnitionShowsTheRedCapWithoutADarkVeil() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-veil-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -189,11 +189,37 @@ private actor P1SyntheticEngine: EngineClient {
         for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
         let container = try XCTUnwrap(app.composition.dock.dockView.superview)
         let button = try XCTUnwrap(container.subviews.compactMap { $0 as? NSButton }.first)
-        let veil = try XCTUnwrap(container.subviews.first { view in view !== button && view.frame == button.frame && view.layer?.backgroundColor != nil })
-        let layer = try XCTUnwrap(veil.layer)
         XCTAssertFalse(button.isEnabled, "The disabled cockpit must stay disabled")
-        XCTAssertTrue(layer.masksToBounds, "The dimming must be clipped rather than paint a square")
-        XCTAssertEqual(layer.cornerRadius, min(veil.bounds.width, veil.bounds.height) / 2, accuracy: 0.01)
+        // G3-23: nothing dark is painted over the red cap (was a 65 % black veil).
+        for view in container.subviews where view !== button && view !== app.composition.dock.dockView && !view.isHidden {
+            XCTAssertFalse(view.frame.intersects(button.frame) && (view.layer?.backgroundColor?.alpha ?? 0) > 0,
+                           "a view darkens the ignition: \(view)")
+        }
+        // Snapshot of the presented widget at the cap: the official red, as in the prototype.
+        let view = app.composition.dock.dockView
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let cap = try XCTUnwrap(skin.fixedLayers.first { $0.resource.contains("cap-night-idle") }).rect
+        let image = try XCTUnwrap(view.presentedImageForChecks)
+        let scale = CGFloat(view.presentationBackingScale ?? max(1, Int((CGFloat(image.width) / view.bounds.width).rounded())))
+        // The button and the cap share the ignition centre; that maps study space onto the view.
+        let local = view.convert(button.frame, from: container)
+        let origin = CGPoint(x: cap.midX - local.midX, y: cap.midY - local.midY)
+        let core = cap.insetBy(dx: cap.width * 0.3, dy: cap.height * 0.3).offsetBy(dx: -origin.x, dy: -origin.y)
+            .applying(.init(scaleX: scale, y: scale)).integral
+        let cropped = try XCTUnwrap(image.cropping(to: core))
+        let context = try XCTUnwrap(CGContext(data: nil, width: cropped.width, height: cropped.height, bitsPerComponent: 8,
+            bytesPerRow: cropped.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+        let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        var sum = [0.0, 0.0, 0.0], count = 0.0
+        for index in stride(from: 0, to: cropped.width * cropped.height * 4, by: 4) {
+            for channel in 0..<3 { sum[channel] += Double(bytes[index + channel]) }
+            count += 1
+        }
+        let (red, green, blue) = (sum[0] / count, sum[1] / count, sum[2] / count)
+        XCTAssertGreaterThan(red, 150, "The ignition cap must read red, not dark: rgb(\(red), \(green), \(blue))")
+        XCTAssertGreaterThan(red, 2 * green); XCTAssertGreaterThan(red, 2 * blue)
         await app.stopLifecycle(); app.composition.dock.close()
     }
 

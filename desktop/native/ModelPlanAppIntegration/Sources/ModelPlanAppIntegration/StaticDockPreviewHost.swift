@@ -63,7 +63,6 @@ public struct StaticDockGeometry {
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
-@MainActor private final class InertCockpitVeil: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 /// Empty-state copy must not swallow the neutral Dock's background grab area.
 @MainActor private final class StaticDockStatusLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -138,7 +137,6 @@ struct DockHelpInteraction: Equatable {
     public var cockpitEntryEnabled = true {
         didSet {
             consoleButton.isEnabled = cockpitEntryEnabled
-            cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
             guard oldValue != cockpitEntryEnabled else { return }
             if let presentation = edge.presentation { publishDockHelpSurface(presentation) }
             if !cockpitEntryEnabled { consoleButton.clearHelpFocus() }
@@ -687,7 +685,6 @@ struct DockHelpInteraction: Equatable {
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = DockIgnitionButton(frame: .zero)
-    private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
@@ -722,10 +719,9 @@ struct DockHelpInteraction: Equatable {
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
-        cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
-        cockpitVeil.isHidden = true
-        container.addSubview(dockView); container.addSubview(cockpitVeil); container.addSubview(consoleButton)
+        // G3-23: the ignition cap shows the official red art at full strength, as in the prototype.
+        // A disabled cockpit entry only disables the button; no dark veil is painted over it.
+        container.addSubview(dockView); container.addSubview(consoleButton)
         bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -1044,8 +1040,7 @@ struct DockHelpInteraction: Equatable {
         }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
-        if let rect = geometry.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
-        cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
+        if let rect = geometry.consoleButton { consoleButton.frame = rect }
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
@@ -1292,12 +1287,10 @@ struct DockHelpInteraction: Equatable {
             let view = edgeViews[orientation] ?? dockView
             for child in container.subviews where child is DockInstrumentView && child !== view { child.removeFromSuperview() }
             if view.superview !== container { container.addSubview(view, positioned: .below, relativeTo: consoleButton) }
-            container.addSubview(cockpitVeil, positioned: .below, relativeTo: consoleButton)
             container.setFrameSize(view.frame.size)
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
-            if let rect = current.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
-            cockpitVeil.isHidden = cockpitEntryEnabled || current.consoleButton == nil
+            if let rect = current.consoleButton { consoleButton.frame = rect }
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
