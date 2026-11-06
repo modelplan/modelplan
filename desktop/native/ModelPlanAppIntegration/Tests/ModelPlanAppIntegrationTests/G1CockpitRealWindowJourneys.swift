@@ -998,6 +998,35 @@ private extension EngineDeliveryContext {
             XCTAssertEqual(Double(contentHeight) - rootHeight, 34, accuracy: 1)
         }
     }
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_SHELL_12_reserveAcrossSyntheticScreenSizes() async throws {
+        try await withLivePage { _, _, page in
+            let cases: [(CGFloat, CGFloat, Bool)] = [(1100, 877, false), (800, 627, false), (600, 609, true)]
+            for (screenHeight, expectedRoot, forcedClosed) in cases {
+                let usable = CGRect(x: 0, y: 0, width: 1200, height: screenHeight)
+                let anchor = CGRect(x: 600, y: screenHeight - 10, width: 20, height: 10)
+                page.verificationPlacement = (usable: usable, anchor: anchor)
+                let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+                var measured: Double?
+                while ContinuousClock.now < deadline {
+                    let facts = try await self.geometry(page)
+                    let height = try self.dimension(facts, "root", "height")
+                    if abs(height - Double(expectedRoot)) < 1, page.verificationShellState?.forcedClosed == forcedClosed {
+                        measured = height; break
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let root = try XCTUnwrap(measured, "The page did not reach the expected synthetic screen profile")
+                let window = try XCTUnwrap(page.window)
+                let contentHeight = try XCTUnwrap(window.contentView?.bounds.height)
+                XCTAssertEqual(Double(contentHeight) - root, 34, accuracy: 1)
+                XCTAssertEqual(window.frame.maxY, anchor.minY - 6, accuracy: 1)
+                XCTAssertEqual(page.verificationShellState?.forcedClosed, forcedClosed)
+            }
+        }
+    }
+    #endif
+
     func testG1_CKP_ENTRY_01_menuAndDockRoutes() async throws {
         try await withLivePage { app, coordinator, initial in
             @MainActor func waitRetired(_ page: CockpitWindowController) async throws {
