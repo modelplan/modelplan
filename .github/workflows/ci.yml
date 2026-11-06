@@ -4,14 +4,44 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
 concurrency:
-  # PR heads share a group, so a newer push cancels the older run; each main commit gets its own group
-  # and is never cancelled or left pending behind a later main commit.
-  group: public-ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: public-ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Merge queue only: when the group is one PR whose head already contains the queue base, the group's
+  # tree is the head's tree, which the PR run already tested (the merge-queue gate requires that head's
+  # checks green), so the group skips the heavy jobs. Any other group runs them on the combined commit.
+  queue-reuse:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.reuse.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+      - id: reuse
+        env:
+          BASE: ${{ github.event.merge_group.base_sha }}
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
+            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "group differs from the PR head: running checks"
+          fi
   cli:
+    needs: queue-reuse
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +63,8 @@ jobs:
       - name: Real-binary app contract schemas and fixture drift (uncached)
         run: make app-cli-contract-check
   codex:
+    needs: queue-reuse
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -48,10 +80,13 @@ jobs:
         run: npm ci --ignore-scripts && npm test && npm run build
       - run: git diff --exit-code -- codex/server.bundle.mjs codex/THIRD-PARTY-NOTICES.md
   claude-code:
+    needs: queue-reuse
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     strategy:
       matrix:
-        # Draft PRs run Linux only; macOS runs once the PR is ready (macOS runners are scarce).
-        os: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
+        # Draft PRs and merge-queue groups run Linux only; macOS runs once the PR is ready (macOS runners
+        # are scarce, and the PR head's macOS result is part of the merge-queue gate).
+        os: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft)) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +101,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: node scripts/pin-codexbar.mjs --check
   data:
+    needs: queue-reuse
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +112,8 @@ jobs:
       - name: data/ is an exact mirror of the open data
         run: node --test scripts/data-sync.test.mjs && node scripts/data-sync.mjs --check
   skill:
+    needs: queue-reuse
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

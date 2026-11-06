@@ -99,7 +99,7 @@ import ModelPlanMenuVerification
         CommunityPlacementBinding.install(on: composition.dock, application: settings)
         // M0's host opts in only when the native interaction port exists.
         if let host = (composition.dock as AnyObject) as? any DockInteractionHostPort {
-            let clock = { ProcessInfo.processInfo.systemUptime }
+            let clock = deadlineElapsed ?? { ProcessInfo.processInfo.systemUptime }
             interactionBinding = EngineDockInteractionBinding(host: host, application: settings,
                 scheduler: DockCommonModeScheduler(clock: clock), clock: clock)
             interactionBinding?.onActivate = { [weak self] id in self?.activateMember(id) }
@@ -207,6 +207,10 @@ import ModelPlanMenuVerification
     }
     var currentSettingsContext: SettingsPageContext { settings.editor.context }
     public func presentSettings() async { await settingsHost.present() }
+    var cockpitAnchor: CGRect? {
+        guard let button = status?.button, let window = button.window else { return nil }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
+    }
     public func showConsole() {
         guard cockpitEntryEnabled, !terminating, !lifecyclePaused else { return }
         composition.dock.acknowledgeCockpitOpening()

@@ -593,7 +593,7 @@
       "id": "codexbar",
       "kind": "helper",
       "name": "CodexBar",
-      "version": "0.81.0",
+      "version": "0.83.0",
       "licenseSpdxId": "MIT",
       "copyright": [
         "Copyright (c) 2026 Peter Steinberger"
@@ -606,7 +606,7 @@
           "sha256": "14293556b79940745123d0160c71d27ed0e9fe9b8a848093f3ed78f4853caafe"
         }
       ],
-      "source": "https://github.com/steipete/CodexBar/releases/tag/v0.81.0",
+      "source": "https://github.com/steipete/CodexBar/releases/tag/v0.83.0",
       "usedBy": [
         "Pinned optional CodexBar compatibility helper (downloaded on consented use)",
         "Native Go provider adaptations, with original source revisions retained in the ported files"

@@ -148,6 +148,11 @@ func (in StatuslineInput) Account(now time.Time) Account {
 			continue
 		}
 		w := Window{Kind: x.kind, UsedPercent: finite(x.w.UsedPercentage, 0, 1000), ResetsAt: unixTime(x.w.ResetsAt), ResetMode: "fixed", ObservedAt: a.ObservedAt}
+		if x.kind == "five_hour" {
+			w.WindowMinutes = 300
+		} else if x.kind == "weekly" {
+			w.WindowMinutes = 10080
+		}
 		if x.kind == "spend" {
 			w.WindowMinutes = map[string]int{"daily": 1440, "weekly": 10080, "monthly": 43200}[x.w.Period]
 			w.UsedUSD, w.LimitUSD = finite(x.w.UsedUSD, 0, 1e9), finite(x.w.LimitUSD, 0, 1e9)
