@@ -1,7 +1,7 @@
 // Copyright (c) 2026 qunqin24. Licensed under the Apache License, Version 2.0.
 // ModelPlan adaptation of FloatingPanel event routing at Pulse 7668384cbcf357bba7dee4af85b4052a59c6e35d.
 // ModelPlan adaptation: reuse Pulse display identity and restore the requested frame after initial order-in.
-// ModelPlan adaptation: use the live pointer for carry and scope Escape handling to this app during a captured press.
+// ModelPlan adaptation: use the live pointer for carry and borrow keyboard focus only during a background drag.
 // No upstream private appearance selector, visual tether or provider logic is used.
 import AppKit
 
@@ -46,6 +46,19 @@ public extension PulsePanelMouseHandling {
     }
 }
 
+/// A nonactivating keyboard target can be ordered out to release key focus
+/// without withdrawing the visible Dock. It cannot receive pointer input.
+@MainActor private final class PulseDragKeyPanel: NSPanel {
+    var lostKey: (() -> Void)?
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func resignKey() {
+        super.resignKey()
+        lostKey?()
+    }
+}
+
 /// Pulse's non-key panel and window-level drag transaction, with a scoped,
 /// numeric-only arrival observer for later real-input evidence. Construction is
 /// deferred to the production host; importing this type creates no window.
@@ -66,8 +79,40 @@ public extension PulsePanelMouseHandling {
     }
     private let input = PulsePanelInputRoute()
     private var escapeMonitor: Any?
+    private var dragKeyPanel: PulseDragKeyPanel?
     private func stopEscapeMonitor() {
         if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor); self.escapeMonitor = nil }
+        if let target = dragKeyPanel {
+            dragKeyPanel = nil
+            target.lostKey = nil
+            target.orderOut(nil)
+        }
+    }
+
+    private func borrowKeyboardForBackgroundDrag() {
+        guard escapeMonitor != nil, dragKeyPanel == nil, isVisible, !NSApplication.shared.isActive else { return }
+        let target = PulseDragKeyPanel(
+            contentRect: CGRect(x: frame.midX, y: frame.midY, width: 1, height: 1),
+            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false)
+        target.titleVisibility = .hidden
+        target.titlebarAppearsTransparent = true
+        target.titlebarSeparatorStyle = .none
+        target.isOpaque = false
+        target.backgroundColor = .clear
+        target.hasShadow = false
+        target.ignoresMouseEvents = true
+        target.isExcludedFromWindowsMenu = true
+        target.hidesOnDeactivate = false
+        target.animationBehavior = .none
+        target.collectionBehavior = [.moveToActiveSpace, .transient, .ignoresCycle, .fullScreenAuxiliary]
+        target.lostKey = { [weak self] in
+            guard let self else { return }
+            self.stopEscapeMonitor()
+            self.input.cancel()
+        }
+        dragKeyPanel = target
+        target.orderFrontRegardless()
+        target.makeKey()
     }
     private func monitorEscape() {
         stopEscapeMonitor()
@@ -107,7 +152,10 @@ public extension PulsePanelMouseHandling {
             return
         case .leftMouseDragged:
             receivedInput?(event.type, event.timestamp)
-            handled = input.drag(globalPoint: global)
+            if !input.drag(globalPoint: global) { super.sendEvent(event) }
+            if input.canCancel { borrowKeyboardForBackgroundDrag() }
+            else { stopEscapeMonitor() }
+            return
         case .leftMouseUp:
             receivedInput?(event.type, event.timestamp)
             handled = input.end(globalPoint: global)

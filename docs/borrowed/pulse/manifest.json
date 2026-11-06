@@ -78,7 +78,7 @@
     },
     {
       "path": "desktop/native/Sources/ModelPlanShell/Pulse/PulseDockPanel.swift",
-      "sha256": "1bb97d7967d32a83f05ff14d1bca64532a66e183d570afbc2252f93d5546c1a5",
+      "sha256": "b8e27cf4643030261d6d91be7b73d3fad2cf41180ddf69c0c712cfeea8a55ac0",
       "upstreamCommit": "7668384cbcf357bba7dee4af85b4052a59c6e35d",
       "upstreamPath": "Sources/Pulse/Panel/FloatingPanelController.swift",
       "upstreamBlob": "4fbb40df47ad604618df355cbc59ccdb00c4a719",
@@ -91,7 +91,7 @@
         "finish first show by ordering front and applying the requested frame again after the host places and installs content",
         "expose PanelScreen identifier to the ModelPlan display topology sample",
         "Recompute the ordered-in frame from the AppKit-granted rectangle",
-        "Drive drag with current display-space pointer; capture Escape only within this app during a held press"
+        "Drive drag with current display-space pointer; a transient nonactivating key target routes Escape during a background drag"
       ]
     },
     {
