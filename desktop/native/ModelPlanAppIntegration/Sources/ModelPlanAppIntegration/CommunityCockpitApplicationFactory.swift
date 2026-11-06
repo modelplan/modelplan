@@ -28,6 +28,7 @@ import ModelPlanDock
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
+    static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -45,11 +46,17 @@ import ModelPlanDock
                 createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
+        #if MODELPLAN_TEST_ONLY_SPI
+        let verificationFactory = verificationPageFactory
+        #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
             createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
+                    #if MODELPLAN_TEST_ONLY_SPI
+                    if let verificationFactory { return try verificationFactory(context) }
+                    #endif
                     guard let owner else { throw CockpitBridgeError.unavailable }
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
@@ -60,6 +67,11 @@ import ModelPlanDock
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
+                #if MODELPLAN_TEST_ONLY_SPI
+                if verificationFactory != nil {
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+                }
+                #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
