@@ -110,6 +110,22 @@ import CryptoKit
             fields.append(label("row."+row.id+".value",row.value));arrange(h,fields)
             h.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));children.append(h)
             if !row.detail.isEmpty{children.append(label("row."+row.id+".detail",row.detail))}
+            if row.id.hasPrefix("reset-event:"), !row.links.isEmpty {
+                let sources=group("row."+row.id+".sources")
+                let icon=NSImageView(image:NSImage(systemSymbolName:"link",accessibilityDescription:nil) ?? NSImage())
+                icon.contentTintColor = .secondaryLabelColor;icon.setAccessibilityElement(false)
+                icon.setAccessibilityIdentifier("dock.card.reset-source-icon")
+                var sourceViews:[NSView]=[icon]
+                for (index,link) in row.links.enumerated() {
+                    let control=button("row."+row.id+".source.\(index)",link.label){[weak self] in
+                        guard let self,self.current(value,token:token) else{return}
+                        if let open=self.onOpenURL { open(link.url) } else { NSWorkspace.shared.open(link.url) }
+                    }
+                    control.bezelStyle = .inline;control.setAccessibilityLabel(link.label)
+                    sourceViews.append(control)
+                }
+                arrange(sources,sourceViews);children.append(sources)
+            }
         }
         var occurrences=[URL:Int]()
         for link in value.links{

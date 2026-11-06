@@ -5,8 +5,9 @@ public struct DockCardRow:Equatable,Sendable {
     public enum Kind:Equatable,Sendable {case quota,extraQuota,reserve,statistic,notice}
     public let id:String,kind:Kind,label:String,value:String,detail:String
     public let remainingFraction:Double?,tone:DockQuotaStatus
-    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown){
-        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone
+    public let links:[DockCardLink]
+    public init(id:String,kind:Kind,label:String,value:String,detail:String="",remainingFraction:Double?=nil,tone:DockQuotaStatus = .unknown,links:[DockCardLink]=[]){
+        self.id=id;self.kind=kind;self.label=label;self.value=value;self.detail=detail;self.remainingFraction=remainingFraction;self.tone=tone;self.links=links
     }
 }
 public struct DockCardLink:Equatable,Sendable {
@@ -23,8 +24,8 @@ public struct DockCardContent:Equatable,Sendable {
         self.rows=rows;self.links=links;self.enterLabel=enterLabel;self.dismissLabel=dismissLabel
     }
     public func validate()throws{
-        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail]}+links.map(\.label)
-        guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true}) else{throw DockLogicError.invalidCatalogue}
+        let strings=[subscriptionID,name,plan,sourceAndAge,stateLabel,enterLabel,dismissLabel]+rows.flatMap{[$0.id,$0.label,$0.value,$0.detail]+$0.links.map(\.label)}+links.map(\.label)
+        guard !subscriptionID.isEmpty,rows.count<=64,links.count<=8,Set(rows.map(\.id)).count==rows.count,!rows.contains(where:{$0.id.isEmpty}),strings.allSatisfy({$0.utf8.count<=2048}),links.allSatisfy(\.allowed),rows.allSatisfy({r in r.links.count<=3 && r.links.allSatisfy(\.allowed) && (r.remainingFraction.map{$0.isFinite && (0...1).contains($0)} ?? true)}) else{throw DockLogicError.invalidCatalogue}
     }
 }
 
