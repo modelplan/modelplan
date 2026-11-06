@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
 import XCTest
 import ModelPlanCore
 import ModelPlanShell
@@ -41,10 +42,13 @@ import ModelPlanSettings
         XCTAssertFalse(host.menuBarReadingItem.isEnabled)
         let image = try XCTUnwrap(CommunityMenuBarResources.templateImage())
         XCTAssertTrue(image.isTemplate)
-        let bundled = try XCTUnwrap(Bundle(url: CommunityMenuBarResources.buildBundleURL)?.url(forResource: "tray", withExtension: "png", subdirectory: "Resources"))
-        var repo = URL(fileURLWithPath: #filePath)
-        for _ in 0..<6 { repo.deleteLastPathComponent() }
-        XCTAssertEqual(try Data(contentsOf: bundled), try Data(contentsOf: repo.appendingPathComponent("desktop/src-tauri/icons/tray.png")))
+        let bundle = try XCTUnwrap(Bundle(url: CommunityMenuBarResources.buildBundleURL))
+        for (name, expected) in [("tray", "4cca64d77f4a3d80e33b37398a1ef2502619f8107263d819ff86ad8ba19d1e6e"),
+                                 ("tray@2x", "44355868b3f7a30bb828d62d1ab3a276d86bddbb2b8e4c9dc45633dcf42d3da8")] {
+            let url = try XCTUnwrap(bundle.url(forResource: name, withExtension: "png", subdirectory: "Resources"))
+            let hash = SHA256.hash(data: try Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
+            XCTAssertEqual(hash, expected)
+        }
     }
     func testPackagedResourceLookupDoesNotDependOnTheBuildCheckout() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("menu-bar-bundle-" + UUID().uuidString)
