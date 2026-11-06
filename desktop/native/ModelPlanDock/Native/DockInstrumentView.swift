@@ -517,6 +517,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
         let eventWindow=window,screenPoint=window?.convertPoint(toScreen:event.locationInWindow)
         func currentPoint()->NSPoint?{
             if let eventWindow,let screenPoint{
