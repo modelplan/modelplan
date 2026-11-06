@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// spec-cockpit.md S26 (MOT-2.3-01, MOT-2.3-02, MOT-2.3-03, MOT-2.3-08,
+// spec-cockpit.md C-26 (MOT-2.3-01, MOT-2.3-02, MOT-2.3-03, MOT-2.3-08,
 // MOT-2.3-09): "Admitted data changes, user interaction, Reduce Motion and hidden
 // cockpit | Deliver changed and unchanged data, press/drag/hover, enable Reduce
 // Motion and hide the cockpit | Data-driven motion is limited to applicable fader
@@ -32,34 +32,34 @@ const animationWithCaution=async(page,send,receive)=>{
  return page.evaluate(()=>document.getAnimations().map(a=>({name:String(a.animationName),state:a.playState,iterations:a.effect?.getTiming?.().iterations})));
 };
 
-test('S26: nothing animates while the cockpit is hidden',async({page})=>{
+test('C-26: nothing animates while the cockpit is hidden',async({page})=>{
  const {send,receive}=await open(page);
  expect(await animationWithCaution(page,send,receive)).toBeDefined();
  await receive(send('visibility',{visible:false,occluded:false,key:false}));
  const hidden=await page.evaluate(()=>document.getAnimations().map(a=>a.animationName));
- expect(hidden,'S26: hidden cockpit runs no animation').toEqual([]);
+ expect(hidden,'C-26: hidden cockpit runs no animation').toEqual([]);
 });
 
 // Named skip (gap record): a caution data change runs `cockpit-state-pulse`
 // (2 iterations) on the lamp, which is outside the approved data-driven motion
 // set. Unskip when the pulse is retired or explicitly admitted to the set.
-test.fixme('S26: data-driven motion stays inside the approved set',async({page})=>{
+test.fixme('C-26: data-driven motion stays inside the approved set',async({page})=>{
  const {send,receive}=await open(page);
  const animations=await animationWithCaution(page,send,receive);
  const outside=animations.filter(a=>!ALLOWED_DATA_ANIMATIONS.has(a.name));
- expect(outside,'S26: only approved data-driven animations may run; found: '+JSON.stringify(animations)).toEqual([]);
+ expect(outside,'C-26: only approved data-driven animations may run; found: '+JSON.stringify(animations)).toEqual([]);
 });
 
-test('S26: no animation runs continuously without a data change',async({page})=>{
+test('C-26: no animation runs continuously without a data change',async({page})=>{
  const {send,receive}=await open(page);
  const animations=await animationWithCaution(page,send,receive);
- for(const animation of animations)expect(animation.iterations,'S26: '+animation.name+' must be finite without new data').not.toBe(Infinity);
+ for(const animation of animations)expect(animation.iterations,'C-26: '+animation.name+' must be finite without new data').not.toBe(Infinity);
  await page.waitForTimeout(400);
  const settled=await page.evaluate(()=>document.getAnimations().filter(a=>a.playState==='running').map(a=>a.animationName));
- expect(settled,'S26: transient animations settle without further data').toEqual([]);
+ expect(settled,'C-26: transient animations settle without further data').toEqual([]);
 });
 
-test('S26: motion does not change size or position',async({page})=>{
+test('C-26: motion does not change size or position',async({page})=>{
  const {send,receive}=await open(page);
  const data=currentSample();
  const window_=data.projection.rows[0].accounts[0].windows[0];window_.remainingPercent=10;
@@ -69,17 +69,17 @@ test('S26: motion does not change size or position',async({page})=>{
  await page.waitForTimeout(90); // mid-animation frame
  const mid=await measure();
  const last=await measure();
- expect(mid,'S26: geometry stable mid-animation').toEqual(first);
- expect(last,'S26: geometry stable after animation').toEqual(first);
+ expect(mid,'C-26: geometry stable mid-animation').toEqual(first);
+ expect(last,'C-26: geometry stable after animation').toEqual(first);
 });
 
-test('S26: no skeleton or shimmer placeholder is defined or rendered',async({page})=>{
+test('C-26: no skeleton or shimmer placeholder is defined or rendered',async({page})=>{
  const {receive}=await open(page);
  const result=await page.evaluate(()=>{
   const cssText=[...document.styleSheets].map(sheet=>{try{return [...sheet.cssRules].map(rule=>rule.cssText).join('\n');}catch{return '';}}).join('\n');
   const rendered=/skeleton|shimmer/i.test(document.querySelector('#cockpit')?.textContent??'');
   return {defined:/skeleton|shimmer/i.test(cssText),rendered};
  });
- expect(result.defined,'S26: no skeleton/shimmer in page CSS').toBe(false);
- expect(result.rendered,'S26: no skeleton/shimmer text').toBe(false);
+ expect(result.defined,'C-26: no skeleton/shimmer in page CSS').toBe(false);
+ expect(result.rendered,'C-26: no skeleton/shimmer text').toBe(false);
 });
