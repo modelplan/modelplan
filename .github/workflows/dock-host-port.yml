@@ -20,10 +20,12 @@ concurrency:
 
 jobs:
   contracts:
+    # Runs through the reviewed reusable workflow (dedicated ordinary Mac under
+    # MAC_CI_RUNNER_V2=split, hosted otherwise, fork PRs always hosted). The check name
+    # changes from "contracts" to "contracts (dock host port)" because the U10 workflow's
+    # own ubuntu "contracts" job must stay unambiguous in a shared check suite.
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Host port lifecycle, identity and factory regressions (no GUI)
-        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/dock-host-port --filter '(DockInteractionHostPortTests|ProductionDockFactoryTests)' --jobs 2
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@413ca9844bed560fd0fe9fb227fa137ebd1f6b33
+    with:
+      task: dock-host-port
+      os: macos-15

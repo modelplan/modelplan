@@ -18,69 +18,13 @@ jobs:
     permissions:
       contents: read
       actions: read
-    # No secrets or protected environment in the PR/build job.
+    # No secrets or protected environment in the PR/build job. Same-repository runs go
+    # through the reviewed reusable workflow (dedicated ordinary Mac under
+    # MAC_CI_RUNNER_V2=split, hosted otherwise, fork PRs always hosted); ad-hoc neutral
+    # packaging only — signing and publication stay hosted. The check name stays
+    # "neutral-build".
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
-    runs-on: macos-latest
-    timeout-minutes: 25
-    env:
-      MACOSX_DEPLOYMENT_TARGET: "14.0"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-      - name: Select newest installed Xcode for Swift 6 source
-        run: |
-          python3 - <<'PY'
-          import os, plistlib, re
-          from pathlib import Path
-          candidates = []
-          for app in Path('/Applications').glob('Xcode*.app'):
-              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
-              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
-          if not candidates:
-              raise SystemExit('No installed Xcode')
-          with open(os.environ['GITHUB_ENV'], 'a') as output:
-              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
-          PY
-      - name: Test release gates with synthetic values only
-        run: python3 -m unittest discover -s desktop/native/tools/distribution -p 'test_*.py' -v
-      - name: Fetch the approved prebuilt credential helper
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
-      - name: Fetch CLI archives from the reviewed native consent pin
-        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin desktop/native/consent-cli-pin.json --output "$RUNNER_TEMP/cli-archives"
-      - name: Build Apple silicon neutral app (ad-hoc only)
-        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/cli-archives" "$RUNNER_TEMP/neutral-build"
-      - name: Require the bundled helper to be the pinned CLI release
-        run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --app "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" --pin desktop/native/consent-cli-pin.json --require-release-identity
-      - name: Reject known private SPI in the built release binary
-        working-directory: cli
-        run: go run ./internal/releaseguard/cmd --binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"
-      - name: Archive checked Apple silicon neutral app
-        run: |
-          mkdir -p "$RUNNER_TEMP/neutral-artifact"
-          ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/neutral-artifact/ModelPlan-Community-arm64-unsigned.zip"
-          python3 - <<'PY'
-          import hashlib, json, os
-          from pathlib import Path
-          root = Path(os.environ['RUNNER_TEMP']) / 'neutral-artifact'
-          archive = root / 'ModelPlan-Community-arm64-unsigned.zip'
-          (root / 'SHA256SUMS').write_text(hashlib.sha256(archive.read_bytes()).hexdigest() + '  ' + archive.name + '\n')
-          (root / 'build-receipt.json').write_text(json.dumps({
-              'edition': 'community', 'sourceCommit': os.environ['GITHUB_SHA'],
-              'signing': 'ad-hoc only, not Developer ID', 'notarized': False,
-              'minimumMacOS': '15.0', 'architectures': ['arm64'],
-              'intel': 'unsupported', 'updateCandidate': False
-          }, indent=2) + '\n')
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: modelplan-macos-neutral-unsigned
-          path: ${{ runner.temp }}/neutral-artifact/
-          if-no-files-found: error
-          retention-days: 7
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@413ca9844bed560fd0fe9fb227fa137ebd1f6b33
+    with:
+      task: distribution
+      os: macos-latest
