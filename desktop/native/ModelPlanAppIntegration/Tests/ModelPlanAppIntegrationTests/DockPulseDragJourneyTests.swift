@@ -640,6 +640,126 @@ import ModelPlanShell
     }
     #endif
 
+    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    func testD07NormalEntrySavesEachDestinationFromBothOtherDisplays() async throws {
+        let topology = DragTopology()
+        let displays = [topology.a, topology.b, topology.c]
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d07-matrix-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let modeKey = "ModelPlanDockDragMode"
+        let originalMode = UserDefaults.standard.integer(forKey: modeKey)
+        defer { UserDefaults.standard.register(defaults: [modeKey: originalMode]) }
+        var observations = [[String: Any]]()
+
+        for mode in [1, 2] {
+            UserDefaults.standard.register(defaults: [modeKey: mode])
+            XCTAssertEqual(UserDefaults.standard.integer(forKey: modeKey), mode)
+            let root = profile.appendingPathComponent(String(mode))
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            _ = try await store.update { $0.autoHide = false }
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "d07-matrix", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            let host = app.composition.dock, editor = app.settingsHost.application.editor
+            let settingsURL = root.appendingPathComponent("ModelPlan/settings.json")
+
+            for destination in displays {
+                let visible = destination.usableFrame
+                let vertical = [visible.minY + 14, visible.midY, visible.maxY - 14]
+                let horizontal = [visible.minX + 14, visible.midX, visible.maxX - 14]
+                let targets = vertical.map { (DockEdge.left, SettingsDockEdge.left, CGPoint(x: visible.minX + 2, y: $0)) }
+                    + vertical.map { (.right, .right, CGPoint(x: visible.maxX - 2, y: $0)) }
+                    + horizontal.map { (.bottom, .bottom, CGPoint(x: $0, y: visible.minY + 2)) }
+                for source in displays where source.id != destination.id {
+                    for (index, target) in targets.enumerated() {
+                        let (edge, savedEdge, targetPoint) = target
+                        var point = targetPoint
+                        let station = ["low", "midpoint", "high"][index % 3]
+                        let label = "mode \(mode), \(source.id) → \(destination.id), \(edge), " + station
+                        let failures = testRun?.failureCount
+                        try await editor.commit(.dockPlacement(displayID: source.id, edge: .right, alongFraction: 0.5))
+                        XCTAssertEqual(host.edgePresentation?.placement?.displayID, source.id, label)
+                        XCTAssertEqual(host.edgePresentation?.placement?.edge, .right, label)
+                        let before = try XCTUnwrap(editor.snapshot, label)
+                        let beforeBytes = try Data(contentsOf: settingsURL)
+                        let view = host.dockView
+                        let drag = try XCTUnwrap(view.backgroundDragDelegate, label)
+                        let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+                            stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
+                        }.first { drag.backgroundCanDrag(local: $0) }, label)
+                        let frame = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
+                        let down = CGPoint(x: frame.minX + local.x, y: frame.maxY - local.y)
+                        topology.pointer = down
+                        let arrival = ContinuousClock.now + .seconds(1)
+                        while !drag.beginBackgroundMove(local: local, global: down) {
+                            guard ContinuousClock.now < arrival else { return XCTFail("Could not press the widget: " + label) }
+                            try await Task.sleep(for: .milliseconds(10))
+                        }
+                        topology.pointer = point
+                        drag.updateBackgroundMove(global: point)
+                        if mode == 1, station == "midpoint" {
+                            // Aim the widget's actual rail anchor at the midpoint while retaining the grabbed point.
+                            let held = try XCTUnwrap(host.edgePresentation?.placement, label)
+                            if edge == .bottom { point.x += visible.midX - held.sliverFrame.midX }
+                            else { point.y += visible.midY - held.sliverFrame.midY }
+                            topology.pointer = point
+                            drag.updateBackgroundMove(global: point)
+                        }
+                        XCTAssertEqual(host.edgePresentation?.placement?.displayID, destination.id, label)
+                        XCTAssertEqual(editor.snapshot?.revision, before.revision, label)
+                        XCTAssertEqual(try Data(contentsOf: settingsURL), beforeBytes, label)
+                        drag.endBackgroundMove(global: point)
+                        drag.endBackgroundMove(global: point)
+                        try await waitForSettings(editor) {
+                            editor.snapshot?.revision == before.revision + 1 && !editor.isSaving
+                        }
+
+                        let landed = try XCTUnwrap(host.edgePresentation?.placement, label)
+                        XCTAssertEqual(landed.displayID, destination.id, label)
+                        XCTAssertEqual(landed.edge, edge, label)
+                        XCTAssertTrue(visible.contains(landed.frame), label)
+                        let occupied = landed.frame.union(landed.sliverFrame)
+                        let clearance: CGFloat?
+                        switch index % 3 {
+                        case 0: clearance = edge == .bottom ? occupied.minX - visible.minX : occupied.minY - visible.minY
+                        case 2: clearance = edge == .bottom ? visible.maxX - occupied.maxX : visible.maxY - occupied.maxY
+                        default: clearance = nil
+                        }
+                        if let clearance { XCTAssertEqual(clearance, 24, accuracy: 0.001, label) }
+                        else { XCTAssertEqual(landed.alongFraction, 0.5, accuracy: 0.0001, label) }
+
+                        let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+                        let saved = await reopened.snapshot()
+                        XCTAssertEqual(saved.preferences.dockDisplayID, destination.id, label)
+                        XCTAssertEqual(saved.preferences.dockEdge, savedEdge, label)
+                        XCTAssertEqual(saved.preferences.dockAlongFraction, landed.alongFraction, accuracy: 0.0001, label)
+                        var receipt: [String: Any] = [
+                            "mode": mode, "source": source.id, "destination": destination.id,
+                            "edge": String(describing: edge), "station": station,
+                            "frame": NSStringFromRect(landed.frame), "savedFraction": saved.preferences.dockAlongFraction,
+                            "releasePointer": NSStringFromPoint(point),
+                            "revisionDelta": (editor.snapshot?.revision ?? before.revision) - before.revision,
+                            "passed": testRun?.failureCount == failures,
+                        ]
+                        receipt["cornerClearance"] = clearance
+                        observations.append(receipt)
+                    }
+                }
+            }
+            await app.composition.stop()
+        }
+
+        XCTAssertEqual(observations.count, 108)
+        if let output = ProcessInfo.processInfo.environment["MODELPLAN_D07_MATRIX_PATH"] {
+            try JSONSerialization.data(withJSONObject: observations, options: [.prettyPrinted, .sortedKeys])
+                .write(to: URL(fileURLWithPath: output))
+        }
+    }
+    #endif
+
     func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
