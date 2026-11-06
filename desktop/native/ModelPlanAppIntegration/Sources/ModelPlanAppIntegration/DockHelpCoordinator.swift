@@ -204,6 +204,7 @@ struct DockStatusHelpDismissal {
             }
             guard mapSurface == surface, !retired, !suspended, isCurrent(surface) else { finishMap(); return false }
             statusDismissal.arm(requestID)
+            dock?.helpMapHold = true
             return true
         } catch { finishMap(); return false }
     }
@@ -218,6 +219,7 @@ struct DockStatusHelpDismissal {
         if !retired && !suspended { update(dock?.currentDockHelpSurface) }
     }
     private func finishMap(reason: HelpUIDismissReason? = nil) {
+        dock?.helpMapHold = false
         let id = statusDismissal.take(reason: reason)
         mapSurface = nil; mapStatusFrame = nil; presenter?.endMap()
         if let id { statusDidDismiss(id) }

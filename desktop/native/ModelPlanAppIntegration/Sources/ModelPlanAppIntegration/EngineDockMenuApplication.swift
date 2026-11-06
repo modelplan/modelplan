@@ -61,6 +61,7 @@ struct StatusNoticePresentation {
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
+    private var helpRevealTask: Task<Void, Never>?
     private var showFeedback: ShowQuotaWidgetOutcome?
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
@@ -620,10 +621,46 @@ struct StatusNoticePresentation {
     }
     private func showHelp(fromStatusMenu: Bool = false) {
         guard !terminating, !lifecyclePaused else { return }
-        statusHelpRequestID = fromStatusMenu ? UUID() : nil
-        helpMapUnavailable = requestHelpMap?() != true
-        if helpMapUnavailable { statusHelpRequestID = nil }
-        renderMenu()
+        helpRevealTask?.cancel(); helpRevealTask = nil
+        let requestID = fromStatusMenu ? UUID() : nil
+        statusHelpRequestID = requestID
+        if requestHelpMap?() == true { helpMapUnavailable = false; renderMenu(); return }
+        // G3-12: the map is drawn over the visible widget. When the widget is hidden or
+        // collapsed and presentation is allowed, show it as Show Quota Widget does, then retry.
+        guard composition.dock.canPresentForHelp, settings.editor.snapshot != nil else {
+            helpMapUnavailable = true; statusHelpRequestID = nil; renderMenu(); return
+        }
+        helpMapUnavailable = false; renderMenu()
+        helpRevealTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            var presented = false
+            if await self.showDockForHelp() {
+                let deadline = ContinuousClock.now + .seconds(2)
+                repeat {
+                    if self.requestHelpMap?() == true { presented = true; break }
+                    try? await Task.sleep(for: .milliseconds(50))
+                } while ContinuousClock.now < deadline && !Task.isCancelled && !self.terminating
+            }
+            guard !Task.isCancelled, !self.terminating else { return }
+            self.helpRevealTask = nil
+            if !presented, self.statusHelpRequestID == requestID { self.statusHelpRequestID = nil }
+            self.helpMapUnavailable = !presented
+            self.renderMenu()
+        }
+    }
+    /// Makes the widget visible for a Help request: saves Show when it was hidden, then
+    /// reveals it from the strip. Returns false when Show cannot be saved.
+    private func showDockForHelp() async -> Bool {
+        if settings.editor.snapshot?.preferences.showDock != true {
+            guard ShowQuotaWidgetRequest.availability(paused: terminating, loaded: settings.editor.snapshot != nil,
+                    saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return false }
+            showRequestInFlight = true
+            let outcome = await ShowQuotaWidgetRequest.perform(editor: settings.editor)
+            showRequestInFlight = false
+            guard !terminating, outcome == .ready, settings.editor.snapshot?.preferences.showDock == true else { return false }
+        }
+        composition.dock.revealForUser()
+        return true
     }
     private func showFeedbackText(_ language: SettingsLanguage) -> String? {
         switch showFeedback {
@@ -673,6 +710,7 @@ struct StatusNoticePresentation {
         }
     }
     private func retireApplicationSurfaces() {
+        helpRevealTask?.cancel(); helpRevealTask = nil
         settings.editor.onHostRequest = nil
         applicationSettingsItem.isEnabled = false
         applicationSettingsItem.keyEquivalent = ""
