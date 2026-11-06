@@ -7,6 +7,10 @@ import ModelPlanEngineClient
 
 /// The exact construction route called by the community executable and synthetic-profile checks.
 @MainActor public enum EngineRowsEntry {
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    static var nativeJourneyProfile: URL?
+    #endif
+
     /// One foundation document backs the normal Settings and Core entry.
     public static func makeSettingsStore(applicationSupport: URL, rowIDMap: [String: String] = [:],
                                          preferredLanguages: [String] = Locale.preferredLanguages) throws -> SettingsStore {
@@ -25,7 +29,14 @@ import ModelPlanEngineClient
                             makeSettingsSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)? = nil,
                             makeConsole: (@MainActor (EngineDockMenuComposition) -> any EngineRowsConsoleSurface)? = nil,
                             activateSettings: @escaping @MainActor () -> Void = { NSApplication.shared.activate() }) -> EngineDockMenuApplication {
-        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings); app.composition.installResetEvents(settings:settingsStore,live:createsNativePanels); return app
+        let app=CommunityCockpitApplicationFactory.make(configuration: configuration, settingsStore: settingsStore, createsNativePanels: createsNativePanels, bundleURL: bundleURL, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: dockEnvironment, deadlineNow: deadlineNow, deadlineElapsed: deadlineElapsed, deadlineScheduling: deadlineScheduling, makeClient: makeClient, makeSettingsSurface: makeSettingsSurface, makeConsole: makeConsole, activateSettings: activateSettings)
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels,
+            isolatedLedger: nativeJourneyProfile?.appendingPathComponent("reset-notifications.json"))
+        #else
+        app.composition.installResetEvents(settings: settingsStore, live: createsNativePanels)
+        #endif
+        return app
     }
     #if DEBUG
     /// Install before prepare. Quota freshness and visibility use separate schedulers.
