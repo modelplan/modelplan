@@ -196,6 +196,34 @@ export function glmVerdict(items, head) {
   return r;
 }
 
+// ---- Exact-head owner-ledger evidence (evidence-gate.sh) ----
+// Scenario declarations come from the first matching body line; only trusted issue comments count.
+// Evidence is tied to the actual head and is never carried across a merge or other commit.
+export function evidenceState(pr, items, head) {
+  const body = pr.body ?? "";
+  if (!/g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n")))
+    return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
+  const declaration = lines(body).find((line) => /^\s*\**Scenarios:?\**:?/i.test(line));
+  // Reject malformed scenario-shaped tokens, including when a valid ID is also present.
+  // Free-text annotations remain allowed, but cannot hide a mistyped ID.
+  const candidates = declaration?.replace(/^\s*\**Scenarios:?\**:?/i, "")
+    .match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
+  if (candidates.some((id) => !/^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/.test(id)))
+    return { state: FAILURE, why: "Scenarios line contains malformed scenario IDs" };
+  const scenarios = [...new Set(declaration?.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g) ?? [])].sort();
+  if (!scenarios.length) return { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" };
+  const verified = new Set();
+  for (const item of items) if (item.kind === "comment") {
+    for (const line of lines(item.body)) {
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      if (match && match[2] === head) verified.add(match[1]);
+    }
+  }
+  const missing = scenarios.filter((id) => !verified.has(id));
+  return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
+    : { state: SUCCESS, why: "scenario evidence verified" };
+}
+
 // ---- CI at one commit (merge-when.sh) ----
 // runs: Actions workflow runs whose head_sha is the commit. Only the newest run per workflow counts, so a
 // superseded or re-triggered run never blocks. A run GitHub rejected at parse time (startup_failure) has no
@@ -242,6 +270,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
   if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
     return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
+  const evidence = evidenceState(pr, items, head);
+  if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   if (pr.draft) return res(PENDING, "draft");
 
   const paths = prPaths(files);
@@ -259,6 +289,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (blocked.length) return res(FAILURE, `VERDICT block ${blocked.join(" ")}`, extra);
 
   const missing = [];
+  if (evidence.state === PENDING) missing.push(evidence.why);
   if (tier === 2 && lanes.get("(macrev2)") !== "merge") missing.push("VERDICT (macrev2) merge");
   if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
   if (design.touching) {
@@ -279,9 +310,19 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 }
 
 // ---- Stale-base guard (merge-when.sh) ----
-// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the same
-// component (first two path segments) since the head forked, those checks never saw the combination.
-const component = (p) => p.split("/").slice(0, 2).join("/");
+// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the
+// same module since the head forked, those checks never saw the combination. Module granularity
+// (owner 2026-11-06): desktop/native paths with five or more segments compare by the first five
+// (desktop/native/<Package>/<Sources|Tests>/<Module>); a package-root file compares by its package;
+// anything shallower stays at the desktop/native tree level; every other tree keeps the first two
+// segments; .github/workflows collapses to one token, so a workflow change on the base overlaps
+// only when the PR itself changes a workflow file.
+const component = (p) => {
+  const s = p.split("/");
+  if (s[0] === ".github" && s[1] === "workflows") return ".github/workflows";
+  if (s[0] === "desktop" && s[1] === "native") return s.slice(0, s.length >= 5 ? 5 : s.length === 4 ? 3 : 2).join("/");
+  return s.slice(0, 2).join("/");
+};
 export function staleOverlap(prFiles, baseFiles) {
   const mine = new Set(prFiles.map(component));
   return [...new Set(baseFiles.map(component))].filter((c) => mine.has(c) && !/^(docs|README\.md|NOTICE)/.test(c)).sort();

@@ -93,6 +93,7 @@ jobs:
       run: swift run --package-path desktop/native --skip-build ModelPlanDockInstrumentChecks "$RUNNER_TEMP/dock-instrument-checks"
     - name: Archive offscreen Dock visual probes
       if: always()
+      id: evidence
       uses: actions/upload-artifact@v4
       with:
         name: dock-visual-${{ inputs.os }}
@@ -108,7 +109,15 @@ jobs:
     - name: Acknowledge preserved evidence
       if: ${{ success() }}
       shell: bash
-      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   native-headless:
     # The half of the native suite that needs no window server, on an ordinary Mac runner, in
     # parallel with the GUI leg above. desktop/native/tools/ci/native-test-partition.json decides
@@ -202,6 +211,7 @@ jobs:
         # tar preserves executable modes and the adjacent SwiftPM fixture bundle.
         tar -czf "$RUNNER_TEMP/native-runtime.tar.gz" .
     - uses: actions/upload-artifact@v4
+      id: evidence
       if: inputs.os == 'macos-latest'
       with:
         name: native-latest-xcode-macos14-runtime
@@ -219,7 +229,15 @@ jobs:
     - name: Acknowledge preserved evidence
       if: ${{ success() }}
       shell: bash
-      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   transport:
     if: ${{ inputs.task == 'transport' }}
     runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
@@ -292,13 +310,21 @@ jobs:
         retention-days: 14
       id: evidence
     - name: Remove this job's completed scratch
-      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
       shell: bash
       run: rm -rf -- .tmp
     - name: Acknowledge preserved evidence
-      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
       shell: bash
-      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   sequences:
     if: ${{ inputs.task == 'sequences' }}
     runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
@@ -336,12 +362,20 @@ jobs:
         retention-days: 14
       id: evidence
     - name: Remove owned scratch after evidence upload
-      if: always()
+      if: ${{ always() && steps.evidence.outcome == 'success' && steps.evidence.outputs.artifact-id != '' }}
       run: rm -rf -- .tmp
     - name: Acknowledge preserved evidence
       if: ${{ always() && steps.evidence.outcome == 'success' }}
       shell: bash
-      run: echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
+      env:
+        ARTIFACT_ID: ${{ steps.evidence.outputs.artifact-id }}
+      run: |
+        set -euo pipefail
+        [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]] || exit 0
+        receipt=$(mktemp "$RUNNER_TEMP/.modelplan-cleanup.XXXXXX")
+        printf '%s\n' "$GITHUB_RUN_ID:$GITHUB_RUN_ATTEMPT:$GITHUB_JOB:$ARTIFACT_ID" > "$receipt"
+        mv -f -- "$receipt" "$RUNNER_TEMP/.modelplan-cleanup-receipt"
+        echo "MODELPLAN_CI_ARTIFACTS_UPLOADED=1" >> "$GITHUB_ENV"
   probe:
     if: ${{ inputs.task == 'probe' && github.event_name == 'workflow_dispatch' }}
     runs-on: ${{ ((inputs.task != 'native' || vars.MAC_CI_GUI == 'enabled') && inputs.os == 'macos-latest' && (github.repository == 'modelplan/modelplan' && github.actor_id == '11829005' && github.actor == 'guanbear' && github.triggering_actor == 'guanbear') && (((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.id == 11829005 && !github.event.pull_request.draft) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/')))) && (vars.MAC_CI_RUNNER_V2 == 'self-hosted' || ((inputs.task == 'probe' || inputs.task == 'gui-probe') && github.event_name == 'workflow_dispatch'))) && fromJSON((inputs.task == 'native' || inputs.task == 'gui-probe') && '["self-hosted","macOS","ARM64","modelplan-mac","modelplan-mac-gui"]' || '["self-hosted","macOS","ARM64","modelplan-mac"]') || (inputs.os == 'ubuntu-latest' && 'ubuntu-24.04' || inputs.os == 'macos-14' && 'macos-14' || 'macos-latest') }}
