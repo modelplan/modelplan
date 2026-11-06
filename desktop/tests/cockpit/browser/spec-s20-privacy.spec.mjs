@@ -24,3 +24,20 @@ test('C-20 clear removes rendered private facts before acknowledgement and rejec
  for(const marker of ['PRIVATE-ROW-CANARY','PRIVATE-MODEL-CANARY','PRIVATE-PROJECT-CANARY'])expect(after).not.toContain(marker);
  await expect(page.locator('#outside-cockpit-focus')).toBeFocused();
 });
+
+// Salvaged from #494: only the admitted bridge can populate the page.
+test('CKP-SHELL-22 ignores stored and URL data and renders only bridge delivery',async({page})=>{
+ const probe=JSON.stringify({projection:{rows:[{id:'probe',name:{en:'INJECTED-ROW-CANARY',zh:'注入'}}]}});
+ await page.addInitScript(source=>{localStorage.setItem('modelplan-cockpit-cache',source);sessionStorage.setItem('modelplan-cockpit-data',source);},probe);
+ await page.goto('/?pageId='+pageId+'&data='+encodeURIComponent(probe));
+ await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ expect(await page.evaluate(()=>({frozen:Object.isFrozen(window.modelPlanCockpit),keys:Object.keys(window.modelPlanCockpit)}))).toEqual({frozen:true,keys:['receive','clear','state']});
+ await expect(page.locator('.ec-empty')).toBeVisible();
+ await expect(page.locator('.eng-keys .ek[data-sub]')).toHaveCount(0);
+ await expect(page.locator('body')).not.toContainText('INJECTED-ROW-CANARY');
+ const data=visualFixture().data,send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ data.projection.rows[0].name.en='ADMITTED-ROW-CANARY';
+ for(const raw of [send('load',{appearance,shell,redBelow:25}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ await expect(page.locator('.eng-keys')).toContainText('ADMITTED-ROW-CANARY');
+ await expect(page.locator('body')).not.toContainText('INJECTED-ROW-CANARY');
+});
