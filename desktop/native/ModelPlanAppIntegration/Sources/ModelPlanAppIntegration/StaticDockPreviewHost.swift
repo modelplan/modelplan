@@ -724,6 +724,7 @@ struct DockHelpInteraction: Equatable {
         style.window = colour(M.window); style.windowSeam = colour(M.windowSeam)
         style.ink = colour(M.ink); style.muted = colour(M.muted); style.track = colour(M.ghost)
         style.quota = [.normal: colour(M.normal), .warning: colour(M.warning), .critical: colour(M.critical), .unknown: colour(M.muted)]
+        style.notice = colour(M.notice)
         style.readoutFont = cardReadoutFont(size: M.valueFontSize); style.readoutSmallFont = cardReadoutFont(size: M.smallFontSize)
         return style
     }

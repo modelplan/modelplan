@@ -861,6 +861,12 @@ actor EntrySyntheticClient: EngineClient {
         }
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
         XCTAssertTrue(text(dock.card).contains("2 resets · expire in 30h"))
+        // DOCK-3.8-11: the announced reset is its own section: the title spans the readout window in reset blue.
+        func fields(_ root: NSView) -> [NSTextField] { ((root as? NSTextField).map { [$0] } ?? []) + root.subviews.flatMap(fields) }
+        let resetTitle = try XCTUnwrap(fields(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.text.row.reset-event:") && $0.accessibilityIdentifier().hasSuffix(".label") })
+        XCTAssertGreaterThan(resetTitle.frame.width, 200, "the reset title is not squeezed into the label column")
+        let ink = try XCTUnwrap(resetTitle.textColor?.usingColorSpace(.sRGB))
+        XCTAssertEqual(ink.blueComponent, 1, accuracy: 0.02); XCTAssertEqual(ink.redComponent * 255, 0x9f, accuracy: 3)
         let content = try XCTUnwrap(dock.cardContent(for: id, at: wall))
         XCTAssertEqual(content.links.map(\.url.absoluteString), [originalURL, aihotURL, officialURL, publicationURL])
         XCTAssertEqual(content.links.map(\.label), ["Original", "AIHot", "Official source", "Source"])
