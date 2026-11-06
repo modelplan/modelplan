@@ -104,6 +104,16 @@ import ModelPlanWire
             await app.stopNativeDockJourney()
             if native { EngineRowsEntry.nativeJourneyProfile = nil }
         }
+        #if DEBUG
+        let visibilityClock = native ? nil : DockVisibilityTestClock()
+        if let visibilityClock {
+            EngineRowsEntry.installDockVisibilityTimingForChecks(on: app, clock: { visibilityClock.now },
+                                                               scheduler: visibilityClock)
+        }
+        let usesControlledVisibility = visibilityClock != nil
+        #else
+        let usesControlledVisibility = false
+        #endif
         cockpit.bind(client: app.composition.client)
         await app.prepare()
         XCTAssertNil(app.loginServiceAdapter)
@@ -132,7 +142,23 @@ import ModelPlanWire
             pointer = point
             dock.refreshPresence()
         }
+        func advanceVisibility(milliseconds: Int) async throws {
+            #if DEBUG
+            if let visibilityClock {
+                visibilityClock.advance(by: Double(milliseconds) / 1000)
+                return
+            }
+            #endif
+            try await Task.sleep(for: .milliseconds(milliseconds))
+        }
         func waitForSurface(_ expected: DockSurfaceState) async throws {
+            if usesControlledVisibility {
+                if dock.edgePresentation?.state != expected {
+                    try await advanceVisibility(milliseconds: 550)
+                }
+                XCTAssertEqual(dock.edgePresentation?.state, expected)
+                return
+            }
             let end = ContinuousClock.now + .seconds(2)
             while dock.edgePresentation?.state != expected && ContinuousClock.now < end {
                 try await Task.sleep(for: .milliseconds(10))
@@ -179,22 +205,34 @@ import ModelPlanWire
                 try await waitForSurface(.sliver)
                 for point in [beyondDepth, beyondEnd] {
                     move(to: point)
-                    // Give each outside point more than the default 150 ms reveal dwell.
-                    try await Task.sleep(for: .milliseconds(225))
+                    try await advanceVisibility(milliseconds: 225)
                     XCTAssertEqual(dock.edgePresentation?.state, .sliver, "\(size) at \(point)")
                 }
                 move(to: wake)
-                try await waitForSurface(.expanded)
-                try await Task.sleep(for: .milliseconds(550))
+                if usesControlledVisibility {
+                    try await advanceVisibility(milliseconds: 149)
+                    XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Reveal waits for 150 ms")
+                    try await advanceVisibility(milliseconds: 2)
+                    XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Reveal after the dwell deadline")
+                } else {
+                    try await waitForSurface(.expanded)
+                }
+                try await advanceVisibility(milliseconds: 550)
                 XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The wake band stays inside after reveal")
                 move(to: outside)
-                try await Task.sleep(for: .milliseconds(400))
+                try await advanceVisibility(milliseconds: 400)
                 XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The first absence is shorter than the hide grace")
                 move(to: wake)
-                try await Task.sleep(for: .milliseconds(150))
+                try await advanceVisibility(milliseconds: 150)
                 XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
                 move(to: outside)
-                try await Task.sleep(for: .milliseconds(550))
+                if usesControlledVisibility {
+                    try await advanceVisibility(milliseconds: 499)
+                    XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Collapse waits for 500 ms")
+                    try await advanceVisibility(milliseconds: 2)
+                } else {
+                    try await advanceVisibility(milliseconds: 550)
+                }
                 XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Continuous absence hides after the grace period")
                 let panelOnly = try XCTUnwrap(placement.globalHoverRects.map {
                     CGPoint(x: $0.midX, y: $0.midY)
