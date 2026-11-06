@@ -78,6 +78,49 @@ import ModelPlanEngineClient
         XCTAssertTrue(retired.items.isEmpty)
     }
 
+    func testS14NormalSettingsWindowInheritsAppKitAppearanceAcrossEveryPane() async throws {
+        let application = NSApplication.shared
+        let originalAppearance = application.appearance
+        defer { application.appearance = originalAppearance }
+        let initialWindows = Set(application.windows.map(ObjectIdentifier.init))
+        let app = try await self.application()
+        defer {
+            app.settingsHost.suspend()
+            app.composition.dock.close()
+        }
+        let editor = app.settingsHost.application.editor
+        let sampleAppearances: [(NSAppearance.Name, SettingsTheme)] = [(.aqua, .night), (.darkAqua, .day)]
+        let appearanceNames: [NSAppearance.Name] = [.aqua, .darkAqua]
+        var retainedWindow: NSWindow?
+        for (inherited, oppositeDockTheme) in sampleAppearances {
+            // Test-process AppKit inputs only. Leave macOS appearance untouched.
+            application.appearance = try XCTUnwrap(NSAppearance(named: inherited))
+            _ = try await editor.commit(SettingsB20Edit.theme(oppositeDockTheme))
+            for language in [SettingsLanguage.english, .chinese] {
+                _ = try await editor.commit(SettingsB21Edit.language(language))
+                for pane in SettingsStructure.task65.panes {
+                    await app.settingsHost.present(paneID: pane.id)
+                    let owned = application.windows.filter {
+                        !initialWindows.contains(ObjectIdentifier($0)) &&
+                            $0.isVisible && $0.windowController is SettingsWindowController
+                    }
+                    let label = "\(inherited.rawValue) / \(language) / \(pane.id)"
+                    XCTAssertEqual(owned.count, 1, label)
+                    let window = try XCTUnwrap(owned.first, label)
+                    let controller = try XCTUnwrap(window.windowController as? SettingsWindowController, label)
+                    if let retainedWindow { XCTAssertTrue(window === retainedWindow, label) }
+                    else { retainedWindow = window }
+                    XCTAssertEqual(controller.selectedPaneID, pane.id, label)
+                    XCTAssertEqual(window.title, language == .english ? "Settings" : "设置", label)
+                    XCTAssertNil(window.appearance, "Settings must inherit its appearance: " + label)
+                    XCTAssertEqual(window.effectiveAppearance.bestMatch(from: appearanceNames), inherited, label)
+                    XCTAssertEqual(application.effectiveAppearance.bestMatch(from: appearanceNames), inherited, label)
+                    XCTAssertEqual(editor.snapshot?.preferences.theme, oppositeDockTheme, label)
+                }
+            }
+        }
+    }
+
     func testS14NormalLaunchDoesNotOverrideSystemAppearance() async throws {
         let application = NSApplication.shared
         let previousAppearance = application.appearance
