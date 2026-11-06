@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -382,13 +383,41 @@ type fileStamp struct {
 	exists         bool
 }
 
+type localFileStamp struct {
+	path string
+	fileStamp
+}
+
+// codexLocalStamps observes metadata only for the same permitted local source
+// that buildView reads. It never opens rollout contents or exposes file paths.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+	tool, decided := admission.State().Tools["codex"]
+	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
+		return nil
+	}
+	paths := b.paths(admission)
+	if paths.CodexHome == "" {
+		return nil
+	}
+	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
+	sort.Strings(files)
+	stamps := make([]localFileStamp, 0, len(files))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err == nil {
+			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
+		}
+	}
+	return stamps
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
-			var codexStamps []fileStamp
+			var codexStamps []localFileStamp
 			var nextCodexCheck time.Time
 			for {
 				select {
@@ -403,19 +432,13 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						codexStamps = nil
 						nextCodexCheck = time.Time{}
 					} else if !now.Before(nextCodexCheck) {
-						// Stat only the same bounded recent rollouts used by the local
-						// reader. Never read their contents or inspect them without
-						// local admission; coalesce metadata checks to once a second.
-						codexStamps = nil
-						for _, file := range quota.RecentRollouts(paths.CodexHome, 8) {
-							if info, err := os.Stat(file); err == nil {
-								codexStamps = append(codexStamps, fileStamp{path: file, size: info.Size(), modified: info.ModTime().UnixNano(), exists: true})
-							}
-						}
+						// Match the local reader's recent files and its active thread;
+						// inspect metadata only, under the same admission fence.
+						codexStamps = b.codexLocalStamps(admission)
 						nextCodexCheck = now.Add(time.Second)
 					}
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
-					current := make([]fileStamp, 0, len(files)+len(codexStamps))
+					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
 						info, err := os.Stat(file)
 						stamp := fileStamp{}
@@ -424,7 +447,11 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						}
 						current = append(current, stamp)
 					}
-					current = append(current, codexStamps...)
+					for _, stamp := range codexStamps {
+						observed := stamp.fileStamp
+						observed.path = stamp.path
+						current = append(current, observed)
+					}
 					if !reflect.DeepEqual(last, current) {
 						last = current
 						b.notify()

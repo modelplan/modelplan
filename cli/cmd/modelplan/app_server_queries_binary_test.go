@@ -40,6 +40,9 @@ func startQueryBinary(t *testing.T, binary string) *queryBinary {
 func startQueryBinaryCaps(t *testing.T, binary string, capabilities []string) *queryBinary {
 	return startQueryBinaryCapsArgs(t, binary, capabilities)
 }
+func startQueryBinaryCapsWithArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
+	return startQueryBinaryCapsArgs(t, binary, capabilities, args...)
+}
 func startQueryBinaryCapsArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
