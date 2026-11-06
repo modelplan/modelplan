@@ -623,9 +623,11 @@ actor EntrySyntheticClient: EngineClient {
             let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
             return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
         }
-        XCTAssertTrue(try weekly().hasPrefix("resets in 2h 14m"), try weekly())
+        let english = try weekly()
+        XCTAssertTrue(english.hasPrefix("resets in 2h 14m"), english)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertTrue(try weekly().hasPrefix("2 小时 14 分后重置"), try weekly())
+        let chinese = try weekly()
+        XCTAssertTrue(chinese.hasPrefix("2 小时 14 分后重置"), chinese)
     }
 
     /// G3-06 residual (DOCK-3.8-08, R-08): a money balance without a currency is shown as a
