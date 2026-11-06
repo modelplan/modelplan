@@ -93,7 +93,11 @@ func TestStaleCodexRuntimeFallbackPublishesRealBinary(t *testing.T) {
 	}
 	// The admitted scheduler decision is a synchronization point: while the
 	// reader lock is held, no local capture can run before the new fixture exists.
-	deadline := time.Now().Add(1500 * time.Millisecond)
+	// The child's read waits up to 2 s for the lock only from the decision on, and
+	// the lock is released within one 10 ms poll of the decision becoming visible,
+	// so a long deadline here never exhausts that budget; it only tolerates a slow
+	// start of the child on a loaded runner (glm-523-5).
+	deadline := time.Now().Add(10 * time.Second)
 	scheduled := false
 	for time.Now().Before(deadline) {
 		response := p.call("diagnostics/get", map[string]any{})

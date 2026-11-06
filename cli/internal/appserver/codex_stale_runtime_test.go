@@ -90,8 +90,11 @@ func TestAutomaticFreshCodexRuntimeSuppressesLocalFallback(t *testing.T) {
 	if err := os.WriteFile(path, b, 0600); err != nil {
 		t.Fatal(err)
 	}
-	planned := make(chan string, 4)
-	calls := make(chan string, 4)
+	// Other default-on runtime scopes (owner decision D27: Copilot, Kiro,
+	// Antigravity) are planned too on a profile without decisions; this test is
+	// only about Codex's local fallback, so it ignores them.
+	planned := make(chan string, 16)
+	calls := make(chan string, 16)
 	s := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths, Now: func() time.Time { return now },
 		Plan: func(_ quota.Paths, scope string, at time.Time) (quota.ScopeRefreshPlan, error) {
 			planned <- scope
@@ -101,19 +104,27 @@ func TestAutomaticFreshCodexRuntimeSuppressesLocalFallback(t *testing.T) {
 	})
 	defer s.Close()
 	s.StartAutomatic()
-	select {
-	case scope := <-planned:
-		if scope != consent.ScopeCodexRuntimeUsage {
-			t.Fatalf("unexpected planned scope: %s", scope)
+	sawRuntime := false
+	quiet := time.After(2 * time.Second)
+	for {
+		select {
+		case scope := <-planned:
+			switch scope {
+			case consent.ScopeCodexRuntimeUsage:
+				if !sawRuntime {
+					sawRuntime = true
+					quiet = time.After(150 * time.Millisecond)
+				}
+			case consent.ScopeCodexLocalHistory:
+				t.Fatal("fresh runtime did not suppress the Codex local fallback")
+			}
+		case scope := <-calls:
+			t.Fatalf("unexpected read: %s", scope)
+		case <-quiet:
+			if !sawRuntime {
+				t.Fatal("runtime was not considered")
+			}
+			return
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("runtime was not considered")
-	}
-	select {
-	case scope := <-planned:
-		t.Fatalf("fresh runtime did not suppress another scope: %s", scope)
-	case scope := <-calls:
-		t.Fatalf("unexpected read: %s", scope)
-	case <-time.After(150 * time.Millisecond):
 	}
 }

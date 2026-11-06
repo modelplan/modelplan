@@ -7,6 +7,7 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 These ship with the next CLI release; its pin PR gives them a version heading.
 
 - Allow explicitly granted local Codex history to refresh when the retained runtime reading is too old to be usable.
+  当保留的运行时读数已过旧、无法使用时，允许已明确授权的本机 Codex 历史刷新读数。
 
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
   请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
