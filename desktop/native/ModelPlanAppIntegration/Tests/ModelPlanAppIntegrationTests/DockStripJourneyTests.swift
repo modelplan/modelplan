@@ -51,7 +51,7 @@ private actor DockStripEngine: EngineClient {
     var displays = [DockDisplayArea(id: "primary", frame: .init(x: 0,y: 0,width: 1440,height: 900), visibleFrame: .init(x: 0,y: 80,width: 1440,height: 820))]
     var host: StaticDockPreviewHost { app.composition.dock }
     static func stamp(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
-    init(profile: URL? = nil, wall: Date? = nil) throws {
+    init(profile: URL? = nil, wall: Date? = nil, shortRemaining: [Int] = [41, 26, 0]) throws {
         root = profile ?? FileManager.default.temporaryDirectory.appendingPathComponent("dock-strip-" + UUID().uuidString)
         store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
@@ -74,7 +74,7 @@ private actor DockStripEngine: EngineClient {
                 a["windows"] = [0,1].map { number -> [String: Any] in
                     var w = window; w["id"] = number == 0 ? "short" : "week"; w["role"] = number == 0 ? "session" : "weekly"
                     w["durationSeconds"] = number == 0 ? 18000 : 604800; w["limitKey"] = number == 0 ? "five_hour" : "weekly"; w["poolKey"] = "main"
-                    w["remainingPercent"] = number == 0 ? [41,26,0][index] : [70,60,50][index]
+                    w["remainingPercent"] = number == 0 ? shortRemaining[index] : [70,60,50][index]
                     w["current"] = true; w["observedAt"] = Self.stamp(clock.wall.addingTimeInterval(-60)); w["validUntil"] = "2099-01-01T00:00:00Z"
                     w["resetsAt"] = Self.stamp(clock.wall.addingTimeInterval(number == 0 ? 8040 : 86400)); w["validUntil"] = w["resetsAt"]; w.removeValue(forKey:"modelScope")
                     return w
@@ -106,7 +106,7 @@ private actor DockStripEngine: EngineClient {
 
 @MainActor final class DockStripJourneyTests: XCTestCase {
     func testNormalEntryPaintsOnlyAffectedQuotaPitches() async throws {
-        let fixture = try DockStripFixture()
+        let fixture = try DockStripFixture(shortRemaining: [51, 50, 0])
         addTeardownBlock { @MainActor in await fixture.close() }
         try await fixture.open(autoHide: true)
         XCTAssertEqual(fixture.host.edgePresentation?.state, .sliver)
@@ -119,7 +119,7 @@ private actor DockStripEngine: EngineClient {
         }
         let withAlerts = try pixels()
         XCTAssertTrue(SettingsPreferences().sliverAlert)
-        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 26, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 50, 0])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, .warning, .critical])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.opacity), [0, 0.18, 0.18])
         XCTAssertTrue(view.accessibilityPerformPress())
@@ -128,12 +128,12 @@ private actor DockStripEngine: EngineClient {
         XCTAssertEqual(try pixels(), withAlerts, "Reveal leaves persistent quota alerts painted")
         fixture.mutateFirstRowAccount(at: 1) { account in
             var windows = account["windows"] as! [[String: Any]]
-            windows[0]["remainingPercent"] = 42
+            windows[0]["remainingPercent"] = 52
             account["windows"] = windows
         }
         try await fixture.publish()
         _ = try fixture.host.prepareSliver(size: size)
-        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [41, 42, 0])
+        XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.remainingPercent), [51, 52, 0])
         XCTAssertEqual(view.quotaSegmentColorRolesForChecks.map(\.quotaRole), [nil, nil, .critical])
         _ = try await fixture.app.settingsHost.application.editor.commit(SettingsB20Edit.sliverAlert(false))
         _ = try fixture.host.prepareSliver(size: size)
