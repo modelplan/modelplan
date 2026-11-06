@@ -171,8 +171,8 @@ private actor EntrySyntheticClient: EngineClient {
         let thresholdRow = try XCTUnwrap(rows.first { $0.key == .redBelow })
         guard case .choice(let selected, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
         XCTAssertEqual(selected, "25")
-        for threshold in [40, 30, 25, 20, 15, 10] where options.contains(String(threshold)) {
-            let option = String(threshold)
+        for option in options {
+            let threshold = try XCTUnwrap(Int(option))
             _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
             XCTAssertEqual(try reading(first).status, threshold >= 25 ? .critical : .warning, option)
             XCTAssertEqual(try reading(second).status, threshold >= 20 ? .critical : .warning, option)
@@ -235,15 +235,32 @@ private actor EntrySyntheticClient: EngineClient {
         try assertBand(second, .normal)
 
         let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
-        let lower = try rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
-        let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
-            consentGeneration: delivery.floor.generation, data: lower), delivery: delivery)
-        await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: lower.projection.invalidRowCount))
+        var sequence = Int(fixture.sequence)
+        func deliver(weekly: Double, secondWeekly: Double) async throws {
+            sequence += 1
+            let snapshot = try rows(weekly: weekly, secondWeekly: secondWeekly, sequence: sequence)
+            let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
+                consentGeneration: delivery.floor.generation, data: snapshot), delivery: delivery)
+            await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: snapshot.projection.invalidRowCount))
+        }
+        try await deliver(weekly: 25, secondWeekly: 10)
         try assertBand(first, .critical)
         try assertBand(second, .critical)
         _ = try await editor.commit(SettingsB20Edit.redBelow(10))
         try assertBand(first, .warning)
         try assertBand(second, .critical)
+
+        let saved = try XCTUnwrap(editor.snapshot)
+        let settingsRows = try SettingsCatalogue.rows(preferences: saved.preferences, context: editor.context)
+        let thresholdRow = try XCTUnwrap(settingsRows.first { $0.key == .redBelow })
+        guard case .choice(_, let options) = thresholdRow.value else { return XCTFail("Expected threshold choices") }
+        for option in options {
+            let threshold = try XCTUnwrap(Int(option))
+            _ = try await editor.commit(SettingsB20Edit.redBelow(threshold))
+            try await deliver(weekly: Double(threshold), secondWeekly: Double(threshold) + 1)
+            try assertBand(first, .critical)
+            try assertBand(second, .warning)
+        }
     }
 
     func testNormalEntryReprojectsAtVerifiedDeadlineWithoutNewRowsAndClearsOnRevoke() async throws {
