@@ -124,7 +124,11 @@ jobs:
       - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
       - name: Package the actual universal Community app with unverified consent identity
+        env:
+          MODELPLAN_NORMAL_ENTRY_SMOKE_BUILD: "1"
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
+      - name: Exercise packaged normal engine entry
+        run: python3 desktop/native/tools/app-smoke/check-normal-entry.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
       - name: Assert packaged production wiring (known baseline failures remain red)
         run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified
       # Interim until the v1 candidate workflow (#522) lands: the on-device lanes need the native app this job
