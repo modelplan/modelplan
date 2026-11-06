@@ -329,13 +329,16 @@ import ModelPlanShell
     func testD19NormalEntryMigratesLegacyFloatingWithoutCoordinates() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-floating-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
-        let topology = DragTopology()
-        let cases: [(savedDisplay: String?, savedAlong: Double?, expectedDisplay: String, expectedAlong: Double)] = [
-            ("B", 0.27, "B", 0.27),
-            ("disconnected", 0.27, "A", 0.27),
-            (nil, nil, "A", 0.5)
+        let cases: [(savedDisplay: String?, savedAlong: Double?, expectedDisplay: String, expectedAlong: Double, reconnect: Bool)] = [
+            ("B", 0.27, "B", 0.27, false),
+            ("disconnected", 0.27, "A", 0.27, false),
+            (nil, nil, "A", 0.5, false),
+            ("B", 2, "B", 0.5, false),
+            ("B", 0.27, "A", 0.27, true)
         ]
         for (index, sample) in cases.enumerated() {
+            let topology = DragTopology()
+            if sample.reconnect { topology.active.removeAll { $0.id == topology.b.id } }
             let root = profile.appendingPathComponent(String(index))
             let legacy = root.appendingPathComponent("ModelPlan/Native/settings-v1.json")
             try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -350,7 +353,8 @@ import ModelPlanShell
             XCTAssertEqual(status?.issues, [.init(source: .communitySettings, failure: .invalidEdge)])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
                 applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
-                createsNativePanels: false, dockEnvironment: topology.read, activateSettings: {})
+                createsNativePanels: false, bundleURL: root.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: topology.read, activateSettings: {})
             addTeardownBlock { @MainActor in await app.composition.stop() }
             await app.prepare()
             app.allowDockPresentation()
@@ -364,6 +368,16 @@ import ModelPlanShell
             XCTAssertEqual(settings.preferences.dockDisplayID, sample.savedDisplay, "Transient fallback must not replace the saved display")
             XCTAssertEqual(settings.preferences.dockAlongFraction, sample.expectedAlong)
             XCTAssertEqual(settings.preferences.dockEdge, .right)
+            if sample.reconnect {
+                topology.active.append(topology.b)
+                dock.refreshDockContent()
+                let restored = try XCTUnwrap(dock.edgePresentation?.placement)
+                XCTAssertEqual(restored.displayID, topology.b.id)
+                XCTAssertEqual(restored.edge, .right)
+                XCTAssertEqual(restored.alongFraction, sample.expectedAlong, accuracy: 0.001)
+                let afterReconnect = await store.snapshot()
+                XCTAssertEqual(afterReconnect.revision, settings.revision, "Display recovery must not save a placement")
+            }
             XCTAssertEqual(try Data(contentsOf: legacy), bytes)
             await app.composition.stop()
         }
