@@ -2,6 +2,7 @@
 """Shared file-backed release, live lease and booking admission."""
 import json
 import math
+import os
 from pathlib import Path
 import time
 
@@ -9,21 +10,35 @@ import book
 from release import HOSTS, IDENTITY_FIELDS, host_role, validate_release
 
 LAUNCH_MODES = ('direct', 'launchservices')
+# Real-profile runs (owner decision 2026-11-05) are admitted only on the dedicated test hosts:
+# dev-mac is M1, macci is V1. The tuple is explicit so a future host never inherits the mode.
+REAL_PROFILE_HOSTS = ('dev-mac', 'macci')
 
 
 def validate(config, now):
-    if config.get('profile') != 'synthetic':
-        raise ValueError('synthetic profile required')
+    profile = config.get('profile', 'synthetic')
+    if profile not in ('synthetic', 'real'):
+        raise ValueError('profile must be synthetic or real')
+    host = config.get('host', 'dev-mac')
+    if profile == 'real' and host not in REAL_PROFILE_HOSTS:
+        raise ValueError('real profile is allowed only on the M1/V1 test hosts')
     pin = config.get('binarySHA256', '')
     if not isinstance(pin, str) or len(pin) != 64 or any(c not in '0123456789abcdef' for c in pin):
         raise ValueError('explicit binary SHA256 required')
-    host = config.get('host', 'dev-mac')
     if host not in HOSTS:
         raise ValueError(f'host must be one of {", ".join(HOSTS)}')
     if config.get('launchMode', 'direct') not in LAUNCH_MODES:
         raise ValueError(f'launchMode must be one of {", ".join(LAUNCH_MODES)}')
     if config.get('subjectKind', 'binary') not in ('binary', 'app-zip'):
         raise ValueError('subjectKind must be binary or app-zip')
+    relaunch = config.get('relaunchPath')
+    if relaunch is not None:
+        # Relaunch keeps one supervised slot with the same HOME across launches; only the exec-gated
+        # direct child can be respawned with proven identity.
+        if not isinstance(relaunch, str) or not relaunch or not os.path.isabs(relaunch):
+            raise ValueError('relaunchPath must be an absolute path')
+        if config.get('launchMode', 'direct') != 'direct':
+            raise ValueError('relaunch needs direct launch mode')
     lease = config['lease']
     validate_release(lease, config['release'], host)  # dev-mac: M1 receipt; macci: V1 + coordinator GO
     expected = config.get('expectedLease')

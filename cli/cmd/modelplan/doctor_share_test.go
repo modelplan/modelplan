@@ -30,3 +30,33 @@ func TestDoctorShareDoesNotCreateCacheOrRunReaders(t *testing.T) {
 		t.Fatalf("share created cache: %v", err)
 	}
 }
+
+func TestDoctorShareIncludesManagedFailureWithoutPrivateDetails(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	t.Setenv("MODELPLAN_CACHE", cache)
+	path := filepath.Join(cache, "observed", "readers", "claude.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"schemaVersion":1,"provider":"claude","entries":[{"status":"error","notice":"synthetic-secret","profileKey":"synthetic-private"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, stderr bytes.Buffer
+	if code := run([]string{"doctor", "--share", "--json"}, nil, &out, &stderr); code != 0 {
+		t.Fatalf("doctor share: %d %s", code, stderr.String())
+	}
+	var report struct {
+		Sources []struct{ Source, Status string } `json:"sources"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, source := range report.Sources {
+		found = found || source.Source == "native:claude" && source.Status == "error"
+	}
+	if !found || strings.Contains(out.String(), "synthetic-secret") || strings.Contains(out.String(), "synthetic-private") {
+		t.Fatalf("unexpected share result: %s", out.String())
+	}
+}

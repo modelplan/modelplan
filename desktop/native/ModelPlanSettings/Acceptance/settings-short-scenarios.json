@@ -54,7 +54,7 @@
   "scenarios": [
     {
       "id": "settings.panes",
-      "revision": 1,
+      "revision": 2,
       "fixture": "m4-settings-1",
       "profile": "en-day-1x-logical",
       "evidence": "offscreen",
@@ -115,6 +115,14 @@
         {
           "action": "checkpoint",
           "checkpoint": "pane.privacy"
+        },
+        {
+          "action": "visitPane",
+          "pane": "diagnostics"
+        },
+        {
+          "action": "checkpoint",
+          "checkpoint": "pane.diagnostics"
         },
         {
           "action": "visitPane",
@@ -369,7 +377,7 @@
       "steps": [
         {
           "action": "awaitHuman",
-          "instruction": "With VoiceOver already configured by the owner, traverse the eight panes and a search result, then one popup/current value. Record real speech/focus observations; do not enable OS features automatically."
+          "instruction": "With VoiceOver already configured by the owner, traverse the nine panes and a search result, then one popup/current value. Record real speech/focus observations; do not enable OS features automatically."
         },
         {
           "action": "checkpoint",

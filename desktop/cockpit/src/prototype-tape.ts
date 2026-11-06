@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The record strip shows producer-reported running and last-seen sessions.
+// The record strip shows producer-reported running and last-seen (CLI state "idle") sessions.
 // Last-seen evidence does not establish an end time or a complete history.
 import type {WireCockpitData} from '../generated/wire.js';
 type Locale='en'|'zh-CN';
@@ -12,7 +12,7 @@ export function mountPrototypeTape(root:HTMLElement){
   const title=locale==='en'?'Last-seen sessions':'最近观察到的会话';
   const unavailable=coverage==='recording-off'?(locale==='en'?'Session recording off':'会话记录已关闭'):(locale==='en'?'Session data unavailable':'暂无会话数据');
   host.setAttribute('aria-label',coverage==='local-last-seen'?title:unavailable);
-  const sessions=coverage==='local-last-seen'?(detail?.sessions??[]).filter(s=>s.state==='running'||s.state==='observed').slice().sort((a,b)=>Number(b.state==='running')-Number(a.state==='running')):[];
+  const sessions=coverage==='local-last-seen'?(detail?.sessions??[]).filter(s=>s.state==='running'||s.state==='idle').slice().sort((a,b)=>Number(b.state==='running')-Number(a.state==='running')):[];
   const shown=sessions.length>count?sessions.slice(0,count-1):sessions.slice(0,count);
   const rows=shown.map(s=>{
    const rate=s.state==='running'&&s.rate!==null&&Number.isFinite(s.rate)&&s.rate>=0?s.rate:null;

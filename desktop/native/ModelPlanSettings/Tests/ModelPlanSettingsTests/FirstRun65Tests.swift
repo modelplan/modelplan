@@ -8,13 +8,14 @@ final class FirstRun65Tests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }; return dir.appendingPathComponent("preferences.json")
     }
-    func testV1HidesPostV1ExplorationWhileLegacyKeepsIt() throws {
+    func testV1ExplorationRequiresARealHelpMap() throws {
         let preferences = SettingsPreferences()
         var context = SettingsPageContext()
         XCTAssertTrue(try FirstRunPage(preferences: preferences, context: context).showsExploration)
         context.v1NormalEntry = true
-        context.capabilities.helpMapAvailable = true
         XCTAssertFalse(try FirstRunPage(preferences: preferences, context: context).showsExploration)
+        context.capabilities.helpMapAvailable = true
+        XCTAssertTrue(try FirstRunPage(preferences: preferences, context: context).showsExploration)
     }
     func testCurrentFlowIsOnePageWithoutTourOrPracticeAndReaderLoginChoicesAreIndependent() throws {
         XCTAssertEqual(OnboardingDefinition.task65.steps.count, 1)
@@ -52,6 +53,13 @@ final class FirstRun65Tests: XCTestCase {
             var replay = restored.preferences; replay.onboarding.replay()
             XCTAssertFalse(replay.onboarding.completed); XCTAssertFalse(replay.openAtLogin); XCTAssertTrue(replay.readerConsent.gemini)
         }}
+    }
+    func testFirstRunDockHelpRevealsDockBeforeRequestingMap() async throws {
+        let store = try SettingsStore(url: file()), initial = await store.snapshot()
+        var capabilities = SettingsCapabilities(); capabilities.helpMapAvailable = true; capabilities.helpMapUsesDock = true
+        let result = try await store.completeFirstRun(options: .init(preferences: initial.preferences), action: .seeWhatsHere,
+            host: .popup, capabilities: capabilities, expectedRevision: initial.revision)
+        XCTAssertEqual(result.effects, [.closeFirstRunPopup, .revealDock, .latchOptionHelp])
     }
     func testSameOptionMapLatchAndReleaseDoNotRequireAnotherMapOrWindowEffects() {
         var help = OptionHelpState(); XCTAssertFalse(help.visible)
@@ -105,7 +113,7 @@ final class FirstRun65Tests: XCTestCase {
             p.helpHints = .init(seen: Set(FirstUseHintKind.allCases), opens: 2, reveals: 2)
         }
         let restart = try SettingsStore(url: url), loaded = await restart.snapshot()
-        XCTAssertEqual(loaded.preferences.helpHints.seen.count, 9)
+        XCTAssertEqual(loaded.preferences.helpHints.seen, Set(FirstUseHintKind.allCases))
         let reset = try await restart.resetFirstUseHints(expectedRevision: loaded.revision)
         XCTAssertEqual(reset.preferences.helpHints, .init()); XCTAssertFalse(reset.preferences.openAtLogin)
         XCTAssertTrue(reset.preferences.readerConsent.cursor); XCTAssertTrue(reset.preferences.onboarding.completed)

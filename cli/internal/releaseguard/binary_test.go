@@ -37,7 +37,7 @@ func TestAppleBinaryBackstopWiredToReleaseBuild(t *testing.T) {
 	workflow := string(b)
 	build := strings.Index(workflow, "run: bash desktop/native/tools/package-neutral.sh")
 	scan := strings.Index(workflow, `--binary "$RUNNER_TEMP/neutral-build/ModelPlan Community.app/Contents/MacOS/ModelPlanCommunity"`)
-	archive := strings.Index(workflow, "- name: Archive checked universal neutral app")
+	archive := strings.Index(workflow, "- name: Archive checked Apple silicon neutral app")
 	upload := strings.Index(workflow, "- uses: actions/upload-artifact@v4")
 	if build < 0 || scan <= build || archive <= scan || upload <= archive {
 		t.Fatal("built release binary is not scanned before archive/upload")

@@ -180,7 +180,7 @@ func TestFailedUpdateKeepsBinaryAndCatalogue(t *testing.T) {
 				}
 			}
 			entries, e := os.ReadDir(filepath.Dir(exe))
-			if e != nil || len(entries) != 1 {
+			if e != nil || len(entries) != 2 || entries[0].Name() != "modelplan" || entries[1].Name() != "modelplan.update.guard" {
 				t.Fatalf("failed update left staging files: %v %v", entries, e)
 			}
 		})
@@ -298,7 +298,7 @@ func TestStaleProcessRechecksInstalledVersionUnderLock(t *testing.T) {
 				t.Fatal("equal/newer destination changed")
 			}
 			entries, err := os.ReadDir(filepath.Dir(exe))
-			if err != nil || len(entries) != 1 {
+			if err != nil || len(entries) != 2 || entries[0].Name() != "modelplan" || entries[1].Name() != "modelplan.update.guard" {
 				t.Fatal("skip left a lock, backup or stage", entries, err)
 			}
 		})
@@ -373,5 +373,125 @@ func TestTargetProbeHonoursDeadlineAndSkillLock(t *testing.T) {
 	defer cancel()
 	if _, err := Apply(ctx, exe, home, "0.5.40", "linux/arm64", pin, noFetch); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("probe exceeded caller deadline", err)
+	}
+}
+
+func TestInterruptedUpdateLockCanRecover(t *testing.T) {
+	home, exe := fixtureTarget(t)
+	archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+	lock := exe + ".update.lock"
+	if err := os.WriteFile(lock, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(archive)), nil
+	})
+	if err != nil || result.Status != "updated" {
+		t.Fatalf("stale lock blocks update: %+v %v", result, err)
+	}
+}
+
+func TestAgedActiveUpdateLockCannotBeStolen(t *testing.T) {
+	home, exe := fixtureTarget(t)
+	archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+	acquired := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+			close(acquired)
+			<-release
+			return io.NopCloser(bytes.NewReader(archive)), nil
+		})
+		done <- err
+	}()
+	<-acquired
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(exe+".update.lock", old, old); err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	_, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), nil)
+	close(release)
+	if !errors.Is(err, ErrBusy) {
+		t.Errorf("aged active lock stolen: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInterruptedInstallerDirectoryLockCanRecover(t *testing.T) {
+	home, exe := fixtureTarget(t)
+	archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+	lock := exe + ".update.lock"
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-24 * time.Hour)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(archive)), nil
+	})
+	if err != nil || result.Status != "updated" {
+		t.Fatalf("stale installer directory blocks update: %+v %v", result, err)
+	}
+	for file, want := range map[string]string{exe: "verified new CLI fixture", exe + ".previous": previousFixture} {
+		got, err := os.ReadFile(file)
+		if err != nil || string(got) != want {
+			t.Fatalf("wrong update receipt for %s: %q %v", file, got, err)
+		}
+	}
+}
+
+func TestInstallerDirectoryLockFailsClosedWhenFreshOrNonEmpty(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		age      bool
+		nonEmpty bool
+	}{
+		{name: "fresh"},
+		{name: "aged but nonempty", age: true, nonEmpty: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home, exe := fixtureTarget(t)
+			archive := fixtureArchive(t, "linux/arm64", "modelplan_linux_arm64/modelplan")
+			lock := exe + ".update.lock"
+			if err := os.Mkdir(lock, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if tc.nonEmpty {
+				if err := os.WriteFile(filepath.Join(lock, "keep"), []byte("sentinel"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.age {
+				old := time.Now().Add(-24 * time.Hour)
+				if err := os.Chtimes(lock, old, old); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := Apply(context.Background(), exe, home, "0.5.40", "linux/arm64", fixturePin("linux/arm64", archive), func(context.Context, string) (io.ReadCloser, error) {
+				t.Fatal("protected directory lock reached fetch")
+				return nil, nil
+			})
+			if err == nil || (!tc.age && !errors.Is(err, ErrBusy)) {
+				t.Fatalf("directory marker was not respected: %v", err)
+			}
+			if info, err := os.Lstat(lock); err != nil || !info.IsDir() {
+				t.Fatalf("directory marker removed: %v", err)
+			}
+			if tc.nonEmpty {
+				if b, err := os.ReadFile(filepath.Join(lock, "keep")); err != nil || string(b) != "sentinel" {
+					t.Fatalf("directory contents changed: %q %v", b, err)
+				}
+			}
+		})
 	}
 }

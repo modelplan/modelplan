@@ -17,13 +17,15 @@ on:
         type: choice
         options: [cli, gui]
         default: cli
+      gui:
+        description: Run the GUI-native job on the single GUI test machine (the coordinator's dispatch queue owns its order)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  # PR heads share a group, so a newer push cancels the older run; each main commit gets its own group
-  # and is never cancelled or left pending behind a later main commit.
-  group: public-desktop-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: public-desktop-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   app:
@@ -76,46 +78,23 @@ jobs:
       - run: npm ci --ignore-scripts && npm run build
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
-  macos:
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    # An unsigned (ad-hoc) Apple Silicon build with the pinned CLI bundled, for trying it out.
-    runs-on: macos-latest
-    defaults:
-      run:
-        working-directory: desktop
+  native-partition:
+    if: ${{ !inputs.mac_ci_probe }}
+    # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
+    # job: a class may run on the ordinary Mac runner only if its source uses no window server.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@1.90.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri
-      - run: npm ci --ignore-scripts
-      - run: node scripts/fetch-cli.mjs aarch64-apple-darwin
-      - run: npx tauri build --bundles app,dmg --config src-tauri/tauri.sidecar.conf.json -- --locked
-      - run: codesign --verify --deep --verbose=2 "src-tauri/target/release/bundle/macos/ModelPlan Community.app"
-      - name: Verify bundle display names and stable identifier
-        run: |
-          native_info="src-tauri/target/release/bundle/macos/ModelPlan Community.app/Contents/Info.plist"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$native_info")" = "ModelPlan Community"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$native_info")" = "ModelPlan Community"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$native_info")" = "ai.modelplan.community"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Model-Plan-Community-macOS-arm64-unsigned
-          path: desktop/src-tauri/target/release/bundle/dmg/*.dmg
-          retention-days: 14
+      - run: python3 -m unittest discover -s desktop/native/tools/ci -p 'test_*.py' -v
+      - run: python3 desktop/native/tools/ci/native_test_partition.py check
 
   app-smoke:
     permissions:
       contents: read
       actions: read
     if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    # The actual universal Community bundle, with no secrets, live reader or displayed UI.
+    # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
     continue-on-error: false
@@ -123,6 +102,10 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Build the exact PR head, not the synthetic merge commit: the artifact name, BUILD.txt and
+          # the bundle's ModelPlanPublicSource must all name the tree that was actually built.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -148,10 +131,41 @@ jobs:
         run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
       - name: Fetch the current plugin CLI pin for the unverified smoke build
         run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
-      - name: Package the actual universal Community app with unverified consent identity
+      - name: Package the actual Apple silicon Community app with unverified consent identity
         run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
+      - name: Require the bundled helper to be the plugin pin it was packaged from
+        run: python3 desktop/native/tools/distribution/check_cli_pin_consistency.py --app "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" --pin codex/cli-pin.json
       - name: Assert packaged production wiring (known baseline failures remain red)
         run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified
+      # Interim until the v1 candidate workflow (#522) lands: the on-device lanes need the native app this job
+      # packages, not the legacy Tauri DMG above. Unverified consent identity, cockpit off, ad-hoc signed.
+      - name: Zip the packaged native app for on-device checks
+        if: always()
+        env:
+          # The PR head, not the synthetic merge commit a pull_request run checks out.
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          app="$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
+          [ -d "$app" ] || { echo "no packaged native app"; exit 0; }
+          built=$(/usr/libexec/PlistBuddy -c 'Print :ModelPlanPublicSource' "$app/Contents/Info.plist")
+          head=$(git rev-parse HEAD)
+          if [ "$built" != "$SOURCE_SHA" ] || [ "$head" != "$SOURCE_SHA" ]; then
+            echo "built source $built / checkout $head differs from label $SOURCE_SHA; no artifact" >&2; exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/native-app"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app/ModelPlan-Community-native.zip"
+          # The helper is the released CLI named by codex/cli-pin.json, not built from SOURCE_SHA's cli/.
+          cli_pin=$(python3 -c 'import json; print(json.load(open("codex/cli-pin.json"))["version"])')
+          printf '%s\n' "sourceSHA=$SOURCE_SHA" "runID=$GITHUB_RUN_ID" "runAttempt=$GITHUB_RUN_ATTEMPT" \
+            "cliHelper=released v$cli_pin from codex/cli-pin.json (not built from sourceSHA)" > "$RUNNER_TEMP/native-app/BUILD.txt"
+          (cd "$RUNNER_TEMP/native-app" && shasum -a 256 ModelPlan-Community-native.zip >> BUILD.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-app-unverified-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/native-app/
+          if-no-files-found: warn
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -162,20 +176,34 @@ jobs:
 
   native:
     name: native (${{ matrix.os }})
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    # The GUI-native job occupies the ONE GUI test machine (runner label modelplan-mac-gui), and GitHub
+    # schedules that machine FIFO with everything else, so urgent runs (owner test builds, ledger fixes)
+    # waited behind routine ones. It now runs ONLY when this workflow is dispatched with gui=true (the
+    # coordinator's ci-dispatch sends at most one such run at a time, highest priority first) or on a
+    # non-draft PR that carries the gui-ci label; pushes and ordinary pull_request events skip it.
+    # native-headless and the hosted app-smoke job still cover every push and ready PR head.
+    if: ${{ !inputs.mac_ci_probe && ((github.event_name == 'workflow_dispatch' && inputs.gui) || (github.event_name == 'pull_request' && !github.event.pull_request.draft && contains(github.event.pull_request.labels.*.name, 'gui-ci'))) }}
     strategy:
       fail-fast: false
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cce044fa9f2f2b48b21693e2b85744a9b1fe2584
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: native
       os: ${{ matrix.os }}
 
+  native-headless:
+    name: native-headless (macos-latest)
+    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    with:
+      task: native-headless
+      os: macos-latest
+
   runner-probe:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.mac_ci_probe && github.actor_id == '11829005' }}
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@cce044fa9f2f2b48b21693e2b85744a9b1fe2584
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: ${{ inputs.mac_ci_probe_mode == 'gui' && 'gui-probe' || 'probe' }}
       os: macos-latest

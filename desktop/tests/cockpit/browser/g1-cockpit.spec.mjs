@@ -96,6 +96,9 @@ test('CKP-ENG-06 named general windows and the tightest Other quota stay separat
  await expect(col.locator('.qcell[data-row="second"] .qvalue')).toHaveText('65');
  await expect(col.locator('.qcell[data-row="other"] .qvalue')).toHaveText('20');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-more','1');
+ const other=col.locator('.qcell[data-row="other"]'),label=other.locator('.qtxt');
+ await expect(label).toBeVisible();await expect(label).toHaveText('5h·mo reset ? +1');
+ await expect(other).toHaveAccessibleName(/5h·5h · 30% left[\s\S]*5h·mo · 20% left/);
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-kind','extra');
  await expect(col.locator('.qcell[data-row="other"]')).toHaveAttribute('data-tag',/mo/i);
 });
@@ -296,7 +299,7 @@ test('CKP-STRIP-10 running session cursors blink, stop when hidden, and stay sta
  const style=await cursors.first().evaluate(e=>{const s=getComputedStyle(e);return {width:s.width,height:s.height,duration:s.animationDuration,iterations:s.animationIterationCount,name:s.animationName};});expect(style.width).toBe('6px');expect(style.height).toBe('11px');expect(style.duration).toBe('1.06s');expect(style.iterations).toBe('infinite');expect(style.name).not.toBe('none');
  expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);expect(await cursors.first().evaluate(e=>getComputedStyle(e).animationName)).toBe('none');
  expect(await receive(send('appearance',appearance))).toBe(true);await page.emulateMedia({reducedMotion:'reduce'});expect(await cursors.first().evaluate(e=>getComputedStyle(e).animationName)).toBe('none');await page.emulateMedia({reducedMotion:'no-preference'});expect(await receive(send('shell',{...shell,profile:'closed'}))).toBe(true);expect(await cursors.first().evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await receive(send('shell',shell))).toBe(true);expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);expect(await cursors.first().evaluate(e=>getComputedStyle(e).animationName)).toBe('none');
- expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);for(const s of data.details.sessions)s.state='observed';expect(await receive(send('display',{data}))).toBe(true);await expect(cursors).toHaveCount(0);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);for(const s of data.details.sessions)s.state='idle';expect(await receive(send('display',{data}))).toBe(true);await expect(cursors).toHaveCount(0);
 });
 
 test('CKP-MOT-03 Reduce Motion keeps running cursors static without shifting controls',async({page})=>{

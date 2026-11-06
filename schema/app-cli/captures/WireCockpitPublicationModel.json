@@ -1,0 +1,16 @@
+{
+  "id": "synthetic-model",
+  "name": "Synthetic model",
+  "developerId": "openai",
+  "recommended": "medium",
+  "efforts": [
+    {
+      "effort": "medium",
+      "label": "Med",
+      "star": true,
+      "ability": 50,
+      "cost": 2,
+      "time": 1.2
+    }
+  ]
+}

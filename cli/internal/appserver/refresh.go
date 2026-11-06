@@ -321,12 +321,17 @@ func (s *RefreshScheduler) run(job refreshJob) {
 				s.decisions.add(s.now(), job.scope, refreshNotAttempted, refreshUnavailable)
 			}
 			s.mu.Lock()
-			if !attempted && currentFence {
-				s.autoNext[job.key] = s.now().Add(10 * time.Minute)
-				s.autoReason[job.key] = wire.MemberRefreshBudget
+			// The worker is serial: a queued job for this key is a newer
+			// replacement, admitted after a credential wait expired. Its
+			// pending guard belongs to it, not to the completing job.
+			if _, replaced := s.scheduled[job.key]; !replaced {
+				if !attempted && currentFence {
+					s.autoNext[job.key] = s.now().Add(10 * time.Minute)
+					s.autoReason[job.key] = wire.MemberRefreshBudget
+				}
+				delete(s.pending, job.key)
+				delete(s.credentialWait, job.key)
 			}
-			delete(s.pending, job.key)
-			delete(s.credentialWait, job.key)
 			s.mu.Unlock()
 		}
 		if s.ctx.Err() == nil && s.config.Changed != nil {

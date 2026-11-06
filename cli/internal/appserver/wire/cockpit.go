@@ -32,6 +32,7 @@ type CockpitAccount struct {
 // CockpitDetails is present only for a client that negotiated cockpitDetailsV1.
 // Performance and sessions describe observations on this device only.
 type CockpitDetails struct {
+	Publication     *CockpitPublication          `json:"publication,omitempty" null:"forbidden"`
 	Version         int                          `json:"version" schema:"minimum=1,maximum=1"`
 	Sources         []string                     `json:"sources" schema:"maxItems=4,uniqueItems=true"`
 	Subscriptions   []CockpitSubscriptionDetails `json:"subscriptions" schema:"maxItems=128"`
@@ -40,6 +41,34 @@ type CockpitDetails struct {
 	ResetEvents     []rows.ResetEvent            `json:"resetEvents" schema:"maxItems=64"`
 	Alerts          []CockpitAlert               `json:"alerts" schema:"maxItems=128"`
 }
+
+// CockpitPublication contains only facts from a verified public publication.
+type CockpitPublication struct {
+	ContractVersion int                       `json:"contractVersion" schema:"minimum=1,maximum=1"`
+	PublicationID   string                    `json:"publicationId" schema:"minLength=1,maxLength=128"`
+	PublishedAt     time.Time                 `json:"publishedAt"`
+	Source          string                    `json:"source" schema:"minLength=1,maxLength=32"`
+	Models          []CockpitPublicationModel `json:"models" schema:"maxItems=3"`
+	Truncated       bool                      `json:"truncated"`
+}
+type CockpitPublicationModel struct {
+	ID          string                     `json:"id" schema:"minLength=1,maxLength=128"`
+	Name        string                     `json:"name" schema:"minLength=1,maxLength=200"`
+	DeveloperID string                     `json:"developerId" schema:"minLength=1,maxLength=128"`
+	Recommended string                     `json:"recommended" schema:"maxLength=64"`
+	Efforts     []CockpitPublicationEffort `json:"efforts" schema:"maxItems=32"`
+}
+type CockpitPublicationEffort struct {
+	Effort      string   `json:"effort" schema:"minLength=1,maxLength=64"`
+	Label       string   `json:"label" schema:"maxLength=64"`
+	Star        bool     `json:"star"`
+	Multiplier  *float64 `json:"multiplier,omitempty" null:"forbidden"`
+	Ability     *float64 `json:"ability" null:"coalesced"`
+	Cost        *float64 `json:"cost" null:"coalesced"`
+	Time        *float64 `json:"time" null:"coalesced"`
+	Provisional bool     `json:"provisional,omitempty" null:"forbidden"`
+}
+
 type CockpitSubscriptionDetails struct {
 	ResetCountsTruncated bool                `json:"resetCountsTruncated,omitempty" null:"forbidden"`
 	ResetCards           *rows.ResetCards    `json:"resetCards,omitempty" null:"forbidden"`

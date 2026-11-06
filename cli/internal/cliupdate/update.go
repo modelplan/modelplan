@@ -182,15 +182,11 @@ func Apply(ctx context.Context, executable, home, current, platform string, pin 
 		r.Status = "up_to_date"
 		return r, nil
 	}
-	lock, err := os.OpenFile(target+".update.lock", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		return r, ErrBusy
-	}
+	unlock, err := acquireUpdateLock(target)
 	if err != nil {
-		return r, errors.New("cannot lock CLI for updating")
+		return r, err
 	}
-	lock.Close()
-	defer os.Remove(target + ".update.lock")
+	defer unlock()
 	// The running process can be older than the file another updater installed
 	// while it discovered its pin. Inspect the destination under the shared lock.
 	resolved, err := Target(executable, home)
