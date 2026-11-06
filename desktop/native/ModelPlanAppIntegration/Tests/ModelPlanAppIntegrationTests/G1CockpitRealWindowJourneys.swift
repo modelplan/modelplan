@@ -1006,20 +1006,29 @@ private extension EngineDeliveryContext {
                 let usable = CGRect(x: 0, y: 0, width: 1200, height: screenHeight)
                 let anchor = CGRect(x: 600, y: screenHeight - 10, width: 20, height: 10)
                 page.verificationPlacement = (usable: usable, anchor: anchor)
+                let web = try XCTUnwrap(page.verificationWebView)
+                let expectedProfile = screenHeight == 1100 ? "full" : "compact"
+                let expectedShell = forcedClosed ? "closed" : "open"
                 let deadline = ContinuousClock.now.advanced(by: .seconds(10))
-                var measured: Double?
+                var observed = false
                 while ContinuousClock.now < deadline {
-                    let facts = try await self.geometry(page)
-                    let height = try self.dimension(facts, "root", "height")
-                    if abs(height - Double(expectedRoot)) < 1, page.verificationShellState?.forcedClosed == forcedClosed {
-                        measured = height; break
+                    let value = try await web.evaluateJavaScript("JSON.stringify({profile:document.documentElement.dataset.profile,shell:document.querySelector('#cockpit')?.dataset.shell})")
+                    if let raw = value as? String,
+                       let state = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: String],
+                       state["profile"] == expectedProfile, state["shell"] == expectedShell,
+                       page.verificationShellState?.forcedClosed == forcedClosed {
+                        observed = true; break
                     }
                     try await Task.sleep(for: .milliseconds(20))
                 }
-                let root = try XCTUnwrap(measured, "The page did not reach the expected synthetic screen profile")
+                XCTAssertTrue(observed, "The page did not reach the expected synthetic screen profile")
+                guard observed else { return }
+                let facts = try await self.geometry(page)
+                let root = try self.dimension(facts, "root", "height")
                 let window = try XCTUnwrap(page.window)
                 let contentHeight = try XCTUnwrap(window.contentView?.bounds.height)
-                XCTAssertEqual(Double(contentHeight) - root, 34, accuracy: 1)
+                XCTAssertEqual(root, Double(expectedRoot), accuracy: 1, "The page root must match the native layout")
+                XCTAssertEqual(Double(contentHeight) - root, 34, accuracy: 1, "The base reserve must remain 34 points")
                 XCTAssertEqual(window.frame.maxY, anchor.minY - 6, accuracy: 1)
                 XCTAssertEqual(page.verificationShellState?.forcedClosed, forcedClosed)
             }
