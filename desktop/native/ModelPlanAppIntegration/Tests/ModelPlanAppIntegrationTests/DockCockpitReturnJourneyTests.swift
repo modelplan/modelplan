@@ -26,6 +26,10 @@ import ModelPlanWire
         try await exercise(native: false)
     }
 
+    func testD22NormalCockpitCloseRestoresLeftAndBottomSurfaces() async throws {
+        try await exercise(native: false, edges: [.left, .bottom])
+    }
+
     func testD22NativeDockReturnsFromCockpit() async throws {
         try await exercise(native: true)
     }
@@ -36,7 +40,8 @@ import ModelPlanWire
     }
     #endif
 
-    private func exercise(native: Bool, physicalPointer: Bool = false) async throws {
+    private func exercise(native: Bool, physicalPointer: Bool = false,
+                          edges: [SettingsDockEdge] = [.right]) async throws {
         let binary = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary))
         let display: DockDisplayArea
@@ -134,61 +139,96 @@ import ModelPlanWire
             }
             XCTAssertEqual(dock.edgePresentation?.state, expected)
         }
-        for size in SettingsSize.allCases {
-            _ = try await editor.commit(SettingsB20Edit.size(size))
-            let placement = try XCTUnwrap(dock.edgePresentation?.placement)
-            XCTAssertEqual(placement.edge, .right)
-            let wake = CGPoint(x: placement.wakeFrame.maxX - 19, y: placement.wakeFrame.midY)
-            let beyondDepth = CGPoint(x: wake.x - 2, y: wake.y)
-            let beyondEnd = CGPoint(x: wake.x, y: placement.wakeFrame.minY - 19)
+        let settingsURL = root.appendingPathComponent("ModelPlan/settings.json")
+        for preference in edges {
             move(to: outside)
-            try await waitForSurface(.sliver)
-            for point in [beyondDepth, beyondEnd] {
-                move(to: point)
-                // Give each outside point more than the default 150 ms reveal dwell.
-                try await Task.sleep(for: .milliseconds(225))
-                XCTAssertEqual(dock.edgePresentation?.state, .sliver, "\(size) at \(point)")
+            _ = try await editor.commit(SettingsB21Edit.dockEdge(preference))
+            let edge: DockEdge = switch preference {
+            case .left: .left
+            case .right: .right
+            case .bottom: .bottom
             }
-            move(to: wake)
-            try await waitForSurface(.expanded)
-            try await Task.sleep(for: .milliseconds(550))
-            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The wake band stays inside after reveal")
-            move(to: outside)
-            try await Task.sleep(for: .milliseconds(400))
-            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The first absence is shorter than the hide grace")
-            move(to: wake)
-            try await Task.sleep(for: .milliseconds(150))
-            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
-            move(to: outside)
-            try await Task.sleep(for: .milliseconds(550))
-            XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Continuous absence hides after the grace period")
-            let panelOnly = try XCTUnwrap(placement.globalHoverRects.map {
-                CGPoint(x: $0.midX, y: $0.midY)
-            }.first { display.usableFrame.contains($0) && !placement.wakeFrame.contains($0) })
-            for (point, expected) in [(outside, DockSurfaceState.sliver), (wake, .expanded), (panelOnly, .expanded)] {
-                app.showConsole()
-                XCTAssertNil(dock.edgePresentation?.paintedFrame, "Opening must withdraw the Dock synchronously")
-                if native { XCTAssertFalse(dock.nativePanel?.isVisible == true) }
-                let end = ContinuousClock.now + .seconds(2)
-                while !page.visible && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(5)) }
-                XCTAssertTrue(page.visible)
-                move(to: point)
-                XCTAssertNil(dock.edgePresentation?.paintedFrame, "Pointer movement cannot reveal over an open cockpit")
-                cockpit.requestClose()
-                XCTAssertFalse(page.visible)
-                let restored = try XCTUnwrap(dock.edgePresentation)
-                XCTAssertEqual(restored.state, expected, "\(size) at \(point)")
-                let frame = expected == .expanded ? placement.frame : placement.sliverFrame
-                XCTAssertEqual(restored.paintedFrame, frame)
-                if native {
-                    let panel = try XCTUnwrap(dock.nativePanel)
-                    XCTAssertTrue(panel.isVisible)
-                    XCTAssertEqual(panel.frame.minX, frame.minX, accuracy: 1)
-                    XCTAssertEqual(panel.frame.minY, frame.minY, accuracy: 1)
-                    XCTAssertEqual(panel.frame.width, frame.width, accuracy: 1)
-                    XCTAssertEqual(panel.frame.height, frame.height, accuracy: 1)
+            for size in SettingsSize.allCases {
+                _ = try await editor.commit(SettingsB20Edit.size(size))
+                let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+                XCTAssertEqual(placement.edge, edge)
+                let wakeRect = placement.wakeFrame
+                let wake: CGPoint, beyondDepth: CGPoint, beyondEnd: CGPoint
+                switch edge {
+                case .left:
+                    XCTAssertEqual(wakeRect.width, 20, accuracy: 0.001)
+                    wake = CGPoint(x: wakeRect.minX + 19, y: wakeRect.midY)
+                    beyondDepth = CGPoint(x: wake.x + 2, y: wake.y)
+                    beyondEnd = CGPoint(x: wake.x, y: wakeRect.minY - 19)
+                case .right:
+                    XCTAssertEqual(wakeRect.width, 20, accuracy: 0.001)
+                    wake = CGPoint(x: wakeRect.maxX - 19, y: wakeRect.midY)
+                    beyondDepth = CGPoint(x: wake.x - 2, y: wake.y)
+                    beyondEnd = CGPoint(x: wake.x, y: wakeRect.minY - 19)
+                case .bottom:
+                    XCTAssertEqual(wakeRect.height, 20, accuracy: 0.001)
+                    wake = CGPoint(x: wakeRect.midX, y: wakeRect.minY + 19)
+                    beyondDepth = CGPoint(x: wake.x, y: wake.y + 2)
+                    beyondEnd = CGPoint(x: wakeRect.minX - 19, y: wake.y)
+                case .top:
+                    return XCTFail("Top is not a supported resting edge")
                 }
+                let revision = await store.snapshot().revision
+                let bytes = try Data(contentsOf: settingsURL)
                 move(to: outside)
+                try await waitForSurface(.sliver)
+                for point in [beyondDepth, beyondEnd] {
+                    move(to: point)
+                    // Give each outside point more than the default 150 ms reveal dwell.
+                    try await Task.sleep(for: .milliseconds(225))
+                    XCTAssertEqual(dock.edgePresentation?.state, .sliver, "\(size) at \(point)")
+                }
+                move(to: wake)
+                try await waitForSurface(.expanded)
+                try await Task.sleep(for: .milliseconds(550))
+                XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The wake band stays inside after reveal")
+                move(to: outside)
+                try await Task.sleep(for: .milliseconds(400))
+                XCTAssertEqual(dock.edgePresentation?.state, .expanded, "The first absence is shorter than the hide grace")
+                move(to: wake)
+                try await Task.sleep(for: .milliseconds(150))
+                XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
+                move(to: outside)
+                try await Task.sleep(for: .milliseconds(550))
+                XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Continuous absence hides after the grace period")
+                let panelOnly = try XCTUnwrap(placement.globalHoverRects.map {
+                    CGPoint(x: $0.midX, y: $0.midY)
+                }.first { display.usableFrame.contains($0) && !placement.wakeFrame.contains($0) })
+                for (point, expected) in [(outside, DockSurfaceState.sliver), (wake, .expanded), (panelOnly, .expanded)] {
+                    app.showConsole()
+                    XCTAssertNil(dock.edgePresentation?.paintedFrame, "Opening must withdraw the Dock synchronously")
+                    if native { XCTAssertFalse(dock.nativePanel?.isVisible == true) }
+                    let end = ContinuousClock.now + .seconds(2)
+                    while !page.visible && ContinuousClock.now < end { try await Task.sleep(for: .milliseconds(5)) }
+                    XCTAssertTrue(page.visible)
+                    move(to: point)
+                    XCTAssertNil(dock.edgePresentation?.paintedFrame, "Pointer movement cannot reveal over an open cockpit")
+                    cockpit.requestClose()
+                    XCTAssertFalse(page.visible)
+                    let restored = try XCTUnwrap(dock.edgePresentation)
+                    XCTAssertEqual(restored.state, expected, "\(size) at \(point)")
+                    let frame = expected == .expanded ? placement.frame : placement.sliverFrame
+                    XCTAssertEqual(restored.paintedFrame, frame)
+                    if native {
+                        let panel = try XCTUnwrap(dock.nativePanel)
+                        XCTAssertTrue(panel.isVisible)
+                        XCTAssertEqual(panel.frame.minX, frame.minX, accuracy: 1)
+                        XCTAssertEqual(panel.frame.minY, frame.minY, accuracy: 1)
+                        XCTAssertEqual(panel.frame.width, frame.width, accuracy: 1)
+                        XCTAssertEqual(panel.frame.height, frame.height, accuracy: 1)
+                    }
+                    XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+                    XCTAssertTrue(observedQuota())
+                    move(to: outside)
+                }
+                let after = await store.snapshot()
+                XCTAssertEqual(after.revision, revision)
+                XCTAssertEqual(try Data(contentsOf: settingsURL), bytes)
             }
         }
     }
