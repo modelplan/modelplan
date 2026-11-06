@@ -16,6 +16,8 @@ import ModelPlanSettings
 }
 
 @MainActor final class DockResetRealServerTests: XCTestCase {
+    private enum PulseMode: String { case animated, system, app }
+
     func testD21RealServerPublishesTheFullResetNoticeLifecycle() async throws {
         try await exercise(native: false)
     }
@@ -34,10 +36,18 @@ import ModelPlanSettings
     func testD21PhysicalRevealAndNativeStatusNotice() async throws {
         try await exercise(native: true, physical: true)
     }
+
+    func testV14PhysicalResetNoticePulsesOnceOrStaysStatic() async throws {
+        let mode = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_V14_MOTION"].flatMap(PulseMode.init(rawValue:)),
+            "Set MODELPLAN_DOCK_V14_MOTION to animated, system, or app")
+        XCTAssertEqual(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, mode == .system)
+        guard NSWorkspace.shared.accessibilityDisplayShouldReduceMotion == (mode == .system) else { return }
+        try await exercise(native: true, physical: true, pulseMode: mode)
+    }
     #endif
 
     private func exercise(native: Bool, physical: Bool = false, measureFace: Bool = false,
-                          captureEdge: SettingsDockEdge = .right) async throws {
+                          captureEdge: SettingsDockEdge = .right, pulseMode: PulseMode? = nil) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -124,11 +134,15 @@ import ModelPlanSettings
             try write(json(["publicationId": publicationID, "manifestHash": hash(manifest),
                             "component": "client", "componentHash": component]), to: "state.json")
         }
-        try publish([announced])
+        try publish(pulseMode == nil ? [announced] : [])
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         _ = try await store.update {
-            $0.autoHide = true; $0.motion = .on
+            $0.autoHide = pulseMode == nil
+            switch pulseMode {
+            case .animated, .system: $0.motion = .system
+            case .app, nil: $0.motion = .on
+            }
             $0.notifications.optedIn = true
             $0.notifications.kinds = [.official]
             if physical { $0.onboarding.next() }
@@ -185,7 +199,7 @@ import ModelPlanSettings
                 application.appearance = appearance
                 application.setActivationPolicy(policy)
             }
-            announce("Keep the pointer clear of the widget. Capture the first announced status icon and collapsed strip.")
+            if pulseMode == nil { announce("Keep the pointer clear of the widget. Capture the first announced status icon and collapsed strip.") }
             app.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification, object: application))
             try await wait("The real status item and fresh delivery must be present", timeout: .seconds(12)) {
                 app.nativeJourneyStatusVisible && !app.lifecyclePaused
@@ -223,6 +237,66 @@ import ModelPlanSettings
             return try dock.prepareSliver(size: XCTUnwrap(dock.edgePresentation?.placement?.sliverFrame.size))
         }
         func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
+
+        if let pulseMode {
+            try await wait("The native face must be visible before the first event") {
+                dock.edgePresentation?.state == .expanded && dock.nativePanel?.isVisible == true &&
+                    dock.dockView.presentedReadingsForChecks[member]?.readout == "30%"
+            }
+            XCTAssertNil(face())
+            XCTAssertEqual(dock.dockView.noticePulseCountForChecks, 0)
+            XCTAssertEqual(dock.interactionEnvironment().reducedMotion, pulseMode != .animated)
+
+            func samplePulses() -> Task<(layers: Int, values: [Double], repeats: Float, duration: Double), Never> {
+                Task { @MainActor in
+                    var seen: [CALayer] = []
+                    var values: [Double] = []
+                    var repeats: Float = 0
+                    var duration = 0.0
+                    let end = ContinuousClock.now + .seconds(2)
+                    while !Task.isCancelled && ContinuousClock.now < end {
+                        for layer in dock.dockView.layer?.sublayers ?? [] {
+                            guard let animation = layer.animation(forKey: "dock-notice-first-appearance") as? CAKeyframeAnimation else { continue }
+                            if !seen.contains(where: { $0 === layer }) { seen.append(layer) }
+                            values = (animation.values ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+                            repeats = animation.repeatCount
+                            duration = animation.duration
+                            XCTAssertFalse(animation.autoreverses)
+                        }
+                        try? await Task.sleep(for: .milliseconds(5))
+                    }
+                    return (seen.count, values, repeats, duration)
+                }
+            }
+
+            announce("V-14: Record the visible widget now. A fresh public announcement will be delivered in five seconds.")
+            try await Task.sleep(for: .seconds(5))
+            let firstProbe = samplePulses()
+            defer { firstProbe.cancel() }
+            try publish([announced])
+            try await subscribe()
+            try await waitForEvent(eventID, "announced")
+            let first = await firstProbe.value
+            XCTAssertEqual(first.layers, pulseMode == .animated ? 1 : 0)
+            if pulseMode == .animated {
+                XCTAssertEqual(first.values, [0, 1, 0], "One brightness rise and fall")
+                XCTAssertEqual(first.repeats, 0)
+                XCTAssertEqual(first.duration, 0.45, accuracy: 0.001)
+            }
+            XCTAssertEqual(face()?.shape, .hollow)
+            XCTAssertEqual(dock.dockView.noticePulseCountForChecks, 0)
+
+            announce("V-14: Keep recording. Re-delivery and a language refresh must not pulse again.")
+            let replayProbe = samplePulses()
+            defer { replayProbe.cancel() }
+            try await subscribe()
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+            let replay = await replayProbe.value
+            XCTAssertEqual(replay.layers, 0)
+            XCTAssertEqual(face()?.shape, .hollow)
+            XCTAssertEqual(dock.dockView.presentedReadingsForChecks[member]?.readout, "30%")
+            return
+        }
 
         func measureBlueInk(_ kind: DockNoticeKind) async throws {
             let editor = app.settingsHost.application.editor
