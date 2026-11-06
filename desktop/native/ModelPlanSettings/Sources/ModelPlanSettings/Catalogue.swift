@@ -136,6 +136,19 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
     }
+    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
+    public mutating func observeNotificationDelivery(_ available: Bool) {
+        let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        for key in [SettingKey.reset, .official] {
+            if available { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = notices }
+        }
+    }
+    /// Shown on the opt-in row while macOS has notifications for ModelPlan turned off.
+    public static let notificationsDeniedHint = SettingsText(
+        "Notifications for ModelPlan are off in macOS. Turn them on in System Settings > Notifications > ModelPlan.",
+        "macOS 已关闭 ModelPlan 的通知。请在“系统设置 > 通知 > ModelPlan”中开启。")
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
@@ -280,6 +293,8 @@ public enum SettingsCatalogue {
                     let subtitle: SettingsText
                     if let reason = c.unavailableControls[key] {
                         subtitle = reason
+                    } else if key == .notificationConsent && c.notificationAuthorization == .denied {
+                        subtitle = SettingsPageContext.notificationsDeniedHint
                     } else if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)

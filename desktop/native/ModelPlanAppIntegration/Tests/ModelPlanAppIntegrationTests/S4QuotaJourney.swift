@@ -672,4 +672,114 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
+
+    // MARK: SET-9-18 v1 notification delivery (quota reset and official extra reset)
+
+    @MainActor private final class FixedNotificationAuthorization:SettingsNotificationAuthorizationServing {
+        let value:NotificationAuthorization
+        init(_ value:NotificationAuthorization) { self.value=value }
+        func authorization() async -> NotificationAuthorization { value }
+        func requestAuthorization() async -> NotificationAuthorization { value }
+    }
+    /// A current Codex window read twice: the second reading reports the next reset instant after
+    /// the first one passed. "Quota reset" on → delivered once per episode; off → not delivered.
+    static func quotaResetDelivery(capture:URL,kindOn:Bool) async throws {
+        var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
+        var account=(row["accounts"] as! [[String:Any]])[0],window=(account["windows"] as! [[String:Any]])[0]
+        row["state"]="fresh";row["consent"]="allowed";row["surfaces"]=["dock","menu"];row["expiresAt"]="2099-01-01T00:00:00Z"
+        account["subscriptionRef"]="0123456789abcdef";account["valueState"]="current";account["freshUntil"]="2099-01-01T00:00:00Z"
+        window["id"]="five-hour";window["role"]="session";window["limitKey"]="five_hour";window["poolKey"]="main"
+        window["current"]=true;window["remainingPercent"]=10;window["validUntil"]="2099-01-01T00:00:00Z"
+        window.removeValue(forKey:"modelScope");projection.removeValue(forKey:"resetEvents")
+        let formatter=ISO8601DateFormatter(),start=Date()
+        func rows(observed:Date,resets:Date,remaining:Double) throws -> WireRowsSnapshot {
+            window["observedAt"]=formatter.string(from:observed);window["resetsAt"]=formatter.string(from:resets);window["remainingPercent"]=remaining
+            account["observedAt"]=formatter.string(from:observed)
+            account["windows"]=[window];row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
+            return try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
+        }
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("set918-quota-reset-"+UUID().uuidString)
+        defer { removeScratch(directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true; if !kindOn { $0.notifications.kinds.remove(.reset) } }
+        let first=try rows(observed:start.addingTimeInterval(-7200),resets:start.addingTimeInterval(-3600),remaining:10)
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:first)},activateSettings:{})
+        entry.composition.currentDate = { start }
+        var deliveries:[String]=[]
+        entry.composition.setNotificationDelivery { kind,episode in deliveries.append(kind.rawValue+"|"+episode) }
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        guard let client=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        let editor=entry.settingsHost.application.editor
+        let settingsRows=try SettingsCatalogue.rows(preferences:try XCTUnwrapOrThrow(editor.snapshot).preferences,context:editor.context)
+        for key in [SettingKey.reset,.official] {
+            try require(settingsRows.first { $0.key == key }?.availability == .available,"SET-9-18: \(key) must be usable once delivery is wired")
+        }
+        try await Task.sleep(for:.milliseconds(50))
+        try require(deliveries.isEmpty,"the first reading of a window must not notify")
+        let second=try rows(observed:start.addingTimeInterval(-60),resets:start.addingTimeInterval(4*3600),remaining:100)
+        try await client.replaceRows(second)
+        if kindOn {
+            for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+            try require(deliveries.count == 1 && deliveries[0].hasPrefix("reset|quota:five-hour:"),"a read reset must deliver one Quota reset notice: \(deliveries)")
+        } else {
+            try await Task.sleep(for:.milliseconds(100))
+            try require(deliveries.isEmpty,"Quota reset off must not deliver: \(deliveries)")
+        }
+        try await client.replaceRows(second);try await Task.sleep(for:.milliseconds(50))
+        try require(deliveries.count == (kindOn ? 1:0),"a repeated reading must not deliver again: \(deliveries)")
+        await entry.composition.stop()
+    }
+    /// A public reset event is the "Official extra reset" kind: on → one delivery, off → none.
+    static func officialResetDelivery(kindOn:Bool) async throws {
+        let fixture=URL(fileURLWithPath:#filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/proposals/fixtures/app-journey-plan-scoped.json").standardizedFileURL
+        let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
+        var data=(document["result"] as! [String:Any])["data"] as! [String:Any],projection=data["projection"] as! [String:Any]
+        var events=projection["resetEvents"] as! [[String:Any]]
+        let now=Date(),formatter=ISO8601DateFormatter()
+        events[0]["publishedAt"]=formatter.string(from:now.addingTimeInterval(-60))
+        events[0]["expiresAt"]=formatter.string(from:now.addingTimeInterval(3600))
+        events[0]["schedule"]=["precision":"window","from":formatter.string(from:now),"through":formatter.string(from:now.addingTimeInterval(3600))]
+        projection["resetEvents"]=events;data["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("set918-official-"+UUID().uuidString)
+        defer { removeScratch(directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true; if !kindOn { $0.notifications.kinds.remove(.official) } }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,engine in S4RowsClient(store:engine,rows:rows)},activateSettings:{})
+        entry.composition.currentDate = { now }
+        var deliveries:[String]=[]
+        entry.composition.setNotificationDelivery { kind,episode in deliveries.append(kind.rawValue+"|"+episode) }
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        let id=(events[0]["id"] as! String)+":announced"
+        if kindOn {
+            for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+            try require(deliveries == ["official|"+id],"a public reset event must deliver one Official extra reset notice: \(deliveries)")
+        } else {
+            try await Task.sleep(for:.milliseconds(100))
+            try require(deliveries.isEmpty,"Official extra reset off must not deliver: \(deliveries)")
+        }
+        await entry.composition.stop()
+    }
+    /// macOS turned notifications off for ModelPlan: the opt-in row shows the System Settings hint.
+    static func deniedAuthorizationHint() async throws {
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("set918-denied-"+UUID().uuidString)
+        defer { removeScratch(directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,activateSettings:{})
+        entry.notificationAuthorizationService=FixedNotificationAuthorization(.denied)
+        await entry.prepare()
+        let editor=entry.settingsHost.application.editor
+        let rows=try SettingsCatalogue.rows(preferences:try XCTUnwrapOrThrow(editor.snapshot).preferences,context:editor.context)
+        let consent=rows.first { $0.key == .notificationConsent }
+        try require(consent?.subtitle == SettingsPageContext.notificationsDeniedHint,"denied authorization must show the System Settings hint: \(String(describing:consent?.subtitle))")
+        await entry.composition.stop()
+    }
+    private static func XCTUnwrapOrThrow<T>(_ value:T?) throws -> T {
+        guard let value else { throw Failure(description:"settings snapshot missing") }
+        return value
+    }
 }
