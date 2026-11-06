@@ -1,0 +1,126 @@
+name: integration-candidate
+# Batch rehearsal on a runner: merge the listed PR heads onto main in order, then package the
+# same native app as the desktop app-smoke job and upload it with a BUILD.txt manifest
+# (main SHA + every PR head). Dispatch-only by design: it never starts for push or
+# pull_request, so the #579 concurrency and draft rules do not apply; the run_id group keeps
+# concurrent candidate runs independent instead of queueing them behind each other.
+on:
+  workflow_dispatch:
+    inputs:
+      prs:
+        description: PR numbers to integrate, space-separated, in merge order
+        required: true
+        type: string
+      expected_heads:
+        description: Full head SHA for each PR, same order as prs
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: integration-candidate-${{ github.run_id }}
+jobs:
+  batch:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Integrate the listed PR heads onto main in order
+        env:
+          PRS: ${{ inputs.prs }}
+          HEADS: ${{ inputs.expected_heads }}
+        run: |
+          set -e
+          read -ra prs <<< "$PRS"
+          read -ra heads <<< "$HEADS"
+          [ "${#prs[@]}" -ge 1 ] || { echo "no PRs given"; exit 1; }
+          [ "${#prs[@]}" -eq "${#heads[@]}" ] || { echo "prs and expected_heads counts differ"; exit 1; }
+          git config user.name "integration-candidate"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -B integration-candidate origin/main
+          main_sha="$(git rev-parse HEAD)"
+          printf 'MAIN_SHA=%s\n' "$main_sha" >> "$GITHUB_ENV"
+          {
+            printf 'mainSHA=%s\n' "$main_sha"
+            for i in "${!prs[@]}"; do
+              pr=${prs[$i]}; want=${heads[$i]}
+              printf 'pr%s=%s\n' "$pr" "$want"
+            done
+          } > "$RUNNER_TEMP/batch-manifest.txt"
+          for i in "${!prs[@]}"; do
+            pr=${prs[$i]}; want=${heads[$i]}
+            echo "$pr" | grep -Eq '^[0-9]+$' || { echo "bad PR number: $pr"; exit 1; }
+            echo "$want" | grep -Eq '^[0-9a-f]{40}$' || { echo "bad head SHA for #$pr: $want"; exit 1; }
+            git fetch origin "pull/$pr/head"
+            got="$(git rev-parse FETCH_HEAD)"
+            [ "$got" = "$want" ] || { echo "head mismatch for #$pr: expected $want, got $got"; exit 1; }
+            git merge --no-ff --no-edit "$want" || { echo "merge conflict integrating #$pr at $want"; exit 1; }
+            echo "integrated #$pr at $want"
+          done
+          echo "batch tree: $(git rev-parse HEAD)"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Select newest installed Xcode for the release package
+        run: |
+          python3 - <<'PYCODE'
+          import os, plistlib, re
+          from pathlib import Path
+          candidates = []
+          for app in Path('/Applications').glob('Xcode*.app'):
+              version = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+              candidates.append((tuple(map(int, re.findall(r'\d+', version))), app))
+          if not candidates:
+              raise SystemExit('No installed Xcode')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'DEVELOPER_DIR={max(candidates)[1]}/Contents/Developer\n')
+          PYCODE
+      - name: Check smoke assertions and release identity negative controls
+        run: python3 -m unittest discover -s desktop/native/tools/app-smoke -p 'test_*.py' -v
+      - name: Fetch the approved prebuilt credential helper
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
+      - name: Fetch the current plugin CLI pin for the unverified smoke build
+        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
+      - name: Package the actual universal Community app with unverified consent identity
+        run: bash desktop/native/tools/package-neutral.sh "$RUNNER_TEMP/smoke-cli-archives" "$RUNNER_TEMP/smoke-neutral-build" --unverified
+      - name: Assert packaged production wiring (known baseline failures remain red)
+        run: python3 desktop/native/tools/app-smoke/check-app-smoke.py "$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app" "$RUNNER_TEMP/app-smoke-report" --expect-unverified
+      - name: Zip the integrated batch app with the batch manifest
+        if: always()
+        env:
+          PRS: ${{ inputs.prs }}
+        run: |
+          app="$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
+          [ -d "$app" ] || { echo "no packaged native app"; exit 0; }
+          : "${MAIN_SHA:=unknown}"
+          short="${MAIN_SHA:0:7}"
+          mkdir -p "$RUNNER_TEMP/native-app-batch"
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app-batch/ModelPlan-Community-native.zip"
+          cp "$RUNNER_TEMP/batch-manifest.txt" "$RUNNER_TEMP/native-app-batch/BUILD.txt"
+          read -ra prs <<< "$PRS"
+          for pr in "${prs[@]}"; do
+            grep -q "^pr$pr=" "$RUNNER_TEMP/native-app-batch/BUILD.txt" || printf 'pr%s=unknown\n' "$pr" >> "$RUNNER_TEMP/native-app-batch/BUILD.txt"
+          done
+          (cd "$RUNNER_TEMP/native-app-batch" && shasum -a 256 ModelPlan-Community-native.zip >> BUILD.txt)
+          echo "ARTIFACT_NAME=native-app-batch-$short-$MAIN_SHA" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.ARTIFACT_NAME || 'native-app-batch-unknown' }}
+          path: ${{ runner.temp }}/native-app-batch/
+          if-no-files-found: warn
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-candidate-smoke-report
+          path: ${{ runner.temp }}/app-smoke-report/
+          if-no-files-found: warn
+          retention-days: 3
