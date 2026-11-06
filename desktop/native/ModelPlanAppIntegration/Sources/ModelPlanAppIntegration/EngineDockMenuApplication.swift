@@ -112,7 +112,11 @@ import ModelPlanMenuVerification
         }
         let application=settings
         composition.dock.requestHideDock = { [weak application] in
-            Task { _ = try? await application?.editor.commit(SettingsB21Edit.showDock(false)) }
+            // Same bounded path as Show: a hint-ledger write must not silently drop Hide.
+            Task { @MainActor in
+                guard let editor = application?.editor else { return }
+                _ = await ShowQuotaWidgetRequest.setVisible(false, editor: editor)
+            }
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -550,12 +554,11 @@ import ModelPlanMenuVerification
     }
     private func showDock() {
         guard ShowQuotaWidgetRequest.availability(paused: terminating,
-                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready,
-              let revision = settings.editor.snapshot?.revision else { return }
+                loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
         showRequestInFlight = true; showFeedback = nil; renderMenu()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor, expectedRevision: revision)
+            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor)
             self.showRequestInFlight = false
             guard !self.terminating else { return }
             let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
