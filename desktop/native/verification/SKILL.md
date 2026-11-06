@@ -223,6 +223,8 @@ M0 owns the verification skill; changes are reviewed by the coordinator (Claude)
 
 For named status-menu actions and native arrival correlation, follow [StatusMenu/README.md](StatusMenu/README.md) before driving the item.
 
+Batch GUI runs (verification plan v2): `bin/preflight.py` (PF-01..PF-12, fail closed) and `bin/verify-run.py`, which chains the section 1 sequence per segment from a batch manifest and per-ID step files in `scenarios/`. Contract, step-file format and outputs: [VERIFY-RUN.md](VERIFY-RUN.md).
+
 Non-GUI qualification:
 
 ```
