@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, monthlyUnknown: Bool? = nil, durationKnown: Bool? = nil, generalScopedFixture: Bool = false, thresholdFixture: Bool = false, criticalAlert: Bool = false, creditBalance: Double? = nil, todaySourceCount: Int? = nil, reduceMotion: Bool = false, runningSession: Bool = false, withoutDetails: Bool = false, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -172,6 +172,7 @@ private extension EngineDeliveryContext {
             details["sessionCoverage"] = "local-last-seen"
             fixture["details"] = details
         }
+        if withoutDetails { fixture.removeValue(forKey: "details") }
         let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: fixture))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
         _ = try await settings.update { $0.language = language; if reduceMotion { $0.motion = .on } }
@@ -631,6 +632,76 @@ private extension EngineDeliveryContext {
                     XCTAssertEqual(observed["cursorAnimation"] as? String, "none")
                     XCTAssertEqual(page.g1OpenAnimationDurationForChecks, 0)
                 } else { baseline = (width, height) }
+            }
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_SHELL_22_missingDetailsStayUnavailableThroughNormalEntry() async throws {
+        try await withLivePage(withoutDetails: true) { _, _, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const root = document.querySelector('#cockpit');
+              const member = root?.querySelector('.eng-keys .ek[data-sub]');
+              const tape = root?.querySelector('.ck-tape');
+              if (!root || !member || !tape || tape.dataset.sessionsAvailable === undefined) return null;
+              return JSON.stringify({details:root.dataset.detailsAvailable,
+                sessions:tape.dataset.sessionsAvailable,
+                observedSessions:tape.querySelectorAll('.t-observed').length,
+                emptyFaders:root.querySelectorAll('.dk-fad .fd-ch.empty').length,
+                liveFaders:root.querySelectorAll('.dk-fad .fd-ch:not(.empty)').length});
+            })()
+            """
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var facts: [String: Any]?
+            while ContinuousClock.now < deadline {
+                if let raw = try await web.evaluateJavaScript(script) as? String,
+                   let object = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any] {
+                    facts = object
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            let observed = try XCTUnwrap(facts, "The normal entry did not render the synthetic host projection")
+            XCTAssertEqual(observed["details"] as? String, "false")
+            XCTAssertEqual(observed["sessions"] as? String, "false")
+            XCTAssertEqual((observed["observedSessions"] as? NSNumber)?.intValue, 0)
+            XCTAssertEqual((observed["emptyFaders"] as? NSNumber)?.intValue, 3)
+            XCTAssertEqual((observed["liveFaders"] as? NSNumber)?.intValue, 0)
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_SHELL_03_headerKeysShareSpecifiedGeometry() async throws {
+        try await withLivePage { _, _, page in
+            let web = try XCTUnwrap(page.verificationWebView)
+            let script = """
+            (() => {
+              const keys = ['[data-settings]', '[data-detach]', '[data-close]'].map(s => document.querySelector(s));
+              if (keys.some(key => !key)) return null;
+              return JSON.stringify(keys.map(key => { const r=key.getBoundingClientRect();
+                return {x:r.x, width:r.width, height:r.height, radius:parseFloat(getComputedStyle(key).borderTopLeftRadius)}; }));
+            })()
+            """
+            let result = try await web.evaluateJavaScript(script)
+            let raw = try XCTUnwrap(result as? String)
+            let keys = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [[String: NSNumber]])
+            XCTAssertEqual(keys.count, 3)
+            guard keys.count == 3 else { return }
+            let xs = try keys.map { try XCTUnwrap($0["x"]?.doubleValue) }
+            XCTAssertLessThan(xs[0], xs[1])
+            XCTAssertLessThan(xs[1], xs[2])
+            XCTExpectFailure("CKP-SHELL-03: the community header uses wider keys than the frozen 32px geometry") {
+                for key in keys {
+                    XCTAssertEqual(key["width"]?.doubleValue ?? -1, 32, accuracy: 1)
+                    XCTAssertEqual(key["height"]?.doubleValue ?? -1, 32, accuracy: 1)
+                    XCTAssertEqual(key["radius"]?.doubleValue ?? -1, 4, accuracy: 1)
+                }
+                XCTAssertEqual(xs[1] - xs[0], 42, accuracy: 1)
+                XCTAssertEqual(xs[2] - xs[1], 42, accuracy: 1)
             }
         }
     }
