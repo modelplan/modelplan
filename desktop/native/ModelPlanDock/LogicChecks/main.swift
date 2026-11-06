@@ -519,10 +519,15 @@ do {
         try expect(key.position==1 && key.proposed.orderedIDs(in:ids)==["b","a","c"],"Option-arrow moves one canonical place")
     }
     try test("B08 menu:optional Help and action-bound separators; acknowledge scopes stay distinct"){
-        let old=DockMenuModel.entries(hasHelp:false),full=DockMenuModel.entries(hasHelp:true)
-        try expect(old.count==7 && full.count==8,"callback omission preserves original menu")
-        try expect(full.map(\.command)==[.website,.methodology,.privacy,.checkForUpdates,.help,.settings,.about,.quit],"Help immediately above Settings")
-        try expect(full.filter(\.separatorBefore).map(\.command)==[.checkForUpdates,.quit] && old.filter(\.separatorBefore).count==2,"groups are not positional indices")
+        let withoutHelp = DockMenuModel.entries(hasHelp: false)
+        let withHelp = DockMenuModel.entries(hasHelp: true)
+        try expect(withoutHelp.map(\.command) == [.website, .methodology, .privacy, .settings, .about, .quit],
+                   "v1 omits updates even with legacy labels and no Help")
+        try expect(withHelp.map(\.command) == [.website, .methodology, .privacy, .help, .settings, .about, .quit],
+                   "Help immediately above Settings")
+        try expect(withHelp.filter(\.separatorBefore).map(\.command) == [.help, .quit] &&
+                   withoutHelp.filter(\.separatorBefore).map(\.command) == [.settings, .quit],
+                   "public links, app actions and Quit keep separate groups")
         var attention=DockAttentionState(),signal=fresh("a",.critical);signal.reset=reset()
         try attention.acknowledge(.cockpitOpening,signals:[signal],at:now)
         let afterCockpit=try attention.project([signal],stationBySubscription:["a":"a"],at:now)
