@@ -924,8 +924,9 @@ actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral ink.
-        let readings = try Self.rows(weekly: 75, fiveHour: 80, secondWeekly: 55)
+        // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral
+        // ink, with ink-heavy digits ("58%") like the original 42.5 % fixture had.
+        let readings = try Self.rows(weekly: 75, fiveHour: 58, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
@@ -991,7 +992,9 @@ actor EntrySyntheticClient: EngineClient {
             XCTAssertNotEqual(try crop(nozzleFrame, origin: viewportOrigin), restingNozzle,
                               "Hover must transform pixels inside the registered nozzle, even with the viewport shift removed", line: line)
             let hoverInk = inkMask(try crop(station.readout, origin: viewportOrigin))
-            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(1, restingInk.count / 50),
+            // A moved readout changes most of its ink; two edge pixels are anti-aliasing next to
+            // the magnified neighbour (strong mode).
+            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(2, restingInk.count / 50),
                                      "The painted readout must stay fixed in the skin coordinate space", line: line)
         }
         XCTAssertGreaterThan(view.bounds.width, skin.bounds.width, "The view reserves hover space beyond the approved skin")
