@@ -24,7 +24,7 @@ class Releases(unittest.TestCase):
         self.now = time.time()
         self.ledger = book.Ledger(self.root / 'ledger.jsonl', clock=lambda: self.now)
         self.ident = self.ledger.request('M2', 'U11a', ['cold'])['id']
-        self.lease = self.ledger.start(self.ident, 'M2', 'run', 'epoch')
+        self.lease = self.ledger.start(self.ident, 'M2', 'run', 'epoch', host='dev-mac')
         self.output = self.root / 'release.json'
 
     def issue(self, **fields):
@@ -58,17 +58,17 @@ class Releases(unittest.TestCase):
         self.now = self.lease['expiresAt']
         with self.assertRaises(ValueError):self.issue()
         self.now = self.lease['notBefore']
-        self.ledger.finish(self.ident, 'M2', 'run', 'epoch', cleaned=True)
+        self.ledger.finish(self.ident, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         with self.assertRaises(ValueError):self.issue()
         self.assertFalse(self.output.exists())
 
     def test_cli_requires_explicit_approval_and_writes_real_receipt(self):
         path = self.root / 'cli-ledger.jsonl'
         book_command = [sys.executable, str(BIN / 'book.py'), '--ledger', str(path)]
-        request = subprocess.run(book_command + ['request', '--lane', 'M1', '--unit', 'U11a', '--scenario', 'cold'],
+        request = subprocess.run(book_command + ['request', '--lane', 'M1', '--unit', 'U11a', '--scenario', 'cold', '--host', 'dev-mac'],
                                  capture_output=True, text=True, check=True)
         ident = json.loads(request.stdout)['id']
-        start = subprocess.run(book_command + ['start', '--id', ident, '--lane', 'M1', '--run-id', 'cli-run', '--epoch', 'cli-epoch'],
+        start = subprocess.run(book_command + ['start', '--id', ident, '--lane', 'M1', '--run-id', 'cli-run', '--epoch', 'cli-epoch', '--host', 'dev-mac'],
                                capture_output=True, text=True, check=True)
         lease_path = self.root / 'lease.json'; lease_path.write_text(start.stdout)
         command = [sys.executable, str(BIN / 'release.py'), '--ledger', str(path),
@@ -104,5 +104,5 @@ class Releases(unittest.TestCase):
         lease_path.write_text(json.dumps({k: v for k, v in self.lease.items() if k != 'guardian'}))
         with self.assertRaisesRegex(ValueError, 'guardian not running'):admission.load_and_admit(c)
         lease_path.write_text(json.dumps(self.lease))
-        self.ledger.finish(self.ident, 'M2', 'run', 'epoch', cleaned=True)
+        self.ledger.finish(self.ident, 'M2', 'run', 'epoch', cleaned=True, host='dev-mac')
         with self.assertRaisesRegex(ValueError, 'head booking'):admission.load_and_admit(c)

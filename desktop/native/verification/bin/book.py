@@ -17,6 +17,9 @@ import uuid
 MAX_SECONDS = 20 * 60
 GRACE_SECONDS = 120
 PROCESS_TOKEN = uuid.uuid4().hex
+# Host roles mirror release.host_role/admission (dev-mac is M1, macci is V1/MacTest). Bookings
+# queue per host: M1 never waits behind V1. Keep the tuple in sync with release.HOSTS.
+HOSTS = ('dev-mac', 'macci')
 
 
 def label(value, name):
@@ -106,8 +109,13 @@ class Ledger:
                 if ident in bookings:
                     raise ValueError('duplicate booking')
                 label(event['lane'], 'lane'); label(event['unit'], 'unit')
+                # Ledgers written before per-host queues have no host field; their bookings
+                # stay on the default dev-mac (M1) queue.
+                host = label(event.get('host') or 'dev-mac', 'host')
+                if host not in HOSTS:
+                    raise ValueError(f'host must be one of {", ".join(HOSTS)}')
                 Ledger.check_request(event['scenarios'], event['maxSeconds'])
-                bookings[ident] = dict(event, state='queued')
+                bookings[ident] = dict(event, state='queued', host=host)
                 continue
             booking = bookings[ident]
             if kind == 'withdraw':
@@ -115,7 +123,8 @@ class Ledger:
                 booking.update(state='withdrawn', endedAt=event['at'], reason=event['reason'],
                                withdrawnBy='coordinator' if event['coordinator'] else event['lane'])
                 continue
-            head = next((b for b in bookings.values() if b['state'] in ('queued', 'started')), None)
+            head = next((b for b in bookings.values() if b['state'] in ('queued', 'started')
+                         and b.get('host', 'dev-mac') == booking.get('host', 'dev-mac')), None)
             if booking is not head:
                 raise ValueError('transition outside queue head')
             if kind == 'start' and booking['state'] == 'queued':
@@ -151,8 +160,14 @@ class Ledger:
         return event
 
     @staticmethod
-    def head(bookings):
-        return next((b for b in bookings.values() if b['state'] in ('queued', 'started')), None)
+    def head(bookings, host=None):
+        """The oldest active booking overall, or of one host queue. Each host role
+        (dev-mac is M1, macci is V1/MacTest) has its own head: a booking on the
+        other machine never blocks this one."""
+        if host is not None and host not in HOSTS:
+            raise ValueError(f'host must be one of {", ".join(HOSTS)}')
+        return next((b for b in bookings.values() if b['state'] in ('queued', 'started')
+                     and (host is None or b.get('host', 'dev-mac') == host)), None)
 
     @staticmethod
     def check_withdraw(booking, lane, coordinator, reason):
@@ -169,42 +184,52 @@ class Ledger:
                 or booking['state'] != 'started' or booking['runID'] != run_id or booking['epoch'] != epoch):
             raise ValueError('caller does not hold the started head booking')
 
-    def request(self, lane, unit, scenarios, seconds=MAX_SECONDS):
-        label(lane, 'lane'); label(unit, 'unit'); self.check_request(scenarios, seconds)
+    def request(self, lane, unit, scenarios, seconds=MAX_SECONDS, *, host):
+        label(lane, 'lane'); label(unit, 'unit'); label(host, 'host')
+        if host not in HOSTS:
+            raise ValueError(f'host must be one of {", ".join(HOSTS)}')
+        self.check_request(scenarios, seconds)
         with self.locked(lane=lane, unit=unit) as (file, events, bookings, now):
             return self.append(file, events, now, 'request', uuid.uuid4().hex,
-                               lane=lane, unit=unit, scenarios=scenarios, maxSeconds=seconds)
+                               lane=lane, unit=unit, scenarios=scenarios, maxSeconds=seconds, host=host)
 
-    def status(self):
+    def status(self, host=None):
         with self.locked() as (_, events, bookings, now):
-            head = self.head(bookings)
+            head = self.head(bookings, host)
+            active = [b for b in bookings.values() if b['state'] in ('queued', 'started')
+                      and (host is None or b.get('host', 'dev-mac') == host)]
             return dict(at=now, events=len(events), head=head,
-                        queue=[b for b in bookings.values() if b['state'] in ('queued', 'started')],
+                        queue=active,
                         history=[b for b in bookings.values() if b['state'] in ('finished', 'expired', 'withdrawn')],
                         expiryEligible=bool(head and head['state'] == 'started' and now >= head['deadline'] + GRACE_SECONDS))
 
-    def start(self, ident, lane, run_id, epoch):
-        label(run_id, 'runID'); label(epoch, 'epoch')
+    def start(self, ident, lane, run_id, epoch, *, host):
+        label(run_id, 'runID'); label(epoch, 'epoch'); label(host, 'host')
         with self.locked(lane=lane) as (file, events, bookings, now):
-            head = self.head(bookings)
+            head = self.head(bookings, host)
             if not head or head['id'] != ident or head['lane'] != lane or head['state'] != 'queued':
-                raise ValueError('only the queued head may start; stop and wait for handoff, do not busy-retry')
+                raise ValueError('only the queued head of this host may start; stop and wait for handoff, do not busy-retry')
             return self.append(file, events, now, 'start', ident, runID=run_id, epoch=epoch,
                                notBefore=now, expiresAt=now + head['maxSeconds'],
                                exclusive=True, ownerPreempted=False, guardianHeartbeatAt=now)
 
-    def finish(self, ident, lane, run_id, epoch, *, cleaned=False):
+    def finish(self, ident, lane, run_id, epoch, *, host, cleaned=False):
         if cleaned is not True:
             raise ValueError('finish requires an explicit cleanup confirmation')
         with self.locked(lane=lane) as (file, events, bookings, now):
-            self.owner(self.head(bookings), ident, lane, run_id, epoch)
+            head = self.head(bookings, host)
+            self.owner(head, ident, lane, run_id, epoch)
             return self.append(file, events, now, 'finish', ident, receipt='end + cleaned', cleaned=True)
 
     def expire(self):
         with self.locked() as (file, events, bookings, now):
-            head = self.head(bookings)
-            if not head or head['state'] != 'started' or now < head['deadline'] + GRACE_SECONDS:
+            # One started booking per host can exist, so several hosts may hold stale
+            # bookings independently; expire the oldest stale one and let callers repeat.
+            stale = sorted((b for b in bookings.values() if b['state'] == 'started'
+                            and now >= b['deadline'] + GRACE_SECONDS), key=lambda b: b['deadline'])
+            if not stale:
                 return dict(event='no-expiry', at=now)
+            head = stale[0]
             return self.append(file, events, now, 'expire', head['id'], cleaned=None,
                                reason='max duration plus grace elapsed; cleanup unconfirmed')
 
@@ -216,7 +241,7 @@ class Ledger:
 
     def admit(self, booking, lease, required_seconds):
         with self.locked(lane=booking.get('lane'), unit=booking.get('unit')) as (_, events, bookings, now):
-            head = self.head(bookings)
+            head = self.head(bookings, booking.get('host'))
             self.owner(head, booking['id'], booking['lane'], lease['runID'], lease['epoch'])
             if booking['unit'] != head['unit'] or booking['scenario'] not in head['scenarios']:
                 raise ValueError('unit/scenario is outside the head booking')
@@ -248,10 +273,14 @@ def main(argv=None):
     request.add_argument('--lane', required=True); request.add_argument('--unit', required=True)
     request.add_argument('--scenario', action='append', required=True, dest='scenarios')
     request.add_argument('--minutes', type=int, choices=range(1, 21), default=20)
+    request.add_argument('--host', required=True, choices=HOSTS,
+                         help='host role whose queue this booking joins (dev-mac is M1, macci is V1/MacTest)')
     for command in ('start', 'finish'):
         action = commands.add_parser(command)
         for flag in ('id', 'lane', 'run-id', 'epoch'):
             action.add_argument('--' + flag, required=True)
+        action.add_argument('--host', required=True, choices=HOSTS,
+                            help='host role of the started booking; must match its request')
         if command == 'finish':
             action.add_argument('--cleaned', action='store_true', required=True)
     withdraw = commands.add_parser('withdraw')
@@ -259,17 +288,22 @@ def main(argv=None):
     actor = withdraw.add_mutually_exclusive_group(required=True)
     actor.add_argument('--lane'); actor.add_argument('--coordinator', action='store_true')
     withdraw.add_argument('--reason', required=True)
-    commands.add_parser('status'); commands.add_parser('expire')
+    status = commands.add_parser('status')
+    status.add_argument('--host', choices=HOSTS,
+                        help='scope the view to one host queue (default: every host)')
+    commands.add_parser('expire')
     args = parser.parse_args(argv)
     try:
         ledger = Ledger(args.ledger)
         if args.command == 'request':
-            result = ledger.request(args.lane, args.unit, args.scenarios, args.minutes * 60)
+            result = ledger.request(args.lane, args.unit, args.scenarios, args.minutes * 60, host=args.host)
         elif args.command == 'withdraw':
             result = ledger.withdraw(args.id, args.lane, coordinator=args.coordinator, reason=args.reason)
         elif args.command in ('start', 'finish'):
             fields = dict(cleaned=args.cleaned) if args.command == 'finish' else {}
-            result = getattr(ledger, args.command)(args.id, args.lane, args.run_id, args.epoch, **fields)
+            result = getattr(ledger, args.command)(args.id, args.lane, args.run_id, args.epoch, host=args.host, **fields)
+        elif args.command == 'status':
+            result = ledger.status(args.host)
         else:
             result = getattr(ledger, args.command)()
         print(json.dumps(result, allow_nan=False))

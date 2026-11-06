@@ -158,9 +158,9 @@ class Host:
     def disk_free(self, path):
         return shutil.disk_usage(path).free
 
-    def booking_status(self):
+    def booking_status(self, host='dev-mac'):
         import book
-        return book.Ledger(self.environ.get('MODELPLAN_BOOKING_LEDGER')).status()
+        return book.Ledger(self.environ.get('MODELPLAN_BOOKING_LEDGER')).status(host)
 
 
 def check(results, ident, ok, detail, **extra):
@@ -506,10 +506,11 @@ def host_checks(results, host, lane, layout, profile, layouts, scratch_parent):
         except OSError:
             problems.append('free disk unknown')
     try:
-        status = host.booking_status()
+        # Bookings queue per host: only a started booking on THIS host blocks it.
+        status = host.booking_status(declared)
         head = status.get('head')
         if head and head.get('state') == 'started':
-            problems.append(f'another GUI booking is started ({head.get("lane")})')
+            problems.append(f'another GUI booking is started on this host ({head.get("lane")})')
     except Exception as error:
         problems.append('booking ledger unknown: ' + (str(error) or type(error).__name__))
     home = ('fresh synthetic HOME (created by packaged_candidate prepare; no consent grant)' if profile == 'synthetic'

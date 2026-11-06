@@ -130,7 +130,7 @@ class FakeHost:
     def disk_free(self, path):
         return 64 * 1024 ** 3
 
-    def booking_status(self):
+    def booking_status(self, host='dev-mac'):
         return self.booking
 
 
