@@ -40,7 +40,7 @@ private extension EngineDeliveryContext {
 }
 
 @MainActor final class G1CockpitRealWindowJourneys: XCTestCase {
-    private func withLivePage(language: SettingsLanguage = .english, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
+    private func withLivePage(language: SettingsLanguage = .english, syntheticAccountCount: Int = 1, _ exercise: @MainActor (EngineDockMenuApplication, EngineCockpitCoordinator, CockpitWindowController) async throws -> Void) async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_COCKPIT_BUNDLE_DIR"], !path.isEmpty else {
             throw XCTSkip("NOT RUN: MODELPLAN_COCKPIT_BUNDLE_DIR is not supplied by the GUI CI job")
         }
@@ -60,7 +60,22 @@ private extension EngineDeliveryContext {
             "ModelPlanBundledHelperSHA256": digest, "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: bundle.appendingPathComponent("Contents/Info.plist"))
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../..").standardizedFileURL
-        let data = try JSONDecoder().decode(WireCockpitData.self, from: Data(contentsOf: repo.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json")))
+        let capture = try Data(contentsOf: repo.appendingPathComponent("schema/app-cli/captures/WireCockpitData.json"))
+        guard syntheticAccountCount == 1 || syntheticAccountCount == 2 else { throw CockpitBridgeError.unavailable }
+        var fixture = try XCTUnwrap(JSONSerialization.jsonObject(with: capture) as? [String: Any])
+        if syntheticAccountCount == 2 {
+            var projection = try XCTUnwrap(fixture["projection"] as? [String: Any])
+            var rows = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+            var accounts = try XCTUnwrap(rows.first?["accounts"] as? [[String: Any]])
+            var second = try XCTUnwrap(accounts.first)
+            second["subscriptionRef"] = NSNull()
+            second["accountLocator"] = NSNull()
+            accounts.append(second)
+            rows[0]["accounts"] = accounts
+            projection["rows"] = rows
+            fixture["projection"] = projection
+        }
+        let data = try JSONDecoder().decode(WireCockpitData.self, from: JSONSerialization.data(withJSONObject: fixture))
         let settings = try SettingsStore(url: root.appendingPathComponent("settings.json"))
         _ = try await settings.update { $0.language = language }
         let configuration = EngineClientConfiguration(executableURL: helpers.appendingPathComponent("modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
@@ -147,6 +162,42 @@ private extension EngineDeliveryContext {
                 await page.g1CloseAndWaitForTeardown()
                 let retired = try await page.g1HelpCaptionFactsForChecks()
                 XCTAssertNil(retired, "A retired page must not return observations")
+            }
+        }
+    }
+    #endif
+
+    #if MODELPLAN_TEST_ONLY_SPI
+    func testG1_CKP_ENG_02_oneAndTwoMembersKeepThreeSlots() async throws {
+        for count in [1, 2] {
+            try await withLivePage(syntheticAccountCount: count) { _, _, page in
+                let web = try XCTUnwrap(page.verificationWebView)
+                let script = """
+                (() => {
+                  const keys = document.querySelector('.eng-keys');
+                  if (!keys) return null;
+                  return JSON.stringify({slots: keys.dataset.slots,
+                    members: keys.querySelectorAll('.ek[data-sub]').length,
+                    empty: keys.querySelectorAll('.ek.ek-bay').length,
+                    columns: document.querySelectorAll('.eng-cols > .ec').length});
+                })()
+                """
+                let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+                var facts: [String: Any]?
+                while ContinuousClock.now < deadline {
+                    if let raw = try await web.evaluateJavaScript(script) as? String,
+                       let object = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                       (object["members"] as? NSNumber)?.intValue == count {
+                        facts = object
+                        break
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                let observed = try XCTUnwrap(facts, "The normal entry did not render the synthetic members")
+                XCTAssertEqual(observed["slots"] as? String, "3")
+                XCTAssertEqual((observed["members"] as? NSNumber)?.intValue, count)
+                XCTAssertEqual((observed["empty"] as? NSNumber)?.intValue, 3 - count)
+                XCTAssertEqual((observed["columns"] as? NSNumber)?.intValue, 3)
             }
         }
     }
