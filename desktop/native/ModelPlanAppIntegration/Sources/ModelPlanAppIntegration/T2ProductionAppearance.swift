@@ -72,6 +72,11 @@ import ModelPlanSettings
                                hoverViewport: hoverViewport)
         let button = try geometry.consoleButtonRect(in: hoverViewport)
         let restingFrame = skin.bounds.offsetBy(dx: -hoverViewport.minX, dy: -hoverViewport.minY)
+        let grip = CGPoint(x: geometry.grip.x - hoverViewport.minX, y: geometry.grip.y - hoverViewport.minY)
+        let unit = geometry.input.diameter / 52
+        let scale = view.appliedGeometryScale
+        view.registerGripRects([CGRect(x: (grip.x - 10 * unit) * scale, y: (grip.y - 6 * unit) * scale,
+                                       width: 20 * unit * scale, height: 12 * unit * scale)])
         var result = StaticDockGeometry(hoverRects: [restingFrame], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
         let horizontal = edge == .bottom || edge == .top
