@@ -25,6 +25,8 @@ public enum QuotaWidgetCardMaterial {
     public static let normal = RGBA(0x5ad9ba)
     public static let warning = RGBA(0xeac17b)
     public static let critical = RGBA(0xef4444)
+    /// Announced/confirmed public reset ink (dock.css --dk-notice, card.js cd-ev).
+    public static let notice = RGBA(0x9fd2ff)
     /// Header name / small text / percent value sizes; the readout font is the dock's LCD face.
     public static let nameFontSize: CGFloat = 13, smallFontSize: CGFloat = 11, valueFontSize: CGFloat = 11.5
     public static let readoutFontResource = "font-jetbrains-mono"

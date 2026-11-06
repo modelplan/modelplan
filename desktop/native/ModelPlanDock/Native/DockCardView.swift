@@ -46,6 +46,8 @@ import CryptoKit
     /// monospaced font at `readoutSize` / `smallFontSize`.
     public var readoutFont:NSFont?=nil,readoutSmallFont:NSFont?=nil,readoutSize:CGFloat=11.5
     public var quota:[DockQuotaStatus:NSColor]=[.normal:.controlAccentColor,.warning:.systemOrange,.critical:.systemRed,.unknown:.secondaryLabelColor]
+    /// Announced-reset ink (the card's ↺ section title).
+    public var notice:NSColor = .systemBlue
     public init(){}
 }
 @MainActor private final class DockCardBar:NSView {
@@ -191,6 +193,31 @@ import CryptoKit
             let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : (row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
+            if row.kind == .notice{
+                // Announced public reset (card.js cd-ev): the title line in reset ink across the
+                // whole window, then its explanation, both wrapping; no grid columns.
+                l.textColor=style.notice;l.font=readout;setWraps(l,true)
+                var title=[(view:l as NSView,x:CGFloat(0),width:rowWidth)]
+                if !row.value.isEmpty{
+                    let v=label(rowID+".value",row.value,font:readoutSmall,color:style.notice,wraps:true);place(v,in:rowView)
+                    title.append((view:v as NSView,x:CGFloat(0),width:rowWidth))
+                }
+                var top:CGFloat=0
+                for cell in title{
+                    let h=wrapped(cell.view as! NSTextField,width:rowWidth)
+                    cell.view.frame=CGRect(x:0,y:top,width:rowWidth,height:h);top+=h
+                }
+                var kept=Set(title.map{ObjectIdentifier($0.view)})
+                if !row.detail.isEmpty{
+                    let d=label(rowID+".detail",row.detail,font:readoutSmall,color:style.muted,wraps:true);place(d,in:rowView)
+                    let h=wrapped(d,width:rowWidth);d.frame=CGRect(x:0,y:top,width:rowWidth,height:h);top+=h;kept.insert(ObjectIdentifier(d))
+                }
+                for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
+                let rowHeight=max(style.rowMinimumHeight,top)
+                rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
+                rowY+=rowHeight
+                continue
+            }
             if row.kind == .quota || row.kind == .extraQuota{
                 usedBars.insert(row.id)
                 let bar=bars[row.id] ?? DockCardBar(row:row,on:toneColor,track:style.track)
