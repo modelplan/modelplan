@@ -230,6 +230,54 @@ import ModelPlanSettings
         XCTAssertNil(store.snapshot.rows)
     }
 
+    private struct FirstShowSamples {
+        private(set) var statusAt: Duration?
+        private(set) var panelAt: Duration?
+        private(set) var rowsAtFirstPanel: Int?
+
+        mutating func record(at elapsed: Duration, status: Bool, panel: Bool, rows: Int) {
+            if status, statusAt == nil { statusAt = elapsed }
+            if panel, panelAt == nil {
+                panelAt = elapsed
+                rowsAtFirstPanel = rows
+            }
+        }
+
+        var panelDelay: Duration? {
+            guard let statusAt, let panelAt else { return nil }
+            return panelAt - statusAt
+        }
+
+        var qualifies: Bool {
+            guard let panelDelay else { return false }
+            return panelDelay <= .seconds(2) && rowsAtFirstPanel == 0
+        }
+    }
+
+    func testD01FirstVisibleSamplerKeepsTheFirstPanelAndRowsCount() {
+        var receipt = FirstShowSamples()
+        receipt.record(at: .milliseconds(15), status: false, panel: false, rows: 0)
+        receipt.record(at: .milliseconds(20), status: true, panel: false, rows: 0)
+        receipt.record(at: .milliseconds(2_019), status: true, panel: true, rows: 0)
+        receipt.record(at: .milliseconds(2_100), status: true, panel: true, rows: 1)
+        XCTAssertEqual(receipt.statusAt, .milliseconds(20))
+        XCTAssertEqual(receipt.panelDelay, .milliseconds(1_999))
+        XCTAssertEqual(receipt.rowsAtFirstPanel, 0)
+        XCTAssertTrue(receipt.qualifies)
+
+        var tooLate = FirstShowSamples()
+        tooLate.record(at: .milliseconds(20), status: true, panel: false, rows: 0)
+        tooLate.record(at: .milliseconds(2_021), status: true, panel: true, rows: 0)
+        XCTAssertFalse(tooLate.qualifies)
+        var alreadyDelivered = FirstShowSamples()
+        alreadyDelivered.record(at: .milliseconds(20), status: true, panel: true, rows: 1)
+        XCTAssertFalse(alreadyDelivered.qualifies)
+        var disabled = FirstShowSamples()
+        disabled.record(at: .milliseconds(20), status: true, panel: false, rows: 0)
+        XCTAssertNil(disabled.panelDelay)
+        XCTAssertFalse(disabled.qualifies)
+    }
+
     func testD01PhysicalFreshFirstShowWithRealRowsWithheld() async throws {
         try await physicalFirstShow(disabled: false)
     }
@@ -263,15 +311,38 @@ import ModelPlanSettings
         let host = app.composition.dock
         host.suppressJourneyOrderIn = disabled
         FileHandle.standardOutput.write(Data("D-01: Start recording before launch. Rows requests will be withheld from the real helper.\n".utf8))
-        launch(app)
-        let statusVisible = try await wait(2) { app.nativeJourneyStatusVisible }
-        XCTAssertTrue(statusVisible, "Start the first-show clock at the actual visible status item")
-        let ordered = try await wait(2) {
-            host.nativePanel.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+        let launchedAt = ContinuousClock.now
+        var samples = FirstShowSamples()
+        func sample() {
+            let visible = host.nativePanel.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+            samples.record(at: ContinuousClock.now - launchedAt, status: app.nativeJourneyStatusVisible,
+                           panel: visible, rows: replies.count)
         }
-        XCTAssertEqual(ordered, !disabled)
+        launch(app)
+        let statusVisible = try await wait(2) {
+            sample()
+            return samples.statusAt != nil
+        }
+        guard statusVisible, let firstStatus = samples.statusAt else {
+            return XCTFail("The actual status item never became visible")
+        }
+        while samples.panelAt == nil, ContinuousClock.now - launchedAt - firstStatus < .seconds(2) {
+            try await Task.sleep(for: .milliseconds(5))
+            sample()
+        }
+        func ms(_ elapsed: Duration) -> Double {
+            let parts = elapsed.components
+            return Double(parts.seconds) * 1_000 + Double(parts.attoseconds) / 1e15
+        }
+        let panelTime = samples.panelAt.map { String(format: "%.3f", ms($0)) } ?? "none"
+        let panelDelay = samples.panelDelay.map { String(format: "%.3f", ms($0)) } ?? "none"
+        let rowsAtPanel = samples.rowsAtFirstPanel.map { String($0) } ?? "none"
+        let output = "D-01: disabled=\(disabled) status_ms=\(ms(firstStatus)) panel_ms=\(panelTime) delta_ms=\(panelDelay) rows_at_panel=\(rowsAtPanel)\n"
+        FileHandle.standardOutput.write(Data(output.utf8))
+        XCTAssertEqual(samples.panelAt != nil, !disabled)
         XCTAssertEqual(replies.count, 0)
         if !disabled {
+            XCTAssertTrue(samples.qualifies, "Panel must first be visible within two seconds with zero replies")
             let placement = try XCTUnwrap(host.edgePresentation?.placement)
             let panel = try XCTUnwrap(host.nativePanel)
             XCTAssertEqual(placement.displayID, screen.id)
