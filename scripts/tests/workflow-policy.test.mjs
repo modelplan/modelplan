@@ -172,3 +172,20 @@ test("macrevb-579-3 regressions: every matrix/runs-on expression form is recogni
   assert.deepEqual(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ github.event.pull_request.draft && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n"), []);
   assert.ok(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ (github.event_name == 'merge_group') && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n").length > 0, "a merge_group-only ubuntu branch still runs macOS on drafts");
 });
+
+test("integration-candidate names the exact merge and its artifact by the integration SHA", () => {
+  const file = ".github/workflows/integration-candidate.yml";
+  const text = fs.readFileSync(file, "utf8");
+  // The batch identity (merge SHA + tree) is written into the BUILD.txt manifest and exported.
+  assert.match(text, /printf 'integrationSHA=%s\\nintegrationTree=%s\\n' "\$integration_sha" "\$integration_tree" >> "\$RUNNER_TEMP\/batch-manifest\.txt"/,
+    "BUILD.txt manifest must record integrationSHA and integrationTree");
+  assert.match(text, /printf 'INTEGRATION_SHA=%s\\nINTEGRATION_TREE=%s\\n' "\$integration_sha" "\$integration_tree" >> "\$GITHUB_ENV"/,
+    "the integration identity must reach later steps via GITHUB_ENV");
+  // The artifact name is keyed on the integration merge SHA, never on main alone.
+  assert.match(text, /ARTIFACT_NAME=native-app-unverified-\$INTEGRATION_SHA/,
+    "the artifact must be named native-app-unverified-<integration sha>");
+  assert.doesNotMatch(text, /native-app-batch-\$\{?[A-Za-z_]*MAIN_SHA/,
+    "a main-only artifact name would let a stale or sibling batch artifact be picked by name");
+  assert.doesNotMatch(text, /native-app-batch-unknown/,
+    "the fallback name must follow the integration-keyed convention too");
+});

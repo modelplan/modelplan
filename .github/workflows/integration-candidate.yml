@@ -1,9 +1,11 @@
 name: integration-candidate
 # Batch rehearsal on a runner: merge the listed PR heads onto main in order, then package the
 # same native app as the desktop app-smoke job and upload it with a BUILD.txt manifest
-# (main SHA + every PR head). Dispatch-only by design: it never starts for push or
-# pull_request, so the #579 concurrency and draft rules do not apply; the run_id group keeps
-# concurrent candidate runs independent instead of queueing them behind each other.
+# (main SHA, every PR head, and the integration merge SHA + tree). The artifact is named by
+# the integration merge SHA (native-app-unverified-<sha>, the plan v2 §3 convention), so a
+# stale or main-only artifact can never be picked by name. Dispatch-only by design: it never
+# starts for push or pull_request, so the #579 concurrency and draft rules do not apply; the
+# run_id group keeps concurrent candidate runs independent instead of queueing them.
 on:
   workflow_dispatch:
     inputs:
@@ -62,7 +64,13 @@ jobs:
             git merge --no-ff --no-edit "$want" || { echo "merge conflict integrating #$pr at $want"; exit 1; }
             echo "integrated #$pr at $want"
           done
-          echo "batch tree: $(git rev-parse HEAD)"
+          integration_sha="$(git rev-parse HEAD)"
+          integration_tree="$(git rev-parse 'HEAD^{tree}')"
+          # The batch identity: the exact merge of the listed heads onto the recorded main.
+          # BUILD.txt carries it (preflight PF-04 material) and the artifact name uses it.
+          printf 'integrationSHA=%s\nintegrationTree=%s\n' "$integration_sha" "$integration_tree" >> "$RUNNER_TEMP/batch-manifest.txt"
+          printf 'INTEGRATION_SHA=%s\nINTEGRATION_TREE=%s\n' "$integration_sha" "$integration_tree" >> "$GITHUB_ENV"
+          echo "batch merge: $integration_sha (tree $integration_tree)"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -99,8 +107,7 @@ jobs:
         run: |
           app="$RUNNER_TEMP/smoke-neutral-build/ModelPlan Community.app"
           [ -d "$app" ] || { echo "no packaged native app"; exit 0; }
-          : "${MAIN_SHA:=unknown}"
-          short="${MAIN_SHA:0:7}"
+          : "${INTEGRATION_SHA:=unknown}"
           mkdir -p "$RUNNER_TEMP/native-app-batch"
           ditto -c -k --keepParent "$app" "$RUNNER_TEMP/native-app-batch/ModelPlan-Community-native.zip"
           cp "$RUNNER_TEMP/batch-manifest.txt" "$RUNNER_TEMP/native-app-batch/BUILD.txt"
@@ -109,11 +116,13 @@ jobs:
             grep -q "^pr$pr=" "$RUNNER_TEMP/native-app-batch/BUILD.txt" || printf 'pr%s=unknown\n' "$pr" >> "$RUNNER_TEMP/native-app-batch/BUILD.txt"
           done
           (cd "$RUNNER_TEMP/native-app-batch" && shasum -a 256 ModelPlan-Community-native.zip >> BUILD.txt)
-          echo "ARTIFACT_NAME=native-app-batch-$short-$MAIN_SHA" >> "$GITHUB_ENV"
+          # Named by the integration merge SHA (plan v2 §3): every distinct batch gets a
+          # distinct name, and a main-only or stale artifact can never match by name.
+          echo "ARTIFACT_NAME=native-app-unverified-$INTEGRATION_SHA" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ${{ env.ARTIFACT_NAME || 'native-app-batch-unknown' }}
+          name: ${{ env.ARTIFACT_NAME || 'native-app-unverified-unknown' }}
           path: ${{ runner.temp }}/native-app-batch/
           if-no-files-found: warn
           retention-days: 3
