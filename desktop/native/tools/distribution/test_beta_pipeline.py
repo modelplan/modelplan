@@ -137,27 +137,13 @@ print(signature.base64EncodedString())
 
 
 class FailClosedTests(unittest.TestCase):
-    def test_workflow_keeps_keys_out_of_pr_and_publication_jobs(self):
+    def test_v1_workflow_does_not_prepare_sparkle_or_access_signing_secrets(self):
         workflow = (Path(__file__).resolve().parents[4] / '.github/workflows/macos-distribution.yml').read_text()
-        jobs = dict(re.findall(r'^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:\n|\Z)',
-                               workflow.split('\njobs:\n', 1)[1], re.MULTILINE | re.DOTALL))
-        self.assertNotIn('secrets.', jobs['neutral-build'])
-        self.assertNotIn('environment:', jobs['neutral-build'])
-        for name in ('release-candidate', 'adhoc-beta-candidate', 'publish-beta-draft'):
-            guard = re.search(r'^    if: (.*)$', jobs[name], re.MULTILINE).group(1)
-            for required in ("github.event_name == 'workflow_dispatch'", "github.ref == 'refs/heads/main'",
-                             "github.repository == 'modelplan/modelplan'"):
-                self.assertIn(required, guard)
-            self.assertIn('environment: macos-release', jobs[name])
-        self.assertIn("vars.MACOS_DEVELOPER_ID_ENABLED == 'true'", jobs['release-candidate'])
-        self.assertIn('needs: adhoc-beta-candidate', jobs['publish-beta-draft'])
-        self.assertNotIn('secrets.', jobs['publish-beta-draft'])
-        beta = jobs['adhoc-beta-candidate']
-        self.assertEqual(set(re.findall(r'secrets\.([A-Z0-9_]+)', beta)), {'SPARKLE_ED25519_PRIVATE_KEY'})
-        self.assertIn('contents: read', beta)
-        self.assertNotIn('contents: write', beta)
-        self.assertIn('shell: bash', beta.split('id: gates', 1)[1].split('- name:', 1)[0])
-        self.assertIn('--previous-appcast', beta)
+        self.assertNotIn('SPARKLE', workflow)
+        self.assertNotIn('fetch-sparkle', workflow)
+        self.assertNotIn('secrets.', workflow)
+        self.assertNotIn('contents: write', workflow)
+        self.assertNotIn('environment: macos-release', workflow)
 
     def test_requested_beta_without_key_fails_plan_command_with_clear_setting_name(self):
         with tempfile.TemporaryDirectory() as root:
@@ -187,7 +173,7 @@ class DraftPublicationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        archive = self.root / 'ModelPlan-beta-universal.zip'; archive.write_bytes(b'synthetic')
+        archive = self.root / 'ModelPlan-beta-arm64.zip'; archive.write_bytes(b'synthetic')
         base = 'https://github.com/modelplan/modelplan/releases/download/macos-beta-42/'
         xml = release.appcast_bytes({'CFBundleVersion': '42', 'CFBundleShortVersionString': '0.1 beta'},
                                     archive, base64.b64encode(bytes(64)).decode(), base + archive.name,
@@ -210,7 +196,7 @@ class DraftPublicationTests(unittest.TestCase):
         (self.root / 'draft-release.json').write_text(json.dumps(self.metadata))
 
     def write_checksums(self):
-        names = ('ModelPlan-beta-universal.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
+        names = ('ModelPlan-beta-arm64.zip', 'appcast-beta.xml', 'RELEASE_NOTES.md', 'release-notes.html')
         (self.root / 'SHA256SUMS').write_text(''.join(f'{release.sha256(self.root / name)}  {name}\n' for name in names))
 
     def test_publication_only_creates_draft_prerelease_never_latest_or_overwrites(self):
@@ -259,7 +245,7 @@ class DraftPublicationTests(unittest.TestCase):
         with patch.object(release.subprocess, 'run') as command:
             with self.assertRaisesRegex(ValueError, 'URLs'): release.publish_beta(self.root)
             command.assert_not_called()
-        (self.root / 'ModelPlan-beta-universal.zip').write_bytes(b'tampered')
+        (self.root / 'ModelPlan-beta-arm64.zip').write_bytes(b'tampered')
         # Restore the URLs; the changed archive must still fail the checksum check.
         path.write_bytes(path.read_bytes().replace(b'v42/', b'macos-beta-42/'))
         with patch.object(release.subprocess, 'run') as command:
