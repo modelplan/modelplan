@@ -106,24 +106,43 @@ private extension EngineDeliveryContext {
                 let before = try XCTUnwrap(initial)
                 let hidden = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(before.utf8)) as? [String: Any])
                 XCTAssertEqual(hidden["open"] as? Bool, false)
-                _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))")
-                var facts: [String: Any] = [:]
-                for _ in 0..<100 {
-                    if let raw = try await page.g1HelpCaptionFactsForChecks(),
-                       let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
-                       value["open"] as? Bool == true { facts = value; break }
-                    try await Task.sleep(for: .milliseconds(20))
-                }
-                XCTAssertEqual(facts["open"] as? Bool, true)
-                let key = language == .english ? "matchesEnglish" : "matchesChinese"
-                for target in ["window", "alert", "record"] {
-                    let caption = try XCTUnwrap(facts[target] as? [String: Any])
-                    XCTAssertEqual(caption["count"] as? Int, 1, target)
-                    XCTAssertEqual(caption[key] as? Bool, true, target)
-                    XCTAssertEqual(caption["visible"] as? Bool, true, target)
-                }
-                XCTExpectFailure("C-17 product-missing: narrow Help captions overlap or exceed the viewport") {
-                    XCTAssertEqual(facts["allInsideAndSeparate"] as? Bool, true)
+                for attached in [true, false] {
+                    if !attached {
+                        _ = try await web.evaluateJavaScript("document.querySelector('[data-detach]')?.click()")
+                        for _ in 0..<100 where page.verificationShellState?.attached != false {
+                            try await Task.sleep(for: .milliseconds(20))
+                        }
+                    }
+                    XCTAssertEqual(page.verificationShellState?.attached, attached)
+                    _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keydown',{key:'Alt'}))")
+                    var facts: [String: Any] = [:]
+                    for _ in 0..<100 {
+                        if let raw = try await page.g1HelpCaptionFactsForChecks(),
+                           let value = try JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any],
+                           value["open"] as? Bool == true { facts = value; break }
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
+                    XCTAssertEqual(facts["open"] as? Bool, true)
+                    let key = language == .english ? "matchesEnglish" : "matchesChinese"
+                    for target in ["window", "alert", "record"] {
+                        let caption = try XCTUnwrap(facts[target] as? [String: Any])
+                        XCTAssertEqual(caption["count"] as? Int, 1, target)
+                        XCTAssertEqual(caption[key] as? Bool, true, target)
+                        XCTAssertEqual(caption["visible"] as? Bool, true, target)
+                        let clipped = try XCTUnwrap(caption["clippedRect"] as? [String: Any])
+                        for axis in ["x", "y", "width", "height"] {
+                            let value = try XCTUnwrap((clipped[axis] as? NSNumber)?.doubleValue)
+                            XCTAssertTrue(value.isFinite && value >= 0, target + "." + axis)
+                        }
+                    }
+                    XCTExpectFailure("C-17 product-missing: narrow Help captions overlap or exceed the viewport") {
+                        XCTAssertEqual(facts["allInsideAndSeparate"] as? Bool, true)
+                    }
+                    _ = try await web.evaluateJavaScript("window.dispatchEvent(new KeyboardEvent('keyup',{key:'Alt'}))")
+                    let closedRaw = try await page.g1HelpCaptionFactsForChecks()
+                    let closed = try XCTUnwrap(closedRaw)
+                    let closedFacts = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(closed.utf8)) as? [String: Any])
+                    XCTAssertEqual(closedFacts["open"] as? Bool, false)
                 }
                 await page.g1CloseAndWaitForTeardown()
                 let retired = try await page.g1HelpCaptionFactsForChecks()
