@@ -521,11 +521,12 @@ struct DockHelpInteraction: Equatable {
             switch preferences.magnification {
             case .none: continue
             case .subtle:
-                guard member == id, let hull = displayed.registeredHullBounds else { continue }
-                let dx = hull.midX - hovered.midX, dy = hull.midY - hovered.midY
-                let distance = hypot(dx, dy)
+                // G3-29: like the prototype, the hovered ring grows outward (away from the screen
+                // edge, along the station's inward normal), never toward the readout below it.
+                guard member == id else { continue }
+                let length = hypot(station.inward.dx, station.inward.dy)
                 scale = 1.15
-                offset = distance > 0 ? CGPoint(x: 6 * dx / distance, y: 6 * dy / distance) : .zero
+                offset = length > 0 ? CGPoint(x: 6 * station.inward.dx / length, y: 6 * station.inward.dy / length) : .zero
             case .strong:
                 guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
                 let centre = horizontal ? anchor.midX : anchor.midY
@@ -678,6 +679,17 @@ struct DockHelpInteraction: Equatable {
         overflowPanel.setFrame(CGRect(x: max(safe.minX, min(x, safe.maxX - size.width)),
             y: max(safe.minY, min(y, safe.maxY - size.height)), width: size.width, height: size.height), display: true)
         overflowPanel.orderFrontRegardless()
+    }
+    /// G3-31: the accepted r7 card measurements (plate 304 wide, 11-point padding, 20-point
+    /// vendor mark, 78 x 7 ten-segment bar with 1.5-point gaps). Material and colours are not ported yet.
+    static var prototypeCardStyle: DockCardStyle {
+        var style = DockCardStyle()
+        style.width = QuotaWidgetCardGeometry.plateWidth
+        style.padding = QuotaWidgetCardGeometry.plateHorizontalPadding
+        style.brandSize = QuotaWidgetCardGeometry.headingIconSize
+        style.barSize = CGSize(width: QuotaWidgetCardGeometry.rowFixedColumns[1], height: QuotaWidgetCardGeometry.barHeight)
+        style.barGap = QuotaWidgetCardGeometry.barSegmentGap
+        return style
     }
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
@@ -1803,7 +1815,7 @@ struct DockHelpInteraction: Equatable {
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         do {
-            try card.apply(content, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
+            try card.apply(content, style: Self.prototypeCardStyle, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         guard createsNativePanels else { return }

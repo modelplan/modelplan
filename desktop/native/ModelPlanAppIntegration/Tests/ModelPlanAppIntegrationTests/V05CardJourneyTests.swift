@@ -81,6 +81,11 @@ private actor V05SyntheticClient: EngineClient {
         try XCTUnwrap(dock.dockView.nozzleEventDelegate).hoverNozzle(id)
         elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(dock.card.isHidden)
+        // G3-31: the card uses the accepted r7 plate width and ten-segment bar measurements.
+        XCTAssertEqual(dock.card.frame.width, 304, accuracy: 0.5)
+        func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+        let bar = try XCTUnwrap(views(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.quota.") })
+        XCTAssertEqual(bar.intrinsicContentSize, NSSize(width: 78, height: 7))
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
         for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限"])] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))

@@ -150,6 +150,16 @@ private actor G3LayoutEngine: EngineClient {
         return problems
     }
 
+    /// Geometry of every stack and scroll container, printed when a layout check fails.
+    private func geometry(_ root: NSView) -> String {
+        flatten(root).filter { $0 is NSStackView || $0 is NSScrollView || $0 is NSClipView || $0 is SettingsNativeRow || $0 is NSTextField || $0 is NSButton }
+            .filter { !$0.isHiddenOrHasHiddenAncestor }
+            .map { view in
+                let id = view.accessibilityIdentifier()
+                let text = (view as? NSTextField)?.stringValue.prefix(24) ?? (view as? NSButton)?.title.prefix(24) ?? ""
+                return "\(type(of: view)) \(id) '\(text)' frame=\(NSStringFromRect(view.frame)) window=\(NSStringFromRect(view.convert(view.bounds, to: nil))) fitting=\(NSStringFromSize(view.fittingSize)) ambiguous=\(view.hasAmbiguousLayout)"
+            }.joined(separator: "\n")
+    }
     func testG3_25_FirstRunLayoutHasNoOverlapClippingOrMisalignment() async throws {
         for locale in ["en-US", "zh-CN"] {
             for members in [0, 2] {
@@ -171,6 +181,7 @@ private actor G3LayoutEngine: EngineClient {
                     }
                 }
                 XCTAssertEqual(problems, [], "G3-25 first-run layout (\(locale), \(members) members)")
+                if !problems.isEmpty { print("G3-25 geometry \(locale) \(members)\n" + geometry(root)) }
                 window.close()
             }
         }
@@ -192,6 +203,7 @@ private actor G3LayoutEngine: EngineClient {
                 problems += leadingEdgeProblems(rows.map(\.titleLabel), label: "title column")
                 problems += leadingEdgeProblems(rows.map(\.controls), label: "control column")
                 XCTAssertEqual(problems, [], "G3-26 Subscriptions layout (\(locale), \(members) members)")
+                if !problems.isEmpty { print("G3-26 geometry \(locale) \(members)\n" + geometry(root)) }
                 window.close()
             }
         }

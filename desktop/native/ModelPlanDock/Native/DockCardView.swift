@@ -19,15 +19,19 @@ import CryptoKit
 /// Neutral complete card; official geometry/material/font/brand image is an injected appearance input.
 @MainActor public struct DockCardStyle {
     public var width:CGFloat=300,padding:CGFloat=12,fontSize:CGFloat=12,brandSize:CGFloat=16
+    /// The ten-segment quota bar: size and gap between segments.
+    public var barSize=CGSize(width:96,height:10),barGap:CGFloat=2
     public var background:NSColor = .windowBackgroundColor,ink:NSColor = .labelColor,track:NSColor = .separatorColor
     public var quota:[DockQuotaStatus:NSColor]=[.normal:.controlAccentColor,.warning:.systemOrange,.critical:.systemRed,.unknown:.secondaryLabelColor]
     public init(){}
 }
 @MainActor private final class DockCardBar:NSView {
     var fraction:Double?,on:NSColor,track:NSColor
+    var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
+    var gap:CGFloat=2{didSet{needsDisplay=true}}
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.remainingFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.remainingFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
     required init?(coder:NSCoder){fatalError()}
-    override var intrinsicContentSize:NSSize{NSSize(width:96,height:10)}
+    override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
         let changed=fraction != row.remainingFraction
         fraction=row.remainingFraction;self.on=on;self.track=track
@@ -36,7 +40,7 @@ import CryptoKit
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
     }
     override func draw(_ dirtyRect:NSRect){
-        let gap:CGFloat=2,w=max(0,(bounds.width-9*gap)/10)
+        let w=max(0,(bounds.width-9*gap)/10)
         for i in 0..<10{let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height);track.setFill();r.fill()
             if let fraction{let fill=max(0,min(1,fraction*10-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
     }
@@ -112,7 +116,8 @@ import CryptoKit
             if row.kind == .quota || row.kind == .extraQuota{
                 usedBars.insert(row.id)
                 let bar=bars[row.id] ?? DockCardBar(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track)
-                bars[row.id]=bar;bar.apply(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track);fields.append(bar)
+                bars[row.id]=bar;bar.apply(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track)
+                bar.size=style.barSize;bar.gap=style.barGap;fields.append(bar)
             }
             // Inline values need an intrinsic width; wrapping labels may collapse to their padding.
             fields.append(label("row."+row.id+".value",row.value,wraps:false));arrange(h,fields)
