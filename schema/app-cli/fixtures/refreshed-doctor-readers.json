@@ -22,13 +22,13 @@
       "windows": 0
     },
     {
-      "admitted": "no",
+      "admitted": "yes",
       "beta": true,
-      "consent": "none",
+      "consent": "granted",
       "detected": "yes",
       "last": "unknown",
       "provider": "claude",
-      "state": "unavailable:not_admitted",
+      "state": "unavailable:reader_error:file_missing",
       "windows": 0
     },
     {

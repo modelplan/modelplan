@@ -405,7 +405,7 @@
     "from": null,
     "recording": false
   },
-  "dataRevision": "cb1a86d45a9aca6288e6f302f1460614f80bda40d4294737e51f318f9b8fc3ae",
+  "dataRevision": "ee77beb214fbbd9cd3b400c11d2314356bdee3ad4b597275455757562ff1e078",
   "events": [],
   "generatedAt": "2030-01-02T03:04:05Z",
   "hourly": [],
@@ -548,6 +548,13 @@
     {
       "source": "user",
       "status": "missing"
+    },
+    {
+      "beta": true,
+      "errorCode": "file_missing",
+      "reason": "file_missing",
+      "source": "native:claude",
+      "status": "unavailable"
     },
     {
       "reason": "no native reader for codex; set its backend to codexbar-compat",

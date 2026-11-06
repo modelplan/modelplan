@@ -57,6 +57,15 @@ func TestDoctorReadersProductionInventoryAndBudgets(t *testing.T) {
 			for _, tool := range localusage.HistoryProviders() {
 				diagnosticRow(t, rows, tool+":history")
 			}
+			if id == "claude" {
+				// D27 (G3-19): Claude Code's saved login is on by default; the
+				// not-admitted/no-read checks below run after a recorded refusal.
+				if diagnosticRow(t, rows, id).Admitted != "yes" {
+					t.Fatal("default-on Claude saved login not admitted on a fresh profile")
+				}
+				productionConsent(t, id, false)
+				rows = ReaderDiagnostics(paths(), at)
+			}
 			if diagnosticRow(t, rows, id).Admitted != "no" {
 				t.Fatal("admitted before consent")
 			}
