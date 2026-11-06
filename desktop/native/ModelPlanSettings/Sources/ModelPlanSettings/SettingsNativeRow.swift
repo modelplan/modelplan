@@ -51,7 +51,8 @@ import AppKit
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
-            controls.widthAnchor.constraint(equalToConstant: 230),
+            // G3-26: rows listing every subscription give names room next to their controls.
+            controls.widthAnchor.constraint(equalToConstant: [.visible, .alias].contains(key) ? 340 : 230),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
         ])
         setAccessibilityElement(false)

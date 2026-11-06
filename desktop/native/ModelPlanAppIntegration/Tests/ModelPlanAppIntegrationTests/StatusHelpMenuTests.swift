@@ -32,7 +32,7 @@ import ModelPlanEngineClient
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
         try invoke("Show Quota Widget", on: app)
-        let feedback = "Could not show Quota Widget. Check Settings and try again."
+        let feedback = "Could not change Show Quota Widget. Check Settings and try again."
         for _ in 0..<250 {
             if app.liveStatusMenu?.items.contains(where: { $0.title == feedback }) == true { break }
             try await Task.sleep(for: .milliseconds(20))

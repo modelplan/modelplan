@@ -21,6 +21,9 @@ enum EngineRowsText {
     static let comingSoon = SettingsText("Coming soon", "即将推出")
     static let quit = SettingsText("Quit ModelPlan", "退出 ModelPlan")
     static let about = SettingsText("About ModelPlan", "关于 ModelPlan")
+    /// G3-22: macOS hides status items behind the notch when the menu bar is full.
+    static let statusItemHidden = SettingsText("The menu bar is full and the ModelPlan icon is hidden. Hold ⌘ and drag it to the right.",
+                                               "菜单栏已满，ModelPlan 图标被挡住了。按住 ⌘ 把它拖到右边。")
     static let waiting = SettingsText("Waiting for readings", "等待读数")
     static let paused = SettingsText("Readings paused", "读数已暂停")
     static let readingServiceUnavailable = SettingsText(

@@ -53,7 +53,7 @@ import ModelPlanEngineClient
         for enabled in [false,true] {
             let entry=app(store,cockpitEntryEnabled:enabled)
             for language in [SettingsLanguage.chinese,.english] {
-                try await store.update { $0.language=language };await entry.prepare()
+                try await store.update { $0.language=language };await entry.prepare();entry.allowDockPresentation()
                 let en=language == .english
                 // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q]; no Hide item.
                 let dock=entry.composition.dock.menu().items

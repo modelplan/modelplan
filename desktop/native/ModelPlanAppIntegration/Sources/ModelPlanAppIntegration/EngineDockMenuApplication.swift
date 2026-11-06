@@ -475,9 +475,42 @@ struct StatusNoticePresentation {
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
+        watchStatusItemVisibility()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
+    /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
+    /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
+    var statusItemVisibility: (@MainActor () -> Bool?)?
+    private(set) var statusItemHidden = false
+    private var statusOcclusionObserver: NSObjectProtocol?
+    private func watchStatusItemVisibility() {
+        statusOcclusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                                        object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let window = note.object as? NSWindow, window === self.status?.button?.window else { return }
+                self.checkStatusItemVisibility()
+            }
+        }
+        // Give the menu bar a few seconds to lay the item out before telling the user.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.checkStatusItemVisibility()
+        }
+    }
+    /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
+    func checkStatusItemVisibility() {
+        guard !terminating else { return }
+        let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
+        let hidden = visible == false
+        guard hidden != statusItemHidden else { return }
+        statusItemHidden = hidden
+        composition.dock.menuNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        var context = settings.editor.context
+        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        settings.update(context: context)
+    }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
+    var statusLengthForTesting: CGFloat? { status?.length }
     /// A caller supplying no autosave name owns a temporary, non-persisted item.
     func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
         guard status == nil, !terminating else { return }
@@ -599,6 +632,11 @@ struct StatusNoticePresentation {
         }
         if let button = status?.button {
             applyStatusContent(to: button, detail: detail)
+            // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
+            // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
+            let iconOnly = button.title.isEmpty && button.image != nil
+            button.imagePosition = iconOnly ? .imageOnly : .imageLeading
+            status?.length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }

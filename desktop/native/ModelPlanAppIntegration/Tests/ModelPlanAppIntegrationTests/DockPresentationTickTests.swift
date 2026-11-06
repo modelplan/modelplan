@@ -69,6 +69,7 @@ private actor TickSilentClient: EngineClient {
         account["observedAt"] = stamp(-60); account["freshUntil"] = stamp(150); account["lastFailure"] = NSNull()
         account.removeValue(forKey: "resetCards")
         windows[0].removeValue(forKey: "modelScope"); windows[0]["current"] = true
+        windows[0]["limitKey"] = "main"; windows[0]["poolKey"] = "main" // a plan-wide 5-hour window drives the rings
         windows[0]["durationSeconds"] = 18_000; windows[0]["resetsAt"] = stamp(3 * 3600)
         windows[0]["observedAt"] = stamp(-60); windows[0]["validUntil"] = stamp(150); windows[0]["remainingPercent"] = 42.0
         account["windows"] = [windows[0]]; row["accounts"] = [account]; rows[0] = row

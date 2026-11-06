@@ -304,8 +304,9 @@ enum SettingsWords {
             : SettingsWords.text("Search results", "搜索结果", language)
         let feedbackText = feedback.map { $0 == .copied ? SettingsWords.text("Diagnostics copied", "诊断信息已复制", language) : SettingsWords.text("Request sent to the app", "请求已交给应用", language) }
         let deliveryWarning = editor.lastCommitDeliveryFailure?.message(language)
-        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : "")
-        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil ? .secondaryLabelColor : .systemOrange)
+        let iconNotice = editor.context.statusItemNotice?.value(language)
+        status.stringValue = errorMessage ?? deliveryWarning ?? feedbackText ?? (editor.isSaving ? SettingsWords.text("Saving…", "正在保存…", language) : (iconNotice ?? ""))
+        status.textColor = errorMessage != nil ? .systemRed : (deliveryWarning == nil && (iconNotice == nil || status.stringValue != iconNotice) ? .secondaryLabelColor : .systemOrange)
         status.isHidden = status.stringValue.isEmpty
         do {
             let catalogued = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context,
