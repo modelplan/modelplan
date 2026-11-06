@@ -656,6 +656,59 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertEqual(try expanded(app).frame, saved, "An unavailable cockpit releases the presentation gate")
     }
 
+    func testD18NormalEntryExposesBilingualControlLabels() async throws {
+        let (rows, ids) = try aliasedRows(memberCount: 2)
+        let app = try await make(profile(), topology: Topology(), rows: rows) {
+            $0.autoHide = true
+            $0.motion = .on
+        }
+        _ = start(app)
+        try await wait { !app.lifecyclePaused }
+        let dock = app.composition.dock
+        let member = try XCTUnwrap(ids.first)
+        let editor = app.settingsHost.application.editor
+        func button(_ id: String, in root: NSView) -> NSButton? {
+            if let button = root as? NSButton, button.accessibilityIdentifier() == id { return button }
+            return root.subviews.lazy.compactMap { button(id, in: $0) }.first
+        }
+
+        for (language, reveal, cockpit, settings, close) in [
+            (SettingsLanguage.english, "Show Quota Widget", "Open cockpit", "Settings", "Close"),
+            (.chinese, "显示额度挂件", "打开驾驶舱", "设置", "关闭"),
+        ] {
+            _ = try await editor.commit(SettingsB21Edit.language(language))
+            try await wait({ dock.edgePresentation?.state == .sliver }, seconds: 4)
+            let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+            let strip = try dock.prepareSliver(size: placement.sliverFrame.size)
+            XCTAssertEqual(strip.accessibilityLabel(), reveal)
+            XCTAssertTrue(strip.accessibilityPerformPress(), "VoiceOver can reveal the actual strip")
+            try await wait { dock.edgePresentation?.state == .expanded }
+            let view = dock.dockView
+            let nodes = (view.accessibilityChildren() ?? []).compactMap { $0 as? NSAccessibilityElement }
+            let subscriptions = nodes.filter { $0.accessibilityIdentifier()?.hasPrefix("dock.subscription.") == true }
+            XCTAssertEqual(subscriptions.count, ids.count)
+            for subscription in subscriptions {
+                XCTAssertFalse(try XCTUnwrap(subscription.accessibilityLabel()).isEmpty)
+            }
+            let holder = try XCTUnwrap(view.superview)
+            let ignition = try XCTUnwrap(holder.subviews.compactMap { $0 as? NSButton }.first)
+            XCTAssertEqual(ignition.accessibilityLabel(), cockpit)
+
+            let nozzle = try XCTUnwrap(subscriptions.first { $0.accessibilityIdentifier() == "dock.subscription." + member })
+            nozzle.setAccessibilityFocused(true)
+            try await wait { dock.detachedCardForChecks != nil }
+            let card = try XCTUnwrap(dock.detachedCardForChecks)
+            let settingsButton = try XCTUnwrap(button("dock.card.enter", in: card))
+            let closeButton = try XCTUnwrap(button("dock.card.close", in: card))
+            XCTAssertEqual(settingsButton.accessibilityLabel(), settings)
+            XCTAssertEqual(closeButton.accessibilityLabel(), close)
+            XCTAssertTrue(closeButton.accessibilityPerformPress(), "An accepted accessibility press reports dispatch")
+            XCTAssertNil(dock.detachedCardForChecks)
+            XCTAssertFalse(closeButton.accessibilityPerformPress(), "A retired card button cannot dispatch")
+            nozzle.setAccessibilityFocused(false)
+        }
+    }
+
     func testD18OverflowRowsKeepAccessibleActionsAcrossReopening() async throws {
         let topology = Topology()
         let (rows, ids) = try aliasedRows(memberCount: 30)
