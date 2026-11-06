@@ -34,3 +34,26 @@ test('CKP-STRIP-04 alert lamp is rectangular and shares the header key height',a
  expect(sizes.width).toBeGreaterThan(sizes.height);expect(Math.abs(sizes.height-sizes.keyHeight)).toBeLessThanOrEqual(1);
  await expect(lamp.locator('span')).toHaveText('ALERT');await expect(lamp).toHaveAccessibleName('Alert inactive');
 });
+
+test('CKP-MFD-01 page screen stays beside faders without an expand key',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data:currentSample()})])expect(await receive(raw)).toBe(true);
+ const screen=page.locator('.mfd-screen'),faders=page.locator('.dk-fad');await expect(screen).toBeVisible();await expect(faders).toBeVisible();
+ const a=await screen.boundingBox(),b=await faders.boundingBox();expect(a).not.toBeNull();expect(b).not.toBeNull();
+ expect(a.x).toBeGreaterThanOrEqual(b.x+b.width-1);expect(a.width).toBeGreaterThan(b.width/2);
+ await expect(page.getByRole('button',{name:/expand|扩大|展开/i})).toHaveCount(0);
+});
+
+test('CKP-MFD-02 page keys show the active selection in both locales',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data:currentSample()})])expect(await receive(raw)).toBe(true);
+ const keys=page.locator('.mfd-pk button');await expect(keys).toHaveCount(4);
+ for(const [i,name] of ['Overview','Subscription','Effort','Breakdown'].entries()){
+  await expect(keys.nth(i)).toHaveAccessibleName(name);await expect(keys.nth(i)).toBeVisible();const r=await keys.nth(i).boundingBox();expect(r).not.toBeNull();await page.mouse.click(r.x+r.width/2,r.y+r.height/2);
+  for(let j=0;j<4;j++){await expect(keys.nth(j)).toHaveAttribute('aria-pressed',String(i===j));if(i===j)await expect(keys.nth(j)).toHaveClass(/\bon\b/);else await expect(keys.nth(j)).not.toHaveClass(/\bon\b/);}
+ }
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ for(const [i,name] of ['总览','订阅','档位','去向'].entries())await expect(keys.nth(i)).toHaveAccessibleName(name);
+});
