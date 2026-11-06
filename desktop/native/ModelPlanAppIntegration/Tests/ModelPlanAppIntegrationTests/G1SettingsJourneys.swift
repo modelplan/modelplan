@@ -3,7 +3,7 @@ import AppKit
 import XCTest
 import ModelPlanEngineClient
 import ModelPlanEngineStore
-import ModelPlanSettings
+@testable import ModelPlanSettings
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
@@ -91,12 +91,96 @@ private actor G1SettingsEngine: EngineClient {
         let fields = flatten(try XCTUnwrap(window.contentView)).compactMap { $0 as? NSTextField }
         XCTAssertTrue(fields.contains { !$0.isHiddenOrHasHiddenAncestor && $0.stringValue == text }, "Missing \(text)")
     }
-    private func choose(_ id: String, value: String, in window: NSWindow) throws {
+    /// One explicit choice through the real window controller, then wait until that controller has
+    /// finished the whole transaction (store commit, observer acknowledgments, UI refresh). A store
+    /// receipt alone is not enough: the editor stays busy until every commit observer acknowledges.
+    private func choose(_ id: String, value: String, in window: NSWindow) async throws {
+        let controller = try XCTUnwrap(window.windowController as? SettingsWindowController)
         let popup = try control(id, in: window, as: NSPopUpButton.self)
         XCTAssertTrue(popup.isEnabled, "\(id) must accept the explicit choice")
         let item = try XCTUnwrap(popup.itemArray.first { ($0.representedObject as? String) == value })
         popup.select(item)
         XCTAssertTrue(popup.sendAction(popup.action, to: popup.target))
+        await controller.waitForPendingSave()
+        XCTAssertFalse(controller.editor.isSaving, "\(id) must settle before the next edit")
+    }
+    /// A slow app consumer: the store commit lands before the UI may accept the next edit.
+    @MainActor private final class Acknowledgments { var count = 0 }
+    private func delayAcknowledgments(_ app: EngineDockMenuApplication) -> @MainActor () -> Int {
+        let acknowledged = Acknowledgments()
+        let editor = app.settingsHost.application.editor
+        let id = editor.observeCommittedEdits { _ in
+            try? await Task.sleep(for: .milliseconds(150)); acknowledged.count += 1
+        }
+        addTeardownBlock { @MainActor in editor.removeCommitObserver(id) }
+        return { acknowledged.count }
+    }
+    /// Visible controls and labels that overlap, spill outside their container or cannot show their text.
+    private func layoutProblems(in views: [NSView], root: NSView) -> [String] {
+        root.layoutSubtreeIfNeeded()
+        for case let scroll as NSScrollView in flatten(root) { scroll.documentView?.layoutSubtreeIfNeeded() }
+        func name(_ view: NSView) -> String {
+            if let row = view as? SettingsNativeRow { return "row " + row.key.rawValue }
+            let id = view.accessibilityIdentifier()
+            if !id.isEmpty { return id }
+            if let field = view as? NSTextField, !field.stringValue.isEmpty { return "label '\(field.stringValue.prefix(40))'" }
+            if let button = view as? NSButton, !button.title.isEmpty { return "button '\(button.title.prefix(40))'" }
+            return String(describing: type(of: view))
+        }
+        func container(_ view: NSView) -> NSView {
+            var current = view.superview
+            while let candidate = current {
+                if let scroll = candidate.enclosingScrollView, scroll.documentView === candidate { return candidate }
+                current = candidate.superview
+            }
+            return root
+        }
+        let shown = views.filter { view in
+            !view.isHiddenOrHasHiddenAncestor && view.alphaValue > 0 && view.bounds.width > 0.5 && view.bounds.height > 0.5
+                && !(view is NSScroller) && !(view is NSTableView)
+                && ((view as? NSTextField).map { !$0.stringValue.isEmpty || $0.isEditable } ?? true)
+        }
+        var problems: [String] = []
+        for view in shown {
+            let box = container(view)
+            let frame = view.convert(view.bounds, to: box)
+            if !box.bounds.insetBy(dx: -0.5, dy: -0.5).contains(frame) { problems.append("\(name(view)) spills outside its container") }
+            if let parent = view.superview, !parent.bounds.insetBy(dx: -0.5, dy: -0.5).contains(view.frame) {
+                problems.append("\(name(view)) spills outside \(name(parent))")
+            }
+            if let field = view as? NSTextField, !field.isEditable, let cell = field.cell {
+                let needed = cell.cellSize(forBounds: NSRect(x: 0, y: 0, width: field.bounds.width, height: .greatestFiniteMagnitude))
+                if needed.height > field.bounds.height + 1 { problems.append("\(name(view)) text is cut off vertically") }
+                if !cell.wraps, cell.cellSize.width > field.bounds.width + 1 { problems.append("\(name(view)) text is truncated") }
+            } else if let button = view as? NSButton, !(view is NSPopUpButton), !button.title.isEmpty,
+                      button.intrinsicContentSize.width > button.bounds.width + 1 {
+                problems.append("\(name(view)) title is truncated")
+            }
+        }
+        for (index, first) in shown.enumerated() {
+            for second in shown[(index + 1)...] where !first.isDescendant(of: second) && !second.isDescendant(of: first) {
+                let a = first.convert(first.visibleRect, to: nil), b = second.convert(second.visibleRect, to: nil)
+                let overlap = a.intersection(b)
+                if !overlap.isNull, overlap.width > 1, overlap.height > 1 { problems.append("\(name(first)) overlaps \(name(second))") }
+            }
+        }
+        return problems
+    }
+    private func leadingEdgeProblems(_ views: [NSView], label: String) -> [String] {
+        let visible = views.filter { !$0.isHiddenOrHasHiddenAncestor }
+        guard let reference = visible.first.map({ $0.convert($0.bounds, to: nil).minX }) else { return ["no visible \(label)"] }
+        var problems: [String] = []
+        for view in visible {
+            let x = view.convert(view.bounds, to: nil).minX
+            guard abs(x - reference) > 1 else { continue }
+            let id = view.accessibilityIdentifier()
+            let name = (view as? SettingsNativeRow).map { "row " + $0.key.rawValue } ?? (id.isEmpty ? String(describing: type(of: view)) : id)
+            problems.append("\(name) \(label) starts at x=\(x), others at x=\(reference)")
+        }
+        return problems
+    }
+    private func nonStrict() -> XCTExpectedFailure.Options {
+        let options = XCTExpectedFailure.Options(); options.isStrict = false; return options
     }
 
     func testG1_FR_9_02_FirstRunPrivacyText() async throws {
@@ -158,6 +242,70 @@ private actor G1SettingsEngine: EngineClient {
         }
     }
 
+    // G3-24 (owner ledger): no first-run sheet on first launch of a profile whose onboarding was already
+    // completed is expected. The same normal launch restore shows it for a profile that has not completed it.
+    func testG1_G3_24_FirstRunAppearsOnlyUntilOnboardingCompletes() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g1-g3-24-" + UUID().uuidString)
+        let app = try await entry(locale: "en-US", profileURL: profile)
+        let window = try await firstRun(app)
+        let done = try control("firstRun.done", in: window, as: NSButton.self)
+        XCTAssertTrue(done.isEnabled); done.performClick(nil)
+        var saved = await app.foundationStore.snapshot()
+        for _ in 0..<1000 where !saved.preferences.onboarding.completed {
+            await Task.yield(); saved = await app.foundationStore.snapshot()
+        }
+        XCTAssertTrue(saved.preferences.onboarding.completed)
+        window.close(); await app.composition.stop()
+        let reopened = try await entry(locale: "en-US", profileURL: profile)
+        let before = Set(NSApplication.shared.windows.map(ObjectIdentifier.init))
+        await reopened.restoreFirstRunIfNeeded()
+        let shown = NSApplication.shared.windows.filter { !before.contains(ObjectIdentifier($0)) && $0.isVisible }
+        XCTAssertEqual(shown.map(\.title), [], "A completed profile must not get the first-run sheet again")
+        for extra in shown { extra.close() }
+    }
+
+    // G3-25 (owner ledger): the owner reports a messy first-run sheet. Expected failure until fixed; drop
+    // the XCTExpectFailure wrapper with the fix so this becomes the regression.
+    func testG1_G3_25_FirstRunLayoutHasNoOverlapClippingOrMisalignment() async throws {
+        for locale in ["en-US", "zh-CN"] {
+            for members in [0, 2] {
+                let app = try await entry(locale: locale, discoveredMembers: members)
+                let window = try await firstRun(app)
+                let root = try XCTUnwrap(window.contentView)
+                let views = flatten(root).filter { $0 is NSControl || $0 is SettingsDiagramView }
+                var problems = layoutProblems(in: views, root: root)
+                let column = try ["firstRun.title", "firstRun.privacy", "firstRun.publicRecommendation", "firstRun.subscriptions", "firstRun.login", "firstRun.done"]
+                    .map { try control($0, in: window, as: NSView.self) }
+                problems += leadingEdgeProblems(column, label: "leading edge")
+                XCTExpectFailure("G3-25: owner-reported messy first-run sheet layout", options: nonStrict()) {
+                    XCTAssertEqual(problems, [], "G3-25 first-run layout (\(locale), \(members) members)")
+                }
+            }
+        }
+    }
+
+    // G3-26 (owner ledger): the owner reports a messy Settings > Subscriptions pane. Expected failure until
+    // fixed; drop the XCTExpectFailure wrapper with the fix so this becomes the regression.
+    func testG1_G3_26_SubscriptionsPaneLayoutHasNoOverlapClippingOrMisalignment() async throws {
+        for locale in ["en-US", "zh-CN"] {
+            for members in [0, 3] {
+                let app = try await entry(locale: locale, discoveredMembers: members)
+                let window = try await settings(app, pane: "subscriptions")
+                let root = try XCTUnwrap(window.contentView)
+                let rows = flatten(root).compactMap { $0 as? SettingsNativeRow }.filter { !$0.isHiddenOrHasHiddenAncestor }
+                XCTAssertFalse(rows.isEmpty, "Subscriptions pane must show rows")
+                let views: [NSView] = rows.map { $0 as NSView } + rows.flatMap { flatten($0).filter { $0 is NSControl || $0 is SettingsDiagramView } }
+                var problems = layoutProblems(in: views, root: root)
+                problems += leadingEdgeProblems(rows, label: "row edge")
+                problems += leadingEdgeProblems(rows.map(\.titleLabel), label: "title column")
+                problems += leadingEdgeProblems(rows.map(\.controls), label: "control column")
+                XCTExpectFailure("G3-26: owner-reported messy Settings > Subscriptions layout", options: nonStrict()) {
+                    XCTAssertEqual(problems, [], "G3-26 Subscriptions layout (\(locale), \(members) members)")
+                }
+            }
+        }
+    }
+
     func testG1_SET_9_08_DockSectionHeadings() async throws {
         for (locale, expected) in [
             ("en-US", ["Display", "Numbers", "Position", "Order"]),
@@ -191,13 +339,24 @@ private actor G1SettingsEngine: EngineClient {
         }
     }
 
-    func testG1_SET_9_07_AutomaticUpdatesDefaultOn() async throws {
-        let app = try await entry(locale: "en-US")
-        let window = try await settings(app, pane: "general")
-        let choice = try control("settings.automaticUpdates", in: window, as: NSPopUpButton.self)
-        XCTAssertEqual(choice.selectedItem?.representedObject as? String, "true")
-        let saved = await app.foundationStore.snapshot()
-        XCTAssertTrue(saved.preferences.automaticUpdates)
+    // SET-9-07 (automatic update checks) and SET-9-20 (manual check) are removed in v1 by D16.
+    // The normal entry must not offer any update control, in either language, on any pane.
+    func testG1_SET_9_07_D16_NoUpdateControlsInV1() async throws {
+        for locale in ["en-US", "zh-CN"] {
+            let app = try await entry(locale: locale)
+            let window = try await settings(app, pane: "general")
+            for pane in SettingsStructure.task65.panes {
+                await app.settingsHost.present(paneID: pane.id, origin: .userInitiated)
+                let views = flatten(try XCTUnwrap(window.contentView)).filter { !$0.isHiddenOrHasHiddenAncestor }
+                for id in ["settings.automaticUpdates", "settings.updateStatus"] {
+                    XCTAssertFalse(views.contains { $0.accessibilityIdentifier() == id }, "\(pane.id) offers \(id)")
+                }
+                let labels = views.compactMap { ($0 as? NSTextField)?.stringValue ?? ($0 as? NSButton)?.title }
+                for title in ["Check for updates automatically", "App updates", "自动检查更新", "应用更新"] {
+                    XCTAssertFalse(labels.contains(title), "\(pane.id) shows \(title)")
+                }
+            }
+        }
     }
 
     func testG1_SET_9_19_PrivacyDefaultsAndRetentionLabels() async throws {
@@ -278,20 +437,19 @@ private actor G1SettingsEngine: EngineClient {
         let app = try await entry(locale: "en-US", discoveredMembers: 2)
         let window = try await settings(app, pane: "dock")
         try assertControls(["settings.showPercentages", "settings.percentageMode", "settings.redBelow", "settings.sliverAlert"], in: window)
-        try choose("settings.showPercentages", value: "false", in: window)
+        let acknowledged = delayAcknowledgments(app)
+        try await choose("settings.showPercentages", value: "false", in: window)
         var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.showPercentages { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertFalse(saved.preferences.showPercentages)
         XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.showPercentages, false)
-        try choose("settings.percentageMode", value: "used", in: window)
+        try await choose("settings.percentageMode", value: "used", in: window)
         saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.percentageMode != .used { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertEqual(saved.preferences.percentageMode, .used)
-        try choose("settings.redBelow", value: "16", in: window)
+        try await choose("settings.redBelow", value: "16", in: window)
         saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.redBelow != 16 { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertEqual(saved.preferences.redBelow, 16)
         XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.redBelow, 16)
+        XCTAssertEqual(acknowledged(), 3, "each chained edit waited for the slow consumer's acknowledgment")
         throw XCTSkip("Actual widget values, event dots, per-member pin and relaunch remain unverified")
     }
 
@@ -300,9 +458,8 @@ private actor G1SettingsEngine: EngineClient {
         let window = try await settings(app, pane: "dock")
         try assertControls(["settings.dockDisplay", "settings.dockEdge", "settings.fullscreen", "settings.activeDisplay"], in: window)
         try assertLabel("Hide from capture", in: window)
-        try choose("settings.dockEdge", value: "left", in: window)
-        var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.dockEdge != .left { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        try await choose("settings.dockEdge", value: "left", in: window)
+        let saved = await app.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.dockEdge, .left)
         XCTAssertEqual(app.composition.dock.currentMenuBarPreferences?.dockEdge, .left)
         throw XCTSkip("Multi-display placement and actual fullscreen/capture behaviour require an admitted GUI session")
@@ -329,14 +486,14 @@ private actor G1SettingsEngine: EngineClient {
         let snapshot = await app.foundationStore.snapshot()
         XCTAssertEqual(snapshot.preferences.motion, .system)
         XCTAssertEqual(snapshot.preferences.transparency, .system)
-        try choose("settings.motion", value: "on", in: window)
+        let acknowledged = delayAcknowledgments(app)
+        try await choose("settings.motion", value: "on", in: window)
         var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.motion != .on { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertEqual(saved.preferences.motion, .on)
-        try choose("settings.transparency", value: "on", in: window)
+        try await choose("settings.transparency", value: "on", in: window)
         saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.transparency != .on { await Task.yield(); saved = await app.foundationStore.snapshot() }
         XCTAssertEqual(saved.preferences.transparency, .on)
+        XCTAssertEqual(acknowledged(), 2, "each chained edit waited for the slow consumer's acknowledgment")
         throw XCTSkip("Theme and accessibility effects on all open surfaces and relaunch remain unverified")
     }
 
@@ -367,9 +524,8 @@ private actor G1SettingsEngine: EngineClient {
         let app = try await entry(locale: "en-US", profileURL: profile)
         let window = try await settings(app, pane: "general")
         try assertControls(["settings.language", "settings.menuDisplay"], in: window)
-        try choose("settings.language", value: "zh-CN", in: window)
-        var saved = await app.foundationStore.snapshot()
-        for _ in 0..<1000 where saved.preferences.language != .chinese { await Task.yield(); saved = await app.foundationStore.snapshot() }
+        try await choose("settings.language", value: "zh-CN", in: window)
+        let saved = await app.foundationStore.snapshot()
         XCTAssertEqual(saved.preferences.language, .chinese)
         window.close(); await app.composition.stop()
         let reopened = try await entry(locale: "en-US", profileURL: profile)

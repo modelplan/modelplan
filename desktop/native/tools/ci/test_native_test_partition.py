@@ -66,6 +66,29 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(any("failed: Mod.Fast/testA" in e for e in
                             partition.verify(PKG, self.expected, log([("Mod.Fast/testA", "failed"), ("Mod.Fast/testEnvGated", "passed")]), "headless")))
 
+    def test_repository_admits_exactly_the_deferred_g1_settings_skips_on_the_gui_leg(self):
+        import re
+        pkg = MANIFEST["packages"]["app-integration"]
+        source = (ROOT / "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests/G1SettingsJourneys.swift").read_text()
+        methods = re.findall(r"func (testG1_\w+)\(\) async throws \{(.*?)\n    \}\n", source, re.S)
+        deferred = sorted(name for name, body in methods if "throw XCTSkip(" in body)
+        complete = sorted(name for name, body in methods if "throw XCTSkip(" not in body)
+        admitted = sorted(k.split("/", 1)[1] for k in pkg["allowedSkips"] if k.startswith("G1SettingsJourneys/"))
+        self.assertEqual(admitted, deferred)
+        self.assertEqual(len(deferred), 12)
+        cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in deferred]
+        complete_cases = [f"ModelPlanAppIntegrationTests.G1SettingsJourneys/{name}" for name in complete]
+        # The actual CI shape: deferred journeys skip, complete journeys pass, on the GUI leg.
+        self.assertEqual(partition.verify(pkg, cases + complete_cases,
+                                          log([(c, "skipped") for c in cases] + [(c, "passed") for c in complete_cases]), "gui"), [])
+        # A deferred journey is not admitted on the other leg, a complete journey may not skip, and failures stay red.
+        self.assertTrue(any("allowed-skip entry for the headless leg" in e for e in
+                            partition.verify(pkg, cases[:1], log([(cases[0], "skipped")]), "headless")))
+        self.assertTrue(any("allowed-skip entry for the gui leg" in e for e in
+                            partition.verify(pkg, complete_cases[:1], log([(complete_cases[0], "skipped")]), "gui")))
+        self.assertTrue(any("failed:" in e for e in
+                            partition.verify(pkg, cases[:1], log([(cases[0], "failed")]), "gui")))
+
     def test_a_skip_allowed_on_the_other_leg_is_not_allowed_here(self):
         pkg = {**PKG, "headless": ["Fast", "Window"]}
         _, expected, _ = partition.plan(pkg, LISTED, "headless")
