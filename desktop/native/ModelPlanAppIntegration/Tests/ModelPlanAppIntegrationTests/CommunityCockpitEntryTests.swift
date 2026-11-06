@@ -152,6 +152,33 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
         await app.composition.stop()
     }
+    // Owner D39/D-E: package-neutral.sh --owner-test writes ModelPlanCockpitEntryEnabled=true; the release and
+    // --unverified packages write false (preflight PF-08). The normal entry reads only the packaged Info.plist here
+    // (no cockpitEntryEnabled override), so this is the packaged switch, not a test seam.
+    @MainActor func testOwnerTestPackageOpensCockpitAndReleasePackageDoesNot() async throws {
+        for (mode, enabled) in [("owner-test", true), ("release", false)] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("d-e-\(mode)-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:root) }
+            let app=root.appendingPathComponent("ModelPlan Community.app"),contents=app.appendingPathComponent("Contents")
+            try FileManager.default.createDirectory(at:contents.appendingPathComponent("MacOS"),withIntermediateDirectories:true)
+            let info:[String:Any]=["CFBundleIdentifier":"org.modelplan.community.swift.scaffold","CFBundleExecutable":"ModelPlanCommunity",
+                                   "CFBundlePackageType":"APPL","ModelPlanCockpitEntryEnabled":enabled]
+            try PropertyListSerialization.data(fromPropertyList:info,format:.xml,options:0).write(to:contents.appendingPathComponent("Info.plist"))
+            let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+            let surface=ConsoleRouteProbe(); var constructed=0
+            let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,bundleURL:app,
+                makeClient:{_,_ in RouteClient()},makeConsole:{_ in constructed += 1; return surface},activateSettings:{})
+            await entry.prepare(); entry.composition.dock.setPresentationAllowed(true); entry.renderMenu()
+            let status=try XCTUnwrap(entry.liveStatusMenu)
+            let item=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") }, mode)
+            XCTAssertEqual(item.isEnabled,enabled,mode)
+            entry.perform(NSSelectorFromString("showConsoleMenu"))
+            entry.composition.dock.perform(NSSelectorFromString("openConsole"))
+            XCTAssertEqual(constructed,enabled ? 1 : 0,mode)
+            XCTAssertEqual(surface.shows,enabled ? 2 : 0,mode)
+            await entry.composition.stop()
+        }
+    }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-switch-"+UUID().uuidString)

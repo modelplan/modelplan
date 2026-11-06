@@ -45,7 +45,7 @@ BUNDLE_ID = 'org.modelplan.community.swift.scaffold'
 RESOURCE_BUNDLES = ('ModelPlanAppIntegration_ModelPlanAppIntegration.bundle',
                     'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle',
                     'ModelPlanDockResources_ModelPlanDockResources.bundle')
-COCKPIT_BUNDLE = 'ModelPlanCockpitWeb_ModelPlanCockpitWeb.bundle'  # copied by package-neutral.sh after #489
+COCKPIT_BUNDLE = 'Cockpit'  # the verified page CockpitConsoleOwner loads; package-neutral.sh --owner-test copies it
 VF_MARKER = 'ModelPlanVerificationFlavour'
 UPDATER_KEYS = ('SUFeedURL', 'SUPublicEDKey', 'SUEnableAutomaticChecks')
 LANE_HOST = {'V1': 'macci', 'M1': 'dev-mac'}
