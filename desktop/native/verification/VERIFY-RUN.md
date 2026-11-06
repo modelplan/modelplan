@@ -62,7 +62,7 @@ FAIL stops the run before booking (every ID becomes `NOT-RUN reason=preflight-PF
 | PF-08 | `ModelPlanCockpitEntryEnabled` not false (release) or true (test), the VF marker `ModelPlanVerificationFlavour` outside the verify flavour, any Sparkle framework or feed key |
 | PF-09 | `codesign --verify --deep --strict` failing (ad-hoc accepted; kind recorded) |
 | PF-10 | An ID not at tier T3/T4 in `scenario-tiers.tsv`, or without a valid step file, both read from the control revision (`--control-ref`, default `origin/main`), or whose layout, flavour or profile does not match. Refused IDs are NOT-RUN; the rest continue |
-| PF-11 | `MODELPLAN_VERIFICATION_HOST` not matching the lane (V1 = `macci`, M1 = `dev-mac`); display count, scales or arrangement not matching `layouts.json`; Dock position or auto-hide, Reduce Motion, appearance or VoiceOver away from the recorded baseline |
+| PF-11 | `MODELPLAN_VERIFICATION_HOST` not matching the lane (V1 = `macci`, M1 = `dev-mac`); display count, scales or arrangement not matching `layouts.json`; Dock position or auto-hide, Reduce Motion, appearance, VoiceOver or the menu-bar item owners (`menuExtras`: owner-name window counts, names only) away from the recorded baseline — no third-party or name-bearing menu extra may be present, so none can enter a captured menu bar |
 | PF-12 | A ModelPlan process or a CI job already running, stale candidate scratch (synthetic), under 8 GiB free, another started GUI booking |
 
 Checks that need macOS tools (ditto, codesign, the display probe) FAIL with `requires-macos` on any other
@@ -87,8 +87,17 @@ host. Tests inject a fake host; a real run never passes them by default.
 - Actions: `wait-window` (`timeoutSeconds`, optional `budgetSeconds`: an owned window must appear;
   later than the budget is REVIEW, none is FAIL), `expect-no-window` (`timeoutSeconds`),
   `capture-window` (owned-window PNG and AX tree through `tools/u14/macos_ax.swift`),
-  `capture-menubar` (`width`, `height`: a crop at the right end of the main display's menu bar),
+  `capture-menubar` (`width`, `height` declared for review only: the crop is the candidate's OWN
+  status item, from accessibility on the candidate PID — the probe's `statusItem` bounds; without
+  them the step is NOT-RUN, never a broad system-region crop),
   `set-appearance` (`value`), `status-menu` (`item`, `menuAction`), `relaunch`, `dwell` (`seconds`).
+- Before every step the runner re-reads the authoritative supervisor state (stop file, lease
+  identity, revocation or takeover, guardian heartbeat, deadline — the same verdict launch.py's
+  own supervisor applies): once it stops, the ID is NOT-RUN, the segment aborts, and only bounded
+  cleanup and the recorded baseline restoration follow.
+- A failed baseline restoration is a machine assertion: the ID ends FAIL
+  (`restore-failed-...`), the run exits non-zero and no later segment starts until the lane
+  re-establishes and re-records the baseline.
 - Not yet wired, so NOT-RUN with the reason: `status-menu` (needs the test-build arrival observer and
   `pointer_drive --status-menu-plan`; Hide/Show have no fixed action ID), `relaunch` (packaged_candidate
   removes the synthetic HOME after one launch), `set-appearance` unless the host has a recorded Automation

@@ -201,6 +201,13 @@ class PreflightTests(unittest.TestCase):
                                      manifest=self.m1_manifest(digest))
         self.assertEqual(self.failed(receipt), [])
 
+    def test_a_menu_extra_beyond_the_recorded_baseline_fails_pf11(self):
+        digest = write_artifact(self.artifacts, NAME)
+        base = dict(dockOrientation='bottom', dockAutohide=False, reduceMotion=False, appearance='light', voiceOver=False)
+        name_bearing = {'Clock': 1, 'Control Center': 1, 'SystemUIServer': 1}  # fast user switching item
+        for extras in (name_bearing, {}):  # an added name-bearing extra, or the pinned items removed
+            self.assertIn('PF-11', self.failed(self.run_preflight(digest, host=FakeHost(digest, settings=base | {'menuExtras': extras}))))
+
     def m1_manifest(self, digest):
         m = manifest(digest)
         m['approval'] = 'https://github.com/modelplan/modelplan/issues/570#issuecomment-3'
@@ -276,7 +283,9 @@ class RepositoryDataTests(unittest.TestCase):
         layouts = json.loads((VERIFICATION / 'layouts.json').read_text())
         self.assertEqual(sorted(layouts['layouts']), ['abc', 'single'])
         self.assertEqual(sorted(layouts['systemBaseline']),
-                         ['appearance', 'dockAutohide', 'dockOrientation', 'reduceMotion', 'voiceOver'])
+                         ['appearance', 'dockAutohide', 'dockOrientation', 'menuExtras', 'reduceMotion', 'voiceOver'])
+        self.assertEqual(layouts['systemBaseline']['menuExtras'],
+                         {'Clock': 1, 'Control Center': 1})  # Apple items only: no name-bearing extra
 
 
 if __name__ == '__main__':

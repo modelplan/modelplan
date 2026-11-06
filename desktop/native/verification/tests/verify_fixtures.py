@@ -77,7 +77,8 @@ class FakeHost:
         self.jobs = jobs if jobs is not None else [dict(name='app-smoke', conclusion='success')]
         self.displays = displays if displays is not None else [dict(x=0, y=0, width=1512, height=982, scale=2, main=True)]
         self.settings = settings if settings is not None else dict(dockOrientation='bottom', dockAutohide=False,
-                                                                     reduceMotion=False, appearance='light', voiceOver=False)
+                                                                     reduceMotion=False, appearance='light', voiceOver=False,
+                                                                     menuExtras={'Clock': 1, 'Control Center': 1})
         self._executables = list(executables)
         self.environ = {'MODELPLAN_VERIFICATION_HOST': 'macci'} if environ is None else environ
         self.booking = booking or {'head': None}

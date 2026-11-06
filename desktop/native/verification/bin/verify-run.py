@@ -27,6 +27,7 @@ import time
 
 BIN = Path(__file__).resolve().parent
 sys.path.insert(0, str(BIN))
+import launch  # noqa: E402
 import preflight  # noqa: E402
 import verify_steps  # noqa: E402
 
@@ -56,6 +57,18 @@ EMAIL = re.compile(r'[\w.+-]+@[\w-]+\.[\w.-]+')
 
 class NotRun(Exception):
     """This ID cannot run here; the reason goes into results.txt."""
+
+
+def supervisor_state(subject, now):
+    """The authoritative supervisor state before any step: the stop file, the lease's identity,
+    revocation or takeover, the guardian heartbeat (within supervision's tolerance) and the
+    deadline — the same verdict launch.py's own supervisor applies. A subject without supervisor
+    paths cannot prove authority at all, which also fails closed."""
+    for key in ('stopPath', 'leasePath'):
+        if not subject.get(key):
+            return 'authority-missing-' + key.lower()[:-4]
+    return launch.stop_reason(dict(stopPath=subject['stopPath'], leasePath=subject['leasePath'],
+                                   lease=subject.get('leaseSnapshot') or {}), now)
 
 
 class StopRun(Exception):
@@ -137,6 +150,33 @@ class Actions:
                                 capture_output=True, timeout=30)
         if result.returncode != 0 or not png.exists():
             raise NotRun('menubar-capture-failed')
+
+    def status_item_rect(self, subject, directory):
+        """The candidate's own status-item bounds as a screencapture crop (top-left origin), from
+        accessibility on the candidate PID. Fail-closed: without the owned item's bounds no
+        system-region capture happens at all — a broad menu-bar crop can carry the host user's
+        name (fast user switching), and pixels cannot be marker-scanned like text."""
+        report = self.capture(subject, directory, 5)
+        ax = report.get('ax') or {}
+        item = ax.get('statusItem')
+        tree = directory / 'ax-tree.json'
+        if self.ctx['profile'] == 'synthetic' and tree.exists():
+            check_markers(tree, self.ctx)
+        main = next(d for d in self.ctx['displays'] if d.get('main'))
+        if ax.get('outcome') != 'pass' or not isinstance(item, dict):
+            raise NotRun('menubar-crop-needs-owned-status-item-bounds')
+        try:
+            x, y = float(item['x']), float(item['y'])
+            w, h = float(item['width']), float(item['height'])
+        except (KeyError, TypeError, ValueError):
+            raise NotRun('menubar-crop-needs-owned-status-item-bounds')
+        if w <= 0 or h <= 0:
+            raise NotRun('menubar-crop-needs-owned-status-item-bounds')
+        top = main['height'] - (y + h)  # AX origin is the main display's bottom-left corner
+        rect = (max(0, int(round(x))), max(0, int(round(top))), int(math.ceil(w)), int(math.ceil(h)))
+        if rect[2] <= 0 or rect[3] <= 0:
+            raise NotRun('menubar-crop-needs-owned-status-item-bounds')
+        return rect
 
     def dialogs(self):
         probe = r"""ObjC.import('CoreGraphics'); var a = ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1, 0));
@@ -259,7 +299,10 @@ class Session:
                 started = next((x for x in lines if 'ownedPID' in x and 'bundle' in x), None)
                 if record.get('state') == 'running' and started:
                     home = json.loads(self.registry.read_text())['registry']['root'] + '/home'
-                    return dict(pid=record['pid'], bundle=started['bundle'], home=home, registeredAt=time.time())
+                    lease = json.loads(Path(paths['leasePath']).read_text())
+                    return dict(pid=record['pid'], bundle=started['bundle'], home=home, registeredAt=time.time(),
+                                leasePath=paths['leasePath'], stopPath=paths['stopPath'],
+                                leaseSnapshot={k: lease.get(k) for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
             except (OSError, ValueError, KeyError):
                 pass
             if self.procs['run'].poll() is not None:
@@ -314,6 +357,13 @@ def ax_strings(node):
             yield from ax_strings(item)
 
 
+def check_markers(tree, ctx):
+    """A synthetic run's captured AX text must never contain this host user's names or an email."""
+    text = '\n'.join(ax_strings(json.loads(tree.read_text())))
+    if EMAIL.search(text) or any(re.search(r'\b' + re.escape(m) + r'\b', text) for m in ctx['markers']):
+        raise StopRun('account-data-on-screen', isolation=True)
+
+
 def run_id(ident, step, segment, subject, ctx, actions, out):
     """Execute one ID's steps. Returns (outcome, reason, receipt)."""
     folder = out / ident
@@ -322,6 +372,11 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
     try:
         before = []  # any dialog on screen counts, including one that was already open
         for number, item in enumerate(step['steps'], 1):
+            stopped = supervisor_state(subject, actions.clock())
+            if stopped:
+                # No step, capture or System Events action runs after the supervisor (stop file,
+                # revoked lease, dead guardian heartbeat or deadline) withdrew the run's authority.
+                raise StopRun('supervisor-' + stopped)
             label = f'{number:02d}-{item["name"]}'
             record = dict(step=label, action=item['action'], startedAt=actions.clock())
             records.append(record)
@@ -336,9 +391,7 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                     png.replace(folder / (label + '.png')); record['png'] = label + '.png'
                 tree = folder / (label + '.probe') / 'ax-tree.json'
                 if ctx['profile'] == 'synthetic' and tree.exists():
-                    text = '\n'.join(ax_strings(json.loads(tree.read_text())))
-                    if EMAIL.search(text) or any(re.search(r'\b' + re.escape(m) + r'\b', text) for m in ctx['markers']):
-                        raise StopRun('account-data-on-screen', isolation=True)
+                    check_markers(tree, ctx)
                 record.update(ax=(report.get('ax') or {}).get('outcome'), screenshot=shot.get('outcome'))
                 elapsed = actions.clock() - subject['registeredAt']
                 if kind == 'wait-window':
@@ -354,14 +407,16 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
                         raise NotRun(f'{label}-no-window-image-{shot.get("reason", "unknown")}')
                     outcome = 'REVIEW' if outcome == 'PASS' else outcome
             elif kind == 'capture-menubar':
-                main = next(d for d in ctx['displays'] if d.get('main'))
-                rect = (int(main['width'] - item['width']), 0, item['width'], item['height'])
+                # The crop is the candidate's OWN status item, from accessibility on the candidate
+                # PID: a broad right-hand menu-bar region can carry the host user's name (fast user
+                # switching), so without the owned item's bounds the step is NOT-RUN, never guessed.
+                rect = actions.status_item_rect(subject, folder / (label + '.item'))
+                record.update(png=label + '.png', region=list(rect), source='owned-status-item')
                 actions.menubar(rect, folder / (label + '.png'))
-                record.update(png=label + '.png', region=list(rect))
                 outcome = 'REVIEW' if outcome == 'PASS' else outcome
             elif kind == 'set-appearance':
-                changed.append(('appearance', ctx['baseline'].get('appearance', 'light')))
                 actions.set_appearance(item['value'])
+                changed.append(('appearance', ctx['baseline'].get('appearance', 'light')))  # only what actually changed
             elif kind == 'status-menu':
                 actions.status_menu(subject, item['item'], item['menuAction'], folder / label)
             elif kind == 'relaunch':
@@ -386,7 +441,9 @@ def run_id(ident, step, segment, subject, ctx, actions, out):
         restore(changed, actions, records)
         write_receipt(folder, ident, ctx, segment, records, 'NOT-RUN', str(error))
         raise
-    restore(changed, actions, records)
+    failed = restore(changed, actions, records)
+    if failed:  # the baseline was not re-established: a machine assertion, not a silent pass
+        outcome, reason = 'FAIL', 'restore-failed-' + '-'.join(sorted(set(failed)))
     write_receipt(folder, ident, ctx, segment, records, outcome, reason)
     return outcome, reason
 
@@ -403,13 +460,18 @@ def purge_captures(folder):
 
 
 def restore(changed, actions, records):
+    """Re-establish the recorded baseline after an ID. Returns the settings it could NOT restore:
+    the caller must make that failure part of the result, never a silent pass."""
+    failed = []
     for setting, value in reversed(changed):
         try:
             if setting == 'appearance':
                 actions.set_appearance(value)
             records.append(dict(step='restore', setting=setting, value=value, restored=True))
         except (NotRun, StopRun) as error:
+            failed.append(setting)
             records.append(dict(step='restore', setting=setting, value=value, restored=False, reason=str(error)))
+    return failed
 
 
 def write_receipt(folder, ident, ctx, segment, records, outcome, reason):
@@ -498,6 +560,11 @@ def execute(manifest, *, lane, layout, ids, out, artifacts_dir, scratch_parent, 
                     try:
                         outcome, reason = run_id(ident, ctx['steps'][ident], segment, subject, ctx, actions, out)
                         results[ident] = (outcome, segment['flavour'], reason)
+                        if reason and str(reason).startswith('restore-failed'):
+                            # The system baseline was not re-established: no later segment runs
+                            # until the lane restores and re-records it (exit status 2 below).
+                            stopped = 'baseline-restore-failed'
+                            deviations.append(f'{ident}: {reason}; later segments stopped until the baseline is re-established')
                     except StopRun as error:
                         stopped = ('ISOLATION-FAIL-' if error.isolation else '') + slug(error)
                         results[ident] = ('NOT-RUN', segment['flavour'], stopped)

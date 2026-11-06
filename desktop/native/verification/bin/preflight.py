@@ -77,6 +77,20 @@ var dock = $.NSUserDefaults.alloc.initWithSuiteName('com.apple.dock');
 var o = dock.stringForKey('orientation');
 out.settings.dockOrientation = o.isNil() ? 'bottom' : ObjC.unwrap(o);
 out.settings.dockAutohide = dock.boolForKey('autohide');
+ObjC.import('CoreGraphics');
+var wins = ObjC.castRefToObject($.CGWindowListCopyWindowInfo(1, 0));
+var extras = {};
+for (var i = 0; i < wins.count; i++) {
+  var w = wins.objectAtIndex(i);
+  var b = w.objectForKey('kCGWindowBounds');
+  if (b.isNil()) continue;
+  var d = ObjC.castRefToObject(b);
+  var y = ObjC.unwrap(d.objectForKey('Y')), h = ObjC.unwrap(d.objectForKey('Height'));
+  if (typeof y !== 'number' || typeof h !== 'number' || y < 0 || y > 8 || h < 4 || h > 40) continue;
+  var owner = ObjC.unwrap(w.objectForKey('kCGWindowOwnerName'));
+  if (owner) extras[owner] = (extras[owner] || 0) + 1;
+}
+out.settings.menuExtras = extras;
 JSON.stringify(out);"""
 
 

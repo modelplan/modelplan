@@ -86,8 +86,32 @@ import UniformTypeIdentifiers
                 guard !tree.isEmpty else { return ["outcome": "fail", "reason": "owned-ax-tree-empty"] }
                 try write(["schemaVersion": 1, "pid": Int(pid), "windows": tree,
                            "nodes": nodes, "truncated": truncated], output.appendingPathComponent("ax-tree.json"))
-                return ["outcome": "pass", "reason": "owned-windows-observed", "nodes": nodes,
-                        "truncated": truncated]
+                var report: [String: Any] = ["outcome": "pass", "reason": "owned-windows-observed",
+                                             "nodes": nodes, "truncated": truncated]
+                // The app's own status item, when it shows exactly one: the only menu-bar region a
+                // verification crop may take (its bounds, in AX screen coordinates).
+                if let extras = value(element, "AXExtrasMenuBar") as? AXUIElement,
+                   let items = value(extras, kAXChildrenAttribute) as? [AXUIElement], items.count == 1 {
+                    var bounds: [String: Any] = ["items": items.count]
+                    if let raw = value(items[0], kAXPositionAttribute), CFGetTypeID(raw) == AXValueGetTypeID() {
+                        var point = CGPoint.zero
+                        if AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cgPoint, &point) {
+                            bounds["x"] = point.x
+                            bounds["y"] = point.y
+                        }
+                    }
+                    if let raw = value(items[0], kAXSizeAttribute), CFGetTypeID(raw) == AXValueGetTypeID() {
+                        var size = CGSize.zero
+                        if AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cgSize, &size) {
+                            bounds["width"] = size.width
+                            bounds["height"] = size.height
+                        }
+                    }
+                    if bounds["x"] != nil && bounds["width"] != nil {
+                        report["statusItem"] = bounds
+                    }
+                }
+                return report
             }
             try await Task.sleep(nanoseconds: 200_000_000)
         }

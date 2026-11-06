@@ -20,6 +20,7 @@ LINE = re.compile(r'^(PASS|FAIL|REVIEW|NOT-RUN) ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ 
 
 class FakeSession:
     opened, closed = [], []
+    lease = None  # set by the harness per run: paths + snapshot of a live lease for the supervisor check
 
     def __init__(self, ctx, segment, index, fail=None, cleaned=True):
         self.segment, self.fail, self.cleaned = segment, fail, cleaned
@@ -28,7 +29,9 @@ class FakeSession:
         FakeSession.opened.append(list(self.segment['ids']))
         if self.fail:
             raise self.fail
-        return dict(pid=123, bundle='/synthetic/ModelPlan Community.app', home='/synthetic/home', registeredAt=100.0)
+        subject = dict(pid=123, bundle='/synthetic/ModelPlan Community.app', home='/synthetic/home', registeredAt=100.0)
+        subject.update(FakeSession.lease or {})  # without paths run_id fails closed on missing authority
+        return subject
 
     def close(self):
         FakeSession.closed.append(list(self.segment['ids']))
@@ -36,9 +39,19 @@ class FakeSession:
 
 
 class FakeActions:
-    def __init__(self, windows=True, at=100.5, dialogs=(), ax_text='Quota Widget', appearance=True):
+    def __init__(self, windows=True, at=100.5, dialogs=(), ax_text='Quota Widget', appearance=True,
+                 item_bounds=dict(x=1412, y=958, width=80, height=24), main_height=982):
         self.windows, self.now, self.dialog_list = windows, at, list(dialogs)
         self.ax_text, self.appearance, self.calls = ax_text, appearance, []
+        self.item_bounds, self.main_height = item_bounds, main_height
+
+    def status_item_rect(self, subject, directory):
+        report = self.capture(subject, directory, 5)
+        item = (report.get('ax') or {}).get('statusItem') if self.item_bounds is not False else None
+        if not item:
+            raise verify_run.NotRun('menubar-crop-needs-owned-status-item-bounds')
+        top = self.main_height - (item['y'] + item['height'])  # AX bottom-left origin -> crop top-left
+        return (int(item['x']), int(top), int(item['width']), int(item['height']))
 
     def capture(self, subject, directory, wait):
         directory.mkdir(parents=True)
@@ -46,7 +59,8 @@ class FakeActions:
         if shown:
             (directory / 'window.png').write_bytes(b'png')
             (directory / 'ax-tree.json').write_text(json.dumps(dict(windows=[dict(AXTitle=self.ax_text)])))
-        return dict(ax=dict(outcome='pass' if shown else 'timeout'),
+        return dict(ax=dict(outcome='pass' if shown else 'timeout',
+                            statusItem=dict(x=1412, y=958, width=80, height=24)),  # the owned item's bounds
                     screenshot=dict(outcome='pass' if shown else 'unsupported', reason='owned-app-unavailable'))
 
     def menubar(self, rect, png):
@@ -83,9 +97,21 @@ class VerifyRunTests(unittest.TestCase):
         FakeSession.opened, FakeSession.closed = [], []
         self.count = 0
 
-    def go(self, ids=('D-01', 'V-01', 'D-14'), actions=None, host=None, session=FakeSession, profile='synthetic'):
+    def go(self, ids=('D-01', 'V-01', 'D-14'), actions=None, host=None, session=FakeSession, profile='synthetic',
+           lease_heartbeat=100.2, stopped=False, with_authority=True):
         self.count += 1
         self.out = self.root / f'out{self.count}'
+        if with_authority:  # a live lease the runner's supervisor check accepts (FakeActions clock 100.5)
+            lease_path, stop_path = self.root / f'lease{self.count}.json', self.root / f'STOP{self.count}'
+            lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=1e12, guardianHeartbeatAt=lease_heartbeat,
+                         ownerPreempted=False, exclusive=True)
+            lease_path.write_text(json.dumps(lease))
+            if stopped:
+                stop_path.write_text('stop')
+            FakeSession.lease = dict(leasePath=str(lease_path), stopPath=str(stop_path),
+                                     leaseSnapshot={k: lease[k] for k in ('runID', 'epoch', 'notBefore', 'expiresAt')})
+        else:
+            FakeSession.lease = None
         code = verify_run.execute(manifest(self.digest, profile=profile), lane='V1', layout='single', ids=list(ids),
                                   out=self.out, artifacts_dir=self.artifacts, scratch_parent=self.scratch,
                                   host=host or FakeHost(self.digest), actions=actions or FakeActions(), session=session)
@@ -115,6 +141,56 @@ class VerifyRunTests(unittest.TestCase):
         # D-01 is fresh: its own launch; V-01 and D-14 ride with it while time allows.
         self.assertEqual(FakeSession.opened, [['D-01', 'V-01', 'D-14']])
         self.assertEqual(FakeSession.closed, FakeSession.opened)
+
+    def test_a_dead_guardian_heartbeat_stops_before_any_step(self):
+        code, lines, readme = self.go(lease_heartbeat=96.0)  # the runner's clock reads 100.5: stale
+        self.assertEqual(code, 2)
+        self.assertIn('reason=supervisor-guardian-heartbeat-stale', lines['D-01'])
+        self.assertIn('segment-stopped-supervisor-guardian-heartbeat-stale', lines['V-01'])
+        self.assertEqual(FakeSession.closed, FakeSession.opened)  # bounded cleanup still ran
+
+    def test_a_stop_receipt_stops_the_segment_before_any_step(self):
+        code, lines, readme = self.go(stopped=True)
+        self.assertEqual(code, 2)
+        self.assertIn('reason=supervisor-stop-file', lines['D-01'])
+        self.assertEqual(list(self.out.rglob('*.png')), [])  # no capture ran after the stop
+
+    def test_a_subject_without_authority_fails_closed(self):
+        code, lines, readme = self.go(with_authority=False)
+        self.assertEqual(code, 2)
+        self.assertIn('reason=supervisor-authority-missing', lines['D-01'])
+
+    def test_capture_menubar_crops_only_the_owned_status_item(self):
+        actions = FakeActions()
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertEqual(code, 0)
+        rect = actions.calls[0][1]
+        self.assertEqual(rect, (1412, 0, 80, 24))  # the item's AX bounds, top-left origin for capture
+        receipt = json.loads((self.out / 'V-01' / 'receipt.json').read_text())
+        crops = [s for s in receipt['steps'] if s.get('action') == 'capture-menubar']
+        self.assertTrue(all(c.get('region') == [1412, 0, 80, 24] and c.get('source') == 'owned-status-item'
+                            for c in crops))
+
+    def test_capture_menubar_without_owned_bounds_takes_no_system_region(self):
+        actions = FakeActions(item_bounds=False)
+        code, lines, readme = self.go(ids=('V-01',), actions=actions)
+        self.assertIn('reason=menubar-crop-needs-owned-status-item-bounds', lines['V-01'])
+        self.assertEqual([c for c in actions.calls if c[0] == 'menubar'], [])  # no system region captured
+
+    def test_failed_restore_fails_the_id_and_stops_later_segments(self):
+        class HalfBroken(FakeActions):
+            def set_appearance(self, value):
+                self.calls.append(('appearance', value))
+                if value == 'light':  # switching to dark works; restoring the light baseline fails
+                    raise verify_run.NotRun('appearance-switch-failed')
+        code, lines, readme = self.go(actions=HalfBroken())
+        self.assertEqual(code, 2)
+        self.assertTrue(lines['V-01'].startswith('FAIL V-01'))
+        self.assertIn('reason=restore-failed-appearance', lines['V-01'])
+        self.assertIn('baseline-restore-failed', lines['D-14'])  # no later segment until re-established
+        self.assertIn('later segments stopped until the baseline is re-established', readme)
+        receipt = json.loads((self.out / 'V-01' / 'receipt.json').read_text())
+        self.assertTrue(any(s.get('restored') is False for s in receipt['steps']))
 
     def test_late_or_missing_window_is_review_or_fail(self):
         _, lines, _ = self.go(ids=('D-01',), actions=FakeActions(at=103.0))
