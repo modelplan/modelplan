@@ -153,6 +153,64 @@ uses the host user's real HOME and TMPDIR — `CFFIXED_USER_HOME` is explicitly 
 creates nothing under that HOME, and refuses a HOME at or inside the removable run scratch. A real-profile
 subject may quit and relaunch within its segment like a synthetic one; the HOME is the user's own.
 
+### Candidate environment, reader scope and product backup (launch.py, packaged_candidate.py)
+
+A brief names these as flags; each fills the run config's field of the same name, and a different
+value already in the config is refused:
+
+```sh
+python3 desktop/native/verification/bin/packaged_candidate.py prepare ... --readers codex,zcode --backup product
+python3 desktop/native/verification/bin/launch.py --config RUN.json --execute --profile synthetic --readers off
+```
+
+- `readers` (`--readers`): `off` sets `MODELPLAN_READERS=off` and `MODELPLAN_CODEX_ACCOUNT=off`;
+  `passive` sets `MODELPLAN_READERS=passive`; a comma list of consent tool IDs (`codex,zai`;
+  `zcode` is accepted for `zai` and recorded as an alias) sets `MODELPLAN_VERIFY_READERS`, which
+  the engine uses only to narrow saved and default consent to those tools, never to widen it, plus
+  `MODELPLAN_CODEX_ACCOUNT=off` unless `codex` is listed. A list needs `subjectKind: app-zip`, and
+  launch.py refuses it unless the candidate's bundled engine (`Contents/Helpers/modelplan`)
+  contains `MODELPLAN_VERIFY_READERS`: an older engine would ignore the list and read every
+  consented tool. The consent file is never edited.
+- `subjectEnv`: extra restricting keys only, each with fixed values: `MODELPLAN_READERS`
+  (`off`/`passive`), `MODELPLAN_CODEX_ACCOUNT`, `MODELPLAN_HISTORY`, `MODELPLAN_CODEXBAR` (`off`),
+  `MODELPLAN_VERIFY_READERS` (normalised list). Anything else is refused at contract time.
+- A real-profile environment drops every inherited `MODELPLAN_*` variable (for example a stray
+  `MODELPLAN_CACHE`) before these are added; the names dropped are recorded. Synthetic runs keep
+  the minimal environment plus these keys.
+- `backup: product` (`--backup product`, real profile only) with an absolute `backupDir` (prepare
+  defaults it to `<registry>.product-backup`, outside the removable scratch) runs
+  `bin/product_backup.py` around the subject: before the subject starts it archives exactly
+  `~/Library/Application Support/ModelPlan/Native/`,
+  `~/Library/Preferences/org.modelplan.community.swift.scaffold.plist`, `~/Library/Caches/modelplan/`
+  and `~/.config/modelplan/consent.json` (tar + SHA-256 manifest; absent paths recorded as absent),
+  and after the subject has ended it puts them back and re-hashes every file. The preferences domain
+  is synced through `defaults import`/`delete` first so `cfprefsd` does not keep the run's values.
+  It refuses a symlink on or inside these paths, any name containing `M0Bridge`, a credential-looking
+  file name, a backupDir inside the product paths, and on restore any archive member outside the list
+  or an archive whose hash differs. Nothing outside the four paths is read or written, so other
+  tools' state (and writes by the owner's own `modelplan` hooks to the engine cache during the run,
+  which the restore reverts) are reported, not hidden. A launcher that dies before restoring leaves
+  the backup; restore it with `python3 bin/product_backup.py restore --backup-dir DIR` (exit 0 only
+  when every path matches).
+- Run manifest: `runManifestPath` (prepare defaults it to `<registry>.run-manifest.json`; else
+  `<backupDir>/run-manifest.json`) records run identity, profile, HOME, launch mode, the exact
+  `subjectEnv`, reader IDs and aliases, dropped variable names, `engineHonoursReaders`, the backup
+  roots and archive hash, and the restore result: `restored`, `mismatches` and `runChanges`
+  (product file names added, changed or removed by the run, never contents). launch.py exits 4 when
+  the restore did not match byte for byte; report it and do not finish the booking.
+
+Booking identity: the run config's `booking` is
+`{"id": "<booking ID>", "lane": "M1", "unit": "U11a", "scenario": "cold"}` (optional `ledger`, else
+`MODELPLAN_BOOKING_LEDGER`), where `scenario` is one of the IDs the booking was requested with.
+Admission and `prepare` name any missing field up front instead of failing inside the launch.
+
+Never started: when launch.py exits non-zero before it reserved the subject slot (an admission or
+backup refusal, a bad config), it writes `<subjectPidPath>.no-subject.json` (run ID, epoch, exit
+status, launcher identity) under the registration lock. The guardian accepts it, once that launcher
+is gone and still no reservation exists, as `subject: never-started`, so the SKILL.md sequence
+finishes the booking as cleaned instead of leaving it held. Without the proof it still reports
+`subject: none`.
+
 ## Outputs
 
 - `preflight.json`, `README.md` (candidate identity, layout, segments and closure, system settings before

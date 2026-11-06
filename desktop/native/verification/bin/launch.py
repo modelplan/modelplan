@@ -19,8 +19,10 @@ process's environment is ever read.
 import argparse,hashlib,json,os,plistlib,re,shutil,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
-from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup
+from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup,registration
 import process_scan
+import product_backup
+import subject_options
 OPEN=['/usr/bin/open'];CODESIGN=['/usr/bin/codesign'];DISCOVERY_SECONDS=20.0
 UNZIP=['/usr/bin/ditto','-x','-k','--noqtn'] # --noqtn: no quarantine, so Gatekeeper does not prompt
 BUNDLE_ID=re.compile(r'[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+')
@@ -47,10 +49,16 @@ def real_env():
     env={k.decode():v.decode('utf-8','surrogateescape') for k,v in os.environb.items() if k!=b'CFFIXED_USER_HOME'}
     env.setdefault('PATH','/usr/bin:/bin')
     return env
-def main():
-    p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true');a=p.parse_args()
-    c=json.loads(a.config.read_text())
+RUN={'children':[],'pidPath':None,'leasePath':None,'manifest':None} # this process's launch, for exit paths
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true')
+    # Brief shorthands; each fills the run config's field of the same name and refuses a different value there.
+    p.add_argument('--profile',choices=('synthetic','real'));p.add_argument('--readers',help='off | passive | comma list of tool IDs (zcode = zai)')
+    p.add_argument('--backup',choices=subject_options.BACKUPS);a=p.parse_args(argv)
+    c=subject_options.merge_flags(json.loads(a.config.read_text()),profile=a.profile,readers=a.readers,backup=a.backup)
     if not a.execute:validate(c,time.time());print('Run contract valid; no process launched');return
+    if isinstance(c.get('subjectPidPath'),str) and isinstance(c.get('leasePath'),str):
+        RUN.update(pidPath=Path(c['subjectPidPath']),leasePath=Path(c['leasePath'])) # for the never-started proof
     c=load_and_admit(c) # Read external records before creating synthetic resources.
     mode=c.get('launchMode','direct')
     profile=c.get('profile','synthetic')
@@ -61,12 +69,49 @@ def main():
     else:
         home=Path(c['syntheticHome']);env=subject_env(home,tmp)
         home.mkdir(exist_ok=False)
+    env,env_manifest=subject_options.apply(env,c,real=profile=='real') # allow-listed, restricting keys only
     tmp.mkdir(exist_ok=False)
     binary=Path(c['argv'][0]).resolve(strict=True)
     if sha256(binary)!=c['binarySHA256']:raise ValueError('binary identity changed')
     kind=c.get('subjectKind','binary')
     if kind=='app-zip':bundle=extract_app(c,binary,tmp) # both modes: verified, extracted under run scratch
     else:bundle=make_bundle(c,binary,tmp) if mode=='launchservices' else None
+    if env_manifest['readerIDs']:
+        # An engine that does not know the list would ignore it and read every consented tool.
+        if not (bundle and subject_options.engine_honours_readers(bundle['app'])):
+            raise ValueError('candidate engine does not honour MODELPLAN_VERIFY_READERS; use readers off|passive')
+        env_manifest['engineHonoursReaders']=True
+    manifest=RUN['manifest']=dict(schemaVersion=1,runID=c.get('lease',{}).get('runID'),epoch=c.get('lease',{}).get('epoch'),profile=profile,
+                                  home=str(home),launchMode=mode,environment=env_manifest,backup=None,restore=None)
+    if c.get('backup')=='product':
+        taken=product_backup.backup(home,c['backupDir']) # before the subject exists; restored after it ends
+        manifest['backup']=dict(backupDir=c['backupDir'],archiveSHA256=taken['archiveSHA256'],roots=taken['roots'],
+                                files=len(taken['files']))
+    try:return run_subject(c,mode,profile,home,tmp,bundle,env,env_manifest)
+    finally:finish_run(c)
+def finish_run(c):
+    """Every exit after the backup: end any subject still alive, restore, write the run manifest."""
+    for child in RUN['children']:
+        try:
+            if child.poll() is None:
+                child.terminate()
+                try:child.wait(10)
+                except subprocess.TimeoutExpired:child.kill();child.wait()
+        except Exception:pass
+    manifest=RUN['manifest']
+    if manifest is None:return
+    if manifest['backup'] is not None:
+        try:manifest['restore']=product_backup.restore(c['backupDir'],home=manifest['home'])
+        except Exception as error:manifest['restore']=dict(restored=False,error=str(error) or type(error).__name__)
+    target=c.get('runManifestPath') or (str(Path(c['backupDir'])/'run-manifest.json') if c.get('backupDir') and manifest['backup'] else None)
+    if target:
+        try:product_backup.write_json(Path(target),manifest)
+        except OSError as error:print(json.dumps({'runManifest':'unwritten','error':type(error).__name__}),file=sys.stderr,flush=True)
+    if target or manifest['backup']: # stderr: stdout carries only the subject lines verify-run consumes
+        print(json.dumps({'runManifest':target,'restored':(manifest['restore'] or {}).get('restored')}),file=sys.stderr,flush=True)
+    if manifest['restore'] is not None and manifest['restore'].get('restored') is not True:
+        raise SystemExit(4) # product state NOT restored byte-for-byte: report, do not finish quietly
+def run_subject(c,mode,profile,home,tmp,bundle,env,env_manifest):
     c=load_and_admit(c) # Reread lease/release after filesystem/hash work, immediately before spawn.
     pid_path=Path(c['subjectPidPath']) # Required: the guardian supervises this subject.
     if mode=='launchservices':return launch_services(c,bundle,pid_path,env)
@@ -79,7 +124,7 @@ def main():
         # The pinned binary may also be running outside this run, so it is never a scope path: the scope
         # is run scratch only, and the subject (the gate, same PID after exec) matches by PID plus start time.
         argv=c['argv'];scope=process_scan.scope_for(prefix=tmp)
-    evidence=bundle['evidence'] if bundle else {}
+    evidence=dict(bundle['evidence'] if bundle else {},subjectEnv=env_manifest['subjectEnv'])
     # Exec gate: the child waits for one byte on stdin before exec'ing the subject (same PID). If launch
     # dies before releasing it, stdin reaches EOF and the child exits without ever running the subject.
     gate=[sys.executable,'-I','-c',GATE,*argv]
@@ -99,7 +144,7 @@ def main():
         # identity, and only then accepts the helper and the new registration.
         launcher=mark_launching(pid_path,scope=scope,mode=mode)
         child=spawn_gated(gate,env,pid_path,launcher,stop_child,admit=lambda:stop_reason(c,time.time()))
-        state['child']=child
+        state['child']=child;RUN['children'].append(child)
         return child
     child=spawn()
     home_field=str(home) # real: the host user's own HOME; synthetic: the run-scratch home
@@ -273,7 +318,7 @@ def launch_services(c,bundle,pid_path,env):
     try:
         found=discover(bundle['exe'],helper,c)
         register(pid_path,found['pid'],launcher) # Identity registered before the guardian supervises it.
-        state['child']=child=Owned({k:found[k] for k in ('pid','startSeconds','startMicroseconds')},helper)
+        state['child']=child=Owned({k:found[k] for k in ('pid','startSeconds','startMicroseconds')},helper);RUN['children'].append(child)
     except BaseException as error:
         failure={'launchMode':'launchservices','registered':False,'error':str(error) or type(error).__name__}
         if isinstance(error,OpenFailed):failure.update(openExit=error.code,launchServicesError=launch_services_error(logs/'open.stderr'))
@@ -337,4 +382,25 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
         # The child is gone. If authority was withdrawn meanwhile (e.g. the guardian closed the subject on
         # STOP between two polls), that is a supervised stop, never a child that ended by itself.
         return stop_reason(c,clock())
-if __name__=='__main__':main()
+def no_subject_proof(code,lookup=None):
+    """A launcher that exits non-zero before reserving the subject slot leaves `<subjectPidPath>.no-subject.json`
+    (run identity, exit status, launcher identity), written under the registration lock only while no
+    reservation exists. The guardian accepts it as a never-started close once this launcher is gone."""
+    pid_path,lease_path=RUN['pidPath'],RUN['leasePath'];lookup=lookup or identity
+    if pid_path is None or code==0:return None
+    try:
+        lease=json.loads(lease_path.read_text())
+        with registration(pid_path):
+            if pid_path.exists():return None # reserved: the guardian's scope scan proves closure instead
+            proof=dict(runID=lease.get('runID'),epoch=lease.get('epoch'),launcherExit=code,subjectPidPath=str(pid_path),
+                       launcher=lookup(os.getpid()))
+            fd=os.open(str(pid_path)+'.no-subject.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,'O_NOFOLLOW',0),0o600)
+            with os.fdopen(fd,'w') as out:json.dump(proof,out,sort_keys=True);out.flush();os.fsync(out.fileno())
+            return proof
+    except (OSError,ValueError):return None
+def entry(argv=None):
+    code=1
+    try:main(argv);code=0
+    except SystemExit as stop:code=stop.code if isinstance(stop.code,int) else (0 if stop.code is None else 1);raise
+    finally:no_subject_proof(code)
+if __name__=='__main__':entry()
