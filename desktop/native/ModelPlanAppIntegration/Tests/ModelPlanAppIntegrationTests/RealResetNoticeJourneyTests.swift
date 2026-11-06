@@ -68,6 +68,24 @@ import ModelPlanSettings
         guard let bytes = context.data else { throw FixtureError.malformedImage }
         return Data(bytes: bytes, count: crop.width * crop.height * 4)
     }
+    private func capture(_ phase: String, image: CGImage, mark: CGRect, row: String, event: String?) throws {
+        guard let directory = ProcessInfo.processInfo.environment["MODELPLAN_R12_CAPTURE_DIR"] else { return }
+        let output = URL(fileURLWithPath: directory)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+            .write(to: output.appendingPathComponent(phase + ".png"))
+        let crop = try XCTUnwrap(image.cropping(to: mark.integral))
+        let cropped = NSBitmapImageRep(cgImage: crop)
+        try XCTUnwrap(cropped.representation(using: .png, properties: [:]))
+            .write(to: output.appendingPathComponent(phase + "-mark.png"))
+        var receipt: [String: Any] = [
+            "phase": phase, "cliRow": row, "markRect": NSStringFromRect(mark.integral),
+            "pixels": [image.width, image.height],
+        ]
+        receipt["publicEvent"] = event
+        try json(receipt).write(to: output.appendingPathComponent(phase + ".json"))
+    }
+
     func testR12RealAppServerPublicEventReachesCorrespondingDockAndClears() async throws {
         guard let binary = ProcessInfo.processInfo.environment["MODELPLAN_ENGINE_TEST_BINARY"] else {
             throw XCTSkip("Real engine binary is required for this end-to-end test")
@@ -103,18 +121,22 @@ import ModelPlanSettings
             let scale = CGFloat(image.width) / skin.bounds.width
             let pixelRect = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY).applying(CGAffineTransform(scaleX: scale, y: scale))
             let announcedPixels = try pixels(image, rect: pixelRect)
+            try capture("announced", image: image, mark: pixelRect, row: event.rowID, event: event.id)
             let sliver = try dock.prepareSliver(size: CGSize(width: 4, height: 80))
             XCTAssertTrue(sliver.noticeMarks.contains { $0.notice.key == notice.key && $0.notice.shape == .hollow && $0.notice.tone == .blue })
             try publish(home: home, phase: "confirmed", clock: clock)
             try await eventually { dock.dockView.presentedNoticesForChecks.values.contains { $0.key.kind == .resetConfirmed && $0.shape == .solid && $0.tone == .blue } }
             let confirmedImage = try XCTUnwrap(dock.dockView.presentedImageForChecks)
             let confirmedPixels = try pixels(confirmedImage, rect: pixelRect)
+            let confirmed = try XCTUnwrap(dock.dockView.presentedNoticesForChecks.values.first { $0.key.kind == .resetConfirmed })
+            try capture("confirmed", image: confirmedImage, mark: pixelRect, row: event.rowID, event: confirmed.key.sourceIDs.first)
             XCTAssertNotEqual(announcedPixels, confirmedPixels, "confirmed dot must render differently from hollow announcement")
             let confirmedSliver = try dock.prepareSliver(size: CGSize(width: 4, height: 80))
             XCTAssertTrue(confirmedSliver.noticeMarks.contains { $0.notice.key.kind == .resetConfirmed && $0.notice.shape == .solid && $0.notice.tone == .blue })
             try publish(home: home, phase: "expired", clock: clock)
             try await eventually { dock.dockView.presentedNoticesForChecks.isEmpty && app.composition.resetSignals.allSatisfy { $0.reset == nil } }
             let expiredImage = try XCTUnwrap(dock.dockView.presentedImageForChecks)
+            try capture("expired", image: expiredImage, mark: pixelRect, row: event.rowID, event: nil)
             XCTAssertNotEqual(announcedPixels, try pixels(expiredImage, rect: pixelRect), "expired dot must leave the rendered surface")
             XCTAssertNotEqual(confirmedPixels, try pixels(expiredImage, rect: pixelRect), "expired confirmation must leave the rendered surface")
             let emptySliver = try dock.prepareSliver(size: CGSize(width: 4, height: 80))
