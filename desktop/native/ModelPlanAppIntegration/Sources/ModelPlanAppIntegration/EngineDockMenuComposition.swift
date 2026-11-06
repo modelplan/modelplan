@@ -125,6 +125,12 @@ public struct EngineMenuRefreshResult {
             if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
+    #if DEBUG
+    func installDockVisibilityTimingForChecks(clock: @escaping () -> TimeInterval, scheduler: any DockEdgeScheduling) {
+        dock.installVisibilityTimingForChecks(clock: clock, scheduler: scheduler)
+    }
+    #endif
+
     public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
