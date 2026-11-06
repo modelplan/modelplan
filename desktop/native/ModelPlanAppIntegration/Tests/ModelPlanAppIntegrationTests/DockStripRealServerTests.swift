@@ -54,7 +54,7 @@ import ModelPlanSettings
             let fixture: [String: Any] = ["schemaVersion": 1, "plans": ids.map { ["planId": $0] }, "windows": windows]
             try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)
         }
-        try writeReadings([51, 40, 25])
+        try writeReadings([51, 50, 25])
 
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let defaults = await store.snapshot()
@@ -101,7 +101,7 @@ import ModelPlanSettings
                 return (String(row.id.dropFirst("declared:".count)), value)
             })
         }
-        try await wait("Require all three real-server quota readings") { readings() == [ids[0]: 51, ids[1]: 40, ids[2]: 25] }
+        try await wait("Require all three real-server quota readings") { readings() == [ids[0]: 51, ids[1]: 50, ids[2]: 25] }
         XCTAssertEqual(dock.edgePresentation?.state, .sliver)
         func currentStrip() throws -> DockSliverView {
             let placement = try XCTUnwrap(dock.edgePresentation?.placement)
@@ -136,11 +136,11 @@ import ModelPlanSettings
         }
         XCTAssertEqual(strip.quotaSegmentColorRolesForChecks.count, 3)
         try assertRole(51, nil)
-        try assertRole(40, .warning)
+        try assertRole(50, .warning)
         try assertRole(25, .critical)
         let original = strip.quotaSegmentColorRolesForChecks
         let normal = try XCTUnwrap(original.first { $0.remainingPercent == 51 })
-        let warning = try XCTUnwrap(original.first { $0.remainingPercent == 40 })
+        let warning = try XCTUnwrap(original.first { $0.remainingPercent == 50 })
         let critical = try XCTUnwrap(original.first { $0.remainingPercent == 25 })
         XCTAssertEqual(warning.through - warning.from, critical.through - critical.from, accuracy: 0.001)
         let overlap = min(warning.through, critical.through) - max(warning.from, critical.from)
