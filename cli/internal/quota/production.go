@@ -129,7 +129,35 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		}
 		p.ReaderAccess.Grants[id] = g
 	}
+	if g, ok := defaultZCodeGrant(home, state, mode); ok {
+		p.ReaderAccess.Grants["zai"] = g
+	}
 	return p
+}
+
+// defaultZCodeGrant: ZCode's own Coding Plan key route is on by default (owner decision
+// 2026-11-06, G3-21) for a user who has made no ModelPlan decision about GLM. Construction
+// only checks that ZCode's provider file is there; the file is opened at read time, under
+// the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
+// (allow with another source, or deny) always takes precedence.
+func defaultZCodeGrant(home string, state consent.State, mode string) (ReaderGrant, bool) {
+	if _, decided := state.Tools["zai"]; decided || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
+		return ReaderGrant{}, false
+	}
+	file := ZCodeProviderConfig(home)
+	if fi, err := os.Lstat(file); err != nil || !fi.Mode().IsRegular() || !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+		return ReaderGrant{}, false
+	}
+	scope := consent.ScopeZaiAccountUsageAPIKey
+	fence := state.Fence()
+	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10),
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		StillValid: func() bool {
+			current, effective := consent.Current()
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
+		},
+		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
 }
 
 // InteractiveReaders is only used by an explicit foreground refresh. Quiet
