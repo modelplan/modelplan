@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: MIT
+#if MODELPLAN_DOCK_REAL_RUNTIME_JOURNEY
+import AppKit
+import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanSettings
+import ModelPlanWire
+@_spi(DockResourceChecks) import ModelPlanDock
+import XCTest
+@testable import ModelPlanAppIntegration
+
+@MainActor private final class MemberRefreshReceipts: EngineStoreEventSink {
+    private(set) var replies: [String: WireMemberRefreshResult] = [:]
+    func acceptedEvent(_ event: EngineClientEvent) {
+        guard case .response(.string(let id), .memberRefresh(let reply)) = event else { return }
+        replies[id] = reply.envelope.data
+    }
+    func apply(_ snapshot: EngineStoreSnapshot) {}
+    func clearPrivateViews(_ invalidation: EngineInvalidation) { replies.removeAll() }
+}
+
+@MainActor final class DockMemberRefreshRealServerTests: XCTestCase {
+    func testR04RealServerDefersOnlyTheGrantedMemberAndRefusesTheOther() async throws {
+        let executable = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"])
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("member-refresh-" + UUID().uuidString)
+        let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
+        let declared = root.appendingPathComponent(".config/modelplan")
+        for directory in [cache, declared, root.appendingPathComponent(".codex")] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": root.path + ":/usr/bin:/bin", "LANG": "C"]
+        func quote(_ path: String) -> String { "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        func script(_ name: String, _ body: String) throws -> URL {
+            let url = root.appendingPathComponent(name)
+            try ("#!/bin/sh\n" + body + "\n").write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+            return url
+        }
+        // Run the genuine scheduler with no network or provider credentials.
+        let helper = try script("app-cli", "exec /usr/bin/sandbox-exec -p '(version 1)(allow default)(deny network*)' " + quote(executable) + " \"$@\"")
+        let attempted = root.appendingPathComponent("unexpected-runtime-attempt")
+        _ = try script("codex", "[ \"$1\" != app-server ] || : > " + quote(attempted.path) + "\nexit 64")
+
+        func consent(_ arguments: [String], input: [String: Any]? = nil) async throws -> [String: Any] {
+            let process = Process(), output = Pipe()
+            process.executableURL = helper
+            process.arguments = ["consent"] + arguments + ["--json"]
+            process.environment = environment
+            process.standardError = FileHandle.nullDevice
+            process.standardOutput = output
+            let stdin = input.map { _ in Pipe() }
+            process.standardInput = stdin ?? FileHandle.nullDevice
+            try process.run()
+            if let stdin, let input {
+                try stdin.fileHandleForWriting.write(contentsOf: JSONSerialization.data(withJSONObject: input))
+                try stdin.fileHandleForWriting.close()
+            }
+            let deadline = ContinuousClock.now + .seconds(5)
+            while process.isRunning && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+            if process.isRunning { process.terminate(); throw CocoaError(.fileReadUnknown) }
+            XCTAssertEqual(process.terminationStatus, 0)
+            return try XCTUnwrap(JSONSerialization.jsonObject(with: output.fileHandleForReading.readDataToEndOfFile()) as? [String: Any])
+        }
+
+        _ = try await consent(["init"])
+        let before = try await consent([])
+        let epoch = try XCTUnwrap(before["storeEpoch"] as? String)
+        let scope = "codex.runtime_usage"
+        _ = try await consent(["grant"], input: [
+            "requestId": UUID().uuidString.lowercased(), "expectStoreEpoch": epoch,
+            "expectGeneration": try XCTUnwrap(before["generation"] as? Int),
+            "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int),
+            "allow": [scope], "deny": [String]()
+        ])
+        let after = try await consent([])
+        let formatter = ISO8601DateFormatter(), observed = Date().addingTimeInterval(-20)
+        let observedText = formatter.string(from: observed)
+        let floor = formatter.string(from: observed.addingTimeInterval(300))
+        let reset = formatter.string(from: observed.addingTimeInterval(7200))
+        let runtimeRef = "aaaaaaaaaaaaaaaa", plan = "synthetic-manual"
+        let runtimeBytes = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": 1, "status": "ok", "observedAt": observedText, "plan": "plus", "subscriptionRef": runtimeRef,
+            "admission": ["storeEpoch": epoch, "generation": try XCTUnwrap(after["generation"] as? Int), "scope": scope],
+            "windows": [["kind": "five_hour", "windowMinutes": 300, "usedPercent": 30,
+                         "observedAt": observedText, "resetsAt": reset, "resetMode": "rolling"]]
+        ])
+        let runtimeCache = cache.appendingPathComponent("codex-account.json")
+        try runtimeBytes.write(to: runtimeCache)
+        let manualBytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "plans": [["planId": plan]],
+            "windows": [["planId": plan, "kind": "five_hour", "remainingPercent": 37,
+                         "observedAt": observedText, "resetAt": reset, "resetMode": "rolling"]]])
+        let manualFile = declared.appendingPathComponent("local.json")
+        try manualBytes.write(to: manualFile)
+
+        let frame = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let screen = DockDisplayArea(id: "synthetic", frame: frame, visibleFrame: frame)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        _ = try await settings.update { $0.motion = .on }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-member-refresh",
+            allowedEnvironment: environment), settingsStore: settings, createsNativePanels: false,
+            bundleURL: root.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: screen.id, pointer: .init(x: 700, y: 450)) },
+            activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare()
+        app.allowDockPresentation()
+        let client = app.composition.client
+        let delivery = try await client.start()
+        _ = try await client.subscribeRows(timeout: .seconds(5))
+        let deadline = ContinuousClock.now + .seconds(3)
+        while app.memberRefreshAdapter == nil && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        let adapter = try XCTUnwrap(app.memberRefreshAdapter as? AppServerMemberRefreshAdapter)
+        let catalogue = app.composition.accountMembers.members
+        let runtime = try XCTUnwrap(catalogue.first { $0.id == runtimeRef })
+        let manual = try XCTUnwrap(catalogue.first { $0.rowID == "declared:" + plan })
+        XCTAssertEqual(runtime.account.refreshNotBefore?.rawValue, floor)
+        XCTAssertNil(manual.account.refreshNotBefore)
+        XCTAssertEqual(adapter.admission(for: runtime, delivery: delivery, now: Date()), .deferred)
+        let eligibleAt = try XCTUnwrap(formatter.date(from: floor))
+        XCTAssertEqual(adapter.admission(for: runtime, delivery: delivery, now: eligibleAt), .ready)
+        XCTAssertEqual(adapter.admission(for: manual, delivery: delivery, now: Date()), .unavailable)
+
+        let dock = app.composition.dock, view = dock.dockView
+        let events = try XCTUnwrap(view.nozzleEventDelegate)
+        let startSweeps = view.refreshSweepCountForChecks
+        let sink = MemberRefreshReceipts()
+        let token = app.composition.store.attach(sink)
+        defer { app.composition.store.detach(token) }
+        for member in [runtime, manual] {
+            let anchor = try XCTUnwrap(view.interactionAnchor(member.id))
+            XCTAssertTrue(events.beginNozzle(id: member.id, local: .init(x: anchor.midX, y: anchor.midY)))
+            events.endNozzle(global: .zero, currentID: member.id)
+        }
+        XCTAssertEqual(view.refreshSweepCountForChecks, startSweeps + 2)
+        XCTAssertFalse(view.refreshSweepAnimatingForChecks)
+        XCTAssertTrue(app.liveStatusMenu?.items.contains { $0.title.contains("Refresh unavailable") } == true)
+
+        // The UI suppressed both RPCs. The two explicit requests below independently
+        // verify the producer receipts on the same session and exact member identities.
+        func receipt(_ member: EngineAccountMember) async throws -> WireMemberRefreshResult {
+            let target = try WireRefreshMember(rowId: member.rowID, route: member.account.route,
+                subscriptionRef: member.account.subscriptionRef, accountLocator: member.account.accountLocator)
+            let completion = try await client.refresh(.init(member: target), timeout: .seconds(4))
+            guard case .string(let id) = completion.requestID else { throw CocoaError(.coderInvalidValue) }
+            return try XCTUnwrap(sink.replies[id])
+        }
+        let deferred = try await receipt(runtime)
+        let refused = try await receipt(manual)
+        XCTAssertEqual(sink.replies.count, 2, "Only the two explicit receipt probes may reach the server")
+        XCTAssertEqual(deferred.outcome, .deferred)
+        XCTAssertEqual(deferred.reason, .floor)
+        XCTAssertEqual(deferred.notBefore?.rawValue, floor)
+        XCTAssertEqual(refused.outcome, .deferred)
+        XCTAssertEqual(refused.reason, .notGranted)
+        XCTAssertNil(refused.notBefore)
+        XCTAssertEqual(view.presentedReadingsForChecks[runtime.id]?.readout, "70%")
+        XCTAssertEqual(view.presentedReadingsForChecks[manual.id]?.readout, "37%")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: attempted.path))
+        XCTAssertEqual(try Data(contentsOf: runtimeCache), runtimeBytes)
+        XCTAssertEqual(try Data(contentsOf: manualFile), manualBytes)
+    }
+}
+#endif
