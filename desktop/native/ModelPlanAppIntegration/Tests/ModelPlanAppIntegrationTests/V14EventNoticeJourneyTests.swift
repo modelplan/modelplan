@@ -116,14 +116,18 @@ private actor V14RowsClient: EngineClient {
         var confirmed = events[0]
         confirmed["status"] = "confirmed"
         confirmed["confirms"] = announcedID
-        confirmed["publishedAt"] = formatter.string(from: now.addingTimeInterval(-1))
-        projection["resetEvents"] = [events[0], confirmed]; data["projection"] = projection
+        let confirmedAt = now.addingTimeInterval(-1)
+        confirmed["publishedAt"] = formatter.string(from: confirmedAt)
+        confirmed["expiresAt"] = formatter.string(from: confirmedAt.addingTimeInterval(24 * 3600))
+        confirmed.removeValue(forKey: "schedule")
+        projection["resetEvents"] = [confirmed]; data["projection"] = projection
         let confirmedRows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
         try await client.replaceRows(confirmedRows)
         let confirmedNotice = try XCTUnwrap(view.presentedNoticesForChecks["0123456789abcdef"])
         XCTAssertEqual(confirmedNotice.key.kind, .resetConfirmed)
         XCTAssertEqual(confirmedNotice.tone, .blue)
         XCTAssertEqual(confirmedNotice.shape, .solid)
+        XCTAssertNil(view.presentedNoticesForChecks["fedcba9876543210"], "V-14: another member's confirmation must not create a notice on the low-quota control")
         let confirmedSkin = try XCTUnwrap(view.presentedSkinForChecks)
         let confirmedStation = try XCTUnwrap(confirmedSkin.stations.first { $0.subscriptionID == "0123456789abcdef" })
         XCTAssertEqual(try XCTUnwrap(confirmedStation.eventSolidDiameter), 5 * confirmedStation.diameter / 52, accuracy: 0.000001, "V-14: confirmed dot outer diameter at the reference scale")
