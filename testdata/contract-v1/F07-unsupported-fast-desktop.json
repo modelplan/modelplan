@@ -71,11 +71,7 @@
         "name": "Synthetic Single",
         "developerId": "other-dev"
       },
-      "effort": {
-        "key": "native",
-        "label": "Native",
-        "star": true
-      },
+      "effort": null,
       "effortStatus": "reported",
       "recommended": {
         "key": "native",
