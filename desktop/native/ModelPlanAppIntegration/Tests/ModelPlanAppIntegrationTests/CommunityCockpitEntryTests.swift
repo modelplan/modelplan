@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import CryptoKit
 import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
@@ -79,15 +80,51 @@ final class CommunityCockpitEntryTests:XCTestCase {
         guard FileManager.default.fileExists(atPath: builds.appendingPathComponent("community/bundle-manifest.json").path),
               FileManager.default.fileExists(atPath: builds.appendingPathComponent("official/bundle-manifest.json").path)
         else { throw XCTSkip("Build both canonical cockpit editions before running the admission check") }
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("cockpit-admission-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundle = root.appendingPathComponent("Synthetic.app")
+        let contents = bundle.appendingPathComponent("Contents")
+        let resources = contents.appendingPathComponent("Resources")
+        let executable = contents.appendingPathComponent("Helpers/modelplan")
+        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let helper = Data("Synthetic identity fixture; never executed".utf8)
+        let helperHash = SHA256.hash(data: helper).map { String(format: "%02x", $0) }.joined()
+        try helper.write(to: executable)
+        try helperHash.write(to: resources.appendingPathComponent("modelplan.sha256"), atomically: true, encoding: .utf8)
+        let info: [String: Any] = [
+            "ModelPlanPublicSource": String(repeating: "a", count: 40),
+            "ModelPlanHelperVersion": CommunityConsentBundleIdentity.version,
+            "ModelPlanSourceHelperSHA256ByArchitecture": CommunityConsentBundleIdentity.sourceSHA256ByArchitecture,
+            "ModelPlanBundledHelperSHA256": helperHash
+        ]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        XCTAssertTrue(CommunityConsentBundleIdentity.matches(bundle: bundle))
+
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("Support"))
+        let owner = CockpitConsoleOwner(bundle: bundle, settingsStore: settings)
+        let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic", generation: 1)
+        let cockpit = resources.appendingPathComponent("Cockpit")
         for edition in ["community", "official"] {
-            let pin = try XCTUnwrap(CommunityCockpitApplicationFactory.manifestPins[edition])
-            let bundle = try VerifiedCockpitBundle(root: builds.appendingPathComponent(edition), manifestSHA256: pin, allowOfficial: edition == "official")
-            XCTAssertFalse(try bundle.resource(path: "index.html").isEmpty, edition)
+            try FileManager.default.copyItem(at: builds.appendingPathComponent(edition), to: cockpit)
+            try JSONSerialization.data(withJSONObject: ["edition": edition])
+                .write(to: resources.appendingPathComponent("build-edition.json"))
+            XCTAssertNoThrow(try owner.makePage(context: context, executable: executable), edition)
+
+            // Valid JSON and unchanged resources with a different manifest digest.
+            let manifest = cockpit.appendingPathComponent("bundle-manifest.json")
+            var changed = try Data(contentsOf: manifest)
+            changed.append(0x0A)
+            try changed.write(to: manifest)
+            XCTAssertThrowsError(try owner.makePage(context: context, executable: executable)) { error in
+                guard case CockpitBundleError.integrity = error else {
+                    return XCTFail("Wrong-pin control must reject the manifest digest for \(edition)")
+                }
+            }
+            try FileManager.default.removeItem(at: cockpit)
         }
-        do {
-            _ = try VerifiedCockpitBundle(root: builds.appendingPathComponent("community"), manifestSHA256: String(repeating: "0", count: 64), allowOfficial: false)
-            XCTFail("Incorrect pin must not be admitted")
-        } catch {}
     }
 
     @MainActor func testBothActualConsoleActionsUseOneFactoryAndOneClient() async throws {
