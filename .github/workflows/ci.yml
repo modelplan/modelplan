@@ -6,11 +6,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
     types: [checks_requested]
+  workflow_dispatch:
 concurrency:
-  # PR heads share a group, so a newer push cancels the older run; each main commit gets its own group
-  # and is never cancelled or left pending behind a later main commit.
-  group: public-ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: true
+  group: public-ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Merge queue only: when the group is one PR whose head already contains the queue base, the group's
