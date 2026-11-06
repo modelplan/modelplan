@@ -321,23 +321,123 @@ import ModelPlanSettings
         _ = try XCTUnwrap(applied ? true : nil, "The physical menu action must complete: \(action)")
     }
 
+    private func writeDeclaredReading(_ remaining: Int, plan: String, at observed: Date, home: URL) throws {
+        let config = home.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        let iso = ISO8601DateFormatter()
+        let data: [String: Any] = ["schemaVersion": 1, "plans": [["planId": plan]], "windows": [[
+            "planId": plan, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+            "observedAt": iso.string(from: observed),
+            "resetAt": iso.string(from: observed.addingTimeInterval(7_200)),
+        ]]]
+        try JSONSerialization.data(withJSONObject: data)
+            .write(to: config.appendingPathComponent("local.json"), options: .atomic)
+    }
+
+    func testD17DetachedFollowMovesOnlyTheLivePlacementAndKeepsTheReading() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d17-detached-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let allowRows = root.appendingPathComponent("allow-rows")
+        let (relay, _, home) = try await makeRowsBarrier(in: root, releaseRowsWhen: allowRows)
+        try writeDeclaredReading(40, plan: "d17-offline-reading", at: Date().addingTimeInterval(-20), home: home)
+        try Data().write(to: allowRows)
+        let profile = root.appendingPathComponent("profile")
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await settings.update {
+            $0.dockDisplayID = "A"; $0.dockEdge = .right; $0.dockAlongFraction = 0.62
+            $0.followActiveDisplay = false; $0.autoHide = false
+        }
+        let main = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1470, height: 956),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1470, height: 860), backingScale: 2)
+        let other = DockDisplayArea(id: "B", frame: CGRect(x: 1470, y: -300, width: 1700, height: 1150),
+            visibleFrame: CGRect(x: 1470, y: -300, width: 1700, height: 1125))
+        let a = CGPoint(x: main.usableFrame.midX, y: main.usableFrame.midY)
+        let b = CGPoint(x: other.usableFrame.midX, y: other.usableFrame.midY)
+        var pointer: CGPoint? = a
+        let app = EngineRowsEntry.make(configuration: configuration(relay, root: home), settingsStore: settings,
+            createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: {
+                .init(displays: [main, other], layouts: [], primaryDisplayID: main.id, pointer: pointer)
+            }, activateSettings: {})
+        addTeardownBlock { @MainActor in
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1, 2] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let dock = app.composition.dock
+        func reading() -> [Double] {
+            dock.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent).sorted()
+        }
+        let ready = try await wait(6) { reading() == [40] }
+        XCTAssertTrue(ready)
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let initial = try XCTUnwrap(dock.edgePresentation?.placement)
+        XCTAssertEqual(initial.displayID, main.id)
+        let url = profile.appendingPathComponent("ModelPlan/settings.json")
+        let fixed = await settings.snapshot()
+        let fixedBytes = try Data(contentsOf: url)
+        XCTAssertFalse(dock.isFollowingDisplay)
+
+        pointer = b
+        dock.refreshPresence()
+        XCTAssertEqual(dock.edgePresentation?.placement, initial)
+        XCTAssertEqual(try Data(contentsOf: url), fixedBytes)
+
+        let editor = app.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(true))
+        XCTAssertTrue(dock.isFollowingDisplay)
+        let following = await settings.snapshot()
+        let followingBytes = try Data(contentsOf: url)
+        XCTAssertEqual(following.revision, fixed.revision + 1)
+        func verifyPlacement(_ display: DockDisplayArea, percent: Double) async throws -> CGRect {
+            let moved = try await wait(2) { dock.edgePresentation?.placement?.displayID == display.id }
+            XCTAssertTrue(moved)
+            let actual = try XCTUnwrap(dock.edgePresentation?.placement)
+            XCTAssertEqual(actual.edge, initial.edge)
+            XCTAssertEqual(actual.alongFraction, initial.alongFraction, accuracy: 0.0001)
+            XCTAssertEqual(actual.frame.maxX, display.usableFrame.maxX, accuracy: 0.01)
+            XCTAssertTrue(display.usableFrame.contains(actual.frame))
+            XCTAssertEqual(dock.edgePresentation?.paintedFrame, actual.frame)
+            XCTAssertEqual(dock.dockView.layer?.contentsScale, CGFloat(display.backingScale))
+            XCTAssertEqual(reading(), [percent])
+            XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+            let saved = await settings.snapshot()
+            XCTAssertEqual(saved.revision, following.revision)
+            XCTAssertEqual(saved.preferences.dockDisplayID, main.id)
+            XCTAssertEqual(saved.preferences.dockAlongFraction, 0.62)
+            XCTAssertEqual(try Data(contentsOf: url), followingBytes)
+            return actual.frame
+        }
+        let onOther = try await verifyPlacement(other, percent: 40)
+        pointer = nil
+        dock.refreshPresence()
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, onOther)
+        pointer = a
+        let onMain = try await verifyPlacement(main, percent: 40)
+        XCTAssertEqual(onMain, initial.frame)
+        pointer = b
+        let returned = try await verifyPlacement(other, percent: 40)
+        XCTAssertEqual(returned, onOther)
+
+        _ = try await editor.commit(SettingsB21Edit.activeDisplay(false))
+        XCTAssertFalse(dock.isFollowingDisplay)
+        XCTAssertEqual(dock.edgePresentation?.paintedFrame, initial.frame)
+        XCTAssertEqual(reading(), [40])
+        let final = await settings.snapshot()
+        XCTAssertEqual(final.revision, following.revision + 1)
+        XCTAssertEqual(final.preferences.dockDisplayID, main.id)
+        XCTAssertEqual(final.preferences.dockAlongFraction, 0.62)
+    }
+
     func testD12DetachedRealServerScrubsRowsAndRestoresResizedPlacementAfterWake() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d12-detached-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let allowRows = root.appendingPathComponent("allow-rows")
         let (relay, receipt, home) = try await makeRowsBarrier(in: root, releaseRowsWhen: allowRows)
-        let config = home.appendingPathComponent(".config/modelplan")
-        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
-        let time = Date(), iso = ISO8601DateFormatter()
+        let time = Date()
         func writeReading(_ remaining: Int, offset: TimeInterval) throws {
-            let plan = "d12-offline-reading"
-            let data: [String: Any] = ["schemaVersion": 1, "plans": [["planId": plan]], "windows": [[
-                "planId": plan, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
-                "observedAt": iso.string(from: time.addingTimeInterval(offset)),
-                "resetAt": iso.string(from: time.addingTimeInterval(7_200)),
-            ]]]
-            try JSONSerialization.data(withJSONObject: data)
-                .write(to: config.appendingPathComponent("local.json"), options: .atomic)
+            try writeDeclaredReading(remaining, plan: "d12-offline-reading", at: time.addingTimeInterval(offset), home: home)
         }
         try writeReading(40, offset: -20)
         try Data().write(to: allowRows)
