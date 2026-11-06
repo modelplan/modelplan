@@ -76,6 +76,28 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testD19NormalEntryRetainsDisplayWhenFloatingFractionIsInvalid() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("d19-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let legacy = profile.appendingPathComponent("ModelPlan/Beta07/settings-v1.json")
+        try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let bytes = Data(#"{"schemaVersion":1,"preferences":{"dockEdge":"floating","dockDisplayID":"synthetic-display","dockAlongFraction":2}}"#.utf8)
+        try bytes.write(to: legacy)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+            activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let preferences = try XCTUnwrap(app.settingsHost.application.editor.snapshot).preferences
+        XCTAssertEqual(preferences.dockEdge, .right)
+        XCTAssertEqual(preferences.dockDisplayID, "synthetic-display")
+        XCTAssertEqual(preferences.dockAlongFraction, 0.5)
+        XCTAssertEqual(try Data(contentsOf: legacy), bytes)
+    }
+
     func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }

@@ -130,6 +130,13 @@ public enum FoundationSettingsMigration {
         guard var values = envelope["preferences"] as? [String: Any] else { throw Failure.invalidPreferences }
         let edgeDefaulted: Bool
         if let value = values["dockEdge"] {
+            if value as? String == "floating", let fraction = values["dockAlongFraction"] {
+                let encoded = try? JSONSerialization.data(withJSONObject: fraction, options: [.fragmentsAllowed])
+                let number = encoded.flatMap { try? JSONDecoder().decode(Double.self, from: $0) }
+                if number.map({ $0.isFinite && (0...1).contains($0) }) != true {
+                    values.removeValue(forKey: "dockAlongFraction")
+                }
+            }
             edgeDefaulted = (value as? String).flatMap(SettingsDockEdge.init(rawValue:)) == nil
             if edgeDefaulted { values["dockEdge"] = "right" }
         } else { edgeDefaulted = false }
