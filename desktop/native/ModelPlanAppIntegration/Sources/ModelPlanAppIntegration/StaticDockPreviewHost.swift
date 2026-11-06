@@ -1406,7 +1406,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
-                additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
+                additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
     }

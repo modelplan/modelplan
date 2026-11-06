@@ -290,6 +290,7 @@ private actor EntrySyntheticClient: EngineClient {
     }
 
     func testNormalOpenCardUpdatesReportedResetExpiryWithoutNewRows() async throws {
+        let captureDirectory = ProcessInfo.processInfo.environment["MODELPLAN_546_CARD_CAPTURE_DIR"].map { URL(fileURLWithPath: $0) }
         for (language, labels) in [
             ("en", ["1 reset · expire in 12m", "1 reset · expire in 9m", "1 reset · expired"]),
             ("zh", ["重置 1 次 · 12 分钟后到期", "重置 1 次 · 9 分钟后到期", "重置 1 次 · 已到期"]),
@@ -336,6 +337,12 @@ private actor EntrySyntheticClient: EngineClient {
                 XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
                 XCTAssertEqual(app.composition.store.snapshot.rows?.sequence, snapshot.sequence)
                 XCTAssertEqual(app.settingsHost.application.editor.snapshot?.revision, revision)
+                if let captureDirectory {
+                    let bitmap = try XCTUnwrap(dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds))
+                    dock.card.cacheDisplay(in: dock.card.bounds, to: bitmap)
+                    let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                    try png.write(to: captureDirectory.appendingPathComponent("\(language)-\(Int(offset)).png"))
+                }
             }
             await app.composition.stop()
         }
