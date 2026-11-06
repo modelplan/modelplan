@@ -599,6 +599,30 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
+    /// DOCK-3.8-07 / V-18: the card's reset time uses the glossary relative format in both languages.
+    func testNormalCardResetTimeUsesTheGlossaryRelativeFormat() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let resets = ISO8601DateFormatter().string(from: wall.addingTimeInterval(2 * 3600 + 14 * 60))
+        let snapshot = try Self.rows(weekly: 75, weeklyDeadline: resets)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock
+        func weekly() throws -> String {
+            let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+            return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
+        }
+        XCTAssertTrue(try weekly().hasPrefix("resets in 2h 14m"), try weekly())
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertTrue(try weekly().hasPrefix("2 小时 14 分后重置"), try weekly())
+    }
+
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
