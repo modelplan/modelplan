@@ -37,3 +37,11 @@ test('verified subscription preserves zero and unknown while ambiguity is withhe
  detail.today.push({...detail.today[0],source:'another'});assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
  detail.today.pop();d.subscriptions=[];assert.equal(prototypeEngineSupplement(account,d).todayTokens,null);
 });
+
+test('forbidden-null fields reject explicit null while omission remains valid',()=>{
+ const d=withDetails();
+ delete d.details.subscriptions[0].resetCards;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),true);
+ d.details.subscriptions[0].resetCards=null;
+ assert.equal(conforms(d,definitions.CockpitData,definitions),false);
+});

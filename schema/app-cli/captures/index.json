@@ -569,7 +569,16 @@
     {
       "file": "WireCockpitDetails.json",
       "type": "WireCockpitDetails",
-      "optional": [],
+      "optional": [
+        {
+          "field": "publication",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
       "required": [
         "version",
         "sources",
@@ -578,6 +587,82 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ]
+    },
+    {
+      "file": "WireCockpitPublication.json",
+      "type": "WireCockpitPublication",
+      "optional": [],
+      "required": [
+        "contractVersion",
+        "publicationId",
+        "publishedAt",
+        "source",
+        "models",
+        "truncated"
+      ]
+    },
+    {
+      "file": "WireCockpitPublicationEffort.json",
+      "type": "WireCockpitPublicationEffort",
+      "optional": [
+        {
+          "field": "multiplier",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "ability",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "cost",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "time",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        },
+        {
+          "field": "provisional",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "effort",
+        "label",
+        "star"
+      ]
+    },
+    {
+      "file": "WireCockpitPublicationModel.json",
+      "type": "WireCockpitPublicationModel",
+      "optional": [],
+      "required": [
+        "id",
+        "name",
+        "developerId",
+        "recommended",
+        "efforts"
       ]
     },
     {

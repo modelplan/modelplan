@@ -81,14 +81,7 @@
           ]
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "route": {
           "enum": [
@@ -296,6 +289,9 @@
           "maxItems": 128,
           "type": "array"
         },
+        "publication": {
+          "$ref": "#/$defs/CockpitPublication"
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"
@@ -342,6 +338,150 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ],
+      "type": "object"
+    },
+    "CockpitPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationModel"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "publicationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "publicationId",
+        "publishedAt",
+        "source",
+        "models",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationEffort": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "multiplier": {
+          "type": "number"
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "star": {
+          "type": "boolean"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "effort",
+        "label",
+        "star",
+        "ability",
+        "cost",
+        "time"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationModel": {
+      "additionalProperties": false,
+      "properties": {
+        "developerId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "efforts": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationEffort"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "recommended": {
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "developerId",
+        "recommended",
+        "efforts"
       ],
       "type": "object"
     },
@@ -508,14 +648,7 @@
           ]
         },
         "resetCards": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResetCards"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/$defs/ResetCards"
         },
         "resetCounts": {
           "items": {
@@ -896,14 +1029,7 @@
       },
       "properties": {
         "accessToken": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "type": "string"
         },
         "expiresAt": {
           "anyOf": [
@@ -982,18 +1108,11 @@
           "type": "string"
         },
         "refreshDecisions": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/RefreshDecision"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "maxItems": 20
+          "items": {
+            "$ref": "#/$defs/RefreshDecision"
+          },
+          "maxItems": 20,
+          "type": "array"
         },
         "scopes": {
           "items": {
@@ -2923,15 +3042,8 @@
           "minimum": 0
         },
         "earliestExpiresAt": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "format": "date-time",
+          "type": "string"
         },
         "items": {
           "items": {
@@ -3653,21 +3765,14 @@
           "type": "string"
         },
         "source": {
-          "anyOf": [
-            {
-              "enum": [
-                "local_history",
-                "runtime",
-                "saved_login",
-                "api_key",
-                "other"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "enum": [
+            "local_history",
+            "runtime",
+            "saved_login",
+            "api_key",
+            "other"
+          ],
+          "type": "string"
         },
         "validUntil": {
           "anyOf": [

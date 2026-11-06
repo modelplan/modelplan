@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 8ef0924d220587f33fbac97d11b03b0b319805a9991886e004c57724fb7fd447
+// Schema SHA-256: 701ab08c05a4a00bfa72a8043ff89633d61bd52cf1b701b1291bf7203a7e25d7
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -12,7 +12,7 @@ export type WireAccount = {
   readonly "observedAt": string | null;
   readonly "plan": WirePlan;
   readonly "refreshNotBefore"?: string | null | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "resetCards"?: WireResetCards;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
   readonly "valueState": "current" | "retained" | "none";
@@ -45,12 +45,41 @@ export type WireCockpitData = {
 
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
+  readonly "publication"?: WireCockpitPublication;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
   readonly "sessions": ReadonlyArray<WireCockpitSession>;
   readonly "sources": ReadonlyArray<string>;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionDetails>;
   readonly "version": number;
+};
+
+export type WireCockpitPublication = {
+  readonly "contractVersion": number;
+  readonly "models": ReadonlyArray<WireCockpitPublicationModel>;
+  readonly "publicationId": string;
+  readonly "publishedAt": string;
+  readonly "source": string;
+  readonly "truncated": boolean;
+};
+
+export type WireCockpitPublicationEffort = {
+  readonly "ability": number | null;
+  readonly "cost": number | null;
+  readonly "effort": string;
+  readonly "label": string;
+  readonly "multiplier"?: number;
+  readonly "provisional"?: boolean;
+  readonly "star": boolean;
+  readonly "time": number | null;
+};
+
+export type WireCockpitPublicationModel = {
+  readonly "developerId": string;
+  readonly "efforts": ReadonlyArray<WireCockpitPublicationEffort>;
+  readonly "id": string;
+  readonly "name": string;
+  readonly "recommended": string;
 };
 
 export type WireCockpitQueryParams = {
@@ -82,7 +111,7 @@ export type WireCockpitSubscription = {
 
 export type WireCockpitSubscriptionDetails = {
   readonly "credits": WireCockpitCredits | null;
-  readonly "resetCards"?: WireResetCards | null;
+  readonly "resetCards"?: WireResetCards;
   readonly "resetCounts": ReadonlyArray<WireCockpitResetCount>;
   readonly "resetCountsTruncated"?: boolean;
   readonly "subscriptionRef": string;
@@ -169,7 +198,7 @@ export type WireResetCardSource = {
 
 export type WireResetCards = {
   readonly "count": number | null;
-  readonly "earliestExpiresAt"?: string | null;
+  readonly "earliestExpiresAt"?: string;
   readonly "items"?: ReadonlyArray<WireResetCardItem>;
   readonly "sources": ReadonlyArray<WireResetCardSource>;
   readonly "state": string;
@@ -239,7 +268,7 @@ export type WireWindow = {
   readonly "resetMode": "fixed" | "rolling" | "unknown";
   readonly "resetsAt": string | null;
   readonly "role": "session" | "daily" | "weekly" | "monthly" | "other";
-  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other" | null;
+  readonly "source"?: "local_history" | "runtime" | "saved_login" | "api_key" | "other";
   readonly "validUntil": string | null;
 };
 
@@ -324,14 +353,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "route": {
         "enum": [
@@ -496,6 +518,9 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 128,
         "type": "array"
       },
+      "publication": {
+        "$ref": "#/$defs/CockpitPublication"
+      },
       "resetEvents": {
         "items": {
           "$ref": "#/$defs/ResetEvent"
@@ -542,6 +567,150 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "sessionCoverage",
       "resetEvents",
       "alerts"
+    ],
+    "type": "object"
+  },
+  "CockpitPublication": {
+    "additionalProperties": false,
+    "properties": {
+      "contractVersion": {
+        "maximum": 1,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "models": {
+        "items": {
+          "$ref": "#/$defs/CockpitPublicationModel"
+        },
+        "maxItems": 3,
+        "type": "array"
+      },
+      "publicationId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "publishedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "source": {
+        "maxLength": 32,
+        "minLength": 1,
+        "type": "string"
+      },
+      "truncated": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "contractVersion",
+      "publicationId",
+      "publishedAt",
+      "source",
+      "models",
+      "truncated"
+    ],
+    "type": "object"
+  },
+  "CockpitPublicationEffort": {
+    "additionalProperties": false,
+    "properties": {
+      "ability": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cost": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "effort": {
+        "maxLength": 64,
+        "minLength": 1,
+        "type": "string"
+      },
+      "label": {
+        "maxLength": 64,
+        "type": "string"
+      },
+      "multiplier": {
+        "type": "number"
+      },
+      "provisional": {
+        "type": "boolean"
+      },
+      "star": {
+        "type": "boolean"
+      },
+      "time": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "effort",
+      "label",
+      "star",
+      "ability",
+      "cost",
+      "time"
+    ],
+    "type": "object"
+  },
+  "CockpitPublicationModel": {
+    "additionalProperties": false,
+    "properties": {
+      "developerId": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "efforts": {
+        "items": {
+          "$ref": "#/$defs/CockpitPublicationEffort"
+        },
+        "maxItems": 32,
+        "type": "array"
+      },
+      "id": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      },
+      "name": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "recommended": {
+        "maxLength": 64,
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "developerId",
+      "recommended",
+      "efforts"
     ],
     "type": "object"
   },
@@ -708,14 +877,7 @@ export const definitions: Readonly<Record<string, Schema>> = {
         ]
       },
       "resetCards": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/ResetCards"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "$ref": "#/$defs/ResetCards"
       },
       "resetCounts": {
         "items": {
@@ -1237,15 +1399,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "minimum": 0
       },
       "earliestExpiresAt": {
-        "anyOf": [
-          {
-            "format": "date-time",
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "format": "date-time",
+        "type": "string"
       },
       "items": {
         "items": {
@@ -1654,21 +1809,14 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "type": "string"
       },
       "source": {
-        "anyOf": [
-          {
-            "enum": [
-              "local_history",
-              "runtime",
-              "saved_login",
-              "api_key",
-              "other"
-            ],
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ]
+        "enum": [
+          "local_history",
+          "runtime",
+          "saved_login",
+          "api_key",
+          "other"
+        ],
+        "type": "string"
       },
       "validUntil": {
         "anyOf": [

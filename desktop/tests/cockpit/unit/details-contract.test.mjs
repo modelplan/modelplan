@@ -22,3 +22,13 @@ test('cockpit details reject malformed nested data and opaque references', () =>
     assert.equal(conforms(data, definitions.CockpitData, definitions), false);
   }
 });
+
+test('publication is optional but explicit null is rejected', () => {
+  const data = capture();
+  delete data.details.publication;
+  assert.equal(conforms(data, definitions.CockpitData, definitions), true, 'absent');
+  data.details.publication = null;
+  assert.equal(conforms(data, definitions.CockpitData, definitions), false, 'null');
+  data.details.publication = { contractVersion: 1, publicationId: '0123456789abcdef01234567', publishedAt: '2026-10-24T12:00:00Z', source: 'client', truncated: false, models: [] };
+  assert.equal(conforms(data, definitions.CockpitData, definitions), true, 'valid');
+});
