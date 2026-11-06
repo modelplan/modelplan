@@ -267,7 +267,8 @@ public enum SettingsCatalogue {
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
                     // SET-9-29: unavailable controls are absent in v1, while
-                    // deferred notification types and updates remain out of scope
+                    // forecast, reset-expiry and stale-data notifications are v1.1;
+                    // updates remain out of scope
                     // even if an injected capability advertises them.
                     if c.v1NormalEntry {
                         if [.automaticUpdates, .updateStatus, .forecast, .expiring, .stale,

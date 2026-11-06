@@ -29,7 +29,15 @@ import ModelPlanWire
             guard !view.isHiddenOrHasHiddenAncestor else { return [] }
             return ((view as? NSTextField).map { [$0.stringValue] } ?? []) + view.subviews.flatMap(visibleText)
         }
-        let text = visibleText(try XCTUnwrap(window.contentView))
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let root = try XCTUnwrap(window.contentView)
+        let sidebar = try XCTUnwrap(descendants(root).compactMap { $0 as? NSTableView }.first)
+        XCTAssertEqual(sidebar.numberOfRows, 9, "SET-9-02 requires nine panes")
+        let observed = (0..<sidebar.numberOfRows).map { index in
+            sidebar.view(atColumn: 0, row: index, makeIfNecessary: false)?.subviews.compactMap { $0.accessibilityIdentifier() }.first
+        }
+        XCTAssertEqual(observed, ["general", "dock", "cockpit", "appearance", "subscriptions", "notifications", "privacy", "diagnostics", "about"].map { Optional("settings.pane." + $0) }, "SET-9-02 preserves the native sidebar order")
+        let text = visibleText(root)
         for title in ["Language", "Menu-bar display", "Open cockpit shortcut", "Toggle Quota Widget shortcut", "Show hints again"] {
             XCTAssertFalse(text.contains(title), "SET-9-29: unavailable \(title) must not appear in the normal Settings window")
         }
