@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -355,16 +356,53 @@ type fileStamp struct {
 	exists         bool
 }
 
+type localFileStamp struct {
+	path string
+	fileStamp
+}
+
+// codexLocalStamps observes metadata only for the same permitted local source
+// that buildView reads. It never opens rollout contents or exposes file paths.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+	state, mode := admission.State(), admission.Mode()
+	if !state.Allows("codex", consent.Local, mode) {
+		return nil
+	}
+	paths := b.paths(admission)
+	if paths.CodexHome == "" {
+		return nil
+	}
+	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
+	sort.Strings(files)
+	stamps := make([]localFileStamp, 0, len(files))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err == nil {
+			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
+		}
+	}
+	return stamps
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
+			localTicker := time.NewTicker(5 * time.Second)
+			defer localTicker.Stop()
+			lastLocal := b.codexLocalStamps(consent.Capture())
 			var last []fileStamp
 			for {
 				select {
 				case <-ctx.Done():
 					return
+				case <-localTicker.C:
+					current := b.codexLocalStamps(consent.Capture())
+					if !reflect.DeepEqual(lastLocal, current) {
+						lastLocal = current
+						b.notify()
+					}
 				case <-ticker.C:
 					paths := b.paths(consent.Capture())
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}

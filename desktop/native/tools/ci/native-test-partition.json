@@ -96,6 +96,10 @@
         "U8ConsentJourneyTests"
       ],
       "allowedSkips": {
+        "CommunityCockpitEntryTests/testG313RealCLIRecoversRetainedWeeklyCard": {
+          "leg": "headless",
+          "reason": "requires the synthetic real CLI supplied and required by the U11 workflow"
+        },
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"
