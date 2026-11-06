@@ -110,10 +110,14 @@ private actor EntrySyntheticClient: EngineClient {
                 "schedule": ["precision": "deadline", "from": scheduled, "through": scheduled],
                 "source": ["kind": "publication", "publicationId": "synthetic",
                     "url": "https://example.invalid/digest", "links": [
-                        ["type": "original", "url": "https://example.invalid/post"],
-                        ["type": "original", "url": "https://example.invalid/post"],
-                        ["type": "original", "url": "http://example.invalid/insecure"],
-                        ["type": "original", "url": "https://user@example.invalid/credentials"]]]]
+                        ["type": "aihot", "url": "https://aihot.news/example-reset"],
+                        ["type": "official", "url": "https://status.openai.com/incidents/demo-reset"],
+                        ["type": "original", "url": "https://x.com/OpenAI/status/123"],
+                        ["type": "original", "url": "https://x.com/OpenAI/status/123"],
+                        ["type": "original", "url": "https://x.com/OpenAI/status/456?token=canary"],
+                        ["type": "official", "url": "https://status.openai.com:8443/incidents/demo-reset"],
+                        ["type": "official", "url": "https://status.openai.com/incidents/demo-reset#section"],
+                        ["type": "publication", "url": "https://example.invalid/invalid-type"]]]]
             if resetConfirmed {
                 event["status"] = "confirmed"
                 event["confirms"] = "synthetic-card-reset"
@@ -265,6 +269,16 @@ private actor EntrySyntheticClient: EngineClient {
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2026, month: 12, day: 2, hour: 16)))
         let snapshot = try rows(weekly: 75, resetCardClock: wall)
+        let officialURL = "https://status.openai.com/incidents/demo-reset"
+        let originalURL = "https://x.com/OpenAI/status/123"
+        let aihotURL = "https://aihot.news/example-reset"
+        let publicationURL = "https://example.invalid/digest"
+        guard case .available(let decoded) = EngineRowsEventDecoder.decode(snapshot) else {
+            return XCTFail("Expected the explicit reset event")
+        }
+        XCTAssertEqual(Set(try XCTUnwrap(decoded.first).sourceLinks.map(\.url.absoluteString)),
+                       Set([officialURL, originalURL, aihotURL, publicationURL]))
+        XCTAssertEqual(decoded.first?.sourceLinks.filter { $0.kind == "official" }.map(\.url.absoluteString), [officialURL])
         var elapsed = 0.0
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
@@ -300,20 +314,24 @@ private actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(text(dock.card).contains("Reset 17:00 announced"))
         XCTAssertTrue(text(dock.card).contains("2 resets · expire in 30h"))
         let content = try XCTUnwrap(dock.cardContent(for: id, at: wall))
-        XCTAssertEqual(content.links.map(\.url.absoluteString), ["https://example.invalid/digest", "https://example.invalid/post"])
+        XCTAssertEqual(content.links.map(\.url.absoluteString), [originalURL, aihotURL, officialURL, publicationURL])
+        XCTAssertEqual(content.links.map(\.label), ["Original", "AIHot", "Official source", "Source"])
         func buttons(_ root: NSView) -> [NSButton] {
             (root as? NSButton).map { [$0] } ?? root.subviews.flatMap(buttons)
         }
-        let original = try XCTUnwrap(buttons(dock.card).first { $0.title == "Original" })
-        original.performClick(nil)
-        XCTAssertEqual(opened.map(\.absoluteString), ["https://example.invalid/post"])
+        let official = try XCTUnwrap(buttons(dock.card).first { $0.title == "Official source" })
+        official.performClick(nil)
+        XCTAssertEqual(opened.map(\.absoluteString), [officialURL])
         let oldAction = try XCTUnwrap(dock.card.onOpenURL)
         oldAction(URL(string: "https://example.invalid/unlisted")!)
         XCTAssertEqual(opened.count, 1)
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertTrue(text(dock.card).contains("预告 17:00 重置"))
         XCTAssertTrue(text(dock.card).contains("重置 2 次 · 30 小时后到期"))
-        oldAction(content.links[1].url)
+        let chinese = try XCTUnwrap(dock.cardContent(for: id, at: wall))
+        XCTAssertEqual(chinese.links.map(\.url.absoluteString), [aihotURL, officialURL, originalURL, publicationURL])
+        XCTAssertEqual(chinese.links.map(\.label), ["AIHot", "官方来源", "原文", "来源"])
+        oldAction(try XCTUnwrap(URL(string: officialURL)))
         XCTAssertEqual(opened.count, 1, "rebuilding the card retires the old link action")
 
         let store = app.composition.store
