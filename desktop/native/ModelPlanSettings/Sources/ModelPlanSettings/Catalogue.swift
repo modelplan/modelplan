@@ -165,7 +165,6 @@ public struct SettingsRow: Equatable, Sendable {
     public let key: SettingKey
     public let paneID: String
     public let groupID: String
-    public let paneTitle: SettingsText
     public let groupTitle: SettingsText?
     /// Compatibility only. Custom pane identifiers are intentionally not constrained to draft IDs.
     public var pane: SettingsPane? { SettingsPane(rawValue: paneID) }
@@ -284,7 +283,7 @@ public enum SettingsCatalogue {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)
                     } else { subtitle = d.subtitle }
-                    return .init(key: key, paneID: pane.id, groupID: group.id, paneTitle: pane.title,
+                    return .init(key: key, paneID: pane.id, groupID: group.id,
                                  groupTitle: group.title, title: d.title, subtitle: subtitle,
                                  availability: availability(key, c), value: value(key, p, c, subs))
                 }
