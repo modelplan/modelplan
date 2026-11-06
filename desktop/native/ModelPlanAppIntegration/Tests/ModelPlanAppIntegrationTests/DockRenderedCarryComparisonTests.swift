@@ -23,15 +23,21 @@ import ModelPlanSettings
 }
 
 @MainActor final class DockRenderedCarryComparisonTests: XCTestCase {
+    private enum Journey { case carry, mixedScaleRelease, reconnect }
+
     func testD04DetachedRealServerCarriesRenderedWidgetAcrossDisplays() async throws {
-        try await exercise(releaseOnMixedScale: false)
+        try await exercise(.carry)
     }
 
     func testD05DetachedRealServerRerasterizesAndSavesOnTheDestination() async throws {
-        try await exercise(releaseOnMixedScale: true)
+        try await exercise(.mixedScaleRelease)
     }
 
-    private func exercise(releaseOnMixedScale: Bool) async throws {
+    func testD10DetachedRealServerRetainsReadingsAndSavedPlacementAcrossReconnect() async throws {
+        try await exercise(.reconnect)
+    }
+
+    private func exercise(_ journey: Journey) async throws {
         let path = try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_D04_CAPTURE_DIR"])
         let output = URL(fileURLWithPath: path, isDirectory: true)
         let helper = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
@@ -82,8 +88,9 @@ import ModelPlanSettings
             let topology = CarryComparisonTopology()
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             _ = try await store.update {
-                $0.dockDisplayID = "A"
-                $0.dockEdge = .right
+                $0.dockDisplayID = journey == .reconnect ? "C" : "A"
+                $0.dockEdge = journey == .reconnect ? .bottom : .right
+                $0.dockAlongFraction = journey == .reconnect ? 0.31 : 0.5
                 $0.autoHide = false
             }
             let storedURL = root.appendingPathComponent("ModelPlan/settings.json")
@@ -94,7 +101,7 @@ import ModelPlanSettings
             addTeardownBlock { @MainActor in await app.composition.stop() }
             await app.prepare()
             app.allowDockPresentation()
-            _ = try await app.composition.client.start()
+            let delivery = try await app.composition.client.start()
             _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
             let host = app.composition.dock, view = host.dockView
             func serverReading() -> Double? {
@@ -104,6 +111,65 @@ import ModelPlanSettings
             XCTAssertEqual(serverReading(), 40)
             let bytes = try Data(contentsOf: storedURL)
             let initial = try XCTUnwrap(host.edgePresentation?.placement)
+            if journey == .reconnect {
+                let before = await store.snapshot()
+                func observe(_ phase: String, on display: DockDisplayArea, percent: Double) async throws {
+                    let presented = try XCTUnwrap(host.edgePresentation)
+                    let placement = try XCTUnwrap(presented.placement)
+                    let frame = try XCTUnwrap(presented.paintedFrame)
+                    let view = try XCTUnwrap(host.detachedRenderedCarryViewForChecks)
+                    let raster = try XCTUnwrap(view.presentedImageForChecks)
+                    let renderedPercentages = view.presentedReadingsForChecks.values.compactMap(\.remainingPercent).sorted()
+                    XCTAssertEqual(presented.state, .expanded, phase)
+                    XCTAssertEqual(placement.displayID, display.id, phase)
+                    XCTAssertEqual(placement.edge, .bottom, phase)
+                    XCTAssertEqual(placement.alongFraction, 0.31, accuracy: 0.0001, phase)
+                    XCTAssertTrue(display.usableFrame.contains(frame), phase)
+                    XCTAssertEqual(CGFloat(raster.width), frame.width * CGFloat(display.backingScale), accuracy: 1, phase)
+                    XCTAssertEqual(CGFloat(raster.height), frame.height * CGFloat(display.backingScale), accuracy: 1, phase)
+                    XCTAssertEqual(serverReading(), percent, phase)
+                    XCTAssertEqual(renderedPercentages, [percent], phase)
+                    XCTAssertEqual(app.composition.store.snapshot.delivery, delivery, phase)
+                    let after = await store.snapshot()
+                    XCTAssertEqual(after.revision, before.revision, phase)
+                    XCTAssertEqual(after.preferences.dockDisplayID, topology.c.id, phase)
+                    XCTAssertEqual(after.preferences.dockEdge, .bottom, phase)
+                    XCTAssertEqual(after.preferences.dockAlongFraction, 0.31, phase)
+                    XCTAssertEqual(try Data(contentsOf: storedURL), bytes, phase)
+                    let prefix = "mode-\(mode)-" + phase
+                    try XCTUnwrap(NSBitmapImageRep(cgImage: raster).representation(using: .png, properties: [:]))
+                        .write(to: output.appendingPathComponent(prefix + ".png"))
+                    let report: [String: Any] = [
+                        "phase": phase, "display": placement.displayID, "edge": "bottom",
+                        "alongFraction": placement.alongFraction, "frame": NSStringFromRect(frame),
+                        "scale": display.backingScale, "pixels": [raster.width, raster.height],
+                        "remainingPercent": renderedPercentages.first ?? -1,
+                        "savedDisplay": after.preferences.dockDisplayID ?? "", "revision": after.revision,
+                    ]
+                    try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                        .write(to: output.appendingPathComponent(prefix + ".json"))
+                }
+                func updateTopology(_ displays: [DockDisplayArea]) {
+                    topology.active = displays
+                    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+                    host.refreshPresence()
+                }
+
+                try await observe("c-initial", on: topology.c, percent: 40)
+                updateTopology([topology.a, topology.b])
+                try await observe("a-fallback", on: topology.a, percent: 40)
+                try writeReading(70)
+                let deadline = ContinuousClock.now + .seconds(6)
+                while serverReading() != 70 && ContinuousClock.now < deadline {
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                try await observe("a-new-reading", on: topology.a, percent: 70)
+                updateTopology([topology.a, topology.b, topology.c])
+                try await observe("c-reconnected", on: topology.c, percent: 70)
+                XCTAssertEqual(host.edgePresentation?.paintedFrame, initial.frame)
+                await app.composition.stop()
+                continue
+            }
             let drag = try XCTUnwrap(view.backgroundDragDelegate)
             let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
                 stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
@@ -118,7 +184,7 @@ import ModelPlanSettings
             }
             guard captured else { return XCTFail("Mode \(mode) did not capture the actual host's background") }
 
-            if releaseOnMixedScale {
+            if journey == .mixedScaleRelease {
                 func capture(_ name: String, at display: DockDisplayArea, moving: Bool) throws {
                     let current = try XCTUnwrap(host.edgePresentation)
                     let frame = try XCTUnwrap(current.paintedFrame)
