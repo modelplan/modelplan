@@ -239,7 +239,8 @@ private actor LifecycleEngine: EngineClient {
         return root
     }
 
-    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false, edit: ((inout SettingsPreferences) -> Void)? = nil)
+    private func make(_ root: URL, topology: Topology, rows: WireRowsSnapshot? = nil, native: Bool = false,
+                      beforePrepare: ((EngineDockMenuApplication) -> Void)? = nil, edit: ((inout SettingsPreferences) -> Void)? = nil)
         async throws -> EngineDockMenuApplication {
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         if let edit { _ = try await store.update { edit(&$0) } }
@@ -248,6 +249,7 @@ private actor LifecycleEngine: EngineClient {
             settingsStore: store, createsNativePanels: native, bundleURL: root.appendingPathComponent("Synthetic.app"),
             dockEnvironment: topology.read,
             makeClient: { _, store in LifecycleEngine(store: store, rows: rows) }, activateSettings: {})
+        beforePrepare?(app)
         await app.prepare()
         addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
         return app
@@ -296,6 +298,124 @@ private actor LifecycleEngine: EngineClient {
         XCTAssertNil(app.composition.store.snapshot.rows)
         let skin = try XCTUnwrap(app.composition.dock.dockView.presentedSkinForChecks)
         XCTAssertTrue(skin.stations.contains { $0.placeholderLabel != nil && $0.subscriptionID == nil })
+    }
+
+    private func showDockRow(_ app: EngineDockMenuApplication) throws -> SettingsRowValue? {
+        let editor = app.settingsHost.application.editor
+        let snapshot = try XCTUnwrap(editor.snapshot)
+        return try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: "dock")
+            .first { $0.key == .showDock }?.value
+    }
+
+    /// G3-17 (a) / D-01: no settings document exists; the first launch creates one with the
+    /// Quota Widget switch on, shows the widget, and offers Show from the status menu.
+    func testG317TrulyFreshProfileEnablesAndShowsTheWidget() async throws {
+        let topology = Topology(), root = profile()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "Precondition: no profile at all")
+        let app = try await make(root, topology: topology)
+        _ = start(app)
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        let editor = app.settingsHost.application.editor
+        XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
+        XCTAssertEqual(try showDockRow(app), .toggle(true), "Settings shows the Quota Widget switch on")
+        let status = await app.foundationStore.foundationStatus()
+        let document = try XCTUnwrap(status?.path)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: document)) as? [String: Any])
+        XCTAssertEqual((object["settings"] as? [String: Any])?["showDock"] as? Bool, true, "The created document saves the switch on")
+        XCTAssertEqual(try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }).isEnabled, true)
+        XCTAssertNotNil(app.composition.dock.edgePresentation?.paintedFrame)
+    }
+
+    /// G3-17 (c) / D-01: first run with every optional reader declined still shows the widget,
+    /// before and after Done, and leaves the switch on.
+    func testG317FirstRunWithAllReadersDeclinedShowsTheWidget() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let topology = Topology(), surface = LifecycleFirstRunProbe()
+        let app = try await make(profile(), topology: topology, rows: fixture,
+                                 beforePrepare: { $0.makeFirstRunSurfaceWithConsent = { _, _ in surface } })
+        _ = start(app)
+        try await wait({ surface.shows > 0 }, seconds: 5)
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        let editor = app.settingsHost.application.editor
+        let before = try XCTUnwrap(editor.snapshot)
+        XCTAssertFalse(before.preferences.onboarding.completed)
+        var declined = OnboardingOptions(preferences: before.preferences)
+        declined.readerConsent = ReaderConsent()
+        _ = try await editor.completeFirstRun(options: declined, action: .done, host: .popup, expectedRevision: before.revision)
+        try await waitForSettings(editor) { editor.snapshot?.preferences.onboarding.completed == true && !editor.isSaving }
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+        XCTAssertEqual(editor.snapshot?.preferences.showDock, true)
+        XCTAssertEqual(try showDockRow(app), .toggle(true))
+        let saved = await app.foundationStore.snapshot()
+        XCTAssertTrue(saved.preferences.showDock)
+        XCTAssertEqual(saved.preferences.readerConsent, ReaderConsent())
+    }
+
+    /// G3-17/G3-18 (b) / D-14, from a truly empty profile. Once first run is done and the
+    /// widget is concealed, the Help host offers "Find it again from the menu" and saves its
+    /// hint ledger through the shared store, outside the Settings editor. Show Quota Widget
+    /// chosen before the editor reloads must still show the widget and turn the switch on:
+    /// in session (Hide, then menu Show) and after a relaunch with the widget hidden.
+    /// At abd90787 the request compared the editor's stale revision with the store, reloaded
+    /// and returned .changed, so showDock stayed false ("did nothing", switch off).
+    func testG318HideThenMenuShowFromFreshProfileSurvivesHintLedgerWrites() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let topology = Topology(), root = profile(), surface = LifecycleFirstRunProbe()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path), "Precondition: no profile at all")
+        let app = try await make(root, topology: topology, rows: fixture,
+                                 beforePrepare: { $0.makeFirstRunSurfaceWithConsent = { _, _ in surface } })
+        _ = start(app)
+        try await wait({ surface.shows > 0 }, seconds: 5)
+        let editor = app.settingsHost.application.editor
+        let fresh = try XCTUnwrap(editor.snapshot)
+        XCTAssertTrue(fresh.preferences.showDock)
+        _ = try await editor.completeFirstRun(options: .init(preferences: fresh.preferences), action: .done,
+                                              host: .popup, expectedRevision: fresh.revision)
+        try await waitForSettings(editor) { editor.snapshot?.preferences.onboarding.completed == true && !editor.isSaving }
+        try await wait { app.composition.dock.edgePresentation?.state == .expanded }
+
+        func ledgerWrite(_ application: EngineDockMenuApplication, _ hints: FirstUseHintPreferences) async throws {
+            let current = await application.foundationStore.snapshot()
+            let saved = try await application.foundationStore.saveHints(hints, expectedRevision: current.revision)
+            XCTAssertNotEqual(application.settingsHost.application.editor.snapshot?.revision, saved.revision,
+                              "Precondition: the editor has not reloaded the ledger write")
+        }
+        func showFromMenu(_ application: EngineDockMenuApplication, hints: FirstUseHintPreferences) async throws {
+            let editor = application.settingsHost.application.editor
+            try select("Show Quota Widget", in: XCTUnwrap(application.liveStatusMenu))
+            try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == true && !editor.isSaving }
+            try await wait { application.composition.dock.edgePresentation?.state == .expanded }
+            XCTAssertEqual(try showDockRow(application), .toggle(true), "Show turns the Settings switch on")
+            let saved = await application.foundationStore.snapshot()
+            XCTAssertTrue(saved.preferences.showDock)
+            XCTAssertEqual(saved.preferences.helpHints, hints, "The ledger write is kept")
+            XCTAssertFalse(application.liveStatusMenu?.items.contains { $0.title == "Settings changed. Choose Show Quota Widget again." } ?? true)
+        }
+
+        // In session: Hide from the widget menu, the hint ledger saves, then menu Show.
+        try await ledgerWrite(app, .init(seen: [.ringRefresh]))
+        try select("Hide Quota Widget", in: app.composition.dock.menu())
+        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        XCTAssertEqual(try showDockRow(app), .toggle(false))
+        try await ledgerWrite(app, .init(seen: [.ringRefresh, .findWidget]))
+        try await showFromMenu(app, hints: .init(seen: [.ringRefresh, .findWidget]))
+
+        // Relaunch hidden: the saved Hide is kept, then the same ledger write and menu Show.
+        try select("Hide Quota Widget", in: app.composition.dock.menu())
+        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        await app.stopLifecycle(); app.composition.dock.close()
+        let relaunched = try await make(root, topology: topology, rows: fixture)
+        _ = start(relaunched)
+        let reopened = relaunched.settingsHost.application.editor
+        XCTAssertEqual(reopened.snapshot?.preferences.showDock, false)
+        XCTAssertEqual(reopened.snapshot?.preferences.onboarding.completed, true)
+        XCTAssertNil(relaunched.composition.dock.edgePresentation?.paintedFrame)
+        try await ledgerWrite(relaunched, .init(seen: [.ringRefresh, .findWidget], reveals: 1))
+        try await showFromMenu(relaunched, hints: .init(seen: [.ringRefresh, .findWidget], reveals: 1))
     }
 
     func testD02RightEdgeSurvivesNeighbourDockMoveAndRelaunch() async throws {
