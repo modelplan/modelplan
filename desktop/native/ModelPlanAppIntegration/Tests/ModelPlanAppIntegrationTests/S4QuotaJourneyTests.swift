@@ -53,6 +53,25 @@ import XCTest
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.roles(capture:capture)
     }
+    func testDOCK_3_3_04NormalEntryUsesTightestIncludingMonthly() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.roles(capture:capture,verifyMonthlyMinimum:true)
+    }
+    func testDOCK_3_4_09NormalEntryProjectsSnapshotEvent() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.strictScopeAndEvents(capture:capture)
+    }
+    func testDOCK_3_7_06AnnouncementDoesNotRefillPersonalReading() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.strictScopeAndEvents(capture:capture)
+    }
+    func testDOCK_3_8_09NormalEntryTodayRow() throws {
+        throw XCTSkip("Account-scoped today wire and Dock consumer are pending #481 and #485; no account data may be invented.")
+    }
+    func testDOCK_3_8_12NormalEntryKeepsScopedExtrasInCard() async throws {
+        let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        try await S4QuotaJourney.roles(capture:capture)
+    }
     func testNormalEntryHasOneNozzlePerAccountMember() async throws {
         let capture=URL(fileURLWithPath:#filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         try await S4QuotaJourney.members(capture:capture)
