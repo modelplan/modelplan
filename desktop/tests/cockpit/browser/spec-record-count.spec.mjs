@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: MIT
+import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
+import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {visualFixture} from '../visual-fixture.mjs';
+
+test('CKP-STRIP-08 record strip keeps five tall and three compact lines in both shell profiles',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data:visualFixture().data})])expect(await receive(raw)).toBe(true);
+ const lines=page.locator('.ck-tape .t-lines > .tl');
+ for(const tier of ['tall','compact'])for(const profile of ['open','closed']){
+  expect(await receive(send('shell',{...shell,tier,profile}))).toBe(true);
+  await expect(lines).toHaveCount(tier==='tall'?5:3);
+  await expect(page.locator('.ck-tape')).toBeVisible();
+  for(const line of await lines.all())await expect(line).toBeVisible();
+ }
+});
+
+for(const locale of ['en','zh-CN'])test(`LBL-2.2-17 today and live speed help identify their basis (${locale})`,async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ data.details.sessions[0].rate=58;
+ for(const raw of [send('load',{appearance:{...appearance,locale},shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ await expect(page.locator('.t-live').first()).toContainText('58');
+ await page.keyboard.down('Alt');const help=page.locator('#help-map');await expect(help).toBeVisible();
+ await expect(help.locator('[data-target=".t-live"]')).toContainText(locale==='en'?'last 60 seconds':'近 60 秒');
+ await expect(help.locator('[data-target=".lb-t,.qrow-t,.qaverage"]')).toContainText(locale==='en'?'today’s average':'今日平均');
+ await page.keyboard.up('Alt');await expect(help).toBeHidden();
+});
+
+test('CKP-STRIP-09 running rows and overflow use only delivered live-session facts',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data,base=data.details.sessions[0];
+ data.details.sessions=Array.from({length:7},(_,i)=>({...base,sessionRef:(i+1).toString(16).padStart(16,'0'),model:`Synthetic ${i+1}`,rate:i===0?58:null}));
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(4);
+ for(let i=0;i<4;i++)await expect(rows.nth(i).locator('.t-model')).toHaveText(`Synthetic ${i+1}`);
+ await expect(rows.first().locator('.t-live')).toHaveText('58 t/s');
+ await expect(page.locator('.ck-tape .t-overflow')).toHaveText('3 more running');
+ expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);
+ await expect(page.locator('.ck-tape .t-overflow')).toHaveText('另有 3 个会话运行中');
+});
+
+test('CKP-STRIP-11 running records expose plain facts without done or error state indicators',async({page})=>{
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw),data=visualFixture().data;
+ data.details.sessions[0].source='Codex';data.details.sessions[0].model='Synthetic Model';data.details.sessions[0].projectLabel='synthetic-project';
+ for(const raw of [send('load',{appearance,shell}),send('visibility',{visible:true,occluded:false,key:true}),send('display',{data})])expect(await receive(raw)).toBe(true);
+ const row=page.locator('.ck-tape .t-observed').first();await expect(row).toBeVisible();
+ await expect(row.locator('.t-tool')).toHaveText('Codex');await expect(row.locator('.t-model')).toHaveText('Synthetic Model');await expect(row.locator('.t-proj')).toHaveText('synthetic-project');await expect(row.locator('.t-time')).toHaveText('Running');
+ await expect(row.locator('.t-state,.t-status,[data-session-state],svg,canvas,img')).toHaveCount(0);
+ await expect(row).not.toContainText(/\b(done|error)\b/i);
+});

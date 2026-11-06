@@ -68,12 +68,19 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',locale==='en'?`Page ${n+1}`:`第 ${n+1} 页`);led.setAttribute('aria-current',String(n===page));}
   // Unknown vendors have no mark; never turn their input into an image URL.
   for(const image of host.querySelectorAll<HTMLImageElement>('img[src="assets/brands/../../neutral.png"]'))image.remove();
-  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);b.setAttribute('aria-label',locale==='en'?member.row.name.en:member.row.name.zh);}}
-  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';all.setAttribute('aria-label',locale==='en'?'All':'全部');}
+  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=locale==='en'?`Shortcut key ${digit}`:`快捷键 ${digit}`;b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
+  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=locale==='en'?'Shortcut key 0':'快捷键 0';all.setAttribute('aria-label',`${locale==='en'?'All':'全部'} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
  };
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};
- host.onkeydown=e=>{if(e.isTrusted&&(e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element))e.preventDefault();};
+ host.onkeydown=e=>{
+  if(!e.isTrusted||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.repeat)return;
+  if((e.key==='Enter'||e.key===' ')&&choosePage(e.target as Element)){e.preventDefault();return;}
+  if(!/^[0-6]$/.test(e.key))return;
+  const button=e.key==='0'?host.querySelector<HTMLButtonElement>('.ek[data-all]'):[...host.querySelectorAll<HTMLButtonElement>('.eng-keys .ek[data-sub]')][Number(e.key)-1];
+  if(!button)return;const key=e.key==='0'?'all':button.dataset.sub??'';
+  if((key==='all'||seen.has(key))&&onSelect(key)){scope=key==='all'?'':key;paint();const next=key==='all'?host.querySelector<HTMLButtonElement>('.ek[data-all]'):[...host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')].find(b=>b.dataset.sub===key);next?.focus();e.preventDefault();}
+ };
  host.onclick=e=>{if(!e.isTrusted)return;if(choosePage(e.target as Element))return;const b=(e.target as Element).closest<HTMLButtonElement>('button');if(!b||!host.contains(b))return;
   if(b.hasAttribute('data-add-subscription')){onAdd();return;}
   if(b.hasAttribute('data-all')){if(onSelect('all')){scope='';paint();}return;}
