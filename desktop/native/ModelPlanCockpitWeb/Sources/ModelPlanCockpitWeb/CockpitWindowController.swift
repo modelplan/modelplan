@@ -265,12 +265,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       for (const [key, [target, english, chinese]] of Object.entries(choices)) {
         const selected = nodes.filter(element => element.getAttribute('data-target') === target);
         const element = selected.length === 1 ? selected[0] : null;
-        const rect = element?.getBoundingClientRect(), style = element ? getComputedStyle(element) : null;
-        const visible = !!element && !!rect && rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+        const rect = element?.getBoundingClientRect();
+        let visible = !!element && !!rect && rect.width > 0 && rect.height > 0;
+        for (let parent=element; visible && parent; parent=parent.parentElement) {
+          const style = getComputedStyle(parent);
+          if (parent.hidden || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) visible = false;
+        }
         const inside = visible && rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+        let clippedRect = null;
+        if (visible && [rect.left, rect.top, rect.right, rect.bottom, innerWidth, innerHeight].every(Number.isFinite)) {
+          const x = Math.max(0, Math.min(innerWidth, rect.left)), y = Math.max(0, Math.min(innerHeight, rect.top));
+          const right = Math.max(x, Math.min(innerWidth, rect.right)), bottom = Math.max(y, Math.min(innerHeight, rect.bottom));
+          clippedRect = {x, y, width:right-x, height:bottom-y};
+        }
         if (rect) rectangles.push(rect);
         facts[key] = {count:selected.length, matchesEnglish:element?.textContent === english,
-          matchesChinese:element?.textContent === chinese, visible, inside};
+          matchesChinese:element?.textContent === chinese, visible, inside, clippedRect};
       }
       let separate = rectangles.length === 3;
       for (let i=0; i<rectangles.length; i++) for (let j=i+1; j<rectangles.length; j++) {
