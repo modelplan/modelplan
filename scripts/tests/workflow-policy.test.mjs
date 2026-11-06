@@ -163,4 +163,12 @@ test("macrevb-579-3 regressions: every matrix/runs-on expression form is recogni
   // workflow_call-only and workflow_dispatch-only files stay outside the rule even when they mention macOS
   assert.deepEqual(macConcurrencyProblems("on:\n  workflow_call:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
   assert.deepEqual(macConcurrencyProblems("on:\n  workflow_dispatch:\njobs:\n  a:\n    runs-on: macos-latest\n"), []);
+  // a collapse whose both branches contain macOS is NOT a draft guard (macrevb-579-3's draft
+  // control flips the Linux branch to Mac); only an ubuntu-only draft branch counts, and a
+  // collapse without any draft clause (e.g. merge_group-only ubuntu) still runs macOS on drafts
+  // and is flagged
+  const allMac = "on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ github.event.pull_request.draft && fromJSON('[\"macos-latest\"]') || fromJSON('[\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n";
+  assert.ok(draftGuardProblems(allMac).length > 0, "an all-Mac collapse escaped the draft guard");
+  assert.deepEqual(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ github.event.pull_request.draft && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"ubuntu-latest\",\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n"), []);
+  assert.ok(draftGuardProblems("on:\n  pull_request:\n  push:\n  workflow_dispatch:\njobs:\n  a:\n    strategy:\n      matrix:\n        os: ${{ (github.event_name == 'merge_group') && fromJSON('[\"ubuntu-latest\"]') || fromJSON('[\"macos-latest\"]') }}\n    runs-on: ${{ matrix.os }}\n").length > 0, "a merge_group-only ubuntu branch still runs macOS on drafts");
 });

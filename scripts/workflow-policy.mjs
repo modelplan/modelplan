@@ -110,7 +110,7 @@ export function macConcurrencyProblems(text) {
 // !github.event.pull_request.draft`, a dispatch-only if, or a matrix that collapses to
 // ubuntu on drafts — the u6-engine-store-core pattern), and the workflow keeps a
 // `workflow_dispatch:` trigger so a lane can still request Mac CI for a draft head
-// (queues/ci-requests.md -> ci-dispatch.sh).
+// (a lane can still request Mac CI for a draft head through the workflow_dispatch trigger).
 function jobBlocks(text) {
   const lines = text.split("\n");
   const start = lines.findIndex((l) => /^jobs:/.test(l));
@@ -146,7 +146,9 @@ function jobDraftGuarded(lines) {
   // and a bare `if: github.event.pull_request.draft` runs ONLY drafts — both are rejections.
   return lines.some((l) => l.includes(STANDARD_GUARD))                              // the standard guard, also inside a larger conjunction
     || lines.some((l) => l.includes(DISPATCH_OR_NOT_DRAFT))                         // dispatch-or-ready (u14-macos shape)
-    || lines.some((l) => /^\s*os:.*github\.event\.pull_request\.draft/.test(l))     // matrix collapses to ubuntu on drafts
+    // a matrix collapse is a draft guard only when the DRAFT branch is ubuntu-only
+    // (macrevb-579-3: a collapse whose both branches contain macOS runs macOS on drafts)
+    || lines.some((l) => /^\s*os:[^\n]*github\.event\.pull_request\.draft[^\n]*&&\s*(?:fromJSON\(\s*)?'\["ubuntu-latest"\]'/i.test(l))
     || lines.some((l) => DISPATCH_ONLY_IF.test(l));                                  // dispatch-only job
 }
 
@@ -155,7 +157,7 @@ export function draftGuardProblems(text) {
   const on = topLevelBlock(text, "on");
   if (!on || !/\bpull_request\b/.test(on) || !runsMacos(text)) return problems;
   if (!/\bworkflow_dispatch:/.test(on)) {
-    problems.push("workflow_dispatch missing: a lane cannot request Mac CI for a draft head (queues/ci-requests.md)");
+    problems.push("workflow_dispatch missing: without the manual trigger a lane cannot request Mac CI for a draft head");
   }
   for (const job of jobBlocks(text)) {
     if (!jobRunsMacos(job.lines)) continue;
