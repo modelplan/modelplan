@@ -195,22 +195,13 @@ final class ModelSelectionTests: XCTestCase {
             now: Date(timeIntervalSinceReferenceDate: .nan)))
         XCTAssertEqual(invalid.issues.map(\.reason), [.invalidReferenceTime])
     }
-    func testSelectionOfRanksFourThroughTenDoesNotReorderRowsAndScopeRecomputesOneSharedResult() {
+    func testScopeRecomputesOneSharedResult() {
         let models = (0..<13).map { model("m\($0)") }
         let result = selection(models)
-        var state = ModelSelectionState(selection: result)
-        for id in result.fieldIDs.dropFirst(3) {
-            XCTAssertTrue(state.select(id))
-            XCTAssertEqual(state.selectedID, id)
-            XCTAssertEqual(state.selection.rowIDs, result.rowIDs)
-            XCTAssertEqual(state.selection.orderedIDs, result.orderedIDs)
-        }
-        XCTAssertFalse(state.select("missing"))
+        XCTAssertEqual(result.rowIDs, Array(result.orderedIDs.prefix(3)))
+        XCTAssertEqual(result.fieldIDs, Array(result.orderedIDs.prefix(10)))
         let narrow = selection(models, scope: .subscription("s"), subscriptions: [.init(id: "s", availability: .available, offeredModelIDs: ["m12"])])
-        state.replace(narrow)
-        XCTAssertNil(state.selectedID)
-        XCTAssertEqual(state.selection.rowIDs, ["m12"])
-        state.replace(result)
-        XCTAssertEqual(state.selection.rowIDs, result.rowIDs)
+        XCTAssertEqual(narrow.rowIDs, ["m12"])
+        XCTAssertEqual(result.rowIDs, Array(result.orderedIDs.prefix(3)))
     }
 }

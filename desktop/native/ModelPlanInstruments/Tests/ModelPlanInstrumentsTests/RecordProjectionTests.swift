@@ -16,7 +16,7 @@ final class RecordProjectionTests: XCTestCase {
         for identity in identities {
             let rate = SessionRate(value: 58, lastAt: now, samples: 5, validSession60s: true, configuration: identity)
             let session = makeSession("a", rate: rate)
-            XCTAssertEqual(strip([session]).lines[0].speed60s, identity == expected ? 58 : nil)
+            XCTAssertEqual(page([session]).timeline[0].speed60s, identity == expected ? 58 : nil)
         }
     }
 
@@ -30,31 +30,26 @@ final class RecordProjectionTests: XCTestCase {
             .init(value: 9, lastAt: now, samples: 5, validSession60s: false, configuration: identity),
         ]
         for rate in badRates {
-            let page = strip([makeSession("a", rate: rate), Fixtures.session("peer")])
-            XCTAssertNil(page.lines.first { $0.id == "a" }?.speed60s)
-            XCTAssertEqual(page.lines.first { $0.id == "peer" }?.speed60s, 58)
+            let page = page([makeSession("a", rate: rate), Fixtures.session("peer")])
+            XCTAssertNil(page.timeline.first { $0.id == "a" }?.speed60s)
+            XCTAssertEqual(page.timeline.first { $0.id == "peer" }?.speed60s, 58)
         }
         let valid = SessionRate(value: 0, lastAt: now, samples: 5, validSession60s: true, configuration: identity)
-        XCTAssertEqual(strip([makeSession("a", rate: valid)]).lines[0].speed60s, 0)
-        XCTAssertNil(strip([makeSession("a", rate: valid, effort: nil)]).lines[0].speed60s)
+        XCTAssertEqual(page([makeSession("a", rate: valid)]).timeline[0].speed60s, 0)
+        XCTAssertNil(page([makeSession("a", rate: valid, effort: nil)]).timeline[0].speed60s)
         let expired = makeSession("a", rate: valid, evidence: .init(validUntil: now))
-        XCTAssertFalse(strip([expired]).lines[0].working); XCTAssertNil(strip([expired]).lines[0].speed60s)
-        XCTAssertEqual(strip([expired]).lines[0].activity, .unknown)
+        XCTAssertFalse(page([expired]).timeline[0].working); XCTAssertNil(page([expired]).timeline[0].speed60s)
+        XCTAssertEqual(page([expired]).timeline[0].activity, .unknown)
     }
 
-    func testStableSessionTiesAndSixRunningOverflowDestination() {
+    func testStableSessionTiesAndDestinationNavigation() {
         let sessions = (0..<6).reversed().map { Fixtures.session("s\($0)") }
-        let compact = strip(sessions, height: 883.9), tall = strip(sessions, height: 884)
-        XCTAssertEqual(compact.lines.map(\.id), ["s0", "s1", "s2"])
-        XCTAssertEqual(compact.runningOverflow, 3); XCTAssertEqual(tall.runningOverflow, 1)
-        XCTAssertEqual(tall.overflow, 1)
-        XCTAssertEqual(tall.moreDestination, .page(.init(.destinations, destinationsMode: .timeline)))
+        XCTAssertEqual(page(sessions).timeline.map(\.id), ["s0", "s1", "s2", "s3", "s4", "s5"])
         var navigation = MainScreenNavigation(location: .init(.effort), scope: .subscription("a"))
-        navigation.activate(tall.moreDestination!, from: .recordOverflow)
+        navigation.activate(.page(.init(.destinations, destinationsMode: .timeline)), from: .recordOverflow)
         XCTAssertEqual(navigation.location.page, .destinations); XCTAssertEqual(navigation.location.destinationsMode, .timeline)
         XCTAssertEqual(navigation.scope, .subscription("a"))
         navigation.back(); XCTAssertEqual(navigation.location.page, .effort)
-        XCTAssertNil(strip([]).moreDestination)
     }
 
     func testProjectRankingPeriodFreshnessAndPrivacyStayExplicit() {
@@ -93,7 +88,8 @@ final class RecordProjectionTests: XCTestCase {
         .init(id: id, subscriptionID: "a", tool: "Codex", model: "model", effort: effort, startedAt: now.addingTimeInterval(-10),
               endedAt: nil, lastAt: now, running: true, rate: rate, evidence: evidence)
     }
-    private func strip(_ sessions: [InstrumentSession], height: Double = 890) -> RecordStripPresentation {
-        .init(sessions: sessions, height: height, scope: .all, showProjectNames: false, now: now, language: .english)
+    private func page(_ sessions: [InstrumentSession]) -> DestinationsPresentation {
+        .init(projects: [], sessions: sessions, scope: .all, timelineRange: .days7, showProjectNames: false,
+              now: now, calendar: Fixtures.calendar(), language: .english)
     }
 }
