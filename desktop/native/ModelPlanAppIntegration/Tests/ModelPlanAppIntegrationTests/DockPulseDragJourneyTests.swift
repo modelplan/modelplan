@@ -326,6 +326,46 @@ import ModelPlanShell
 }
 
 @MainActor final class DockPulseDragPersistenceTests: XCTestCase {
+    func testD19LegacyTopUsesTheNearestAllowedEdgeOnTheSavedDisplay() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-top-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let main = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1440, height: 805))
+        let cases: [(fraction: Double, width: CGFloat, height: CGFloat, expected: DockEdge)] = [
+            (0.1, 1400, 800, .left),
+            (0.9, 1400, 800, .right),
+            (0.5, 4000, 600, .bottom),
+        ]
+        for (index, sample) in cases.enumerated() {
+            let profile = root.appendingPathComponent(String(index))
+            let legacy = profile.appendingPathComponent("ModelPlan/Native/settings-v1.json")
+            try FileManager.default.createDirectory(at: legacy.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let preferences: [String: Any] = ["dockEdge": "top", "dockDisplayID": "B", "dockAlongFraction": sample.fraction]
+            let bytes = try JSONSerialization.data(withJSONObject: ["schemaVersion": 1, "preferences": preferences])
+            try bytes.write(to: legacy)
+            let frame = CGRect(x: 1440, y: 0, width: sample.width, height: sample.height)
+            let saved = DockDisplayArea(id: "B", frame: frame, visibleFrame: frame.insetBy(dx: 0, dy: 20))
+            for _ in 0..<2 {
+                let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+                let app = EngineRowsEntry.make(configuration: .init(executableURL: profile.appendingPathComponent("not-launched"),
+                    applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+                    createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                    dockEnvironment: { .init(displays: [main, saved], layouts: [], primaryDisplayID: main.id,
+                                             pointer: CGPoint(x: main.frame.midX, y: main.frame.midY)) },
+                    activateSettings: {})
+                addTeardownBlock { @MainActor in await app.composition.stop() }
+                await app.prepare()
+                app.allowDockPresentation()
+                let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
+                XCTAssertEqual(placement.displayID, saved.id)
+                XCTAssertEqual(placement.edge, sample.expected, "Legacy top at fraction \(sample.fraction) on B")
+                XCTAssertTrue(saved.usableFrame.contains(placement.frame))
+                XCTAssertEqual(try Data(contentsOf: legacy), bytes)
+                await app.composition.stop()
+            }
+        }
+    }
+
     func testD19NormalEntryMigratesLegacyFloatingWithoutCoordinates() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-floating-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
