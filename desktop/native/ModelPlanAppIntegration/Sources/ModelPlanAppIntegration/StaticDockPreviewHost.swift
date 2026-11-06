@@ -1881,7 +1881,8 @@ struct DockHelpInteraction: Equatable {
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        let projected = memberSafePreferences.applying(to: input)
+        var projected = memberSafePreferences.applying(to: input)
+        projected.name = projected.duplicateDisplayName
         let row = model?.presentationRows[id]
         let selected = row?.windowObservations == nil ? nil :
             try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID

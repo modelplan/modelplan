@@ -1219,7 +1219,7 @@ actor EntrySyntheticClient: EngineClient {
         await surface.waitForShow()
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account")
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
@@ -1234,7 +1234,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(store.snapshot.rows?.sequence, before, "no new engine delivery")
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
-        XCTAssertEqual(card.name, "合成账户 · 账号 1")
+        XCTAssertEqual(card.name, "合成账户")
         XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)

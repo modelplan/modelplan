@@ -44,6 +44,14 @@ public struct DockInstrumentInput: Sendable {
     public var unavailableReason:String?
     public var working: DockWorkingSignal?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
+    /// D40 / DOCK-3.5-01: a subscription that shares its name shows "name · alias" when the user
+    /// gave it an alias, else the producer's "name · 2" (the first of the group stays plain).
+    public var duplicateDisplayName: String {
+        guard let tag = duplicateAccountTag, let alias, !alias.isEmpty else { return name }
+        let number = " · " + String(tag)
+        let base = tag > 1 && name.hasSuffix(number) ? String(name.dropLast(number.count)) : name
+        return base + " · " + alias
+    }
 }
 public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
 public struct DockQuotaArc: Equatable, Sendable {
