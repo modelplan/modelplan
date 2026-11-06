@@ -191,7 +191,7 @@ actor EntrySyntheticClient: EngineClient {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("quota-settings-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let snapshot = try rows(weekly: 25, secondWeekly: 20)
+        let snapshot = try Self.rows(weekly: 25, secondWeekly: 20)
         func start() async throws -> EngineDockMenuApplication {
             let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
             let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
@@ -261,7 +261,7 @@ actor EntrySyntheticClient: EngineClient {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let fixture = try rows(weekly: 50, secondWeekly: 51)
+        let fixture = try Self.rows(weekly: 50, secondWeekly: 51)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
@@ -284,7 +284,7 @@ actor EntrySyntheticClient: EngineClient {
         try assertBand(second, .normal)
 
         let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
-        let lower = try rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
+        let lower = try Self.rows(weekly: 25, secondWeekly: 10, sequence: Int(fixture.sequence) + 1)
         let reply = try EngineReply(envelope: .init(sessionId: delivery.sessionID, storeEpoch: delivery.floor.storeEpoch,
             consentGeneration: delivery.floor.generation, data: lower), delivery: delivery)
         await app.composition.store.consume(.rowsChanged(reply, invalidRowCount: lower.projection.invalidRowCount))
