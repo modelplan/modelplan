@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanEngineClient
@@ -413,6 +414,11 @@ import ModelPlanMenuVerification
         },
            dockHost: composition.dock) } catch { NSApplication.shared.terminate(nil); return }
         #endif
+        installStatusItem()
+        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
+    }
+    /// The normal launch path for the menu bar item (also driven directly by its launch test).
+    func installStatusItem() {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         #if MODELPLAN_DOCK_NATIVE_JOURNEY
         if EngineRowsEntry.nativeJourneyProfile == nil { status?.autosaveName = "ModelPlanCommunity.StatusItem" }
@@ -427,7 +433,27 @@ import ModelPlanMenuVerification
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
-        Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
+        logStatusItemPlacementOnce()
+    }
+    var statusButtonForTesting: NSStatusBarButton? { status?.button }
+    func removeStatusItemForTesting() {
+        if let status { NSStatusBar.system.removeStatusItem(status); self.status = nil }
+    }
+    /// Owner-build diagnosis: one line after the menu bar has laid the item out, readable with
+    /// `log show --predicate 'subsystem == "org.modelplan.community"'`. Geometry only, no private content.
+    private func logStatusItemPlacementOnce() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            do {
+                let logger = Logger(subsystem: "org.modelplan.community", category: "status-item")
+                guard let self, let status = self.status else { logger.error("Status item missing after creation"); return }
+                let button = status.button, window = button?.window
+                let frame = window?.frame ?? .zero, screen = window?.screen?.frame ?? .zero
+                let occluded = !(window?.occlusionState.contains(.visible) ?? false)
+                let image = button?.image
+                logger.notice("Status item isVisible=\(status.isVisible, privacy: .public) imageLoaded=\(image != nil, privacy: .public) imageSize=\(NSStringFromSize(image?.size ?? .zero), privacy: .public) titleCharacters=\((button?.title ?? "").count, privacy: .public) fallbackTitle=\(button?.title == Self.statusFallbackTitle, privacy: .public) buttonFrame=\(NSStringFromRect(button?.frame ?? .zero), privacy: .public) buttonHidden=\(button?.isHiddenOrHasHiddenAncestor ?? true, privacy: .public) window=\(window != nil, privacy: .public) windowVisible=\(window?.isVisible ?? false, privacy: .public) occluded=\(occluded, privacy: .public) windowFrame=\(NSStringFromRect(frame), privacy: .public) screen=\(NSStringFromRect(screen), privacy: .public) length=\(Double(status.length), privacy: .public) autosave=\(status.autosaveName ?? "", privacy: .public) lookup=\(CommunityMenuBarResources.lastLookup, privacy: .public)")
+            }
+        }
     }
     func renderMenu() {
         let language = composition.latestSettings?.effective.language ?? .english
@@ -524,6 +550,7 @@ import ModelPlanMenuVerification
         pulse?.fromValue = 0.25; pulse?.toValue = 1; pulse?.duration = 0.35
         noticeIndicator.apply(notice, firstAppearanceAnimation: pulse, reducedMotion: composition.latestSettings?.effective.reduceMotion ?? true)
     }
+    static let statusFallbackTitle = "MP"
     static func configureStatusButton(_ button:NSButton,image:NSImage?,barThickness:CGFloat) {
         let sized=image?.copy() as? NSImage
         let side=min(16,max(0,barThickness.isFinite ? barThickness : 0))
@@ -536,7 +563,9 @@ import ModelPlanMenuVerification
     /// Shared by the native status item and detached presentation checks.
     /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
     func applyStatusContent(to button: NSButton, detail: String) {
-        button.title = composition.menuPresentation.title
+        let title = composition.menuPresentation.title
+        // Never let the item collapse to zero width when the template image is unavailable.
+        button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
         button.toolTip = detail
         button.setAccessibilityHelp(detail)
     }
