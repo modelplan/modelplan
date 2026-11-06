@@ -6,7 +6,7 @@ import Foundation
 import XCTest
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 @MainActor private final class ResetCockpitProbe: EngineRowsConsoleSurface {
     private(set) var shown = false
@@ -20,6 +20,10 @@ import ModelPlanSettings
         try await exercise(native: false)
     }
 
+    func testV14NormalEntryPaintsFivePointResetInkInBothPercentageModes() async throws {
+        try await exercise(native: false, measureFace: true)
+    }
+
     #if MODELPLAN_DOCK_NATIVE_JOURNEY
     func testD21NativeOrderInAcknowledgesTheResetNotice() async throws {
         try await exercise(native: true)
@@ -30,7 +34,7 @@ import ModelPlanSettings
     }
     #endif
 
-    private func exercise(native: Bool, physical: Bool = false) async throws {
+    private func exercise(native: Bool, physical: Bool = false, measureFace: Bool = false) async throws {
         let executable = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["MODELPLAN_DOCK_TEST_CLI"]))
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("d21-real-reset-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".codex"), withIntermediateDirectories: true)
@@ -125,6 +129,7 @@ import ModelPlanSettings
             $0.notifications.optedIn = true
             $0.notifications.kinds = [.official]
             if physical { $0.onboarding.next() }
+            if measureFace { $0.size = .large }
         }
         let dockEnvironment: (@MainActor () -> DockEdgeEnvironment)?
         if physical {
@@ -149,6 +154,7 @@ import ModelPlanSettings
             bundleURL: root.appendingPathComponent("Synthetic.app"), cockpitEntryEnabled: true,
             dockEnvironment: dockEnvironment, deadlineNow: { wall }, makeConsole: { _ in cockpit },
             isolatedResetNotificationLedger: root.appendingPathComponent("test-notifications.json"), activateSettings: {})
+        if measureFace { app.composition.dock.captureBackingScaleForChecks = 2 }
         var delivered: [String] = []
         app.composition.setResetNotificationDelivery { event, title in
             XCTAssertEqual(title, "Official extra reset")
@@ -212,6 +218,42 @@ import ModelPlanSettings
         }
         func face() -> DockNotice? { dock.dockView.presentedNoticesForChecks[member] }
 
+        func measureBlueInk(_ kind: DockNoticeKind) async throws {
+            let editor = app.settingsHost.application.editor
+            for percentages in [true, false] {
+                if editor.snapshot?.preferences.showPercentages != percentages {
+                    _ = try await editor.commit(SettingsB20Edit.showPercentages(percentages))
+                }
+                let view = dock.dockView
+                XCTAssertEqual(face()?.key.kind, kind)
+                let skin = try XCTUnwrap(view.presentedSkinForChecks)
+                let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == member })
+                XCTAssertEqual(station.diameter, 52, accuracy: 0.001)
+                let image = try XCTUnwrap(view.presentedImageForChecks)
+                let region = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+                    .applying(.init(scaleX: 2, y: 2)).integral
+                let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(image.cropping(to: region)))
+                var blue: [CGPoint] = []
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                        // Include only the strong reset blue ink, excluding white/amber and the neutral backing.
+                        if color.blueComponent > 0.92 && color.greenComponent > 0.75 &&
+                            (0.54...0.69).contains(color.redComponent) && color.alphaComponent > 0.8 {
+                            blue.append(CGPoint(x: x, y: y))
+                        }
+                    }
+                }
+                let minX = try XCTUnwrap(blue.map(\.x).min()), maxX = try XCTUnwrap(blue.map(\.x).max())
+                let minY = try XCTUnwrap(blue.map(\.y).min()), maxY = try XCTUnwrap(blue.map(\.y).max())
+                let width = maxX - minX + 1, height = maxY - minY + 1
+                print("V-14 \(kind) percentages=\(percentages) blue backing pixels \(width)×\(height)")
+                XCTAssertGreaterThanOrEqual(max(width, height), 8)
+                XCTAssertLessThanOrEqual(max(width, height), 11, "Five logical points with up to one backing pixel of sampling tolerance")
+            }
+            _ = try await editor.commit(SettingsB20Edit.showPercentages(true))
+        }
+
         try await waitForEvent(eventID, "announced")
         let row = try XCTUnwrap(app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" })
         XCTAssertEqual(row.accounts.first?.windows.first?.remainingPercent, 30)
@@ -225,7 +267,9 @@ import ModelPlanSettings
         }
         let initial = try strip()
         let mark = try XCTUnwrap(initial.noticeMarks.first)
-        XCTAssertEqual(mark.unit, 44.0 / 52.0, accuracy: 0.001, "The medium strip uses the nominal four-point reset dot")
+        if !measureFace {
+            XCTAssertEqual(mark.unit, 44.0 / 52.0, accuracy: 0.001, "The medium strip uses the nominal four-point reset dot")
+        }
         let announcement = mark.notice
         func raster(_ strip: DockSliverView) throws -> Data {
             let image = try XCTUnwrap(strip.bitmapImageRepForCachingDisplay(in: strip.bounds))
@@ -242,6 +286,7 @@ import ModelPlanSettings
         XCTAssertEqual(quota.first?.remainingPercent, 30)
         XCTAssertEqual(quota.first?.quotaRole, .warning, "The fixture must have quota paint before acknowledging the notice")
         try await wait("Announced notice is delivered once") { delivered == [eventID] }
+        if measureFace { try await measureBlueInk(.resetAnnounced) }
 
         if physical {
             announce("Capture the actual status item and hollow blue strip mark now.")
@@ -287,6 +332,7 @@ import ModelPlanSettings
         announce("Capture the confirmed solid mark and status indicator before the restarted reading arrives.")
         if physical { try await Task.sleep(for: .seconds(5)) }
         XCTAssertEqual(delivered, [eventID], "Confirmation must not deliver the same event a second time")
+        if measureFace { try await measureBlueInk(.resetConfirmed) }
 
         try writeReading(used: 30, observed: at(-10), reset: at(10_800))
         try await subscribe()
