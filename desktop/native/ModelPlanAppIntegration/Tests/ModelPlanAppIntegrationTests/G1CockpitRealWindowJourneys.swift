@@ -187,14 +187,15 @@ private extension EngineDeliveryContext {
     }
     func testG1_CKP_ENTRY_01_menuAndDockRoutes() async throws {
         try await withLivePage { app, coordinator, initial in
-            func waitRetired(_ page: CockpitWindowController) async throws {
+            @MainActor func waitRetired(_ page: CockpitWindowController) async throws {
                 let deadline = ContinuousClock.now.advanced(by: .seconds(3))
                 while !page.g1PageStateForChecks.disposed && ContinuousClock.now < deadline {
                     try await Task.sleep(for: .milliseconds(20))
                 }
-                XCTAssertTrue(page.g1PageStateForChecks.disposed)
+                let disposed = page.g1PageStateForChecks.disposed
+                XCTAssertTrue(disposed)
             }
-            func waitNewPage(_ previous: CockpitWindowController) async throws -> CockpitWindowController {
+            @MainActor func waitNewPage(_ previous: CockpitWindowController) async throws -> CockpitWindowController {
                 let deadline = ContinuousClock.now.advanced(by: .seconds(10))
                 while ContinuousClock.now < deadline {
                     if let current = coordinator.g1LivePageForChecks, current !== previous, current.g1PageStateForChecks.ready { return current }
