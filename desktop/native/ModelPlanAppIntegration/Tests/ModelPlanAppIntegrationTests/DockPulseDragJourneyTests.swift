@@ -640,6 +640,111 @@ import ModelPlanShell
     }
     #endif
 
+    #if MODELPLAN_DOCK_REAL_CONTEXT_JOURNEY
+    func testD08NormalEntryWakesOnlyFromTheWidgetSideOfEachInnerEdge() async throws {
+        let primary = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1400, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1400, height: 870), backingScale: 2)
+        let right = DockDisplayArea(id: "B", frame: CGRect(x: 1400, y: -100, width: 1600, height: 1000),
+            visibleFrame: CGRect(x: 1400, y: -100, width: 1600, height: 975))
+        let below = DockDisplayArea(id: "C", frame: CGRect(x: 0, y: -800, width: 1400, height: 800),
+            visibleFrame: CGRect(x: 0, y: -800, width: 1400, height: 775))
+        let cases: [(DockDisplayArea, DockDisplayArea, DockEdge, SettingsDockEdge, CGVector)] = [
+            (right, primary, .left, .left, .init(dx: 1, dy: 0)),
+            (primary, right, .right, .right, .init(dx: -1, dy: 0)),
+            (primary, below, .bottom, .bottom, .init(dx: 0, dy: 1)),
+        ]
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d08-matrix-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        var reports = [[String: Any]]()
+
+        for (display, neighbour, edge, preference, inward) in cases {
+            let label = "\(display.id)/\(edge) beside \(neighbour.id)"
+            let middle = CGPoint(x: display.usableFrame.midX, y: display.usableFrame.midY)
+            var pointer = middle
+            let root = profile.appendingPathComponent(String(describing: edge))
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+            _ = try await store.update {
+                $0.dockDisplayID = display.id; $0.dockEdge = preference; $0.autoHide = true
+            }
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+                applicationVersion: "d08-inner-edge", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: {
+                    .init(displays: [primary, right, below], layouts: [], primaryDisplayID: primary.id, pointer: pointer)
+                }, activateSettings: {})
+            addTeardownBlock { @MainActor in await app.composition.stop() }
+            await app.prepare()
+            app.allowDockPresentation()
+            let host = app.composition.dock
+            let initial = try XCTUnwrap(host.edgePresentation?.placement, label)
+            XCTAssertEqual(host.edgePresentation?.state, .sliver, label)
+            XCTAssertEqual(initial.edge, edge, label)
+            XCTAssertEqual(initial.displayID, display.id, label)
+            XCTAssertTrue(display.frame.contains(initial.wakeFrame), label)
+            let url = root.appendingPathComponent("ModelPlan/settings.json")
+            let bytes = try Data(contentsOf: url)
+            let before = await store.snapshot()
+
+            let seam: CGPoint
+            switch edge {
+            case .left: seam = .init(x: display.frame.minX, y: initial.sliverFrame.midY)
+            case .right: seam = .init(x: display.frame.maxX, y: initial.sliverFrame.midY)
+            case .bottom: seam = .init(x: initial.sliverFrame.midX, y: display.frame.minY)
+            case .top: return XCTFail("Top is not an allowed edge")
+            }
+            let across = CGPoint(x: seam.x - 2 * inward.dx, y: seam.y - 2 * inward.dy)
+            XCTAssertTrue(neighbour.frame.contains(across), label)
+            XCTAssertFalse(display.frame.contains(across), label)
+            pointer = across
+            host.refreshPresence()
+            try await Task.sleep(for: .milliseconds(before.preferences.revealMilliseconds + 50))
+            host.refreshPresence()
+            XCTAssertEqual(host.edgePresentation?.state, .sliver, "Neighbour-side control: " + label)
+
+            pointer = middle
+            host.refreshPresence()
+            let onStrip = CGPoint(x: initial.sliverFrame.midX, y: initial.sliverFrame.midY)
+            XCTAssertTrue(display.frame.contains(onStrip), label)
+            XCTAssertFalse(neighbour.frame.contains(onStrip), label)
+            XCTAssertTrue(initial.wakeFrame.contains(onStrip), label)
+            pointer = onStrip
+            host.refreshPresence()
+            let revealDeadline = ContinuousClock.now + .seconds(2)
+            while host.edgePresentation?.state != .expanded && ContinuousClock.now < revealDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(host.edgePresentation?.state, .expanded, label)
+            XCTAssertEqual(host.edgePresentation?.placement, initial, label)
+            XCTAssertEqual(host.edgePresentation?.paintedFrame, initial.frame, label)
+            XCTAssertTrue(display.usableFrame.contains(initial.frame), label)
+            try await Task.sleep(for: .milliseconds(550))
+            XCTAssertEqual(host.edgePresentation?.state, .expanded, "The inner wake band counts as inside: " + label)
+
+            pointer = middle
+            host.refreshPresence()
+            let collapseDeadline = ContinuousClock.now + .seconds(2)
+            while host.edgePresentation?.state != .sliver && ContinuousClock.now < collapseDeadline {
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertEqual(host.edgePresentation?.state, .sliver, label)
+            XCTAssertEqual(host.edgePresentation?.paintedFrame, initial.sliverFrame, label)
+            let after = await store.snapshot()
+            XCTAssertEqual(after.revision, before.revision, label)
+            XCTAssertEqual(try Data(contentsOf: url), bytes, label)
+            reports.append([
+                "edge": String(describing: edge), "display": display.id, "neighbour": neighbour.id,
+                "onStripPointer": NSStringFromPoint(onStrip), "neighbourControlPointer": NSStringFromPoint(across),
+                "stripFrame": NSStringFromRect(initial.sliverFrame), "wakeFrame": NSStringFromRect(initial.wakeFrame),
+                "expandedFrame": NSStringFromRect(initial.frame), "settingsRevision": after.revision,
+            ])
+            await app.composition.stop()
+        }
+        if let path = ProcessInfo.processInfo.environment["MODELPLAN_D08_MATRIX_PATH"] {
+            try JSONSerialization.data(withJSONObject: reports, options: [.prettyPrinted, .sortedKeys])
+                .write(to: URL(fileURLWithPath: path))
+        }
+    }
+    #endif
+
     func testD06NormalDropsWriteOnceAndRelaunchAtEachDestination() async throws {
         let topology = DragTopology()
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("dock-drag-" + UUID().uuidString)
