@@ -294,7 +294,7 @@ test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition
  windows[0].remainingPercent=18;expect(await receive(send('display',{data}))).toBe(true);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(true);
  windows[1].remainingPercent=10;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bred\b/);expect(await lamp.evaluate(e=>e.getAnimations().includes(window.__g1CautionAnimation))).toBe(false);windows[1].remainingPercent=75;
 
- await page.getByRole('button',{name:'Subscription',exact:true}).click();await lamp.click();await expect(page.locator('.pg-overview .mfd-alerts')).toBeVisible();await expect(lamp).not.toHaveClass(/\bflash\b/);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
+ await page.getByRole('button',{name:'Subscription',exact:true}).click();await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all.ack')).toBeVisible();await expect(lamp).not.toHaveClass(/\bflash\b/);await page.keyboard.press('Escape');windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
  for(const w of windows)w.remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\blit|flash\b/);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await receive(send('appearance',appearance))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);windows[0].remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).toHaveClass(/\bflash\b/);await page.emulateMedia({reducedMotion:'reduce'});await expect(lamp).not.toHaveClass(/\bflash\b/);await page.emulateMedia({reducedMotion:'no-preference'});await expect(lamp).not.toHaveClass(/\bflash\b/);expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);expect(await lamp.evaluate(e=>getComputedStyle(e).animationName)).toBe('none');expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);data.details=visualFixture().data.details;data.details.alerts=[{severity:'blue',source:data.projection.rows[0].id,subscriptionRef:data.projection.rows[0].accounts[0].subscriptionRef,windowId:windows[0].id,remainingPercent:19}];expect(await receive(send('display',{data}))).toBe(true);/* D38: the lamp follows the reading against T, not the producer's alert severity. */await expect(lamp).toHaveClass(/\bred\b/);data.details=null;windows[0].remainingPercent=75;expect(await receive(send('display',{data}))).toBe(true);expect(await receive(send('appearance',{...appearance,reduceMotion:true}))).toBe(true);windows[0].remainingPercent=19;expect(await receive(send('display',{data}))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);expect(await receive(send('appearance',appearance))).toBe(true);await expect(lamp).not.toHaveClass(/\bflash\b/);
 });
 
@@ -324,7 +324,7 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
  for(const theme of ['night','day']){if(theme==='day')expect(await receive(send('appearance',{...appearance,theme}))).toBe(true);const result=await audit();expect(result.keys).toHaveLength(6);for(const n of result.keys)expect(n).toBeGreaterThanOrEqual(4.5);expect(result.bars).toHaveLength(3);for(const n of result.bars)expect(n).toBeGreaterThanOrEqual(3);}
 });
 
- test('CKP-STRIP-09 session status text fits without ellipsis in both locales and tiers',async({page})=>{
+test('Record strip (requirement ID pending) session status text fits without ellipsis in both locales and tiers',async({page})=>{
  const {send,receive}=await open(page);
  for(const tier of ['tall','compact']){
   expect(await receive(send('shell',{...shell,tier}))).toBe(true);
@@ -335,4 +335,36 @@ test('CKP-MOT-07 active key text and quota bars meet contrast thresholds in both
    for(const label of await labels.all()){const size=await label.evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,text:e.textContent}));expect(size.text).not.toMatch(/[\u2026]/);expect(size.scroll).toBeLessThanOrEqual(size.client);}
   }
  }
+});
+
+// macrev2-478-1 and the D38 press clause: the lamp is global, so its list is too, whatever subscription is selected;
+// prototype mfd.js:39-58,75,121,170 returns with "‹ Back to <page>", Esc, a page key or a second lamp press.
+async function alertScope(page,slots){
+ const data=visualFixture().data;data.details=null;data.projection.rows=data.projection.rows.slice(0,2);data.subscriptions=data.subscriptions.slice(0,2);
+ for(let i=2;i<slots;i++){const row=structuredClone(data.projection.rows[0]),ref=(i+1).toString(16).padStart(16,'0');row.id='tool'+i;row.name={en:'Synthetic '+i,zh:'合成 '+i};row.accounts[0].subscriptionRef=ref;row.accounts[0].accountLocator=ref;data.projection.rows.push(row);data.subscriptions.push({subscriptionRef:ref,accounts:[{tool:row.id,account:structuredClone(row.accounts[0])}]});}
+ for(const r of data.projection.rows)for(const w of r.accounts[0].windows){w.remainingPercent=75;w.resetsAt='2026-11-04T15:30:00Z';}
+ data.projection.rows[slots-1===1?0:slots-1].accounts[0].windows[0].remainingPercent=20;
+ const opened=await open(page,data);return {...opened,lamp:page.locator('[data-caution]')};
+}
+test('CKP-STRIP-06 ALERT under a healthy selected subscription lists the other subscription and returns',async({page})=>{
+ const {lamp}=await alertScope(page,2);await expect(lamp).toHaveClass(/\bred\b/);
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await lamp.click();
+ const list=page.locator('.pg-alerts .mfd-alerts.all');await expect(list).toBeVisible();await expect(list).toContainText('Codex');
+ await expect(lamp).toHaveClass(/\bmfd-src\b/);await expect(page.locator('.mfd-back')).toHaveText('‹ Back to Subscription');
+ // Back returns to the page it came from, with its scope intact.
+ await page.locator('.mfd-back').click();await expect(page.locator('.pg-sub')).toBeVisible();await expect(lamp).not.toHaveClass(/\bmfd-src\b/);
+ // Esc returns; a second lamp press returns; a page key leaves the view for that page.
+ await lamp.click();await expect(list).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.pg-sub')).toBeVisible();
+ await lamp.click();await expect(list).toBeVisible();await lamp.click();await expect(page.locator('.pg-sub')).toBeVisible();
+ await lamp.click();await expect(list).toBeVisible();await page.getByRole('button',{name:'Effort',exact:true}).click();await expect(page.locator('.pg-tune')).toBeVisible();
+});
+test('CKP-STRIP-06 ALERT reveals a critical subscription on another engine page',async({page})=>{
+ const {lamp}=await alertScope(page,7);await expect(lamp).toHaveClass(/\bred\b/);await expect(page.locator('.eng-keys')).not.toContainText('Synthetic 6');
+ await page.locator('.eng-keys .ek[data-sub]').nth(1).click();await lamp.click();
+ await expect(page.locator('.pg-alerts .mfd-alerts.all')).toContainText('Synthetic 6');
+});
+test('CKP-STRIP-06 ALERT under All keeps the overview control and opens the same full list',async({page})=>{
+ const {lamp}=await alertScope(page,2);await expect(page.locator('.pg-overview .mfd-alerts')).toContainText('Codex');
+ await lamp.click();await expect(page.locator('.pg-alerts .mfd-alerts.all')).toContainText('Codex');await expect(page.locator('.mfd-back')).toHaveText('‹ Back to Overview');
 });
