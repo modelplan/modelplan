@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import CoreGraphics
 import Foundation
 import XCTest
@@ -8,7 +9,7 @@ import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
 import ModelPlanWire
-@testable import ModelPlanAppIntegration
+@_spi(DockResourceChecks) @testable import ModelPlanAppIntegration
 
 private actor PairedSyntheticClient: EngineClient {
     nonisolated func isCurrent(_ context: EngineDeliveryContext) -> Bool { true }
@@ -252,6 +253,8 @@ private actor EntrySyntheticClient: EngineClient {
                 return .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: .init(x: 700, y: 400))
             }, deadlineNow: { clock },
             makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        let capture = ProcessInfo.processInfo.environment["MODELPLAN_D23_CAPTURE_DIR"]
+        if capture != nil { app.composition.dock.captureBackingScaleForChecks = 2 }
         await app.prepare()
         let application = app.settingsHost.application
         var environment = application.editor.environment
@@ -368,6 +371,60 @@ private actor EntrySyntheticClient: EngineClient {
                 edgeEvents.hoverNozzle(nil)
             }
         }
+        if let capture {
+            let directory = URL(fileURLWithPath: capture)
+            var frames: [[String: Any]] = []
+            for (size, sizeName) in [(SettingsSize.small, "S"), (.medium, "M"), (.large, "L")] {
+                _ = try await application.editor.commit(SettingsB20Edit.size(size))
+                for (edge, expectedPlacement) in edges {
+                    _ = try await application.editor.commit(SettingsB21Edit.dockEdge(edge))
+                    XCTAssertEqual(app.composition.dock.edgePresentation?.placement?.edge, expectedPlacement)
+                    let hit = try XCTUnwrap(view.interactionAnchor(id))
+                    let readout = try XCTUnwrap(view.helpReadoutAnchor(id))
+                    let face = try XCTUnwrap(view.presentedSkinForChecks)
+                    let station = try XCTUnwrap(face.stations.first { $0.subscriptionID == id })
+                    let viewOrigin = CGPoint(x: station.centre.x - hit.midX, y: station.centre.y - hit.midY)
+                    let input = try XCTUnwrap(view.nozzleEventDelegate)
+                    for (mode, preference, reduced) in [
+                        ("none", HoverMagnification.none, false), ("subtle", .subtle, false),
+                        ("strong", .strong, false), ("reduced", .strong, true),
+                    ] {
+                        input.hoverNozzle(nil)
+                        _ = try await application.editor.commit(SettingsB20Edit.motion(reduced ? .on : .system))
+                        _ = try await application.editor.commit(SettingsB21Edit.magnification(preference))
+                        input.hoverNozzle(id)
+                        XCTAssertEqual(view.helpReadoutAnchor(id), readout)
+                        XCTAssertEqual(view.interactionAnchor(id), hit)
+                        let pose = view.nozzlePosesForChecks[id]
+                        if mode == "subtle" || mode == "strong" {
+                            XCTAssertEqual(pose?.scale, mode == "subtle" ? 1.15 : 1.5)
+                            for (member, transform) in view.nozzlePosesForChecks {
+                                let anchor = try XCTUnwrap(view.interactionAnchor(member))
+                                let width = anchor.width * transform.scale, height = anchor.height * transform.scale
+                                let painted = CGRect(x: anchor.midX + transform.offset.x - width / 2,
+                                                     y: anchor.midY + transform.offset.y - height / 2,
+                                                     width: width, height: height)
+                                XCTAssertTrue(view.bounds.contains(painted), "\(edge) \(sizeName) \(mode)")
+                            }
+                        } else { XCTAssertNil(pose) }
+                        let image = try XCTUnwrap(view.presentedImageForChecks)
+                        let bitmap = NSBitmapImageRep(cgImage: image)
+                        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                        let name = "\(edge.rawValue)-\(sizeName)-\(mode).png"
+                        try png.write(to: directory.appendingPathComponent(name))
+                        let origin = pose == nil ? face.bounds.origin : viewOrigin
+                        frames.append(["file": name, "edge": edge.rawValue, "size": sizeName, "mode": mode,
+                            "x": origin.x - viewOrigin.x, "y": origin.y - viewOrigin.y,
+                            "viewport": [view.bounds.width, view.bounds.height], "pixels": [image.width, image.height],
+                            "readout": NSStringFromRect(readout), "hit": NSStringFromRect(hit)])
+                    }
+                    input.hoverNozzle(nil)
+                }
+            }
+            try JSONSerialization.data(withJSONObject: frames, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent("frames.json"))
+        }
+
     }
 
     func testNormalEntryLanguageChangeReprojectsSameAdmittedDelivery() async throws {
