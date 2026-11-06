@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanInstruments
@@ -80,6 +81,43 @@ private actor S04SyntheticClient: EngineClient {
         second.onAction?(.dismissHint(offerID: secondCard.offerID, reason: .explicitButton))
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(liveHintLayers().isEmpty, "There must not be a third automatic hint")
+        await app.composition.stop()
+    }
+
+    /// G3-10 / S-07 on real panels: keyboard focus on the painted grip shows the move
+    /// explanation next to the widget, and leaving the grip clears it.
+    func testG310FocusedGripShowsItsExplanationAndLeavingClearsIt() async throws {
+        _ = NSApplication.shared
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("g310-explanation-" + UUID().uuidString)
+        EngineRowsEntry.nativeJourneyProfile = profile
+        defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
+        var projection = try XCTUnwrap(root["projection"] as? [String: Any])
+        var records = try XCTUnwrap(projection["rows"] as? [[String: Any]])
+        records[0]["surfaces"] = ["dock", "menu"]; records[0]["expiresAt"] = "2027-01-01T00:00:00Z"
+        projection["rows"] = records; root["projection"] = projection
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
+            makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        defer { app.composition.dock.close() }
+        let dock = app.composition.dock, view = dock.dockView
+        for _ in 0..<300 where dock.currentDockHelpSurface == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(dock.currentDockHelpSurface, "the real widget must publish its help surface")
+        let tab = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: 0, windowNumber: 0, context: nil, characters: "\t",
+            charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48))
+        view.keyDown(with: tab)
+        XCTAssertEqual(view.focusedGripIndex, 0)
+        for _ in 0..<200 where app.shownDockExplanationForChecks == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(app.shownDockExplanationForChecks, HelpCatalog(.english).explanation(.dockMove).accessibleDescription)
+        _ = view.resignFirstResponder()
+        for _ in 0..<200 where app.shownDockExplanationForChecks != nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(app.shownDockExplanationForChecks, "leaving the grip clears its explanation")
         await app.composition.stop()
     }
     #endif

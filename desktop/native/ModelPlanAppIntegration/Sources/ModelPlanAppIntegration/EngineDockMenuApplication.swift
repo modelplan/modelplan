@@ -78,6 +78,8 @@ struct StatusNoticePresentation {
     }
     private var dockHelp: DockHelpCoordinator?
     var dockHelpInstalled: Bool { dockHelp?.isInstalled == true }
+    /// The explanation card currently shown next to a widget element (checks only).
+    var shownDockExplanationForChecks: String? { dockHelp?.shownExplanationForChecks?.accessibleDescription }
     private var helpMapUnavailable = false
     /// The presentation boundary remains replaceable for synthetic, window-free tests.
     var requestHelpMap: (() -> Bool)?

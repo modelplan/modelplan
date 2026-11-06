@@ -59,7 +59,7 @@
         "ConsentContractTests",
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
-        "DockInteractionHostPortTests",
+        "DockHoverExplanationTests", "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
         "DockPlacementGeometryTests",
         "DockPlacementProducerTests",

@@ -23,6 +23,7 @@ import ModelPlanSettings
     private var eventMonitor: Any?
     private var deactivateObserver: NSObjectProtocol?
     private var currentOffer: HintOffer?
+    private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
     private var generation: UInt64 = 0
     private var retired = false
@@ -61,7 +62,7 @@ import ModelPlanSettings
         generation &+= 1
         let token = generation
         removeEventMonitor()
-        currentOffer = nil; currentSurfaceValue = nil; panel?.orderOut(nil)
+        currentOffer = nil; currentSurfaceValue = nil; currentExplanationID = nil; panel?.orderOut(nil)
         // Detach before the new input: viewWillMove(toWindow:nil) suspends the
         // old layer, and must not invalidate the replacement after it is drawn.
         layer.removeFromSuperview()
@@ -150,7 +151,7 @@ import ModelPlanSettings
               let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) }),
               let policy = windowPolicy(surface) else { return nil }
         generation &+= 1; removeEventMonitor(); removeDeactivateObserver()
-        currentOffer = nil; currentSurfaceValue = surface
+        currentOffer = nil; currentExplanationID = nil; currentSurfaceValue = surface
         panel?.orderOut(nil); layer.removeFromSuperview()
         let window = panel ?? makePanel(); panel = window
         window.sharingType = policy.0; window.collectionBehavior = policy.1
@@ -188,6 +189,61 @@ import ModelPlanSettings
             MainActor.assumeIsolated { dismissMap(nil) }
         }
         return true
+    }
+
+    /// A first-use hint owns the panel while it is shown.
+    var showsHint: Bool { currentOffer != nil }
+    private(set) var shownExplanationForChecks: HelpExplanation?
+
+    /// G3-10: the prototype explanation card next to the hovered or focused widget element.
+    /// The panel ignores the pointer, so the hover that produced it stays on the widget.
+    func showExplanation(_ explanation: HelpExplanation, id: String, anchor: CGRect, surface: DockHelpSurface) -> Bool {
+        guard !retired, currentOffer == nil, surface.visible, !surface.dragging,
+              let screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(anchor) }),
+              let policy = windowPolicy(surface) else { return false }
+        generation &+= 1
+        let token = generation
+        removeEventMonitor(); removeDeactivateObserver()
+        currentSurfaceValue = nil; currentExplanationID = nil; shownExplanationForChecks = nil
+        panel?.orderOut(nil); layer.removeFromSuperview()
+        let viewport = screen.visibleFrame
+        func local(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX - viewport.minX, y: viewport.maxY - rect.maxY, width: rect.width, height: rect.height)
+        }
+        let anchorID = "dock.explanation"
+        var input = HelpUIRenderInput(sessionID: surface.layoutID, viewport: viewport.size, profile: .compact640,
+            language: language(), anchors: [.init(id: anchorID, rect: local(anchor))],
+            liveReadings: blockers(surface).map(local),
+            contextual: .init(id: id, anchorID: anchorID, explanation: explanation))
+        let effective = accessibility()
+        input.reduceMotion = effective.motion
+        input.reduceTransparency = effective.transparency
+        layer.update(input)
+        guard !retired, generation == token, let placement = layer.presentation?.card,
+              placement.identity == .context(id) else { return false }
+        let rect = placement.frame
+        guard rect.width > 0, rect.height > 0, CGRect(origin: .zero, size: viewport.size).contains(rect) else { return false }
+        let screenRect = CGRect(x: viewport.minX + rect.minX, y: viewport.maxY - rect.maxY,
+                                width: rect.width, height: rect.height)
+        let window = panel ?? makePanel()
+        panel = window
+        window.ignoresMouseEvents = true
+        window.sharingType = policy.0; window.collectionBehavior = policy.1
+        let container = ClipView(frame: CGRect(origin: .zero, size: rect.size))
+        container.wantsLayer = true; container.layer?.masksToBounds = true
+        layer.frame = CGRect(x: -rect.minX, y: -rect.minY, width: viewport.width, height: viewport.height)
+        container.addSubview(layer); window.contentView = container
+        layer.onAction = { _ in }
+        window.setFrame(screenRect, display: true); window.orderFrontRegardless()
+        guard window.isVisible else { window.orderOut(nil); return false }
+        currentExplanationID = id; shownExplanationForChecks = explanation
+        return true
+    }
+
+    func hideExplanation() {
+        guard currentExplanationID != nil else { return }
+        currentExplanationID = nil; shownExplanationForChecks = nil; generation &+= 1
+        panel?.orderOut(nil); layer.suspend()
     }
 
     func endMap() {
