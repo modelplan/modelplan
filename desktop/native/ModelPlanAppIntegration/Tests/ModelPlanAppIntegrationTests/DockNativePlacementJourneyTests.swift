@@ -828,6 +828,113 @@ import ModelPlanSettings
             if shown { XCTAssertEqual(app.composition.dock.nativePanel?.frame, frame) }
         }
     }
+    func testD15DetachedRestingMatrixUsesActualDisplayBudgetAndRasterScale() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("dock-d15-detached-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let allowRows = root.appendingPathComponent("allow-rows")
+        let (relay, _, home) = try await makeRowsBarrier(in: root, releaseRowsWhen: allowRows)
+        let now = Date(), iso = ISO8601DateFormatter()
+        let quotas = [76, 58, 41, 25], ids = (0..<4).map { "synthetic-d15-\($0)" }
+        let config = home.appendingPathComponent(".config/modelplan")
+        try FileManager.default.createDirectory(at: config, withIntermediateDirectories: true)
+        let windows: [[String: Any]] = zip(ids, quotas).map { id, remaining in
+            ["planId": id, "kind": "five_hour", "remainingPercent": remaining, "resetMode": "rolling",
+             "observedAt": iso.string(from: now.addingTimeInterval(-10)),
+             "resetAt": iso.string(from: now.addingTimeInterval(7_200))]
+        }
+        let fixture: [String: Any] = ["schemaVersion": 1, "plans": ids.map { ["planId": $0] }, "windows": windows]
+        try JSONSerialization.data(withJSONObject: fixture).write(to: config.appendingPathComponent("local.json"), options: .atomic)
+        try Data().write(to: allowRows)
+
+        let a = DockDisplayArea(id: "A", frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+            visibleFrame: CGRect(x: 0, y: 70, width: 1512, height: 875), backingScale: 2)
+        let b = DockDisplayArea(id: "B", frame: CGRect(x: 1512, y: -80, width: 580, height: 465),
+            visibleFrame: CGRect(x: 1512, y: -40, width: 580, height: 400))
+        let profile = root.appendingPathComponent("profile")
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { $0.autoHide = false; $0.followActiveDisplay = false }
+        let app = EngineRowsEntry.make(configuration: configuration(relay, root: home), settingsStore: store,
+            createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [a, b], layouts: [], primaryDisplayID: a.id, pointer: CGPoint(x: 700, y: 450)) },
+            activateSettings: {})
+        addTeardownBlock { @MainActor in
+            await app.stopLifecycle()
+            app.composition.dock.close()
+        }
+        await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(),
+            displayIDs: { [1, 2] }, onConsole: { true }, displaysAsleep: { _ in false })
+        let host = app.composition.dock
+        let ready = try await wait(6) {
+            Set(host.dockView.presentedReadingsForChecks.values.compactMap(\.remainingPercent)) == Set(quotas.map(Double.init))
+        }
+        XCTAssertTrue(ready)
+        let delivery = try XCTUnwrap(app.composition.store.snapshot.delivery)
+        let editor = app.settingsHost.application.editor
+        let edges: [(SettingsDockEdge, DockEdge)] = [(.left, .left), (.right, .right), (.bottom, .bottom)]
+        let directory = ProcessInfo.processInfo.environment["MODELPLAN_DOCK_D15_CAPTURE_DIR"].map { URL(fileURLWithPath: $0) }
+        var receipts = [[String: Any]]()
+        var overflowCases = 0
+        for display in [a, b] {
+            _ = try await editor.commit(SettingsB21Edit.dockDisplay(display.id))
+            for (preference, edge) in edges {
+                _ = try await editor.commit(SettingsB21Edit.dockEdge(preference))
+                for size in [SettingsSize.small, .medium, .large] {
+                    _ = try await editor.commit(SettingsB20Edit.size(size))
+                    for theme in [SettingsTheme.day, .night] {
+                        _ = try await editor.commit(SettingsB20Edit.theme(theme))
+                        let label = "\(display.id)-\(preference.rawValue)-\(size.rawValue)-\(theme.rawValue)"
+                        let observed = try XCTUnwrap(host.edgePresentation, label)
+                        let place = try XCTUnwrap(observed.placement, label)
+                        let view = host.dockView
+                        let image = try XCTUnwrap(view.presentedImageForChecks, label)
+                        let skin = try XCTUnwrap(view.presentedSkinForChecks, label)
+                        let nozzles = skin.stations.filter { $0.subscriptionID != nil }
+                        let overflow = view.interactionOverflowIDs.count
+                        XCTAssertEqual(observed.state, .expanded, label)
+                        XCTAssertEqual(place.displayID, display.id, label)
+                        XCTAssertEqual(place.edge, edge, label)
+                        XCTAssertEqual(view.appearanceDisplaySize, display.usableFrame.size, label)
+                        XCTAssertEqual(view.presentationBackingScale, display.backingScale, label)
+                        XCTAssertEqual(observed.paintedFrame, place.frame, label)
+                        XCTAssertTrue(display.usableFrame.contains(place.frame), label)
+                        switch edge {
+                        case .left: XCTAssertEqual(place.frame.minX, display.usableFrame.minX, accuracy: 0.001, label)
+                        case .right: XCTAssertEqual(place.frame.maxX, display.usableFrame.maxX, accuracy: 0.001, label)
+                        case .bottom: XCTAssertEqual(place.frame.minY, display.usableFrame.minY, accuracy: 0.001, label)
+                        case .top: XCTFail(label)
+                        }
+                        XCTAssertFalse(nozzles.isEmpty, label)
+                        for nozzle in nozzles {
+                            XCTAssertEqual(nozzle.diameter, size.nozzleDiameter, accuracy: 0.001, label)
+                        }
+                        XCTAssertEqual(nozzles.count + overflow, quotas.count, label)
+                        if overflow > 0 { overflowCases += 1 }
+                        XCTAssertEqual(CGFloat(image.width), ceil(view.bounds.width * CGFloat(display.backingScale)), label)
+                        XCTAssertEqual(CGFloat(image.height), ceil(view.bounds.height * CGFloat(display.backingScale)), label)
+                        XCTAssertEqual(app.composition.store.snapshot.delivery, delivery, label)
+                        if let directory {
+                            try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]), label)
+                                .write(to: directory.appendingPathComponent(label + ".png"))
+                        }
+                        receipts.append([
+                            "key": label, "display": display.id, "edge": preference.rawValue, "size": size.rawValue,
+                            "theme": theme.rawValue, "frame": NSStringFromRect(place.frame),
+                            "availableFrame": NSStringFromRect(display.usableFrame), "scale": display.backingScale,
+                            "pixels": [image.width, image.height], "visibleMembers": nozzles.count, "overflowMembers": overflow,
+                        ])
+                    }
+                }
+            }
+        }
+        XCTAssertEqual(receipts.count, 36)
+        XCTAssertGreaterThan(overflowCases, 0, "The constrained display must exercise actual overflow")
+        if let directory {
+            try JSONSerialization.data(withJSONObject: receipts, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent("matrix.json"))
+        }
+    }
+
     func testD15PhysicalRestingPanelRendersEveryDisplayEdgeAndSize() async throws {
         preserveTestAppAppearance()
         let topology = DockDisplayTopology.system()
