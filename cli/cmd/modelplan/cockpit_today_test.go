@@ -12,7 +12,7 @@ import (
 func TestCockpitTodayTotalsRequiresUniqueCurrentBinding(t *testing.T) {
 	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.Local)
 	account := quota.Account{Source: "codex", Subscription: &quota.Binding{Ref: "0123456789abcdef", Status: "verified", ObservedAt: now}}
-	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
+	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{{Day: now.Format("2006-01-02"), Source: "codex", ObservedRequests: 5, ObservedOutputTokens: 120, EligibleRequests: 5, EligibleOutputTokens: 100, GenMs: 2000}}}}
 	got := cockpitTodayTotals([]quota.Account{account}, view)
 	if len(got) != 1 || got[0].OutputTokens != 120 || got[0].GenerationTPS == nil || *got[0].GenerationTPS != 50 || got[0].BindingBasis != "source-wide-current-binding" {
 		t.Fatalf("known totals: %#v", got)
@@ -44,5 +44,20 @@ func TestCockpitTodayTotalsRequiresUniqueCurrentBinding(t *testing.T) {
 	view.Ledger.Rows = nil
 	if got := cockpitTodayTotals([]quota.Account{account}, view); len(got) != 0 {
 		t.Fatalf("empty ledger: %#v", got)
+	}
+}
+
+func TestCockpitTodayNeverInventsZeroWithoutAnObservedRequest(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.Local)
+	account := quota.Account{Source: "codex", Subscription: &quota.Binding{Ref: "0123456789abcdef", Status: "verified", ObservedAt: now}}
+	row := speed.PerfRow{Day: now.Format("2006-01-02"), Source: "codex"}
+	view := speed.PerfView{OK: true, Recording: true, Now: now, Ledger: speed.PerfLedger{Rows: []speed.PerfRow{row}}}
+	if got := cockpitTodayTotals([]quota.Account{account}, view); len(got) != 0 {
+		t.Fatalf("unobserved zero presented as a known total: %#v", got)
+	}
+	view.Ledger.Rows[0].ObservedRequests = 1
+	got := cockpitTodayTotals([]quota.Account{account}, view)
+	if len(got) != 1 || got[0].OutputTokens != 0 || got[0].GenerationTPS != nil {
+		t.Fatalf("observed zero was not retained distinctly from missing: %#v", got)
 	}
 }
