@@ -748,7 +748,9 @@ private actor S4RowsClient: EngineClient {
             let expectedBalanceLabels = language == .chinese ? ["余额", "储备", "点数"] : ["Balance", "Reserve", "Credits"]
             try require(balanceLabels == expectedBalanceLabels,"wire units must map to localized balance facts without inventing a currency")
             if language == .chinese {
-                try require(!visible.joined().unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
+                // D40: the card's compact reset time ("3h18", "5d20h", "45m") is the prototype's form in both languages.
+                let prose = visible.joined().replacingOccurrences(of: #"\d+(d\d+h|h\d{2}|m)"#, with: "", options: .regularExpression)
+                try require(!prose.unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
                 try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
                 try require(content.snapshot.inputs.map(\.name).prefix(2) == ["合成工具","合成工具 · 2"],"duplicate member copy is numbered the same way in Chinese")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
