@@ -23,7 +23,7 @@ final class V2BridgeContractTests: XCTestCase {
         let load = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
         XCTAssertEqual(load["version"] as? Int, 2)
         let appearance = try XCTUnwrap(load["appearance"] as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency"])
+        XCTAssertEqual(Set(appearance.keys), ["theme","locale","reduceMotion","reduceTransparency","showProjectNames"])
         let shell = try XCTUnwrap(load["shell"] as? [String: Any])
         XCTAssertEqual(Set(shell.keys), ["profile", "attached", "forcedClosed", "tier", "scope"])
         XCTAssertEqual(shell["profile"] as? String, "closed")
@@ -87,11 +87,12 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(value.readyCapabilities, Set(capabilities))
         let ticket = value.queryTicket
         let header: Set<String> = ["version","pageId","requestId","sessionId","storeEpoch","generation","viewRevision","sequence","type"]
-        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true))
+        let appearanceRaw = try value.setAppearance(.init(theme: .night, locale: .zhCN, profile: .compact, reduceMotion: true, reduceTransparency: true, showProjectNames: false))
         let appearance = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(appearanceRaw.utf8)) as? [String: Any])
-        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","redBelow"]))
+        XCTAssertEqual(Set(appearance.keys), header.union(["theme","locale","reduceMotion","reduceTransparency","showProjectNames","redBelow"]))
         XCTAssertEqual(appearance["type"] as? String, "appearance")
         XCTAssertEqual(appearance["reduceTransparency"] as? Bool, true)
+        XCTAssertEqual(appearance["showProjectNames"] as? Bool, false)
         let shellRaw = try value.setShell(.init(closed: false, attached: true, forcedClosed: true, tier: .compact))
         let shell = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(shellRaw.utf8)) as? [String: Any])
         XCTAssertEqual(Set(shell.keys), header.union(["profile","attached","forcedClosed","tier","scope"]))

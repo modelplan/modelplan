@@ -114,6 +114,16 @@
             }
           ]
         },
+        "today": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccountToday"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "valueState": {
           "enum": [
             "current",
@@ -141,6 +151,55 @@
         "freshUntil",
         "lastFailure",
         "windows"
+      ],
+      "type": "object"
+    },
+    "AccountToday": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingBasis": {
+          "enum": [
+            "source-wide-current-binding",
+            "session-binding"
+          ],
+          "type": "string"
+        },
+        "generationTps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 0
+        },
+        "observedOutputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 1
+        },
+        "runningSessions": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "bindingBasis"
       ],
       "type": "object"
     },
@@ -239,6 +298,16 @@
             }
           ]
         },
+        "history": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitHistory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "projection": {
           "$ref": "#/$defs/RowsProjection"
         },
@@ -296,6 +365,23 @@
           "maxItems": 128,
           "type": "array"
         },
+        "forecasts": {
+          "items": {
+            "$ref": "#/$defs/CockpitForecast"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "publication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CockpitPublication"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"
@@ -345,6 +431,448 @@
       ],
       "type": "object"
     },
+    "CockpitEntityRanking": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "measure": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/CockpitEntityWindow"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/CockpitEntityWindow"
+        }
+      },
+      "required": [
+        "measure",
+        "attribution",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "CockpitEntityWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "type": "integer"
+        },
+        "top": {
+          "items": {
+            "$ref": "#/$defs/CockpitRankedEntity"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "totalObservedOutputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entities",
+        "totalObservedOutputTokens",
+        "top"
+      ],
+      "type": "object"
+    },
+    "CockpitForecast": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "recent-rate",
+            "cycle-average",
+            "none"
+          ],
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "pace": {
+          "enum": [
+            "tight",
+            "on_track",
+            "surplus",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "runsOutAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "windowId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "runsOutAt",
+        "pace",
+        "basis",
+        "observedAt"
+      ],
+      "type": "object"
+    },
+    "CockpitHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "coverage": {
+          "type": "string"
+        },
+        "daily": {
+          "items": {
+            "$ref": "#/$defs/CockpitSourceBucket"
+          },
+          "maxItems": 728,
+          "type": "array"
+        },
+        "dailyFrom": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hourly": {
+          "items": {
+            "$ref": "#/$defs/CockpitSourceBucket"
+          },
+          "maxItems": 192,
+          "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/CockpitEntityRanking"
+        },
+        "projects": {
+          "$ref": "#/$defs/CockpitProjectRanking"
+        },
+        "recordingSince": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/CockpitSubscriptionHistory"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
+        "tools": {
+          "$ref": "#/$defs/CockpitEntityRanking"
+        },
+        "version": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "sources",
+        "coverage",
+        "recordingSince",
+        "subscriptions",
+        "models",
+        "tools",
+        "dailyFrom",
+        "daily",
+        "hourly",
+        "projects"
+      ],
+      "type": "object"
+    },
+    "CockpitHistorySums": {
+      "additionalProperties": false,
+      "properties": {
+        "cacheHitRatio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cacheWriteTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eligibleRequests": {
+          "type": "integer"
+        },
+        "generationTps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputTokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "outputTokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "inputTokens",
+        "outputTokens",
+        "cacheReadTokens",
+        "cacheWriteTokens",
+        "cacheHitRatio",
+        "generationTps",
+        "observedRequests",
+        "eligibleRequests"
+      ],
+      "type": "object"
+    },
+    "CockpitProjectRanking": {
+      "additionalProperties": false,
+      "properties": {
+        "recent30d": {
+          "items": {
+            "$ref": "#/$defs/CockpitRankedProject"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "recent7d": {
+          "items": {
+            "$ref": "#/$defs/CockpitRankedProject"
+          },
+          "maxItems": 10,
+          "type": "array"
+        }
+      },
+      "required": [
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
+    "CockpitPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {
+          "maximum": 1,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationModel"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "publicationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contractVersion",
+        "publicationId",
+        "publishedAt",
+        "source",
+        "models",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationEffort": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effort": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provisional": {
+          "type": "boolean"
+        },
+        "star": {
+          "type": "boolean"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "effort",
+        "label",
+        "star",
+        "ability",
+        "cost",
+        "time"
+      ],
+      "type": "object"
+    },
+    "CockpitPublicationModel": {
+      "additionalProperties": false,
+      "properties": {
+        "developerId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "efforts": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationEffort"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "recommended": {
+          "maxLength": 64,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "developerId",
+        "recommended",
+        "efforts"
+      ],
+      "type": "object"
+    },
     "CockpitQueryParams": {
       "additionalProperties": false,
       "properties": {
@@ -359,6 +887,84 @@
         }
       },
       "required": [],
+      "type": "object"
+    },
+    "CockpitRankedEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "observedRequests": {
+          "type": "integer"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "observedRequests",
+        "observedOutputTokens",
+        "share"
+      ],
+      "type": "object"
+    },
+    "CockpitRankedProject": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "ref": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "share": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ref",
+        "label",
+        "model",
+        "effort",
+        "observedOutputTokens",
+        "share"
+      ],
       "type": "object"
     },
     "CockpitResetCount": {
@@ -473,6 +1079,51 @@
       ],
       "type": "object"
     },
+    "CockpitSourceBucket": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "observedOutputTokens": {
+          "type": "integer"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "source",
+        "observedOutputTokens"
+      ],
+      "type": "object"
+    },
+    "CockpitSourceHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingBasis": {
+          "type": "string"
+        },
+        "recent30d": {
+          "$ref": "#/$defs/CockpitHistorySums"
+        },
+        "recent7d": {
+          "$ref": "#/$defs/CockpitHistorySums"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "bindingBasis",
+        "recent7d",
+        "recent30d"
+      ],
+      "type": "object"
+    },
     "CockpitSubscription": {
       "additionalProperties": false,
       "properties": {
@@ -545,6 +1196,28 @@
         "resetCounts",
         "credits",
         "today"
+      ],
+      "type": "object"
+    },
+    "CockpitSubscriptionHistory": {
+      "additionalProperties": false,
+      "properties": {
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/CockpitSourceHistory"
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "sources"
       ],
       "type": "object"
     },
@@ -3334,6 +4007,20 @@
     "RowsProjection": {
       "additionalProperties": false,
       "properties": {
+        "forecasts": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CockpitForecast"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "maxItems": 128
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"

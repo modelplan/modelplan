@@ -45,8 +45,9 @@ BUNDLE_ID = 'org.modelplan.community.swift.scaffold'
 RESOURCE_BUNDLES = ('ModelPlanAppIntegration_ModelPlanAppIntegration.bundle',
                     'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle',
                     'ModelPlanDockResources_ModelPlanDockResources.bundle')
-COCKPIT_BUNDLE = 'ModelPlanCockpitWeb_ModelPlanCockpitWeb.bundle'  # copied by package-neutral.sh after #489
+COCKPIT_BUNDLE = 'Cockpit'  # the verified page CockpitConsoleOwner loads; package-neutral.sh --owner-test copies it
 VF_MARKER = 'ModelPlanVerificationFlavour'
+OWNER_TEST_KEY = 'ModelPlanOwnerTestBuild'
 UPDATER_KEYS = ('SUFeedURL', 'SUPublicEDKey', 'SUEnableAutomaticChecks')
 LANE_HOST = {'V1': 'macci', 'M1': 'dev-mac'}
 PROFILES = ('synthetic', 'real')
@@ -242,6 +243,58 @@ def read_member(archive, name):
         return None
 
 
+# Where configure_beta_zai (tools/distribution/release.py) finds the Dock resource manifest.
+DOCK_MANIFESTS = ('Resources/manifest.json', 'Contents/Resources/Resources/manifest.json',
+                  'Contents/Resources/manifest.json', 'manifest.json')
+
+
+def mark_problems(inner, info, names, dock):
+    """PF-07's Z.ai mark policy, matching the producers: package-neutral.sh always removes the
+    beta-only mark and writes no `zaiMarkEnabled`; release.py configure_beta_zai sets the boolean and,
+    only when true, restores exactly one mark at the manifest's path with the manifest's bytes."""
+    marks = sorted(n for n in names if n.startswith(dock) and n.endswith('/zai-white.svg'))
+    enabled = info.get('zaiMarkEnabled', False)
+    if type(enabled) is not bool:
+        return ['zaiMarkEnabled is not a boolean']
+    if not enabled:
+        return [] if not marks else [f'{len(marks)} zai-white.svg mark(s) without zaiMarkEnabled '
+                                     '(neutral builds exclude the beta-only mark)']
+    if len(marks) != 1:
+        return [f'{len(marks)} zai-white.svg marks with zaiMarkEnabled (need exactly one)']
+    manifests = [dock + m for m in DOCK_MANIFESTS if dock + m in names]
+    if len(manifests) != 1:
+        return ['beta mark without exactly one Dock resource manifest']
+    try:
+        record = json.loads(read_member(inner, manifests[0]) or b'')['files']['logo-zai-white']
+    except (ValueError, KeyError, TypeError):
+        return ['beta mark manifest record unreadable']
+    root = manifests[0][:-len('manifest.json')]
+    if (not isinstance(record, dict) or record.get('betaOnly') is not True
+            or record.get('path') != 'Marks/zai-white.svg' or marks[0] != root + record['path']):
+        return ['beta mark is not at the manifest path']
+    data = read_member(inner, marks[0])
+    if data is None or len(data) != record.get('bytes') or sha256_bytes(data) != record.get('sha256'):
+        return ['beta mark bytes do not match the manifest record']
+    return []
+
+
+def bundle_public_source(inner_bytes):
+    """The source commit the bundle itself records (Info.plist ModelPlanPublicSource, written by
+    package-neutral.sh from the checkout's real `git rev-parse HEAD`), or None when it cannot be read.
+    This is what binds the BUILD.txt label to the tree that was actually built."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(inner_bytes)) as inner:
+            plists = [n for n in inner.namelist()
+                      if n.count('/') == 2 and n.endswith('.app/Contents/Info.plist')]
+            if len(plists) != 1:
+                return None
+            info = plistlib.loads(read_member(inner, plists[0]) or b'')
+    except Exception:
+        return None
+    value = info.get('ModelPlanPublicSource') if isinstance(info, dict) else None
+    return value if isinstance(value, str) else None
+
+
 def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir, work):
     """PF-01..PF-09 for one flavour. Returns the extracted .app path (or None)."""
     name = entry.get('name') if isinstance(entry, dict) else None
@@ -312,9 +365,16 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
           'sha256 mismatch between artifact archive, manifest digest, GitHub digest or BUILD.txt', **tag)
     source = fields.get('sourceSHA', '')
     build_flavour = fields.get('flavour')
-    source_ok = source == expected_sha and (build_flavour is None or build_flavour == flavour)
-    check(results, 'PF-04', source_ok, f'BUILD.txt sourceSHA={source or "missing"}'
-          + (f' flavour={build_flavour}' if build_flavour else ''), **tag)
+    # The label alone is not provenance: a pull_request run that built the synthetic merge commit
+    # can still be labelled with the PR head. The bundle's own recorded source (the built tree's
+    # HEAD) must equal both the label and the expected SHA; unreadable or different fails closed.
+    built = bundle_public_source(inner_bytes)
+    source_ok = (source == expected_sha and built == expected_sha
+                 and (build_flavour is None or build_flavour == flavour))
+    check(results, 'PF-04', source_ok, f'BUILD.txt sourceSHA={source or "missing"} '
+          f'bundle ModelPlanPublicSource={built or "missing"}'
+          + (f' flavour={build_flavour}' if build_flavour else '')
+          + ('' if built in (None, source) else ': the bundle was built from a different tree than its label'), **tag)
     try:
         inner = zipfile.ZipFile(io.BytesIO(inner_bytes))
         app = app_shape(inner)
@@ -339,12 +399,11 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
     resources = contents + 'Resources/'
     wanted = list(RESOURCE_BUNDLES) + ([COCKPIT_BUNDLE] if flavour in ('test', 'verify') else [])
     missing = [b for b in wanted if not any(n.startswith(resources + b + '/') for n in names)]
-    marks = [n for n in names if n.startswith(resources + RESOURCE_BUNDLES[2] + '/') and n.endswith('/zai-white.svg')]
     helper = read_member(inner, contents + 'Helpers/modelplan')
     pin = (read_member(inner, resources + 'modelplan.sha256') or b'').decode('ascii', 'replace').strip()
     helper_ok = helper is not None and SHA256.fullmatch(pin) and sha256_bytes(helper) == pin
     problems = ([f'missing {", ".join(missing)}'] if missing else []) + \
-               ([f'{len(marks)} zai-white.svg marks (need exactly one)'] if len(marks) != 1 else []) + \
+               mark_problems(inner, info, names, resources + RESOURCE_BUNDLES[2] + '/') + \
                ([] if helper_ok else ['Helpers/modelplan does not match Resources/modelplan.sha256'])
     check(results, 'PF-07', not problems, '; '.join(problems) or 'resource bundles and helper pin present', **tag)
     entry_flag = info.get('ModelPlanCockpitEntryEnabled')
@@ -352,9 +411,14 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
     marker = VF_MARKER in info
     updater = [k for k in UPDATER_KEYS if k in info] + \
               (['Sparkle.framework'] if any('/Sparkle.framework/' in n for n in names) else [])
-    flavour_ok = type(entry_flag) is bool and entry_flag == want_flag and marker == (flavour == 'verify') and not updater
+    # Owner D39/D-E: only the owner test flavour may carry the owner-test page admission marker.
+    owner_test = info.get(OWNER_TEST_KEY)
+    owner_test_ok = owner_test is True if flavour == 'test' else OWNER_TEST_KEY not in info
+    flavour_ok = type(entry_flag) is bool and entry_flag == want_flag and marker == (flavour == 'verify') and not updater \
+        and owner_test_ok
     check(results, 'PF-08', flavour_ok, f'ModelPlanCockpitEntryEnabled={entry_flag!r} (want {want_flag}); '
-          f'VF marker {"present" if marker else "absent"}; updater {updater or "none"}', **tag)
+          f'VF marker {"present" if marker else "absent"}; owner-test marker {owner_test!r}; '
+          f'updater {updater or "none"}', **tag)
     try:
         destination = Path(work) / flavour
         destination.mkdir(parents=True, exist_ok=False)

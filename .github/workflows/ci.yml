@@ -79,14 +79,36 @@ jobs:
       - working-directory: codex
         run: npm ci --ignore-scripts && npm test && npm run build
       - run: git diff --exit-code -- codex/server.bundle.mjs codex/THIRD-PARTY-NOTICES.md
+  # Ready PRs run the macOS leg only when something it tests changed; other events keep it.
+  mac-scope:
+    if: ${{ github.event_name == 'pull_request' && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          sparse-checkout: .github
+      - id: scope
+        run: |
+          set -eu
+          # A pull_request checkout is the merge commit, so its first parent is the base.
+          # -z keeps paths Git would otherwise quote, such as non-ASCII names.
+          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '^(claude-code/|codex/hooks/|codex/cli-pin\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
   claude-code:
-    needs: queue-reuse
+    needs: [queue-reuse, mac-scope]
     if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.queue-reuse.outputs.run == 'true') }}
     strategy:
       matrix:
-        # Draft PRs and merge-queue groups run Linux only; macOS runs once the PR is ready (macOS runners
-        # are scarce, and the PR head's macOS result is part of the merge-queue gate).
-        os: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.draft)) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
+        # Draft PRs and merge-queue groups run Linux only. A ready PR runs macOS when mac-scope finds a
+        # relevant change (macOS runners are scarce); pushes to main always run it.
+        os: ${{ (github.event_name == 'merge_group' || (github.event_name == 'pull_request' && (github.event.pull_request.draft || needs.mac-scope.outputs.run != 'true'))) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

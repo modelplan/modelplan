@@ -87,19 +87,28 @@ type ResetCardSource struct {
 }
 
 type Account struct {
-	ResetCards       *ResetCards `json:"resetCards,omitempty" null:"forbidden"`
-	RefreshNotBefore **time.Time `json:"refreshNotBefore,omitempty" null:"coalesced"`
-	Route            Route       `json:"route"`
-	SubscriptionRef  *string     `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator   *string     `json:"accountLocator" null:"coalesced"`
-	Plan             Plan        `json:"plan"`
-	Beta             bool        `json:"beta"`
-	Credits          *Credits    `json:"credits" null:"coalesced"`
-	ValueState       ValueState  `json:"valueState"`
-	ObservedAt       *time.Time  `json:"observedAt" null:"coalesced"`
-	FreshUntil       *time.Time  `json:"freshUntil" null:"coalesced"`
-	LastFailure      *Failure    `json:"lastFailure" null:"coalesced"`
-	Windows          []Window    `json:"windows"`
+	Today            *AccountToday `json:"today,omitempty" null:"forbidden"`
+	ResetCards       *ResetCards   `json:"resetCards,omitempty" null:"forbidden"`
+	RefreshNotBefore **time.Time   `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	Route            Route         `json:"route"`
+	SubscriptionRef  *string       `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string       `json:"accountLocator" null:"coalesced"`
+	Plan             Plan          `json:"plan"`
+	Beta             bool          `json:"beta"`
+	Credits          *Credits      `json:"credits" null:"coalesced"`
+	ValueState       ValueState    `json:"valueState"`
+	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time    `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure      `json:"lastFailure" null:"coalesced"`
+	Windows          []Window      `json:"windows"`
+}
+
+// AccountToday contains only observed values; omission means unknown.
+type AccountToday struct {
+	ObservedOutputTokens *int64            `json:"observedOutputTokens,omitempty" null:"forbidden" schema:"minimum=1"`
+	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
+	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`
+	BindingBasis         TodayBindingBasis `json:"bindingBasis"`
 }
 
 type Plan struct {
@@ -137,6 +146,16 @@ type Window struct {
 	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
 	Current          bool          `json:"current"`
 	ValidUntil       *time.Time    `json:"validUntil" null:"coalesced"`
+	// Forecast stays out of the rows contract; the cockpit details project it when negotiated.
+	Forecast *WindowForecast `json:"-"`
+}
+
+// WindowForecast is the quota engine's outlook for one window. RunsOutAt is set only
+// when the window is forecast to be used up before its reset.
+type WindowForecast struct {
+	RunsOutAt *time.Time `null:"coalesced"`
+	Pace      string     // tight | on_track | surplus | exhausted
+	Basis     string     // recent-rate | cycle-average | none
 }
 
 type RowsSummary struct {

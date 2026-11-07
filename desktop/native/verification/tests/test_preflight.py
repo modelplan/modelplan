@@ -88,6 +88,30 @@ class PreflightTests(unittest.TestCase):
             f'sourceSHA={"c" * 40}\nrunID=42\nrunAttempt=1\n{hashlib.sha256(inner).hexdigest()}  {preflight.INNER}\n'))
         self.assertIn('PF-04', self.failed(self.run_preflight(digest)))
 
+    def test_a_merge_commit_build_labelled_with_the_pr_head_is_refused(self):
+        # A pull_request run that checked out the synthetic merge commit M records M as the bundle's
+        # ModelPlanPublicSource (package-neutral.sh: git rev-parse HEAD), while BUILD.txt, the
+        # artifact name and the run's head_sha all say the PR head H. Matching labels are not
+        # provenance: the built tree's own source must equal H, or PF-04 fails closed.
+        import hashlib
+        merge = 'd' * 40
+        for recorded in (merge, None):
+            inner = inner_zip(plist=info(ModelPlanPublicSource=recorded))
+            digest = write_artifact(self.artifacts, NAME, inner=inner, build=(
+                f'sourceSHA={SHA}\nrunID=42\nrunAttempt=1\n{hashlib.sha256(inner).hexdigest()}  {preflight.INNER}\n'))
+            receipt = self.run_preflight(digest)
+            self.assertEqual(receipt['outcome'], 'FAIL')
+            self.assertEqual(self.failed(receipt), ['PF-04'])
+            detail = [c for c in receipt['checks'] if c['id'] == 'PF-04' and c['status'] != 'PASS'][0]['detail']
+            self.assertIn(f'ModelPlanPublicSource={recorded or "missing"}', detail)
+
+    def test_an_exact_head_build_passes_source_binding(self):
+        # Checkout of the exact PR head: label, run head_sha and the bundle's recorded source agree.
+        receipt = self.run_preflight(write_artifact(self.artifacts, NAME, inner=inner_zip(plist=info(ModelPlanPublicSource=SHA))))
+        self.assertEqual(self.failed(receipt), [])
+        pf04 = [c for c in receipt['checks'] if c['id'] == 'PF-04']
+        self.assertIn(f'bundle ModelPlanPublicSource={SHA}', pf04[0]['detail'])
+
     def test_provenance_requires_repo_workflow_head_and_successful_job(self):
         digest = write_artifact(self.artifacts, NAME)
         base = dict(repository=dict(full_name=preflight.REPO), path='.github/workflows/desktop.yml', head_sha=SHA)
@@ -114,7 +138,8 @@ class PreflightTests(unittest.TestCase):
                        ('PF-08', dict(plist=info(ModelPlanCockpitEntryEnabled=None))),
                        ('PF-08', dict(plist=info(SUFeedURL='https://example.invalid/feed'))),
                        ('PF-08', dict(extra=('Frameworks/Sparkle.framework/Sparkle',))),
-                       ('PF-08', dict(plist=info(ModelPlanVerificationFlavour='verify')))]
+                       ('PF-08', dict(plist=info(ModelPlanVerificationFlavour='verify'))),
+                       ('PF-08', dict(plist=info(ModelPlanOwnerTestBuild=True)))]
         for check, kwargs in list(cases.items()) + cases_extra:
             with self.subTest(check=check, case=sorted(kwargs)):
                 digest = write_artifact(self.artifacts, NAME, inner=inner_zip(**kwargs))
@@ -127,8 +152,14 @@ class PreflightTests(unittest.TestCase):
         digest = write_artifact(self.artifacts, name, inner=inner_zip(plist=info(ModelPlanCockpitEntryEnabled=True)))
         receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
         self.assertIn('PF-07', self.failed(receipt))
+        # Without the owner-test page admission marker the page could never load (Q1/Q2 on #611).
         digest = write_artifact(self.artifacts, name, inner=inner_zip(
             plist=info(ModelPlanCockpitEntryEnabled=True), bundles=preflight.RESOURCE_BUNDLES + (preflight.COCKPIT_BUNDLE,)))
+        receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
+        self.assertEqual(self.failed(receipt), ['PF-08'])
+        digest = write_artifact(self.artifacts, name, inner=inner_zip(
+            plist=info(ModelPlanCockpitEntryEnabled=True, ModelPlanOwnerTestBuild=True),
+            bundles=preflight.RESOURCE_BUNDLES + (preflight.COCKPIT_BUNDLE,)))
         receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
         self.assertEqual(self.failed(receipt), [])
 

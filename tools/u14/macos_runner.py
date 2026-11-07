@@ -135,6 +135,16 @@ def command(args, cwd, env, timeout, log):
     return bytes(output)
 
 
+def helper_version(source):
+    """Same-source helper stamped above the App's minimum CLI release (the native pin, which
+    check_cli_pin_consistency.py keeps at or above EngineRowsEntry.minimumAppServerVersion).
+    A 0.0.0 stamp is refused by the normal entry before any rows, so no Dock window appears."""
+    pinned=load_json(REPO/'desktop/native/consent-cli-pin.json')['version']
+    if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',pinned) or not re.fullmatch('[0-9a-f]{40}',source):
+        raise ValueError('invalid native CLI pin or source')
+    return pinned+'+u14.'+source[:12]
+
+
 def build_app(work):
     """Reuse the production packager; supply same-source real CLI archives."""
     binding = credential_artifact.acquire(work/'credential-input')
@@ -144,7 +154,7 @@ def build_app(work):
     env.update({'GOCACHE':str(work/'go-cache'),'GOMODCACHE':str(work/'go-mod'),
                 'TMPDIR':str(work/'tmp'), 'CGO_ENABLED':'0','GOOS':'darwin','GOFLAGS':'-modcacherw'})
     (work/'tmp').mkdir(mode=0o700)
-    version='0.0.0+u14.'+git(REPO,'rev-parse','HEAD')[:12]
+    version=helper_version(git(REPO,'rev-parse','HEAD'))
     checksums=[]
     for architecture in ('arm64','amd64'):
         directory=new_directory(work/('modelplan_darwin_'+architecture))
