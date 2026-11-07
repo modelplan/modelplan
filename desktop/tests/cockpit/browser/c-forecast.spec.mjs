@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Forecast consumer (owner D38, CKP-ENG-13) on the built page through its normal bridge, with synthetic data only.
+// Forecast consumer (owner D38, CKP-STRIP-05) on the built page through its normal bridge, with synthetic data only.
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
 import {appearance,commands,pageId,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
@@ -40,7 +40,7 @@ test('D38 the Chinese row reads 撑不到 and uses the same rule',async({page})=
  await expect(page.getByText(`${row.name.zh} ${w.label.zh} 60% · 撑不到 5h00 后重置`)).toBeVisible();
 });
 
-test('CKP-ENG-13 the engine cell and the Subscription page name the run-out',async({page})=>{
+test('D38 the engine cell and the Subscription page name the run-out',async({page})=>{
  await open(page,fixture().data);
  await expect(page.locator('.qcell').filter({hasText:'out ~40m'}).first()).toBeVisible();
  await page.keyboard.press('1');
