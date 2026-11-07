@@ -623,7 +623,7 @@ struct StatusNoticePresentation {
             if onStatusItem { showConsole() }
             return true
         }
-        guard onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
+        guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
               cockpitEntryEnabled, !terminating, !lifecyclePaused else { return false }
         statusPressPending = true
         return true
@@ -784,7 +784,8 @@ struct StatusNoticePresentation {
         let title = composition.menuPresentation.title
         // Never let the item collapse to zero width when the template image is unavailable.
         button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
-        button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        // With no image the fallback title is the whole item; image-only would hide it.
+        if button.image != nil { button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading }
         button.toolTip = detail
         button.setAccessibilityHelp(detail)
     }
