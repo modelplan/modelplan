@@ -9,7 +9,7 @@ public struct SettingsText: Equatable, Sendable {
 public enum SettingKey: String, CaseIterable, Sendable {
     case theme, size, motion, transparency, percentageMode, showPercentages, percentagePin, redBelow, sliverAlert
     case showDock, autoHide, reveal, magnification, fullscreen, captureHiding, activeDisplay, order
-    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints
+    case login, automaticUpdates, menuDisplay, openShortcut, dockShortcut, language, opening, countdown, resetHints, cockpitSize
     case notificationConsent, forecast, reset, official, expiring, stale
     case visible, alias, source, projectNames, retention, clearCLI, clearAppCache, privacyStatement
     case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
@@ -256,6 +256,7 @@ public enum SettingsCatalogue {
         .init(.dockShortcut,"Toggle Quota Widget shortcut","显示隐藏额度挂件快捷键","Text editing and composition do not trigger shortcuts.","文本编辑与输入法组合期间不触发。"),
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Opening behavior","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
+        .init(.cockpitSize,"Cockpit size","驾驶舱大小","Automatic fits the whole cockpit to the screen. A size that does not fit a screen uses Automatic there.","自动会让整个驾驶舱适配屏幕。某个屏幕放不下所选大小时，在该屏幕上改用自动。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
         .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and their open/reveal budgets.","重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
@@ -404,6 +405,7 @@ public enum SettingsCatalogue {
         case .dockShortcut: return .text(shortcut(p.dockShortcut))
         case .language: return choices(p.language)
         case .opening: return choices(p.opening)
+        case .cockpitSize: return choices(p.cockpitSize)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
         case .resetHints: return .action(.resetHelpHints)
         case .loginSystemSettings, .notificationSystemSettings: return .action(nil)

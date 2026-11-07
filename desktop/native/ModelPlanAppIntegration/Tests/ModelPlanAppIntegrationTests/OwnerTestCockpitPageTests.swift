@@ -160,5 +160,70 @@ extension CommunityCockpitEntryTests {
         XCTAssertLessThan(window.frame.minX, start.minX, "and moves it")
         XCTAssertEqual(window.frame.size, start.size, "the same cockpit, not a resized one")
     }
+
+    /// CKP-SHELL-07 / owner D51, C-02, C-03 on the real page and panel: an Air shows the full cockpit with its flame
+    /// reserve, scaled as one page (WebKit page zoom, not a bitmap), with the strip and shutter still hit where drawn.
+    /// Covers 1470x956 with the Dock at the bottom, the lowest full scale (75 %) and a live switch to 80 %.
+    @MainActor func testD51ScaledFullCockpitKeepsCrispTextAndHitTargets() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let cases: [(String, CGRect, CockpitSize?, CGFloat)] = [
+            ("1470x956, Dock at the bottom", CGRect(x: 0, y: 70, width: 1470, height: 849), nil, 843 / 911),
+            ("lowest full scale", CGRect(x: 0, y: 0, width: 1440, height: 690), nil, 684 / 911),
+            ("80 % chosen live", CGRect(x: 0, y: 0, width: 1680, height: 1026), .percent80, 0.8),
+        ]
+        for (name, usable, live, expected) in cases {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("d51-" + UUID().uuidString).resolvingSymlinksInPath()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+            let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+            let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let page = try owner.makePage(context: context, executable: app.appendingPathComponent("Contents/Helpers/modelplan"))
+            defer { page.discard() }
+            page.verificationPlacement = (usable: usable, anchor: CGRect(x: usable.maxX - 340, y: usable.maxY, width: 28, height: 24))
+            page.open()
+            let window = try XCTUnwrap(page.window), region = try XCTUnwrap(page.verificationDragRegion), web = try XCTUnwrap(page.verificationWebView)
+            if let live { page.updateAppearance(.init(theme: .night, locale: .en, profile: .full, size: live)) }
+            var box: [String: Double]?
+            let deadline = ContinuousClock.now + .seconds(30)
+            while box == nil, ContinuousClock.now < deadline {
+                let script = "(()=>{const b=document.querySelector('.ck-head .ck-brand'),s=document.querySelector('[data-shutter]'),c=document.querySelector('.ck');if(!b||!s||!c||!document.documentElement.dataset.profile)return null;const r=b.getBoundingClientRect(),t=s.getBoundingClientRect();return {brandX:r.x+r.width/2,brandY:r.y+r.height/2,shutterX:t.x+t.width/2,shutterY:t.y+t.height/2,width:innerWidth,height:innerHeight,root:c.getBoundingClientRect().height,rootBottom:c.getBoundingClientRect().bottom}})()"
+                box = (try? await web.evaluateJavaScript(script)) as? [String: Double]
+                if box == nil { try await Task.sleep(for: .milliseconds(50)) }
+            }
+            let painted = try XCTUnwrap(box, "\(name): the page must be painted")
+            let layout = try XCTUnwrap(page.verificationLayout), scale = layout.scale
+            XCTAssertEqual(scale, expected, accuracy: 1e-6, name)
+            XCTAssertEqual(page.verificationShellState?.tier, .tall, "\(name): the full cockpit, never the short one")
+            XCTAssertEqual(painted["root"], 877, "\(name): the full root")
+            // The whole canvas, root plus the flame reserve, is laid out at 636 CSS px and fits the window.
+            XCTAssertEqual(painted["width"]!, 636, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]!, 911, accuracy: 1, name)
+            XCTAssertEqual(painted["height"]! - painted["rootBottom"]!, 34, accuracy: 1, "\(name): the flame reserve is inside the window")
+            XCTAssertEqual(window.frame.width, 636 * scale, accuracy: 0.5, name)
+            XCTAssertEqual(window.frame.height, 911 * scale, accuracy: 0.5, name)
+            XCTAssertLessThanOrEqual(window.frame.maxY, usable.maxY - 6 + 0.5, name)
+            XCTAssertGreaterThanOrEqual(window.frame.minY, usable.minY - 0.5, name)
+            // Crisp: WebKit draws the page at the final size; no view scales a bitmap of it.
+            XCTAssertEqual(web.pageZoom, scale, accuracy: 1e-6, name)
+            let content = try XCTUnwrap(window.contentView)
+            XCTAssertEqual(content.bounds.size.width, window.frame.width, accuracy: 0.5, name)
+            XCTAssertEqual(web.frame.size.width, window.frame.width, accuracy: 0.5, name)
+            // Hit targets: page points map by the scale onto the window, and land where they are drawn.
+            let height = content.bounds.height
+            func hit(_ x: Double, _ y: Double) -> NSView? {
+                content.hitTest(content.convert(CGPoint(x: x * scale, y: height - y * scale), to: content.superview))
+            }
+            XCTAssertTrue(hit(painted["brandX"]!, painted["brandY"]!) === region, "\(name): a press on the free strip reaches the drag region")
+            let shutter = hit(painted["shutterX"]!, painted["shutterY"]!)
+            XCTAssertFalse(shutter === region, "\(name): the shutter keeps its own input")
+            XCTAssertTrue(shutter?.isDescendant(of: web) == true, "\(name): the shutter press reaches the page")
+        }
+    }
     #endif
 }

@@ -72,6 +72,28 @@ import XCTest
         XCTAssertTrue(try XCTUnwrap(controller.choice(key: .notificationConsent)).isEnabled)
         controller.close()
     }
+    /// CKP-SHELL-07 / owner D51: "Cockpit size" is a live v1 control on the Cockpit pane, default Automatic,
+    /// with its fallback note, and the choice persists and reaches the cockpit consumer.
+    func testD51CockpitSizeChoicePersistsAndFeedsTheCockpit() async throws {
+        let editor = try await makeEditor()
+        var context = editor.context; context.configureV1NormalEntry(); editor.update(context: context)
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare()
+        controller.selectPane("cockpit")
+        let popup = try XCTUnwrap(controller.choice(key: .cockpitSize))
+        XCTAssertTrue(popup.isEnabled)
+        XCTAssertEqual(popup.itemArray.compactMap { $0.representedObject as? String }, ["automatic", "100", "90", "80"])
+        XCTAssertEqual(popup.itemArray.map(\.title), ["Automatic", "100 %", "90 %", "80 %"])
+        XCTAssertEqual(popup.selectedItem?.representedObject as? String, "automatic")
+        XCTAssertTrue(labels(controller.window!.contentView!).contains { $0.contains("uses Automatic there") })
+        try await choose("80", key: .cockpitSize, controller: controller)
+        XCTAssertEqual(editor.snapshot?.preferences.cockpitSize, .percent80)
+        XCTAssertEqual(editor.effective?.cockpitSize, .percent80)
+        let restarted = try SettingsStore(url: try XCTUnwrap(storeDirectory).appendingPathComponent("preferences.json"))
+        let restored = await restarted.snapshot().preferences
+        XCTAssertEqual(restored.cockpitSize, .percent80)
+        controller.close()
+    }
     func testAliasMarkedTextSurvivesEnvironmentAndContextRefreshThenCommitsOnce() async throws {
         let editor = try await makeEditor()
         var environment = SettingsEnvironment()
