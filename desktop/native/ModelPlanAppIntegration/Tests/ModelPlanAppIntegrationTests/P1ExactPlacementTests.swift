@@ -785,34 +785,17 @@ extension P1ExactPlacementTests {
         try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
     }
 
-    /// Owner test option: a release build neither shows nor applies ring centring; an owner test
-    /// build moves the ring and its percent at once, and back, with no relaunch.
-    func testRingCentringIsAnOwnerTestOptionOnly() async throws {
+    /// D48: the ring is centred in the face by default, with no option. At L the face is 76 pt
+    /// deep at the first ring, so the ring sits 38 pt from the screen edge (the prototype: 40),
+    /// and a stored value of the removed owner test option changes nothing.
+    func testRingSitsHalfwayAcrossTheFaceByDefault() async throws {
+        UserDefaults.standard.set(false, forKey: "ModelPlanOwnerTestRingsCentred")
         addTeardownBlock { UserDefaults.standard.removeObject(forKey: "ModelPlanOwnerTestRingsCentred") }
         let rows = try synthetic([Station(id: "ring", vendorKey: "openai", name: "Codex", accounts: 1, remaining: 76)])
         let (app, view) = try await launch(rows, size: .large, percentages: true, stations: 1, tag: "centring")
-        func station() throws -> DockStationRecipe { try XCTUnwrap(view.presentedSkinForChecks?.stations.first { $0.subscriptionID != nil }) }
-        func settled(_ what: String, _ predicate: () -> Bool) async throws {
-            for _ in 0..<300 where !predicate() { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertTrue(predicate(), what)
-        }
-        let prototype = try station().centre.x, readout = try station().readout.midX
-        XCTAssertFalse(app.ownerTestOptions, "this test bundle is not a sealed owner-test package")
-        XCTAssertNil(app.ownerTestRingItem(.english), "a release build does not show the option")
-        app.setRingsCentred(true)
-        XCTAssertFalse(app.composition.dock.ringsCentred, "a release build does not apply the option")
-        XCTAssertEqual(try station().centre.x, prototype)
-        app.ownerTestOptions = true
-        let item = try XCTUnwrap(app.ownerTestRingItem(.chinese))
-        XCTAssertEqual(item.title, "测试选项：额度圈居中"); XCTAssertEqual(item.checked, false)
-        item.action?()
-        try await settled("the ring moves") { (try? station().centre.x) != prototype }
-        // L: 40 from the screen edge at the first ring, 36 from the inner edge, so 2 pt towards the edge.
-        XCTAssertEqual(try station().centre.x - prototype, 2, accuracy: 0.01)
-        XCTAssertEqual(try station().readout.midX - readout, 2, accuracy: 0.01, "the percent moves with the ring")
-        XCTAssertEqual(app.ownerTestRingItem(.chinese)?.checked, true)
-        app.setRingsCentred(false)
-        try await settled("the ring returns") { (try? station().centre.x) == prototype }
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil })
+        XCTAssertEqual(skin.bounds.maxX - station.centre.x, 38, accuracy: 0.01)
         await app.stopLifecycle(); app.composition.dock.close()
     }
 
