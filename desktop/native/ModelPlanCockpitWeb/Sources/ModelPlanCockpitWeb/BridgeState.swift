@@ -75,7 +75,7 @@ public struct CockpitVisibility: Equatable, Sendable {
   var active: Bool { visible && !occluded && key }
 }
 public enum CockpitIntent: Equatable, Sendable {
-  case chooseSetup, openSettings, close, detach, putBack, shutterToggle
+  case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   case scopeSelect(String)
   case openWebsite(CockpitWebsiteLink)
@@ -470,6 +470,7 @@ public final class CockpitBridgeState {
       case "detach": intent = .detach
       case "putBack": intent = .putBack
       case "shutterToggle": intent = .shutterToggle
+      case "openField": intent = .openField
       case "openHistory":
         guard let tool = m["tool"] as? String, historyTools.contains(tool),
           earlyDisplay.map({ pending[$0.requestID]?.tools.contains(tool) == true }) ?? true else {

@@ -1,9 +1,12 @@
 package render
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/modelplan/modelplan/cli/internal/advise"
+	"github.com/modelplan/modelplan/cli/internal/quota"
 )
 
 func TestQuotaNoticeLines(t *testing.T) {
@@ -36,6 +39,16 @@ func TestQuotaNoticeLines(t *testing.T) {
 		}
 		if got := (Style{T: ZH}).QuotaNotice(c.n); got != c.zh {
 			t.Errorf("zh:\ngot  %s\nwant %s", got, c.zh)
+		}
+	}
+}
+
+func TestQuotaSaysWhyNothingWasRead(t *testing.T) {
+	for reason, want := range map[string]string{"reader-privacy": "MODELPLAN_READERS", "consent-newer": "Update the plugin or the CLI"} {
+		var out bytes.Buffer
+		Style{T: EN}.Quota(&out, quota.Report{Sources: []quota.SourceStatus{{Source: "readers", Status: "off", Reason: reason}}})
+		if !strings.Contains(out.String(), "No local quota readings.") || !strings.Contains(out.String(), want) {
+			t.Fatalf("%s: %q", reason, out.String())
 		}
 	}
 }

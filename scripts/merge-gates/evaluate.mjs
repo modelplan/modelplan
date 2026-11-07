@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, parseDesignConf } from "./rules.mjs";
+import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -21,6 +21,7 @@ const repo = env.GITHUB_REPOSITORY || "modelplan/modelplan";
 const cwd = flag("--repo-dir") ?? process.cwd();
 const gh = client({ token: env.GITHUB_TOKEN, repo });
 const conf = parseDesignConf(readFileSync(new URL("./design-paths.conf", import.meta.url), "utf8"));
+const tiers = tiersFrom(() => readFileSync(new URL(`../../${TIER_TABLE}`, import.meta.url), "utf8"));
 const MAIN = "refs/remotes/origin/main";
 const runUrl = env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL || "https://github.com"}/${repo}/actions/runs/${env.GITHUB_RUN_ID}` : undefined;
 
@@ -29,6 +30,8 @@ function log(obj) {
   console.log(line);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, "`" + line.replaceAll("`", "'") + "`\n\n");
 }
+
+if (!tiers.size) log({ warning: `${TIER_TABLE} unreadable: every scenario needs evidence` });
 
 async function post(sha, result) {
   log({ sha, ...result, dryRun });
@@ -47,17 +50,33 @@ function verifiedEdge(oldSha, newSha) {
   return carryCache.get(k);
 }
 
+// A train's members, read only for a train: the extra calls would otherwise run on every evaluation. A number in
+// Supersedes that is not a PR is skipped; any other read error stops the evaluation, so the gate never passes on
+// a partial member list.
+async function readTrainMembers(pr) {
+  if (!isTrain(pr)) return [];
+  const notFound = (e) => { if (/HTTP 404/.test(String(e))) return null; throw e; };
+  const [based, open, superseded] = await Promise.all([
+    gh.all(`/pulls?state=all&base=${encodeURIComponent(pr.head.ref)}`),
+    gh.all("/pulls?state=open&base=main"),
+    Promise.all(supersededPrs(pr.body).map((n) => gh.get(`/pulls/${n}`).catch(notFound))),
+  ]);
+  G.git(cwd, ["fetch", "-q", "--no-tags", "--filter=blob:none", "origin", `+refs/heads/main:${MAIN}`]);
+  return trainMembers(pr, { based, open, superseded: superseded.filter(Boolean), commits: G.commitsOnlyIn(cwd, pr.head.sha, MAIN) });
+}
+
 async function prResult(number) {
   const pr = await gh.get(`/pulls/${number}`);
   const head = pr.head.sha;
-  const [comments, reviews, files, runs, combined] = await Promise.all([
+  const [comments, reviews, files, runs, combined, members] = await Promise.all([
     gh.all(`/issues/${number}/comments`),
     gh.all(`/pulls/${number}/reviews`),
     gh.all(`/pulls/${number}/files`),
     gh.all(`/actions/runs?head_sha=${head}`, "workflow_runs", 500),
     gh.get(`/commits/${head}/status`),
+    readTrainMembers(pr),
   ]);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers });
   return { pr, result };
 }
 
