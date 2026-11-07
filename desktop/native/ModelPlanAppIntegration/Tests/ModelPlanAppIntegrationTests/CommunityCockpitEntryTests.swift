@@ -413,6 +413,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await composition.store.consume(.connection(.ready(context)));await composition.store.consume(.context(context))
         await composition.store.consume(.response(requestID:.string("cockpit"),.cockpit(.init(envelope:try .init(sessionId:context.sessionID,storeEpoch:context.floor.storeEpoch,consentGeneration:1,data:wire),delivery:context))))
         await coordinator.consume(.context(context));surface.show()
+        // show() opens the page from a task; only an open page has the coordinator's onClosed.
+        for _ in 0..<200 where page.onClosed == nil { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertNotNil(page.onClosed,"The cockpit page opened")
         surface.handle(.openField)
         XCTAssertTrue(surface.fieldIsOpen)
         page.discard()
