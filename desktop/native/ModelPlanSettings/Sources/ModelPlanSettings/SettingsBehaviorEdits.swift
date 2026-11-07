@@ -91,7 +91,7 @@ public enum SettingsHostIntent: Equatable, Sendable {
     case action(SettingsActionRequest)
     case shortcutPreferencesChanged(openCockpit: ShortcutChord, toggleDock: ShortcutChord)
     case notificationConsentChanged(previous: Bool, enabled: Bool)
-    case openPublicLink(SettingsPublicLink), checkForUpdates, previewFirstRun
+    case openPublicLink(SettingsPublicLink), openSystemSettings(SettingsSystemPane), checkForUpdates, previewFirstRun
     case firstRunCompleted(effects: [FirstRunEffect], loginRequest: SettingsActionRequest?)
 }
 /// A persisted user request, not an authorization to execute a system operation.
