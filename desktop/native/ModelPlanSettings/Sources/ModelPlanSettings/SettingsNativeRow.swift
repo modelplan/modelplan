@@ -142,6 +142,8 @@ import AppKit
         case .privacyLink: action = .request(.openLink(.privacy))
         case .repositoryLink: action = .request(.openLink(.repository))
         case .updateStatus: action = .request(.checkForUpdates)
+        case .loginSystemSettings: action = .request(.openSystemSettings(.loginItems))
+        case .notificationSystemSettings: action = .request(.openSystemSettings(.notifications))
         default: action = nil
         }
         if let action {
