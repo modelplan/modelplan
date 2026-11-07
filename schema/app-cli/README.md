@@ -264,6 +264,11 @@ engine that produces forecasts also reports `forecastProducerV1`, so the App can
 offer the forecast notification. The same capability adds `forecasts` to rows
 snapshots and changes, so the App can notify while the cockpit is closed.
 
+Clients can declare `cockpitModelsV1`, together with `cockpitDetailsV1`, to receive
+`details.publishedModels`: public data of every published model, in publication
+order, for the launch field and the frontier. `details.publication` keeps its
+three-model lineup. Without the capability the field is omitted.
+
 Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
 7/30-day sums per subscription and source, model and tool rankings, `daily` (last
 182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per

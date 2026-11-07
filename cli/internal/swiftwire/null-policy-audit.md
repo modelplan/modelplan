@@ -64,6 +64,7 @@ containers and failure ID retain their required-key checks.
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
+| CockpitDetails.PublishedModels | forbidden | Omission means not negotiated or nothing published; explicit null is rejected. |
 | CockpitDetails.Forecasts | forbidden | Omission means not negotiated or nothing to report; explicit null is rejected. |
 | RowsProjection.Forecasts | forbidden | Omission means not negotiated; explicit null is rejected. |
 | CockpitForecast.RunsOutAt | coalesced | Null means no run-out before the reset is forecast; it is never a past or invented moment. |

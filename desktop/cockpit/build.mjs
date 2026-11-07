@@ -46,6 +46,7 @@ if (official) {
   const assets=resolve(repo,'desktop/official-visuals');
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
+  await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
   // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
@@ -82,6 +83,8 @@ if (official) {
   notices.push('Official appearance/artwork: LicenseRef-ModelPlan-Visuals-1.0; see VISUAL-LICENSE.md.','Fonts: OFL-1.1; see fonts/*/OFL.txt and fonts/README.md.');
 } else {
   notices.push('Community edition excludes reserved artwork.');
+  // The launch field is official only; its page has no place in this edition.
+  for(const name of ['src/field-page.js','src/field-model.js'])await rm(resolve(output,name),{force:true});
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: MIT\nexport default null;\n');
 }
 await writeFile(resolve(output,'cockpit.css'),css);
