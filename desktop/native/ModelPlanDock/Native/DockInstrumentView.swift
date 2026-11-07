@@ -144,11 +144,6 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         overlay.add(pulse, forKey: "dock-notice-first-appearance"); CATransaction.commit()
         return true
     }
-    /// Existing material pixels for a destination ghost when the supplier has no vector hull.
-    public var registeredMovePreviewImage: CGImage? {
-        guard !community, !failed else { return nil }
-        return backgroundImage
-    }
     public var registeredHullPath: CGPath? {
         guard !failed else { return nil }
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
@@ -258,13 +253,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
+        setAccessibilityValue(nil)
         resetVisuals(); community = false; failed = true
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){setAccessibilityValue(nil);appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
@@ -521,6 +517,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
         let eventWindow=window,screenPoint=window?.convertPoint(toScreen:event.locationInWindow)
         func currentPoint()->NSPoint?{
             if let eventWindow,let screenPoint{

@@ -156,14 +156,16 @@ public struct EngineMenuRefreshResult {
     public var memberInstability:[String:Bool] {
         Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
     }
-    func installResetEvents(settings:SettingsStore,live:Bool) {
+    func installResetEvents(settings:SettingsStore,live:Bool,isolatedLedger:URL? = nil) {
         let base:URL
-        if live {
+        if let isolatedLedger {
+            base = isolatedLedger.deletingLastPathComponent()
+        } else if live {
             guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
             base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
-            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live)
+            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
             resetNotifier=notifier;notifier.start()
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
