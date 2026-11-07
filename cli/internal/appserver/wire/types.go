@@ -110,7 +110,8 @@ type RowsProjection struct {
 func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled bool, sourceEnabled ...bool) RowsProjection {
 	expose := len(sourceEnabled) > 0 && sourceEnabled[0]
 	members := len(sourceEnabled) > 1 && sourceEnabled[1]
-	result := project(value, expose, members)
+	today := len(sourceEnabled) > 3 && sourceEnabled[3]
+	result := project(value, expose, members, today)
 	if enabled {
 		if events != nil {
 			projected := ProjectResetEventLinks(*events, len(sourceEnabled) > 2 && sourceEnabled[2])
@@ -133,11 +134,11 @@ func ProjectResetEventLinks(events []rows.ResetEvent, enabled bool) []rows.Reset
 	return out
 }
 
-func Project(value rows.Projection) RowsProjection { return project(value, false, false) }
+func Project(value rows.Projection) RowsProjection { return project(value, false, false, false) }
 
-func project(value rows.Projection, expose, members bool) RowsProjection {
+func project(value rows.Projection, expose, members, today bool) RowsProjection {
 	result := RowsProjection{RowsVersion: value.RowsVersion, Rows: append([]rows.Row{}, value.Rows...), RowsSummary: value.RowsSummary}
-	if expose && members {
+	if expose && members && today {
 		return result
 	}
 	for i := range result.Rows {
@@ -147,6 +148,9 @@ func project(value rows.Projection, expose, members bool) RowsProjection {
 		result.Rows[i].Accounts = append([]rows.Account{}, result.Rows[i].Accounts...)
 		for j := range result.Rows[i].Accounts {
 			account := &result.Rows[i].Accounts[j]
+			if !today {
+				account.Today = nil
+			}
 			if !members {
 				account.RefreshNotBefore = nil
 			}

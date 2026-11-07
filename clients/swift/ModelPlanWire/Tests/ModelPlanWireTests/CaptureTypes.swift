@@ -6,6 +6,7 @@ import ModelPlanWire
 func decodeCapture(_ type: String, _ data: Data) throws {
     switch type {
     case "RowsAccount": _ = try WireDecoder.decode(RowsAccount.self, from: data)
+    case "RowsAccountToday": _ = try WireDecoder.decode(RowsAccountToday.self, from: data)
     case "RowsCredits": _ = try WireDecoder.decode(RowsCredits.self, from: data)
     case "RowsExpiryState": _ = try WireDecoder.decode(RowsExpiryState.self, from: data)
     case "RowsFailure": _ = try WireDecoder.decode(RowsFailure.self, from: data)
@@ -91,6 +92,7 @@ func decodeCapture(_ type: String, _ data: Data) throws {
 func roundTripCapture(_ type: String, _ data: Data) throws -> Data {
     switch type {
     case "RowsAccount": return try JSONEncoder().encode(WireDecoder.decode(RowsAccount.self, from: data))
+    case "RowsAccountToday": return try JSONEncoder().encode(WireDecoder.decode(RowsAccountToday.self, from: data))
     case "RowsCredits": return try JSONEncoder().encode(WireDecoder.decode(RowsCredits.self, from: data))
     case "RowsExpiryState": return try JSONEncoder().encode(WireDecoder.decode(RowsExpiryState.self, from: data))
     case "RowsFailure": return try JSONEncoder().encode(WireDecoder.decode(RowsFailure.self, from: data))

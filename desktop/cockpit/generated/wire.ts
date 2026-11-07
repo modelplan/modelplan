@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 6e0531514992f748ea85649ab72ccf6e16feb02a319ec860b4fe7a80b53b8217
+// Schema SHA-256: 32b562f933d1d90fb9cda65bc3e569874c2fae01ed9af8d3646614e0bc56711a
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -15,8 +15,16 @@ export type WireAccount = {
   readonly "resetCards"?: WireResetCards | null;
   readonly "route": "saved_login_api" | "runtime_rpc" | "local_log" | "api_key_api" | "local_sqlite" | "status_line" | "browser_session" | "manual" | "unknown";
   readonly "subscriptionRef": string | null;
+  readonly "today"?: WireAccountToday | null;
   readonly "valueState": "current" | "retained" | "none";
   readonly "windows": ReadonlyArray<WireWindow>;
+};
+
+export type WireAccountToday = {
+  readonly "bindingBasis": "source-wide-current-binding" | "session-binding";
+  readonly "generationTps"?: number | null;
+  readonly "observedOutputTokens"?: number | null;
+  readonly "runningSessions"?: number | null;
 };
 
 export type WireCockpitAccount = {
@@ -464,6 +472,16 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "today": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AccountToday"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "valueState": {
         "enum": [
           "current",
@@ -491,6 +509,55 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "freshUntil",
       "lastFailure",
       "windows"
+    ],
+    "type": "object"
+  },
+  "AccountToday": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingBasis": {
+        "enum": [
+          "source-wide-current-binding",
+          "session-binding"
+        ],
+        "type": "string"
+      },
+      "generationTps": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 0
+      },
+      "observedOutputTokens": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 1
+      },
+      "runningSessions": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "minimum": 1
+      }
+    },
+    "required": [
+      "bindingBasis"
     ],
     "type": "object"
   },
