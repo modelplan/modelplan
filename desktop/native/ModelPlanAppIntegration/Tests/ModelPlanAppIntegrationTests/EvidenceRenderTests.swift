@@ -48,6 +48,22 @@ private actor EvidenceEngine: EngineClient {
     }
     func testWriteRenders() async throws {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        func renderCard(_ content: DockCardContent, _ name: String) throws {
+            var style = StaticDockPreviewHost.prototypeCardStyle; style.showsActions = false
+            let cardView = DockCardView(frame: .zero)
+            try cardView.apply(content, style: style)
+            func fonts(_ v: NSView) -> [String] { ((v as? NSTextField).map { ["\($0.stringValue) | \($0.font?.fontName ?? "nil") | \($0.textColor?.description.prefix(40) ?? "")"] } ?? []) + v.subviews.flatMap(fonts) }
+            print("EVIDENCE", name, fonts(cardView))
+            let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(cardView.frame.width * 2), pixelsHigh: Int(cardView.frame.height * 2),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+            rep.size = cardView.frame.size
+            cardView.cacheDisplay(in: cardView.bounds, to: rep)
+            write(rep.cgImage, name)
+        }
+        let staticContent = DockCardContent(subscriptionID: "codex", name: "Codex", plan: "Synthetic", sourceAndAge: "Tool runtime · 1m ago", rows: [
+            .init(id: "quota:week", kind: .quota, label: "Weekly", value: "76%", detail: "resets 4d0h", remainingFraction: 0.76, tone: .normal, emphasised: true),
+            .init(id: "credits", kind: .reserve, label: "Reserve", value: "43 credits")])
+        try renderCard(staticContent, "card-before-app")
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: capture)) as? [String: Any])
         var projection = try XCTUnwrap(json["projection"] as? [String: Any])
@@ -97,6 +113,8 @@ private actor EvidenceEngine: EngineClient {
         rep.size = cardView.frame.size
         cardView.cacheDisplay(in: cardView.bounds, to: rep)
         write(rep.cgImage, "card")
+        try renderCard(try XCTUnwrap(try dock.cardContent(for: id)), "card-app-content")
+        try renderCard(staticContent, "card-static-after-app")
         await app.composition.stop(); dock.close()
     }
 }
