@@ -10,6 +10,25 @@ import ModelPlanEngineClient
     private func app(_ store:SettingsStore, cockpitEntryEnabled: Bool = false) -> EngineDockMenuApplication {
         EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/modelplan"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:cockpitEntryEnabled)
     }
+    /// A Hide that fails leaves the widget on screen, so the status menu says so; a later Hide clears it.
+    func testFailedHideIsShownAndAWorkingHideClearsIt() async throws {
+        struct WriteFailed: Error {}
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("hide-failure-"+UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at:root) }
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        _ = try await store.update { $0.showDock=true }
+        let entry=app(store);await entry.prepare()
+        addTeardownBlock { @MainActor in entry.composition.dock.close() }
+        await entry.hideDock(commit:{ _ in throw WriteFailed() })
+        XCTAssertEqual(entry.showFeedbackText(.english),"Could not hide Quota Widget. Check Settings and try again.")
+        let kept=await store.snapshot()
+        XCTAssertTrue(kept.preferences.showDock)
+        await entry.hideDock()
+        XCTAssertNil(entry.showFeedbackText(.english))
+        let hidden=await store.snapshot()
+        XCTAssertFalse(hidden.preferences.showDock)
+    }
+
     func testDragCommitSurvivesContentRebuildAndRestart() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }
@@ -54,7 +73,7 @@ import ModelPlanEngineClient
                 let en=language == .english
                 let cockpit = enabled ? (en ? "Open Cockpit" : "打开驾驶舱") : (en ? "Coming soon" : "即将推出")
                 let dock=entry.composition.dock.menu().items
-                XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Quota Widget" : "隐藏额度挂件"])
+                XCTAssertEqual(Array(dock.suffix(4)).map(\.title),[cockpit,en ? "Settings" : "设置",en ? "Close" : "关闭",en ? "Hide Quota Widget" : "隐藏额度挂件"])
                 XCTAssertEqual(dock.first { $0.title == cockpit }?.isEnabled, enabled)
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
                 XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","说明…","设置…","关于","退出"])
