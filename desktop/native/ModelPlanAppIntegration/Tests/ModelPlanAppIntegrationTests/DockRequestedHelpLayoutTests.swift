@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import AppKit
 import Foundation
 import XCTest
 import ModelPlanInstruments
@@ -76,6 +77,30 @@ import ModelPlanSettings
             let result = NeutralHelpUIRecipeProvider().presentation(for: input)
             let label = try XCTUnwrap(result.mapLabels.first { $0.anchorID == "nozzle" })
             XCTAssertEqual(label.text.contains("click to refresh"), available)
+        }
+    }
+
+    /// The packaged map showed "Number: quota left in the window selected for": the label's own
+    /// text field wrapped "this nozzle." onto a second line its frame had no room for.
+    func testEveryMapCaptionFitsTheTextFieldThatDrawsIt() throws {
+        let recipe = NeutralHelpUIRecipeProvider()
+        for language in [InstrumentLanguage.english, .chinese] {
+            let regions = HelpMapCatalog(language).entries(for: .dock).map(\.region)
+            let anchors = regions.enumerated().map { index, region in
+                DockRequestedHelpAnchor(id: region.rawValue, region: region,
+                    rect: CGRect(x: 1860, y: 120 + CGFloat(index) * 100, width: 44, height: 44), visible: true)
+            }
+            let input = try XCTUnwrap(DockRequestedHelpLayout.make(session: UUID(), viewport: CGSize(width: 1920, height: 120 + CGFloat(regions.count) * 100 + 80),
+                language: language, anchors: anchors, blocked: [], recipe: recipe, refreshAvailable: true))
+            let labels = recipe.presentation(for: input).mapLabels
+            XCTAssertEqual(labels.count, regions.count)
+            for label in labels {
+                let field = NSTextField(wrappingLabelWithString: label.text)
+                field.font = recipe.font(for: .caption); field.maximumNumberOfLines = 0
+                let drawn = label.frame.insetBy(dx: 8, dy: 5)
+                let needed = try XCTUnwrap(field.cell).cellSize(forBounds: CGRect(x: 0, y: 0, width: drawn.width, height: 10_000)).height
+                XCTAssertLessThanOrEqual(needed, drawn.height + 0.5, "\(language) \(label.id): \(label.text)")
+            }
         }
     }
 

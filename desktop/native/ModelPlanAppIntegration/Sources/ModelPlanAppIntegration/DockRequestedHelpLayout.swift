@@ -51,10 +51,14 @@ struct DockRequestedHelpAnchor: Equatable {
                 labelID = "extra." + anchor.id
                 map.supplements.append(.init(id: labelID, anchorID: anchor.id, text: text))
             }
+            // The label is a wrapping NSTextField inset 8 pt in the frame, and its text cell keeps
+            // another 2 pt of line-fragment padding a side. Measured without those 4 pt, a caption
+            // that just fits wraps its last words onto a line its one-line frame then clips.
+            let padding: CGFloat = 16 + 4
             let maxWidth = min(320, viewport.width - 32)
-            let measured = recipe.measure(text, width: maxWidth - 16, role: .caption)
-            let width = min(maxWidth, max(80, ceil(measured.width) + 16))
-            let height = ceil(recipe.measure(text, width: width - 16, role: .caption).height) + 10
+            let measured = recipe.measure(text, width: maxWidth - padding, role: .caption)
+            let width = min(maxWidth, max(80, ceil(measured.width) + padding))
+            let height = ceil(recipe.measure(text, width: width - padding, role: .caption).height) + 10
             guard let frame = HelpUIGeometry.placeCard(anchor: anchor.rect, size: CGSize(width: width, height: height),
                                                        viewport: viewport, blocked: obstacles) else { return nil }
             frames[labelID] = frame; obstacles.append(frame)
