@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver"
 	"github.com/modelplan/modelplan/cli/internal/appserver/queries"
@@ -74,7 +75,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	broker := &appserver.CredentialBroker{PathsFor: rawPaths, Offline: options.Offline, ReadOnly: options.ReadOnly}
 	paths := broker.Paths
 	shared, err := appserver.NewSharedBackend(appserver.SharedConfig{
-		Activity:         appActivity(st.Dir),
+		Activity: appActivity(st.Dir),
+		Reported: func(report quota.Report, now time.Time) {
+			if !options.ReadOnly {
+				observeQuotaHistory(st, report, now)
+			}
+		},
 		ResetPublication: func() (*digest.Digest, error) { d, _, err := publication.Load(st); return d, err },
 		Detect:           detectTools, Paths: paths, Offline: options.Offline, ReadOnly: options.ReadOnly,
 		Cleanup: func(scope string, forget bool) error {
