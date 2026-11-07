@@ -14,14 +14,16 @@ import subprocess
 import sys
 import time
 
+import book
 import candidate_config
 import candidate_scratch
 import guardian
+import subject_options
 
 SOURCE = re.compile(r"[0-9a-f]{40}\Z")
 
 
-def prepare(archive, manifest, template, parent, registry_path):
+def prepare(archive, manifest, template, parent, registry_path, readers=None, backup=None):
     with Path(manifest).open(encoding="utf-8") as stream:
         pin = json.load(stream)
     source, digest = pin.get("sourceSHA"), pin.get("sha256")
@@ -30,6 +32,14 @@ def prepare(archive, manifest, template, parent, registry_path):
     candidate_config.verify_archive(archive, digest)
     with Path(template).open(encoding="utf-8") as stream:
         config = json.load(stream)
+    # --readers/--backup fill the template's fields; a different value already there is refused.
+    config = subject_options.merge_flags(config, readers=readers, backup=backup)
+    if config.get("backup") == "product":
+        # Outside the scratch root, which cleanup removes: an unrestored backup must survive.
+        config.setdefault("backupDir", str(registry_path) + ".product-backup")
+    config.setdefault("runManifestPath", str(registry_path) + ".run-manifest.json")
+    if config.get("booking") is not None:
+        book.check_identity(config["booking"])
     profile = config.get("profile", "synthetic")
     if profile not in ("synthetic", "real") or config.get("launchMode", "direct") != "direct":
         raise ValueError("direct synthetic or real launch template required")
@@ -58,6 +68,7 @@ def prepare(archive, manifest, template, parent, registry_path):
         config.update(subjectKind="app-zip", launchMode="direct", profile=profile,
                       argv=[str(Path(archive).resolve())],
                       binarySHA256=digest, syntheticTmp=str(root / "tmp"))
+        subject_options.validate(config)
         if profile == "synthetic":
             config["syntheticHome"] = str(root / "home")
         config_path = root / "launch.json"
@@ -65,6 +76,7 @@ def prepare(archive, manifest, template, parent, registry_path):
             json.dump(config, stream, sort_keys=True)
         record = {"registry": registry, "sourceSHA": source, "packageSHA256": digest, "profile": profile,
                   "launchConfig": str(config_path), "stopPath": config["stopPath"],
+                  "runManifest": config["runManifestPath"], "backupDir": config.get("backupDir"),
                   "subjectPidPath": config["subjectPidPath"],
                   "noSubjectReceipt": str(Path(str(registry_path) + ".no-subject.json")),
                   "candidateCleanupReceipt": config["candidateCleanupReceipt"]}
@@ -87,6 +99,7 @@ def run(record, receipt_path, *, runner=subprocess.run, clock=time.time, wait=ti
             raise ValueError("candidate hash identity changed")
         candidate_config.verify_archive(config["argv"][0], record["packageSHA256"])
         result = runner([sys.executable, str(Path(__file__).with_name("launch.py")), "--config", str(config_path), "--execute"], check=False)
+        # launch.py writes the run manifest (environment, backup, restore) before it exits.
         status = result.returncode
         # launch.py reserves the PID file before it can spawn the subject. Only
         # after that launcher has exited may absence of the reservation attest
@@ -122,7 +135,7 @@ def run(record, receipt_path, *, runner=subprocess.run, clock=time.time, wait=ti
     receipt = {"sourceSHA": record["sourceSHA"], "packageSHA256": record["packageSHA256"],
                "profile": record.get("profile", "synthetic"),
                "startedAt": started, "stoppedAt": clock(), "launchExit": status, "cleaned": cleaned,
-               "error": failure}
+               "error": failure, "runManifest": record.get("runManifest")}
     with Path(receipt_path).open("x", encoding="utf-8") as stream:
         json.dump(receipt, stream, sort_keys=True)
     if not cleaned:
@@ -138,11 +151,14 @@ def main():
     prep = sub.add_parser("prepare")
     for flag in ("archive", "manifest", "template", "scratch-parent", "registry"):
         prep.add_argument("--" + flag, required=True)
+    prep.add_argument("--readers", help="off | passive | comma list of tool IDs (zcode = zai)")
+    prep.add_argument("--backup", choices=subject_options.BACKUPS)
     execute = sub.add_parser("run")
     execute.add_argument("--registry", required=True); execute.add_argument("--receipt", required=True)
     args = parser.parse_args()
     if args.action == "prepare":
-        result = prepare(args.archive, args.manifest, args.template, args.scratch_parent, args.registry)
+        result = prepare(args.archive, args.manifest, args.template, args.scratch_parent, args.registry,
+                         readers=args.readers, backup=args.backup)
     else:
         with Path(args.registry).open(encoding="utf-8") as stream:
             result = run(json.load(stream), args.receipt)

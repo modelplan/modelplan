@@ -13,7 +13,10 @@ Run it in the background right after `book.py start`, before `release.py` and `l
   project-scoped scan instead: the launcher records the run's exact executable path, its scratch
   prefix and the PID plus start time of each helper it spawns in the reservation, and the guardian
   (once that launcher is gone) stops any owned process inside that scope and rescans. An empty scan
-  reports `subject: never-started`. A reservation without a scope stays unconfirmed. Process names
+  reports `subject: never-started`. A reservation without a scope stays unconfirmed. A launcher that
+  exited non-zero before reserving anything (for example an admission refusal) leaves a run-bound
+  `<subject-pid-file>.no-subject.json`; once that launcher is gone and no reservation exists, it is
+  also closed as `never-started`. Without that proof a missing reservation is `none`. Process names
   and other processes' environments are never read.
 - Exit status 0 means closure is verified and the booking may be finished as cleaned: either the
   run ended normally with the subject confirmed gone, or the scan proved the subject never started.
@@ -229,11 +232,36 @@ def terminate(pid_file, grace=10.0, lookup=identity, send=os.kill, clock=time.mo
     return stop_identities([record], grace, lookup, send, clock, sleep)
 
 
+def no_subject_proof(pid_file, lease, lookup=identity, clock=time.monotonic, sleep=time.sleep, launcher_wait=5.0):
+    """True when launch.py proved it exited before reserving: its run-bound proof matches this lease,
+    records a non-zero exit, its launcher identity is gone, and still no reservation exists."""
+    proof_path = pid_file.with_name(pid_file.name + '.no-subject.json')
+    if lease is None or proof_path.is_symlink() or not proof_path.is_file():
+        return False
+    try:
+        proof = json.loads(proof_path.read_text())
+    except (OSError, ValueError):
+        return False
+    launcher = proof.get('launcher')
+    if (proof.get('runID') != lease.get('runID') or proof.get('epoch') != lease.get('epoch')
+            or proof.get('subjectPidPath') != str(pid_file) or type(proof.get('launcherExit')) is not int
+            or proof['launcherExit'] == 0 or not isinstance(launcher, dict)):
+        return False
+    end = clock() + launcher_wait
+    while cleanup.matches(lookup(launcher.get('pid')), launcher):
+        if clock() >= end:
+            return False
+        sleep(0.1)
+    with registration(pid_file):
+        return not pid_file.exists()
+
+
 def close(pid_file, lookup=identity, send=os.kill, scan=None, clock=time.monotonic, sleep=time.sleep,
-          launcher_wait=5.0, grace=5.0, settle=1.0):
+          launcher_wait=5.0, grace=5.0, settle=1.0, lease=None):
     """Closure of this booking's subject: returns (closed, subject).
 
-    subject: `none` (no reservation), `registered` (the owned PID was stopped/confirmed), or, for a
+    subject: `none` (no reservation), `never-started` (no reservation, plus the launcher's run-bound
+    pre-reservation exit proof for `lease`), `registered` (the owned PID was stopped/confirmed), or, for a
     subject that never registered, `never-started` / `unregistered-stopped` when the scope scan is
     empty, otherwise an unconfirmed `unregistered-*` / `unreadable` state.
     Only after the reserving launcher is gone (it alone can still register or spawn) does the scan
@@ -245,8 +273,13 @@ def close(pid_file, lookup=identity, send=os.kill, scan=None, clock=time.monoton
             return json.loads(pid_file.read_text())
         except (OSError, ValueError):
             return None
-    if pid_file is None or not pid_file.exists():
+    if pid_file is None:
         return True, 'none'
+    if not pid_file.exists():
+        if no_subject_proof(pid_file, lease, lookup, clock, sleep, launcher_wait):
+            return True, 'never-started'
+        if not pid_file.exists():
+            return True, 'none'
     record = read()
     if record is None:
         return False, 'unreadable'
@@ -285,10 +318,10 @@ def close(pid_file, lookup=identity, send=os.kill, scan=None, clock=time.monoton
 def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
         clock=time.time, sleep=time.sleep, running=lambda: True, kill=close):
     """Returns (outcome, closed, subject); `kill(pid_file)` returns (closed, subject)."""
-    outcome = 'error'
+    outcome = 'error'; bound = None
     try:
         lease = json.loads(lease_path.read_text())
-        identity = {k: lease.get(k) for k in IDENTITY}
+        identity = bound = {k: lease.get(k) for k in IDENTITY}
         if any(v in (None, '') for v in identity.values()):
             raise ValueError('lease is missing identity fields')
         if not 0 < interval <= 1:
@@ -314,7 +347,10 @@ def run(lease_path, stop_path, interval=1.0, reserve=30.0, pid_file=None,
             stop(stop_path, 'guardian-' + outcome, clock())
         except OSError:
             pass  # still stop the subject; launch.py also stops on a stale heartbeat
-        closed, subject = kill(pid_file)
+        if kill is close:
+            closed, subject = close(pid_file, lease=bound)  # bound: None when the lease never parsed
+        else:
+            closed, subject = kill(pid_file)
     return outcome, closed, subject
 
 
@@ -354,7 +390,7 @@ def main(argv=None):
             lease = json.loads(args.lease.read_text())
             candidate = json.loads(args.candidate_registry.read_text())
             registry = candidate.get('registry', candidate)
-            if subject == 'none':
+            if not args.subject_pid_file.exists():  # 'none' or a launcher-proven 'never-started'
                 # A missing PID file alone is not proof: the launcher could
                 # still be preparing. Require the run-bound receipt it writes
                 # only after launch.py exited before registering a subject.
