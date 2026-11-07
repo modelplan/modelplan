@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
+	"github.com/modelplan/modelplan/cli/internal/consent"
 )
 
 // The real binary on a schema-1 profile shaped like the owner's: a native Gemini allow with
@@ -40,8 +41,10 @@ func TestLegacySchemaOneProfileReadsThroughAppServer(t *testing.T) {
 	c.send(t, 2, "rows/subscribe", wire.Empty{})
 	c.response(t, 2)
 	state := filepath.Join(home, "cache", "observed", "readers", "gemini.json")
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	// A read that lost the reader lock under load waits ten minutes, so keep asking.
+	deadline := time.Now().Add(60 * time.Second)
+	nextAsk := time.Now().Add(2 * time.Second)
+	for id := 3; ; {
 		// The file exists as soon as the attempt is reserved; wait for its recorded result.
 		var saved struct {
 			Entries []json.RawMessage `json:"entries"`
@@ -51,6 +54,11 @@ func TestLegacySchemaOneProfileReadsThroughAppServer(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("the legacy Gemini grant was never read")
+		}
+		if time.Now().After(nextAsk) {
+			c.send(t, id, "refresh/request", wire.RefreshRequestParams{Scopes: []string{consent.ScopeGeminiAccountUsageSavedLogin}})
+			id++
+			nextAsk = time.Now().Add(2 * time.Second)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
