@@ -695,12 +695,13 @@ extension P1ExactPlacementTests {
     /// Build 7 showed "ini" (Gemini) and "k B" clipped by the ring: the whole name was drawn
     /// into the 0.27 x D glyph box.
     func testG332NoRingLabelIsClippedForAnyKnownVendor() async throws {
-        let marked: Set<String> = ["openai", "claude", "cursor", "copilot", "kimi", "opencode", "deepseek"]
+        let marked: Set<String> = ["openai", "claude", "cursor", "copilot", "kimi", "opencode", "deepseek", "gemini", "grok", "x", "qwen", "kiro",
+            "minimax", "xiaomi", "antigravity", "amp", "droid", "zai", "zhipu"]
         XCTAssertEqual(["Gemini", "Grok", "GLM", "Z.ai", "智谱清言", "Work Bench B", "Grok · 2"].map(DockVendorFallback.mark), ["Ge", "Gr", "GL", "Za", "智谱", "Wo", "Gr"])
         let vendors: [(String, String)] = [("openai", "Codex"), ("claude", "Claude"), ("cursor", "Cursor"), ("copilot", "Copilot"),
             ("kimi", "Kimi"), ("opencode", "OpenCode"), ("gemini", "Gemini"), ("grok", "Grok"), ("qwen", "Qwen"), ("kiro", "Kiro"),
             ("minimax", "MiniMax"), ("antigravity", "Antigravity"), ("amp", "Amp"), ("zai", "Z.ai"), ("zhipu", "智谱清言"),
-            ("deepseek", "DeepSeek"), ("unknown-vendor", "Work Bench B")]
+            ("deepseek", "DeepSeek"), ("x", "X"), ("xiaomi", "Xiaomi"), ("droid", "Droid"), ("unknown-vendor", "Work Bench B")]
         let output = try visualOutput("g3-32")
         for size in SettingsSize.allCases {
             for batch in stride(from: 0, to: vendors.count, by: 4) {

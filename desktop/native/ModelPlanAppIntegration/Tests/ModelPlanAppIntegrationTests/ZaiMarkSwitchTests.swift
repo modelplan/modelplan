@@ -27,7 +27,7 @@ import XCTest
             await coordinator.reload()
             XCTAssertNil(host.lastAppearanceError)
             let station = try XCTUnwrap(host.dockView.presentedSkinForChecks?.stations.first { $0.subscriptionID == "zhipu" })
-            XCTAssertEqual(station.glyphs["zhipu"], enabled ? "logo-zai-white" : nil)
+            XCTAssertEqual(station.glyphs["zhipu"], enabled ? "logo-zai-white" : "logo-zhipu")
             XCTAssertEqual(station.fallbackVendorName, true)
             XCTAssertNotNil(host.dockView.presentedImageForChecks)
         }
@@ -56,7 +56,7 @@ import XCTest
         }
     }
 
-    func testDisabledSwitchActuallyDrawsTextInsteadOfMark() throws {
+    func testDisabledSwitchDrawsZhipusOwnMark() throws {
         let now = Date(timeIntervalSince1970: 1_792_506_300)
         var input = DockInstrumentInput(id: "zhipu", name: "GLM", windows: [])
         input.vendorResourceKey = "zhipu"
@@ -70,7 +70,8 @@ import XCTest
             let renderer = DockInstrumentRenderer(resources: official, supplementalResources: thirdParty)
             let skin = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, zaiMarkEnabled: enabled)
             let rendered = try renderer.render(skin: skin, readings: ["zhipu": reading], scale: 2)
-            XCTAssertEqual(rendered.metrics.contains { $0.text == DockVendorFallback.mark("GLM") }, !enabled)
+            XCTAssertEqual(skin.stations.first { $0.subscriptionID == "zhipu" }?.glyphs["zhipu"], enabled ? "logo-zai-white" : "logo-zhipu")
+            XCTAssertFalse(rendered.metrics.contains { $0.text == DockVendorFallback.mark("GLM") })
             XCTAssertGreaterThan(rendered.image.width, 0)
         }
     }
