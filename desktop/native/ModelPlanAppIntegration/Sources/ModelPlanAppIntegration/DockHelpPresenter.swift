@@ -163,7 +163,7 @@ import ModelPlanSettings
         return viewport
     }
 
-    func showPreparedMap(surface: DockHelpSurface, dismissMap: @escaping @MainActor () -> Void) -> Bool {
+    func showPreparedMap(surface: DockHelpSurface, dismissMap: @escaping @MainActor (HelpUIDismissReason?) -> Void) -> Bool {
         guard !retired, currentSurfaceValue == surface, isCurrent(surface), let window = panel,
               layer.presentation?.mapHeader != nil else { return false }
         let token = generation
@@ -172,19 +172,20 @@ import ModelPlanSettings
             window.orderOut(nil); return false
         }
         var optionHeld = NSEvent.modifierFlags.contains(.option)
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self] event in
-            guard let self, !self.retired, self.generation == token, self.currentSurfaceValue == surface else { return event }
-            if event.type == .keyDown && event.keyCode == 53 { dismissMap(); return nil }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .flagsChanged]) { [weak self, weak window] event in
+            guard let self, let window, window.isVisible, !self.retired, self.generation == token,
+                  self.currentSurfaceValue == surface, self.isCurrent(surface) else { return event }
+            if event.type == .keyDown && event.keyCode == 53 { dismissMap(.escape); return nil }
             if event.type == .flagsChanged {
                 let held = event.modifierFlags.contains(.option)
-                if optionHeld && !held { dismissMap() }
+                if optionHeld && !held { dismissMap(nil) }
                 optionHeld = held
             }
-            if event.type == .leftMouseDown || event.type == .rightMouseDown { dismissMap() }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown { dismissMap(.pointer) }
             return event
         }
         deactivateObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { dismissMap() }
+            MainActor.assumeIsolated { dismissMap(nil) }
         }
         return true
     }

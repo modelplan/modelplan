@@ -12,6 +12,11 @@ import ModelPlanOfficialDock
 import ModelPlanCommunityHost
 
 /// Geometry returned by an injected appearance, already scaled in view-local points.
+struct DockHoverStation {
+    let inward: CGVector
+    let pitch: CGFloat
+}
+
 public struct StaticDockGeometry {
     public var hoverRects: [CGRect]
     public var sliverLength: CGFloat
@@ -25,6 +30,9 @@ public struct StaticDockGeometry {
     public var noticeStationBySubscription: [String: String] = [:]
     public var noticeStationPositions: [String: CGFloat] = [:]
     public var noticeUnit: CGFloat = 1
+    /// Normalized along-axis member pitch ranges registered by the active appearance.
+    public var quotaPitchRanges: [String: ClosedRange<Double>] = [:]
+    var hoverStations: [String: DockHoverStation] = [:]
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -61,7 +69,57 @@ public struct StaticDockGeometry {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+@MainActor private final class DockIgnitionButton: NSButton {
+    var onHelpFocusChanged: (() -> Void)?
+    private var keyboardFocused = false
+    private var assistiveFocused = false
+
+    private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
+    var hasHelpFocus: Bool { canPresentHelp && (keyboardFocused || assistiveFocused) }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        updateHelpFocus(keyboard: canPresentHelp)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        updateHelpFocus(keyboard: false)
+        return true
+    }
+
+    override func setAccessibilityFocused(_ focused: Bool) {
+        super.setAccessibilityFocused(focused)
+        updateHelpFocus(assistive: focused && canPresentHelp)
+    }
+
+    override func viewDidHide() {
+        clearHelpFocus()
+        super.viewDidHide()
+    }
+
+    func clearHelpFocus() {
+        setAccessibilityHelp(nil)
+        updateHelpFocus(keyboard: false, assistive: false)
+    }
+
+    private func updateHelpFocus(keyboard: Bool? = nil, assistive: Bool? = nil) {
+        let wasFocused = keyboardFocused || assistiveFocused
+        if let keyboard { keyboardFocused = keyboard }
+        if let assistive { assistiveFocused = assistive }
+        if wasFocused != (keyboardFocused || assistiveFocused) { onHelpFocusChanged?() }
+    }
+}
+
 public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
+
+struct DockHelpInteraction: Equatable {
+    enum Source: Equatable { case pointer, keyboard }
+    let anchor: DockRequestedHelpAnchor
+    let source: Source
+    let receipt = UUID()
+}
 
 /// Interactive native Dock companion shared by production and explicit self-tests.
 /// The static instrument renderer does not disable native panels, edge/hide, drag/drop or menus.
@@ -77,8 +135,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
-    public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
+    public var cockpitEntryEnabled = true {
+        didSet {
+            consoleButton.isEnabled = cockpitEntryEnabled
+            cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
+            guard oldValue != cockpitEntryEnabled else { return }
+            if let presentation = edge.presentation { publishDockHelpSurface(presentation) }
+            if !cockpitEntryEnabled { consoleButton.clearHelpFocus() }
+        }
+    }
     public var showSettings: (() -> Void)?
+    var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     public var requestHideDock:(() -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
@@ -104,6 +171,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var attentionSignals: [DockSubscriptionSignal] = []
     private var attentionWasExpanded = false
     private var locateLayer: CAShapeLayer?
+    private var pendingUserReveal = false
+    private var cockpitPresentationBlocked = false
     private var locateTask: Task<Void, Never>?
     private var locating = false
     public private(set) var menuNotice: DockNotice?
@@ -146,7 +215,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var pointerInputView: PulsePanelPointerSurface { pointerSurface }
     var edgePresentation: DockEdgePresentation? { edge.presentation }
     var nativePanel: NSPanel? { panel }
-    var nativeMovePreviewPanel: NSPanel? { outlinePanel }
+    #if MODELPLAN_DOCK_NATIVE_JOURNEY
+    var suppressJourneyOrderIn = false
+    #endif
+
     #if DEBUG
     var detachedCardForChecks: DockCardView? { !createsNativePanels && !card.isHidden ? card : nil }
     #endif
@@ -163,6 +235,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var dockHelpSurfaceDidChange: ((DockHelpSurface?) -> Void)? {
         didSet { dockHelpSurfaceDidChange?(lastDockHelpSurface) }
     }
+    private(set) var currentDockHelpInteraction: DockHelpInteraction?
+    var dockHelpInteractionDidChange: ((DockHelpInteraction?) -> Void)?
     private var lastDockHelpSurface: DockHelpSurface?
     private var dockHelpInputGeneration: UInt64?
     var currentDockHelpSurface: DockHelpSurface? {
@@ -285,6 +359,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     #endif
     private var preferences = SettingsPreferences()
+    private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
     }
@@ -294,7 +369,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
     /// Synthetic offscreen captures may select a deterministic backing scale.
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
-    private var permitted = false, retired = false, retiring = false, rendering = false, menuOpen = false
+    private var permitted = false, retired = false, retiring = false, rendering = false
+    private weak var trackedDockMenu: NSMenu?
+    private var dockMenuGeneration: UInt64 = 0
+    private var menuOpen: Bool { trackedDockMenu != nil }
     private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -309,8 +387,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if menu.delegate === self { return true }
         return (menu.delegate as? DockSliverMenu)?.owner === self
     }
-    private var outlinePanel: NSPanel?
-    private let outlineView = DockSnapOutlineView()
+    private var appearanceDisplay: DockDisplayArea?
     private var cardID: String?
     private var cardPresentedRevision: UInt64?, cardPresentedGeneration: UInt64?
     private var fallbackCardLeaveTask: Task<Void, Never>?
@@ -325,6 +402,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private var interactionPreviewOrder: [String]?
     private var interactionOriginalActions: [(DockInstrumentView, ((DockInstrumentAction) -> Void)?, Bool)] = []
     private let overflowTray = DockOverflowTrayView(frame: .zero)
+    var detachedOverflowForChecks: DockOverflowTrayView? { createsNativePanels ? nil : overflowTray }
     private let overflowScroll = NSScrollView(frame: .zero)
     private var overflowPanel: NSPanel?
     private var interactionView: DockInstrumentView {
@@ -370,7 +448,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let catalogue = model?.inputs.map(\.id) ?? []
         let expanded = edge.presentation?.state == .expanded
         let active = permitted && !retired && !rendering && preferences.showDock &&
-            appearance != nil && view.interactionProjectionAvailable && model != nil
+            env.presence.cockpitClosed && appearance != nil && view.interactionProjectionAvailable && model != nil
         var inside: Bool?
         if let place, let pointer = env.pointer,
            let display = env.displays.first(where: { $0.id == place.displayID }) {
@@ -406,6 +484,48 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             active: active, reducedMotion: application?.effective.reduceMotion ?? true, edge: orientation, contents: contents)
     }
 
+    private func updateNozzleMagnification() {
+        let displayed = interactionView
+        let views = [dockView] + alternateViews
+        for view in views where view !== displayed { view.setNozzlePoses([:]) }
+        guard permitted, !retired, edge.presentation?.state == .expanded, !edge.isBackgroundPressed,
+              interactionController?.presentation?.reorder == nil, preferences.magnification != .none,
+              application?.effective.reduceMotion == false, let id = interactionHoveredID,
+              let hovered = displayed.interactionAnchor(id) else { displayed.setNozzlePoses([:]); return }
+        let stations = presentationGeometry.hoverStations
+        let horizontal = edge.presentation?.placement?.edge == .bottom
+        let diameter = preferences.size.nozzleDiameter
+        var along = horizontal ? hovered.midX : hovered.midY
+        if let window = displayed.window, let pointer = environment().pointer {
+            let local = displayed.convert(window.convertPoint(fromScreen: pointer), from: nil)
+            along = horizontal ? local.x : local.y
+        }
+        var poses = [String: DockNozzlePose]()
+        for (member, station) in stations {
+            let scale: CGFloat
+            let offset: CGPoint
+            switch preferences.magnification {
+            case .none: continue
+            case .subtle:
+                guard member == id, let hull = displayed.registeredHullBounds else { continue }
+                let dx = hull.midX - hovered.midX, dy = hull.midY - hovered.midY
+                let distance = hypot(dx, dy)
+                scale = 1.15
+                offset = distance > 0 ? CGPoint(x: 6 * dx / distance, y: 6 * dy / distance) : .zero
+            case .strong:
+                guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
+                let centre = horizontal ? anchor.midX : anchor.midY
+                let influence = max(0, 1 - abs(along - centre) / (1.6 * station.pitch))
+                guard influence > 0 else { continue }
+                scale = (1000 * (1 + 0.5 * influence * influence * (3 - 2 * influence))).rounded() / 1000
+                let shift = (scale - 1) * (diameter / 2 + 4)
+                offset = CGPoint(x: station.inward.dx * shift, y: station.inward.dy * shift)
+            }
+            poses[member] = .init(scale: scale, offset: offset)
+        }
+        displayed.setNozzlePoses(poses)
+    }
+
     @discardableResult func sweepRefresh(_ id: String) -> Bool {
         guard permitted, !retired, preferences.showDock,
               model?.inputs.contains(where: { $0.id == id }) == true else { return false }
@@ -416,6 +536,19 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard !retired, interactionController !== controller else { return }
         if let previous = interactionController { uninstallInteraction(previous) }
         interactionController = controller
+        controller.onOrderAnnouncement = { [weak self] id, position, count in
+            guard let self, let item = self.model?.inputs.first(where: { $0.id == id }) else { return }
+            let name = self.memberSafePreferences.applying(to: item).alias ?? item.name
+            let message = self.preferences.language == .english
+                ? "\(name), position \(position + 1) of \(count)"
+                : "\(name)，第 \(position + 1) 项，共 \(count) 项"
+            let view = self.interactionView
+            view.setAccessibilityValue(message)
+            if self.createsNativePanels {
+                NSAccessibility.post(element: view, notification: .announcementRequested,
+                    userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            }
+        }
         #if DEBUG && MODELPLAN_E2E_JOURNEY
         journeyOwnsCardController=false;journeyHoverID=nil
         #endif
@@ -433,6 +566,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 guard let self, let view, self.interactionView === view else { return }
                 self.interactionHoverRevision &+= 1
                 self.interactionHoveredID = id
+                self.updateNozzleMagnification()
             }
             events.insideMainDrop = { [weak self, weak view] point in
                 guard let self, let view, self.interactionView === view, let window = view.window,
@@ -473,6 +607,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func uninstallInteraction(_ controller: DockInteractionController) {
         guard interactionController === controller else { return }
         controller.onPresent = nil
+        controller.onOrderAnnouncement = nil
         for (index, original) in interactionOriginalActions.enumerated() {
             let (view, action, keyboard) = original
             if index < interactionEvents.count, view.nozzleEventDelegate === interactionEvents[index] {
@@ -490,24 +625,32 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
 
     private func renderInteraction(_ value: DockInteractionPresentation) {
+        defer { publishDockHelpInteraction() }
         guard permitted, !retired else { dismissCard(); overflowPanel?.orderOut(nil); return }
         let preview = value.reorder?.order
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
+        updateNozzleMagnification()
         if let id = value.card.subscriptionID, let content = value.content {
             showCard(id, supplied: content)
         } else {
             dismissCard()
         }
-        guard !value.overflowIDs.isEmpty, let model else { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
+        guard !value.overflowIDs.isEmpty, let model else {
+            // Retire the rows, keeping their host bindings for the next open.
+            try? overflowTray.apply([])
+            overflowPanel?.orderOut(nil)
+            return
+        }
         let rows = Dictionary(uniqueKeysWithValues: model.inputs.map { ($0.id, $0) })
         let entries = value.overflowIDs.compactMap { id -> DockOverflowEntry? in
-            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: Double(preferences.redBelow)) else { return nil }
+            guard let input = rows[id], let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to: input), now: currentDate(), redBelow: effectiveRedBelow) else { return nil }
             let help = preferences.language == .english ? "Use Option-arrow keys to reorder this subscription." : "使用 ⌥ 方向键调整此订阅的顺序。"
             return DockOverflowEntry(id: id, label: reading.alias ?? reading.name, value: reading.readout, dragHelp: help)
         }
-        do { try overflowTray.apply(entries) } catch { overflowTray.dispose(); overflowPanel?.orderOut(nil); return }
+        do { try overflowTray.apply(entries) } catch { overflowPanel?.orderOut(nil); return }
         overflowTray.edge = nativeEdge(preferences.dockEdge); overflowTray.keyboardNavigationEnabled = true
-        guard createsNativePanels, let anchor = panel?.frame, let screen = panel?.screen else { return }
+        guard createsNativePanels, let anchor = panel?.frame,
+              let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { return }
         if overflowPanel == nil { overflowPanel = makePanel() }
         guard let overflowPanel else { return }
         let safe = screen.visibleFrame
@@ -527,7 +670,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
-    private let consoleButton = NSButton(frame: .zero)
+    private let consoleButton = DockIgnitionButton(frame: .zero)
     private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
@@ -560,6 +703,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.setAccessibilityIdentifier("dock.ignition")
+        consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
         cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
@@ -590,6 +735,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
     private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
@@ -602,10 +748,21 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
+        edge.prepareDragDisplay = { [weak self] display in
+            guard let self, self.appearanceDisplay != display, !self.rendering else { return }
+            self.rendering = true
+            defer { self.rendering = false }
+            self.rebuildPass(self.inputGeneration, carriedTo: display)
+        }
+        edge.onDragCancelled = { [weak self] in self?.rebuild() }
         edge.onCommittedPlacement = { [weak self] value in
             guard let self, let next = SettingsDockEdge(rawValue: String(describing: value.edge)) else { return }
-            if let id = value.displayID { self.commitDisplayPlacement?(id, next, value.alongFraction) }
-            self.commitPlacement?(next, value.alongFraction)
+            if let id = value.displayID, let commit = self.commitDisplayPlacement {
+                if self.preferences.followActiveDisplay { self.followedDisplayID = id }
+                commit(id, next, value.alongFraction)
+            } else {
+                self.commitPlacement?(next, value.alongFraction)
+            }
         }
     }
     public func apply(_ value: SettingsApplication) {
@@ -617,7 +774,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        if !preferences.showDock { clearLocateHighlight(); dismissCard() }
+        if !preferences.showDock { pendingUserReveal = false; clearLocateHighlight(); dismissCard() }
         if preferences.revealMilliseconds != oldReveal {
             let saved = edge.preference
             edge.stop(); edge.onPresent = nil; edge.onCommittedPlacement = nil
@@ -714,7 +871,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         inputGeneration &+= 1
         permitted = allowed
         if allowed { rebuild(); edge.start() }
-        else { clearLocateHighlight(); workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil); hideMovePreview() }
+        else { retireTrackedDockMenu(); clearLocateHighlight(); workingDriver?.stop(); pointerSurface.stop(); displayFollower.stop(); followedDisplayID = nil; edge.stop(); dismissCard(); panel?.orderOut(nil) }
         bindInteractionInput(); interactionController?.refresh()
         syncDisplayFollower()
     }
@@ -746,7 +903,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private func rebuild() {
         guard !retired, !retiring, application != nil else { return }
         rebuildPending = true
-        guard !rendering else { return }
+        guard !rendering, !edge.isBackgroundPressed, !edge.isPublishingRelease else { return }
         rendering = true
         defer { rendering = false; bindInteractionInput(); interactionController?.refresh() }
         while rebuildPending, !retired {
@@ -759,11 +916,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard inputGeneration == generation else { rebuildPending = true; return false }
         return true
     }
-    private func rebuildPass(_ generation: UInt64) {
-        let choices = NSScreen.screens.enumerated().map { index, screen in
-            SettingsDisplayChoice(id: displayID(screen, index: index), name: screen.localizedName)
-        }
-        if choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
+    private func rebuildPass(_ generation: UInt64, carriedTo: DockDisplayArea? = nil) {
+        let displayFacts = sampleEnvironment()
+        let topology = topology(of: displayFacts)
+        let choices = topology.displays.map { SettingsDisplayChoice(id: $0.id, name: $0.name ?? $0.id) }
+        if carriedTo == nil, choices != lastDisplayChoices { lastDisplayChoices = choices; displayChoicesChanged?(choices) }
         guard passIsCurrent(generation) else { return }
         let now = currentDate()
         let facts = CommunityReaderFactsBinding.make(snapshot: snapshot, diagnostics: diagnostics, capabilities: readerCapabilities)
@@ -774,7 +931,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         contentMenuStatusLines = content.menuStatusLines
         contentEmptyText = content.emptyText
         let key = next.subscriptions.map { "\($0.id)|\($0.name.english)|\($0.source)|\($0.isUnstable)" }.joined(separator: "\n")
-        if key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
+        if carriedTo == nil, key != catalogueKey { catalogueKey = key; catalogueChanged?(next.subscriptions) }
         guard passIsCurrent(generation) else { return }
         let byID = Dictionary(uniqueKeysWithValues: next.inputs.map { ($0.id, $0) })
         let canonicalOrder = (try? passPreferences.presentedSubscriptionIDs(next.inputs.map(\.id))) ?? next.inputs.map(\.id)
@@ -786,20 +943,19 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             var value = passPreferences.applying(to: input)
             value.unavailableReason=next.presentationRows[input.id]?.reason
             if let signal = workingSignals[input.id] { value.working = signal }
-            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: Double(passPreferences.redBelow)) else { return nil }
+            guard let reading = try? DockInstrumentProjection.evaluate(value, now: now, redBelow: effectiveRedBelow) else { return nil }
             if !createsNativePanels, let fixtureStatus = comparisonStatuses[input.id] { return reading.comparisonFixture(status: fixtureStatus) }
             return reading
         }
         dockView.requestedNozzleDiameter = passPreferences.size.nozzleDiameter
         alternateViews.forEach { $0.requestedNozzleDiameter = passPreferences.size.nozzleDiameter }
-        let backingScale = captureBackingScaleForChecks.flatMap { (1...2).contains($0) ? $0 : nil } ?? destinationBackingScale()
+        let followed = topology.display(followedDisplayID) ?? displayFacts.pointer.flatMap { topology.containing($0) }
+        let destination = passPreferences.followActiveDisplay ? followed?.id : passPreferences.dockDisplayID
+        let display = carriedTo ?? PulseRestingPlacement.display(preference: .init(displayID: destination),
+            displays: topology.displays, pointer: nil, primaryID: topology.primaryID)
+        let backingScale = captureBackingScaleForChecks.flatMap { (1...2).contains($0) ? $0 : nil } ?? display?.backingScale ?? 1
         dockView.presentationBackingScale = backingScale
         alternateViews.forEach { $0.presentationBackingScale = backingScale }
-        let displayFacts = environment()
-        let appearancePrimary = displayFacts.primaryDisplayID
-        let appearanceFollowed = followedDisplayID ?? displayFacts.pointer.flatMap { point in displayFacts.displays.first { $0.frame.contains(point) }?.id } ?? appearancePrimary
-        let appearanceSelected = passPreferences.followActiveDisplay ? appearanceFollowed : (passPreferences.dockDisplayID ?? appearancePrimary)
-        let display = displayFacts.displays.first { $0.id == appearanceSelected } ?? displayFacts.displays.first { $0.id == appearancePrimary }
         let admittedIDs = Set(rows.map(\.subscriptionID))
         let filteredSignals = content.signals.filter { admittedIDs.contains($0.id) }
         // Duplicate identities fail closed instead of arbitrarily choosing a source.
@@ -810,8 +966,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         })
         for view in [dockView] + alternateViews {
             view.appearanceNotices = presentationNotices
-            view.appearanceDisplaySize = display?.frame.size
-            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.visibleFrame.maxY) } ?? 0
+            view.appearanceDisplaySize = display?.usableFrame.size
+            view.appearanceMenuBarExclusion = display.map { max(0, $0.frame.maxY - $0.usableFrame.maxY) } ?? 0
         }
         var appearanceFallback = false
         lastAppearanceError = nil
@@ -905,19 +1061,17 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             }
         }
         edgeGeometries = nextGeometries; edgeViews = nextViews
+        appearanceDisplay = display
+        if carriedTo != nil { return }
         if sliverPrepared {
             let logical = sliverLogicalSize
             // AppKit can round the owned window to whole backing pixels. A data-only
             // update must keep that actual surface size until registered geometry changes.
             let size = preparedSliverGeometrySize == logical ? sliver.frame.size : logical
-            _ = try? prepareSliver(size: size)
+            _ = try? prepareSliver(size: size, backingScale: display?.backingScale)
         }
-        let env = environment()
-        let primary = env.primaryDisplayID ?? "primary-unavailable"
-        let selectedID = passPreferences.dockDisplayID ?? primary
-        let followed = followedDisplayID ?? env.pointer.flatMap { point in env.displays.first { $0.frame.contains(point) }?.id } ?? primary
-        let preference = DockEdgePreference(displayID: passPreferences.followActiveDisplay ? followed : selectedID,
-            edge: selected, alongFraction: passPreferences.dockAlongFraction)
+        let selectedID = passPreferences.followActiveDisplay ? display?.id : (passPreferences.dockDisplayID ?? topology.main?.id)
+        let preference = DockEdgePreference(displayID: selectedID, edge: selected, alongFraction: passPreferences.dockAlongFraction)
         if edge.preference != preference { edge.setPreference(preference) }
         guard passIsCurrent(generation) else { return }
         if let cardID { if order.contains(cardID) { showCard(cardID) } else { dismissCard() } }
@@ -935,18 +1089,21 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         }
         return DockEdgeController(preference: preference, policy: policy, read: read, position: PulseDockPositioning.resolve)
     }
+    private func topology(of environment: DockEdgeEnvironment) -> DockDisplayTopology {
+        .init(displays: environment.displays, primaryID: environment.primaryDisplayID)
+    }
+
+    private func sampleEnvironment() -> DockEdgeEnvironment {
+        if let nativeEnvironment { return nativeEnvironment() }
+        let topology = DockDisplayTopology.system()
+        var presence = DockPresence()
+        presence.mouseButtonDown = NSEvent.pressedMouseButtons != 0
+        return .init(displays: topology.displays, layouts: [], primaryDisplayID: topology.primaryID,
+                     pointer: NSEvent.mouseLocation, presence: presence)
+    }
+
     private func environment() -> DockEdgeEnvironment {
-        let native: DockEdgeEnvironment
-        if let nativeEnvironment { native = nativeEnvironment() }
-        else {
-            let displays = NSScreen.screens.enumerated().map { index, screen in
-                DockDisplayArea(id: displayID(screen, index: index), frame: screen.frame, visibleFrame: screen.visibleFrame)
-            }
-            var presence = DockPresence()
-            presence.mouseButtonDown = NSEvent.pressedMouseButtons != 0
-            native = .init(displays: displays, layouts: [], primaryDisplayID: displays.first?.id,
-                           pointer: NSEvent.mouseLocation, presence: presence)
-        }
+        let native = sampleEnvironment()
         let displays = native.displays
         let layouts = displays.flatMap { display in
             edgeGeometries.compactMap { orientation, geometry -> DockEdgeLayout? in
@@ -960,6 +1117,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         var presence = native.presence
         presence.enabled = preferences.showDock; presence.autoHide = preferences.autoHide
         presence.lifecycleActive = permitted && !retired
+        presence.cockpitClosed = presence.cockpitClosed && !cockpitPresentationBlocked
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
         presence.menuActuallyOpen = menuOpen; presence.locating = locating
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
@@ -968,23 +1126,6 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if overflowPanel?.isVisible == true, let frame = overflowPanel?.frame { auxiliary = auxiliary.map { $0.union(frame) } ?? frame }
         return .init(displays: displays, layouts: layouts, primaryDisplayID: native.primaryDisplayID,
             pointer: native.pointer, presence: presence, cardFrame: auxiliary)
-    }
-    private func destinationBackingScale() -> Int {
-        let screens = NSScreen.screens, env = environment()
-        let primary = screens.first.map { displayID($0, index: 0) }
-        let preference = DockEdgePreference(displayID: preferences.followActiveDisplay ? followedDisplayID : preferences.dockDisplayID ?? primary,
-            edge: nativeEdge(preferences.dockEdge), alongFraction: preferences.dockAlongFraction)
-        let placement = try? DockEdgeGeometry.resolve(preference: preference, displays: env.displays, layouts: env.layouts,
-            pointer: env.pointer, primaryID: primary, wakeDepth: visibilityPolicy.wakeDepth)
-        let target = placement?.displayID ?? preference.displayID
-        let selected = screens.enumerated().first { displayID($0.element, index: $0.offset) == target }?.element
-            ?? screens.first { preferences.followActiveDisplay && $0.frame.contains(NSEvent.mouseLocation) } ?? screens.first
-        return min(2, max(1, Int(selected?.backingScaleFactor ?? 1)))
-    }
-    private func displayID(_ screen: NSScreen, index: Int) -> String {
-        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return "session.\(index)" }
-        guard let uuid = CGDisplayCreateUUIDFromDisplayID(number.uint32Value)?.takeRetainedValue() else { return "session.\(number)" }
-        return CFUUIDCreateString(nil, uuid) as String
     }
     private func acceptsInstrumentAction(from view: DockInstrumentView, source: DockActionSource) -> Bool {
         guard !createsNativePanels || view.superview === container else { return false }
@@ -1008,6 +1149,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         if forDock {
             let dock = PulseDockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             dock.mouseHandler = self
+            if let nativeEnvironment {
+                dock.pointerLocation = { nativeEnvironment().pointer }
+            }
             value = dock
         } else {
             value = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -1058,6 +1202,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             // presumed outside because the pointer may be over a separate card.
             self.edge.refresh()
             self.interactionController?.refresh()
+            self.updateNozzleMagnification()
+            self.publishDockHelpInteraction()
         }
         return surface
     }
@@ -1083,15 +1229,26 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
     private func present(_ value: DockEdgePresentation) {
         defer {
+            // The controller is still sampling during onPresent. Apply a queued
+            // reveal after this delivery so its own reveal intent can be sampled.
+            if pendingUserReveal, value.paintedFrame != nil {
+                Task { @MainActor [weak self] in self?.fulfillUserReveal() }
+            }
             publishDockHelpSurface(value)
+            updateNozzleMagnification()
             if !rendering { bindInteractionInput(); interactionController?.refresh() }
+        }
+        // A withdrawn surface must not accept late tracking from its old menus.
+        if value.paintedFrame == nil {
+            dockMenuGeneration &+= 1
+            retireTrackedDockMenu()
         }
         // Native panels and the no-window construction checks share this actual input binding.
         bindBackgroundMovement(value)
         guard createsNativePanels else { bindPointerInput(value); publishPlacementObservation(value); return }
         guard permitted, !retired, let frame = value.paintedFrame else {
             attentionWasExpanded = false; pointerSurface.stop()
-            panel?.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+            panel?.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel == nil {
             let newPanel = makePanel(forDock: true)
@@ -1100,6 +1257,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 name: NSWindow.didChangeOcclusionStateNotification, object: newPanel)
         }
         guard let panel else { publishPlacementObservation(nil); return }
+        panel.level = value.moving ? .statusBar : .floating
         panel.setFrame(frame, display: false)
         panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
         let content: NSView
@@ -1118,20 +1276,29 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
-            catch { pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return }
-        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); panel.orderOut(nil); hideMovePreview(); publishPlacementObservation(nil); reportVisibility(false); return
+            catch { pointerSurface.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return }
+        case .suppressed: attentionWasExpanded = false; pointerSurface.stop(); panel.orderOut(nil); publishPlacementObservation(nil); reportVisibility(false); return
         }
         if panel.contentView !== content { panel.contentView = content }
         bindPointerInput(value, content: content)
-        content.menu = menu(); content.subviews.forEach { $0.menu = content.menu }
-        if let preview = value.snapPreview, let view = edgeViews[preview.edge],
-           view.registeredMoveOutlinePath != nil || view.registeredMovePreviewImage != nil {
-            if outlinePanel == nil { outlinePanel = makePanel(); outlinePanel?.ignoresMouseEvents = true; outlinePanel?.contentView = outlineView }
-            outlineView.path = view.registeredMoveOutlinePath
-            outlineView.rasterImage = outlineView.path == nil ? view.registeredMovePreviewImage : nil
-            outlinePanel?.setFrame(preview.frame, display: true); outlinePanel?.orderFrontRegardless()
-        } else { hideMovePreview() }
-        panel.displayIfNeeded(); panel.orderFrontRegardless()
+        // Keep the AppKit tracking instance attached while the surface redraws.
+        let contextualMenu = trackedDockMenu ?? menu()
+        content.menu = contextualMenu
+        content.subviews.forEach { $0.menu = contextualMenu }
+        #if MODELPLAN_DOCK_NATIVE_JOURNEY
+        if suppressJourneyOrderIn { return }
+        #endif
+        if !panel.isVisible, let dockPanel = panel as? PulseDockPanel {
+            dockPanel.orderInAtPlacement { granted in
+                guard let placement = value.placement,
+                      let display = topology(of: sampleEnvironment()).display(placement.displayID) else { return nil }
+                return PulseRestingPlacement.replaceGranted(granted, requested: frame, edge: placement.edge,
+                                                             visible: display.usableFrame)
+            }
+        } else {
+            panel.displayIfNeeded()
+            panel.orderFrontRegardless()
+        }
         if panel.isVisible, value.state == .expanded, !attentionWasExpanded { acknowledgeDockReveal() }
         attentionWasExpanded = panel.isVisible && value.state == .expanded
         if panel.isVisible { pulsePresentedNotices(value) }
@@ -1148,8 +1315,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                                   visible: view.visibleRect, contains: regions.contains)
     }
     private func withdrawDockHelpSurface() {
-        guard lastDockHelpSurface != nil else { return }
+        guard lastDockHelpSurface != nil else {
+            if !permitted || retired { consoleButton.clearHelpFocus() }
+            return
+        }
         lastDockHelpSurface = nil; dockHelpInputGeneration = nil
+        consoleButton.clearHelpFocus()
+        publishDockHelpInteraction()
         dockHelpSurfaceDidChange?(nil)
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
@@ -1185,6 +1357,62 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
     }
+    /// The presenter supplies the same title and body it displayed, after its own dwell.
+    /// An older surface or focus receipt cannot overwrite or clear the current control.
+    @discardableResult func setDockHelpAccessibilityExplanation(
+        _ text: String?, for interaction: DockHelpInteraction, on surface: DockHelpSurface
+    ) -> Bool {
+        guard isCurrentDockHelpSurface(surface), !surface.dragging, interaction.source == .keyboard,
+              currentDockHelpInteraction == interaction, focusedDockHelpAnchorID == interaction.anchor.id else { return false }
+        if interaction.anchor.id == "dock.ignition" {
+            consoleButton.setAccessibilityHelp(text)
+            return true
+        }
+        return interactionView.setFocusedHelpExplanation(text, for: interaction.anchor.id)
+    }
+
+    var focusedDockHelpAnchorID: String? {
+        guard permitted, !retired, edge.presentation?.state == .expanded, edge.presentation?.moving != true,
+              interactionController?.hasCapture != true else { return nil }
+        return consoleButton.hasHelpFocus ? "dock.ignition" : interactionView.focusedHelpAnchorID
+    }
+
+    private func clearDockHelpAccessibilityExplanation() {
+        consoleButton.setAccessibilityHelp(nil)
+        dockView.clearFocusedHelpExplanation()
+        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
+    }
+
+    private func publishDockHelpInteraction() {
+        let next: DockHelpInteraction?
+        if let surface = currentDockHelpSurface, !surface.dragging,
+           interactionController?.hasCapture != true, let panel {
+            let view = interactionView
+            if let focused = focusedDockHelpAnchorID,
+               let anchor = surface.mapAnchors.first(where: { $0.id == focused && $0.visible }) {
+                next = .init(anchor: anchor, source: .keyboard)
+            } else if let pointer = environment().pointer {
+                let local = view.convert(panel.convertPoint(fromScreen: pointer), from: nil)
+                let targetID = view.helpAnchorID(atLocal: local)
+                let anchor = surface.mapAnchors.first { $0.visible && $0.id == targetID }
+                    ?? surface.mapAnchors.first {
+                        guard $0.visible, $0.rect.contains(pointer) else { return false }
+                        if $0.id == "dock.ignition" {
+                            return consoleButton.isEnabled && !consoleButton.isHiddenOrHasHiddenAncestor
+                        }
+                        return $0.id == "dock.move" || $0.id == "dock.card"
+                    }
+                next = anchor.map { .init(anchor: $0, source: .pointer) }
+            } else { next = nil }
+        } else { next = nil }
+        // A fresh focus visit gets a new receipt, but repeated samples of one visit stay silent.
+        guard next?.anchor != currentDockHelpInteraction?.anchor ||
+                next?.source != currentDockHelpInteraction?.source else { return }
+        clearDockHelpAccessibilityExplanation()
+        currentDockHelpInteraction = next
+        dockHelpInteractionDidChange?(next)
+    }
+
     private func publishDockHelpSurface(_ value: DockEdgePresentation) {
         guard createsNativePanels, !retired, !retiring, permitted, preferences.showDock, value.state == .expanded,
               let panel, panel.isVisible, !panel.isMiniaturized, panel.alphaValue > 0,
@@ -1192,6 +1420,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
         let view = edgeViews[orientation] ?? dockView
         guard view.window === panel, !view.isHiddenOrHasHiddenAncestor else { withdrawDockHelpSurface(); return }
+        defer { publishDockHelpInteraction() }
         let current = edgeGeometries[orientation] ?? geometry
         func screenRect(_ rect: CGRect) -> CGRect? {
             guard !rect.isNull, !rect.isInfinite, rect.width > 0, rect.height > 0,
@@ -1202,6 +1431,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return global
         }
         var anchors: [FirstUseHintKind: CGRect] = [:]
+        if let hull = view.registeredHullBounds, let global = screenRect(hull) {
+            anchors[.findWidget] = global
+        }
         if let id = model?.inputs.first(where: { view.interactionAnchor($0.id) != nil })?.id,
            let local = view.interactionAnchor(id), let global = screenRect(local) {
             anchors[.ringRefresh] = global
@@ -1218,11 +1450,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             anchors[.drag] = global
         }
         var mapAnchors: [DockRequestedHelpAnchor] = []
+        for (index, rect) in view.registeredGripRects.enumerated() {
+            if let global = screenRect(rect) {
+                mapAnchors.append(.init(id: "dock.grip.\(index)", region: .dockMove, rect: global, visible: true))
+            }
+        }
         if let grip = anchors[.drag] { mapAnchors.append(.init(id: "dock.move", region: .dockMove, rect: grip, visible: true)) }
         if let ignition = anchors[.ignition] { mapAnchors.append(.init(id: "dock.ignition", region: .ignition, rect: ignition, visible: true)) }
         for input in model?.inputs ?? [] {
             if let local = view.interactionAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.nozzle." + input.id, region: .nozzle, rect: rect, visible: true))
+            }
+            if let local = view.helpRingsAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.rings." + input.id, region: .rings, rect: rect, visible: true))
             }
             if let local = view.helpReadoutAnchor(input.id), let rect = screenRect(local) {
@@ -1246,6 +1485,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                                    visible: true, dragging: value.moving, anchors: anchors)
         next.mapAnchors = mapAnchors
         guard next != previous else { return }
+        clearDockHelpAccessibilityExplanation()
         lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
         dockHelpSurfaceDidChange?(next)
     }
@@ -1274,18 +1514,37 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public func pulseDockNoticesForChecks(reduced: Bool) {
         pulseDockNotices(dockView, reduced: reduced)
     }
-    private func hideMovePreview() {
-        outlinePanel?.orderOut(nil)
-        outlineView.path = nil; outlineView.rasterImage = nil
-    }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
         return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)) == .bottom
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
+    private func quotaReadingsForSliver() -> [DockSliverQuotaInput] {
+        guard preferences.sliverAlert, let model else { return [] }
+        let inputs = Dictionary(uniqueKeysWithValues:model.inputs.map { ($0.id,$0) })
+        guard let order = try? memberSafePreferences.presentedSubscriptionIDs(model.inputs.map(\.id)) else { return [] }
+        let view = interactionView
+        let pitches = presentationGeometry.quotaPitchRanges
+        func ink(_ role:DockQuotaStatus) -> DockInk {
+            if let supplied = view.quotaInk(for:role) { return supplied }
+            let fallback:NSColor
+            switch role { case .warning: fallback = .systemYellow; case .critical: fallback = .systemRed; case .normal,.unknown: fallback = .secondaryLabelColor }
+            guard let rgb=fallback.usingColorSpace(.sRGB) else { return DockInk(0.5,0.5,0.5) }
+            return DockInk(Double(rgb.redComponent),Double(rgb.greenComponent),Double(rgb.blueComponent),Double(rgb.alphaComponent))
+        }
+        let now = currentDate()
+        return order.compactMap { id in
+            guard let input = inputs[id], let pitch=pitches[id] else { return nil }
+            // The model already withholds unproven values; evaluate expiry/selection again at presentation time.
+            let reading = try? DockInstrumentProjection.evaluate(memberSafePreferences.applying(to:input),now:now,redBelow:effectiveRedBelow)
+            let status = reading?.status ?? .unknown
+            let role:DockQuotaStatus? = status == .warning || status == .critical ? status:nil
+            return .init(subscriptionID:id,remainingPercent:reading?.remainingPercent,quotaRole:role,ink:role.map(ink),from:pitch.lowerBound,through:pitch.upperBound)
+        }
+    }
     /// Uses the same bounded view preparation in native presentation and no-window checks.
-    func prepareSliver(size: CGSize) throws -> DockSliverView {
+    func prepareSliver(size: CGSize, backingScale: Int? = nil) throws -> DockSliverView {
         guard !retired else { throw DockArtworkError.invalidManifest }
         do {
             let geometry = presentationGeometry
@@ -1298,9 +1557,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                 marks[dot.stationID] = DockSliverNoticeMark(position: position, notice: dot.notice, unit: geometry.noticeUnit)
             }
             sliver.noticeMarks = marks.values.sorted { $0.position == $1.position ? $0.notice.key.subscriptionID < $1.notice.key.subscriptionID : $0.position < $1.position }
-            let nativeScale = panel.map { min(2, max(1, Int($0.backingScaleFactor))) } ?? geometry.sliverScale
+            let nativeScale = backingScale
+                ?? topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID)?.backingScale
+                ?? geometry.sliverScale
             try sliver.apply(image: geometry.sliverImage, logicalSize: size, scale: min(nativeScale, geometry.sliverScale),
-                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language))
+                             accessibilityLabel: EngineRowsText.showQuotaWidget.value(preferences.language), quotaReadings: quotaReadingsForSliver())
             sliverPrepared = true; preparedSliverGeometrySize = sliverLogicalSize
             return sliver
         } catch { sliverPrepared = false; preparedSliverGeometrySize = nil; throw error }
@@ -1308,16 +1569,25 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     func menu() -> NSMenu {
         let component = DockSliverMenu(labels: [:], handlers: [:])
         component.owner = self
-        component.onMenuActuallyOpen = { [weak self] open in
-            guard let self else { return }; self.menuOpen = open; self.edge.refresh()
-        }
         let menu = component.menu
+        let generation = dockMenuGeneration
+        component.onMenuActuallyOpen = { [weak self, weak menu] open in
+            guard let self, let menu, self.dockMenuGeneration == generation else { return }
+            if open { self.menuWillOpen(menu) }
+            else { self.menuDidClose(menu) }
+        }
         component.retainWithMenu()
         var items: [DockMenuPresentationItem] = []
         if lifecycleSuspended {
             items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
             items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.settings.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language)))
+            items.append(.init(title: EngineRowsText.contextClose.value(preferences.language),
+                               action: permitted ? { [weak self] in self?.closeContext() } : nil))
+            if permitted {
+                items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language),
+                                   action: { [weak self] in self?.hideDockMenu() }))
+            }
             items.append(.init(title: nil))
             let english = preferences.language == .english
             let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
@@ -1336,26 +1606,70 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         items.append(.init(title: nil))
         items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
-        items.append(.init(title: EngineRowsText.settings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
+        items.append(.init(title: EngineRowsText.contextClose.value(preferences.language), action: { [weak self] in self?.closeContext() }))
         items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language), action: { [weak self] in self?.hideDockMenu() }))
         component.replace(with: items)
         return menu
     }
-    public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
-    public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    public func menuWillOpen(_ menu: NSMenu) {
+        guard permitted, !retired, !retiring, edge.presentation?.paintedFrame != nil, ownsDockMenu(menu) else { return }
+        trackedDockMenu = menu
+        edge.refresh()
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        guard trackedDockMenu === menu else { return }
+        trackedDockMenu = nil
+        edge.refresh()
+    }
+
+    private func retireTrackedDockMenu() {
+        let menu = trackedDockMenu
+        trackedDockMenu = nil
+        menu?.cancelTracking()
+    }
+
+    private func closeContext() {
+        guard permitted, !retired, !retiring else { return }
+        retireTrackedDockMenu()
+        if let controller = interactionController, controller.isActive { controller.dismissCard() }
+        dismissCard()
+        edge.refresh()
+    }
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
         publishAttention()
     }
+    func setCockpitPresentationBlocked(_ blocked: Bool) {
+        guard !retired, cockpitPresentationBlocked != blocked else { return }
+        cockpitPresentationBlocked = blocked
+        if blocked {
+            clearLocateHighlight()
+            edge.refresh()
+            dismissCard()
+        } else {
+            edge.restoreAfterCockpitClose()
+        }
+    }
+
     func revealForUser() {
-        guard permitted, !retired, preferences.showDock else { return }
+        guard !retired, preferences.showDock else { return }
+        pendingUserReveal = true
+        fulfillUserReveal()
+    }
+
+    private func fulfillUserReveal() {
+        guard pendingUserReveal, permitted, !retired, preferences.showDock,
+              edge.presentation?.paintedFrame != nil else { return }
         clearLocateHighlight(); locating = true; edge.reveal()
         guard let presentation = edge.presentation, presentation.state == .expanded,
               let placement = presentation.placement, let view = edgeViews[placement.edge],
               !view.bounds.isEmpty, let parent = view.layer else {
             locating = false; edge.refresh(); return
         }
+        pendingUserReveal = false
         let path = view.registeredMoveOutlinePath ?? CGPath(roundedRect: view.bounds.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 6, cornerHeight: 6, transform: nil)
         let mark = CAShapeLayer(); mark.name = "dock.locate-highlight"; mark.frame = view.bounds; mark.path = path
         mark.fillColor = NSColor.clear.cgColor; mark.strokeColor = NSColor.controlAccentColor.cgColor
@@ -1385,7 +1699,11 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard cockpitEntryEnabled, permitted, !retired, let showConsole else { return }
         acknowledgeCockpitOpening(); dismissCard(); showConsole()
     }
-    @objc private func openSettings() { guard permitted, !retired else { return }; showSettings?() }
+    @objc private func openSettings() {
+        guard permitted, !retired, !retiring else { return }
+        closeContext()
+        showSettings?()
+    }
     @objc private func hideDockMenu() {
         guard permitted,!retired else { return }
         if let requestHideDock { requestHideDock() } else { setPresentationAllowed(false) }
@@ -1399,14 +1717,28 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        return try DockCardProjection.content(input: memberSafePreferences.applying(to: input),
+        let projected = memberSafePreferences.applying(to: input)
+        let row = model?.presentationRows[id]
+        let selected = row?.windowObservations == nil ? nil :
+            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
+        return try DockCardProjection.content(input: projected,
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
+                sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
-                additionalRows: model?.presentationRows[id]?.additionalRows ?? [],
-                enterLabel: model?.presentationRows[id] == nil ? (preferences.language == .english ? "Cockpit" : "驾驶舱") : (preferences.language == .english ? "Settings" : "设置"), dismissLabel: preferences.language == .english ? "Close" : "关闭", at: now)
+                additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
+                links: currentCardSourceLinks(for: id, at: now),
+                enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
+                dismissLabel: EngineRowsText.contextClose.value(preferences.language),
+                redBelow: effectiveRedBelow, at: now)
+    }
+    private func cardUsesSettings(_ id: String) -> Bool {
+        purpose == .production || model?.presentationRows[id] != nil
+    }
+    private func currentCardSourceLinks(for id: String, at now: Date) -> [DockCardLink] {
+        guard let expiry = attentionSignals.first(where: { $0.id == id })?.reset?.expiresAt, now < expiry else { return [] }
+        return model?.presentationRows[id]?.links ?? []
     }
     private func interactionCardContent(_ id: String) -> DockCardContent? { try? cardContent(for:id) }
     private func showCard(_ id: String, supplied: DockCardContent? = nil) {
@@ -1419,13 +1751,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         cardID = id; cardPresentedRevision = content.revision; cardPresentedGeneration = feed; card.isHidden = false
         card.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         card.permitsAction = { [weak self] id, revision in self?.cardIsCurrent(id, revision: revision, token: token, feed: feed) == true }
+        card.onOpenURL = { [weak self] url in
+            guard let self, self.cardIsCurrent(id, revision: content.revision, token: token, feed: feed),
+                  EngineRowsEventDecoder.isHTTPSSourceURL(url),
+                  self.currentCardSourceLinks(for: id, at: self.currentDate()).contains(where: { $0.url == url }) else { return }
+            self.openCardSourceURL(url)
+        }
         card.onEnter = { [weak self] id, revision in
             guard let self, self.cardIsCurrent(id, revision: revision, token: token, feed: feed) else { return }
-            if let controller = self.interactionController, controller.isActive { controller.dismissCard() }
-            self.dismissCard()
-            guard self.permitted, !self.retired else { return }
-            if self.model?.presentationRows[id] != nil { self.showSettings?() }
-            else { self.openConsole() }
+            if self.cardUsesSettings(id) { self.openSettings() }
+            else { self.closeContext(); self.openConsole() }
         }
         card.onDismiss = { [weak self] in
             guard let self, self.cardGeneration == token, self.inputGeneration == feed else { return }
@@ -1433,7 +1768,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             self.dismissCard()
         }
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
-        let unavailable = model?.presentationRows[id] == nil && !cockpitEntryEnabled
+        let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         do {
             try card.apply(content, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
@@ -1444,7 +1779,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             NotificationCenter.default.addObserver(self, selector: #selector(cardKeyStateChanged(_:)), name: NSWindow.didBecomeKeyNotification, object: panel)
             NotificationCenter.default.addObserver(self, selector: #selector(cardKeyStateChanged(_:)), name: NSWindow.didResignKeyNotification, object: panel)
         }
-        guard let cardPanel, let panelFrame = panel?.frame, let screen = NSScreen.screens.first(where: { $0.frame.intersects(panelFrame) }) else { dismissCard(); return }
+        guard let cardPanel, let panelFrame = panel?.frame,
+              let screen = topology(of: sampleEnvironment()).display(edge.presentation?.placement?.displayID) else { dismissCard(); return }
         let view = interactionView
         guard let local = view.interactionAnchor(id), let window = view.window else { dismissCard(); return }
         let anchor = window.convertToScreen(view.convert(local, to: nil))
@@ -1492,6 +1828,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func close() {
         guard !retired, !retiring else { return }
         retiring = true
+        retireTrackedDockMenu()
         let retireContent = onWillRetire; onWillRetire = nil
         retireContent?()
         withdrawAdmittedContent(privacy: true)
@@ -1509,7 +1846,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         onPlacementObserved = nil
         dockView.onNeedsFreshPresentation = nil
         dockView.dispose(); alternateViews.forEach { $0.dispose() }; sliver.dispose(); card.dispose()
-        edgeViews = [:]; edgeGeometries = [:]; hideMovePreview(); outlinePanel = nil
+        edgeViews = [:]; edgeGeometries = [:]; appearanceDisplay = nil
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
@@ -1538,5 +1875,10 @@ extension StaticDockPreviewHost: PulsePanelMouseHandling {
         guard permitted, !retired else { edge.cancelBackgroundMove(); return }
         edge.endBackgroundMove(global: globalPoint)
     }
-    public func cancelPanelMove() { edge.cancelBackgroundMove() }
+    public var hasPanelControlCapture: Bool { interactionController?.hasCapture == true }
+
+    public func cancelPanelMove() {
+        if hasPanelControlCapture { interactionController?.cancelNozzle() }
+        edge.cancelBackgroundMove()
+    }
 }
