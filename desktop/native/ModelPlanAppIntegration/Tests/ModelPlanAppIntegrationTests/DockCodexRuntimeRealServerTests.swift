@@ -126,8 +126,7 @@ import XCTest
         try encode(["schemaVersion": 1, "nextAttemptAt": old]).write(to: reservation, options: .atomic)
         try response(used: 30)
 
-        // No cleanup defer here: on a thrown failure its failed removal replaced the real error in the report.
-        // The sandbox teardown removes the file with everything else.
+        // The sandbox teardown removes this file with everything else.
         try Data().write(to: hold)
 
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -225,8 +224,10 @@ import XCTest
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
             consentTextVersion: XCTUnwrap(before["consentTextVersion"] as? Int), allow: [], deny: [scope])
-        // The product's limit: withdrawal took about 7 s on the hosted runner, past the 4 s used here before.
+        // The product's limit, with a loose bound: withdrawal took about 7 s on the hosted runner.
+        let revokeStarted = ContinuousClock.now
         _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: nil)
+        XCTAssertLessThan(revokeStarted.duration(to: .now), .seconds(20), "Consent withdrawal must not creep toward the 30 s limit")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
         _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
