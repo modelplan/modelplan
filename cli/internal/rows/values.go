@@ -218,7 +218,7 @@ func buildWindows(raw []WindowInput, account Account, now time.Time) []Window {
 			value := v.Source
 			source = &value
 		}
-		w := Window{Source: source, ModelScope: scope, ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
+		w := Window{Forecast: v.Forecast, Source: source, ModelScope: scope, ID: string(r) + ":" + durationKey + ":" + key + ":" + poolKey(v.Pool), Role: r, DurationSeconds: duration, Label: label, LimitKey: key, PoolKey: poolKey(v.Pool), ResetMode: mode, RemainingPercent: finite(v.RemainingPercent, 0, 100), ResetsAt: knownTime(v.ResetsAt), ObservedAt: observed(v.ObservedAt, now)}
 		w.ValidUntil = windowValidUntil(account, w)
 		result = append(result, w)
 	}

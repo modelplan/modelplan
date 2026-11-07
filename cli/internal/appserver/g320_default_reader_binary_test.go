@@ -66,9 +66,11 @@ func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(rese
 	if err := json.Unmarshal(m["result"], &snapshot); err != nil {
 		t.Fatalf("rows/subscribe: %s", m["error"])
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	// Wait on the published state, not on one notification: under load the read can finish
+	// between the last rows/changed and the check, so ask for the rows again while waiting.
+	deadline := time.Now().Add(90 * time.Second)
 	var codex *rows.Row
-	for {
+	for id := 3; ; id++ {
 		codex = nil
 		for i := range snapshot.Data.Projection.Rows {
 			if snapshot.Data.Projection.Rows[i].ID == "codex" {
@@ -78,11 +80,19 @@ func g320FreshProfileOneAccount(t *testing.T, logPlan string, logReset func(rese
 		if codex != nil && runtimeReadCount(t, trace) > 0 && hasRuntimeAccount(codex) {
 			break
 		}
-		next, ok := nextRowsChanged(t, c, deadline)
-		if !ok {
-			t.Fatalf("no Codex runtime reading by default on a fresh profile (runtime reads=%d, codex row=%t)", runtimeReadCount(t, trace), codex != nil)
+		if !time.Now().Before(deadline) {
+			account, _ := os.ReadFile(filepath.Join(home, "cache", "observed", "codex-account.json"))
+			t.Fatalf("no Codex runtime reading by default on a fresh profile (runtime reads=%d, codex row=%t, cached snapshot bytes=%d)", runtimeReadCount(t, trace), codex != nil, len(account))
 		}
-		snapshot = next
+		if next, ok := nextRowsChanged(t, c, time.Now().Add(time.Second)); ok {
+			snapshot = next
+			continue
+		}
+		c.send(t, id, "rows/subscribe", wire.Empty{})
+		var current wire.Envelope[wire.RowsSnapshot]
+		if json.Unmarshal(c.response(t, id)["result"], &current) == nil {
+			snapshot = current
+		}
 	}
 	if len(codex.Accounts) != 1 {
 		for _, a := range codex.Accounts {
