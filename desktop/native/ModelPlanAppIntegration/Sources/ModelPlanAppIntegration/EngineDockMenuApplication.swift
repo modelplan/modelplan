@@ -117,6 +117,7 @@ struct StatusNoticePresentation {
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
     /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
     public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
     public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
@@ -698,9 +699,9 @@ struct StatusNoticePresentation {
                   action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
+            .init(title: label("Website", "网站"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.website.url) }),
+            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.methodology.url) }),
+            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openPublicURL(SettingsPublicLink.privacy.url) }),
         ]
         if let item = ownerTestRingItem(language) { menuItems.append(item) }
         let admitted = composition.presentedContent.snapshot.presentationRows

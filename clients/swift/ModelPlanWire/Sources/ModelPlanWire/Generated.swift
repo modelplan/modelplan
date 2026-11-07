@@ -2132,6 +2132,7 @@ public struct WireCockpitDetails: Codable, Sendable {
     public let `sessionCoverage`: String
     public let `resetEvents`: [RowsResetEvent]
     public let `alerts`: [WireCockpitAlert]
+    public let `publishedModels`: [WireCockpitPublicationModel]?
     public let `forecasts`: [WireCockpitForecast]?
     private enum CodingKeys: String, CodingKey {
         case `publication`
@@ -2142,9 +2143,10 @@ public struct WireCockpitDetails: Codable, Sendable {
         case `sessionCoverage`
         case `resetEvents`
         case `alerts`
+        case `publishedModels`
         case `forecasts`
     }
-    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `forecasts`: [WireCockpitForecast]? = nil) throws {
+    public init(`publication`: WireCockpitPublication? = nil, `version`: Int, `sources`: [String], `subscriptions`: [WireCockpitSubscriptionDetails], `sessions`: [WireCockpitSession], `sessionCoverage`: String, `resetEvents`: [RowsResetEvent], `alerts`: [WireCockpitAlert], `publishedModels`: [WireCockpitPublicationModel]? = nil, `forecasts`: [WireCockpitForecast]? = nil) throws {
         self.`publication` = `publication`
         self.`version` = `version`
         self.`sources` = `sources`
@@ -2153,6 +2155,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`sessionCoverage` = `sessionCoverage`
         self.`resetEvents` = `resetEvents`
         self.`alerts` = `alerts`
+        self.`publishedModels` = `publishedModels`
         self.`forecasts` = `forecasts`
         try validate()
     }
@@ -2167,6 +2170,8 @@ public struct WireCockpitDetails: Codable, Sendable {
         self.`sessionCoverage` = try c.decode(String.self, forKey: .`sessionCoverage`)
         self.`resetEvents` = try c.decode([RowsResetEvent].self, forKey: .`resetEvents`)
         self.`alerts` = try c.decode([WireCockpitAlert].self, forKey: .`alerts`)
+        if c.contains(.`publishedModels`), try c.decodeNil(forKey: .`publishedModels`) { throw WireDecodeError.invalidIdentity }
+        self.`publishedModels` = try c.decodeIfPresent([WireCockpitPublicationModel].self, forKey: .`publishedModels`)
         if c.contains(.`forecasts`), try c.decodeNil(forKey: .`forecasts`) { throw WireDecodeError.invalidIdentity }
         self.`forecasts` = try c.decodeIfPresent([WireCockpitForecast].self, forKey: .`forecasts`)
         try validate()
@@ -2182,6 +2187,7 @@ public struct WireCockpitDetails: Codable, Sendable {
         try c.encode(`sessionCoverage`, forKey: .`sessionCoverage`)
         try c.encode(`resetEvents`, forKey: .`resetEvents`)
         try c.encode(`alerts`, forKey: .`alerts`)
+        try c.encodeIfPresent(`publishedModels`, forKey: .`publishedModels`)
         try c.encodeIfPresent(`forecasts`, forKey: .`forecasts`)
     }
     private func validate() throws {
