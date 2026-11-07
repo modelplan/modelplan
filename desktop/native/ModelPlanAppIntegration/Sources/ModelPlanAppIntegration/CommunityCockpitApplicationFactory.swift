@@ -23,8 +23,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"93af0c4afdde974b61731a971c81b706f720859cbe931fd4edafa4c2c6ca64d7",
-        "official":"5f376613b43e5d9b3c3fb4bf6c0735ad17e9724eaf9cbb15e03838359d555097",
+        "community":"2d9280afa8a52dd358a723fd63d807de26bef2093d73f065623409294d2640c3",
+        "official":"a60375efd907ff833e1ec03020a62fd84500118ba70c46f7c6ebf53ac19afb55",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -112,6 +112,7 @@ struct CockpitUnavailableNotice {
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     var fallback: EngineRowsConsole?
+    private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
     private let activate: @MainActor () -> Void
     private let requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
@@ -124,6 +125,17 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
         owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
+    }
+    /// The page follows the committed settings live; a cockpit opened later starts from them.
+    func applySettings(_ value: SettingsApplication) {
+        appliedSettings=value
+        owner.appearance=cockpitAppearance(value)
+        owner.coordinator?.updateAppearance(owner.appearance)
+    }
+    private func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
+        let e=value.effective
+        return .init(theme:owner.appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow,showProjectNames:e.showProjectNames)
     }
     func show() {
         wantsVisible=true
@@ -138,7 +150,9 @@ struct CockpitUnavailableNotice {
             case .night:theme = .night
             case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
             }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full)
+            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
+                redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
+            if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
                 switch intent {

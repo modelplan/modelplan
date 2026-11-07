@@ -20,6 +20,10 @@ export function prototypeEngineSupplement(account:WireAccount,data?:WireCockpitD
   reserveCredits:wireCredits?{balance:wireCredits.balance,unit:'credits'}:detail?null:account.credits};
 }
 export const cockpitDetails=(data:WireCockpitData)=>data.details;
+// Settings "Project names" off: labels are dropped before any surface or accessibility text sees them.
+export function withoutProjectNames(data:WireCockpitData):WireCockpitData {
+ return data.details?{...data,details:{...data.details,sessions:data.details.sessions.map(s=>s.projectLabel===null?s:{...s,projectLabel:null})}}:data;
+}
 
 // A producer-current observation ceases to be current at its deadline, even
 // when the containing account and other windows are still current.
