@@ -4,7 +4,9 @@
 // one merge-group commit from the per-PR states plus the group's own proofs. evaluate.mjs feeds them.
 //
 // The rules are a port of the coordinator's landing scripts (tier, trusted-author, verdict, carry, GLM,
-// design and stale-base checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate.
+// and design checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate. There is no
+// stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
+// the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
@@ -15,8 +17,9 @@ export const SELF_WORKFLOWS = Object.freeze([".github/workflows/merge-gates.yml"
 // A head counts as CI-checked only once this workflow has run; every other run of the same push is created
 // with it, so its completion means the head's run list is complete.
 export const ANCHOR_WORKFLOW = ".github/workflows/ci.yml";
-// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger).
-export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml"]);
+// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger). desktop.yml
+// carries the Mac build and native-headless checks; its queue-scope job skips them for a group outside its paths.
+export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml", ".github/workflows/desktop.yml"]);
 const SHA = /^[0-9a-f]{40}$/;
 
 export const PENDING = "pending";
@@ -217,6 +220,10 @@ export function evidenceState(pr, items, head) {
     for (const line of lines(item.body)) {
       const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
+      // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
+      // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      if (deferred && deferred[2] === head) verified.add(deferred[1]);
     }
   }
   const missing = scenarios.filter((id) => !verified.has(id));
@@ -290,7 +297,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge") missing.push("VERDICT (macrev2) merge");
+  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
+  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
   if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
   if (design.touching) {
     const d = designVerdict(items, head, carried);
@@ -309,27 +317,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`, extra);
 }
 
-// ---- Stale-base guard (merge-when.sh) ----
-// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the
-// same module since the head forked, those checks never saw the combination. Module granularity
-// (owner 2026-11-06): desktop/native paths with five or more segments compare by the first five
-// (desktop/native/<Package>/<Sources|Tests>/<Module>); a package-root file compares by its package;
-// anything shallower stays at the desktop/native tree level; every other tree keeps the first two
-// segments; .github/workflows collapses to one token, so a workflow change on the base overlaps
-// only when the PR itself changes a workflow file.
-const component = (p) => {
-  const s = p.split("/");
-  if (s[0] === ".github" && s[1] === "workflows") return ".github/workflows";
-  if (s[0] === "desktop" && s[1] === "native") return s.slice(0, s.length >= 5 ? 5 : s.length === 4 ? 3 : 2).join("/");
-  return s.slice(0, 2).join("/");
-};
-export function staleOverlap(prFiles, baseFiles) {
-  const mine = new Set(prFiles.map(component));
-  return [...new Set(baseFiles.map(component))].filter((c) => mine.has(c) && !/^(docs|README\.md|NOTICE)/.test(c)).sort();
-}
-
 // ---- One merge-group commit ----
-// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}, overlap: [...]}.
+// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
 // queueRuns/queueStatuses: CI on the group commit itself.
 export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
@@ -337,7 +326,6 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
-    if (s.overlap.length) return { state: FAILURE, why: `${n}: stale base, main changed ${s.overlap.slice(0, 4).join(" ")}; merge main into the branch` };
   }
   const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS });
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };

@@ -55,10 +55,10 @@ FAIL stops the run before booking (every ID becomes `NOT-RUN reason=preflight-PF
 | PF-01 | Any name but `native-app-(unverified\|test\|verify)-<sha>` for this flavour and SHA: the legacy Tauri `Model-Plan-Community-macOS-arm64-unsigned`, any `.dmg`, any other name |
 | PF-02 | A run outside `modelplan/modelplan`, a workflow other than `desktop.yml`, `v1-test-build.yml` or `verify-batch.yml`, a run `head_sha` other than the expected SHA, a producing job that did not succeed, an expired artifact, an archive holding anything but `BUILD.txt` and the inner zip |
 | PF-03 | sha256 of the archive differing from the manifest or GitHub digest; inner zip differing from `BUILD.txt` |
-| PF-04 | `BUILD.txt` `sourceSHA` (or `flavour`) differing from the expected head; a PR head that moved or is not an ancestor of the integration SHA |
+| PF-04 | `BUILD.txt` `sourceSHA` (or `flavour`) differing from the expected head; the bundle's own `Info.plist` `ModelPlanPublicSource` (the built checkout's `git rev-parse HEAD`) missing or differing from that label, e.g. a pull_request merge-commit build labelled with the PR head; a PR head that moved or is not an ancestor of the integration SHA |
 | PF-05 | Not exactly one top-level `.app`; a symlink leaving it |
 | PF-06 | `CFBundleExecutable` not `ModelPlanCommunity`, a non-Mach-O executable, no arm64 slice, another bundle ID |
-| PF-07 | A missing SwiftPM resource bundle (cockpit bundle too for test/verify), not exactly one `zai-white.svg`, `Helpers/modelplan` not matching `Resources/modelplan.sha256` |
+| PF-07 | A missing SwiftPM resource bundle (cockpit bundle too for test/verify), a `zai-white.svg` that breaks the producers' policy (neutral `package-neutral.sh` builds: none, no `zaiMarkEnabled`; beta `configure_beta_zai` builds: boolean `zaiMarkEnabled`, and when true exactly one mark at the Dock manifest's `Marks/zai-white.svg` with the manifest's bytes and SHA-256), `Helpers/modelplan` not matching `Resources/modelplan.sha256` |
 | PF-08 | `ModelPlanCockpitEntryEnabled` not false (release) or true (test), the VF marker `ModelPlanVerificationFlavour` outside the verify flavour, any Sparkle framework or feed key |
 | PF-09 | `codesign --verify --deep --strict` failing (ad-hoc accepted; kind recorded) |
 | PF-10 | An ID not at tier T3/T4 in `scenario-tiers.tsv`, or without a valid step file, both read from the control revision (`--control-ref`, default `origin/main`), or whose layout, flavour or profile does not match. Refused IDs are NOT-RUN; the rest continue |
@@ -152,6 +152,77 @@ keeps every booking/guardian/release/cleanup guard and records the mode in its r
 uses the host user's real HOME and TMPDIR — `CFFIXED_USER_HOME` is explicitly removed, never redirected —
 creates nothing under that HOME, and refuses a HOME at or inside the removable run scratch. A real-profile
 subject may quit and relaunch within its segment like a synthetic one; the HOME is the user's own.
+
+### Candidate environment, reader scope and product backup (launch.py, packaged_candidate.py)
+
+A brief names these as flags; each fills the run config's field of the same name, and a different
+value already in the config is refused:
+
+```sh
+python3 desktop/native/verification/bin/packaged_candidate.py prepare ... --readers codex,zcode --backup product
+python3 desktop/native/verification/bin/launch.py --config RUN.json --execute --profile synthetic --readers off
+```
+
+- `readers` (`--readers`): `off` sets `MODELPLAN_READERS=off` and `MODELPLAN_CODEX_ACCOUNT=off`;
+  `passive` sets `MODELPLAN_READERS=passive`; a comma list of consent tool IDs (`codex,zai`;
+  `zcode` is accepted for `zai` and recorded as an alias) sets `MODELPLAN_VERIFY_READERS`, which
+  the engine uses only to narrow saved and default consent to those tools, never to widen it, plus
+  `MODELPLAN_CODEX_ACCOUNT=off` unless `codex` is listed. A list needs `subjectKind: app-zip`, and
+  launch.py refuses it unless the candidate's bundled engine (`Contents/Helpers/modelplan`)
+  contains `MODELPLAN_VERIFY_READERS`: an older engine would ignore the list and read every
+  consented tool. No released engine contains it yet (the engine side is a separate PR), so today
+  a list always stops at this refusal. The consent file is never edited.
+- `subjectEnv`: extra restricting keys only, each with fixed values: `MODELPLAN_READERS`
+  (`off`/`passive`), `MODELPLAN_CODEX_ACCOUNT`, `MODELPLAN_HISTORY`, `MODELPLAN_CODEXBAR` (`off`).
+  Anything else is refused at contract time, including `MODELPLAN_VERIFY_READERS`: a reader list
+  is written only as `readers`, so the checks above always apply to it.
+- Reaching the engine: these variables are set on the subject process. A binary subject receives
+  them itself (`engineDelivery: subject-process` in the run manifest). A packaged app passes its
+  engine only the keys in `schema/app-cli/child-environment.json`, so for `app-zip` launch.py
+  refuses the run before spawn unless every key is in the app's main executable
+  (`engineDelivery: app-forwarded`). The contract lists `MODELPLAN_READERS`,
+  `MODELPLAN_CODEX_ACCOUNT` and `MODELPLAN_VERIFY_READERS`. Builds made before that contract
+  change refuse every restriction, including `--readers off`: rebuild the candidate. On any build,
+  `MODELPLAN_HISTORY` and `MODELPLAN_CODEXBAR` are refused for `app-zip`, because the app does not
+  forward them (a `MODELPLAN_CODEXBAR` value can name a binary to run). The check reads strings in
+  the binaries; it proves the app forwards a key and the engine knows it, not what the engine then
+  does with it.
+- A real-profile environment drops every inherited `MODELPLAN_*` variable (for example a stray
+  `MODELPLAN_CACHE`) before these are added; the names dropped are recorded. Synthetic runs keep
+  the minimal environment plus these keys.
+- `backup: product` (`--backup product`, real profile only) with an absolute `backupDir` (prepare
+  defaults it to `<registry>.product-backup`, outside the removable scratch) runs
+  `bin/product_backup.py` around the subject: before the subject starts it archives exactly
+  `~/Library/Application Support/ModelPlan/Native/`,
+  `~/Library/Preferences/org.modelplan.community.swift.scaffold.plist`, `~/Library/Caches/modelplan/`
+  and `~/.config/modelplan/consent.json` (tar + SHA-256 manifest; absent paths recorded as absent),
+  and after the subject has ended it puts them back and re-hashes every file. The preferences domain
+  is synced through `defaults import`/`delete` first so `cfprefsd` does not keep the run's values.
+  It refuses a symlink on or inside these paths, any name containing `M0Bridge`, a credential-looking
+  file name, a backupDir inside the product paths, and on restore any archive member outside the list
+  or an archive whose hash differs. Nothing outside the four paths is read or written, so other
+  tools' state (and writes by the owner's own `modelplan` hooks to the engine cache during the run,
+  which the restore reverts) are reported, not hidden. A launcher that dies before restoring leaves
+  the backup; restore it with `python3 bin/product_backup.py restore --backup-dir DIR` (exit 0 only
+  when every path matches).
+- Run manifest: `runManifestPath` (prepare defaults it to `<registry>.run-manifest.json`; else
+  `<backupDir>/run-manifest.json`) records run identity, profile, HOME, launch mode, the exact
+  `subjectEnv`, reader IDs and aliases, dropped variable names, `engineHonoursReaders`, the backup
+  roots and archive hash, and the restore result: `restored`, `mismatches` and `runChanges`
+  (product file names added, changed or removed by the run, never contents). launch.py exits 4 when
+  the restore did not match byte for byte; report it and do not finish the booking.
+
+Booking identity: the run config's `booking` is
+`{"id": "<booking ID>", "lane": "M1", "unit": "U11a", "scenario": "cold"}` (optional `ledger`, else
+`MODELPLAN_BOOKING_LEDGER`), where `scenario` is one of the IDs the booking was requested with.
+Admission and `prepare` name any missing field up front instead of failing inside the launch.
+
+Never started: when launch.py exits non-zero before it reserved the subject slot (an admission or
+backup refusal, a bad config), it writes `<subjectPidPath>.no-subject.json` (run ID, epoch, exit
+status, launcher identity) under the registration lock. The guardian accepts it, once that launcher
+is gone and still no reservation exists, as `subject: never-started`, so the SKILL.md sequence
+finishes the booking as cleaned instead of leaving it held. Without the proof it still reports
+`subject: none`.
 
 ## Outputs
 

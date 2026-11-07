@@ -139,7 +139,8 @@ import ModelPlanWire
             let app = EngineRowsEntry.make(configuration: .init(
                 executableURL: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/modelplan"),
                 applicationVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "community",
-                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) }), settingsStore: preferences)
+                allowedEnvironment: ProcessInfo.processInfo.environment.filter { WireChildEnvironment.allowedKeys.contains($0.key) },
+                minimumServerVersion: EngineRowsEntry.minimumAppServerVersion), settingsStore: preferences)
             NSApplication.shared.delegate = app
             withExtendedLifetime(app) { NSApplication.shared.run() }
         } catch { fputs("ModelPlan preferences could not load. Existing data was preserved.\n", stderr) }

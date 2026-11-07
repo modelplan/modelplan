@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 import copy
+import json
 import os
 from pathlib import Path
 import sys
@@ -10,12 +11,60 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent.parent
 sys.path.insert(0, str(ROOT))
-from engine_process import EngineProcess, EngineFailure, build_binary
-from engine_runner import plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows, _wait_scheduler_capture
+from engine_process import EngineProcess, EngineFailure, EngineTimeout, build_binary
+from engine_runner import await_pending, plain_smoke, verify_baseline, zero_rows, empty_states, backpressure, admission, evaluate_admission, shared_state, null_selectors, fresh_rows, _wait_scheduler_capture
 from engine_build import build_tools
 from shape_home import build_home
 from contracts import load_json, encoded, write_private
 import run as engine_cli
+
+
+class ScriptedEngine(EngineProcess):
+    """Replays frames through the real read and validation path, one per request."""
+
+    def __init__(self, home, frames):
+        super().__init__('/synthetic/not-launched', home, 's')
+        self.frames = list(frames)
+
+    def send(self, id, method, params):
+        frame = self.frames.pop(0)
+        if frame is not None:
+            self.buffer.extend(json.dumps({**frame, 'id': id}).encode() + b'\n')
+
+    def _bytes_ready(self, timeout):
+        raise EngineTimeout('output-deadline')
+
+
+def rows_frame(state='pending', generation=5, sequence=2, session='s', **extra):
+    data = {'sequence': sequence, 'projection': {'rows': [], 'rowsSummary': {'state': state}, **extra}}
+    return {'jsonrpc': '2.0', 'result': {'sessionId': session, 'storeEpoch': 'e', 'consentGeneration': generation, 'data': data}}
+
+
+class PendingRetryTests(unittest.TestCase):
+    def engine(self, frames):
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        engine = ScriptedEngine(home.name, frames)
+        engine.epoch, engine.floor = 'e', 5
+        return engine
+
+    def test_a_rejected_frame_ends_the_scenario(self):
+        for code, frame in (('wrong-session', rows_frame(session='other')),
+                            ('private-value-below-floor', rows_frame(generation=4)),
+                            ('unexpected-token-field', rows_frame(accessToken='synthetic'))):
+            with self.subTest(code=code):
+                engine = self.engine([frame, rows_frame()])
+                with self.assertRaises(EngineFailure) as caught:
+                    await_pending(engine, {'rowsSummary': {'state': 'ok'}}, 2)
+                self.assertEqual(str(caught.exception), code)
+
+    def test_no_answer_yet_may_recover(self):
+        busy = {'jsonrpc': '2.0', 'error': {'code': -32013, 'message': 'changed', 'data': {'sessionId': 's'}}}
+        for first in (busy, None):
+            with self.subTest(first=first):
+                engine = self.engine([first, rows_frame()])
+                projection = await_pending(engine, {'rowsSummary': {'state': 'ok'}}, 5)
+                self.assertEqual(projection['rowsSummary']['state'], 'pending')
 
 
 def valid_admission_observation():
