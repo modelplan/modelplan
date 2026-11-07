@@ -52,7 +52,55 @@ private actor RowsEntryClient: EngineClient {
     func render() { lastRows = composition.provider.dockContent.dockRows.map(\.id) }
     func hide() {}
 }
+@MainActor private final class EntryToggleConsole: EngineRowsConsoleSurface {
+    private(set) var session: UUID?
+
+    func show() {
+        if session == nil { reveal() } else { hide() }
+    }
+
+    func reveal() {
+        if session == nil { session = UUID() }
+    }
+
+    func render() {}
+    func hide() { session = nil }
+}
+
 @MainActor final class EngineRowsEntryTests: XCTestCase {
+    func testFirstRunRevealKeepsTheSessionWhileTheStatusActionToggles() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-reveal-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let console = EntryToggleConsole()
+        let app = EngineRowsEntry.make(
+            configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile),
+            createsNativePanels: false, cockpitEntryEnabled: true,
+            makeClient: { _, store in RowsEntryClient(store: store, rows: rows) },
+            makeConsole: { _ in console }, activateSettings: {})
+        await app.prepare()
+        let editor = app.settingsHost.application.editor
+        var context = editor.context
+        context.capabilities.helpMapAvailable = true
+        context.capabilities.helpMapUsesDock = false
+        editor.update(context: context)
+        var session: UUID?
+        for attempt in 0..<2 {
+            let snapshot = try XCTUnwrap(editor.snapshot)
+            let receipt = try await editor.completeFirstRun(options: .init(preferences: snapshot.preferences),
+                action: .seeWhatsHere, host: .popup, expectedRevision: snapshot.revision)
+            XCTAssertTrue(receipt.effects.contains(.openCockpit))
+            if attempt == 0 { session = try XCTUnwrap(console.session) }
+            else { XCTAssertEqual(console.session, session) }
+        }
+        XCTAssertNotNil(console.session)
+        _ = app.perform(NSSelectorFromString("showConsoleMenu"))
+        XCTAssertNil(console.session)
+    }
+
     func testPluginResultUsesAcceptedRequestPairAcrossOtherResponsesAndClear() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("u8-plugin-" + UUID().uuidString)
