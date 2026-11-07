@@ -124,6 +124,14 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 
+  func testFailureLogSurvivesAClosedStderr() {
+    let saved = dup(STDERR_FILENO)
+    XCTAssertGreaterThanOrEqual(saved, 0)
+    close(STDERR_FILENO)
+    CockpitFailureLog.record("synthetic line with stderr closed")
+    dup2(saved, STDERR_FILENO); close(saved)
+  }
+
   func testFailureLogKeepsErrorCaseNamesAndDropsTheirValues() {
     enum Synthetic: Error { case account(String), plain }
     struct Detailed: Error { let text = "synthetic-account" }

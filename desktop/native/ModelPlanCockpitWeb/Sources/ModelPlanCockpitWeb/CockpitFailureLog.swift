@@ -24,9 +24,13 @@ public enum CockpitUnavailableReason: Equatable, Sendable {
 /// app.log. Callers pass code paths and counters only, never engine data or an error's text.
 public enum CockpitFailureLog {
   private static let logger = Logger(subsystem: "org.modelplan.community", category: "cockpit")
+  // A pipe whose reader has gone must not raise SIGPIPE for the sake of a log line.
+  private static let stderrPrepared: Void = { _ = fcntl(STDERR_FILENO, F_SETNOSIGPIPE, 1) }()
   public static func record(_ line: String) {
     logger.error("\(line, privacy: .public)")
-    FileHandle.standardError.write(Data(("modelplan-cockpit " + line + "\n").utf8))
+    _ = stderrPrepared
+    // Not FileHandle.write, which raises an exception when stderr is closed. A failed write is ignored.
+    ("modelplan-cockpit " + line + "\n").withCString { _ = write(STDERR_FILENO, $0, strlen($0)) }
   }
   /// The case name of an error: an associated value can carry account or path text.
   public static func errorName(_ error: Error) -> String {
