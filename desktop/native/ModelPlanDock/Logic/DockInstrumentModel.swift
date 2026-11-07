@@ -30,8 +30,13 @@ public struct DockQuotaWindowInput: Sendable {
 public struct DockWorkingSignal: Sendable {
     public var subscriptionID: String?
     public var bindingVerified: Bool, fresh: Bool, observedOutput: Bool
-    public init(subscriptionID: String?, bindingVerified: Bool, fresh: Bool, observedOutput: Bool) {
+    /// Explicit admitted turn evidence is distinct from observed token output.
+    public var observedInFlight: Bool
+    public var expiresAt: Date?
+    public init(subscriptionID: String?, bindingVerified: Bool, fresh: Bool, observedOutput: Bool,
+                observedInFlight: Bool = false, expiresAt: Date? = nil) {
         self.subscriptionID=subscriptionID;self.bindingVerified=bindingVerified;self.fresh=fresh;self.observedOutput=observedOutput
+        self.observedInFlight=observedInFlight;self.expiresAt=expiresAt
     }
 }
 public struct DockInstrumentInput: Sendable {
@@ -44,6 +49,14 @@ public struct DockInstrumentInput: Sendable {
     public var unavailableReason:String?
     public var working: DockWorkingSignal?
     public init(id: String, name: String, windows: [DockQuotaWindowInput]) {self.id=id;self.name=name;self.windows=windows}
+    /// D40 / DOCK-3.5-01: a subscription that shares its name shows "name · alias" when the user
+    /// gave it an alias, else the producer's "name · 2" (the first of the group stays plain).
+    public var duplicateDisplayName: String {
+        guard let tag = duplicateAccountTag, let alias, !alias.isEmpty else { return name }
+        let number = " · " + String(tag)
+        let base = tag > 1 && name.hasSuffix(number) ? String(name.dropLast(number.count)) : name
+        return base + " · " + alias
+    }
 }
 public enum DockQuotaStatus: String, Codable, Hashable, Sendable {case unknown, normal, warning, critical}
 public struct DockQuotaArc: Equatable, Sendable {
@@ -113,7 +126,7 @@ public enum DockInstrumentProjection {
         }
         func status(_ r: Double?) -> DockQuotaStatus {
             guard let r else{return .unknown}
-            return r<=redBelow ? .critical : r<41 ? .warning : .normal
+            return r <= redBelow ? .critical : r <= 50 ? .warning : .normal
         }
         let general=input.windows.filter(\.isGeneral)
         // Match the study's ringWindows ordering by typed window length. Restricted
@@ -134,7 +147,11 @@ public enum DockInstrumentProjection {
            let duration=selected.durationSeconds, duration.isFinite, duration>0 {
             time=max(0,min(1,reset.timeIntervalSince(now)/duration))
         }
-        let working=input.working.map{$0.bindingVerified && $0.fresh && $0.observedOutput && $0.subscriptionID==input.id} == true && input.dataState == .fresh
+        let working=input.working.map { signal in
+            signal.bindingVerified && signal.fresh && signal.subscriptionID == input.id &&
+            (signal.observedOutput || (signal.observedInFlight && signal.expiresAt != nil)) &&
+            (signal.expiresAt.map { now < $0 } ?? true)
+        } == true && input.dataState == .fresh
         func arc(_ w:DockQuotaWindowInput?) -> DockQuotaArc? {w.map{let r=value($0);return DockQuotaArc(windowID:$0.id,fraction:r.map{$0/100},status:status(r))}}
         return DockInstrumentReading(subscriptionID:input.id,name:input.name,alias:input.alias,vendorResourceKey:input.vendorResourceKey,duplicateAccountTag:input.duplicateAccountTag,
             outer:arc(outer),inner:arc(inner),selectedWindowID:selected?.id,selectedWindowLabel:selected?.label,

@@ -62,6 +62,9 @@ final class CatalogueTests: XCTestCase {
         func row(_ key: SettingKey) throws -> SettingsRow { try XCTUnwrap(rows.first { $0.key == key }) }
         XCTAssertEqual(try row(.login).value, .login(LoginSetting(preferences: .init(), capabilities: c.capabilities)))
         XCTAssertEqual(try row(.captureHiding).availability, .unsupportedCaptureHiding)
+        // DOCK-3.3-11: the percentage switch's own name.
+        XCTAssertEqual(try row(.showPercentages).title.value(.english), "Quota widget percentages")
+        XCTAssertEqual(try row(.showPercentages).title.value(.chinese), "挂件额度百分比")
         XCTAssertEqual(try row(.clearCLI).availability, .cliOwned); XCTAssertEqual(try row(.clearCLI).value, .action(nil))
         XCTAssertEqual(try row(.retention).value, .text("sessions=35d; dailyTotals=371d; owner=CLI"))
         XCTAssertEqual(try row(.clearAppCache).availability, .cacheUnavailable)

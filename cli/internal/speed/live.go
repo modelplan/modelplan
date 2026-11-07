@@ -36,35 +36,39 @@ type liveSample struct {
 
 // LiveRecord is bounded local observation state, not a public session identifier.
 type LiveRecord struct {
-	GrantEpoch      *GrantEpoch  `json:"grantEpoch,omitempty"`
-	Key             string       `json:"key"`
-	Ref             string       `json:"ref"`
-	Source          string       `json:"source"`
-	Model           string       `json:"model"`
-	Effort          string       `json:"effort"`
-	Speed           string       `json:"speed"`
-	ProjectRef      string       `json:"projectRef,omitempty"`
-	SubscriptionRef string       `json:"subscriptionRef,omitempty"`
-	StartedAt       time.Time    `json:"startedAt"`
-	LastAt          time.Time    `json:"lastAt"`
-	Running         bool         `json:"running"`
-	Samples         []liveSample `json:"samples,omitempty"`
+	GrantEpoch      *GrantEpoch   `json:"grantEpoch,omitempty"`
+	Activity        *TurnActivity `json:"activity,omitempty"`
+	Key             string        `json:"key"`
+	Ref             string        `json:"ref"`
+	Source          string        `json:"source"`
+	Model           string        `json:"model"`
+	Effort          string        `json:"effort"`
+	Speed           string        `json:"speed"`
+	ProjectRef      string        `json:"projectRef,omitempty"`
+	ProjectLabel    string        `json:"projectLabel,omitempty"` // only while project labels are on
+	SubscriptionRef string        `json:"subscriptionRef,omitempty"`
+	StartedAt       time.Time     `json:"startedAt"`
+	LastAt          time.Time     `json:"lastAt"`
+	Running         bool          `json:"running"`
+	Samples         []liveSample  `json:"samples,omitempty"`
 }
 
 // LiveSession contains only local opaque references, configuration and timing evidence.
 type LiveSession struct {
-	Ref             string    `json:"ref"`
-	Source          string    `json:"source"`
-	Model           string    `json:"model"`
-	Effort          string    `json:"effort"`
-	EffortStatus    string    `json:"effortStatus"`
-	Speed           string    `json:"speed"`
-	ProjectRef      *string   `json:"projectRef"`
-	SubscriptionRef *string   `json:"subscriptionRef"`
-	StartedAt       time.Time `json:"startedAt"`
-	LastAt          time.Time `json:"lastAt"`
-	Status          string    `json:"status"`
-	Rate            Rate      `json:"rate"`
+	Activity        *TurnActivity `json:"activity,omitempty"`
+	Ref             string        `json:"ref"`
+	Source          string        `json:"source"`
+	Model           string        `json:"model"`
+	Effort          string        `json:"effort"`
+	EffortStatus    string        `json:"effortStatus"`
+	Speed           string        `json:"speed"`
+	ProjectRef      *string       `json:"projectRef"`
+	ProjectLabel    string        `json:"projectLabel,omitempty"`
+	SubscriptionRef *string       `json:"subscriptionRef"`
+	StartedAt       time.Time     `json:"startedAt"`
+	LastAt          time.Time     `json:"lastAt"`
+	Status          string        `json:"status"`
+	Rate            Rate          `json:"rate"`
 }
 
 func (p *claudeParser) liveProbe() liveProbe {
@@ -126,16 +130,26 @@ func probeTurns(turns []turn) liveProbe {
 // separate Claude subagent files. It follows no symlinks, visits at most 20,000 entries per root,
 // and returns at most 64 newest logs changed in the last five minutes. Each read is a 256 KiB tail.
 func ActiveLogs(claudeHome, codexHome string, now time.Time) []LiveLog {
+	return activeLogs([]liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}}, now)
+}
+
+type liveRoot struct {
+	dir, source string
+	enabled     bool
+}
+
+// ActivityLogs shares the existing bounded discovery with the ZCode lifecycle root.
+func ActivityLogs(claudeHome, codexHome, zcodeHome string, now time.Time) []LiveLog {
+	return activeLogs([]liveRoot{{filepath.Join(claudeHome, "projects"), "claude-code", claudeHome != ""}, {filepath.Join(codexHome, "sessions"), "codex", codexHome != ""}, {filepath.Join(zcodeHome, "cli", "log"), "zcode", zcodeHome != ""}}, now)
+}
+func activeLogs(roots []liveRoot, now time.Time) []LiveLog {
 	type candidate struct {
 		log LiveLog
 		at  time.Time
 	}
 	var all []candidate
-	for _, root := range []struct{ dir, source string }{{filepath.Join(claudeHome, "projects"), "claude-code"}, {filepath.Join(codexHome, "sessions"), "codex"}} {
-		if !filepath.IsAbs(root.dir) {
-			continue
-		}
-		if (root.source == "claude-code" && claudeHome == "") || (root.source == "codex" && codexHome == "") {
+	for _, root := range roots {
+		if !root.enabled || !filepath.IsAbs(root.dir) {
 			continue
 		}
 		visited := 0
@@ -201,6 +215,15 @@ func ObserveLive(cache string, logs []LiveLog, labels bool, subscriptions map[st
 				continue
 			}
 			changed = l.setLive(fileKey(log.Path), log.Source, x, subscriptions[log.Source], now) || changed
+			// Reuse the decisive lifecycle parser without changing token/rate eligibility.
+			if verdicts, err := readActivityTail(log, fi, now); err == nil && len(verdicts) == 1 && !verdicts[0].RecordAt.Before(grantStart(l.admission, log.Source)) {
+				for j := range l.Live {
+					if l.Live[j].Key == fileKey(log.Path) && l.Live[j].Source == log.Source && sameEpoch(l.Live[j].GrantEpoch, currentEpoch(l.admission, log.Source)) {
+						v := verdicts[0].TurnActivity
+						l.Live[j].Activity = &v
+					}
+				}
+			}
 		}
 		return changed
 	})
@@ -239,8 +262,14 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			break
 		}
 	}
-	if r.ProjectRef == "" && x.cwd != "" && l.project != nil {
-		r.ProjectRef, _ = l.project(x.cwd)
+	if x.cwd != "" && l.project != nil {
+		ref, label := l.project(x.cwd)
+		if r.ProjectRef == "" {
+			r.ProjectRef = ref
+		}
+		if ref == r.ProjectRef {
+			r.ProjectLabel = label
+		}
 	}
 	for _, q := range x.requests {
 		if q.cfg != x.cfg || q.end.Before(start) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
@@ -287,12 +316,25 @@ func (v PerfView) LiveSessions() []LiveSession {
 		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
 			continue
 		}
-		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), SubscriptionRef: refOrNil(r.SubscriptionRef)}
+		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef)}
 		if r.Effort != "" {
 			x.EffortStatus = "reported"
 		}
 		if r.Running {
 			x.Status = "running"
+		}
+		if r.Activity != nil {
+			a := *r.Activity
+			if !v.Now.Before(a.ExpiresAt) {
+				a.Phase = "finished"
+			}
+			x.Activity = &a
+			x.LastAt = a.RecordAt
+			if a.Phase == "finished" {
+				x.Status = "idle"
+			} else {
+				x.Status = "running"
+			}
 		}
 		rate := Rate{Source: r.Source, Window: "60s", Scope: "session", Min: MinSamples, Status: "insufficient", Reason: "too-few-samples"}
 		var output, gen int64

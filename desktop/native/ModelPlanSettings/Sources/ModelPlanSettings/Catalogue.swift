@@ -179,6 +179,8 @@ public struct SettingsPageContext: Sendable {
         else if v1NormalEntry { unavailableControls[.forecast] = SettingsText("Unavailable until forecasts are available.", "预测可用前不可用。") }
     }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
+    /// G3-22: the menu-bar icon is covered (full menu bar); Settings shows how to bring it back.
+    public var statusItemNotice: SettingsText?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
     public var readerDiagnostics: [SettingsReaderDiagnostic] = []
@@ -207,7 +209,6 @@ public struct SettingsRow: Equatable, Sendable {
     public let key: SettingKey
     public let paneID: String
     public let groupID: String
-    public let paneTitle: SettingsText
     public let groupTitle: SettingsText?
     /// Compatibility only. Custom pane identifiers are intentionally not constrained to draft IDs.
     public var pane: SettingsPane? { SettingsPane(rawValue: paneID) }
@@ -231,19 +232,19 @@ public enum SettingsCatalogue {
         .init(.motion,"Reduce motion","减少动态效果","Follow accessibility settings or always reduce motion.","跟随辅助功能设置或始终减少动态。"),
         .init(.transparency,"Reduce transparency","减少透明度","Follow accessibility settings or use solid surfaces.","跟随辅助功能设置或使用不透明表面。"),
         .init(.percentageMode,"Percentage basis","百分比含义","Show remaining or used quota.","显示剩余或已用额度。"),
-        .init(.showPercentages,"Show percentages","显示百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
+        .init(.showPercentages,"Quota widget percentages","挂件额度百分比","Keep notification indicators when numbers are hidden.","隐藏数字后仍保留提示点。"),
         .init(.percentagePin,"Percentage window","百分比窗口","Select the tightest, 5-hour or weekly window per subscription.","为每个订阅选择最紧的、5小时或每周窗口。"),
         .init(.redBelow,"Critical threshold","变红阈值","Red at remaining quota ≤ the threshold, even when displaying used quota.","剩余额度 ≤ 阈值时变红，即使显示已用额度也一样。"),
-        .init(.sliverAlert,"Sliver alert color","隐藏条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
-        .init(.showDock,"Show Quota Widget","显示额度挂件","Show or hide the Quota Widget.","显示或隐藏额度挂件。"),
-        .init(.autoHide,"Auto-collapse","自动收起","Collapse to the edge strip when leaving.","移开后收起成贴边细条。"),
+        .init(.sliverAlert,"Sliver alert color","细条提示色","Allow the collapsed strip to indicate attention.","允许收起的细条提示需关注状态。"),
+        .init(.showDock,"Show Quota Widget","显示额度挂件","Same as Show Quota Widget in the menu bar icon's menu. When off, turn it back on there.","与菜单栏图标菜单里的「显示额度挂件」相同；关闭后可在那里重新打开。"),
+        .init(.autoHide,"Auto-collapse when the pointer leaves","鼠标离开后自动收起","Shrinks to a strip on the edge; rest the pointer there to expand it. Same as Auto-Collapse in the widget's menu.","缩成贴边细条，鼠标靠近稍停即可展开；与挂件右键菜单里的「自动收起」相同。"),
         .init(.reveal,"Reveal dwell","展开停留时间","Wait before revealing the edge Quota Widget.","在边缘停留后展开。"),
         .init(.magnification,"Hover magnification","悬停放大","Choose none, subtle or strong.","选择不放大、轻微或明显。"),
         .init(.fullscreen,"Show over full-screen apps","全屏应用上显示","Off by default.","默认关闭。"),
         .init(.captureHiding,"Hide from capture","录屏时隐藏","Unavailable: hiding from arbitrary recorders is not supported.","不可用：不支持对任意录屏程序隐藏。"),
         .init(.dockDisplay,"Preferred display","偏好显示器","Keep the selected display when it reconnects.","重新连接后恢复所选显示器。"),
         .init(.dockPosition,"Preferred along-edge position","偏好沿边位置","Bottom to top on sides; left to right on bottom.","侧边从下到上；底边从左到右。"),
-        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom or left.","选择右侧、底部或左侧。"),
+        .init(.dockEdge,"Preferred Quota Widget edge","偏好额度挂件边缘","Choose right, bottom, left or top (below the menu bar).","选择右侧、底部、左侧或顶部（菜单栏下方）。"),
         .init(.detectedReaders,"Detected readers","已检测读取器","Read-only local reader status.","本地读取器的只读状态。"),
         .init(.optionalReaders,"Local reader choices","本地读取器选择","Legacy app choices only; not shared CLI authorization.","仅为旧版本地选择，不代表 CLI 共享授权。"),
         .init(.activeDisplay,"Follow active display","跟随当前显示器","Use the display selected by the display coordinator.","使用显示器协调器选定的显示器。"),
@@ -336,7 +337,7 @@ public enum SettingsCatalogue {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)
                     } else { subtitle = d.subtitle }
-                    return .init(key: key, paneID: pane.id, groupID: group.id, paneTitle: pane.title,
+                    return .init(key: key, paneID: pane.id, groupID: group.id,
                                  groupTitle: group.title, title: d.title, subtitle: subtitle,
                                  availability: availability(key, c), value: value(key, p, c, subs))
                 }
@@ -386,7 +387,7 @@ public enum SettingsCatalogue {
         case .percentageMode: return choices(p.percentageMode)
         case .showPercentages: return .toggle(p.showPercentages)
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
-        case .redBelow: return .choice(String(p.redBelow), options: [10,16,20,25].map(String.init))
+        case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)
