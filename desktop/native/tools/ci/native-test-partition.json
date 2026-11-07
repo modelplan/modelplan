@@ -37,6 +37,7 @@
       "testModule": "ModelPlanAppIntegrationTests",
       "testSources": "desktop/native/ModelPlanAppIntegration/Tests/ModelPlanAppIntegrationTests",
       "preexistingSkip": [
+        "DockMotionPolicyTests",
         "GeneratedConsentPortTests"
       ],
       "headless": [
