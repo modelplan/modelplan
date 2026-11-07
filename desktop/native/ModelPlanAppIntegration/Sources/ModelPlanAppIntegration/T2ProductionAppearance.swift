@@ -6,6 +6,21 @@ import ModelPlanOfficialDock
 import ModelPlanDockResources
 import ModelPlanSettings
 
+/// D-6: the ignition cap's art, loaded once from the verified store for its hover and press poses.
+final class T2IgnitionArt: @unchecked Sendable {
+    let idle: CGImage, pressed: CGImage, inner: CGImage, guardRing: CGImage
+    private init?() {
+        guard let records = try? T2BundledArtwork.records().mapValues({ DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }),
+              let root = try? T2BundledArtwork.rootURL(), let store = try? DockArtworkStore(root: root, manifest: .init(files: records)),
+              let idle = try? store.image("a5-cap-night-idle-44x44@3x.png", maximumPixelSize: 256),
+              let pressed = try? store.image("a5-cap-night-pressed-44x44@3x.png", maximumPixelSize: 256),
+              let inner = try? store.image("a5-inner-contact-shadow-52x52@3x.png", maximumPixelSize: 256),
+              let guardRing = try? store.image("a5-recessed-guard-52x52@3x.png", maximumPixelSize: 256) else { return nil }
+        self.idle = idle; self.pressed = pressed; self.inner = inner; self.guardRing = guardRing
+    }
+    static let shared = T2IgnitionArt()
+}
+
 /// Connects verified artwork and the registered T2 geometry to the production host.
 @MainActor enum T2ProductionAppearance {
     enum Failure: Error { case missingDisplay }

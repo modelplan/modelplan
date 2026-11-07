@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
@@ -193,7 +194,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 
 	unlock, ok := lock(cache, now)
 	if !ok {
-		return errors.New("another refresh is running")
+		return fmt.Errorf("another refresh is running: %w", consent.ErrReaderBusy)
 	}
 	defer unlock()
 	next, err := codexRefreshNext(cache)
