@@ -25,8 +25,9 @@ func TestAppServerObservesLiveSessionsItself(t *testing.T) {
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// Its own repository: CI's temporary directory is inside the checkout, and a label names the repository.
 	cwd := filepath.Join(home, "alpha")
-	if err := os.MkdirAll(cwd, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(cwd, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now().UTC().Add(-20 * time.Second)
