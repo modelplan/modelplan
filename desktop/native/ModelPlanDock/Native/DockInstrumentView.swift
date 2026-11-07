@@ -711,7 +711,7 @@ enum DockGripInk {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
                 case .resetAnnounced:label=zh ? "已公告额外重置":"Extra reset announced"
                 case .resetConfirmed:label=zh ? "额外重置已确认，等待读数":"Extra reset confirmed; awaiting a reading"
-                case .cardsExpiring:label=zh ? "重置卡即将过期":"Reset card expiring"
+                case .cardsExpiring:label=zh ? "额外重置即将过期":"Resets expiring"
                 case .credits:label=zh ? "正在使用点数":"Using credits"
                 }
                 append("notice."+id,label,nil,label,station.eventRect.offsetBy(dx:-origin.x,dy:-origin.y),.notice(id))
