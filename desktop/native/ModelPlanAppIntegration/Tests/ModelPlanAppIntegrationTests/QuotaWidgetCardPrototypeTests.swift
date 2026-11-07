@@ -33,7 +33,7 @@ import XCTest
         let view = try card(badCase, name: "train-card")
         XCTAssertEqual(view.frame.width, 304)
         let window = try XCTUnwrap(view.readoutWindowForChecks)
-        XCTAssertEqual(window.minX, 11); XCTAssertEqual(window.width, 282); XCTAssertEqual(window.height, 75)
+        XCTAssertEqual(window.minX, 11); XCTAssertEqual(window.minY, 50); XCTAssertEqual(window.width, 282); XCTAssertEqual(window.height, 75)
         XCTAssertEqual(view.frame.height - window.maxY, 29, "The empty events band and the plate padding")
         let rows = try ["quota:weekly", "reserve", "today"].map { try XCTUnwrap(view.rowFrameForChecks($0)) }
         XCTAssertEqual(rows.map { $0.minY - window.minY }, [7, 28, 49])

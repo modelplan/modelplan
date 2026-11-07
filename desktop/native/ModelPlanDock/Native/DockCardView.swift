@@ -45,12 +45,12 @@ import CryptoKit
     /// The notice's own window: gap above it and its inset (dock.css .cd-ev).
     public var noticeGap:CGFloat=7,noticePadding=NSEdgeInsets(top:6,left:8,bottom:6,right:8)
     /// Header: name size (semibold), small text size, gap after the mark, gap below the header.
-    public var nameFontSize:CGFloat=13,smallFontSize:CGFloat=11,headerGap:CGFloat=8,headerBottomGap:CGFloat=7
+    public var nameFontSize:CGFloat=13,smallFontSize:CGFloat=11,headerGap:CGFloat=8,headerBottomGap:CGFloat=7,headerMinimumHeight:CGFloat=0
     /// Row grid: label, bar and percent columns are fixed; the time column takes the rest.
     public var columns:[CGFloat]=[56,96,34],columnGap:CGFloat=5,rowMinimumHeight:CGFloat=18,rowGap:CGFloat=2
     /// Readout fonts (the LCD face) for percent values and for labels/times; nil uses the system
     /// monospaced font at `readoutSize` / `smallFontSize`.
-    public var readoutFont:NSFont?=nil,readoutSmallFont:NSFont?=nil,readoutSize:CGFloat=11.5
+    public var readoutFont:NSFont?=nil,readoutSmallFont:NSFont?=nil,readoutSize:CGFloat=11.5,labelLift:CGFloat=0
     public var quota:[DockQuotaStatus:NSColor]=[.normal:.controlAccentColor,.warning:.systemOrange,.critical:.systemRed,.unknown:.secondaryLabelColor]
     /// Announced-reset ink (the card's ↺ section title).
     public var notice:NSColor = .systemBlue
@@ -179,7 +179,7 @@ import CryptoKit
             let plan=label("plan",value.plan,font:small,color:style.muted);place(plan,in:self)
             let h=ceil(natural(plan).height);plan.frame=CGRect(x:x,y:y+nameHeight,width:nameWidth,height:h);leftHeight+=h
         }
-        headerHeight=max(headerHeight,leftHeight)
+        headerHeight=max(headerHeight,leftHeight,style.headerMinimumHeight)
         var headerX=style.width-style.padding-rightWidth
         for cell in right{
             place(cell.field,in:self);let h=ceil(natural(cell.field).height)
@@ -206,7 +206,8 @@ import CryptoKit
             let l=label(rowID+".label",row.label,font:readoutSmall,color:row.emphasised ? style.ink:style.muted);place(l,in:rowView)
             if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
             let toneColor=style.quota[row.tone] ?? style.ink
-            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : (row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
+            let isReading=row.kind == .quota || row.kind == .extraQuota
+            let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : (isReading && row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
             if row.kind == .quota || row.kind == .extraQuota{
@@ -245,7 +246,9 @@ import CryptoKit
                     // Single-line cells centre on the row; a wrapped value starts on the first line.
                     top=field.lineBreakMode == .byWordWrapping ? max(0,(style.rowMinimumHeight-min(h,style.rowMinimumHeight))/2) : (rowHeight-h)/2
                 }else{h=style.barSize.height;top=(rowHeight-h)/2}
-                cell.view.frame=CGRect(x:cell.x,y:max(0,top),width:cell.width,height:h)
+                // The label's CJK face sits a point low beside the LCD digits and the bar.
+                let nudge:CGFloat=cell.view === l ? -style.labelLift : 0
+                cell.view.frame=CGRect(x:cell.x,y:max(0,top)+nudge,width:cell.width,height:h)
             }
             if let detailBelow{
                 let dx=c[0]+g,dw=max(0,rowWidth-dx),dh=wrapped(detailBelow,width:dw)

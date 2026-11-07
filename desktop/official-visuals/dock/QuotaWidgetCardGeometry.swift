@@ -17,6 +17,9 @@ public enum QuotaWidgetCardGeometry {
     public static let headingIconSize: CGFloat = 20
     public static let headingGap: CGFloat = 8
     public static let headingBottomGap: CGFloat = 7
+    /// Measured: the header block is 33 tall, so the readout starts at 50.
+    public static let headingMinimumHeight: CGFloat = 33
+    public static let rowLabelLift: CGFloat = 1
     /// face.css task 36 widened the label column to 56 so LCD glyphs fit "Fable·wk" / "Fable·周".
     public static let rowFixedColumns: [CGFloat] = [56, 78, 34]
     public static let rowColumnGap: CGFloat = 5

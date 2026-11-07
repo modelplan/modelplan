@@ -719,6 +719,7 @@ struct DockHelpInteraction: Equatable {
         style.brandSize = QuotaWidgetCardGeometry.headingIconSize
         style.headerGap = QuotaWidgetCardGeometry.headingGap
         style.headerBottomGap = QuotaWidgetCardGeometry.headingBottomGap
+        style.headerMinimumHeight = QuotaWidgetCardGeometry.headingMinimumHeight; style.labelLift = QuotaWidgetCardGeometry.rowLabelLift
         style.windowRadius = QuotaWidgetCardGeometry.lcdRadius
         let rowMargin = QuotaWidgetCardGeometry.rowVerticalMargin
         style.windowPadding = NSEdgeInsets(top: QuotaWidgetCardGeometry.lcdVerticalPadding + rowMargin, left: QuotaWidgetCardGeometry.lcdHorizontalPadding,
