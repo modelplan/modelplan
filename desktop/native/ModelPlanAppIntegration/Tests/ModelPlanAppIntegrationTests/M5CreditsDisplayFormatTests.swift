@@ -114,6 +114,25 @@ final class M5CreditsDisplayFormatTests: XCTestCase {
         }
     }
 
+    // V-06 / DOCK-3.8-08: display rounding must not alter the reported value.
+    func testV06OwnerApprovedIntegerExamples() {
+        let examples: [(Double, String)] = [(3, "3"), (3.5, "4"), (3.456, "3"),
+                                             (0.004, "<1"), (1_234_567.891, "1,234,568")]
+        let unknown = M5CreditsDisplayFormat.Unit(identifier: "other")
+        for english in [true, false] {
+            for (value, expected) in examples {
+                XCTAssertEqual(M5CreditsDisplayFormat.text(value, unit: .credits, english: english), .formatted(expected))
+                guard case .rendered(let original, let unit, let text, _) =
+                        M5CreditsDisplayFormat.unknownUnitText(value, unit: unknown, knowledge: .unknown, english: english) else {
+                    XCTFail("unknown unit must retain and render the reported balance"); continue
+                }
+                XCTAssertEqual(original.bitPattern, value.bitPattern)
+                XCTAssertEqual(unit, unknown)
+                XCTAssertEqual(text, expected)
+            }
+        }
+    }
+
     func testUnknownUnitMissingNonFiniteAndLargeValuePreserveFacts() {
         let unit = M5CreditsDisplayFormat.Unit(identifier: "")
         XCTAssertEqual(M5CreditsDisplayFormat.unknownUnitText(nil, unit: unit, knowledge: .unknown), .missing(unit: unit))

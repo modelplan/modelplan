@@ -341,6 +341,7 @@ private actor RowsEntryClient: EngineClient {
         XCTAssertNotEqual(app.currentSettingsContext.about.macOSVersion, "unknown")
         XCTAssertNotEqual(app.currentSettingsContext.about.cliState, .ready)
         await app.prepare(); await app.composition.start()
+        XCTAssertNil(app.currentSettingsContext.unavailableControls[.magnification])
         XCTAssertEqual(app.currentSettingsContext.about.cliVersion, CommunityConsentBundleIdentity.version)
         XCTAssertEqual(app.currentSettingsContext.about.cliState, .ready)
         await app.composition.store.consume(.connection(.stopped(.requested)))

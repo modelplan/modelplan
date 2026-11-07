@@ -5,6 +5,12 @@ import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
+/// DOCK-3.1-11: the T2 matte gradient, free edge to attachment.
+public enum T2FaceGradient {
+    public static let inks: [[CGFloat]] = [[21,29,35], [54,63,68], [38,50,57], [16,27,36], [3,9,17]]
+    public static let locations: [CGFloat] = [0, 0.17, 0.43, 0.74, 1]
+}
+
 /// DOCK-3.1-10/-11/-20: native face material, soot and clipped ignition well.
 /// Instruments, the grip and ignition remain later layers.
 @MainActor public final class T2FaceMaterial {
@@ -17,6 +23,22 @@ import CoreImage.CIFilterBuiltins
     // bounded Core Image CPU fallback rather than substituting different art.
     private lazy var softwareCompositor = CIContext(options: [.workingColorSpace: linear, .outputColorSpace: srgb, .useSoftwareRenderer: true])
     public init() {}
+
+    /// sRGB 8-bit code to linear light (IEC 61966-2-1), as SVG's linearRGB conversion.
+    nonisolated static let linearTable: [Double] = (0...255).map { code in
+        let v = Double(code) / 255
+        return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+    }
+    nonisolated static func encode(_ linear: Double) -> Double {
+        let v = min(1, max(0, linear))
+        return v <= 0.0031308 ? 12.92 * v : 1.055 * pow(v, 1 / 2.4) - 0.055
+    }
+    /// Compositing and Blending Level 1, soft-light: Cb = backdrop (in2), Cs = source (in).
+    nonisolated static func softLight(backdrop cb: Double, source cs: Double) -> Double {
+        if cs <= 0.5 { return cb - (1 - 2 * cs) * cb * (1 - cb) }
+        let d = cb <= 0.25 ? ((16 * cb - 12) * cb + 4) * cb : sqrt(cb)
+        return cb + (2 * cs - 1) * (d - cb)
+    }
 
     /// The viewport is expressed in the same top-left study coordinates as the
     /// geometry, so cropping changes neither gradient registration nor noise phase.
@@ -42,10 +64,9 @@ import CoreImage.CIFilterBuiltins
         outline.move(to: pathPoint(first))
         for point in geometry.outline.dropFirst() { outline.addLine(to: pathPoint(point)) }
         outline.closeSubpath(); context.addPath(outline); context.clip()
-        let inks: [[CGFloat]] = [[21,29,35], [54,63,68], [38,50,57], [16,27,36], [3,9,17]]
-        let colors = inks.map { CGColor(colorSpace: srgb, components: [$0[0]/255, $0[1]/255, $0[2]/255, 1])! }
+        let colors = T2FaceGradient.inks.map { CGColor(colorSpace: srgb, components: [$0[0]/255, $0[1]/255, $0[2]/255, 1])! }
         guard let gradient = CGGradient(colorsSpace: srgb, colors: colors as CFArray,
-            locations: [0, 0.17, 0.43, 0.74, 1]) else { throw RenderError.allocation }
+            locations: T2FaceGradient.locations) else { throw RenderError.allocation }
         let c = geometry.input.coordinates, depth = geometry.freeDepth
         let start: CGPoint, end: CGPoint
         switch c.edge {
@@ -56,13 +77,44 @@ import CoreImage.CIFilterBuiltins
         }
         context.drawLinearGradient(gradient, start: start, end: end,
             options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-        guard let source = context.makeImage() else { throw RenderError.allocation }
-
-        let bytes = Self.grainRasters.raster(viewport: viewport, scale: scale)
-        let noise = CIImage(bitmapData: bytes, bytesPerRow: width * 16,
-            size: CGSize(width: width, height: height), format: .RGBAf, colorSpace: linear)
-        // feColorMatrix(saturate=0), feFuncA(slope=.018), then the study's
-        // feBlend(in=SourceGraphic, mode=soft-light), feComposite(in2=SourceAlpha, in).
+        // G3-30 colour: the grain is the study's dkGrain filter, evaluated per pixel exactly as SVG
+        // defines it (filters in linearRGB, premultiplied):
+        //   feTurbulence -> feColorMatrix(saturate 0) -> feFuncA(slope .018)
+        //   -> feBlend(in=SourceGraphic, in2=grain, soft-light) -> feComposite(in2=SourceAlpha, in).
+        // The previous Core Image chain handed the unpremultiplied turbulence raster to CIImage as
+        // if it were premultiplied, so the grain colour became R/A (about 1, often above) instead of
+        // about 0.5; soft-light then lifted every dark tone by roughly 0.01 linear, 15-20 sRGB
+        // levels at the screen-edge band. Doing the arithmetic here also removes the dependence on
+        // Core Image's blend-mode alpha conventions and on the GPU/CPU renderer choice.
+        let noise = Self.grainRasters.raster(viewport: viewport, scale: scale)
+        guard let pixels = context.data?.assumingMemoryBound(to: UInt8.self),
+              noise.count == width * height * 16 else { throw RenderError.allocation }
+        let toLinear = Self.linearTable
+        noise.withUnsafeBytes { raw in
+            let grain = raw.bindMemory(to: Float.self)
+            for index in 0..<(width * height) {
+                let p = index * 4
+                let alpha = Double(pixels[p + 3]) / 255
+                guard alpha > 0 else { continue }
+                let n = index * 4
+                let backdrop = min(1, max(0, 0.213 * Double(grain[n]) + 0.715 * Double(grain[n + 1]) + 0.072 * Double(grain[n + 2])))
+                let grainAlpha = min(1, max(0, 0.018 * Double(grain[n + 3])))
+                // feBlend: co = cs(1-ab) + cb(1-as) + as ab B(Cb, Cs); ao = as + ab - as ab.
+                let blendedAlpha = alpha + grainAlpha - alpha * grainAlpha
+                // feComposite in SourceAlpha.
+                let outAlpha = blendedAlpha * alpha
+                for channel in 0..<3 {
+                    let encoded = min(255, Int((Double(pixels[p + channel]) / alpha).rounded()))
+                    let source = toLinear[encoded]
+                    let premultiplied = source * alpha * (1 - grainAlpha) + backdrop * grainAlpha * (1 - alpha)
+                        + alpha * grainAlpha * Self.softLight(backdrop: backdrop, source: source)
+                    let linear = premultiplied / blendedAlpha
+                    pixels[p + channel] = UInt8(max(0, min(255, (Self.encode(linear) * outAlpha * 255).rounded())))
+                }
+                pixels[p + 3] = UInt8(max(0, min(255, (outAlpha * 255).rounded())))
+            }
+        }
+        guard let grained = context.makeImage() else { throw RenderError.allocation }
         let canvas = CGRect(x: 0, y: 0, width: width, height: height)
         // A bounded extent is part of the rendering contract. In particular,
         // blur may grow its extent; crop each output to the requested bitmap.
@@ -74,20 +126,6 @@ import CoreImage.CIFilterBuiltins
                   extent.contains(canvas) else { throw RenderError.filterExtent(stage) }
             return value.cropped(to: canvas)
         }
-        let matrix = CIFilter.colorMatrix()
-        matrix.inputImage = noise
-        matrix.rVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
-        matrix.gVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
-        matrix.bVector = CIVector(x: 0.213, y: 0.715, z: 0.072, w: 0)
-        matrix.aVector = CIVector(x: 0, y: 0, z: 0, w: T2Grain.opacity)
-        let gray = try checked(matrix.outputImage, "colorMatrix")
-        let graphic = CIImage(cgImage: source)
-        let blend = CIFilter.softLightBlendMode()
-        blend.inputImage = graphic; blend.backgroundImage = gray
-        let blended = try checked(blend.outputImage, "softLightBlendMode")
-        let clip = CIFilter.sourceInCompositing()
-        clip.inputImage = blended; clip.backgroundImage = graphic
-        let clipped = try checked(clip.outputImage, "sourceInFace")
         // face-view.js places three quadratic soot fans per station. They use
         // the station mapping, never a second fit to the face contour.
         guard let sootContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
@@ -119,35 +157,31 @@ import CoreImage.CIFilterBuiltins
         blur.inputImage = CIImage(cgImage: sootBitmap)
         blur.radius = Float(1.1 * unitScale * CGFloat(scale))
         let blurred = try checked(blur.outputImage, "gaussianBlur")
-        let sootClip = CIFilter.sourceInCompositing()
-        sootClip.inputImage = blurred; sootClip.backgroundImage = graphic
-        let soot = try checked(sootClip.outputImage, "sourceInSoot")
-        let sootOver = CIFilter.sourceOverCompositing()
-        sootOver.inputImage = soot; sootOver.backgroundImage = clipped
-        let withSoot = try checked(sootOver.outputImage, "sourceOverSoot")
-        guard let wellContext = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width * 4, space: srgb,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw RenderError.allocation }
-        transform(wellContext); wellContext.addPath(outline); wellContext.clip()
-        let r = 17.8 * unitScale, button = geometry.button
-        let well = CGRect(x: button.x - r, y: button.y - r, width: 2*r, height: 2*r)
-        wellContext.setFillColor(CGColor(colorSpace: srgb, components: [8.0/255, 12.0/255, 16.0/255, 1])!)
-        wellContext.setStrokeColor(CGColor(gray: 0, alpha: 11.0/15))
-        wellContext.setLineWidth(0.8 * unitScale); wellContext.addEllipse(in: well); wellContext.drawPath(using: .fillStroke)
-        guard let wellBitmap = wellContext.makeImage() else { throw RenderError.allocation }
-        let wellOver = CIFilter.sourceOverCompositing()
-        wellOver.inputImage = CIImage(cgImage: wellBitmap); wellOver.backgroundImage = withSoot
-        let face = try checked(wellOver.outputImage, "sourceOverWell")
-        guard let result = compositor.createCGImage(face, from: canvas)
-                ?? softwareCompositor.createCGImage(face, from: canvas) else { throw RenderError.filterRender }
-        guard result.width == width, result.height == height else { throw RenderError.filterExtent("renderedBitmap") }
+        guard let soot = compositor.createCGImage(blurred, from: canvas)
+                ?? softwareCompositor.createCGImage(blurred, from: canvas) else { throw RenderError.filterRender }
+        guard soot.width == width, soot.height == height else { throw RenderError.filterExtent("renderedBitmap") }
 
-        // Original grip: rocket.css .dk-cap i, positioned by the T2 geometry.
-        // Side edges use 10x22, horizontal edges 22x10, scaled with the face.
+        // The study composites the clipped dk-material group (soot, ignition well) over the
+        // filtered body in sRGB, as ordinary SVG painting; so does this context.
         guard let final = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * 4, space: srgb,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { throw RenderError.allocation }
-        final.draw(result, in: canvas)
+        final.draw(grained, in: canvas)
+        var device = CGAffineTransform(translationX: 0, y: CGFloat(height)).scaledBy(x: CGFloat(scale), y: -CGFloat(scale))
+            .translatedBy(x: -viewport.minX, y: -viewport.minY)
+        guard let deviceOutline = outline.copy(using: &device) else { throw RenderError.allocation }
+        final.saveGState()
+        final.addPath(deviceOutline); final.clip()
+        final.draw(soot, in: canvas)
+        transform(final)
+        let r = 17.8 * unitScale, button = geometry.button
+        let well = CGRect(x: button.x - r, y: button.y - r, width: 2*r, height: 2*r)
+        final.setFillColor(CGColor(colorSpace: srgb, components: [8.0/255, 12.0/255, 16.0/255, 1])!)
+        final.setStrokeColor(CGColor(gray: 0, alpha: 11.0/15))
+        final.setLineWidth(0.8 * unitScale); final.addEllipse(in: well); final.drawPath(using: .fillStroke)
+        final.restoreGState()
+        // Original grip: rocket.css .dk-cap i, positioned by the T2 geometry.
+        // Side edges use 10x22, horizontal edges 22x10, scaled with the face.
         transform(final)
         let vertical = geometry.input.coordinates.edge == .left || geometry.input.coordinates.edge == .right
         let gripWidth = (vertical ? 10.0 : 22.0) * unitScale

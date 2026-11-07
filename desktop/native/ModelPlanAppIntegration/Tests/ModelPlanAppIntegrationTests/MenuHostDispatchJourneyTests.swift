@@ -27,7 +27,7 @@ import ModelPlanWire
     func testStatusMenuAndSettingsLinksReachTheHostOpener() async throws {
         let app = try makeApp(); defer { app.composition.dock.close() }
         var opened: [URL] = []
-        app.openExternalURL = { opened.append($0) }
+        app.openPublicURL = { opened.append($0) }
         await app.prepare()
         app.renderMenu()
         let menu = try XCTUnwrap(app.liveStatusMenu)
