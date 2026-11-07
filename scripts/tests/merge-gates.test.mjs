@@ -180,8 +180,8 @@ test("merge group requires evidence for each member's own head", () => {
   const other = pr({title:"G3-02", body:"Scenarios: D-02", head:{sha:OLD, ref:"fix/g3-02", repo:{full_name:"modelplan/modelplan"}}});
   const absent = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${H} evidence=wrong-head`)]});
   const valid = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${OLD} evidence=second`)]});
-  const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}, overlap:[]});
-  const queueRuns = [run(".github/workflows/ci.yml")];
+  const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}});
+  const queueRuns = R.QUEUE_WORKFLOWS.map((path) => run(path));
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.FAILURE);
   assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
 });
@@ -192,41 +192,25 @@ test("malformed scenario members fail PR and merge group despite valid evidence"
   for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
     const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
     assert.equal(result.state, R.FAILURE, invalid);
-    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}, overlap:[]}], queueRuns:greenCi}).state, R.FAILURE, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenCi}).state, R.FAILURE, invalid);
   }
   const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
   assert.equal(valid.state, R.SUCCESS);
 });
 
-test("stale-base guard and merge-group evaluation", () => {
-  assert.deepEqual(R.staleOverlap(["desktop/native/A.swift", "docs/x.md"], ["desktop/native/B.swift", "docs/y.md", "cli/z.go"]), ["desktop/native"]);
-  assert.deepEqual(R.staleOverlap(["cli/a.go"], ["desktop/native/B.swift"]), []);
-  // Module granularity (owner 2026-11-06): a desktop/native/<Package> path compares by its first
-  // five segments, so an unrelated native module on the base is not an overlap...
-  const mine = ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/App.swift"];
-  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanEngineStore/Sources/ModelPlanEngineStore/Store.swift"]), []);
-  // ...while the same five-segment module still is.
-  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/Other.swift"]),
-    ["desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration"]);
-  // Shorter desktop/native paths: a package-root file is its package token (a module PR does not
-  // overlap it); files directly under desktop/native stay at tree level, like the legacy rule.
-  assert.deepEqual(R.staleOverlap(["desktop/native/ModelPlanAppIntegration/README.md"], ["desktop/native/ModelPlanAppIntegration/Other.md"]),
-    ["desktop/native/ModelPlanAppIntegration"]);
-  assert.deepEqual(R.staleOverlap(mine, ["desktop/native/ModelPlanAppIntegration/README.md"]), []);
-  assert.deepEqual(R.staleOverlap(["desktop/native/A.swift"], ["desktop/native/B.swift"]), ["desktop/native"]);
-  // A base workflow change overlaps only when the PR itself changes a workflow file.
-  assert.deepEqual(R.staleOverlap(mine, [".github/workflows/desktop.yml"]), []);
-  assert.deepEqual(R.staleOverlap([mine[0], ".github/workflows/u11-native.yml"], [".github/workflows/desktop.yml"]), [".github/workflows"]);
+test("merge-group evaluation: the group's own CI replaces any stale-base rule", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
-  const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, overlap: [], ...o });
-  const qci = [run(".github/workflows/ci.yml")];
+  const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
+  const qci = R.QUEUE_WORKFLOWS.map((path) => run(path));
+  assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");
   assert.equal(R.evaluateGroup({ steps: [step(), step({ pr: 8, prResult: { state: R.PENDING, why: "x" } })], queueRuns: qci }).state, R.FAILURE, "an unready PR fails the group");
-  assert.equal(R.evaluateGroup({ steps: [step({ overlap: ["desktop/native"] })], queueRuns: qci }).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml")] }).state, R.PENDING, "the Mac queue run has not started");
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml"), run(".github/workflows/desktop.yml", "failure")] }).state, R.FAILURE, "a failed Mac queue run fails the group");
   assert.equal(R.evaluateGroup({ steps: [step({ mergeProof: { ok: false, why: "x" } })], queueRuns: qci }).state, R.FAILURE);
-  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml", "failure"), run(".github/workflows/desktop.yml")] }).state, R.FAILURE);
   assert.ok(R.description("x".repeat(200)).length <= 140);
 });
 
@@ -308,6 +292,14 @@ test("shipped files: design rules parse, gate workflows pass the workflow policy
   for (const path of [...R.QUEUE_WORKFLOWS, ".github/workflows/merge-gates-probe.yml"]) {
     assert.match(readFileSync(join(root, path), "utf8"), /^  merge_group:\s*$/m, `${path} must run for queue groups`);
   }
+  // merge_group has no paths filter: queue-scope must decide with the same list as pull_request, or a
+  // group could skip a Mac check its PR run would have needed. native-headless must wait for that decision.
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]);
+  const scope = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1]);
+  for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
+  assert.doesNotMatch("docs/mac-ci.md", scope);
+  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
   const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
   assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");

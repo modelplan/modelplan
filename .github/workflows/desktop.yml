@@ -6,6 +6,8 @@ on:
   pull_request:
     paths: ["desktop/**", "codex/ui/**", "codex/lib/**", "codex/cli-pin.json", "cli/internal/snapshot/**", "cli/internal/digest/**", "cli/internal/desktopcontract/**", "cli/internal/contracttest/**", "schema/**", "testdata/contract-v1/**", ".github/workflows/desktop.yml"]
     types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       mac_ci_probe:
@@ -28,8 +30,43 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Merge queue only: the queue is what tests "PR + latest main", because a PR no longer has to merge
+  # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
+  # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
+  # contains the base and its own run tested exactly this), skips the jobs below. The GUI leg never
+  # runs here. trusted-mac.yml has no merge_group route to the self-hosted pool, so native-headless
+  # uses a hosted Mac here.
+  queue-scope:
+    if: ${{ github.event_name == 'merge_group' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: .github
+      - id: scope
+        env:
+          BASE: ${{ github.event.merge_group.base_sha }}
+          QUEUE_PATHS: ^(desktop/|codex/ui/|codex/lib/|codex/cli-pin\.json$|cli/internal/snapshot/|cli/internal/digest/|cli/internal/desktopcontract/|cli/internal/contracttest/|schema/|testdata/contract-v1/|\.github/workflows/desktop\.yml$)
+        run: |
+          set -eu
+          read -r _ p1 p2 extra <<<"$(git rev-list --parents -n 1 HEAD) x"
+          if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
+            && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
+          elif git diff --no-renames --name-only "$BASE" HEAD | grep -qE "$QUEUE_PATHS"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes desktop paths: running checks on the group commit"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"
+          fi
+
   app:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -53,7 +90,8 @@ jobs:
           grep -q '"edition": "community"' app/dist/build-edition.json
           cmp app/dist/app.css app/style.css
   shell:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The Rust shell on Linux (a supported Tauri target): format, unit tests, a debug build.
     runs-on: ubuntu-latest
     defaults:
@@ -79,7 +117,8 @@ jobs:
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
   native-partition:
-    if: ${{ !inputs.mac_ci_probe }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # Static rules for the GUI/headless split of the native XCTest suite, on Linux, before any Mac
     # job: a class may run on the ordinary Mac runner only if its source uses no window server.
     runs-on: ubuntu-latest
@@ -93,7 +132,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     # The actual Apple silicon Community bundle, with no secrets, live reader or displayed UI.
     runs-on: macos-latest
     timeout-minutes: 25
@@ -195,7 +235,8 @@ jobs:
 
   native-headless:
     name: native-headless (macos-latest)
-    if: ${{ !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: queue-scope
+    if: ${{ !cancelled() && !inputs.mac_ci_probe && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (github.event_name != 'merge_group' || needs.queue-scope.outputs.run == 'true') }}
     uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
     with:
       task: native-headless
