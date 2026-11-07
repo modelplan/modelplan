@@ -89,13 +89,17 @@ enum SettingsDiagramWords {
         }
         switch input {
         case .edge(let current):
-            for (index, edge) in [SettingsDockEdge.left, .bottom, .right].enumerated() {
-                let x = CGFloat(index) * 32 + 3.5, selected = current == edge
-                stroke(NSBezierPath(roundedRect: .init(x: x, y: 7.5, width: 26, height: 25), xRadius: 2, yRadius: 2), selected: selected)
+            // Four screens in the same 96-point diagram: left, bottom, right and top (below the menu bar).
+            for (index, edge) in [SettingsDockEdge.left, .bottom, .right, .top].enumerated() {
+                let x = CGFloat(index) * 24 + 1.5, selected = current == edge
+                stroke(NSBezierPath(roundedRect: .init(x: x, y: 7.5, width: 21, height: 25), xRadius: 2, yRadius: 2), selected: selected)
                 switch edge {
                 case .left: line(.init(x: x + 4, y: 13), .init(x: x + 4, y: 26), selected: selected)
-                case .right: line(.init(x: x + 22, y: 13), .init(x: x + 22, y: 26), selected: selected)
-                case .bottom: line(.init(x: x + 7, y: 28), .init(x: x + 20, y: 28), selected: selected)
+                case .right: line(.init(x: x + 17, y: 13), .init(x: x + 17, y: 26), selected: selected)
+                case .bottom: line(.init(x: x + 5, y: 28), .init(x: x + 16, y: 28), selected: selected)
+                case .top:
+                    line(.init(x: x + 1, y: 10.5), .init(x: x + 20, y: 10.5)) // the menu bar
+                    line(.init(x: x + 5, y: 13), .init(x: x + 16, y: 13), selected: selected)
                 }
             }
         case .percentages(let shown, let eventDot):

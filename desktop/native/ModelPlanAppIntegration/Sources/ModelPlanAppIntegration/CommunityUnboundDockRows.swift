@@ -6,21 +6,34 @@ import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
 public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale, errorLastGood, error }
+public struct DockWindowObservation: Sendable {
+    public let sourceName: String
+    public let observedAt: Date?
+    // Retained provenance conveys neither a numeric reading nor an active reset deadline.
+    var verifiedRetained = false
+}
+
 public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
     public let nextStep: String
+    /// D41: the label of a local action the card offers for this row; empty when none.
+    public var actionLabel = ""
     public let originalObservedAt: Date?
     public let plan:String, sourceName:String
     public let resetTimes:[String:Date]
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
+    let resetCountExpiry: Date?
+    public let links: [DockCardLink]
+    public let windowObservations: [String: DockWindowObservation]?
     public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],cardReadingState:DockCardReadingState?=nil) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.resetCountExpiry=resetCountExpiry;self.links=links
+        self.windowObservations = windowObservations
         self.cardReadingState = cardReadingState ?? {
             switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
         }()
@@ -28,10 +41,24 @@ public struct DockContentRow: Sendable {
     private func cardAge(at now:Date,english:Bool) -> String {
         CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
-    public func cardSourceAndAge(at now:Date,english:Bool) -> String {
+    public func cardSourceAndAge(at now:Date,english:Bool,selectedWindowID:String?=nil) -> String {
+        if let selectedWindowID, windowObservations != nil {
+            return observationText(for: selectedWindowID, at: now, english: english)
+        }
         let age = cardAge(at: now, english: english)
         return sourceName.isEmpty ? age : sourceName + " · " + age
     }
+    private func observationText(for windowID: String?, at now: Date, english: Bool) -> String {
+        let fact = windowID.flatMap { id -> DockWindowObservation? in
+            guard let window = input.windows.first(where: { $0.id == id }) else { return nil }
+            if case .verifiedCurrent(let until) = window.validity, now >= until { return nil }
+            return windowObservations?[id]
+        }
+        let source = fact?.sourceName ?? (english ? "Unknown source" : "未知来源")
+        let age = CommunityObservationAge.cardText(observedAt: fact?.observedAt, now: now, english: english)
+        return source + " · " + age
+    }
+
     public func cardBadge(at now:Date,english:Bool) -> String {
         let age=cardAge(at:now,english:english)
         switch cardReadingState {
@@ -42,12 +69,51 @@ public struct DockContentRow: Sendable {
         case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
         }
     }
-    public func resetDetails(at now:Date,english:Bool) -> [String:String] {
-        input.windows.reduce(into:[:]) { result,window in
+    /// card.js: one reserve line, reset cards and credits on the left and the earliest expiry on the right.
+    func cardAdditionalRows(at now: Date, english: Bool) -> [DockCardRow] {
+        let count = additionalRows.first { $0.id == "reset-count" }, credits = additionalRows.first { $0.id == "credits" }
+        guard count != nil || credits != nil else { return additionalRows }
+        var expiryText = ""
+        if let expiry = resetCountExpiry, count != nil {
+            let seconds = expiry.timeIntervalSince(now)
+            if seconds.isFinite, seconds < Double(Int.max) {
+                if seconds <= 0 { expiryText = english ? "expired" : "已到期" }
+                else {
+                    let duration = Self.expiryDuration(Int(ceil(seconds / 60)))
+                    expiryText = english ? "exp in " + duration : duration + " 后到期"
+                }
+            }
+        }
+        // The count and the credits can carry the same note; the folded line says it once.
+        var seen = Set<String>()
+        let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        // The prototype has no money row: a money balance keeps its own name on the one line.
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
+            value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+            detail: notes.joined(separator: " · "))
+        var placed = false
+        return additionalRows.flatMap { row -> [DockCardRow] in
+            guard row.id == "reset-count" || row.id == "credits" else { return [row] }
+            if placed { return [] }
+            placed = true
+            return [reserve]
+        }
+    }
+    public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {
+        let selectedObservation = selectedWindowID.map { observationText(for: $0, at: now, english: english) }
+        return input.windows.reduce(into:[:]) { result,window in
             let reset=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
-            if let description=windowDescriptions[window.id],!description.isEmpty,description != window.label {
-                result[window.id]=description+" · "+reset
-            } else { result[window.id]=reset }
+            var detail = reset
+            if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
+                detail = description + " · " + detail
+            }
+            // The header names the selected window's source and age; a row repeats it only when it differs.
+            if windowObservations != nil {
+                let own = observationText(for: window.id, at: now, english: english)
+                if own != selectedObservation { detail += " · " + own }
+            }
+            result[window.id] = detail
         }
     }
     private static func resetDetail(_ reset:Date?,now:Date,english:Bool) -> String {
@@ -55,12 +121,21 @@ public struct DockContentRow: Sendable {
         let seconds=reset.timeIntervalSince(now)
         guard seconds.isFinite,seconds < Double(Int.max/60) else { return "--" }
         guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
-        let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
-        let value:String
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
-        else { value=english ? "\(rest)m":"\(rest)分" }
-        return english ? "Resets in "+value:value+"后重置"
+        // D40: the card's compact form, so it fits the 85 pt column: "18m", "3h18", "5d20h";
+        // "5d20h 后重置" / "resets 5d20h". Prototype: opus-r7/src/rocket-r1/window-time.js:6
+        // (duration, imported as dhm by card.js:46) and strings/card.js:13 (card.resetIn).
+        let minutes=Int(ceil(seconds/60))
+        return english ? "resets "+compactDuration(minutes):compactDuration(minutes)+" 后重置"
+    }
+    /// card.js expiryDuration: an expiry under two days stays in hours, "30h", "30h05".
+    static func expiryDuration(_ minutes:Int) -> String {
+        guard minutes >= 60, minutes < 48*60 else { return compactDuration(minutes) }
+        return "\(minutes/60)h"+(minutes%60 == 0 ? "":String(format:"%02d",minutes%60))
+    }
+    static func compactDuration(_ minutes:Int) -> String {
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1440 { return "\(minutes/60)h"+String(format:"%02d",minutes%60) }
+        return "\(minutes/1440)d\(minutes%1440/60)h"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
