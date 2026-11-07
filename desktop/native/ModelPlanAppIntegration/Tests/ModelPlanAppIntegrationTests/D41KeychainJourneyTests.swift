@@ -24,7 +24,7 @@ private actor D41Engine: EngineClient {
     func retry() async throws -> EngineDeliveryContext { try await start() }
     func stop() async {}
     func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion {
-        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context)))
+        await store.consume(.rowsChanged(.init(envelope: try .init(sessionId: context.sessionID, storeEpoch: context.floor.storeEpoch, consentGeneration: 1, data: rows), delivery: context, invalidRowCount: 0)))
         return .init(requestID: .string("d41-rows"))
     }
     func consent(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("d41-facts")) }
