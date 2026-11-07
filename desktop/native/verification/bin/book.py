@@ -229,11 +229,26 @@ class Ledger:
             return head
 
 
-def admit(config):
-    """Live booking check for Launch; contract-only validation grants no launch."""
-    booking = config.get('booking')
+BOOKING_IDENTITY = ('id', 'lane', 'unit', 'scenario')
+
+
+def check_identity(booking):
+    """The run config's booking identity, e.g. {"id": "<booking ID>", "lane": "M1", "unit": "U11a",
+    "scenario": "cold"} (plus optional "ledger", else MODELPLAN_BOOKING_LEDGER): `scenario` is ONE
+    of the scenario IDs the booking was requested with (`book.py request --scenario ...`).
+    Missing fields are named."""
     if not isinstance(booking, dict):
         raise ValueError('GUI execution requires a started head booking')
+    missing = [k for k in BOOKING_IDENTITY if not isinstance(booking.get(k), str) or not booking.get(k)]
+    if missing:
+        raise ValueError('booking identity needs ' + ', '.join(BOOKING_IDENTITY) + '; missing: '
+                         + ', '.join(missing) + ' (scenario = one ID from the booking request; see VERIFY-RUN.md)')
+    return booking
+
+
+def admit(config):
+    """Live booking check for Launch; contract-only validation grants no launch."""
+    booking = check_identity(config.get('booking'))
     try:
         return Ledger(booking.get('ledger')).admit(booking, config['lease'], config['requiredSeconds'])
     except (KeyError, TypeError) as error:
