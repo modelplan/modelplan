@@ -100,7 +100,7 @@ struct DockStatusHelpDismissal {
                 let zh = language == .chinese
                 switch kind {
                 case .ringRefresh: return (zh ? "悬停查看详情 · 点击刷新" : "Hover to see details · click to refresh", zh ? "不再显示" : "Don't show again")
-                case .findWidget: return (zh ? "在菜单栏图标里勾选「显示额度挂件」可再次找到" : "Find it again from the menu bar icon: Show Quota Widget", zh ? "不再显示" : "Don't show again")
+                case .findWidget: return (zh ? "右键点菜单栏图标，勾选「显示额度挂件」可再次找到" : "Find it again: right-click the menu bar icon, Show Quota Widget", zh ? "不再显示" : "Don't show again")
                 case .widgetOff: return (EngineRowsText.widgetTurnedOffHint.value(zh ? .chinese : .english), zh ? "知道了" : "OK")
                 case .ignition: return (zh ? "点按打开驾驶舱" : "Tap to open Cockpit", zh ? "关闭" : "Close")
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
@@ -226,7 +226,7 @@ struct DockStatusHelpDismissal {
         var anchors = surface.mapAnchors.map { DockRequestedHelpAnchor(id: $0.id, region: $0.region, rect: local($0.rect), visible: $0.visible, caption: $0.caption) }
         if let status = statusAnchor(), viewport.contains(status.frame) {
             mapStatusFrame = status.frame
-            let caption = application.latest?.effective.language == .chinese ? "在菜单栏图标里勾选「显示额度挂件」。" : "Choose Show Quota Widget from the menu bar icon."
+            let caption = application.latest?.effective.language == .chinese ? "右键点菜单栏图标，勾选「显示额度挂件」。" : "Right-click the menu bar icon and choose Show Quota Widget."
             anchors.append(.init(id: "status.menu", region: .sliver, rect: local(status.frame), visible: true, caption: caption))
         } else { mapStatusFrame = nil }
         let blockers = (dock?.dockHelpMapBlockingRects(surface) ?? []).map(local)
