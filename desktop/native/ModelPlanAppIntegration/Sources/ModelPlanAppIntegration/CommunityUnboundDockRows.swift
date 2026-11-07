@@ -57,10 +57,10 @@ public struct DockContentRow: Sendable {
         guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
         let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
         let value:String
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
-        else { value=english ? "\(rest)m":"\(rest)分" }
-        return english ? "Resets in "+value:value+"后重置"
+        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days) 天 \(hours) 小时" }
+        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours) 小时 \(rest) 分" }
+        else { value=english ? "\(rest)m":"\(rest) 分" }
+        return english ? "resets in "+value:value+"后重置"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)
