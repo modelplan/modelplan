@@ -19,13 +19,4 @@ final class SettingsV1NotificationDeliveryTests: XCTestCase {
         XCTAssertEqual(try availability(.reset), .serviceUnavailable)
         XCTAssertEqual(SettingsPreferences().notifications.kinds, Set(NotificationKind.allCases))
     }
-    func testDeniedAuthorizationShowsTheSystemSettingsHint() throws {
-        var context = SettingsPageContext()
-        context.notificationAuthorization = .denied
-        let row = try XCTUnwrap(try SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .notificationConsent })
-        XCTAssertEqual(row.subtitle, SettingsPageContext.notificationsDeniedHint)
-        context.notificationAuthorization = .authorized
-        let allowed = try XCTUnwrap(try SettingsCatalogue.rows(preferences: .init(), context: context).first { $0.key == .notificationConsent })
-        XCTAssertNotEqual(allowed.subtitle, SettingsPageContext.notificationsDeniedHint)
-    }
 }

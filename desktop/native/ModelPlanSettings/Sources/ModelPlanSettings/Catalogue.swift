@@ -145,10 +145,6 @@ public struct SettingsPageContext: Sendable {
             else if v1NormalEntry { unavailableControls[key] = notices }
         }
     }
-    /// Shown on the opt-in row while macOS has notifications for ModelPlan turned off.
-    public static let notificationsDeniedHint = SettingsText(
-        "Notifications for ModelPlan are off in macOS. Turn them on in System Settings > Notifications > ModelPlan.",
-        "macOS 已关闭 ModelPlan 的通知。请在“系统设置 > 通知 > ModelPlan”中开启。")
     /// SET-9-18 / SET-9-29: the forecast-exhaustion kind is offered only while the engine
     /// reports a forecast producer (F1); without one the v1 row is hidden, not shown disabled.
     /// The saved notification kinds are never changed here.
@@ -307,8 +303,6 @@ public enum SettingsCatalogue {
                     let subtitle: SettingsText
                     if let reason = c.unavailableControls[key] {
                         subtitle = reason
-                    } else if key == .notificationConsent && c.notificationAuthorization == .denied {
-                        subtitle = SettingsPageContext.notificationsDeniedHint
                     } else if [.dockDisplay, .dockPosition, .dockEdge].contains(key) {
                         let current = SettingsDockPlacementText.current(c.dockPlacementObservation, displays: c.displays)
                         subtitle = .init(current.english + " " + d.subtitle.english, current.chinese + " " + d.subtitle.chinese)

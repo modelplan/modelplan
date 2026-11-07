@@ -775,7 +775,7 @@ private actor S4RowsClient: EngineClient {
         let editor=entry.settingsHost.application.editor
         let rows=try SettingsCatalogue.rows(preferences:try XCTUnwrapOrThrow(editor.snapshot).preferences,context:editor.context)
         let consent=rows.first { $0.key == .notificationConsent }
-        try require(consent?.subtitle == SettingsPageContext.notificationsDeniedHint,"denied authorization must show the System Settings hint: \(String(describing:consent?.subtitle))")
+        try require(consent != nil && editor.context.notificationAuthorization == .denied,"denied authorization must reach the Notifications pane")
         await entry.composition.stop()
     }
     private static func XCTUnwrapOrThrow<T>(_ value:T?) throws -> T {
