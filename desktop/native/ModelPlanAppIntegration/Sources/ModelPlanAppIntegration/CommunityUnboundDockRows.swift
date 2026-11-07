@@ -69,36 +69,44 @@ public struct DockContentRow: Sendable {
         case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
         }
     }
+    /// card.js: one reserve line, reset cards and credits on the left and the earliest expiry on the right.
     func cardAdditionalRows(at now: Date, english: Bool) -> [DockCardRow] {
-        guard let expiry = resetCountExpiry,
-              let index = additionalRows.firstIndex(where: { $0.id == "reset-count" }) else { return additionalRows }
-        let seconds = expiry.timeIntervalSince(now)
-        guard seconds.isFinite, seconds < Double(Int.max) else { return additionalRows }
-        let suffix: String
-        if seconds <= 0 {
-            suffix = english ? "expired" : "已到期"
-        } else {
-            let hours = seconds >= 3600
-            let quantity = Int(ceil(seconds / (hours ? 3600 : 60)))
-            let duration = hours ? (english ? "\(quantity)h" : "\(quantity) 小时") :
-                (english ? "\(quantity)m" : "\(quantity) 分钟")
-            suffix = english ? "expire in " + duration : duration + "后到期"
+        let count = additionalRows.first { $0.id == "reset-count" }, credits = additionalRows.first { $0.id == "credits" }
+        guard count != nil || credits != nil else { return additionalRows }
+        var expiryText = ""
+        if let expiry = resetCountExpiry, count != nil {
+            let seconds = expiry.timeIntervalSince(now)
+            if seconds.isFinite, seconds < Double(Int.max) {
+                if seconds <= 0 { expiryText = english ? "expired" : "已到期" }
+                else {
+                    let duration = Self.compactDuration(Int(ceil(seconds / 60)))
+                    expiryText = english ? "exp in " + duration : duration + " 后到期"
+                }
+            }
         }
-        var rows = additionalRows
-        let row = rows[index]
-        rows[index] = .init(id: row.id, kind: row.kind, label: row.label + " · " + suffix, value: row.value,
-                            detail: row.detail, remainingFraction: row.remainingFraction, tone: row.tone)
-        return rows
+        let reserve = DockCardRow(id: "reserve", kind: .reserve, label: english ? "Reserve" : "储备",
+            value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
+            detail: [expiryText, count?.detail ?? "", credits?.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+        var placed = false
+        return additionalRows.flatMap { row -> [DockCardRow] in
+            guard row.id == "reset-count" || row.id == "credits" else { return [row] }
+            if placed { return [] }
+            placed = true
+            return [reserve]
+        }
     }
-    public func resetDetails(at now:Date,english:Bool) -> [String:String] {
-        input.windows.reduce(into:[:]) { result,window in
+    public func resetDetails(at now:Date,english:Bool,selectedWindowID:String?=nil) -> [String:String] {
+        let selectedObservation = selectedWindowID.map { observationText(for: $0, at: now, english: english) }
+        return input.windows.reduce(into:[:]) { result,window in
             let reset=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
             var detail = reset
             if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
                 detail = description + " · " + detail
             }
+            // The header names the selected window's source and age; a row repeats it only when it differs.
             if windowObservations != nil {
-                detail += " · " + observationText(for: window.id, at: now, english: english)
+                let own = observationText(for: window.id, at: now, english: english)
+                if own != selectedObservation { detail += " · " + own }
             }
             result[window.id] = detail
         }

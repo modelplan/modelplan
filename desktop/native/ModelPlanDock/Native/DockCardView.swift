@@ -38,6 +38,12 @@ import CryptoKit
     /// The inset readout window behind the rows (nil: rows sit on the plate).
     public var window:NSColor?=nil,windowSeam:NSColor?=nil
     public var windowRadius:CGFloat=8,windowPadding=NSEdgeInsets(top:5,left:7,bottom:5,right:7)
+    /// The selected window's row fill, reaching `rowOutset` past the text (face.css .selected-window, .cd-r margin).
+    public var rowHighlight:NSColor?=nil,rowOutset:CGFloat=4,rowHighlightRadius:CGFloat=4
+    /// Space under the readout before the plate's bottom padding (the prototype's empty .cd-events band).
+    public var readoutBottomGap:CGFloat=0
+    /// The notice's own window: gap above it and its inset (dock.css .cd-ev).
+    public var noticeGap:CGFloat=7,noticePadding=NSEdgeInsets(top:6,left:8,bottom:6,right:8)
     /// Header: name size (semibold), small text size, gap after the mark, gap below the header.
     public var nameFontSize:CGFloat=13,smallFontSize:CGFloat=11,headerGap:CGFloat=8,headerBottomGap:CGFloat=7
     /// Row grid: label, bar and percent columns are fixed; the time column takes the rest.
@@ -87,7 +93,7 @@ import CryptoKit
     private var labels=[String:NSTextField](),buttons=[String:DockCardButton]()
     private var bars=[String:DockCardBar](),rowViews=[String:NSView](),brandView:NSImageView?
     /// The readout window in card coordinates (flipped), drawn behind the rows.
-    private var windowRect:CGRect?
+    private var windowRect:CGRect?,noticeRect:CGRect?,highlightRects=[CGRect]()
     public override init(frame:NSRect){super.init(frame:frame)}
     required init?(coder:NSCoder){fatalError()}
     public override var isFlipped:Bool{true}
@@ -151,15 +157,20 @@ import CryptoKit
             image.frame=CGRect(x:x,y:y,width:style.brandSize,height:style.brandSize)
             x+=style.brandSize+style.headerGap;headerHeight=style.brandSize
         }else{brandView?.removeFromSuperview();brandView=nil}
-        var rightWidth:CGFloat=0,rightHeight:CGFloat=0
-        var right=[NSTextField]()
+        // Source · age, then any state badge, on the header's one line (card.js cd-h); the name keeps 64 pt.
+        var right=[(field:NSTextField,width:CGFloat)]()
         for (id,text,size) in [("source",value.sourceAndAge,style.smallFontSize),("state",value.stateLabel,style.smallFontSize-1)] where !text.isEmpty{
-            let field=label(id,text,font:.systemFont(ofSize:size),color:style.muted,alignment:.right);right.append(field)
-            let s=natural(field);rightWidth=max(rightWidth,ceil(s.width));rightHeight+=ceil(s.height)
+            let field=label(id,text,font:.systemFont(ofSize:size),color:style.muted,alignment:.right)
+            right.append((field,ceil(natural(field).width)))
         }
-        rightWidth=min(rightWidth,inner*0.5)
+        let rightLimit=max(0,style.width-style.padding-x-64-style.headerGap)
+        var rightWidth=right.reduce(0){$0+$1.width}+CGFloat(max(0,right.count-1))*style.headerGap
+        if rightWidth>rightLimit{
+            let excess=rightWidth-rightLimit,total=max(1,right.reduce(0){$0+$1.width})
+            right=right.map{($0.field,floor($0.width-excess*$0.width/total))};rightWidth=rightLimit
+        }
         let nameWidth=max(40,style.width-style.padding-x-(rightWidth>0 ? rightWidth+style.headerGap:0))
-        let name=label("name",value.name,font:.systemFont(ofSize:style.nameFontSize,weight:.semibold),color:style.ink)
+        let name=label("name",value.name,font:.systemFont(ofSize:style.nameFontSize,weight:.bold),color:style.ink)
         name.setAccessibilityLabel([value.name,value.plan].filter{!$0.isEmpty}.joined(separator:" · "))
         place(name,in:self);let nameHeight=ceil(natural(name).height)
         name.frame=CGRect(x:x,y:y,width:nameWidth,height:nameHeight)
@@ -168,12 +179,12 @@ import CryptoKit
             let plan=label("plan",value.plan,font:small,color:style.muted);place(plan,in:self)
             let h=ceil(natural(plan).height);plan.frame=CGRect(x:x,y:y+nameHeight,width:nameWidth,height:h);leftHeight+=h
         }
-        var headerY=y
-        for field in right{
-            place(field,in:self);let h=ceil(natural(field).height)
-            field.frame=CGRect(x:style.width-style.padding-rightWidth,y:headerY,width:rightWidth,height:h);headerY+=h
+        headerHeight=max(headerHeight,leftHeight)
+        var headerX=style.width-style.padding-rightWidth
+        for cell in right{
+            place(cell.field,in:self);let h=ceil(natural(cell.field).height)
+            cell.field.frame=CGRect(x:headerX,y:y+(headerHeight-h)/2,width:cell.width,height:h);headerX+=cell.width+style.headerGap
         }
-        headerHeight=max(headerHeight,leftHeight,rightHeight)
         if let brandView{brandView.frame.origin.y=y+(headerHeight-style.brandSize)/2}
         y+=headerHeight+style.headerBottomGap
         // Readout window with the fixed row grid (dock.css .cd-lcd / .cd-r, face.css 56/78/34/1fr).
@@ -182,44 +193,22 @@ import CryptoKit
         let windowTop=y
         var rowY=y+pad.top
         let c=style.columns,g=style.columnGap
-        for (index,row) in value.rows.enumerated(){
+        highlightRects=[];noticeRect=nil
+        let readings=value.rows.filter{$0.kind != .notice},notices=value.rows.filter{$0.kind == .notice}
+        let noticeTextWidth=inner-style.noticePadding.left-style.noticePadding.right
+        for (index,row) in readings.enumerated(){
             if index>0{rowY+=style.rowGap}
             let rowID="row."+row.id
             usedRows.insert(rowID)
             let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
             rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.group)
             rowView.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "))
-            let l=label(rowID+".label",row.label,font:readoutSmall,color:style.muted);place(l,in:rowView)
+            let l=label(rowID+".label",row.label,font:readoutSmall,color:row.emphasised ? style.ink:style.muted);place(l,in:rowView)
             if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
             let toneColor=style.quota[row.tone] ?? style.ink
             let valueColor:NSColor = row.tone == .warning || row.tone == .critical ? toneColor : (row.remainingFraction == nil && row.tone == .unknown ? style.muted : style.ink)
             var cells:[(view:NSView,x:CGFloat,width:CGFloat)]=[]
             var detailBelow:NSTextField?
-            if row.kind == .notice{
-                // Announced public reset (card.js cd-ev): the title line in reset ink across the
-                // whole window, then its explanation, both wrapping; no grid columns.
-                l.textColor=style.notice;l.font=readout;setWraps(l,true)
-                var title=[(view:l as NSView,x:CGFloat(0),width:rowWidth)]
-                if !row.value.isEmpty{
-                    let v=label(rowID+".value",row.value,font:readoutSmall,color:style.notice,wraps:true);place(v,in:rowView)
-                    title.append((view:v as NSView,x:CGFloat(0),width:rowWidth))
-                }
-                var top:CGFloat=0
-                for cell in title{
-                    let h=wrapped(cell.view as! NSTextField,width:rowWidth)
-                    cell.view.frame=CGRect(x:0,y:top,width:rowWidth,height:h);top+=h
-                }
-                var kept=Set(title.map{ObjectIdentifier($0.view)})
-                if !row.detail.isEmpty{
-                    let d=label(rowID+".detail",row.detail,font:readoutSmall,color:style.muted,wraps:true);place(d,in:rowView)
-                    let h=wrapped(d,width:rowWidth);d.frame=CGRect(x:0,y:top,width:rowWidth,height:h);top+=h;kept.insert(ObjectIdentifier(d))
-                }
-                for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
-                let rowHeight=max(style.rowMinimumHeight,top)
-                rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
-                rowY+=rowHeight
-                continue
-            }
             if row.kind == .quota || row.kind == .extraQuota{
                 usedBars.insert(row.id)
                 let bar=bars[row.id] ?? DockCardBar(row:row,on:toneColor,track:style.track)
@@ -265,13 +254,40 @@ import CryptoKit
             let kept=Set(cells.map{ObjectIdentifier($0.view)}+(detailBelow.map{[ObjectIdentifier($0)]} ?? []))
             for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
             rowView.frame=CGRect(x:style.padding+pad.left,y:rowY,width:rowWidth,height:rowHeight)
+            if row.emphasised,style.rowHighlight != nil{highlightRects.append(rowView.frame.insetBy(dx:-style.rowOutset,dy:0))}
             rowY+=rowHeight
         }
-        if value.rows.isEmpty{windowRect=nil;y=windowTop-style.headerBottomGap}
+        if readings.isEmpty{windowRect=nil;y=windowTop-style.headerBottomGap}
         else{
             rowY+=pad.bottom
             windowRect=style.window == nil ? nil : CGRect(x:style.padding,y:windowTop,width:inner,height:rowY-windowTop)
             y=rowY
+        }
+        // The announced public reset is its own window (dock.css .cd-ev): title and pill, timing, then what it is not.
+        let noticeTop=y+style.noticeGap
+        if !notices.isEmpty{y=noticeTop+style.noticePadding.top}else{y+=style.readoutBottomGap}
+        for row in notices{
+            let rowID="row."+row.id
+            usedRows.insert(rowID)
+            let rowView=rowViews[rowID] ?? DockCardRowView();rowViews[rowID]=rowView;place(rowView,in:self)
+            rowView.setAccessibilityElement(true);rowView.setAccessibilityRole(.group)
+            rowView.setAccessibilityLabel([row.label,row.pill,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "))
+            let title=label(rowID+".label",row.label,font:readout,color:style.notice);place(title,in:rowView)
+            var kept=Set([ObjectIdentifier(title)]),top:CGFloat=0,titleWidth=noticeTextWidth
+            let titleHeight=ceil(natural(title).height)
+            if !row.pill.isEmpty{
+                let pill=label(rowID+".pill",row.pill,font:readoutSmall,color:style.notice,alignment:.center);place(pill,in:rowView)
+                let w=ceil(natural(pill).width)+12;titleWidth-=w+5;kept.insert(ObjectIdentifier(pill))
+                pill.wantsLayer=true;pill.layer?.cornerRadius=8;pill.layer?.borderWidth=1;pill.layer?.borderColor=style.notice.withAlphaComponent(0.45).cgColor
+                pill.frame=CGRect(x:noticeTextWidth-w,y:0,width:w,height:titleHeight)
+            }
+            title.frame=CGRect(x:0,y:0,width:titleWidth,height:titleHeight);top+=titleHeight
+            for (suffix,text,colour) in [(".value",row.value,style.notice),(".detail",row.detail,style.muted)] where !text.isEmpty{
+                let line=label(rowID+suffix,text,font:readoutSmall,color:colour,wraps:true);place(line,in:rowView)
+                let h=wrapped(line,width:noticeTextWidth);top+=2;line.frame=CGRect(x:0,y:top,width:noticeTextWidth,height:h);top+=h;kept.insert(ObjectIdentifier(line))
+            }
+            for child in rowView.subviews where !kept.contains(ObjectIdentifier(child)){child.removeFromSuperview()}
+            rowView.frame=CGRect(x:style.padding+style.noticePadding.left,y:y,width:noticeTextWidth,height:top);y+=top
         }
         // Source links (announced public reset): one flowing line in reading order.
         var occurrences=[URL:Int](),links=[DockCardButton]()
@@ -285,16 +301,21 @@ import CryptoKit
             b.attributedTitle=NSAttributedString(string:link.label,attributes:[.font:small,.foregroundColor:style.muted])
             links.append(b)
         }
+        let linkLeft=style.padding+(notices.isEmpty ? 0:style.noticePadding.left),linkRight=style.width-style.padding-(notices.isEmpty ? 0:style.noticePadding.right)
         if !links.isEmpty{
-            y+=6
-            var lineX=style.padding,lineHeight:CGFloat=0
+            y+=notices.isEmpty ? 6:3
+            var lineX=linkLeft,lineHeight:CGFloat=0
             for b in links{
-                place(b,in:self);let s=b.fittingSize,w=min(ceil(s.width),inner)
-                if lineX>style.padding && lineX+w>style.width-style.padding{y+=lineHeight+2;lineX=style.padding;lineHeight=0}
+                place(b,in:self);let s=b.fittingSize,w=min(ceil(s.width),linkRight-linkLeft)
+                if lineX>linkLeft && lineX+w>linkRight{y+=lineHeight+2;lineX=linkLeft;lineHeight=0}
                 b.frame=CGRect(x:lineX,y:y,width:w,height:ceil(s.height))
                 lineX+=w+10;lineHeight=max(lineHeight,ceil(s.height))
             }
             y+=lineHeight
+        }
+        if !notices.isEmpty{
+            y+=style.noticePadding.bottom
+            noticeRect=style.window == nil ? nil : CGRect(x:style.padding,y:noticeTop,width:inner,height:y-noticeTop)
         }
         // D41: an action this subscription needs now, independent of the footer buttons.
         if !value.actionLabel.isEmpty{
@@ -331,7 +352,7 @@ import CryptoKit
         content=nil;buttons.values.forEach{$0.retire()};bars.values.forEach{$0.setAccessibilityElement(false)}
         rowViews.values.forEach{$0.setAccessibilityElement(false)}
         subviews.forEach{$0.removeFromSuperview()}
-        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil
+        buttons.removeAll();bars.removeAll();labels.removeAll();rowViews.removeAll();brandView=nil;windowRect=nil;noticeRect=nil;highlightRects=[]
     }
     public override func draw(_ dirtyRect:NSRect){
         // Flat plate with a 1 pt inset seam; dark readout window with its own seam (face.css #card.c7).
@@ -342,13 +363,18 @@ import CryptoKit
             let edge=NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:max(0,style.plateRadius-0.5),yRadius:max(0,style.plateRadius-0.5))
             edge.lineWidth=1;edge.stroke()
         }
-        if let windowRect,let fill=style.window{
-            fill.setFill();NSBezierPath(roundedRect:windowRect,xRadius:style.windowRadius,yRadius:style.windowRadius).fill()
+        for rect in [windowRect,noticeRect].compactMap({$0}){
+            guard let fill=style.window else{break}
+            fill.setFill();NSBezierPath(roundedRect:rect,xRadius:style.windowRadius,yRadius:style.windowRadius).fill()
             if let seam=style.windowSeam{
                 seam.setStroke()
-                let edge=NSBezierPath(roundedRect:windowRect.insetBy(dx:0.5,dy:0.5),xRadius:max(0,style.windowRadius-0.5),yRadius:max(0,style.windowRadius-0.5))
+                let edge=NSBezierPath(roundedRect:rect.insetBy(dx:0.5,dy:0.5),xRadius:max(0,style.windowRadius-0.5),yRadius:max(0,style.windowRadius-0.5))
                 edge.lineWidth=1;edge.stroke()
             }
+        }
+        if let highlight=style.rowHighlight{
+            highlight.setFill()
+            for rect in highlightRects{NSBezierPath(roundedRect:rect,xRadius:style.rowHighlightRadius,yRadius:style.rowHighlightRadius).fill()}
         }
     }
     public func dispose(){generation &+= 1;clear();setAccessibilityElement(false);onEnter=nil;onDismiss=nil;onOpenURL=nil;onAction=nil;onFocusChange=nil;permitsAction=nil}
