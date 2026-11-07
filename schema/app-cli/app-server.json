@@ -530,6 +530,13 @@
             }
           ]
         },
+        "publishedModels": {
+          "items": {
+            "$ref": "#/$defs/CockpitPublicationModel"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
         "resetEvents": {
           "items": {
             "$ref": "#/$defs/ResetEvent"
