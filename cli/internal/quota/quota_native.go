@@ -604,6 +604,8 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	if profileKey == "" {
 		return errors.New("identity key unavailable")
 	}
+	// Decide before the outcome below clears the failure facts this reads.
+	localBackoff := claudeBackoffIsLocal(p.Cache)
 	// This operation is interactive even when the remote budget is closed. Keep
 	// its credential only in this stack frame and reuse it if a remote read is due.
 	credential := g.Credential
@@ -633,5 +635,21 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
 	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
 	p.ReaderAccess = access
-	return refreshManaged(ctx, p, provider, now)
+	return refreshManagedAfter(ctx, p, provider, now, localBackoff)
+}
+
+// claudeBackoffIsLocal: every recorded failure stopped at the credential, before any
+// provider request, so the back-off protects nothing the user's Allow should wait for.
+// A provider failure or a success keeps its floor and any Retry-After.
+func claudeBackoffIsLocal(cache string) bool {
+	s, err := loadReaderState(cache, "claude")
+	if err != nil || s.Failures == 0 || len(s.Entries) == 0 {
+		return false
+	}
+	for _, e := range s.Entries {
+		if e.Status == "ok" || (e.CredentialReadState == "" && e.ErrorCode != "file_missing") {
+			return false
+		}
+	}
+	return true
 }

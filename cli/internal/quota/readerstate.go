@@ -214,6 +214,12 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
+	return refreshManagedAfter(ctx, p, provider, now, false)
+}
+
+// refreshManagedAfter: localBackoffSpent is true only for the read following the user's
+// Keychain Allow, when the back-off came from failures that never reached the provider.
+func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time.Time, localBackoffSpent bool) error {
 	if err := nativeAdmissionError(provider); err != nil {
 		return err
 	}
@@ -234,7 +240,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if err != nil {
 		return err
 	}
-	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
+	if !localBackoffSpent && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
 		return nil
 	}
 	n := nativeReaders[provider]
@@ -436,6 +442,10 @@ func readerProfileBasis(provider string) string { return "reader-profile:" + pro
 func AppendManagedRows(in *rows.Input, p Paths) {
 	if in == nil || p.Cache == "" || p.ReaderAccess == nil {
 		return
+	}
+	if p.ClaudeKeychainPending {
+		const keychainUnset = "unset" // keychain channel; maps to keychain_unset
+		in.KeychainBlocks = append(in.KeychainBlocks, rows.KeychainBlock{ToolID: "claude", Status: keychainUnset, Blocked: true})
 	}
 	providers := make([]string, 0, len(p.ReaderAccess.Grants))
 	for provider, g := range p.ReaderAccess.Grants {

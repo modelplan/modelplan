@@ -62,3 +62,56 @@ func TestG319ClaudeDefaultGrantYieldsToDecisions(t *testing.T) {
 		t.Fatal("no Claude Code profile, but a grant was made")
 	}
 }
+
+// D41: a Keychain-only login on a fresh profile reports the Keychain step without a
+// reader or a Keychain access, and every recorded decision or file login ends it.
+func TestD41ClaudeKeychainPending(t *testing.T) {
+	isolateHome(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	old := claudeKeychainPlatform
+	t.Cleanup(func() { claudeKeychainPlatform = old })
+	claudeKeychainPlatform = func() bool { return true }
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	fresh := consent.Empty()
+	if claudeKeychainPending(fresh, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("no Claude Code directory must not ask for the Keychain")
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !claudeKeychainPending(fresh, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("Keychain-only login was not reported")
+	}
+	if _, ok := defaultClaudeGrant(fresh, consent.Automatic, "0.5.53", nil); ok {
+		t.Fatal("Keychain-only login gained a background reader")
+	}
+	if claudeKeychainPending(fresh, consent.Passive, "0.5.53", nil) {
+		t.Fatal("Passive mode reported the Keychain step")
+	}
+	decided := consent.Empty()
+	decided.Tools["claude"] = consent.Record{Allowed: false}
+	if claudeKeychainPending(decided, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("a recorded Claude decision reported the Keychain step")
+	}
+	routed := map[string]detect.Entry{"claude": {Preferred: "codexbar", ReaderID: "codexbar:claude"}}
+	if claudeKeychainPending(fresh, consent.Automatic, "0.5.53", routed) {
+		t.Fatal("a published non-native route reported the Keychain step")
+	}
+	claudeKeychainPlatform = func() bool { return false }
+	if claudeKeychainPending(fresh, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("only macOS has a Keychain step")
+	}
+	claudeKeychainPlatform = func() bool { return true }
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	if claudeKeychainPending(fresh, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("a custom Claude profile has no Keychain step")
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if err := os.WriteFile(filepath.Join(root, ".credentials.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if claudeKeychainPending(fresh, consent.Automatic, "0.5.53", nil) {
+		t.Fatal("a saved-login file does not need the Keychain")
+	}
+}

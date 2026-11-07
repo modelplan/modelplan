@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -85,4 +86,53 @@ func savedLoginAttempted(row *rows.Row) bool {
 		}
 	}
 	return false
+}
+
+// D41 through the normal entry, on macOS: the real app-server on a fresh profile with a
+// Keychain-only Claude Code login shows the Keychain step and never runs a reader.
+func TestD41FreshKeychainOnlyClaudeRowAsksForKeychain(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the Keychain step exists only on macOS")
+	}
+	bin := candidateBinary(t, "./cmd/modelplan")
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, stderr := candidateClient(t, bin, home, nil, nil)
+	c.initialize(t)
+	c.send(t, 2, "rows/subscribe", wire.Empty{})
+	m := c.response(t, 2)
+	var snapshot wire.Envelope[wire.RowsSnapshot]
+	if err := json.Unmarshal(m["result"], &snapshot); err != nil {
+		t.Fatalf("rows/subscribe: %s", m["error"])
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var claude *rows.Row
+		for i := range snapshot.Data.Projection.Rows {
+			if snapshot.Data.Projection.Rows[i].ID == "claude" {
+				claude = &snapshot.Data.Projection.Rows[i]
+			}
+		}
+		if claude != nil && claude.State == rows.StateNeedsKeychain && claude.Reason.Code == rows.CodeKeychainUnset && claude.NextStep != nil && claude.NextStep.Action == rows.ActionOpenSettingsKeychain {
+			break
+		}
+		next, ok := nextRowsChanged(t, c, deadline)
+		if !ok {
+			raw, _ := json.Marshal(claude)
+			t.Fatalf("fresh Keychain-only Claude row did not ask for the Keychain: %s", raw)
+		}
+		snapshot = next
+	}
+	if _, err := os.Stat(filepath.Join(home, ".cache", "modelplan", "observed", "readers", "claude.json")); !os.IsNotExist(err) {
+		t.Fatalf("a reader ran before Allow: %v", err)
+	}
+	finishCandidate(t, c)
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected protocol stderr: %s", stderr.String())
+	}
 }

@@ -303,6 +303,7 @@ type Paths struct {
 	CodexThread                 string                    // the calling Codex thread, when known (CODEX_THREAD_ID)
 	ClaudeSession               string                    // the calling Claude Code session, when known
 	ClaudeSessionRoot           string                    // transient locally admitted profile root, never persisted
+	ClaudeKeychainPending       bool                      // a Keychain-only Claude Code login awaits the user's choice (D41)
 	ClaudeSessionAccess         *localusage.HistoryAccess // explicit consent/profile scope for cache-only session projection
 	ReaderAccess                *ReaderAccess             // explicit shared-consent admission for saved-login readers
 }
