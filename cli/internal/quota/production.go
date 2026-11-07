@@ -72,6 +72,10 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 	if mode != consent.Automatic {
 		return p
 	}
+	if g, ok := defaultClaudeGrant(state, mode, version, routes); ok {
+		p.ReaderAccess.Grants["claude"] = g
+	}
+	p.ClaudeKeychainPending = claudeKeychainPending(state, mode, version, routes)
 	for id, record := range state.Tools {
 		n := nativeReaders[id]
 		if n == nil || !record.Allowed || record.ConsentTextVersion != consent.TextVersion || record.Backend != BackendNative || record.BrowserSession ||
