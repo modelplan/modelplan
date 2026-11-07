@@ -206,6 +206,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     public var verificationShellState: CockpitShellState? { currentShell }
     public var verificationRootHeight: CGFloat? { layout?.rootHeight }
+    public var verificationDragRegion: NSView? { dragRegion }
     public var verificationDidOpen: ((WKWebView, NSWindow) -> Void)?
     public var verificationResource: ((String) -> Void)?
     public var configureVerification: ((WKWebViewConfiguration) -> Void)?
@@ -605,7 +606,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))
     web?.frame = .init(x: 0, y: 0, width: 636, height: fit.rootHeight + 34)
-    dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
+    dragRegion?.frame = fit.titleDragFrame
     publishAppearance()
   }
   private func setAttached(_ attached: Bool) {
