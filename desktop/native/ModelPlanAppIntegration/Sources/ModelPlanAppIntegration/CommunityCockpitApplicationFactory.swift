@@ -24,7 +24,7 @@ import ModelPlanDock
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
         "community":"93af0c4afdde974b61731a971c81b706f720859cbe931fd4edafa4c2c6ca64d7",
-        "official":"5f376613b43e5d9b3c3fb4bf6c0735ad17e9724eaf9cbb15e03838359d555097",
+        "official":"92af2e975370b18aa04ab55b9515451171bde2e195a0236d31d49f65c87ce6aa",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
