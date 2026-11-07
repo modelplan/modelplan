@@ -410,7 +410,8 @@ var (
 // Publish serializes generation validation and the short cache commit with
 // consent changes. No credential or provider I/O belongs inside this callback.
 func Publish(f Fence, write func() error) error {
-	return publish(context.Background(), f, write, false)
+	// Every caller is saving a finished read: a brief hold must not lose it.
+	return publish(context.Background(), f, write, true)
 }
 
 // PublishContext waits at most one second for the lock, without retrying write.

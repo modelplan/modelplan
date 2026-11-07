@@ -272,7 +272,7 @@ struct NativeFailure:Error {let message:String}
     hiddenView.dispose()
     let effectsView=DockInstrumentView(frame:effectsSkin.bounds)
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
-    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool,systemReduceMotion:{false}),provider=SyntheticDockFrameProvider()
+    let pool=EffectResourcePool(),driver=DockWorkingEffects(pool:pool,systemReduceMotion:{false},onBattery:{false}),provider=SyntheticDockFrameProvider()
     let magnifications=Dictionary(uniqueKeysWithValues:working.map{($0.subscriptionID,1.5)})
     try driver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:RenderProfile(scale:2),magnification:magnifications,compositing:.screen,provider:{_ in provider})
     try require(driver.activeIDs.count==6 && driver.animatingIDs.count==6,"six distinct native consumers")
@@ -287,7 +287,7 @@ struct NativeFailure:Error {let message:String}
     driver.stop();pool.purgeUnleased();effectsView.dispose();try require(pool.activeLeaseCount==0 && pool.decodedBytes==0,"explicit teardown releases every jet")
     let smoothPool=EffectResourcePool(),smoothProvider=SyntheticDockFrameProvider()
     var hostTimeReads=0
-    let smoothDriver=DockWorkingEffects(pool:smoothPool,systemReduceMotion:{false},hostTime:{hostTimeReads+=1;return 100})
+    let smoothDriver=DockWorkingEffects(pool:smoothPool,systemReduceMotion:{false},onBattery:{false},hostTime:{hostTimeReads+=1;return 100})
     try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:2,locale:"en")
     try smoothDriver.configure(view:effectsView,skin:effectsSkin,readings:working,profile:.init(scale:2),magnification:magnifications,rotation:.init(period:1),sampling:.interpolatedCandidate,provider:{_ in smoothProvider})
     try require(smoothDriver.interpolatedIDs.count==6 && smoothDriver.interpolationLayerCount==54 && smoothDriver.animatingIDs.count==6,"P04 candidate uses bounded native interpolation without an app frame loop")
@@ -312,7 +312,7 @@ struct NativeFailure:Error {let message:String}
     smoothDriver.stop();smoothPool.purgeUnleased();effectsView.dispose()
     // Optional motion remains independent of the shared discrete bitmap clock.
     var syntheticSystemReduction=false
-    let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction})
+    let motionPool=EffectResourcePool(),motionDriver=DockWorkingEffects(pool:motionPool,systemReduceMotion:{syntheticSystemReduction},onBattery:{false})
     let recipe=DockEffectRotation(period:2,direction:.clockwise)
     func motion(_ profile:RenderProfile = .init(scale:1),quiet:Set<String>=[])throws {
         try effectsView.applyOfficial(skin:effectsSkin,rows:working,renderer:renderer,scale:1,locale:"en")

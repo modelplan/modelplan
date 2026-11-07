@@ -51,11 +51,20 @@ func TestDoctorReadersProductionInventoryAndBudgets(t *testing.T) {
 			cache := t.TempDir()
 			paths := func() Paths { return ProductionPaths(cache, "1.0.0") }
 			rows := ReaderDiagnostics(paths(), at)
-			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+1 {
+			if len(rows) != len(nativeReaders)+len(localusage.HistoryProviders())+2 {
 				t.Fatal("incomplete inventory", rows)
 			}
 			for _, tool := range localusage.HistoryProviders() {
 				diagnosticRow(t, rows, tool+":history")
+			}
+			if id == "claude" {
+				// D27 (G3-19): Claude Code's saved login is on by default; the
+				// not-admitted/no-read checks below run after a recorded refusal.
+				if diagnosticRow(t, rows, id).Admitted != "yes" {
+					t.Fatal("default-on Claude saved login not admitted on a fresh profile")
+				}
+				productionConsent(t, id, false)
+				rows = ReaderDiagnostics(paths(), at)
 			}
 			if diagnosticRow(t, rows, id).Admitted != "no" {
 				t.Fatal("admitted before consent")
@@ -172,7 +181,7 @@ func TestDoctorReadersIdentifiersNeverReachAnyField(t *testing.T) {
 						switch key {
 						case "provider":
 							id := value.(string)
-							if nativeReaders[id] == nil && id != "claude:session" {
+							if nativeReaders[id] == nil && id != "claude:session" && id != "codex" {
 								found := false
 								for _, tool := range localusage.HistoryProviders() {
 									if id == tool+":history" {

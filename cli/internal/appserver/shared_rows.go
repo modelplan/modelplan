@@ -103,7 +103,7 @@ func appendReportRows(in *rows.Input, report quota.Report, declaredOnly bool) {
 					source = rows.WindowSourceAPIKey
 				}
 			}
-			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt)}
+			raw := rows.WindowInput{Source: source, Kind: window.Kind, Limit: window.Limit, ModelIDs: window.ModelIDs, Pool: account.Pool, ResetMode: window.ResetMode, RemainingPercent: window.RemainingPercent, ResetsAt: window.ResetsAt, ObservedAt: timePointer(window.ObservedAt), Forecast: window.RunOutForecast()}
 			if window.WindowMinutes > 0 {
 				duration := int64(window.WindowMinutes) * 60
 				raw.DurationSeconds = &duration

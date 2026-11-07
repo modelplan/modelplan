@@ -39,6 +39,7 @@ It marks no advice as told. A client keeps its own notified keys.
 | `dailyLong[]` | CLI 0.5.32+. The same rows for the last 371 local days (53 weeks, today included), from `observed/daily-long.json`, for a year-long heatmap (below) |
 | `sessionRanking` | CLI 0.5.27+. The sessions with the most observed output tokens (below) |
 | `projectRanking` | CLI 0.5.29+. The same sessions summed per project (below) |
+| `perfHistory` | v1.1, optional. The 7/30-day observed windows per subscription and the model/tool rankings (below); present only when `modelplan desktop --json --history` asked for it |
 | `subscriptions` | CLI 0.5.30+. `[{subscriptionRef, sources, basis, observedAt}]`: each subscription the accounts were bound to, with the account sources read from it, for a scope selector (below) |
 | `projectLabels` | CLI 0.5.29+. Whether project labels are on. Since CLI 0.5.32 they are on unless the user turned them off (`modelplan project-labels off`), and a stored choice is kept; before, they were off until `modelplan project-labels on` |
 | `paceHistory` | CLI 0.5.27+. How fast each window's percentage rose per cycle (below) |
@@ -168,6 +169,18 @@ CLI 0.5.29+. `{measure: "observed-output-tokens", recent7d, recent30d}`; each wi
 - `configs[]`: as in `sessionRanking`, across the project's sessions.
 
 Sources: the Codex rollout's working directory (session meta and turn context) and the Claude Code transcript's. The first one a session records names its project. At most 500 projects are kept; the ones last active longest ago lose their reference first, and a reference goes with its last session. Neither the reference nor the label is meant for anything that leaves the machine; a future portable or synced form leaves both out.
+
+## `perfHistory`
+
+Optional (v1.1): present only when the caller passed `--history`. The performance ledger summed per source over the recent 7 and 30 local days, bound to subscriptions, plus rankings. The same section crosses the app-server as `cockpit/query`'s `history` behind the separately negotiated `cockpitHistoryV1` capability; clients that did not negotiate it never receive the field.
+
+`{coverage, recordingSince, subscriptions, models, tools}`. `coverage` is `local-history`, `recording-off` or `unavailable`; `recordingSince` is when the ledger started, so a 30-day window that opens before it is known to be partial (`null` when unknown).
+
+`subscriptions[]`: `[{subscriptionRef, sources}]`. A source's windows appear under a subscription only through the one unambiguous current binding (as `todayTotals`): exactly one fresh (`≤ 1 h`) verified account of that source bound to that reference, `bindingBasis: "source-wide-current-binding"`. An ambiguous, stale or unverified source contributes no subscription row at all — never a copy of its figures to several subscriptions — and stays visible only in the unattributed rankings. `sources[]` is `[{source, bindingBasis, recent7d, recent30d}]`.
+
+Each window is `{inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, cacheHitRatio, generationTps, observedRequests, eligibleRequests}`. The token kinds are sums over every observed request; one is `null` when any request lacked it, never `0`. `cacheHitRatio` is `cacheReadTokens ÷ (cacheReadTokens + inputTokens)`, `null` unless both are known and the denominator is positive. `generationTps` is `eligibleOutputTokens` per second of `genMs`, `null` below the five-sample minimum. Output is what this machine's harnesses produced; it is not vendor-billed usage, and nothing here is proof of historic account ownership.
+
+`models` and `tools` are the same shape as `sessionRanking`'s windows: `{measure: "observed-output-tokens", attribution: "unattributed", recent7d, recent30d}`, each window `{entities, totalObservedOutputTokens, top}` with `top` holding at most ten `{name, observedRequests, observedOutputTokens, share}` — `name` is the model (across every source that ran it) or the tool (the ledger's source). Only sources whose local-history consent is granted contribute, anywhere in this section.
 
 ## `paceHistory`
 

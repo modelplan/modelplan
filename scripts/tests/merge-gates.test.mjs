@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as R from "../merge-gates/rules.mjs";
 import * as G from "../merge-gates/git.mjs";
 import { workflowProblems } from "../workflow-policy.mjs";
@@ -77,9 +77,21 @@ test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on ti
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev")), glm] }).state, R.PENDING);
   assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "macrev")), comment(v("merge", H, "macrev2")), glm] }).state, R.SUCCESS);
   assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "macrev2")), comment(v("block", H, "glm")), glm] }).state, R.FAILURE);
+  assert.equal(evalPr({ files: t2, comments: [comment(v("merge", H, "sonnet")), glm] }).state, R.SUCCESS, "Sonnet stands in for macrev2");
+  assert.equal(evalPr({ files: t2, comments: [comment(v("block", H, "sonnet")), comment(v("merge", H, "macrev2")), glm] }).state, R.FAILURE);
   assert.equal(evalPr({ files: [file("docs/a.md")] }).state, R.SUCCESS, "tier 0 needs no verdict");
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment(v("block"))] }).state, R.FAILURE);
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);
+});
+
+test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
+  const ledger = pr({ title: "G3-20 fix", body: "Scenarios: D-01" });
+  const later = `EVIDENCE-DEFERRED: D-01 @ ${H} issue=470`;
+  assert.equal(R.evidenceState(ledger, R.feed([comment(later)]), H).state, R.SUCCESS);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-01 @ ${OLD} issue=470`)]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-01 @ ${H} issue=1`)]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(later, { login: "spam", id: 9 })]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-02 @ ${H} issue=470`)]), H).state, R.PENDING);
 });
 
 test("PR admission: trusted same-repo PRs into main only; drafts wait", () => {
@@ -151,19 +163,66 @@ test("CI at the head: newest run per workflow, parse-time failures, statuses, an
   assert.equal(evalPr({ comments: [], runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "a red head fails before reviews arrive");
 });
 
-test("stale-base guard and merge-group evaluation", () => {
-  assert.deepEqual(R.staleOverlap(["desktop/native/A.swift", "docs/x.md"], ["desktop/native/B.swift", "docs/y.md", "cli/z.go"]), ["desktop/native"]);
-  assert.deepEqual(R.staleOverlap(["cli/a.go"], ["desktop/native/B.swift"]), []);
+test("ledger evidence: exact-head trusted comment required for every listed scenario", () => {
+  const docs = [file("docs/evidence.md")];
+  const ledger = (body, extra = {}) => pr({ title: "Fix G3-07", body, ...extra });
+  const mark = (id, sha = H) => `VERIFIED: ${id} @ ${sha} evidence=artifacts/run-1`;
+  assert.equal(evalPr({ p: ledger("Details"), files: docs }).state, R.FAILURE);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01"), {login:"other", id:1})] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD))] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, reviews: [review(mark("D-01"))] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({title:"Ordinary fix", body:""}), files: docs }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({title:"Ordinary", body:"Scenarios: D-01", head:{sha:H, ref:"fix/g3-12", repo:{full_name:"modelplan/modelplan"}}}), files: docs }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(`VERIFIED: D-01 @ ${H} evidence=`)] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01"), files: docs, comments: [comment(mark("D-01", OLD)), comment(`VERDICT-CARRY: ${OLD} -> ${H}`)], verified: () => true }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("**Scenarios:** D-01, D-01"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01, V-03"), files: docs, comments: [comment(mark("D-01")), comment(mark("V-03"), {login:"guanbear",id:1})] }).state, R.PENDING);
+  assert.equal(evalPr({ p: ledger("Scenarios: D-01\nScenarios: V-03"), files: docs, comments: [comment(mark("D-01"))] }).state, R.SUCCESS, "only the first declaration counts");
+  assert.equal(evalPr({ p: ledger("Scenarios: d-01"), files: docs }).state, R.FAILURE, "IDs follow the shell gate's uppercase format");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("V-03"))] }).state, R.PENDING, "ledger scenario needs its own evidence");
+  assert.equal(evalPr({ p: ledger("Scenarios: G3-12, V-03"), files: docs, comments: [comment(mark("G3-12")), comment(mark("V-03"))] }).state, R.SUCCESS, "numeric scenario prefixes match verified evidence");
+});
+
+test("merge group requires evidence for each member's own head", () => {
+  const docs = [file("docs/evidence.md")];
+  const first = evalPr({p:pr({title:"G3-01", body:"Scenarios: D-01"}), files:docs,
+    comments:[comment(`VERIFIED: D-01 @ ${H} evidence=first`)]});
+  const other = pr({title:"G3-02", body:"Scenarios: D-02", head:{sha:OLD, ref:"fix/g3-02", repo:{full_name:"modelplan/modelplan"}}});
+  const absent = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${H} evidence=wrong-head`)]});
+  const valid = evalPr({p:other, files:docs, comments:[comment(`VERIFIED: D-02 @ ${OLD} evidence=second`)]});
+  const step = (n, result) => ({pr:n, prResult:result, mergeProof:{ok:true}});
+  const queueRuns = R.QUEUE_WORKFLOWS.map((path) => run(path));
+  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, absent)], queueRuns}).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({steps:[step(1, first), step(2, valid)], queueRuns}).state, R.SUCCESS);
+});
+
+test("malformed scenario members fail PR and merge group despite valid evidence", () => {
+  const docs = [file("docs/evidence.md")];
+  const receipt = comment(`VERIFIED: V-01 @ ${H} evidence=fixture`);
+  for (const invalid of ["S6", "d-01", "V-1", "V-001"]) {
+    const result = evalPr({ p: pr({title:"G3-07", body:`Scenarios: V-01, ${invalid}`}), files:docs, comments:[receipt] });
+    assert.equal(result.state, R.FAILURE, invalid);
+    assert.equal(R.evaluateGroup({steps:[{pr:1, prResult:result, mergeProof:{ok:true}}], queueRuns:greenCi}).state, R.FAILURE, invalid);
+  }
+  const valid = evalPr({p:pr({title:"G3-07", body:"Scenarios: V-01 (normal entry), V-01"}), files:docs, comments:[receipt]});
+  assert.equal(valid.state, R.SUCCESS);
+});
+
+test("merge-group evaluation: the group's own CI replaces any stale-base rule", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
-  const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, overlap: [], ...o });
-  const qci = [run(".github/workflows/ci.yml")];
+  const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
+  const qci = R.QUEUE_WORKFLOWS.map((path) => run(path));
+  assert.ok(R.QUEUE_WORKFLOWS.includes(".github/workflows/desktop.yml"), "the queue must test the Mac build class");
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: qci }).state, R.SUCCESS);
   assert.equal(R.evaluateGroup({ steps: [], queueRuns: qci }).state, R.FAILURE);
   assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [] }).state, R.PENDING, "queue CI not started yet");
   assert.equal(R.evaluateGroup({ steps: [step(), step({ pr: 8, prResult: { state: R.PENDING, why: "x" } })], queueRuns: qci }).state, R.FAILURE, "an unready PR fails the group");
-  assert.equal(R.evaluateGroup({ steps: [step({ overlap: ["desktop/native"] })], queueRuns: qci }).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml")] }).state, R.PENDING, "the Mac queue run has not started");
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml"), run(".github/workflows/desktop.yml", "failure")] }).state, R.FAILURE, "a failed Mac queue run fails the group");
   assert.equal(R.evaluateGroup({ steps: [step({ mergeProof: { ok: false, why: "x" } })], queueRuns: qci }).state, R.FAILURE);
-  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE);
+  assert.equal(R.evaluateGroup({ steps: [step()], queueRuns: [run(".github/workflows/ci.yml", "failure"), run(".github/workflows/desktop.yml")] }).state, R.FAILURE);
   assert.ok(R.description("x".repeat(200)).length <= 140);
 });
 
@@ -236,12 +295,55 @@ test("clean-merge proof: the group tree is exactly Git's merge of its parents", 
   } finally { r.done(); }
 });
 
+test("queue-scope sees every changed path, whatever Git would quote", () => {
+  // Git quotes non-ASCII, quote and control characters in plain --name-only output, which would hide the
+  // desktop/ prefix from the anchored match and let a group skip its Mac checks. Runs the shipped command.
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  const paths = /^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1];
+  const command = /^\s+elif (git diff .+); then$/m.exec(desktop)[1];
+  const scoped = (name) => {
+    const dir = mkdtempSync(join(tmpdir(), "queue-scope-"));
+    try {
+      const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd: dir, stdio: "pipe" });
+      git("init", "-q");
+      git("commit", "-q", "--allow-empty", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+      mkdirSync(dirname(join(dir, name)), { recursive: true });
+      writeFileSync(join(dir, name), "x");
+      git("add", "-A");
+      git("commit", "-q", "-m", "change");
+      return spawnSync("bash", ["-c", command], { cwd: dir, env: { ...process.env, BASE: base, QUEUE_PATHS: paths } }).status === 0;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  for (const name of ["desktop/native/a.swift", "desktop/native/测试.swift", 'desktop/a"b.swift', "desktop/a\tb.swift", "desktop/a\nb.swift", "codex/cli-pin.json"]) {
+    assert.equal(scoped(name), true, `queue-scope misses ${JSON.stringify(name)}`);
+  }
+  for (const name of ["docs/mac-ci.md", "docs/desktop/测试.md", "codex/cli-pin.json.bak"]) {
+    assert.equal(scoped(name), false, `queue-scope wrongly selects ${JSON.stringify(name)}`);
+  }
+});
+
 test("shipped files: design rules parse, gate workflows pass the workflow policy", () => {
   assert.ok(conf.include.some((r) => r.surface === "dock") && conf.exclude.length >= 4 && conf.pinonly.length === 1);
   for (const f of ["merge-gates.yml", "merge-gates-probe.yml", "ci.yml"]) {
     const path = `.github/workflows/${f}`;
     assert.deepEqual(workflowProblems(readFileSync(join(root, path), "utf8"), path), [], path);
   }
+  for (const path of [...R.QUEUE_WORKFLOWS, ".github/workflows/merge-gates-probe.yml"]) {
+    assert.match(readFileSync(join(root, path), "utf8"), /^  merge_group:\s*$/m, `${path} must run for queue groups`);
+  }
+  // merge_group has no paths filter: queue-scope must decide with the same list as pull_request, or a
+  // group could skip a Mac check its PR run would have needed. native-headless must wait for that decision.
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  const prPathList = JSON.parse(/^  pull_request:\n    paths: (\[.*\])$/m.exec(desktop)[1]);
+  const scope = new RegExp(/^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1]);
+  for (const p of prPathList) assert.match(p.replace(/\*\*$/, "x"), scope, `queue-scope misses ${p}`);
+  assert.doesNotMatch("docs/mac-ci.md", scope);
+  assert.match(/^  native-headless:\n(?:.*\n){1,3}/m.exec(desktop)[0], /needs: queue-scope/);
+  const probe = readFileSync(join(root, ".github/workflows/merge-gates-probe.yml"), "utf8");
+  assert.match(probe, /pull_request:\s*\n\s*types:\s*\[[^\]]*\bedited\b/, "PR title/body edits must re-evaluate evidence");
   const gates = readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8");
   assert.match(gates, /actions\/checkout@[0-9a-f]{40} /, "the gate pins its action by commit");
   assert.doesNotMatch(gates, /^\s+(pull_request|merge_group|pull_request_review):/m, "the gate never runs PR code");

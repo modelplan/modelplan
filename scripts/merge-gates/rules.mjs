@@ -4,7 +4,9 @@
 // one merge-group commit from the per-PR states plus the group's own proofs. evaluate.mjs feeds them.
 //
 // The rules are a port of the coordinator's landing scripts (tier, trusted-author, verdict, carry, GLM,
-// design and stale-base checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate.
+// and design checks). Deliberate differences are marked "Stricter:"; none of them relaxes a gate. There is no
+// stale-base check (owner 2026-11-07): a PR need not contain the latest main, because the queue's own CI on
+// the group commit (QUEUE_WORKFLOWS) tests "PR + latest main".
 
 export const CONTEXT = "modelplan-gates";
 // Every lane posts through this account; anybody can comment on a public repo, so nothing else counts.
@@ -15,8 +17,9 @@ export const SELF_WORKFLOWS = Object.freeze([".github/workflows/merge-gates.yml"
 // A head counts as CI-checked only once this workflow has run; every other run of the same push is created
 // with it, so its completion means the head's run list is complete.
 export const ANCHOR_WORKFLOW = ".github/workflows/ci.yml";
-// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger).
-export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml"]);
+// Workflows that must pass on the merge-group commit itself (they have a merge_group trigger). desktop.yml
+// carries the Mac build and native-headless checks; its queue-scope job skips them for a group outside its paths.
+export const QUEUE_WORKFLOWS = Object.freeze([".github/workflows/ci.yml", ".github/workflows/desktop.yml"]);
 const SHA = /^[0-9a-f]{40}$/;
 
 export const PENDING = "pending";
@@ -196,6 +199,38 @@ export function glmVerdict(items, head) {
   return r;
 }
 
+// ---- Exact-head owner-ledger evidence (evidence-gate.sh) ----
+// Scenario declarations come from the first matching body line; only trusted issue comments count.
+// Evidence is tied to the actual head and is never carried across a merge or other commit.
+export function evidenceState(pr, items, head) {
+  const body = pr.body ?? "";
+  if (!/g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n")))
+    return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
+  const declaration = lines(body).find((line) => /^\s*\**Scenarios:?\**:?/i.test(line));
+  // Reject malformed scenario-shaped tokens, including when a valid ID is also present.
+  // Free-text annotations remain allowed, but cannot hide a mistyped ID.
+  const candidates = declaration?.replace(/^\s*\**Scenarios:?\**:?/i, "")
+    .match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
+  if (candidates.some((id) => !/^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/.test(id)))
+    return { state: FAILURE, why: "Scenarios line contains malformed scenario IDs" };
+  const scenarios = [...new Set(declaration?.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g) ?? [])].sort();
+  if (!scenarios.length) return { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" };
+  const verified = new Set();
+  for (const item of items) if (item.kind === "comment") {
+    for (const line of lines(item.body)) {
+      const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
+      if (match && match[2] === head) verified.add(match[1]);
+      // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
+      // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      if (deferred && deferred[2] === head) verified.add(deferred[1]);
+    }
+  }
+  const missing = scenarios.filter((id) => !verified.has(id));
+  return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
+    : { state: SUCCESS, why: "scenario evidence verified" };
+}
+
 // ---- CI at one commit (merge-when.sh) ----
 // runs: Actions workflow runs whose head_sha is the commit. Only the newest run per workflow counts, so a
 // superseded or re-triggered run never blocks. A run GitHub rejected at parse time (startup_failure) has no
@@ -242,6 +277,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
   if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
     return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
+  const evidence = evidenceState(pr, items, head);
+  if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   if (pr.draft) return res(PENDING, "draft");
 
   const paths = prPaths(files);
@@ -259,7 +296,9 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   if (blocked.length) return res(FAILURE, `VERDICT block ${blocked.join(" ")}`, extra);
 
   const missing = [];
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge") missing.push("VERDICT (macrev2) merge");
+  if (evidence.state === PENDING) missing.push(evidence.why);
+  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
+  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
   if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
   if (design.touching) {
     const d = designVerdict(items, head, carried);
@@ -278,17 +317,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   return res(SUCCESS, `tier ${tier}: gates pass${carried.length ? ` (carried ${carried.length})` : ""}`, extra);
 }
 
-// ---- Stale-base guard (merge-when.sh) ----
-// Checks that do not run in the merge queue only saw the PR head. If the base gained changes in the same
-// component (first two path segments) since the head forked, those checks never saw the combination.
-const component = (p) => p.split("/").slice(0, 2).join("/");
-export function staleOverlap(prFiles, baseFiles) {
-  const mine = new Set(prFiles.map(component));
-  return [...new Set(baseFiles.map(component))].filter((c) => mine.has(c) && !/^(docs|README\.md|NOTICE)/.test(c)).sort();
-}
-
 // ---- One merge-group commit ----
-// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}, overlap: [...]}.
+// steps: one per PR in the group, base first: {pr, prResult, mergeProof: {ok, why}}.
 // queueRuns/queueStatuses: CI on the group commit itself.
 export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
   if (!steps.length) return { state: FAILURE, why: "no PR found in the merge group" };
@@ -296,7 +326,6 @@ export function evaluateGroup({ steps, queueRuns, queueStatuses = [] }) {
     const n = `#${s.pr}`;
     if (!s.mergeProof.ok) return { state: FAILURE, why: `${n}: ${s.mergeProof.why}` };
     if (s.prResult.state !== SUCCESS) return { state: s.prResult.state === PENDING ? FAILURE : s.prResult.state, why: `${n}: ${s.prResult.why}` };
-    if (s.overlap.length) return { state: FAILURE, why: `${n}: stale base, main changed ${s.overlap.slice(0, 4).join(" ")}; merge main into the branch` };
   }
   const ci = ciState(queueRuns, queueStatuses, { required: QUEUE_WORKFLOWS });
   if (ci.state !== SUCCESS) return { state: ci.state, why: `group ${ci.why}` };

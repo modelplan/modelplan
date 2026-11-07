@@ -302,7 +302,7 @@ func TestClaudeDoesNotForwardCredentialOnRedirect(t *testing.T) {
 	}
 }
 
-func TestKeychainGrantReadsCredentialWithoutBypassingRemoteBudget(t *testing.T) {
+func TestKeychainGrantReadsAtOnceAfterLocalFailureButKeepsTheFloor(t *testing.T) {
 	p := claudeTestPaths(t)
 	status := 200
 	paths := []string{}
@@ -334,9 +334,9 @@ func TestKeychainGrantReadsCredentialWithoutBypassingRemoteBudget(t *testing.T) 
 	if len(s.Entries) == 0 || s.Entries[0].Status != keychain.ConfirmationNeeded {
 		t.Fatal("background timeout was not latched as before", s.Entries)
 	}
-	// A later background attempt would return the latch without asking again.
-	// The grant triggers one interactive credential operation while the shared
-	// remote budget stays closed.
+	// A later background attempt would return the latch without asking again. That
+	// failure never reached the provider, so its back-off does not delay the read
+	// that follows the user's Allow.
 	claudeSecurity = func(ctx context.Context, _ string, _ ...string) (keychain.ProcessResult, error) {
 		d, _ := ctx.Deadline()
 		interactive = append(interactive, time.Until(d) > keychain.BackgroundTimeout)
@@ -348,8 +348,9 @@ func TestKeychainGrantReadsCredentialWithoutBypassingRemoteBudget(t *testing.T) 
 		t.Fatal(err)
 	}
 	s, _ = loadReaderState(p.Cache, "claude")
-	if len(paths) != 0 || len(s.Entries) == 0 || s.Entries[0].Account != nil {
-		t.Fatal("Keychain grant bypassed remote budget", paths, s.Entries)
+	remote := len(paths)
+	if remote == 0 || len(s.Entries) == 0 || s.Entries[0].Account == nil {
+		t.Fatal("Keychain grant waited for a local back-off", paths, s.Entries)
 	}
 	if len(interactive) != 2 || interactive[0] || !interactive[1] {
 		t.Fatal("expected one background then one foreground Keychain attempt", interactive)
@@ -357,17 +358,163 @@ func TestKeychainGrantReadsCredentialWithoutBypassingRemoteBudget(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(p.Cache, "observed", "keychain", "claude-code.json")); !os.IsNotExist(err) {
 		t.Fatal("latched Keychain state survived a successful foreground read")
 	}
-	// After the backoff expires, a new explicit action reuses exactly one
-	// credential result for the budgeted remote operation.
+	// The successful read's floor still holds for a repeat Allow.
+	if err := KeychainGrantRead(ctx, p, "claude", claudeTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != remote || len(interactive) != 3 {
+		t.Fatal("a repeat Keychain grant bypassed the floor", paths, interactive)
+	}
+	// After the floor expires, a new explicit action reuses exactly one credential
+	// result for the budgeted remote operation.
 	if err := KeychainGrantRead(ctx, p, "claude", claudeTestNow.Add(11*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	s, _ = loadReaderState(p.Cache, "claude")
-	if len(paths) == 0 || len(interactive) != 3 || s.Entries[0].Account == nil {
-		t.Fatal("due read did not reuse one credential operation", paths, interactive, s.Entries)
+	if len(paths) == remote || len(interactive) != 4 {
+		t.Fatal("due read did not reuse one credential operation", paths, interactive)
 	}
 	if err := KeychainGrantRead(ctx, p, "codex", claudeTestNow); err == nil {
 		t.Fatal("foreground path accepted a provider without a saved-login reader")
 	}
 	assertClaudeCachePrivate(t, p.Cache)
+}
+
+// A failure the provider answered keeps its back-off, also for the read after Allow.
+func TestKeychainGrantKeepsProviderBackoff(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 500
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	p.ReaderAccess.Grants["claude"] = g
+	old := claudeSecurity
+	t.Cleanup(func() { claudeSecurity = old })
+	claudeSecurity = func(context.Context, string, ...string) (keychain.ProcessResult, error) {
+		return keychain.ProcessResult{Output: claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))}, nil
+	}
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	remote := len(paths)
+	if remote == 0 {
+		t.Fatal("first read did not reach the provider")
+	}
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != remote {
+		t.Fatal("Keychain grant bypassed a provider back-off", paths)
+	}
+}
+
+// macrev2-605-1: a canceled credential operation overlays the entry, but the provider's
+// refusal still holds the next read until its deadline.
+func TestKeychainGrantKeepsProviderBackoffAfterCanceledCredential(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 500
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	valid := claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	result, outcome := valid, ""
+	credential := func(next string) {
+		outcome, result = next, valid
+		if next != "" {
+			result = nil
+		}
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return append([]byte(nil), result...), outcome }
+	p.ReaderAccess.Grants["claude"] = g
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	remote := len(paths)
+	if remote == 0 {
+		t.Fatal("first read did not reach the provider")
+	}
+	credential("canceled")
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := loadReaderState(p.Cache, "claude")
+	if len(s.Entries) == 0 || s.Entries[0].CredentialReadState == "" {
+		t.Fatal("cancellation did not overlay the entry", s.Entries)
+	}
+	credential("")
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != remote {
+		t.Fatal("a canceled credential made the provider back-off bypassable", paths)
+	}
+}
+
+// A cache written before localBackoff existed has no proof its failure was local, so the
+// deadline stands even though the entry looks like a credential failure.
+func TestKeychainGrantKeepsDeadlineWithoutRecordedProvenance(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 200
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	outcome, valid := "canceled", claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	g.Credential = func(context.Context) ([]byte, string) {
+		if outcome != "" {
+			return nil, outcome
+		}
+		return append([]byte(nil), valid...), ""
+	}
+	p.ReaderAccess.Grants["claude"] = g
+	if err := RefreshNative(context.Background(), p, claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := loadReaderState(p.Cache, "claude")
+	if !s.LocalBackoff || s.Failures == 0 {
+		t.Fatalf("fixture needs a recorded local failure: %+v", s)
+	}
+	file := readerPath(p.Cache, "claude")
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "localBackoff")
+	raw, _ = json.Marshal(legacy)
+	if err := os.WriteFile(file, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outcome = ""
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 0 {
+		t.Fatal("a cache without provenance skipped its deadline", paths)
+	}
 }

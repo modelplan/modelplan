@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
@@ -378,7 +379,9 @@ func TestAccountMergeRequiresVerifiedMatchingBinding(t *testing.T) {
 		{"matching", "0123456789abcdef", "verified", 1},
 		{"different", "fedcba9876543210", "verified", 2},
 		{"unverified", "0123456789abcdef", "unverified", 2},
-		{"missing", "", "", 2},
+		// An unbound session-log account is not a second source while the live reading is
+		// available (owner decision 2026-11-06, G3-20 option B).
+		{"missing", "", "", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cache := t.TempDir()
@@ -452,9 +455,40 @@ func TestCodexRuntimeNeverMergesUnverifiedOrDifferentAccount(t *testing.T) {
 	for _, binding := range []*Binding{nil, {Ref: snap.SubscriptionRef, Status: "unverified"}, {Ref: "fedcba9876543210", Status: "verified"}} {
 		r := Report{Accounts: []Account{{Source: "codex", Subscription: binding, ObservedAt: acctNow.Add(-time.Hour), Windows: []Window{{Kind: "weekly", ObservedAt: acctNow.Add(-time.Hour)}}}}}
 		applyAccount(&r, cache, acctNow)
+		if binding == nil {
+			// Owner decision B: an unbound session-log reading is not shown beside the live
+			// reading and gives it nothing.
+			if len(r.Accounts) != 1 || r.Accounts[0].Via != "codex-account" || len(r.Accounts[0].Windows) != 2 {
+				t.Fatalf("live reading with an unbound log: %+v", r.Accounts)
+			}
+			continue
+		}
 		if len(r.Accounts) != 2 || r.Accounts[0].Via == "codex-account" || r.Accounts[1].Via != "codex-account" {
 			t.Fatalf("unbound readings were combined: %+v", r.Accounts)
 
 		}
+	}
+}
+
+// A brief hold on the consent lock must not lose a finished reading: the failed save used
+// to leave no snapshot and pushed the next read out by the failure wait.
+func TestRefreshKeepsTheReadingThroughABriefConsentLock(t *testing.T) {
+	isolateHome(t)
+	cache := t.TempDir()
+	bin, _ := fakeCodex(t, acctResponse)
+	state, _ := consent.Current()
+	held, done := make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- consent.Publish(state.Fence(), func() error { close(held); time.Sleep(700 * time.Millisecond); return nil })
+	}()
+	<-held
+	if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow); err != nil {
+		t.Fatalf("a brief consent lock lost the reading: %v", err)
+	}
+	if s := loadAccount(cache); s == nil || s.Status != "ok" {
+		t.Fatalf("snapshot = %+v", s)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

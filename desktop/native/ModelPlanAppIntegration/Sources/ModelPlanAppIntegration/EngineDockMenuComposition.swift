@@ -64,6 +64,7 @@ public struct EngineMenuRefreshResult {
         set { clock.now = newValue }
     }
     private var resetNotifier:EngineResetNotifier?
+    private var forecastNotifier:EngineForecastNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
     public private(set) var latestSettings: SettingsApplication?
@@ -73,6 +74,7 @@ public struct EngineMenuRefreshResult {
         setLanguage(value.snapshot.preferences.language.rawValue)
         dock.apply(value)
         settingsDidChange?(value)
+        menuDidChange?()
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
@@ -168,12 +170,27 @@ public struct EngineMenuRefreshResult {
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
         }
+        let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
+        forecastNotifier=forecasts;_=store.attach(forecasts)
+    }
+    /// The same seam for forecast notices.
+    public func setForecastNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
+        forecastNotifier?.deliveryOverride=delivery
+        forecastNotifier?.apply(store.snapshot)
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
         resetNotifier?.deliveryOverride=delivery
         resetNotifier?.apply(store.snapshot)
     }
+    /// The same seam with the Settings notification kind (`.reset` quota resets, `.official`
+    /// public reset events).
+    public func setNotificationDelivery(_ delivery:@escaping @MainActor (NotificationKind,String) async throws -> Void) {
+        resetNotifier?.kindDeliveryOverride=delivery
+        resetNotifier?.apply(store.snapshot)
+    }
+    /// True only when reset notifications can actually be delivered (system or host adapter).
+    public var notificationDeliveryAvailable:Bool { resetNotifier?.delivers ?? false }
     private var fallbackStatusText: String {
         let english = adapter.language == "en"
         let fallback: String
@@ -193,7 +210,10 @@ public struct EngineMenuRefreshResult {
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
+        let title = latestSettings.map {
+            EngineMenuBarTitle.make(inputs: presentedContent.snapshot.inputs, preferences: $0.snapshot.preferences, now: deadlineWall())
+        } ?? ""
+        return .init(title: title, detail: detail.isEmpty ? fallbackStatusText : detail)
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }

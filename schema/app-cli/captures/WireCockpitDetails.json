@@ -1,4 +1,29 @@
 {
+  "publication": {
+    "contractVersion": 1,
+    "publicationId": "0123456789abcdef01234567",
+    "publishedAt": "2026-10-29T12:00:00Z",
+    "source": "client",
+    "models": [
+      {
+        "id": "synthetic-model",
+        "name": "Synthetic model",
+        "developerId": "openai",
+        "recommended": "medium",
+        "efforts": [
+          {
+            "effort": "medium",
+            "label": "Med",
+            "star": true,
+            "ability": 50,
+            "cost": 2,
+            "time": 1.2
+          }
+        ]
+      }
+    ],
+    "truncated": false
+  },
   "version": 1,
   "sources": [
     "synthetic"
@@ -87,6 +112,17 @@
       "windowId": "synthetic",
       "severity": "synthetic",
       "remainingPercent": 42.5
+    }
+  ],
+  "forecasts": [
+    {
+      "source": "synthetic",
+      "subscriptionRef": "0123456789abcdef",
+      "windowId": "synthetic",
+      "runsOutAt": "2026-10-29T12:00:00.123456789Z",
+      "pace": "tight",
+      "basis": "recent-rate",
+      "observedAt": "2026-10-29T12:00:00.123456789Z"
     }
   ]
 }

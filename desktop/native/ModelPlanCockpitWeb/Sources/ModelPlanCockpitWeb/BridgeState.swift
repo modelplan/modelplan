@@ -33,7 +33,10 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil) {
+  /// Settings "Project names": off withholds project labels from every cockpit surface.
+  public let showProjectNames: Bool
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true) {
+    self.showProjectNames = showProjectNames
     if let redBelow, [10, 16, 20, 25].contains(redBelow) {
       self.redBelow = redBelow
     } else {
@@ -185,7 +188,7 @@ public final class CockpitBridgeState {
   private var loaded = false, hostSequence: UInt64 = 0, pageSequence: UInt64 = 0
   private var visibility = CockpitVisibility(visible: false, occluded: true, key: false)
   private var retiredSessions = Set<UUID>(), retiredEpochs = Set<String>(),
-    historyTools = Set<String>(), actionRequests = Set<UUID>()
+    historyTools = Set<String>()
   private struct Pending {
     let kind: String
     let sequence: UInt64
@@ -244,6 +247,7 @@ public final class CockpitBridgeState {
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
           "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+          "showProjectNames": appearance.showProjectNames,
         ],
         "shell": shell.fields, "redBelow": appearance.redBelow,
       ], receipt: "ready")
@@ -254,7 +258,7 @@ public final class CockpitBridgeState {
     return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "redBelow": appearance.redBelow,
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow,
     ], appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {
@@ -358,7 +362,6 @@ public final class CockpitBridgeState {
     historyTools.removeAll()
     scopeMembers.removeAll()
     pending.removeAll()
-    actionRequests.removeAll()
     latestDisplayRequest = nil; cancelDeadlineReports()
     retiredEpochs.removeAll()
     retiredSessions.removeAll()
@@ -423,12 +426,13 @@ public final class CockpitBridgeState {
       return .deadlinePending(id)
     }
     if type == "action" {
+      // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
       let history = action == "openHistory", scope = action == "scopeSelect"
       let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
-        visibility.active, actionRequests.count < 1024, !actionRequests.contains(id)
+        visibility.active
       else { throw CockpitBridgeError.invalidMessage }
       let intent: CockpitIntent
       switch action {
@@ -450,7 +454,6 @@ public final class CockpitBridgeState {
         intent = .openHistory(tool)
       default: throw CockpitBridgeError.invalidMessage
       }
-      actionRequests.insert(id)
       pageSequence = sequence
       return .action(intent)
     }

@@ -179,6 +179,14 @@ class MacosHarnessTests(unittest.TestCase):
             mac.build_app(work)
         go_commands=[(args,env) for args,env in commands if args[0]=='go']
         self.assertEqual(len(go_commands),2)
+        # The normal entry refuses helpers below EngineRowsEntry.minimumAppServerVersion (G5).
+        import json,re
+        pinned=json.loads((ROOT.parent.parent/'desktop/native/consent-cli-pin.json').read_text())['version']
+        minimum=re.search(r'minimumAppServerVersion = "([0-9.]+)"',(ROOT.parent.parent/
+            'desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/EngineRowsEntry.swift').read_text()).group(1)
+        self.assertGreaterEqual(tuple(map(int,pinned.split('.'))),tuple(map(int,minimum.split('.'))))
+        for args,env in go_commands:
+            self.assertIn('-X main.version='+pinned+'+u14.'+'a'*12,args)
         for args,env in go_commands:
             self.assertIn('-modcacherw',env['GOFLAGS'].split())
             self.assertEqual(env['GOMODCACHE'],str(work/'go-mod'))

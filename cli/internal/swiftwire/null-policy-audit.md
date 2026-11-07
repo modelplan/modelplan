@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 72 optional/nullable fields reachable from the production
+This inventory covers the 78 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -42,7 +42,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (61 fields)
+## Outputs (67 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -52,12 +52,24 @@ containers and failure ID retain their required-key checks.
 
 | Field | Declaration | Producer and consumer behavior |
 | --- | --- | --- |
+| CockpitDetails.Publication | forbidden | Omission means no verified publication; explicit null is not a publication. The producer never synthesizes one. |
+| CockpitPublicationEffort.Multiplier | forbidden | Omission means no published multiplier; null is not a published value. The producer does not calculate one. |
+| CockpitPublicationEffort.Ability | coalesced | Null is an unknown published ability, never zero. |
+| CockpitPublicationEffort.Cost | coalesced | Null is an unknown published cost, never zero. |
+| CockpitPublicationEffort.Time | coalesced | Null is an unknown published time, never zero. |
+| CockpitPublicationEffort.Provisional | forbidden | Omission means the publication did not mark the effort provisional; explicit null is rejected. |
 | CockpitData.Details | coalesced | The cockpit producer omits this field without `cockpitDetailsV1`; absence/null both mean unavailable, never an empty details projection. |
 | CockpitSubscriptionDetails.Credits | coalesced | The admitted producer uses null for unknown credits; generated decoding preserves that as no reading. |
 | CockpitResetCount.Count | coalesced | Null is an unknown count, distinct from zero; required-key validation is separate. |
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
+| CockpitDetails.Forecasts | forbidden | Omission means not negotiated or nothing to report; explicit null is rejected. |
+| RowsProjection.Forecasts | forbidden | Omission means not negotiated; explicit null is rejected. |
+| CockpitCycleShare.Model | coalesced | Null means no verified publication ID; the local string never crosses. |
+| CockpitCycleShare.Effort | coalesced | Null means an unknown or default effort. |
+| CockpitForecast.RunsOutAt | coalesced | Null means no run-out before the reset is forecast; it is never a past or invented moment. |
+| WindowForecast.RunsOutAt | coalesced | In-process only (the field is not on the wire); nil matches the cockpit field. |
 | CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
 | CockpitSession.Effort | coalesced | Null means an unreported or unsupported effort. |
 | CockpitSession.ProjectLabel | coalesced | Null means no permitted local label; the producer honors the project-label switch. |

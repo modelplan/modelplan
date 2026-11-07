@@ -8,7 +8,7 @@ export function commands() {
   let sequence=0;
   return (type,extra={})=>JSON.stringify({version:2,pageId,sessionId,requestId:`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`,sequence:String(sequence),storeEpoch:'epoch-z',generation:'41',viewRevision:'3',type,...extra});
 }
-export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false};
+export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true};
 export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'};
 export function sample() {
   const value=capture();
@@ -40,4 +40,14 @@ export function currentSample() {
     for(const window of account.windows){window.current=true;window.validUntil=deadline;window.resetsAt=null;}
   }
   return value;
+}
+// The porthole flicker (owner D39/D-H) is the one continuous decoration; c-porthole-still.spec.mjs owns its
+// gates (active, open, Reduce Motion) and counts it there. Specs about other motion see the page without it.
+export async function excludePortholeFlicker(page){
+  await page.addInitScript(()=>{
+    const own=Document.prototype.getAnimations;
+    Document.prototype.getAnimations=function(){return own.call(this).filter(a=>!a.effect?.target?.closest?.('.ck-still'));};
+    const style=window.getComputedStyle;
+    window.getComputedStyle=function(element,pseudo){const s=style.call(window,element,pseudo);return element?.closest?.('.ck-still')?new Proxy(s,{get:(t,k)=>k==='animationIterationCount'?'1':Reflect.get(t,k)}):s;};
+  });
 }

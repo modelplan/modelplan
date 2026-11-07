@@ -6,6 +6,16 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- A read that loses a lock to another ModelPlan process, such as a plugin hook, now retries after 15 seconds. Before, nothing had been read but the app waited 10 minutes, or 30 for Codex's runtime.
+
+- An older tool-level allow no longer switches off default-on reads added after it: for example Codex's runtime is read on such profiles, while a refusal, a denied source or a chosen non-native backend still wins. `doctor readers` now lists Codex.
+
+- Verification only: `MODELPLAN_VERIFY_READERS=<tool,...>` narrows every consent read (saved grants and default-on local/runtime scopes) to the listed tool IDs for device test runs. It never grants anything, an invalid entry denies every tool, and it is never written to the consent file. Unset, nothing changes.
+
+- A finished Codex reading is no longer lost when the consent lock is briefly held. Before, the reading was dropped and the next attempt waited 5 to 30 minutes.
+
+- Withdraw today statistics from subscribed account rows when their session evidence, day, or current source binding expires, even when no cache file changes.
+
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
   请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
 
