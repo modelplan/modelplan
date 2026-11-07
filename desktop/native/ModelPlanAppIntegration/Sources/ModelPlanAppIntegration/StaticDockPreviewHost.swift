@@ -384,7 +384,13 @@ struct DockHelpInteraction: Equatable {
         return true
     }
     #endif
+    /// The Quota Widget settings this host applies live from the committed preferences:
+    /// `apply(_:)` repaints from them and re-binds the panels, so none needs a relaunch.
+    public static let consumedSettingKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
     private var preferences = SettingsPreferences()
+    private var panelCollectionBehavior: NSWindow.CollectionBehavior {
+        preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
+    }
     private var effectiveRedBelow: Double { Double(application?.effective.redBelow ?? SettingsPreferences().redBelow) }
     private var memberSafePreferences: SettingsPreferences {
         preferences.withoutUnstableMemberChoices(model?.subscriptions ?? [])
@@ -886,6 +892,8 @@ struct DockHelpInteraction: Equatable {
         application = value
         let oldReveal = preferences.revealMilliseconds
         preferences = value.snapshot.preferences
+        // A panel keeps its Spaces behaviour until told otherwise, and the edge may not re-present.
+        for window in [panel, cardPanel, overflowPanel] { window?.collectionBehavior = panelCollectionBehavior }
         if value.effective.reduceMotion { locateLayer?.removeAnimation(forKey: "locate-pulse") }
         empty.stringValue = preferences.language == .english ? "No local subscriptions" : "暂无本地订阅"
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
@@ -1297,7 +1305,7 @@ struct DockHelpInteraction: Equatable {
         }
         value.isFloatingPanel = true; value.level = .floating; value.isOpaque = false
         value.backgroundColor = .clear; value.hasShadow = false; value.hidesOnDeactivate = false
-        value.isReleasedWhenClosed = false
+        value.isReleasedWhenClosed = false; value.collectionBehavior = panelCollectionBehavior
         return value
     }
     private func publishPlacementObservation(_ value: DockEdgePresentation?) {
@@ -1409,7 +1417,7 @@ struct DockHelpInteraction: Equatable {
         panel.level = value.moving ? .statusBar : .floating
         updateSnapPreview(value)
         panel.setFrame(frame, display: false)
-        panel.collectionBehavior = preferences.showOverFullscreen ? [.canJoinAllSpaces, .fullScreenAuxiliary] : [.canJoinAllSpaces]
+        panel.collectionBehavior = panelCollectionBehavior
         let content: NSView
         switch value.state {
         case .expanded:

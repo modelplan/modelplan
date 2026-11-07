@@ -89,6 +89,31 @@ import ModelPlanSettings
     func testD01VisibleStatusToRealPanelBeforeRowsReplies() async throws { try await firstShow(disabled: false) }
     func testD01OrderInControlRejectsFirstShow() async throws { try await firstShow(disabled: true) }
 
+    /// SET-9: "show over full-screen apps" reaches the live panel; the edge need not re-present.
+    func testFullscreenSettingReachesTheRunningPanel() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let app = try await make(root, Topology())
+        addTeardownBlock { @MainActor in
+            await app.stopNativeDockJourney()
+            EngineRowsEntry.nativeJourneyProfile = nil
+            try FileManager.default.removeItem(at: root)
+        }
+        launch(app)
+        try await checkEngine(app)
+        let shown = try await wait(2) { app.composition.dock.nativePanel?.isVisible == true }
+        XCTAssertTrue(shown)
+        let panel = try XCTUnwrap(app.composition.dock.nativePanel)
+        XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary))
+        let editor = app.settingsHost.application.editor
+        _ = try await editor.commit(SettingsB21Edit.fullscreen(true))
+        let on = try await wait(2) { panel.collectionBehavior.contains(.fullScreenAuxiliary) }
+        XCTAssertTrue(on)
+        _ = try await editor.commit(SettingsB21Edit.fullscreen(false))
+        let off = try await wait(2) { !panel.collectionBehavior.contains(.fullScreenAuxiliary) }
+        XCTAssertTrue(off)
+        XCTAssertTrue(app.composition.dock.nativePanel === panel, "the same panel, no relaunch")
+    }
+
     func testD02AndD03NativePanelTracksReservationsAndKeepsEdge() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let topology = Topology()
