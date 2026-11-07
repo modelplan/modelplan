@@ -3,30 +3,44 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Hint80Tests: XCTestCase {
-    func testV1OffersOnlyTwoHintsAndNeverMarksUnavailableHintSeen() throws {
+    func testV1FindsWidgetBeforeRingAndResetsTheSequence() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
-        context.v1MinimalHints = true
+        context.v1MinimalHints = true; context.ringRefreshAvailable = true
         try value.updateContext(context, at: 0)
-        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh, .ignition], at: 0))
+        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh], at: 0), "A ring anchor cannot bypass the first hint")
         XCTAssertTrue(value.preferences.seen.isEmpty)
-        context.ringRefreshAvailable = true
-        try value.updateContext(context, at: 1)
-        let ring = try XCTUnwrap(value.nextOffer(placeable: [.ringRefresh, .ignition], at: 1))
-        XCTAssertEqual(ring.kind, .ringRefresh)
-        try value.confirmShown(ring, at: 1); value.dismiss()
-        context.dockReveal = nil; context.widgetConcealed = true
-        try value.updateContext(context, at: 2)
-        XCTAssertNil(try value.nextOffer(placeable: [.findWidget], at: 2), "No hint without an actual status anchor")
-        context.statusAnchorAvailable = true
-        try value.updateContext(context, at: 3)
-        let find = try XCTUnwrap(value.nextOffer(placeable: [.findWidget], at: 3))
-        XCTAssertEqual(find.kind, .findWidget)
-        try value.confirmShown(find, at: 3); value.dismiss()
-        context.dockReveal = UUID(); context.widgetConcealed = false
-        try value.updateContext(context, at: 4)
-        for kind in FirstUseHintKind.allCases { value.request(kind) }
-        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 4))
-        XCTAssertEqual(value.preferences.seen, [.ringRefresh, .findWidget])
+        let first = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 1))
+        XCTAssertEqual(first.kind, .findWidget)
+        try value.confirmShown(first, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh], at: 1), "Only one hint can be visible")
+        value.dismiss(); try value.updateContext(context, at: 2)
+        let second = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 2))
+        XCTAssertEqual(second.kind, .ringRefresh)
+        try value.confirmShown(second, at: 2); value.dismiss()
+        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 3))
+        XCTAssertEqual(value.preferences.seen, [.findWidget, .ringRefresh])
+        value.reset(); try value.updateContext(context, at: 4)
+        XCTAssertEqual(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 4)?.kind, .findWidget)
+    }
+    /// G3-28 (owner 11-06): turning the widget off from the status menu or Settings shows a
+    /// one-time hint at the menu bar icon. Collapsing to the strip never does.
+    func testTurningTheWidgetOffOffersItsOneTimeHintButCollapsingDoesNot() throws {
+        var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
+        context.v1MinimalHints = true; context.widgetConcealed = true; context.statusAnchorAvailable = true
+        try value.updateContext(context, at: 0)
+        XCTAssertNotEqual(try value.nextOffer(placeable: [.widgetOff, .findWidget], at: 0)?.kind, .widgetOff,
+                          "a collapsed strip is not a turned-off widget")
+        value.dismiss()
+        context.widgetTurnedOff = true; context.dockReveal = UUID(); try value.updateContext(context, at: 1)
+        let offer = try XCTUnwrap(value.nextOffer(placeable: [.widgetOff, .findWidget], at: 1))
+        XCTAssertEqual(offer.kind, .widgetOff, "turning off wins over the find-widget hint")
+        try value.confirmShown(offer, at: 1); value.dismiss()
+        XCTAssertTrue(value.preferences.seen.contains(.widgetOff))
+        context.dockReveal = UUID(); try value.updateContext(context, at: 2)
+        XCTAssertNil(try value.nextOffer(placeable: [.widgetOff], at: 2), "the hint is shown once per machine profile")
+        context.statusAnchorAvailable = false; context.dockReveal = UUID()
+        var fresh = FirstUseHints(); try fresh.updateContext(context, at: 3)
+        XCTAssertNil(try fresh.nextOffer(placeable: [.widgetOff], at: 3), "without the menu bar icon there is nothing to point at")
     }
     func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
@@ -45,7 +59,7 @@ final class Hint80Tests: XCTestCase {
         try value.updateContext(context, at: 0); return value
     }
     func testNineKindPriorityDetachFirstOpenThenOptionOnNextOpen() throws {
-        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget])
+        XCTAssertEqual(FirstUseHintKind.allCases, [.ignition,.detach,.optionHelp,.shutter,.field,.drag,.page,.pinned,.trial,.ringRefresh,.findWidget,.widgetOff])
         var value = try cockpit()
         let detach = try XCTUnwrap(value.nextOffer(placeable: [.detach,.optionHelp], at: 0))
         XCTAssertEqual(detach.kind, .detach); try value.confirmShown(detach, at: 0); value.dismiss()

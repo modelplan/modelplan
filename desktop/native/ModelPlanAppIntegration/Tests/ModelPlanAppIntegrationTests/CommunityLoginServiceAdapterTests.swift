@@ -52,6 +52,34 @@ import ModelPlanSettings
         XCTAssertEqual(adapter.handle(request, current: current, mayChangeLoginItem: true), .performed(.requiresApproval))
         XCTAssertEqual(service.registers, 1)
     }
+    func testNormalEntryDoneAppliesCheckedAndUncheckedLoginChoicesOnce() async throws {
+        for enabled in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-login-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: directory, preferredLanguages: ["en"])
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: directory.appendingPathComponent("not-launched"),
+                applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store,
+                createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+            defer { app.composition.dock.close() }
+            let service = AdapterLoginService()
+            app.loginServiceAdapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: service))
+            await app.prepare()
+            let editor = app.settingsHost.application.editor
+            let before = try XCTUnwrap(editor.snapshot)
+            XCTAssertTrue(before.preferences.openAtLogin)
+            XCTAssertEqual(service.registers, 0)
+            var options = OnboardingOptions(preferences: before.preferences)
+            options.openAtLogin = enabled
+            _ = try await editor.completeFirstRun(options: options, action: .done, host: .popup,
+                expectedRevision: before.revision)
+            XCTAssertEqual(editor.snapshot?.preferences.openAtLogin, enabled)
+            XCTAssertEqual(service.registers, enabled ? 1 : 0)
+            XCTAssertEqual(service.unregisters, 0)
+            await app.prepare()
+            XCTAssertEqual(service.registers, enabled ? 1 : 0, "Restoration must not repeat the login effect")
+        }
+    }
+
     func testUnrelatedHostRequestIsNotClaimedOrObserved() async throws {
         let (editor, _) = try await editor()
         let service = AdapterLoginService(), adapter = CommunityLoginServiceAdapter(item: .init(isAppBundle: true, service: service))

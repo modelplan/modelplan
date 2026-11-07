@@ -23,6 +23,8 @@ import ModelPlanDock
     private let sourceIsCurrent: @MainActor (UInt64) -> Bool
     private let report: @MainActor (Status) -> Void
     private let installValidatedUnknown: Bool
+    private let presentationInterval: TimeInterval?
+    private let refreshPresentation: @MainActor (Date) -> Void
     private var fence = HostDeadlineFence()
     private var scheduledSourceToken: UInt64?
     private var crossingBoundary = false
@@ -33,10 +35,13 @@ import ModelPlanDock
          recompute: @escaping @MainActor (Date) -> Candidate?,
          install: @escaping @MainActor (Value) -> Void,
          sourceIsCurrent: @escaping @MainActor (UInt64) -> Bool, installValidatedUnknown: Bool = false,
+         presentationInterval: TimeInterval? = nil, refreshPresentation: @escaping @MainActor (Date) -> Void = { _ in },
          report: @escaping @MainActor (Status) -> Void = { _ in }) {
         self.wallNow = wallNow; self.elapsed = elapsed; self.scheduler = scheduler
         self.clear = clear; self.recompute = recompute; self.install = install
         self.sourceIsCurrent = sourceIsCurrent; self.report = report; self.installValidatedUnknown = installValidatedUnknown
+        self.presentationInterval = presentationInterval.flatMap { $0.isFinite && $0 > 0 ? $0:nil }
+        self.refreshPresentation = refreshPresentation
     }
     /// Accepted replacement or significant clock change; never starts a reader.
     func invalidate() { handle(fence.invalidateAndRecompute()) }
@@ -87,7 +92,8 @@ import ModelPlanDock
             guard sourceIsCurrent(source) else {
                 handle(fence.withdraw()); if fence.isSuspended { setStatus(.staleSource) }; return
             }
-            scheduler.arm(at: clock + max(0, delay)) { [weak self] in
+            let wakeDelay = presentationInterval.map { min(delay,$0) } ?? delay
+            scheduler.arm(at: clock + max(0, wakeDelay)) { [weak self] in
                 guard let self, self.fence.isCurrent(ticket) else { return }
                 guard self.sourceIsCurrent(source) else {
                     self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.staleSource) }; return
@@ -96,7 +102,13 @@ import ModelPlanDock
                 guard now.timeIntervalSinceReferenceDate.isFinite else {
                     self.handle(self.fence.withdraw()); if self.fence.isSuspended { self.setStatus(.invalidClock) }; return
                 }
-                self.handle(self.fence.timerFired(ticket, now: now))
+                if now < date, self.presentationInterval != nil {
+                    // This is not a new source admission or a deadline extension.
+                    self.refreshPresentation(now)
+                    guard self.fence.isCurrent(ticket) else { return }
+                    guard self.sourceIsCurrent(source) else { self.handle(self.fence.withdraw()); return }
+                    self.handle(.schedule(ticket,date,hasUnknownDeadline:unknown))
+                } else { self.handle(self.fence.timerFired(ticket, now: now)) }
             }
             // Unknown/mixed policy is intentionally unresolved: never reinstall here.
             if (!unknown || installValidatedUnknown), let candidate, fence.isCurrent(ticket) {

@@ -6,6 +6,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
 @MainActor private final class DockInstrumentAXNode:NSAccessibilityElement {
     var press:(()->Bool)?
     var focus:((Bool)->Void)?
+    var normalHelp: String? { didSet { setAccessibilityHelp(contextualHelp ?? normalHelp) } }
+    var contextualHelp: String? { didSet { setAccessibilityHelp(contextualHelp ?? normalHelp) } }
     override func accessibilityPerformPress()->Bool {press?() ?? false}
     override func setAccessibilityFocused(_ focused: Bool) { super.setAccessibilityFocused(focused); focus?(focused) }
 }
@@ -30,11 +32,22 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     @_spi(DockResourceChecks) public var presentedReadingsForChecks: [String: DockInstrumentReading] { failed ? [:] : readings }
     /// Read-only capture of the currently presented synthetic test surface.
     @_spi(DockResourceChecks) public var presentedSkinForChecks: DockInstrumentSkin? { failed || community ? nil : skin }
+    /// Skin-space origin of the view's local coordinates (the hover viewport when one is reserved).
+    @_spi(DockResourceChecks) public var layoutOriginForChecks: CGPoint { layoutOrigin }
     @_spi(DockResourceChecks) public var presentedImageForChecks: CGImage? { failed || community ? nil : image }
     @_spi(DockResourceChecks) public var renderedPixelSize: CGSize? {
         image.map { CGSize(width: $0.width, height: $0.height) }
     }
+    /// Quota consumers share the ink of the current successful instrument appearance.
+    /// Reading/label overrides are not quota colours; failed/community appearances have no supplied ink.
+    public func quotaInk(for status:DockQuotaStatus) -> DockInk? {
+        guard !failed, !community else { return nil }
+        return skin?.palette[status.rawValue]
+    }
     public var onAction:((DockInstrumentAction)->Void)? {didSet{refreshNodes()}}
+    /// Esc while a ring holds keyboard focus: the host closes that ring's card and keeps the focus
+    /// (owner D37: a held card closes with Esc). Returns false when there was nothing to close.
+    public var onEscape:(()->Bool)?
     public var permitsAction:((DockInstrumentAction,DockActionSource)->Bool)?
     /// Separate empty-state action; never routed through subscription/overflow interaction.
     public var onEmptyAction: (() -> Bool)? { didSet { refreshNodes() } }
@@ -42,14 +55,66 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public weak var backgroundDragDelegate:(any DockBackgroundDragHandling)?
     public weak var nozzleEventDelegate:(any DockNozzleEventHandling)?
     public var keyboardNavigationEnabled=false
-    public var keyboardTargetID:String?
+    public var keyboardTargetID: String? {
+        didSet { if keyboardTargetID != oldValue { helpFocusChanged() } }
+    }
+    public var onHelpFocusChanged: (() -> Void)?
+    /// G3-10: the pointer moved over (or left) the widget. The help owner re-samples which
+    /// element is under the pointer; repeated samples over one element stay silent there.
+    public var onHelpPointerMoved: (() -> Void)?
+    public private(set) var registeredGripRects: [CGRect] = []
+    /// The painted grip art for each registered grip; the focus/hover outline hugs it while the
+    /// hit target (registeredGripRects) may be larger (R64 D-5).
+    public private(set) var registeredGripArtRects: [CGRect] = []
+    public private(set) var focusedGripIndex: Int? {
+        didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); helpFocusChanged() } }
+    }
+    private var hoveredGripIndex: Int?
+    private var gripOutline: CAShapeLayer?
+    @_spi(DockResourceChecks) public var emphasizedGripFrameForChecks: CGRect? { gripOutline?.path?.boundingBox }
+
+    public func registerGripRects(_ rects: [CGRect], art: [CGRect]? = nil) {
+        let arts = art.flatMap { $0.count == rects.count ? $0 : nil } ?? rects
+        let pairs = zip(rects, arts).filter { hit, art in
+            !hit.isEmpty && !art.isEmpty && bounds.contains(hit) && hit.contains(CGPoint(x: art.midX, y: art.midY)) &&
+                isPainted(atLocal: CGPoint(x: art.midX, y: art.midY))
+        }
+        let valid = pairs.map(\.0)
+        guard registeredGripRects != valid || registeredGripArtRects != pairs.map(\.1) else { return }
+        registeredGripRects = valid
+        registeredGripArtRects = pairs.map(\.1)
+        hoveredGripIndex = nil
+        focusedGripIndex = nil
+        updateGripEmphasis()
+        refreshNodes()
+    }
+
+    private func updateGripEmphasis() {
+        guard let index = focusedGripIndex ?? hoveredGripIndex, registeredGripRects.indices.contains(index) else {
+            gripOutline?.removeFromSuperlayer()
+            gripOutline = nil
+            return
+        }
+        let outline = gripOutline ?? CAShapeLayer()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.frame = bounds
+        let art = registeredGripArtRects.indices.contains(index) ? registeredGripArtRects[index] : registeredGripRects[index]
+        outline.path = CGPath(roundedRect: art, cornerWidth: 3, cornerHeight: 3, transform: nil)
+        outline.fillColor = NSColor.clear.cgColor
+        outline.strokeColor = NSColor.systemOrange.cgColor
+        outline.lineWidth = 2
+        if outline.superlayer == nil { layer?.addSublayer(outline) }
+        gripOutline = outline
+        CATransaction.commit()
+    }
     public var interactionProjectionAvailable: Bool { !community && !failed && skin != nil }
     /// Registered local geometry, never a second layout or an input window.
     public func interactionTargets(edge: DockEdge) -> [DockReorderTarget] {
         guard !community, !failed else { return [] }
         return orderedIDs.compactMap { id in
             guard let rect = stationRect(id) else { return nil }
-            return DockReorderTarget(id:id,along:Double(edge == .bottom ? rect.midX : rect.midY))
+            return DockReorderTarget(id:id,along:Double(edge.isHorizontal ? rect.midX : rect.midY))
         }
     }
     public var interactionOverflowIDs: Set<String> {
@@ -60,13 +125,84 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     /// Registered visible reading geometry for the Help-map owner, in view-local points.
     public func helpReadoutAnchor(_ id: String) -> CGRect? {
         guard !community, !failed, let skin, readings[id] != nil,
-              let station = skin.stations.first(where: { $0.subscriptionID == id }), station.showsReadout != false else { return nil }
-        return station.readout.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+              let station = skin.stations.first(where: { $0.subscriptionID == id }),
+              station.showsReadout != false, (station.readoutOpacity ?? 1) > 0 else { return nil }
+        return station.readout.offsetBy(dx: -layoutOrigin.x, dy: -layoutOrigin.y)
     }
     public func helpNoticeAnchor(_ id: String) -> CGRect? {
-        guard !community, !failed, let skin, notices[id] != nil,
+        guard !community, !failed, let skin, let notice = notices[id],
               let station = skin.stations.first(where: { $0.subscriptionID == id }) else { return nil }
-        return station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
+        let diameter = (notice.shape == .solid ? station.eventSolidDiameter : station.eventHollowDiameter) ?? station.eventRect.width / 2
+        let outline = notice.shape == .solid && station.eventOutlineKey != nil ? (station.eventSolidOutlineWidth ?? 0) : 0
+        let radius = diameter / 2 + outline
+        return CGRect(x: station.eventRect.midX - layoutOrigin.x - radius,
+                      y: station.eventRect.midY - layoutOrigin.y - radius, width: 2 * radius, height: 2 * radius)
+    }
+    private var focusedNoticeID: String? {
+        didSet { if focusedNoticeID != oldValue { helpFocusChanged() } }
+    }
+
+    public var focusedHelpAnchorID: String? {
+        if let index = focusedGripIndex { return "dock.grip.\(index)" }
+        if let id = focusedNoticeID, helpNoticeAnchor(id) != nil { return "dock.notice." + id }
+        guard let id = keyboardTargetID else { return nil }
+        return (helpRingsAnchor(id) == nil ? "dock.nozzle." : "dock.rings.") + id
+    }
+
+    private weak var contextualHelpNode: DockInstrumentAXNode?
+
+    private func helpFocusChanged() {
+        clearFocusedHelpExplanation()
+        onHelpFocusChanged?()
+    }
+
+    public func clearFocusedHelpExplanation() {
+        contextualHelpNode?.contextualHelp = nil
+        contextualHelpNode = nil
+    }
+
+    /// Update only the current keyboard control. The underlying reading remains its AX value.
+    @discardableResult public func setFocusedHelpExplanation(_ text: String?, for anchorID: String) -> Bool {
+        guard !failed, !isHiddenOrHasHiddenAncestor, focusedHelpAnchorID == anchorID,
+              nozzleEventDelegate?.hasCapture != true, backgroundDragDelegate?.isBackgroundMoving != true else { return false }
+        let key = focusedGripIndex.map { "grip.\($0)" }
+            ?? focusedNoticeID.map { "notice." + $0 }
+            ?? keyboardTargetID.map { "subscription." + $0 }
+        guard let key, let node = nodes[key] else { return false }
+        if contextualHelpNode !== node { clearFocusedHelpExplanation() }
+        node.contextualHelp = text
+        contextualHelpNode = text == nil ? nil : node
+        return true
+    }
+
+    public func helpRingsAnchor(_ id: String) -> CGRect? {
+        guard !failed, !community, let skin,
+              let station = skin.stations.first(where: { $0.subscriptionID == id }),
+              station.replacementResource == nil, readings[id] != nil else { return nil }
+        let radius = max(station.outer.radius + station.outer.width / 2, station.inner.radius + station.inner.width / 2)
+        return CGRect(x: station.centre.x - layoutOrigin.x - radius,
+                      y: station.centre.y - layoutOrigin.y - radius,
+                      width: 2 * radius, height: 2 * radius)
+    }
+
+    public func helpAnchorID(atLocal point: CGPoint) -> String? {
+        guard isPainted(atLocal: point), !community, let skin,
+              nozzleEventDelegate?.hasCapture != true, backgroundDragDelegate?.isBackgroundMoving != true else { return nil }
+        // The renderer paints the dot above the readout, then the quota rings above the nozzle.
+        for station in skin.stations.reversed() {
+            guard let id = station.subscriptionID, let reading = readings[id] else { continue }
+            if let rect = helpNoticeAnchor(id), hypot(point.x - rect.midX, point.y - rect.midY) <= rect.width / 2 { return "dock.notice." + id }
+            if helpReadoutAnchor(id)?.contains(point) == true { return "dock.number." + id }
+            let distance = hypot(point.x + layoutOrigin.x - station.centre.x,
+                                 point.y + layoutOrigin.y - station.centre.y)
+            if station.replacementResource == nil,
+               abs(distance - station.outer.radius) <= station.outer.width / 2 ||
+               (reading.inner != nil && abs(distance - station.inner.radius) <= station.inner.width / 2) {
+                return "dock.rings." + id
+            }
+            if distance <= station.diameter / 2 { return "dock.nozzle." + id }
+        }
+        return registeredGripRects.firstIndex(where: { $0.contains(point) }).map { "dock.grip.\($0)" }
     }
     private var edgeTracking:NSTrackingArea?
     /// The pooled-effect adapter stops/releases its old leases before a profile/identity transaction.
@@ -74,8 +210,17 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public private(set) var workingLayerParents=[String:CALayer]()
     private var image:CGImage?,backgroundImage:CGImage?,skin:DockInstrumentSkin?,readings=[String:DockInstrumentReading](),notices=[String:DockNotice]()
     private var officialRenderer: DockInstrumentRenderer?
+    private var restingInstrumentImage: CGImage?
+    private var hoverViewport: CGRect?
+    private var imageUsesHoverViewport = false
+    private var layoutOrigin: CGPoint { (hoverViewport ?? skin?.bounds)?.origin ?? .zero }
+    private var restingPaintFrame: CGRect {
+        guard let skin else { return bounds }
+        return skin.bounds.offsetBy(dx: -layoutOrigin.x, dy: -layoutOrigin.y)
+    }
+    @_spi(DockResourceChecks) public private(set) var nozzlePosesForChecks: [String: DockNozzlePose] = [:]
     private var refreshSweepTask: Task<Void, Never>?
-    private var refreshSweepOriginal: CGImage?
+    private var refreshSweepOriginal: (image: CGImage, usesHoverViewport: Bool)?
     private var refreshSweepGeneration: UInt64 = 0
     @_spi(DockResourceChecks) public private(set) var refreshSweepCountForChecks = 0
     @_spi(DockResourceChecks) public var refreshSweepAnimatingForChecks: Bool { refreshSweepTask != nil }
@@ -83,6 +228,39 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     var workingEffectSkin: DockInstrumentSkin? { failed || community ? nil : skin }
     private var orderedIDs=[String](),nodes=[String:DockInstrumentAXNode](),alphaData:CFData?
     private var noticePulseLayers = [CALayer]()
+    /// M-1: the ring whose card is open glows softly outside its rim (colour and blur are an
+    /// appearance input). Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:68 (.dk-n.hot).
+    private var hotGlow: CALayer?
+    @_spi(DockResourceChecks) public private(set) var hotNozzleForChecks: String?
+    public func setHotNozzle(_ id: String?, glow colour: CGColor? = nil, blur: CGFloat = 7) {
+        guard id != hotNozzleForChecks || (id != nil && hotGlow == nil) else { return }
+        hotGlow?.removeFromSuperlayer(); hotGlow = nil; hotNozzleForChecks = nil
+        guard let id, let colour, blur.isFinite, blur > 0, !failed, !community, let root = layer,
+              let station = skin?.stations.first(where: { $0.subscriptionID == id }) else { return }
+        let size = station.diameter, room = blur * 2
+        let glow = CALayer()
+        glow.frame = CGRect(x: station.centre.x - size / 2 - layoutOrigin.x - room, y: station.centre.y - size / 2 - layoutOrigin.y - room,
+                            width: size + 2 * room, height: size + 2 * room)
+        let disc = CGRect(x: room, y: room, width: size, height: size)
+        glow.shadowPath = CGPath(ellipseIn: disc, transform: nil)
+        glow.shadowColor = colour.copy(alpha: 1)
+        glow.shadowOpacity = Float(colour.alpha)
+        glow.shadowRadius = blur / 2
+        glow.shadowOffset = .zero
+        // Only the halo outside the rim: the shadow never washes over the ring art itself.
+        let mask = CAShapeLayer()
+        let outside = CGMutablePath(); outside.addRect(glow.bounds); outside.addEllipse(in: disc)
+        mask.path = outside; mask.fillRule = .evenOdd
+        glow.mask = mask
+        glow.contentsScale = CGFloat(scale)
+        if let pose = nozzlePosesForChecks[id] {
+            glow.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y).scaledBy(x: pose.scale, y: pose.scale))
+        }
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        root.addSublayer(glow)
+        CATransaction.commit()
+        hotGlow = glow; hotNozzleForChecks = id
+    }
     @_spi(DockResourceChecks) public var noticePulseCountForChecks: Int { noticePulseLayers.count }
     /// Registered hull extent excludes raster padding, separate controls and shadows.
     public var registeredHullBounds: CGRect? {
@@ -99,7 +277,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         }
     }
     @discardableResult public func pulseNotice(_ key: String) -> Bool {
-        guard !failed, !community, let skin, let image, let notice = notices[key], let root = layer,
+        guard !failed, !community, let skin, let image = restingInstrumentImage, let notice = notices[key], let root = layer,
               let station = skin.stations.first(where: { $0.subscriptionID == key || $0.overflowNoticeKey == key }) else { return false }
         let local = station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)
         let pixels = CGRect(x: local.minX * CGFloat(scale), y: local.minY * CGFloat(scale),
@@ -122,7 +300,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             guard let bright = c.makeImage() else { return false }; contents = bright
         }
         let overlay = CALayer(); overlay.contents = contents; overlay.contentsScale = CGFloat(scale)
-        overlay.frame = CGRect(x: pixels.minX / CGFloat(scale), y: pixels.minY / CGFloat(scale),
+        overlay.frame = CGRect(x: restingPaintFrame.minX + pixels.minX / CGFloat(scale),
+                               y: restingPaintFrame.minY + pixels.minY / CGFloat(scale),
                                width: pixels.width / CGFloat(scale), height: pixels.height / CGFloat(scale))
         let mask = CAShapeLayer(); mask.frame = overlay.bounds
         let diameter = (notice.shape == .solid ? station.eventSolidDiameter : station.eventHollowDiameter) ?? station.eventRect.width / 2
@@ -144,16 +323,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         overlay.add(pulse, forKey: "dock-notice-first-appearance"); CATransaction.commit()
         return true
     }
-    /// Existing material pixels for a destination ghost when the supplier has no vector hull.
-    public var registeredMovePreviewImage: CGImage? {
-        guard !community, !failed else { return nil }
-        return backgroundImage
-    }
     public var registeredHullPath: CGPath? {
         guard !failed else { return nil }
         guard let skin, skin.bodyPolygon.count >= 3 else { return nil }
         let path = CGMutablePath()
-        path.addLines(between: skin.bodyPolygon.map { CGPoint(x: $0.x - skin.bounds.minX, y: $0.y - skin.bounds.minY) })
+        path.addLines(between: skin.bodyPolygon.map { CGPoint(x: $0.x - layoutOrigin.x, y: $0.y - layoutOrigin.y) })
         path.closeSubpath(); return path
     }
     /// Movement may outline the neutral rectangle; supplier hull/sliver registration stays independent.
@@ -186,13 +360,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         }
         var excluded = controls
         for station in skin.stations {
-            excluded.append(CGRect(x: station.centre.x - station.diameter / 2 - skin.bounds.minX,
-                y: station.centre.y - station.diameter / 2 - skin.bounds.minY, width: station.diameter, height: station.diameter))
-            excluded.append(station.readout.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
-            excluded.append(station.eventRect.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY))
-            if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -skin.bounds.minX, dy: -skin.bounds.minY)) }
+            excluded.append(CGRect(x: station.centre.x - station.diameter / 2 - layoutOrigin.x,
+                y: station.centre.y - station.diameter / 2 - layoutOrigin.y, width: station.diameter, height: station.diameter))
+            excluded.append(station.readout.offsetBy(dx: -layoutOrigin.x, dy: -layoutOrigin.y))
+            excluded.append(station.eventRect.offsetBy(dx: -layoutOrigin.x, dy: -layoutOrigin.y))
+            if let alias = station.aliasRect { excluded.append(alias.offsetBy(dx: -layoutOrigin.x, dy: -layoutOrigin.y)) }
         }
-        return DockBackgroundDragRegions(body: path, excludedControls: excluded, bodyHitTest: bodyHitTest)
+        return DockBackgroundDragRegions(body: path, grips: registeredGripRects.map { CGPath(rect: $0, transform: nil) },
+                                         excludedControls: excluded, bodyHitTest: bodyHitTest)
     }
     public var onNeedsFreshPresentation:(()->Void)?
     private var windowObservers=[NSObjectProtocol]()
@@ -208,7 +383,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public override func resignFirstResponder() -> Bool {
         guard super.resignFirstResponder() else { return false }
-        keyboardTargetID = nil; nozzleEventDelegate?.hoverNozzle(nil)
+        keyboardTargetID = nil; focusedGripIndex = nil; focusedNoticeID = nil; nozzleEventDelegate?.hoverNozzle(nil)
         return true
     }
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.isGeometryFlipped=true;setAccessibilityElement(false);setAccessibilityRole(.group)}
@@ -216,14 +391,14 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
     public func applyCommunity(_ rows:[DockInstrumentReading],locale:String="en") throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
-        resetVisuals();officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
+        clearFocusedHelpExplanation();resetVisuals();registerGripRects([]);restingInstrumentImage=nil;hoverViewport=nil;imageUsesHoverViewport=false;officialRenderer=nil;self.locale=locale;community=true;failed=false;skin=nil;image=nil;backgroundImage=nil;alphaData=nil;notices=[:];appearanceNotices=[:]
         orderedIDs=rows.map(\.subscriptionID);readings=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)})
         communityRowHeight = requestedNozzleDiameter ?? 44
         guard communityRowHeight.isFinite, (8...256).contains(communityRowHeight) else { throw DockArtworkError.invalidManifest }
         appliedGeometryScale = 1
         frame.size=CGSize(width:240 * communityRowHeight / 44,height:max(communityRowHeight,CGFloat(rows.count)*communityRowHeight));refreshNodes();needsDisplay=true
     }
-    public func applyOfficial(skin:DockInstrumentSkin,rows:[DockInstrumentReading],notices:[String:DockNotice]=[:],renderer:DockInstrumentRenderer,scale:Int,locale:String) throws {
+    public func applyOfficial(skin:DockInstrumentSkin,rows:[DockInstrumentReading],notices:[String:DockNotice]=[:],renderer:DockInstrumentRenderer,scale:Int,locale:String,hoverViewport:CGRect?=nil) throws {
         guard Set(rows.map(\.subscriptionID)).count==rows.count else{throw DockLogicError.invalidCatalogue}
         let renderScale = presentationBackingScale ?? window.map { Int($0.backingScaleFactor) } ?? scale
         guard (1...2).contains(scale), (1...2).contains(renderScale) else{throw DockArtworkError.invalidManifest}
@@ -236,18 +411,26 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 factor = target / source
             } else { factor = 1 }
             let skin = try skin.scaled(by: factor)
+            let viewport = hoverViewport?.applying(CGAffineTransform(scaleX: factor, y: factor))
+            if let viewport {
+                guard viewport.contains(skin.bounds), viewport.width <= 4096, viewport.height <= 4096 else {
+                    throw DockArtworkError.invalidManifest
+                }
+            }
+            self.hoverViewport = viewport
+            imageUsesHoverViewport = false
             appliedGeometryScale = factor
             let values=Dictionary(uniqueKeysWithValues:rows.map{($0.subscriptionID,$0)}),result=try renderer.render(skin:skin,readings:values,notices:notices,scale:renderScale)
             community=false;failed=false;self.skin=skin;self.scale=renderScale;self.locale=locale;self.notices=notices
             self.officialRenderer=renderer
-            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
-            frame.size=skin.bounds.size
+            orderedIDs=rows.map(\.subscriptionID);readings=values;image=result.image;restingInstrumentImage=result.image;backgroundImage=result.backgroundImage;alphaData=result.image.dataProvider?.data
+            frame.size = viewport?.size ?? skin.bounds.size
             CATransaction.begin();CATransaction.setDisableActions(true);layer?.contentsScale=CGFloat(renderScale)
             let visible=Set(skin.stations.compactMap(\.subscriptionID))
             for id in Array(workingLayerParents.keys) where !visible.contains(id){workingLayerParents[id]?.removeFromSuperlayer();workingLayerParents.removeValue(forKey:id)}
             for station in skin.stations {guard let id=station.subscriptionID,values[id] != nil else{continue}
                 let parent=workingLayerParents[id] ?? CALayer();parent.isGeometryFlipped=true;parent.contentsScale=CGFloat(renderScale)
-                parent.frame=CGRect(x:station.centre.x-station.diameter/2-skin.bounds.minX,y:station.centre.y-station.diameter/2-skin.bounds.minY,width:station.diameter,height:station.diameter)
+                parent.frame=CGRect(x:station.centre.x-station.diameter/2-layoutOrigin.x,y:station.centre.y-station.diameter/2-layoutOrigin.y,width:station.diameter,height:station.diameter)
                 if parent.superlayer == nil{layer?.addSublayer(parent)};workingLayerParents[id]=parent
             }
             CATransaction.commit();refreshNodes();needsDisplay=true
@@ -258,14 +441,71 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     /// A failed refresh keeps only the last supplied material. Old data and all instrument actions retire.
     public func retireOfficialPresentation() {
-        resetVisuals(); community = false; failed = true
+        setAccessibilityValue(nil)
+        clearFocusedHelpExplanation(); resetVisuals(); focusedGripIndex = nil; registeredGripRects = []; registeredGripArtRects = []; community = false; failed = true
+        restingInstrumentImage = nil
+        imageUsesHoverViewport = false
         image = backgroundImage; alphaData = backgroundImage?.dataProvider?.data
         readings = [:]; orderedIDs = []; notices = [:]; nodes = [:]; setAccessibilityChildren([])
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
-    private func resetVisuals(){cancelRefreshSweep();noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+    public func dispose(){onEscape=nil;setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];registeredGripArtRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    private func resetVisuals(){hotGlow?.removeFromSuperlayer();hotGlow=nil;hotNozzleForChecks=nil;hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
+
+    /// R64 D-2: hover magnification eases in and out over 0.12 s (ease-out) instead of snapping.
+    /// The host turns this off under Reduce Motion. Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:38
+    /// (.dk-u transition transform .12s ease-out).
+    public var animatesPoses = false
+    public static let poseTransitionDuration: CFTimeInterval = 0.12
+    @_spi(DockResourceChecks) public private(set) var lastPoseTransitionForChecks: CFTimeInterval?
+    /// Draws only the changed pose over the existing static material. The model, registered
+    /// pointer targets, readout geometry and refresh cadence remain in their original basis.
+    public func setNozzlePoses(_ poses: [String: DockNozzlePose]) {
+        guard poses != nozzlePosesForChecks, !failed, !community, let skin, let renderer = officialRenderer,
+              let restingInstrumentImage else { return }
+        let painted: CGImage
+        if poses.isEmpty {
+            painted = restingInstrumentImage
+        } else {
+            guard let result = try? renderer.render(skin: skin, readings: readings, notices: notices, scale: scale,
+                poses: poses, cachedBackground: backgroundImage, viewport: hoverViewport) else { return }
+            painted = result.image
+        }
+        nozzlePosesForChecks = poses
+        let usesViewport = !poses.isEmpty && hoverViewport != nil
+        let animated = animatesPoses && window != nil
+        lastPoseTransitionForChecks = animatesPoses ? Self.poseTransitionDuration : nil
+        if animated, refreshSweepOriginal == nil, let layer {
+            // The re-rendered pose cross-fades in; the flame layers below follow with the same curve.
+            let fade = CATransition()
+            fade.type = .fade; fade.duration = Self.poseTransitionDuration
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            layer.add(fade, forKey: "dock.pose")
+        }
+        if refreshSweepOriginal == nil {
+            image = painted
+            imageUsesHoverViewport = usesViewport
+        } else { refreshSweepOriginal = (painted, usesViewport) }
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(Self.poseTransitionDuration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        } else { CATransaction.setDisableActions(true) }
+        if let hotGlow, let id = hotNozzleForChecks {
+            if let pose = poses[id] {
+                hotGlow.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y).scaledBy(x: pose.scale, y: pose.scale))
+            } else { hotGlow.setAffineTransform(.identity) }
+        }
+        for (id, layer) in workingLayerParents {
+            if let pose = poses[id] {
+                layer.setAffineTransform(CGAffineTransform(translationX: pose.offset.x, y: pose.offset.y)
+                    .scaledBy(x: pose.scale, y: pose.scale))
+            } else { layer.setAffineTransform(.identity) }
+        }
+        CATransaction.commit()
+        needsDisplay = true
+    }
 
     /// Renders a bounded one-off sweep from the existing admitted reading, without changing its age.
     @discardableResult public func playRefreshSweep(_ id: String, reduceMotion: Bool) -> Bool {
@@ -276,7 +516,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
               original.width * original.height <= 4_194_304 else { return false }
         refreshSweepCountForChecks += 1
         if reduceMotion { return true }
-        refreshSweepOriginal = original
+        refreshSweepOriginal = (original, imageUsesHoverViewport)
         refreshSweepGeneration &+= 1
         let token = refreshSweepGeneration, base = readings, notices = self.notices, scale = self.scale
         let started = ProcessInfo.processInfo.systemUptime
@@ -286,8 +526,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
                 let elapsed = max(0, ProcessInfo.processInfo.systemUptime - started)
                 guard let progress = DockRefreshSweep.fraction(elapsed: elapsed, target: 1, reduceMotion: false) else { break }
                 var frame = base; frame[id] = reading.refreshSweepFrame(progress: progress)
-                do { self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale).image }
-                catch { break }
+                let viewport = self.nozzlePosesForChecks.isEmpty ? nil : self.hoverViewport
+                do {
+                    self.image = try renderer.render(skin: skin, readings: frame, notices: notices, scale: scale,
+                        poses: self.nozzlePosesForChecks, cachedBackground: self.backgroundImage, viewport: viewport).image
+                    self.imageUsesHoverViewport = viewport != nil
+                } catch { break }
                 self.needsDisplay = true
                 if elapsed >= DockRefreshSweep.duration { break }
                 try? await Task.sleep(for: .milliseconds(50))
@@ -299,10 +543,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     private func cancelRefreshSweep() {
         refreshSweepGeneration &+= 1; refreshSweepTask?.cancel(); refreshSweepTask = nil
-        if let original = refreshSweepOriginal { image = original; refreshSweepOriginal = nil; needsDisplay = true }
+        if let original = refreshSweepOriginal {
+            image = original.image; imageUsesHoverViewport = original.usesHoverViewport
+            refreshSweepOriginal = nil; needsDisplay = true
+        }
     }
     public override func viewWillMove(toWindow newWindow:NSWindow?){if newWindow==nil{resetVisuals()};super.viewWillMove(toWindow:newWindow)}
-    public override func viewDidHide(){resetVisuals();super.viewDidHide()}
+    public override func viewDidHide(){clearFocusedHelpExplanation();focusedGripIndex=nil;focusedNoticeID=nil;resetVisuals();super.viewDidHide()}
     private func clearObservers(){
         windowObservers.forEach{NotificationCenter.default.removeObserver($0)};windowObservers=[]
         if let workspaceObserver{NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver);self.workspaceObserver=nil}
@@ -342,7 +589,11 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             NSGraphicsContext.saveGraphicsState();defer{NSGraphicsContext.restoreGraphicsState()}
             NSGraphicsContext.current?.imageInterpolation = .high
             NSGraphicsContext.current?.cgContext.setShouldAntialias(true)
-            NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil);return
+            let paintFrame = imageUsesHoverViewport ? bounds : restingPaintFrame
+            if paintFrame != bounds { NSColor.clear.setFill(); dirtyRect.fill(using: .copy) }
+            NSImage(cgImage: image, size: paintFrame.size).draw(in: paintFrame, from: .zero,
+                operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
+            return
         }
         // Official rasters include transparent/grain pixels: replace the backing contents,
         // rather than accumulating alpha over the previous appearance on each redraw.
@@ -365,14 +616,15 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             let inset = 8 * communityRowHeight / 44
             return CGRect(x:0,y:CGFloat(i)*communityRowHeight,width:bounds.width,height:communityRowHeight).insetBy(dx:inset,dy:inset)
         }
-        guard let s=skin?.stations.first(where:{$0.subscriptionID==id}),let origin=skin?.bounds.origin else{return nil}
+        guard let s=skin?.stations.first(where:{$0.subscriptionID==id}) else{return nil}
+        let origin = layoutOrigin
         return CGRect(x:s.centre.x-s.diameter/2-origin.x,y:s.centre.y-s.diameter/2-origin.y,width:s.diameter,height:s.diameter)
     }
     private var emptyStationRect: CGRect? {
         guard !community, !failed, let skin,
               let station = skin.stations.first(where: { $0.placeholderStyle != nil && $0.placeholderLabel != nil && $0.subscriptionID == nil && $0.overflowCount == nil }) else { return nil }
-        return CGRect(x: station.centre.x-station.diameter/2-skin.bounds.minX,
-                      y: station.centre.y-station.diameter/2-skin.bounds.minY, width: station.diameter, height: station.diameter)
+        return CGRect(x: station.centre.x-station.diameter/2-layoutOrigin.x,
+                      y: station.centre.y-station.diameter/2-layoutOrigin.y, width: station.diameter, height: station.diameter)
     }
     @_spi(DockResourceChecks) public var emptyStationRectForChecks: CGRect? { emptyStationRect }
     private func refreshNodes(){
@@ -380,7 +632,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         func append(_ key:String,_ label:String,_ value:String?,_ help:String,_ rect:CGRect,_ action:DockInstrumentAction) {
             let node=nodes[key] ?? DockInstrumentAXNode(),oldValue=node.accessibilityValue() as? String
             node.setAccessibilityRole(.button);node.setAccessibilityParent(self);node.setAccessibilityEnabled(onAction != nil)
-            node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.setAccessibilityHelp(help)
+            node.setAccessibilityIdentifier("dock."+key);node.setAccessibilityLabel(label);node.setAccessibilityValue(value);node.normalHelp=help
             node.setAccessibilityFrameInParentSpace(rect);node.press={[weak self,weak node] in
                 guard let self,let node,self.nodes[key] === node,self.permitsAction?(action,.accessibility) ?? true else{return false}
                 // A gate may synchronously refresh the snapshot; recheck this stable AX node afterward.
@@ -388,8 +640,17 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             }
             node.focus = { [weak self, weak node] focused in
                 guard let self, let node, self.nodes[key] === node else { return }
+                if case .notice(let id) = action {
+                    if focused {
+                        self.focusedGripIndex = nil
+                        self.keyboardTargetID = nil
+                        self.nozzleEventDelegate?.hoverNozzle(nil)
+                        self.focusedNoticeID = id
+                    } else if self.focusedNoticeID == id { self.focusedNoticeID = nil }
+                    return
+                }
                 guard case .subscription(let id) = action else { return }
-                if focused { self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
+                if focused { self.focusedNoticeID = nil; self.focusedGripIndex = nil; self.keyboardTargetID = id; self.nozzleEventDelegate?.hoverNozzle(id) }
                 else if self.keyboardTargetID == id { self.keyboardTargetID = nil; self.nozzleEventDelegate?.hoverNozzle(nil) }
             }
             nodes[key]=node;children.append(node);used.insert(key)
@@ -398,7 +659,8 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         for id in orderedIDs {guard let reading=readings[id],let rect=stationRect(id) else{continue}
             let stale = reading.dataState == .stale ? (reading.unavailableReason ?? (locale.hasPrefix("zh") ? "部分读数已过期" : "Some readings are stale")) : nil
             append("subscription."+id,reading.alias ?? reading.name,reading.readout,[reading.selectedWindowLabel,reading.readout,stale].compactMap{$0}.joined(separator:" · "),rect,.subscription(id))
-            if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}),let origin=skin?.bounds.origin {
+            if !community,let notice=notices[id],let station=skin?.stations.first(where:{$0.subscriptionID==id}) {
+                let origin = layoutOrigin
                 let zh=locale.hasPrefix("zh"),label:String
                 switch notice.key.kind {
                 case .forecast:label=zh ? "可能提前耗尽":"May run out before reset"
@@ -423,11 +685,34 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
             }
             nodes[key] = node; children.append(node); used.insert(key)
         }
-        if !community,let more=skin?.stations.first(where:{$0.overflowCount != nil}),let origin=skin?.bounds.origin {
+        if !community,let more=skin?.stations.first(where:{$0.overflowCount != nil}) {
+            let origin = layoutOrigin
             let label=locale.hasPrefix("zh") ? "更多订阅":"More subscriptions"
             append("overflow",label,String(more.overflowCount ?? 0),label,CGRect(x:more.centre.x-more.diameter/2-origin.x,y:more.centre.y-more.diameter/2-origin.y,width:more.diameter,height:more.diameter),.overflow)
         }
+        for (index, rect) in registeredGripRects.enumerated() {
+            let key = "grip.\(index)"
+            let node = nodes[key] ?? DockInstrumentAXNode()
+            node.setAccessibilityRole(.group)
+            node.setAccessibilityParent(self)
+            node.setAccessibilityIdentifier("dock." + key)
+            node.setAccessibilityLabel(locale.hasPrefix("zh") ? "移动额度挂件" : "Move Quota Widget")
+            node.setAccessibilityFrameInParentSpace(rect)
+            node.focus = { [weak self, weak node] focused in
+                guard let self, let node, self.nodes[key] === node else { return }
+                if focused {
+                    self.focusedNoticeID = nil
+                    self.keyboardTargetID = nil
+                    self.nozzleEventDelegate?.hoverNozzle(nil)
+                    self.focusedGripIndex = index
+                } else if self.focusedGripIndex == index { self.focusedGripIndex = nil }
+            }
+            nodes[key] = node
+            children.append(node)
+            used.insert(key)
+        }
         nodes=nodes.filter{used.contains($0.key)}
+        if let id = focusedNoticeID, !used.contains("notice." + id) { focusedNoticeID = nil }
         if let id=keyboardTargetID, !used.contains("subscription." + id) { keyboardTargetID=nil;nozzleEventDelegate?.hoverNozzle(nil) }
         setAccessibilityChildren(children)
     }
@@ -435,8 +720,12 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         guard !isHiddenOrHasHiddenAncestor,bounds.contains(local),!failed else{return false}
         if community{return true}
         // This tests only this view's painted raster. The containing window's native route is a separate gate.
-        guard let image,let bytes=alphaData,CFDataGetLength(bytes)>=image.bytesPerRow*image.height,image.bitsPerPixel==32,image.bitsPerComponent==8 else{return false}
-        let x=min(image.width-1,max(0,Int(local.x*CGFloat(scale)))),y=min(image.height-1,max(0,Int(local.y*CGFloat(scale))))
+        let painted = restingPaintFrame
+        guard painted.contains(local), let image = restingInstrumentImage, let bytes = alphaData,
+              CFDataGetLength(bytes) >= image.bytesPerRow * image.height,
+              image.bitsPerPixel == 32, image.bitsPerComponent == 8 else { return false }
+        let x = min(image.width - 1, Int((local.x - painted.minX) * CGFloat(scale)))
+        let y = min(image.height - 1, Int((local.y - painted.minY) * CGFloat(scale)))
         let alphaIndex=(image.alphaInfo == .premultipliedFirst || image.alphaInfo == .first) ? 0:3
         guard CFDataGetBytePtr(bytes)![y*image.bytesPerRow+x*4+alphaIndex]>0 else{return false};return true
     }
@@ -453,10 +742,13 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     public override func mouseMoved(with event:NSEvent){
         let p=convert(event.locationInWindow,from:nil)
+        let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
+        if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
+        onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){nozzleEventDelegate?.hoverNozzle(nil)}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
         if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
         guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}
@@ -475,6 +767,19 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func cancelOperation(_ sender:Any?){nozzleEventDelegate?.cancelNozzle();backgroundDragDelegate?.cancelBackgroundMove();NSCursor.arrow.set()}
     public override func keyDown(with event:NSEvent){
         let modifiers=event.modifierFlags.intersection([.option,.control,.command])
+        if modifiers.isEmpty, event.keyCode == 53, keyboardTargetID != nil, onEscape?() == true { return }
+        if modifiers.isEmpty, event.keyCode == 48, keyboardNavigationEnabled, !registeredGripRects.isEmpty {
+            let backward = event.modifierFlags.contains(.shift)
+            let next = focusedGripIndex.map { $0 + (backward ? -1 : 1) } ?? (backward ? registeredGripRects.count - 1 : 0)
+            if registeredGripRects.indices.contains(next) {
+                focusedNoticeID = nil
+                keyboardTargetID = nil
+                nozzleEventDelegate?.hoverNozzle(nil)
+                focusedGripIndex = next
+                return
+            }
+            focusedGripIndex = nil
+        }
         if modifiers == .option,let id=keyboardTargetID,nozzleEventDelegate?.optionArrow(id:id,keyCode:event.keyCode)==true{return}
         if modifiers.isEmpty, let id=keyboardTargetID, let index=orderedIDs.firstIndex(of:id), [123,124,125,126].contains(event.keyCode) {
             let delta = event.keyCode == 123 || event.keyCode == 126 ? -1 : 1
@@ -491,7 +796,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     }
     private func pointerAction(atLocal p:NSPoint)->DockInstrumentAction?{
         if let skin,!community {
-            let global=CGPoint(x:p.x+skin.bounds.minX,y:p.y+skin.bounds.minY)
+            let global=CGPoint(x:p.x+layoutOrigin.x,y:p.y+layoutOrigin.y)
             for s in skin.stations.reversed(){
                 if let id=s.subscriptionID,notices[id] != nil,s.eventRect.contains(global){return .notice(id)}
                 if let id=s.subscriptionID,let r=stationRect(id),r.contains(p) || (s.showsReadout != false && s.readout.contains(global)) || s.aliasRect?.contains(global)==true{return .subscription(id)}
@@ -521,6 +826,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
     public override func mouseDown(with event:NSEvent){
         guard !failed else{return}
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
         let eventWindow=window,screenPoint=window?.convertPoint(toScreen:event.locationInWindow)
         func currentPoint()->NSPoint?{
             if let eventWindow,let screenPoint{

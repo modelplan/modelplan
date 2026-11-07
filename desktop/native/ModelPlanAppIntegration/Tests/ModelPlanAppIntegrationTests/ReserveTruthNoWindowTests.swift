@@ -269,7 +269,7 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
-            let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve }
+            let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
             XCTAssertEqual(heldReserve?.value, "13"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
             // Isolate the representation gap: even an explicitly supplied valid
             // weekly value is suppressed when overall state is stale.
@@ -312,7 +312,7 @@ private actor ReserveJourneyClient: EngineClient {
             let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
             XCTAssertEqual(refreshedInput.dataState, .fresh)
             XCTAssertEqual(refreshedInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
-            XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
             let withdrawnPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
@@ -331,7 +331,7 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(firstProof.remainingPercent, 42.5); XCTAssertEqual(secondProof.remainingPercent, 75.0)
             XCTAssertEqual(firstProof.windowID, "session:18000:main:main"); XCTAssertEqual(secondProof.windowID, firstProof.windowID)
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
-                snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
+                snapshot.presentationRows[id]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
             }
             XCTAssertNotNil(reserveRow(content.snapshot, "aaaaaaaaaaaaaaaa"))
             XCTAssertNotNil(reserveRow(content.snapshot, "bbbbbbbbbbbbbbbb"))
@@ -384,16 +384,16 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
         }
         if clearAfter {
-            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
             let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
             XCTAssertNil(cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
             return (cleared.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" },
-                    cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+                    cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
         }
-        return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
     }
 
     private func reserve(balance: Any?, unit: String, english: Bool) async throws -> DockCardRow? {
@@ -497,10 +497,10 @@ private actor ReserveJourneyClient: EngineClient {
             settingsStore: settings, createsNativePanels: false, makeClient: { _, store in ReserveJourneyClient(store: store, rows: rows) }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let content = app.composition.presentedContent
-        let retained = try XCTUnwrap(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        let retained = try XCTUnwrap(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
         XCTAssertEqual(retained.value, "13"); XCTAssertEqual(retained.detail, "Last known reading")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
-        XCTAssertEqual(card.rows.first { $0.kind == .reserve }?.detail, "Last known reading")
+        XCTAssertEqual(card.rows.first { $0.id == "credits" && $0.kind == .reserve }?.detail, "Last known reading")
         let delivery = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery,
             nextFloor: .init(storeEpoch: "reserve-synthetic", generation: 2))))

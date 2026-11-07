@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -105,7 +105,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertTrue(handler.beginBackgroundMove(local: local, global: start))
         let destination = CGPoint(x: -999, y: 500); pointer = destination
         handler.updateBackgroundMove(global: destination)
-        let preview = try XCTUnwrap(host.edgePresentation?.snapPreview)
+        let preview = try XCTUnwrap(host.edgePresentation?.placement)
         XCTAssertTrue(handler.isBackgroundMoving); XCTAssertEqual(preview.displayID, "secondary"); XCTAssertEqual(preview.edge, .left)
         XCTAssertNotNil(host.dockView.registeredMoveOutlinePath)
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: destination)
@@ -155,7 +155,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertTrue(handler.beginBackgroundMove(local: local, global: start))
         let destination = CGPoint(x: 1199, y: 700); pointer = destination
         handler.updateBackgroundMove(global: destination)
-        let preview = try XCTUnwrap(host.edgePresentation?.snapPreview)
+        let preview = try XCTUnwrap(host.edgePresentation?.placement)
         XCTAssertEqual(preview.displayID, "primary"); XCTAssertEqual(preview.edge, .right)
         XCTAssertNotEqual(preview.alongFraction, initial.alongFraction)
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: destination)
@@ -173,7 +173,7 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertEqual(after.dockAlongFraction, preview.alongFraction, accuracy: 0.000001)
         await reopened.stopLifecycle(); reopened.composition.dock.close()
     }
-    func testDisabledIgnitionVeilIsShapeLimitedOnNormalEntry() async throws {
+    func testG323DisabledIgnitionShowsTheRedCapWithoutADarkVeil() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-veil-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -189,12 +189,132 @@ private actor P1SyntheticEngine: EngineClient {
         for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
         let container = try XCTUnwrap(app.composition.dock.dockView.superview)
         let button = try XCTUnwrap(container.subviews.compactMap { $0 as? NSButton }.first)
-        let veil = try XCTUnwrap(container.subviews.first { view in view !== button && view.frame == button.frame && view.layer?.backgroundColor != nil })
-        let layer = try XCTUnwrap(veil.layer)
         XCTAssertFalse(button.isEnabled, "The disabled cockpit must stay disabled")
-        XCTAssertTrue(layer.masksToBounds, "The dimming must be clipped rather than paint a square")
-        XCTAssertEqual(layer.cornerRadius, min(veil.bounds.width, veil.bounds.height) / 2, accuracy: 0.01)
+        // G3-23: nothing dark is painted over the red cap (was a 65 % black veil).
+        for view in container.subviews where view !== button && view !== app.composition.dock.dockView && !view.isHidden {
+            XCTAssertFalse(view.frame.intersects(button.frame) && (view.layer?.backgroundColor?.alpha ?? 0) > 0,
+                           "a view darkens the ignition: \(view)")
+        }
+        // Snapshot of the presented widget at the cap: the official red, as in the prototype.
+        let view = app.composition.dock.dockView
+        let skin = try XCTUnwrap(view.presentedSkinForChecks)
+        let cap = try XCTUnwrap(skin.fixedLayers.first { $0.resource.contains("cap-night-idle") }).rect
+        let image = try XCTUnwrap(view.presentedImageForChecks)
+        // The resting image covers the skin bounds (as in HostPairedProjectionTests' crops).
+        let scale = CGFloat(image.width) / skin.bounds.width
+        let origin = skin.bounds.origin
+        let core = cap.insetBy(dx: cap.width * 0.3, dy: cap.height * 0.3).offsetBy(dx: -origin.x, dy: -origin.y)
+            .applying(.init(scaleX: scale, y: scale)).integral
+        let cropped = try XCTUnwrap(image.cropping(to: core))
+        let context = try XCTUnwrap(CGContext(data: nil, width: cropped.width, height: cropped.height, bitsPerComponent: 8,
+            bytesPerRow: cropped.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height))
+        let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        var sum = [0.0, 0.0, 0.0], count = 0.0
+        for index in stride(from: 0, to: cropped.width * cropped.height * 4, by: 4) {
+            for channel in 0..<3 { sum[channel] += Double(bytes[index + channel]) }
+            count += 1
+        }
+        let (red, green, blue) = (sum[0] / count, sum[1] / count, sum[2] / count)
+        XCTAssertGreaterThan(red, 150, "The ignition cap must read red, not dark: rgb(\(red), \(green), \(blue))")
+        XCTAssertGreaterThan(red, 2 * green); XCTAssertGreaterThan(red, 2 * blue)
         await app.stopLifecycle(); app.composition.dock.close()
+    }
+
+    /// G3-30: the expanded widget's face touches the screen edge exactly like the prototype
+    /// (geometry.js: attached side at depth 0, first ring's outer edge 14 x D/52 from the edge).
+    /// The collapsed strip and its 20 pt wake band are never part of the expanded window; the only
+    /// extra window area is the transparent ceil(D/2) hover canvas on the screen side.
+    func testG330ExpandedFaceTouchesTheScreenEdgeAtEverySize() async throws {
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        for size in SettingsSize.allCases {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-g330-" + UUID().uuidString)
+            addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+            let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            _ = try await store.update { p in
+                p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = size
+                for _ in 0..<16 { p.onboarding.next() }
+            }
+            let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795))
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+                dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+                makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+            protect(app)
+            await app.prepare()
+            app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+            for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+            let host = app.composition.dock
+            let presentation = try XCTUnwrap(host.edgePresentation)
+            XCTAssertEqual(presentation.state, .expanded, "\(size)")
+            let placement = try XCTUnwrap(presentation.placement)
+            let d = size.nozzleDiameter, unit = d / 52
+            // The window is flush with the screen edge and holds only the face plus the hover canvas.
+            XCTAssertEqual(placement.frame.maxX, screen.usableFrame.maxX, accuracy: 0.01, "\(size) window flush")
+            XCTAssertEqual(try XCTUnwrap(presentation.paintedFrame), placement.frame, "\(size) expanded paints the face frame, not the strip")
+            let face = try XCTUnwrap(placement.globalHoverRects.first)
+            XCTAssertEqual(face.maxX, screen.usableFrame.maxX, accuracy: 0.01, "\(size) face touches the screen edge")
+            XCTAssertEqual(placement.frame.width - face.width, ceil(d / 2), accuracy: 0.5, "\(size) only the transparent hover canvas is added, on the screen side")
+            // Visible face depth matches the prototype formula (D/2+14s)+(D/2+3s)+7s plus at most the 8s arc sagitta.
+            let freeDepth = d + 24 * unit
+            XCTAssertGreaterThanOrEqual(face.width, freeDepth - 0.5, "\(size) face depth")
+            XCTAssertLessThanOrEqual(face.width, freeDepth + 8 * unit + 1.5, "\(size) face depth")
+            // Rings: the first ring's outer edge sits 14 x D/52 from the screen edge (arc adds at most 8 x D/52).
+            let view = host.dockView
+            let ids = host.interactionEnvironment().catalogue
+            XCTAssertFalse(ids.isEmpty)
+            for id in ids {
+                guard let ring = view.interactionAnchor(id) else { continue }
+                let gap = view.bounds.maxX - ring.maxX
+                XCTAssertGreaterThanOrEqual(gap, 14 * unit - 0.75, "\(size) \(id) ring to screen edge")
+                XCTAssertLessThanOrEqual(gap, 22 * unit + 0.75, "\(size) \(id) ring to screen edge")
+            }
+            // The resting raster is opaque in its edge-most column at a station: nothing transparent
+            // (strip, wake band) separates the face from the screen edge.
+            let skin = try XCTUnwrap(view.presentedSkinForChecks)
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil })
+            let scale = CGFloat(image.width) / skin.bounds.width
+            let row = Int(((station.centre.y - skin.bounds.minY) * scale).rounded(.down))
+            let pixel = try XCTUnwrap(image.cropping(to: CGRect(x: image.width - 1, y: row, width: 1, height: 1)))
+            var rgba = [UInt8](repeating: 0, count: 4)
+            let context = try XCTUnwrap(CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(pixel, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            XCTAssertGreaterThan(rgba[3], 200, "\(size) the face is painted up to the screen edge")
+            await app.stopLifecycle(); host.close()
+        }
+    }
+
+    /// MENU-12: an actually open widget menu protects the widget; when AppKit ends tracking without
+    /// the close callback, the flag clears anyway, so it never blocks the collapse.
+    func testMENU12OpenMenuProtectsAndAStaleFlagClears() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("p1-menu12-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
+        let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
+        let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: Data(contentsOf: capture))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        _ = try await store.update { p in p.autoHide = false; for _ in 0..<16 { p.onboarding.next() } }
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 820))
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false, bundleURL: profile.appendingPathComponent("Synthetic.app"),
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 50, y: 200)) },
+            makeClient: { _, target in P1SyntheticEngine(store: target, rows: rows) }, makeSettingsSurface: { _ in P1NoWindowSurface() }, activateSettings: {})
+        protect(app); await app.prepare()
+        app.startLifecycle(workspace: NotificationCenter(), local: NotificationCenter(), lockEvents: NotificationCenter(), displayIDs: { [1] }, onConsole: { true }, displaysAsleep: { _ in false })
+        for _ in 0..<1000 { if !app.lifecyclePaused { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let host = app.composition.dock
+        XCTAssertNotNil(host.edgePresentation?.paintedFrame)
+        let menu = host.menu()
+        host.menuWillOpen(menu)
+        XCTAssertTrue(host.menuOpenForChecks, "an open widget menu protects the widget")
+        // AppKit ended tracking but the close callback was missed: the flag must not stay set.
+        NotificationCenter.default.post(name: NSMenu.didEndTrackingNotification, object: menu)
+        for _ in 0..<100 where host.menuOpenForChecks { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(host.menuOpenForChecks, "a stale menu flag clears with the end of tracking")
+        host.menuWillOpen(menu); host.menuDidClose(menu)
+        XCTAssertFalse(host.menuOpenForChecks)
+        await app.stopLifecycle(); host.close()
     }
 
     func testFreshQuotaWidgetShowAndSavedChoicesOnNormalEntry() async throws {
@@ -224,54 +344,54 @@ private actor P1SyntheticEngine: EngineClient {
         XCTAssertFalse(observed.recovering)
         XCTAssertEqual(placement.edge, .right)
         XCTAssertEqual(placement.frame.maxX, screen.usableFrame.maxX, accuracy: 0.01)
-        let showDock = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }, "The status menu must offer the locating action")
-        XCTAssertTrue(showDock.isEnabled)
-        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" })
+        // Owner decision 11-06: one checkable Show Quota Widget item; its checkmark is the saved switch.
+        let showDock = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" }, "The status menu must offer the switch")
+        XCTAssertTrue(showDock.isEnabled); XCTAssertEqual(showDock.state, .on)
+        XCTAssertFalse(entry.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" })
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .off })
         let editor = entry.settingsHost.application.editor
         _ = try await editor.commit(SettingsB21Edit.autoHide(true))
         for _ in 0..<300 { if entry.composition.dock.edgePresentation?.state == .sliver { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "Auto-hide is an explicit saved option")
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "Auto-Collapse" && $0.state == .on }, "the widget menu follows Settings")
         var accessibility = SettingsEnvironment(); accessibility.reduceMotion = false
         entry.updateSystemAccessibility(accessibility)
         XCTAssertFalse(try XCTUnwrap(entry.composition.latestSettings).effective.reduceMotion)
-        let beforeShow = await store.snapshot()
-        let reveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(reveal.target as? NSObject)).perform(try XCTUnwrap(reveal.action), with: reveal)
+        // Unchecking turns the widget off; checking turns it on and locates it with the pulse.
+        try await chooseShowQuotaWidget(entry, checked: true)
+        XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
+        try await chooseShowQuotaWidget(entry, checked: false)
         for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
         let animated = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
         XCTAssertTrue(animated.animationKeys()?.contains("locate-pulse") == true)
         accessibility.reduceMotion = true; entry.updateSystemAccessibility(accessibility)
         XCTAssertFalse(animated.animationKeys()?.contains("locate-pulse") == true)
-        let staticReveal = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(staticReveal.target as? NSObject)).perform(try XCTUnwrap(staticReveal.action), with: staticReveal)
-        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.first(where: { $0.name == "dock.locate-highlight" }) !== animated { break }; try await Task.sleep(for: .milliseconds(10)) }
-        let still = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
-        XCTAssertTrue(still.animationKeys()?.isEmpty ?? true, "Reduce Motion uses a static highlight")
         for _ in 0..<400 {
             if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) != true { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertFalse(entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true, "Locating highlight must expire")
         let afterReveal = await store.snapshot().preferences
-        XCTAssertTrue(afterReveal.autoHide); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
-        let afterShow = await store.snapshot()
-        XCTAssertEqual(afterShow.revision, beforeShow.revision, "Showing a visible widget must not change saved preferences")
+        XCTAssertTrue(afterReveal.autoHide); XCTAssertTrue(afterReveal.showDock); XCTAssertEqual(afterReveal.dockEdge, .right); XCTAssertNil(afterReveal.dockDisplayID)
         for _ in 0..<400 {
             if entry.composition.dock.edgePresentation?.state == .sliver { break }
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .sliver, "The temporary reveal returns to the normal auto-hide rule")
+        // The Settings switch and the status checkmark are the same stored setting.
         _ = try await editor.commit(SettingsB21Edit.showDock(false))
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .suppressed(.userHidden))
-        let enable = try XCTUnwrap(entry.liveStatusMenu?.items.first { $0.title == "Show Quota Widget" })
-        _ = (try XCTUnwrap(enable.target as? NSObject)).perform(try XCTUnwrap(enable.action), with: enable)
-        for _ in 0..<300 { if entry.composition.dock.currentMenuBarPreferences?.showDock == true && entry.composition.dock.edgePresentation?.state == .expanded { break }; try await Task.sleep(for: .milliseconds(10)) }
+        try await chooseShowQuotaWidget(entry, checked: false)
+        for _ in 0..<300 { if entry.composition.dock.dockView.layer?.sublayers?.contains(where: { $0.name == "dock.locate-highlight" }) == true { break }; try await Task.sleep(for: .milliseconds(10)) }
+        let staticReveal = try XCTUnwrap(entry.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" })
+        XCTAssertTrue(staticReveal.animationKeys()?.isEmpty ?? true, "Reduce Motion uses a static highlight")
         XCTAssertTrue(try XCTUnwrap(entry.composition.dock.currentMenuBarPreferences).showDock)
         XCTAssertEqual(entry.composition.dock.edgePresentation?.state, .expanded)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
-        XCTAssertNotNil(entry.liveStatusMenu?.items.first { $0.title == "显示额度挂件" && $0.isEnabled })
-        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "隐藏额度挂件" })
+        XCTAssertNotNil(entry.liveStatusMenu?.items.first { $0.title == "显示额度挂件" && $0.isEnabled && $0.state == .on })
+        XCTAssertTrue(entry.composition.dock.menu().items.contains { $0.title == "自动收起" && $0.state == .on })
+        XCTAssertFalse(entry.composition.dock.menu().items.contains { $0.title.contains("隐藏") })
         _ = try await editor.commit(SettingsB21Edit.language(.english))
         _ = try await editor.commit(SettingsB21Edit.autoHide(false))
         _ = try await editor.commit(SettingsB21Edit.dockEdge(.left))

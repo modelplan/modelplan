@@ -51,7 +51,8 @@ import AppKit
             copy.widthAnchor.constraint(greaterThanOrEqualToConstant: 160),
             subtitle.widthAnchor.constraint(equalTo: copy.widthAnchor),
             illustration.widthAnchor.constraint(equalToConstant: 96), illustration.heightAnchor.constraint(equalToConstant: 40),
-            controls.widthAnchor.constraint(equalToConstant: 230),
+            // G3-26: rows listing every subscription give names room next to their controls.
+            controls.widthAnchor.constraint(equalToConstant: [.visible, .alias].contains(key) ? 380 : 230),
             readout.widthAnchor.constraint(lessThanOrEqualToConstant: 230),
         ])
         setAccessibilityElement(false)
@@ -111,6 +112,8 @@ import AppKit
             diagram?.language = language
             diagram?.apply(input, reduceMotion: reduced, animate: true)
         }
+        // G3-26: a row without a diagram gives its blank 96-point slot to the title and subtitle.
+        illustration.isHidden = diagram == nil
         let enabled = (SettingsB20Edit.keys.contains(key) || SettingsB21Edit.keys.contains(key) || SettingsB22Edit.keys.contains(key)) && row.availability == .available
         if key == .alias, case .subscriptions(let subs) = row.value {
             configureAliases(subs, context: context, enabled: enabled && !saving, language: language, onEdit: onEdit, onDraftCleared: onDraftCleared); return

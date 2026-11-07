@@ -114,7 +114,11 @@ public struct DockVisibilityState: Sendable {
     }
 }
 
-public enum DockEdge: CaseIterable, Equatable, Sendable { case left, right, top, bottom }
+public enum DockEdge: CaseIterable, Equatable, Sendable {
+    case left, right, top, bottom
+    /// Top and bottom run along x; left and right run along y.
+    public var isHorizontal: Bool { self == .top || self == .bottom }
+}
 /// Hover-retention geometry only, supplied by the eventual view.
 /// Slack/corridor rectangles MUST NOT be reused as native click-catching regions (B05b proves those separately).
 public struct DockPresenceArea: Sendable {

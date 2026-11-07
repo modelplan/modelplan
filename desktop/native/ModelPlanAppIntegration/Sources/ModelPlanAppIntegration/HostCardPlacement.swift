@@ -21,8 +21,9 @@ enum HostCardPlacement {
             preferred = CGRect(x: anchor.midX - size.width / 2, y: anchor.maxY + spacing, width: size.width, height: size.height)
             flipped = CGRect(x: preferred.minX, y: anchor.minY - spacing - size.height, width: size.width, height: size.height)
         case .top:
-            // Quota Widget permits left, right and bottom only.
-            return nil
+            // Below the menu bar the card unfolds downwards, mirroring the bottom edge.
+            preferred = CGRect(x: anchor.midX - size.width / 2, y: anchor.minY - spacing - size.height, width: size.width, height: size.height)
+            flipped = CGRect(x: preferred.minX, y: anchor.maxY + spacing, width: size.width, height: size.height)
         }
         return QuotaWidgetCardGeometry.place(anchorRing: anchor, preferred: preferred,
                                                flipped: flipped, available: available)?.plate
