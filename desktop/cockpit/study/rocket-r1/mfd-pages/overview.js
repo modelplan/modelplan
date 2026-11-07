@@ -19,8 +19,9 @@ export function alertList(d, {max = 3} = {}) {
 const series = (d, ui) => accountsIn(d, ui).map(a => ({a, daily: d.daily.find(x => x.accountId === a.id)})).filter(x => x.daily);
 
 function totals(d,ui,list){
- const today=list.reduce((s,x)=>s+(x.a.todayTokens||0),0),d30=list.reduce((s,x)=>s+x.daily.values.slice(-30).reduce((p,v)=>p+(v||0),0),0);
- return `<div class="ov-top"><span class="lbl">${t('mfd.today')}</span><b class="ov-total">${tok(today)}</b><span class="sp"></span><span class="lbl">${t('mfd.d30')}</span><span class="ov-sum">${tok(d30)}</span></div>`;
+ // Every selected subscription must have a Today reading; an unknown one is not a zero.
+ const todays=accountsIn(d,ui).map(a=>a.todayTokens),today=todays.length&&todays.every(Number.isFinite)?todays.reduce((s,v)=>s+v,0):null,d30=list.reduce((s,x)=>s+x.daily.values.slice(-30).reduce((p,v)=>p+(v||0),0),0);
+ return `<div class="ov-top"><span class="lbl">${t('mfd.today')}</span><b class="ov-total">${today===null?'--':tok(today)}</b><span class="sp"></span><span class="lbl">${t('mfd.d30')}</span><span class="ov-sum">${tok(d30)}</span></div>`;
 }
 // Equal width buckets, no interpolation. Gaps consume display pixels, never data height.
 export function overviewBars(d,ui,list){
