@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"60e9ba4f0a76dc29d97078aae8fa15a566dcd4bb5da16c8784aff73155ca81b6",
-        "official":"2e4ab0e43ae69a4b710dba14324e4fadd4de0f6c9f231239bdaccad58a6ec9a1",
+        "community":"7fce363cf17ceb58fd57d250a8a43d189522cd32176f0ff9d0bb6a4e3cba9a1d",
+        "official":"a9ec25f2f2eb7e9cde070b6d5114a6c08e910e6d1559a477fab0f0eb867e38c8",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
