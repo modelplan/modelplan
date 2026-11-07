@@ -90,7 +90,12 @@ private actor EvidenceEngine: EngineClient {
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer) },
             makeClient: { _, target in EvidenceEngine(store: target, rows: rows) }, activateSettings: {})
-        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        await app.prepare()
+        let application = app.settingsHost.application
+        var environment = application.editor.environment
+        environment.reduceMotion = false
+        application.update(environment: environment)
+        app.allowDockPresentation(); await app.composition.start()
         let dock = app.composition.dock, view = dock.dockView
         for _ in 0..<600 where view.presentedReadingsForChecks.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(view.presentedReadingsForChecks.isEmpty)
