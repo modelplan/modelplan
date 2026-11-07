@@ -222,6 +222,11 @@ struct CockpitUnavailableNotice {
             showTask = nil
         }
     }
+    var isShowing: Bool { wantsVisible }
+    /// The page closes through its normal transition; an open still waiting for its page is just cancelled.
+    func requestClose() {
+        if pageOpened { owner.coordinator?.requestClose() } else { hide() }
+    }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
     func hide() {
         wantsVisible = false

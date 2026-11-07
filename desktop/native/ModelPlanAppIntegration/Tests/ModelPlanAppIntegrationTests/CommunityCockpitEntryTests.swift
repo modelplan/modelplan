@@ -423,6 +423,36 @@ final class CommunityCockpitEntryTests:XCTestCase {
         surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
+    /// G3-40 / MENU-07: the production console behind the icon. The toggle goes through the page's close,
+    /// a close during the wait for a page cancels the open, and the console can open again afterwards.
+    @MainActor func testG3_40ConsoleToggleClosesThePageAndOpensAgain() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-toggle-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        let sessionID=UUID(),sink=ClearSink();var made=0
+        let coordinator=EngineCockpitCoordinator { _ in made+=1;return ClearingPage(try .init(sessionID:sessionID,storeEpoch:"synthetic",generation:1),sink:sink) }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        let context=EngineDeliveryContext(sessionID:"s-"+sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context))
+        XCTAssertFalse(surface.isShowing)
+        surface.show();XCTAssertTrue(surface.isShowing)
+        surface.requestClose();XCTAssertFalse(surface.isShowing,"A close before the page exists cancels the open")
+        try await Task.sleep(for:.milliseconds(50));XCTAssertEqual(made,0)
+        surface.show()
+        for _ in 0..<200 where made==0 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,1);XCTAssertTrue(surface.isShowing)
+        surface.requestClose()
+        XCTAssertFalse(surface.isShowing,"The second click closes the open page")
+        surface.show()
+        for _ in 0..<200 where made==1 { try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(made,2,"The next click opens a new page");XCTAssertTrue(surface.isShowing)
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
     /// MOT-2.3-04: Settings Reduce Motion reaches the page at open and when it changes. The normal entry's
     /// settings fan-out into `applySettings` is covered by NormalEntrySettingsJourneyTests.
     @MainActor func testReduceMotionSettingReachesTheCockpitAtOpenAndOnChange() async throws {
