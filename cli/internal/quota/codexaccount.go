@@ -65,7 +65,16 @@ const (
 	// accountKeep: older readings are ignored; the session logs carry on alone.
 	accountKeep    = 6 * time.Hour
 	accountTimeout = 15 * time.Second
+	// accountFirstTimeout: a first read pays for a cold start of Codex. It stays inside the
+	// app-server's 30-second job and under the lock's 2*accountTimeout staleness.
+	accountFirstTimeout = 25 * time.Second
 )
+
+// firstReadRetries (G3-36): until Codex has answered once, one failed read must not leave the
+// user without a reading for accountRetryAfter. The failure says little on a fresh install
+// (cold start, a read lost to a consent change), so the first failures retry soon. They are
+// bounded: a Codex that is not signed in reaches the ordinary half-hour wait after these.
+var firstReadRetries = []time.Duration{20 * time.Second, time.Minute, 5 * time.Minute}
 
 type accountSnap struct {
 	Admission     *consent.CaptureStamp `json:"admission,omitempty"`
@@ -84,7 +93,27 @@ type accountSnap struct {
 	UsageRead bool     `json:"usageRead,omitempty"`
 	// SubscriptionRef: the account's reference (identity.go); the identity itself is not kept.
 	SubscriptionRef string `json:"subscriptionRef,omitempty"`
+	// FirstFailures: failed reads in a row since the cache began, with no reading before them.
+	FirstFailures int `json:"firstFailures,omitempty"`
 }
+
+// awaitingFirstRead: no read has answered yet, so the first-read limits apply. An older
+// failure record without the count keeps the ordinary wait.
+func awaitingFirstRead(s *accountSnap) bool {
+	return s == nil || s.Status != "ok" && s.FirstFailures > 0 && s.FirstFailures <= len(firstReadRetries)
+}
+
+// accountFailureWait is how long the recorded failure holds the next read back.
+func accountFailureWait(s *accountSnap) time.Duration {
+	if s != nil && s.Status != "ok" && s.FirstFailures > 0 && s.FirstFailures <= len(firstReadRetries) {
+		return firstReadRetries[s.FirstFailures-1]
+	}
+	return accountRetryAfter
+}
+
+// CodexFailureWait is the scheduler's wait after a failed read: the budget the failure left.
+// A failure that recorded nothing keeps the ordinary wait.
+func CodexFailureWait(cache string) time.Duration { return accountFailureWait(loadAccount(cache)) }
 
 func accountPath(cache string) string { return filepath.Join(cache, "observed", "codex-account.json") }
 
@@ -194,7 +223,8 @@ func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) 
 }
 
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
-// (or the failure, so a missing login is not retried for half an hour). One refresh at a time.
+// (or the failure, so a missing login is not retried for half an hour once firstReadRetries are
+// spent). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {
 	if cache == "" {
 		return errors.New("reader budget unavailable")
@@ -213,11 +243,18 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	}
 	// A finished reading must survive a brief hold on the consent lock, and a timed-out read
 	// must still be recorded, so this bounded wait does not follow the read's context.
+	previous := (*accountSnap)(nil)
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		wait := AccountEvery
 		if s.Status != "ok" {
-			wait = accountRetryAfter
+			if awaitingFirstRead(previous) {
+				s.FirstFailures = 1
+				if previous != nil {
+					s.FirstFailures = previous.FirstFailures + 1
+				}
+			}
+			wait = accountFailureWait(s)
 		}
 		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
 			return err
@@ -240,7 +277,13 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if now.Before(next) {
 		return nil
 	}
-	if err := reserveReaderAttempt(cache, "codex", now.Add(AccountEvery)); err != nil {
+	previous = loadAccount(cache)
+	// A read killed before it records anything must not cost a first read the full interval.
+	reserve, timeout := AccountEvery, accountTimeout
+	if awaitingFirstRead(previous) {
+		reserve, timeout = firstReadRetries[0], accountFirstTimeout
+	}
+	if err := reserveReaderAttempt(cache, "codex", now.Add(reserve)); err != nil {
 		return err
 	}
 	if codex == "" {
@@ -249,7 +292,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if !consent.CurrentFence(state.Fence()) {
 		return errors.New("consent changed; refresh stopped")
 	}
-	ctx, cancel := context.WithTimeout(ctx, accountTimeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	resp, err := askCodex(ctx, codex)
 	if err != nil {
@@ -747,7 +790,7 @@ func codexRefreshNext(cache string) (time.Time, error) {
 	if snapshot := loadAccount(cache); snapshot != nil {
 		wait := AccountEvery
 		if snapshot.Status != "ok" {
-			wait = accountRetryAfter
+			wait = accountFailureWait(snapshot)
 		}
 		until := snapshot.ObservedAt.Add(wait)
 		if until.After(next) {
