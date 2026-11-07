@@ -96,6 +96,15 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 	if raw, err := status.CombinedOutput(); err != nil {
 		t.Fatalf("statusline: %v %s", err, raw)
 	}
+	// The statusline run above keeps quota history too. Clear it, so whatever appears below came
+	// from the app-server. It is cleared before the server starts because the server writes at
+	// most once a minute: clearing it afterwards would wait out that limit.
+	observed := filepath.Join(home, "cache", "observed")
+	for _, name := range []string{"cycles.json", "pace.json"} {
+		if err := os.Remove(filepath.Join(observed, name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
 	project := filepath.Join(home, ".claude", "projects", "-synthetic-project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
@@ -124,11 +133,13 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 	// Quota history is kept from the same read, with no plugin hook.
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if raw, err := os.ReadFile(filepath.Join(home, "cache", "observed", "cycles.json")); err == nil && len(raw) > 2 {
+		cycles, cyclesErr := os.ReadFile(filepath.Join(observed, "cycles.json"))
+		pace, paceErr := os.ReadFile(filepath.Join(observed, "pace.json"))
+		if cyclesErr == nil && paceErr == nil && len(cycles) > 2 && len(pace) > 2 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("no quota history recorded")
+			t.Fatalf("no quota history recorded: cycles %v, pace %v", cyclesErr, paceErr)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
