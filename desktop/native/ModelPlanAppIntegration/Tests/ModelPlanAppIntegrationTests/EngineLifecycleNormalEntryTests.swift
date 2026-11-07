@@ -140,7 +140,11 @@ private actor LifecycleEngine: EngineClient {
         for _ in 0..<100 where app.lifecyclePaused { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(app.lifecyclePaused)
         XCTAssertEqual(app.composition.provider.dockContent.dockRows.map(\.id), ["codex"])
-        let oldStatus = try XCTUnwrap(app.liveStatusMenu?.items.first)
+        let oldStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        // A second normal presentation can retire the item before sleep gets to scrub the current menu.
+        app.renderMenu()
+        let currentStatus = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "Refresh" })
+        XCTAssertFalse(currentStatus === oldStatus)
         let oldDock = app.composition.dock.menu()
         let retainedDockItems = oldDock.items
         let unrelated = NSMenu(); unrelated.addItem(withTitle: "Unrelated synthetic menu", action: nil, keyEquivalent: "")
@@ -148,6 +152,10 @@ private actor LifecycleEngine: EngineClient {
         workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
         XCTAssertTrue(app.lifecyclePaused, "Sleep must immediately withdraw the presentation")
         XCTAssertEqual(oldStatus.title, "", "A retained old status item must be scrubbed immediately")
+        XCTAssertNil(oldStatus.target)
+        XCTAssertNil(oldStatus.action)
+        XCTAssertFalse(oldStatus.isEnabled)
+        XCTAssertEqual(currentStatus.title, "", "Sleep also clears the current status item")
         XCTAssertTrue(retainedDockItems.allSatisfy { $0.title.isEmpty }, "Retained Dock menu items must not expose old readings")
         XCTAssertEqual(unrelated.items.first?.title, "Unrelated synthetic menu")
         for _ in 0..<100 { if await engine.counts().1 > 0 { break }; try await Task.sleep(for: .milliseconds(10)) }

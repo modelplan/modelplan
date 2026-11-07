@@ -3,30 +3,24 @@ import XCTest
 @testable import ModelPlanSettings
 
 final class Hint80Tests: XCTestCase {
-    func testV1OffersOnlyTwoHintsAndNeverMarksUnavailableHintSeen() throws {
+    func testV1FindsWidgetBeforeRingAndResetsTheSequence() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
-        context.v1MinimalHints = true
+        context.v1MinimalHints = true; context.ringRefreshAvailable = true
         try value.updateContext(context, at: 0)
-        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh, .ignition], at: 0))
+        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh], at: 0), "A ring anchor cannot bypass the first hint")
         XCTAssertTrue(value.preferences.seen.isEmpty)
-        context.ringRefreshAvailable = true
-        try value.updateContext(context, at: 1)
-        let ring = try XCTUnwrap(value.nextOffer(placeable: [.ringRefresh, .ignition], at: 1))
-        XCTAssertEqual(ring.kind, .ringRefresh)
-        try value.confirmShown(ring, at: 1); value.dismiss()
-        context.dockReveal = nil; context.widgetConcealed = true
-        try value.updateContext(context, at: 2)
-        XCTAssertNil(try value.nextOffer(placeable: [.findWidget], at: 2), "No hint without an actual status anchor")
-        context.statusAnchorAvailable = true
-        try value.updateContext(context, at: 3)
-        let find = try XCTUnwrap(value.nextOffer(placeable: [.findWidget], at: 3))
-        XCTAssertEqual(find.kind, .findWidget)
-        try value.confirmShown(find, at: 3); value.dismiss()
-        context.dockReveal = UUID(); context.widgetConcealed = false
-        try value.updateContext(context, at: 4)
-        for kind in FirstUseHintKind.allCases { value.request(kind) }
-        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 4))
-        XCTAssertEqual(value.preferences.seen, [.ringRefresh, .findWidget])
+        let first = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 1))
+        XCTAssertEqual(first.kind, .findWidget)
+        try value.confirmShown(first, at: 1)
+        XCTAssertNil(try value.nextOffer(placeable: [.ringRefresh], at: 1), "Only one hint can be visible")
+        value.dismiss(); try value.updateContext(context, at: 2)
+        let second = try XCTUnwrap(value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 2))
+        XCTAssertEqual(second.kind, .ringRefresh)
+        try value.confirmShown(second, at: 2); value.dismiss()
+        XCTAssertNil(try value.nextOffer(placeable: Set(FirstUseHintKind.allCases), at: 3))
+        XCTAssertEqual(value.preferences.seen, [.findWidget, .ringRefresh])
+        value.reset(); try value.updateContext(context, at: 4)
+        XCTAssertEqual(try value.nextOffer(placeable: [.findWidget, .ringRefresh], at: 4)?.kind, .findWidget)
     }
     func testUnavailableIgnitionDoesNotBlockDragOrBecomeSeen() throws {
         var value = FirstUseHints(), context = HintContext(dockReveal: UUID())
