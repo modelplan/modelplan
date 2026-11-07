@@ -164,6 +164,11 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 			}
 			key = auth[source.OpenCodeProvider].Key
 		}
+	case "zcode":
+		region, key, state, code = zcodeProviderKey(b)
+		if state != "" {
+			return "", "", state, code
+		}
 	default:
 		return "", "", "not_supported_yet", "unsupported_login"
 	}
@@ -177,23 +182,34 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 	return region, key, "", ""
 }
 func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.Time) codexbarEntry {
+	e, _ := fetchZaiConfigKey(ctx, c, now)
+	return e
+}
+
+// fetchZaiConfigKey also returns the key it read, so the caller can record which subscription
+// answered without opening the file again. The key itself is never stored.
+func fetchZaiConfigKey(ctx context.Context, c *http.Client, now time.Time) (codexbarEntry, string) {
 	source, ok := ctx.Value(zaiConfigSourceKey{}).(ZaiConfigSource)
 	if !ok {
-		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}, ""
 	}
 	region, key, state, code := zaiConfiguredKeyCode(source)
 	if state != "" {
-		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}
+		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}, ""
 	}
 	if source.Region != "" && region != source.Region {
-		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}, ""
 	}
 	if c == nil {
 		c = nativeClient
 	}
 	client := *c
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	e := fetchZai(ctx, &client, region, key, now)
+	authorization := "Bearer " + key
+	if source.Tool == "zcode" {
+		authorization = key
+	}
+	e := fetchZaiAuthorization(ctx, &client, region, key, authorization, now)
 	if e.Status != "ok" {
 		// Existing parser messages can contain provider text; never propagate it.
 		state = "upstream_changed"
@@ -205,5 +221,85 @@ func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.T
 	// Only numeric usage windows survive. Configured key possession doesn't prove
 	// membership or a particular plan, and generic server plan text isn't retained.
 	e.Plan = ""
-	return e
+	return e, key
+}
+
+// ZCodeProviderConfig: the provider file ZCode Desktop and its CLI share. Only this fixed
+// location is used; no other file or credential store of ZCode is opened.
+func ZCodeProviderConfig(home string) string {
+	return filepath.Join(home, ".zcode", "v2", "provider_config.json")
+}
+
+// zcodeTemplateRegion: ZCode's own Coding Plan templates (zcode-builtin.json), used only when
+// the selected provider inherits its endpoint from one of them.
+var zcodeTemplateRegion = map[string]string{"zai-api": "global", "bigmodel-api": "bigmodel-cn"}
+
+// zcodeProviderKey reads only the provider ZCode itself has selected
+// (config.defaultModelSelection.providerId) and only when it is a Coding Plan key on a
+// documented Z.ai/BigModel endpoint; this is the provider ZCode's own Plan usage panel reads.
+// Account logins keep no key in this file and stay "not supported yet". Option B of the
+// 2026-11-05 research note.
+func zcodeProviderKey(b []byte) (region, key, state, code string) {
+	var cfg struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Config        struct {
+			ProviderConfigRules struct {
+				ProviderRules []struct {
+					ProviderID string  `json:"providerId"`
+					TemplateID *string `json:"templateId"`
+					Enabled    *bool   `json:"enabled"`
+					Config     struct {
+						Access *struct {
+							Type   string  `json:"type"`
+							APIKey *string `json:"apiKey"`
+						} `json:"access"`
+						API *struct {
+							BaseURL *string `json:"baseUrl"`
+						} `json:"api"`
+					} `json:"config"`
+				} `json:"providerRules"`
+			} `json:"providerConfigRules"`
+			DefaultModelSelection *struct {
+				ProviderID string `json:"providerId"`
+			} `json:"defaultModelSelection"`
+		} `json:"config"`
+	}
+	if json.Unmarshal(b, &cfg) != nil || cfg.SchemaVersion != 1 {
+		return "", "", "not_supported_yet", "parse_error"
+	}
+	selected := cfg.Config.DefaultModelSelection
+	if selected == nil || selected.ProviderID == "" || strings.HasPrefix(selected.ProviderID, "account:") {
+		return "", "", "not_supported_yet", "unsupported_login"
+	}
+	found := 0
+	for _, rule := range cfg.Config.ProviderConfigRules.ProviderRules {
+		if rule.ProviderID != selected.ProviderID {
+			continue
+		}
+		if found++; found > 1 || (rule.Enabled != nil && !*rule.Enabled) || rule.Config.Access == nil || rule.Config.Access.APIKey == nil {
+			return "", "", "not_supported_yet", "unsupported_login"
+		}
+		base := ""
+		if rule.Config.API != nil && rule.Config.API.BaseURL != nil {
+			base = *rule.Config.API.BaseURL
+		}
+		switch rule.Config.Access.Type {
+		case "zhipu-coding-plan-api-key":
+			if base != "" {
+				region = ZaiConfigRegion(base)
+			} else if rule.TemplateID != nil {
+				region = zcodeTemplateRegion[*rule.TemplateID]
+			}
+		case "api-key":
+			region = ZaiConfigRegion(base)
+		}
+		if region == "" {
+			return "", "", "not_supported_yet", "unsupported_login"
+		}
+		key = *rule.Config.Access.APIKey
+	}
+	if found != 1 {
+		return "", "", "not_supported_yet", "unsupported_login"
+	}
+	return region, key, "", ""
 }

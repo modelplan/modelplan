@@ -181,7 +181,14 @@ func Fallback() *Catalogue {
 		{"amp", "Amp", "amp", ".local/share/amp"}, {"droid", "Droid", "droid", ".factory"}, {"grok", "Grok Build", "grok", ".grok"},
 	} {
 		e := Entry{ProviderID: tool.id, DisplayName: tool.name, ReaderID: "native:" + tool.id, Preferred: "native", MinCLI: "0.0.0", Beta: true, DetectionStatus: "signals"}
-		for _, s := range []Signal{{Type: "command", Name: tool.command}, {Type: "path", Value: tool.path}} {
+		signals := []Signal{{Type: "command", Name: tool.command}, {Type: "path", Value: tool.path}}
+		if tool.id == "zai" {
+			// ZCode ships as Desktop and as the zcode-app-cli package; a host may install the
+			// latter as `zcode-cli` with its own data under ~/.local/share/zcode-community (G3-21).
+			signals = append(signals, Signal{Type: "command", Name: "zcode-cli"}, Signal{Type: "path", Value: ".local/share/zcode-community"},
+				Signal{Type: "path", Value: ".local/share/zcode-cli"}, Signal{Type: "path", Value: "Library/Application Support/ZCode"})
+		}
+		for _, s := range signals {
 			b, _ := json.Marshal(s)
 			e.Signals = append(e.Signals, b)
 		}

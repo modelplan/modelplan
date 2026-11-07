@@ -37,6 +37,8 @@ class PackageNeutralFixture:
         visuals = self.repo / json.loads((ROOT / 'source-policy.json').read_text())['reservedVisuals']['prefix']
         visuals.mkdir(parents=True)
         (visuals / 'LICENSE.md').write_text('Synthetic visuals license')
+        (visuals / 'icons').mkdir()
+        (visuals / 'icons/AppIcon.icns').write_bytes(b'icns synthetic')
         (self.repo / 'THIRD-PARTY-TRADEMARKS.md').write_text('Synthetic trademark notice')
         self.archives = root / 'archives'
         self.archives.mkdir()
@@ -189,6 +191,8 @@ class PackageNeutralHookTests(unittest.TestCase):
         self.assertTrue((resources / 'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle' / 'fixture.txt').is_file())
         self.assertFalse(list((resources / 'ModelPlanDockResources_ModelPlanDockResources.bundle').rglob('zai-white.svg')))
         self.assertTrue((resources / 'VISUAL-LICENSE.md').is_file())
+        self.assertEqual((resources / 'AppIcon.icns').read_bytes(), b'icns synthetic')
+        self.assertIn('<key>CFBundleIconFile</key><string>AppIcon</string>', (resources.parent / 'Info.plist').read_text())
         self.assertTrue((resources / 'THIRD-PARTY-TRADEMARKS.md').is_file())
 
     def test_flat_resource_bundle_excludes_beta_only_mark(self):

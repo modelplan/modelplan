@@ -26,7 +26,7 @@ import ModelPlanSettings
     }
 
     private func usesDock(_ kind: FirstUseHintKind) -> Bool {
-        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || (kind == .pinned && context.cockpitOpen == nil)
+        kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && context.cockpitOpen == nil)
     }
     public func placeableKinds(context: HintContext, trial: InstrumentHintSourceSnapshot?) -> Set<FirstUseHintKind> {
         self.context = context

@@ -203,6 +203,23 @@ func validateOutcome(state State, reason Reason, step *NextStep, now time.Time) 
 
 func validateAccount(in Input, a Account, declared string, refs map[string]bool) error {
 	fail := func(field string) error { return fmt.Errorf("invalid rows account field: %s", field) }
+	seenActivity := map[string]bool{}
+	for _, v := range a.Activity {
+		if a.SubscriptionRef == nil || v.SubscriptionRef != *a.SubscriptionRef || !v.BindingVerified || !refPattern.MatchString(v.SessionRef) || seenActivity[v.SessionRef] || !validActivityWindow(v.Phase, v.RecordAt, v.ExpiresAt, in.Now) {
+			return fail("activity")
+		}
+		matched := false
+		for _, raw := range in.Activities {
+			if raw.BindingVerified && raw.SubscriptionRef == v.SubscriptionRef && raw.SessionRef == v.SessionRef && raw.Phase == v.Phase && raw.RecordAt.Equal(v.RecordAt) && raw.ExpiresAt.Equal(v.ExpiresAt) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fail("activity provenance")
+		}
+		seenActivity[v.SessionRef] = true
+	}
 	if a.Route == "" || safeRoute(a.Route) != a.Route {
 		return fail("account route")
 	}
@@ -349,6 +366,28 @@ func validateAccount(in Input, a Account, declared string, refs map[string]bool)
 		}
 	}
 	return nil
+}
+
+func validActivityPhase(v ActivityPhase) bool {
+	switch v {
+	case ActivityPhaseModel, ActivityPhaseTool, ActivityPhaseFinished, ActivityPhaseFallback:
+		return true
+	}
+	return false
+}
+
+func validActivityWindow(phase ActivityPhase, at, until, now time.Time) bool {
+	if !validActivityPhase(phase) || at.IsZero() || at.After(now) || !now.Before(until) {
+		return false
+	}
+	grace := 90 * time.Second
+	switch phase {
+	case ActivityPhaseTool, ActivityPhaseFinished:
+		grace = 5 * time.Minute
+	case ActivityPhaseFallback:
+		grace = 30 * time.Second
+	}
+	return until.Equal(at.Add(grace))
 }
 func validTime(value *time.Time) bool {
 	return value != nil && !value.IsZero() && value.Year() > 1 && value.Year() <= 9999

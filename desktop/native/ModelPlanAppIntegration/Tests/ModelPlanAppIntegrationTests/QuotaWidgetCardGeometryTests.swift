@@ -15,9 +15,10 @@ final class QuotaWidgetCardGeometryTests: XCTestCase {
         XCTAssertEqual(QuotaWidgetCardGeometry.headingIconSize, 20)
         XCTAssertEqual(QuotaWidgetCardGeometry.headingGap, 8)
         XCTAssertEqual(QuotaWidgetCardGeometry.headingBottomGap, 7)
-        XCTAssertEqual(QuotaWidgetCardGeometry.rowFixedColumns, [48, 78, 34])
+        XCTAssertEqual(QuotaWidgetCardGeometry.rowFixedColumns, [56, 78, 34])
         XCTAssertEqual(QuotaWidgetCardGeometry.rowColumnGap, 5)
-        XCTAssertEqual(QuotaWidgetCardGeometry.rowMinimumHeight, 18)
+        XCTAssertEqual(QuotaWidgetCardGeometry.rowMinimumHeight, 19)
+        XCTAssertEqual(QuotaWidgetCardGeometry.rowVerticalMargin, 2)
         XCTAssertEqual(QuotaWidgetCardGeometry.barSegments, 10)
         XCTAssertEqual(QuotaWidgetCardGeometry.barHeight, 7)
         XCTAssertEqual(QuotaWidgetCardGeometry.barSegmentGap, 1.5)
@@ -34,7 +35,7 @@ final class QuotaWidgetCardGeometryTests: XCTestCase {
     }
 
     func testColumnsAndSegmentsUseAvailableWidth() throws {
-        XCTAssertEqual(QuotaWidgetCardGeometry.rowColumnWidths(availableWidth: 200), [48, 78, 34, 25])
+        XCTAssertEqual(QuotaWidgetCardGeometry.rowColumnWidths(availableWidth: 200), [56, 78, 34, 17])
         XCTAssertNil(QuotaWidgetCardGeometry.rowColumnWidths(availableWidth: 174))
         XCTAssertNil(QuotaWidgetCardGeometry.rowColumnWidths(availableWidth: .infinity))
         XCTAssertEqual(try XCTUnwrap(QuotaWidgetCardGeometry.barSegmentWidth(availableWidth: 113.5)), 10, accuracy: 0.0001)

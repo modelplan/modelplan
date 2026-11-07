@@ -8,10 +8,18 @@ import XCTest
         var accepted = true, writes = [String]()
         func writeDiagnostics(_ text: String) -> Bool { writes.append(text); return accepted }
     }
+    /// Any alias text is now accepted (cut to the limit), so a failed save means a failed write.
+    private var storeDirectory: URL?
+    private func lockStore() throws {
+        let directory = try XCTUnwrap(storeDirectory)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+    }
     private func editor() async throws -> SettingsEditor {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("privacy-window-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        storeDirectory = directory
         let store = try SettingsStore(url: directory.appendingPathComponent("preferences.json"))
         try await store.update { $0.language = .english }
         let editor = SettingsEditor(store: store); await editor.reload(); return editor
@@ -82,6 +90,7 @@ import XCTest
         controller.searchField.stringValue = "a"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         let field = try XCTUnwrap(controller.aliasControl(subscriptionID: "sample"))
+        try lockStore()
         @MainActor func failAlias() async {
             field.stringValue = String(repeating: "x", count: 129)
             field.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))

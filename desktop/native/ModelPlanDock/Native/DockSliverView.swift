@@ -6,11 +6,45 @@ import QuartzCore
 /// An admitted semantic notice and its appearance-owned relative position.
 public struct DockSliverNoticeMark: Equatable {
     public let position: CGFloat, notice: DockNotice, unit: CGFloat
+    // Reset marks measure four points at the default 44-point nozzle size.
+    /// DOCK-3.7-02: the mark paints at this opacity.
+    public static let opacity: CGFloat = 0.7
+    public static func diameter(tone: DockNotice.Tone, shape: DockNotice.Shape, unit: CGFloat) -> CGFloat {
+        (tone == .blue ? 4 * 52 / 44 : (shape == .hollow ? 6 : 5)) * unit
+    }
+    fileprivate var diameter: CGFloat { Self.diameter(tone: notice.tone, shape: notice.shape, unit: unit) }
     public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
+}
+
+/// One member's registered pitch. A nil role means no alert paint over the neutral body.
+public struct DockSliverQuotaInput {
+    public let subscriptionID: String, remainingPercent: Double?, quotaRole: DockQuotaStatus?, ink: DockInk?
+    public let from: Double, through: Double, opacity: Double
+    public init(subscriptionID:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,ink:DockInk?,from:Double,through:Double,opacity:Double=0.18) {
+        self.subscriptionID=subscriptionID;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole
+        self.ink=quotaRole == nil ? nil:ink;self.opacity=quotaRole == nil ? 0:opacity
+        self.from=from;self.through=through
+    }
+}
+/// Registered member pitch and alert paint. Nil role/zero opacity means no quota overlay.
+/// A raw raster diagnostic has no member provenance; unknown readings never invent a percentage.
+public struct DockSliverResolvedColorSegment: Equatable {
+    public let from: Double, through: Double
+    public let rgbaHex: String, subscriptionID: String?
+    public let remainingPercent: Double?
+    public let quotaRole: DockQuotaStatus?
+    public let opacity: Double
+    public init(from:Double,through:Double,rgbaHex:String,remainingPercent:Double?,quotaRole:DockQuotaStatus?,subscriptionID:String?=nil,opacity:Double=1) {
+        self.from=from;self.through=through;self.rgbaHex=rgbaHex;self.remainingPercent=remainingPercent;self.quotaRole=quotaRole;self.subscriptionID=subscriptionID;self.opacity=opacity
+    }
 }
 
 /// A small painted surface, not the physical wake target. Appearance pixels are externally supplied.
 @MainActor public final class DockSliverView:NSView {
+    private struct PitchKey:Hashable { let from:Double, through:Double }
+    private var quotaDrawing: [(segment:DockSliverResolvedColorSegment, ink:DockInk?)] = []
+    /// Semantic bindings consumed by draw(), with no pixel-to-quota inference or window side effect.
+    public var quotaSegmentColorRolesForChecks: [DockSliverResolvedColorSegment] { failed ? [] : quotaDrawing.map(\.segment) }
     public var onReveal:(()->Void)?{didSet{setAccessibilityEnabled(!failed && onReveal != nil)}}
     public var onNeedsFreshPresentation:(()->Void)?
     public var noticeMarks: [DockSliverNoticeMark] = [] { didSet { if oldValue != noticeMarks { clearPulses(); needsDisplay = true } } }
@@ -23,10 +57,20 @@ public struct DockSliverNoticeMark: Equatable {
     public override var acceptsFirstResponder:Bool{false}
     public override init(frame:NSRect){super.init(frame:frame);wantsLayer=true;layer?.masksToBounds=true;setAccessibilityElement(false);setAccessibilityRole(.button);setAccessibilityEnabled(false)}
     required init?(coder:NSCoder){fatalError("init(coder:) is unsupported")}
-    public func apply(image:CGImage?,logicalSize:CGSize,scale:Int,accessibilityLabel:String)throws{
-        self.image=nil;alpha=[];retainedBytes=0;failed=true;setAccessibilityElement(false);setAccessibilityLabel(nil);setAccessibilityEnabled(false);needsDisplay=true
+    public func apply(image:CGImage?,logicalSize:CGSize,scale:Int,accessibilityLabel:String,quotaReadings:[DockSliverQuotaInput]=[])throws{
+        self.image=nil;alpha=[];quotaDrawing=[];retainedBytes=0;failed=true;setAccessibilityElement(false);setAccessibilityLabel(nil);setAccessibilityEnabled(false);needsDisplay=true
         guard (1...2).contains(scale),logicalSize.width.isFinite,logicalSize.height.isFinite,
             logicalSize.width>0,logicalSize.height>0,logicalSize.width<=4096,logicalSize.height<=4096 else{throw DockArtworkError.invalidManifest}
+        guard quotaReadings.count <= 256, Set(quotaReadings.map(\.subscriptionID)).count == quotaReadings.count,
+              quotaReadings.allSatisfy({ value in
+                guard !value.subscriptionID.isEmpty, value.subscriptionID.utf8.count <= 256,
+                      value.from.isFinite, value.through.isFinite, 0 <= value.from, value.from < value.through, value.through <= 1,
+                      value.remainingPercent.map({ $0.isFinite && (0...100).contains($0) }) ?? true else { return false }
+                if let role=value.quotaRole {
+                    return (role == .warning || role == .critical) && value.remainingPercent != nil && value.ink?.valid == true && value.opacity.isFinite && value.opacity > 0 && value.opacity < 1
+                }
+                return value.ink == nil && value.opacity == 0
+              }) else { throw DockArtworkError.invalidManifest }
         let w=Int(ceil(logicalSize.width*CGFloat(scale))),h=Int(ceil(logicalSize.height*CGFloat(scale)))
         guard w*h<=800_000 else{throw DockArtworkError.decodedBudget}
         if let image{
@@ -59,6 +103,11 @@ public struct DockSliverNoticeMark: Equatable {
             let p=bytes.assumingMemoryBound(to:UInt8.self);alpha=(0..<(w*h)).map{p[$0*4+3]};self.image=normalized
             retainedBytes=normalized.bytesPerRow*normalized.height+alpha.count
         }
+        quotaDrawing = quotaReadings.map { value in
+            let hex = value.ink.map { ink in String(format:"#%02X%02X%02X%02X",Int((ink.r*255).rounded()),Int((ink.g*255).rounded()),Int((ink.b*255).rounded()),Int((ink.a*255).rounded())) } ?? ""
+            let segment = DockSliverResolvedColorSegment(from:value.from,through:value.through,rgbaHex:hex,remainingPercent:value.remainingPercent,quotaRole:value.quotaRole,subscriptionID:value.subscriptionID,opacity:value.opacity)
+            return (segment,value.ink)
+        }
         self.scale=scale;frame.size=logicalSize;failed=false;setAccessibilityElement(true);setAccessibilityEnabled(onReveal != nil);setAccessibilityLabel(accessibilityLabel)
     }
     public func isPainted(atLocal point:CGPoint)->Bool{
@@ -79,10 +128,33 @@ public struct DockSliverNoticeMark: Equatable {
         graphics.cgContext.setShouldAntialias(true)
         if let image{NSImage(cgImage:image,size:bounds.size).draw(in:bounds,from:.zero,operation:.copy,fraction:1,respectFlipped:true,hints:nil)}
         else{drawNeutralMetal(in:graphics.cgContext)}
+        // The body stays neutral. Alert paint is faint, static, and limited to the registered pitch.
+        // Overflow members share a physical pitch: paint its highest severity once, without accumulating alpha.
+        let c = graphics.cgContext
+        var paints = [PitchKey:Int]()
+        for (index,value) in quotaDrawing.enumerated() where value.segment.quotaRole != nil {
+            let key = PitchKey(from:value.segment.from,through:value.segment.through)
+            if let previous=paints[key], quotaDrawing[previous].segment.quotaRole == .critical { continue }
+            paints[key]=index
+        }
+        c.saveGState(); c.setBlendMode(.sourceAtop)
+        for role in [DockQuotaStatus.warning,.critical] {
+            for index in paints.values where quotaDrawing[index].segment.quotaRole == role {
+                let value=quotaDrawing[index]
+                guard let ink=value.ink else { continue }
+                let horizontal = bounds.width > bounds.height
+                let from = CGFloat(value.segment.from), through = CGFloat(value.segment.through)
+                let rect = horizontal
+                    ? CGRect(x:bounds.minX+bounds.width*from,y:bounds.minY,width:bounds.width*(through-from),height:bounds.height)
+                    : CGRect(x:bounds.minX,y:bounds.minY+bounds.height*from,width:bounds.width,height:bounds.height*(through-from))
+                c.setAlpha(value.segment.opacity); c.setFillColor(ink.cg); c.fill(rect)
+            }
+        }
+        c.restoreGState()
         for mark in noticeMarks where mark.position.isFinite && (0...1).contains(mark.position) && mark.unit.isFinite && mark.unit > 0 {
             let horizontal = bounds.width > bounds.height
             let center = horizontal ? CGPoint(x: bounds.width * mark.position, y: bounds.midY) : CGPoint(x: bounds.midX, y: bounds.height * mark.position)
-            let diameter = (mark.notice.shape == .hollow ? 6 : 5) * mark.unit
+            let diameter = mark.diameter
             let rect = CGRect(x: center.x-diameter/2, y: center.y-diameter/2, width: diameter, height: diameter)
             let components: [CGFloat]
             switch mark.notice.tone {
@@ -91,7 +163,7 @@ public struct DockSliverNoticeMark: Equatable {
             case .white: components = [1,1,1,1]
             }
             let c = graphics.cgContext, color = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: components)!
-            c.saveGState(); c.setAlpha(0.7)
+            c.saveGState(); c.setAlpha(DockSliverNoticeMark.opacity)
             if mark.notice.shape == .hollow {
                 let width = 1.2 * mark.unit; c.setStrokeColor(color); c.setLineWidth(width)
                 c.strokeEllipse(in: rect.insetBy(dx: width/2, dy: width/2))
@@ -105,7 +177,7 @@ public struct DockSliverNoticeMark: Equatable {
               mark.position.isFinite, (0...1).contains(mark.position), mark.unit.isFinite, mark.unit > 0 else { return false }
         let horizontal = bounds.width > bounds.height
         let center = horizontal ? CGPoint(x: bounds.width * mark.position, y: bounds.midY) : CGPoint(x: bounds.midX, y: bounds.height * mark.position)
-        let diameter = (mark.notice.shape == .hollow ? 6 : 5) * mark.unit
+        let diameter = mark.diameter
         let dot = CGRect(x: center.x-diameter/2, y: center.y-diameter/2, width: diameter, height: diameter)
         let components: [CGFloat]
         switch mark.notice.tone {
@@ -133,7 +205,12 @@ public struct DockSliverNoticeMark: Equatable {
     /// Only the neutral fallback is drawn here; supplied artwork and semantic segments stay intact.
     private func drawNeutralMetal(in c:CGContext){
         let edge:DockEdge
-        if bounds.width>bounds.height{edge = .bottom}
+        if bounds.width>bounds.height{
+            // A horizontal strip rests on the bottom or, below the menu bar, on the top edge.
+            if let frame=window?.frame,let screen=window?.screen?.visibleFrame{
+                edge=abs(frame.maxY-screen.maxY)<abs(frame.minY-screen.minY) ? .top:.bottom
+            }else{edge = .bottom}
+        }
         else if let frame=window?.frame,let screen=window?.screen?.visibleFrame{
             edge=abs(frame.minX-screen.minX)<abs(frame.maxX-screen.maxX) ? .left:.right
         }else{edge = .right}
@@ -175,9 +252,16 @@ public struct DockSliverNoticeMark: Equatable {
     }
     public override func accessibilityPerformPress()->Bool{guard !failed,!isHiddenOrHasHiddenAncestor,let onReveal else{return false};onReveal();return true}
     public override func acceptsFirstMouse(for event:NSEvent?)->Bool{true}
-    public override func mouseDown(with event:NSEvent){if !failed,!isHiddenOrHasHiddenAncestor{onReveal?()}}
+    public override func mouseDown(with event:NSEvent) {
+        guard !failed, !isHiddenOrHasHiddenAncestor else { return }
+        if event.modifierFlags.contains(.control) {
+            if let menu = menu(for: event) { NSMenu.popUpContextMenu(menu, with: event, for: self) }
+            return
+        }
+        onReveal?()
+    }
     public func dispose(){
-        failed=true;noticeMarks=[];onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0
+        failed=true;quotaDrawing=[];noticeMarks=[];onNeedsFreshPresentation=nil;onReveal=nil;image=nil;alpha=[];retainedBytes=0
         setAccessibilityElement(false);setAccessibilityEnabled(false);setAccessibilityLabel(nil);needsDisplay=true
     }
 }

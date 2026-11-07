@@ -2,6 +2,7 @@
 import AppKit
 import CryptoKit
 import ImageIO
+import QuartzCore
 import XCTest
 import ModelPlanCore
 @_spi(DockResourceChecks) import ModelPlanDock
@@ -151,7 +152,7 @@ import ModelPlanSettings
         fixture.host.render(snapshot: snapshot, diagnostics: diagnostics)
     }
 
-    func testRasterDefaultHostDragShowsPreviewAndRestoresAtBothScales() async throws {
+    func testRasterDefaultHostDragCarriesPanelAndRestoresAtBothScales() async throws {
         for scale in [1, 2] {
             let url = try temporaryURL(), folder = url.deletingLastPathComponent()
             let settings = try SettingsStore(url: url)
@@ -210,12 +211,12 @@ import ModelPlanSettings
             func gesture(_ local: CGPoint, to end: CGPoint, release: Bool = true) throws {
                 let start = panel.convertPoint(toScreen: view.convert(local, to: nil))
                 f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
-                view.mouseDown(with: try f.event(.leftMouseDown, global: start))
+                panel.sendEvent(try f.event(.leftMouseDown, global: start))
                 f.inputs.pointer = end
-                view.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
+                panel.sendEvent(try f.event(.leftMouseDragged, global: end))
                 if release {
                     f.inputs.presence.mouseButtonDown = false
-                    view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+                    panel.sendEvent(try f.event(.leftMouseUp, global: end))
                 }
             }
             let end = CGPoint(x: 1, y: 450)
@@ -231,32 +232,24 @@ import ModelPlanSettings
             }
             try gesture(CGPoint(x: 20, y: 80), to: end, release: false)
             XCTAssertEqual(f.host.edgePresentation?.moving, true)
-            let destination = try XCTUnwrap(f.host.edgePresentation?.snapPreview)
-            XCTAssertEqual(destination.edge, .left); XCTAssertEqual(panel.frame, originalFrame)
-            let preview = try XCTUnwrap(f.host.nativeMovePreviewPanel, "raster drags need visible destination feedback")
-            XCTAssertTrue(preview.isVisible); XCTAssertTrue(preview.ignoresMouseEvents)
-            XCTAssertEqual(preview.frame, destination.frame)
-            XCTAssertNil(preview.contentView?.hitTest(CGPoint(x: 20, y: 80)))
-            XCTAssertGreaterThan(preview.alphaValue, 0)
-            let surface = try XCTUnwrap(preview.contentView as? DockSnapOutlineView)
-            XCTAssertNil(surface.path)
-            let material = try XCTUnwrap(surface.rasterImage)
-            XCTAssertEqual(material.width, 96 * scale); XCTAssertEqual(material.height, 160 * scale)
-            let pixels = try XCTUnwrap(surface.bitmapImageRepForCachingDisplay(in: surface.bounds))
-            surface.cacheDisplay(in: surface.bounds, to: pixels)
-            let painted = try XCTUnwrap(pixels.colorAt(x: pixels.pixelsWide / 2, y: pixels.pixelsHigh / 2))
-            XCTAssertGreaterThan(painted.alphaComponent, 0); XCTAssertLessThan(painted.alphaComponent, 1)
+            let destination = try XCTUnwrap(f.host.edgePresentation?.placement)
+            XCTAssertEqual(destination.edge, .left)
+            XCTAssertNotEqual(panel.frame, originalFrame)
+            XCTAssertTrue(panel.isVisible)
+            XCTAssertEqual(panel.frame, f.host.edgePresentation?.paintedFrame)
+            // The drag crosses to an alternate edge view. AppKit still sends the release to the panel.
+            XCTAssertNil(view.window)
             f.inputs.presence.mouseButtonDown = false
-            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
-            view.mouseUp(with: try f.event(.leftMouseUp, global: end))
+            panel.sendEvent(try f.event(.leftMouseUp, global: end))
+            panel.sendEvent(try f.event(.leftMouseUp, global: end))
             XCTAssertEqual(commits.count, 1, "a completed native gesture commits once")
-            XCTAssertFalse(preview.isVisible); XCTAssertNil(surface.rasterImage)
+            XCTAssertFalse(f.host.edgePresentation?.moving ?? true)
             let commit = try XCTUnwrap(commits.first)
             try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
             let placement = try XCTUnwrap(f.host.edgePresentation?.placement)
             try f.reveal(); let savedFrame = panel.frame
             XCTAssertNotEqual(savedFrame, originalFrame)
-            f.host.close(); XCTAssertFalse(panel.isVisible); XCTAssertFalse(preview.isVisible)
+            f.host.close(); XCTAssertFalse(panel.isVisible)
             let restored = try BehaviourFixture(url: url, customAppearance: appearance)
             defer { restored.host.close() }
             await restored.start(); try restored.reveal()
@@ -264,11 +257,11 @@ import ModelPlanSettings
             let restoredPanel = try restored.panel()
             XCTAssertEqual(restoredPanel.frame, savedFrame)
             restored.host.close(); XCTAssertFalse(restoredPanel.isVisible)
-            print("raster-host scale=\(scale) default-M44-right reveal=150ms preview=visible non-intercepting drop=1 restored=true closed=true")
+            print("raster-host scale=\(scale) default-M44-right reveal=150ms carry=visible non-intercepting drop=1 restored=true closed=true")
         }
     }
 
-    func testPlacementProducerReportsActualSeamRecoveryAndClearsOnTopologyAndClose() async throws {
+    func testPlacementProducerKeepsInnerEdgeAndClearsOnTopologyAndClose() async throws {
         let url = try temporaryURL(), store = try SettingsStore(url: url)
         try await store.update { $0.dockDisplayID = "main"; $0.dockEdge = .right; $0.autoHide = true }
         let persisted = try Data(contentsOf: url)
@@ -285,11 +278,11 @@ import ModelPlanSettings
         var facts: [(DockEdgePlacement?, Bool)] = []
         f.host.onPlacementObserved = { facts.append(($0, $1)) }
         await f.start()
-        let left = try XCTUnwrap(f.host.edgePresentation?.placement)
-        XCTAssertEqual(left.displayID, "main"); XCTAssertEqual(left.edge, .left)
-        XCTAssertEqual(facts.last?.0, left); XCTAssertEqual(facts.last?.1, true)
+        let right = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(right.displayID, "main"); XCTAssertEqual(right.edge, .right)
+        XCTAssertEqual(facts.last?.0, right); XCTAssertEqual(facts.last?.1, false)
         let panel = try f.panel(); XCTAssertTrue(panel.isVisible)
-        XCTAssertEqual(panel.frame, left.sliverFrame)
+        XCTAssertEqual(panel.frame, right.sliverFrame)
         let count = facts.count
         f.host.refreshPresence()
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -304,11 +297,11 @@ import ModelPlanSettings
         XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false); XCTAssertFalse(panel.isVisible)
         f.inputs.displays = [.init(id: "main", frame: CGRect(x: 0, y: 0, width: 1200, height: 900), visibleFrame: CGRect(x: 0, y: 24, width: 1200, height: 850)), adjacent]
         NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        XCTAssertEqual(facts.last?.0?.edge, .left); XCTAssertEqual(facts.last?.1, true)
+        XCTAssertEqual(facts.last?.0?.edge, .right); XCTAssertEqual(facts.last?.1, false)
         f.host.close(); XCTAssertNil(facts.last?.0); XCTAssertEqual(facts.last?.1, false)
         XCTAssertFalse(panel.isVisible); XCTAssertNil(f.host.nativePanel)
         XCTAssertEqual(try Data(contentsOf: url), persisted, "fallback and observations must never overwrite saved right intent")
-        print("placement-producer saved=right effective=left recovery=true restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
+        print("placement-producer saved=right effective=right recovery=false restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
     }
 
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
@@ -355,6 +348,54 @@ import ModelPlanSettings
         report(2, "neutral-M-span=\(placement.sliverFrame.height) thickness=4 reveals=\(reveals)/10 collapses=\(collapses)/10")
     }
 
+    /// R64 D-9: reveal fades in over 0.16 s ease-out from 14 pt toward the edge; collapse fades out
+    /// over 0.12 s ease-in sliding 14 pt toward the edge. The real state and panel change at once.
+    /// Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:25-29.
+    func testD9RevealFadesInAndCollapseSlidesTowardTheEdge() async throws {
+        let url = try temporaryURL(), settings = try SettingsStore(url: url)
+        try await settings.update { $0.autoHide = true }
+        let f = try BehaviourFixture(url: url); defer { f.host.close() }
+        await f.start()
+        let panel = try f.panel(), placement = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+        let before = f.host.revealAnimationsForChecks
+        f.inputs.pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.midY)
+        f.host.refreshPresence(); f.tick(0.151)
+        XCTAssertEqual(f.host.edgePresentation?.state, .expanded)
+        XCTAssertEqual(f.host.revealAnimationsForChecks, before + 1, "the reveal animates")
+        XCTAssertFalse(panel.contentView is DockSliverView, "the expanded content is presented at once")
+        let animations = f.host.containerAnimationsForChecks
+        let fade = try XCTUnwrap(animations["dock.reveal.opacity"] as? CABasicAnimation)
+        XCTAssertEqual(fade.duration, 0.16, accuracy: 0.0001)
+        func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
+            guard let function else { return [] }
+            var result = [Float]()
+            for index in 1...2 { var value: [Float] = [0, 0]; function.getControlPoint(at: index, values: &value); result += value }
+            return result
+        }
+        XCTAssertEqual(controlPoints(fade.timingFunction), controlPoints(CAMediaTimingFunction(name: .easeOut)))
+        XCTAssertEqual((fade.fromValue as? NSNumber)?.doubleValue, 0)
+        if let slide = animations["dock.reveal.slide"] as? CABasicAnimation {
+            let from = try XCTUnwrap((slide.fromValue as? NSValue)?.caTransform3DValue)
+            XCTAssertEqual(from.m41, 14, accuracy: 0.0001, "a right-edge reveal starts 14 pt toward the edge")
+            XCTAssertEqual(from.m42, 0, accuracy: 0.0001)
+        }
+        f.tick(0.301)
+        f.leave()
+        XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+        XCTAssertTrue(panel.contentView is DockSliverView, "the sliver is presented at once")
+        XCTAssertTrue(f.host.collapseAnimatingForChecks, "the collapse plays in its own click-through panel")
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertFalse(f.host.collapseAnimatingForChecks, "the collapse ends after 0.12 s")
+        let motion = DockRevealMotion.animations(revealing: false, edge: .bottom, flipped: true, reduceMotion: false)
+        XCTAssertEqual(motion["dock.reveal.opacity"]?.duration ?? 0, 0.12, accuracy: 0.0001)
+        XCTAssertEqual(controlPoints(motion["dock.reveal.opacity"]?.timingFunction), controlPoints(CAMediaTimingFunction(name: .easeIn)))
+        let end = try XCTUnwrap((motion["dock.reveal.slide"]?.toValue as? NSValue)?.caTransform3DValue)
+        XCTAssertEqual(end.m42, 14, accuracy: 0.0001, "a bottom-edge collapse slides down toward the edge")
+        XCTAssertNil(DockRevealMotion.animations(revealing: true, edge: .left, flipped: true, reduceMotion: true)["dock.reveal.slide"],
+                     "Reduce Motion keeps the fade and drops the slide")
+    }
+
     func testItem3ThirtyPointerOnlyMovesCannotRepositionTheWindow() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start(); try await f.coordinator.editor.commit(.autoHide(false))
@@ -383,16 +424,16 @@ import ModelPlanSettings
         f.host.commitDisplayPlacement = { commits.append(($0, $1, $2)) }
         let local = CGPoint(x: 25, y: 30)
         let start = panel.convertPoint(toScreen: f.host.dockView.convert(local, to: nil))
-        // Bottom space is reserved for the system Dock in this layout; drop on the exposed left edge.
+        // This gesture targets the left edge, beside the macOS Dock.
         let end = CGPoint(x: 1, y: 450)
         f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
-        f.host.dockView.mouseDown(with: try f.event(.leftMouseDown, global: start))
+        panel.sendEvent(try f.event(.leftMouseDown, global: start))
         f.inputs.pointer = end
-        f.host.dockView.mouseDragged(with: try f.event(.leftMouseDragged, global: end))
+        panel.sendEvent(try f.event(.leftMouseDragged, global: end))
         XCTAssertEqual(f.host.edgePresentation?.moving, true)
-        XCTAssertEqual(f.host.edgePresentation?.snapPreview?.edge, .left)
+        XCTAssertEqual(f.host.edgePresentation?.placement?.edge, .left)
         f.inputs.presence.mouseButtonDown = false
-        f.host.dockView.mouseUp(with: try f.event(.leftMouseUp, global: end))
+        panel.sendEvent(try f.event(.leftMouseUp, global: end))
         XCTAssertEqual(commits.count, 1)
         let commit = try XCTUnwrap(commits.first)
         try await f.coordinator.editor.commit(.dockPlacement(displayID: commit.0, edge: commit.1, alongFraction: commit.2))
@@ -406,6 +447,7 @@ import ModelPlanSettings
         XCTAssertEqual(try restored.panel().frame, savedFrame)
         report(4, "commits=\(commits.count) edge=\(placement.edge) fraction=\(commit.2) restored-frame=\(savedFrame)")
     }
+
 
     func testItem5TwoDisplaySelectionSurvivesRecreationAndPointerCrossing() async throws {
         let url = try temporaryURL(), f = try BehaviourFixture(url: url)
@@ -524,7 +566,7 @@ import ModelPlanSettings
         try await community.coordinator.editor.commit(.autoHide(false))
         try await community.coordinator.editor.commit(.showPercentages(false))
         let value = try XCTUnwrap(community.rows().first?.accessibilityValue() as? String)
-        XCTExpectFailure("dock-item 8: Community row ignores Show percentages=false; beta07 bug") {
+        XCTExpectFailure("dock-item 8: Community row ignores Quota Widget percentages=false; beta07 bug") {
             XCTAssertFalse(value.contains("%"), "hidden percentages still expose the native readout: \(value)")
         }
         report(8, "Dock-keys=\(covered.count) reveal=300ms size=L/52 display/follow/edge/position=applied capture=unavailable supplier-options=forwarded expected-failures=1(show-percentages)")

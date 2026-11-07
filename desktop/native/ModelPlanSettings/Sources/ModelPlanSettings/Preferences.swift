@@ -72,6 +72,9 @@ public struct SettingsPreferences: Codable, Sendable {
     public var percentageMode: PercentageMode = .remaining
     public var showPercentages = true
     public var redBelow = 25
+    /// D22: the choices, highest first. An older saved 16 stays readable, is not rewritten, and acts as the default.
+    public static let redBelowChoices = [40, 30, 25, 20, 15, 10]
+    public var effectiveRedBelow: Int { Self.redBelowChoices.contains(redBelow) ? redBelow : 25 }
     public var sliverAlert = true
     public var showDock = true
     public var autoHide = false
@@ -90,7 +93,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openAtLogin = true
     /// Saved preference only; observing/performing update checks belongs to the application service.
     public var automaticUpdates = true
-    public var menuDisplay: MenuDisplay = .icon
+    public var menuDisplay: MenuDisplay = .tightest
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
@@ -141,7 +144,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public func validate() throws {
         func validID(_ id: String) -> Bool { !id.isEmpty && id.utf8.count <= 256 && !id.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
         guard dockAlongFraction.isFinite, (0...1).contains(dockAlongFraction), dockDisplayID.map(validID) ?? true,
-              [10, 16, 20, 25].contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
+              (Self.redBelowChoices + [16]).contains(redBelow), [100, 150, 300].contains(revealMilliseconds),
               [150, 200, 250].contains(beatMilliseconds),
               openShortcut.isValid || openShortcut.isUnassigned, dockShortcut.isValid || dockShortcut.isUnassigned,
               openShortcut.isUnassigned || dockShortcut.isUnassigned || openShortcut != dockShortcut,

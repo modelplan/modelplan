@@ -45,12 +45,29 @@ final class HelpCatalogTests: XCTestCase {
         XCTAssertTrue(HelpCatalog(.english).explanation(.screen).body.contains("Destinations"))
     }
 
+    /// D37 (11-06): holding the ignition is v1.1, so no v1 ignition copy mentions it; the move
+    /// explanation names all four edges (G3-27 top edge).
+    func testIgnitionCopyNeverMentionsHoldingAndMoveNamesFourEdges() {
+        for language in [InstrumentLanguage.chinese, .english] {
+            let help = HelpCatalog(language), map = HelpMapCatalog(language)
+            let ignition = [help.explanation(.ignition).body, help.hint(.init(.ignition)) ?? "", map.sentence(.ignition)]
+            for text in ignition {
+                XCTAssertFalse(["长按", "按住", "hold", "Hold", "ignite"].contains { text.contains($0) }, "\(language): \(text)")
+                XCTAssertFalse(text.isEmpty)
+            }
+            let move = [help.explanation(.dockMove).body, map.sentence(.dockMove)]
+            for text in move {
+                XCTAssertTrue(language == .chinese ? text.contains("上") : text.contains("top"), "\(language): \(text)")
+            }
+        }
+    }
+
     func testFiveHintTextsAndResetAction() {
         let zh = HelpCatalog(.chinese), en = HelpCatalog(.english)
         XCTAssertEqual(zh.hint(.init(.trial)), "这只是本地比较，不会改你的会话")
         XCTAssertEqual(en.hint(.init(.trial)), "Just a local comparison; your session is unchanged")
-        XCTAssertEqual(zh.hint(.init(.ignition)), "点按打开，长按点火")
-        XCTAssertEqual(en.hint(.init(.ignition)), "Tap to open · hold to ignite")
+        XCTAssertEqual(zh.hint(.init(.ignition)), "点按打开驾驶舱")
+        XCTAssertEqual(en.hint(.init(.ignition)), "Tap to open the Cockpit")
         XCTAssertEqual(zh.hint(.init(.pinned)), "已钉住，按 Esc 或点别处取消")
         XCTAssertEqual(en.hint(.init(.pinned)), "Pinned · Esc or click elsewhere to release")
         XCTAssertEqual(zh.hint(.init(.page, pageNumber: 3)), "还有订阅在第 3 页")
