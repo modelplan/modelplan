@@ -68,12 +68,15 @@ jobs:
           # The test-only page seam needs MODELPLAN_TEST_ONLY_SPI; without it the real app-server details
           # journey is not compiled at all and would vanish silently.
           swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/u11-product-build --jobs 2 \
-            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CommunityCockpitEntryTests|DockCodexRuntimeRealServerTests)' 2>&1 | tee .tmp/u11-product-tests.log
+            -Xswiftc -DMODELPLAN_TEST_ONLY_SPI --filter '(CommunityCockpitEntryTests|DockCodexRuntimeRealServerTests|QuotaWidgetCardPrototypeTests)' 2>&1 | tee .tmp/u11-product-tests.log
           # Both real-CLI normal-entry journeys must have run and passed here (elsewhere they are allowed skips).
           for test in testNormalEntryRejectsOutdatedCLI testNormalEntryReceivesCockpitDetailsFromRealAppServer testOwnerTestPackageLoadsTheRealCockpitPageAndReleaseShapeRefusesIt; do
             grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.CommunityCockpitEntryTests $test\]' passed" .tmp/u11-product-tests.log \
               || { echo "::error::CommunityCockpitEntryTests/$test did not run and pass"; exit 1; }
           done
+          # The card's readout font must draw on the oldest supported macOS, which this runner is.
+          grep -Eq "Test Case '-\[ModelPlanAppIntegrationTests\.QuotaWidgetCardPrototypeTests testReadoutValuesAreActuallyDrawn\]' passed" .tmp/u11-product-tests.log \
+            || { echo "::error::QuotaWidgetCardPrototypeTests/testReadoutValuesAreActuallyDrawn did not run and pass"; exit 1; }
       - name: Public numerical receipt privacy
         run: python3 -m unittest discover -s desktop/native/verification/tests -p 'test_public_receipts.py'
       - name: Source policy

@@ -501,8 +501,8 @@ private actor ReserveJourneyClient: EngineClient {
         XCTAssertEqual(retained.value, "13 credits"); XCTAssertEqual(retained.detail, "Last known reading")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
         // The card folds credits into the one reserve line (card.js:76-81); a stale reading stays labelled there.
-        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.value, "13 credits")
-        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.detail, "Last known reading")
+        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.value, "↺1 · 13 credits")
+        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.detail, "expired · Last known reading")
         let delivery = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery,
             nextFloor: .init(storeEpoch: "reserve-synthetic", generation: 2))))

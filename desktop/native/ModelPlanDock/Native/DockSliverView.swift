@@ -7,9 +7,12 @@ import QuartzCore
 public struct DockSliverNoticeMark: Equatable {
     public let position: CGFloat, notice: DockNotice, unit: CGFloat
     // Reset marks measure four points at the default 44-point nozzle size.
-    fileprivate var diameter: CGFloat {
-        (notice.tone == .blue ? 4 * 52 / 44 : (notice.shape == .hollow ? 6 : 5)) * unit
+    /// DOCK-3.7-02: the mark paints at this opacity.
+    public static let opacity: CGFloat = 0.7
+    public static func diameter(tone: DockNotice.Tone, shape: DockNotice.Shape, unit: CGFloat) -> CGFloat {
+        (tone == .blue ? 4 * 52 / 44 : (shape == .hollow ? 6 : 5)) * unit
     }
+    fileprivate var diameter: CGFloat { Self.diameter(tone: notice.tone, shape: notice.shape, unit: unit) }
     public init(position: CGFloat, notice: DockNotice, unit: CGFloat) { self.position = position; self.notice = notice; self.unit = unit }
 }
 
@@ -160,7 +163,7 @@ public struct DockSliverResolvedColorSegment: Equatable {
             case .white: components = [1,1,1,1]
             }
             let c = graphics.cgContext, color = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: components)!
-            c.saveGState(); c.setAlpha(0.7)
+            c.saveGState(); c.setAlpha(DockSliverNoticeMark.opacity)
             if mark.notice.shape == .hollow {
                 let width = 1.2 * mark.unit; c.setStrokeColor(color); c.setLineWidth(width)
                 c.strokeEllipse(in: rect.insetBy(dx: width/2, dy: width/2))

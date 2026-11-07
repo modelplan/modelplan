@@ -30,7 +30,6 @@ import AppKit
     public func cancelNozzle(){capturedID=nil;controller.cancelNozzle()}
     public func hoverNozzle(_ id:String?){onHover?(id);controller.refresh()}
     public func optionArrow(id:String,keyCode:UInt16)->Bool{
-        let keys:[UInt16]=edge().isHorizontal ? [123,124]:[126,125]
-        guard let index=keys.firstIndex(of:keyCode) else{return false};controller.moveByKeyboard(id:id,delta:index==0 ? -1:1);return true
+        guard let delta=edge().optionArrowDelta(keyCode:keyCode) else{return false};controller.moveByKeyboard(id:id,delta:delta);return true
     }
 }

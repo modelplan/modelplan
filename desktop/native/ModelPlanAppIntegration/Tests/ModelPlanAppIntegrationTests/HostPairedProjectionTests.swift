@@ -648,11 +648,11 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         }
         XCTAssertEqual(try balance().label, "Balance")
-        XCTAssertEqual(try balance().value, "14,207.86")
-        XCTAssertEqual(try balance().detail, "Currency not reported")
+        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().detail, "expired · Currency not reported")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
-        XCTAssertEqual(try balance().value, "14,207.86")
+        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
@@ -685,6 +685,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(content.rows.contains { $0.kind == .extraQuota }, "precondition: the card has a scoped extra row")
         func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
         XCTAssertEqual(tooltips(dock.card), [])
+        // DOCK-3.6-18: no native tooltip on the widget itself either; details go to accessible labels.
+        XCTAssertEqual(tooltips(view), [])
     }
 
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
