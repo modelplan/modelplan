@@ -58,7 +58,7 @@ public enum T2DockSkin {
                 "singleWindowCaseInnerRadius":max(0,singleWindowRadius),
                 "radialOverlay":["radius":throatRadius,"alphas":throatAlphas],
                 "showsReadout":showsPercentages, "fallbackVendorName":true,
-                "eventSolidDiameter":5*unit, "eventHollowDiameter":5*unit, "eventStrokeWidth":1.2*unit,
+                "eventSolidDiameter":5*unit, "eventHollowDiameter":6*unit, "eventStrokeWidth":1.2*unit,
                 "eventBackdropKey":"eventBackdrop", "eventOutlineKey":"eventOutline", "eventSolidOutlineWidth":unit
             ]
             if let id=station.subscription?.id, let reading=available[id] {

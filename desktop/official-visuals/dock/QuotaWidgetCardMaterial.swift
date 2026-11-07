@@ -35,9 +35,3 @@ public enum QuotaWidgetCardMaterial {
     public static let hotGlowBlur: CGFloat = 7
 }
 
-/// R64 M-2: the hairline outline of the destination face while the widget is carried off an edge.
-/// Prototype: clients/official-visuals/dock-aftview-integration/face.css:137 (#dock-snap-preview path).
-public enum QuotaWidgetSnapPreviewMaterial {
-    public static let stroke = QuotaWidgetCardMaterial.RGBA(0xc6ced8, alpha: 0x5c) // opacity .36
-    public static let lineWidth: CGFloat = 1
-}

@@ -53,7 +53,7 @@ final class T2IgnitionArt: @unchecked Sendable {
             // the resulting local geometry at the saved anchor.
             // The top edge mirrors the bottom-edge layout (A-1106-4): the ignition sits at the same end.
             let input = T2GeometryInput(coordinates: coords, diameter: preferences.size.nozzleDiameter,
-                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical)
+                showsPercentages: preferences.showPercentages, ignitionAtEnd: !vertical, centresRings: view.centresRings)
             let geometry = try T2Geometry.make(subscriptions: subscriptions, input: input)
             let skin = try T2DockSkin.make(geometry: geometry, rows: rows, showsPercentages: preferences.showPercentages,
                                           zaiMarkEnabled: view.zaiMarkEnabled)
