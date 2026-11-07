@@ -9,6 +9,17 @@ struct DockStatusHelpAnchor {
     let collection: NSWindow.CollectionBehavior
 }
 
+/// A status-menu focus return is valid only for the user dismissal of its own map.
+struct DockStatusHelpDismissal {
+    private var requestID: UUID?
+    mutating func arm(_ id: UUID?) { requestID = id }
+    mutating func take(reason: HelpUIDismissReason?) -> UUID? {
+        let id = requestID; requestID = nil
+        guard reason == .escape || reason == .pointer else { return nil }
+        return id
+    }
+}
+
 /// Connects the real Dock surface to the same app-scoped hint arbiter and ledger
 /// used by the existing Help composition. It creates no independent hint queue.
 @MainActor final class DockHelpCoordinator {
@@ -21,6 +32,9 @@ struct DockStatusHelpAnchor {
     private var suspended = false
     private var retired = false
     private let statusAnchor: @MainActor () -> DockStatusHelpAnchor?
+    private let statusRequestID: @MainActor () -> UUID?
+    private let statusDidDismiss: @MainActor (UUID) -> Void
+    private var statusDismissal = DockStatusHelpDismissal()
     private var activeSurface: DockHelpSurface?
     private var statusSurface: DockHelpSurface?
     private var requestedMap: RequestedHelpMap?
@@ -31,15 +45,20 @@ struct DockStatusHelpAnchor {
 
     private init(dock: StaticDockPreviewHost, application: SettingsApplicationCoordinator,
                  composition: InstrumentHelpComposition, router: HelpOverlayRouter,
-                 statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor?) {
+                 statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor?,
+                 statusRequestID: @escaping @MainActor () -> UUID?,
+                 statusDidDismiss: @escaping @MainActor (UUID) -> Void) {
         self.dock = dock; self.application = application
         self.composition = composition; self.router = router
         self.statusAnchor = statusAnchor
+        self.statusRequestID = statusRequestID; self.statusDidDismiss = statusDidDismiss
     }
 
     static func restored(dock: StaticDockPreviewHost,
                          application: SettingsApplicationCoordinator,
-                         statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor? = { nil }) async -> DockHelpCoordinator? {
+                         statusAnchor: @escaping @MainActor () -> DockStatusHelpAnchor? = { nil },
+                         statusRequestID: @escaping @MainActor () -> UUID? = { nil },
+                         statusDidDismiss: @escaping @MainActor (UUID) -> Void = { _ in }) async -> DockHelpCoordinator? {
         var routed: HelpOverlayRouter?
         let composition = await InstrumentHelpComposition.restored(application: application, overlayFactory: { cockpit in
             let router = HelpOverlayRouter(cockpit: cockpit)
@@ -48,7 +67,8 @@ struct DockStatusHelpAnchor {
         })
         guard let router = routed else { composition.dispose(); return nil }
         let owner = DockHelpCoordinator(dock: dock, application: application,
-                                        composition: composition, router: router, statusAnchor: statusAnchor)
+                                        composition: composition, router: router, statusAnchor: statusAnchor,
+                                        statusRequestID: statusRequestID, statusDidDismiss: statusDidDismiss)
         owner.install()
         return owner
     }
@@ -82,7 +102,11 @@ struct DockStatusHelpAnchor {
                 case .drag: return (zh ? "拖喷口换顺序，拖底座换到别的边" : "Drag a nozzle to reorder; drag the base to move to another edge", zh ? "关闭" : "Close")
                 default: return nil
                 }
-            }, dismiss: { [weak self] _ in self?.composition.host.dismiss() }, layer: composition.layer)
+            }, dismiss: { [weak self] _ in
+                guard let self else { return }
+                self.composition.host.dismiss()
+                self.refresh()
+            }, layer: composition.layer)
         let binding = DockHelpBinding(presenter: presenter,
             isCurrent: { [weak self] surface in self?.isCurrent(surface) == true })
         self.presenter = presenter; self.binding = binding
@@ -93,10 +117,19 @@ struct DockStatusHelpAnchor {
         })
         composition.onHelpAction = { [weak self] action in
             guard let self else { return }
+            let current = self.mapSurface.map { self.isCurrent($0) } == true
             self.dismissingMap = true
             let handled = (try? self.requestedMap?.handleHelpAction(action)) == true
             self.dismissingMap = false
-            if handled { self.finishMap(); self.refresh() }
+            if handled {
+                let reason: HelpUIDismissReason?
+                if current, case .dismissMap(let value, _) = action { reason = value } else { reason = nil }
+                self.finishMap(reason: reason); self.refresh()
+            }
+        }
+        composition.onSettingsReceipt = { [weak self] edit, accepted in
+            guard accepted, case .resetHelpHints = edit.kind else { return }
+            self?.refresh()
         }
         router.installDock(binding)
         dock.dockHelpSurfaceDidChange = { [weak self] surface in self?.update(surface) }
@@ -139,6 +172,8 @@ struct DockStatusHelpAnchor {
 
     @discardableResult func presentRequestedMap() -> Bool {
         guard !retired, !suspended, let surface = dock?.currentDockHelpSurface else { return false }
+        let requestID = statusRequestID()
+        if mapSurface != nil { dismissRequestedMap() }
         update(surface)
         guard isCurrent(surface), let presenter, let requestedMap else { return false }
         composition.host.dismiss()
@@ -164,22 +199,29 @@ struct DockStatusHelpAnchor {
         input.reduceTransparency = application.latest?.effective.reduceTransparency ?? true
         do {
             guard try requestedMap.presentHelpMap(input: input, content: [:], context: composition.host.hints.context),
-                  presenter.showPreparedMap(surface: surface, dismissMap: { [weak self] in self?.dismissRequestedMap() }) else {
+                  presenter.showPreparedMap(surface: surface, dismissMap: { [weak self] reason in self?.dismissRequestedMap(reason: reason) }) else {
                 try? requestedMap.dismissHelpMap(); finishMap(); return false
             }
+            guard mapSurface == surface, !retired, !suspended, isCurrent(surface) else { finishMap(); return false }
+            statusDismissal.arm(requestID)
             return true
         } catch { finishMap(); return false }
     }
 
-    func dismissRequestedMap() {
-        guard mapSurface != nil else { return }
+    func dismissRequestedMap(reason: HelpUIDismissReason? = nil) {
+        guard let surface = mapSurface else { return }
+        let userReason = isCurrent(surface) && !retired && !suspended ? reason : nil
         dismissingMap = true
         try? requestedMap?.dismissHelpMap()
         dismissingMap = false
-        finishMap()
+        finishMap(reason: userReason)
         if !retired && !suspended { update(dock?.currentDockHelpSurface) }
     }
-    private func finishMap() { mapSurface = nil; mapStatusFrame = nil; presenter?.endMap() }
+    private func finishMap(reason: HelpUIDismissReason? = nil) {
+        let id = statusDismissal.take(reason: reason)
+        mapSurface = nil; mapStatusFrame = nil; presenter?.endMap()
+        if let id { statusDidDismiss(id) }
+    }
 
     private func isCurrent(_ surface: DockHelpSurface) -> Bool {
         guard !retired, !suspended, !dismissingMap, activeSurface == surface else { return false }

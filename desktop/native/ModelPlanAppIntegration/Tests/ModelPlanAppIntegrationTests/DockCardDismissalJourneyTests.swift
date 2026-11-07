@@ -109,6 +109,7 @@ private actor CardDismissalClient: EngineClient {
         projection["rows"] = rows; root["projection"] = projection
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
         var pointer = CGPoint(x: 1430, y: 475)
         var cardFrame: CGRect?
         let app = EngineRowsEntry.make(configuration: config,
@@ -118,7 +119,7 @@ private actor CardDismissalClient: EngineClient {
                 env.pointer = pointer
                 env.cardFrame = cardFrame
                 return env
-            }, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
+            }, deadlineNow: { now }, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare()
         let refresh = CardMemberRefresh(); app.memberRefreshAdapter = refresh
         let dock = app.composition.dock
@@ -141,7 +142,13 @@ private actor CardDismissalClient: EngineClient {
         }
         // A drag release must not become a click.
         let memberID = "0123456789abcdef"
-        let nozzle = try XCTUnwrap(dock.dockView.nozzleEventDelegate)
+        let view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        XCTAssertNotNil(view.presentedReadingsForChecks[memberID]?.remainingPercent)
+        let nozzle = try XCTUnwrap(view.nozzleEventDelegate)
         let target = try XCTUnwrap(dock.interactionEnvironment().targets.first { $0.id == memberID })
         let start = CGPoint(x: target.along, y: target.along)
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))

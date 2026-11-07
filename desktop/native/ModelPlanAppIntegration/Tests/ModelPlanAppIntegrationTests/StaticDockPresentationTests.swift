@@ -157,7 +157,7 @@ import ModelPlanSettings
         XCTAssertEqual(c.latest?.snapshot.preferences.redBelow, 25)
         XCTAssertFalse(try XCTUnwrap(c.latest).snapshot.preferences.followActiveDisplay)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        for threshold in [25, 16] {
+        for threshold in [25, 20] {
             try await c.commit(.redBelow(threshold))
             let app = try XCTUnwrap(c.latest)
             for remaining in [Double(threshold) - 0.01, Double(threshold), Double(threshold) + 0.01] {

@@ -125,7 +125,11 @@ public struct EngineMenuRefreshResult {
             if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
         }
     }
-    public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
+    public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
+
+    private func presentedContent(at now: Date) -> DockContent {
+        admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+    }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
@@ -156,8 +160,8 @@ public struct EngineMenuRefreshResult {
     public var memberInstability:[String:Bool] {
         Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
     }
-    func installResetEvents(settings:SettingsStore,live:Bool,isolatedLedger:URL? = nil) {
-        let base:URL
+    func installResetEvents(settings: SettingsStore, live: Bool, isolatedLedger: URL? = nil) {
+        let base: URL
         if let isolatedLedger {
             base = isolatedLedger.deletingLastPathComponent()
         } else if live {
@@ -173,7 +177,11 @@ public struct EngineMenuRefreshResult {
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
-        resetNotifier?.deliveryOverride=delivery
+        setResetNotificationDelivery { id, _ in try await delivery(id) }
+    }
+
+    func setResetNotificationDelivery(_ delivery: @escaping @MainActor (String, String) async throws -> Void) {
+        resetNotifier?.deliveryOverride = delivery
         resetNotifier?.apply(store.snapshot)
     }
     private var fallbackStatusText: String {
@@ -185,7 +193,7 @@ public struct EngineMenuRefreshResult {
         case .empty:
             fallback = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
         case .failed:
-            fallback = english ? "Readings unavailable. Check the engine connection in Settings." : "读数不可用，请在设置中检查引擎连接。"
+            fallback = EngineRowsText.readingServiceUnavailable.value(english ? .english : .chinese)
         case .cleared:
             fallback = english ? "Readings cleared. Check Settings to reconnect." : "读数已清除，请在设置中重新连接。"
         case .ready:
@@ -194,8 +202,37 @@ public struct EngineMenuRefreshResult {
         return fallback
     }
     public var menuPresentation: CommunityMenuBarPresentation {
-        let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
+        let now = deadlineWall()
+        let content = presentedContent(at: now)
+        let detail = (content.menuStatusLines ?? []).joined(separator: " · ")
+        return .init(title: statusQuotaTitle(content.snapshot.inputs, at: now),
+                     detail: detail.isEmpty ? fallbackStatusText : detail)
+    }
+
+    private func statusQuotaTitle(_ inputs: [DockInstrumentInput], at now: Date) -> String {
+        guard let preferences = latestSettings?.snapshot.preferences,
+              let ordered = try? preferences.presentedSubscriptionIDs(inputs.map(\.id)) else { return "" }
+        let visible = Set(ordered)
+        func tightest(_ period: DockQuotaPeriod? = nil) -> String? {
+            inputs.compactMap { input -> (remaining: Double, text: String)? in
+                guard visible.contains(input.id) else { return nil }
+                var quota = input
+                if let period { quota.windows = quota.windows.filter { $0.period == period } }
+                quota.selectedWindowID = nil
+                quota.showUsedPercent = false
+                guard let reading = try? DockInstrumentProjection.evaluate(quota, now: now),
+                      let remaining = reading.remainingPercent else { return nil }
+                return (remaining, reading.readout)
+            }.min { $0.remaining < $1.remaining }?.text
+        }
+        switch preferences.menuDisplay {
+        case .icon: return ""
+        case .tightest: return tightest() ?? ""
+        case .twoWindows:
+            let week = preferences.language == .chinese ? "周" : "Week"
+            return [tightest(.fiveHour).map { "5h " + $0 }, tightest(.week).map { week + " " + $0 }]
+                .compactMap { $0 }.joined(separator: " ")
+        }
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
@@ -223,5 +260,5 @@ public struct EngineMenuRefreshResult {
     }
     func suspendDeadlines() { deadlineLifecycleSuspended = true; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

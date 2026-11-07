@@ -90,7 +90,7 @@ public struct SettingsPreferences: Codable, Sendable {
     public var openAtLogin = true
     /// Saved preference only; observing/performing update checks belongs to the application service.
     public var automaticUpdates = true
-    public var menuDisplay: MenuDisplay = .icon
+    public var menuDisplay: MenuDisplay = .tightest
     public var openShortcut = ShortcutChord.unassigned
     public var dockShortcut = ShortcutChord.unassigned
     public var language: SettingsLanguage = .chinese
