@@ -61,8 +61,9 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
   ) { owner?.receive(message) }
 }
 
-/// No prewarm: construction creates state only; open() creates the sole web view.
-/// Each close discards the page. Production contains no private WebKit selectors.
+/// CKP-SHELL-20: construction creates state only. prewarm() builds the sole web view and loads the page in
+/// a panel that is never ordered front, with no data, focus or outside-press monitor; open() shows it, or
+/// builds it first. Each close discards the page. Production contains no private WebKit selectors.
 @MainActor
 public final class CockpitWindowController: NSWindowController, NSWindowDelegate,
   WKNavigationDelegate, WKUIDelegate
@@ -179,6 +180,9 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onIntent: ((CockpitIntent) -> Void)?
   public var onRendered: (() -> Void)?
   public var onClosed: (() -> Void)?
+  /// Once per open, when the page is first confirmed visible. It replaces the hidden-display refresh then.
+  public var onShown: (() -> Void)?
+  private var shown = false, awaitingShown = false
   public var onFailure: ((CockpitWindowFailure) -> Void)?
   public var onBridgeDiagnostic: ((CockpitBridgeDiagnostic) -> Void)?
   public private(set) var rejectedBridgeMessageCount: UInt64 = 0
@@ -228,15 +232,36 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     super.init(window: nil)
   }
   required init?(coder: NSCoder) { nil }
+  public func prewarm() {
+    guard web == nil, !bridge.disposed, !ending else { return }
+    build()
+  }
   public func open() {
     closeTask?.cancel(); closeTask = nil
     if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
-    guard web == nil, !bridge.disposed else {
-      window?.alphaValue = 1
-      window?.makeKeyAndOrderFront(nil)
+    if web == nil, !bridge.disposed, !ending { build() }
+    guard let panel = window else { return }
+    guard shown else {
+      shown = true; awaitingShown = true
+      applyLayout()
+      installOutsideMonitors()
+      panel.alphaValue = appearance.reduceMotion ? 1 : 0
+      panel.makeKeyAndOrderFront(nil)
+      if !appearance.reduceMotion {
+        NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
+      }
       lastVisibility = nil; visibilityChanged()
+      #if MODELPLAN_TEST_ONLY_SPI
+        if let web { verificationDidOpen?(web, panel) }
+      #endif
       return
     }
+    panel.alphaValue = 1
+    panel.makeKeyAndOrderFront(nil)
+    lastVisibility = nil; visibilityChanged()
+  }
+  private func build() {
+    if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .nonPersistent()
     #if MODELPLAN_TEST_ONLY_SPI
@@ -307,19 +332,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     }
     freshnessObservers.append((center, clock))
     applyLayout()
-    installOutsideMonitors()
     observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in self?.cancelDrag(); self?.applyLayout() }
     })
+    panel.alphaValue = 0
     view.load(URLRequest(url: pageURL))
-    panel.alphaValue = appearance.reduceMotion ? 1 : 0
-    panel.makeKeyAndOrderFront(nil)
-    if !appearance.reduceMotion {
-      NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
-    }
-    #if MODELPLAN_TEST_ONLY_SPI
-      verificationDidOpen?(view, panel)
-    #endif
   }
   public func display(_ data: WireCockpitData, ticket: CockpitQueryTicket) {
     guard visibilityFence.isConfirmedVisible else {
@@ -500,7 +517,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           else { self.watchDeferredAppearance() }
           if let id = self.bridge.currentDisplayRequest, self.bridge.awaitsDisplayReceipt(id) { self.renderWatchdog.wait(for: id) }
           self.freshnessDriver.show()
-          if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
+          if self.awaitingShown, let onShown = self.onShown {
+            self.awaitingShown = false; self.refreshAfterHiddenDisplay = false; onShown()
+          } else if self.refreshAfterHiddenDisplay { self.refreshAfterHiddenDisplay = false; self.onReady?() }
+          self.awaitingShown = false
         }
       })
     } catch { fail() }

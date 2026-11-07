@@ -1,0 +1,1 @@
+The cockpit opens at once: the app loads an empty cockpit page in the background after launch and after each close, and a click shows it with the last readings, which the fresh ones then replace. Readings past their freshness time are still not shown as current. Under memory pressure the background page is released until memory is normal again.

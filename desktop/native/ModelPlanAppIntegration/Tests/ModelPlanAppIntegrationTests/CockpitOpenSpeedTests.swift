@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+import Darwin
 import Foundation
 import XCTest
 import WebKit
@@ -65,19 +66,27 @@ extension CommunityCockpitEntryTests {
         return result
     }
 
+    /// Physical footprint (what Activity Monitor calls Memory) of one process, in KiB.
+    static func footprintKiB(_ pid: Int32) -> Int {
+        var usage = rusage_info_v4()
+        let result = withUnsafeMutablePointer(to: &usage) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) }
+        }
+        return result == 0 ? Int(usage.ri_phys_footprint / 1024) : -1
+    }
+    /// WebKit helper processes by pid, with their footprint in KiB.
+    static func webKitFootprints() -> [Int32: Int] {
+        Dictionary(uniqueKeysWithValues: webKitMemory().keys.map { ($0, footprintKiB($0)) })
+    }
     private static func ms(_ start: ContinuousClock.Instant, _ end: ContinuousClock.Instant = .now) -> Int {
         let (seconds, attoseconds) = (end - start).components
         return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
     }
 
-    /// Splits click to first data on the page into stages, for three opens of one launch. The first open is
-    /// the first WebKit use of this test process. Stages, all from the click:
-    /// - `navStartMs`: the page's `performance.timeOrigin`, so the web view, its WebKit processes and the
-    ///   navigation start; `firstFileMs`: the first file the bundle scheme served.
-    /// - `pageLoadMs`: the page's load event (HTML, module scripts, styles).
-    /// - `bridgeReadyMs`: the page's `ready` reply after the native `load` message.
-    /// - `firstDataMs`: the page's `rendered` reply for the first data it displayed.
-    /// - `queryMs`: one more cockpit query on the same client, timed alone after the page is shown.
+    /// CKP-SHELL-20: after launch the app loads one hidden, empty page and fills the last reply; a click
+    /// shows that page and the last reply at once, then the fresh reply replaces it without a layout change.
+    /// After each close an empty page is loaded again. Three opens of one launch, and the memory it costs.
+    /// The 800 ms bound is loose for a hosted runner and still far below a WebKit cold start (about 3.3 s there).
     @MainActor func testG3_42ClickToFirstDataStagesAtTheNormalEntry() async throws {
         let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
@@ -92,21 +101,43 @@ extension CommunityCockpitEntryTests {
         let environment = try await Self.syntheticHome(root, helper: helper)
 
         final class Probe {
-            var made: [(page: CockpitWindowController, at: ContinuousClock.Instant)] = []
-            var firstFile: [ObjectIdentifier: ContinuousClock.Instant] = [:]
-            var rendered: [ObjectIdentifier: [ContinuousClock.Instant]] = [:]
+            var made: [CockpitWindowController] = []
+            var rendered: [ObjectIdentifier: [(at: ContinuousClock.Instant, frame: CGRect, rootHeight: CGFloat?)]] = [:]
+            var layouts: [ObjectIdentifier: [String]] = [:]
+            var trace: [(step: String, at: ContinuousClock.Instant)] = []
+            func traced(_ step: String, after: ContinuousClock.Instant) -> ContinuousClock.Instant? {
+                trace.first { $0.step == step && $0.at > after }?.at
+            }
+            func renders(_ page: CockpitWindowController, after: ContinuousClock.Instant) -> [(at: ContinuousClock.Instant, frame: CGRect, rootHeight: CGFloat?)] {
+                (rendered[ObjectIdentifier(page)] ?? []).filter { $0.at > after }
+            }
         }
         let probe = Probe()
-        let previous = CommunityCockpitApplicationFactory.verificationPage
-        CommunityCockpitApplicationFactory.verificationPage = { page in
+        let previousPage = CommunityCockpitApplicationFactory.verificationPage
+        let previousTrace = CommunityCockpitApplicationFactory.verificationCockpitTrace
+        CommunityCockpitApplicationFactory.verificationCockpitTrace = { probe.trace.append((step: $0, at: ContinuousClock.now)) }
+        CommunityCockpitApplicationFactory.verificationPage = { [weak probe] page in
             let id = ObjectIdentifier(page)
-            probe.made.append((page, .now))
-            page.verificationResource = { _ in if probe.firstFile[id] == nil { probe.firstFile[id] = .now } }
-            page.onRendered = { probe.rendered[id, default: []].append(.now) }
+            probe?.made.append(page)
+            page.onRendered = { [weak page, weak probe] in
+                guard let page, let probe else { return }
+                probe.rendered[id, default: []].append((at: ContinuousClock.now, frame: page.window?.frame ?? .zero, rootHeight: page.verificationRootHeight))
+                // Read in order with the page's own messages, so each read sees the render it follows.
+                Task { @MainActor in
+                    let layout = try? await page.verificationWebView?.evaluateJavaScript("""
+                        [...document.querySelectorAll('#cockpit > *')].map(e=>{const r=e.getBoundingClientRect();
+                        return [r.x,r.y,r.width,r.height].map(Math.round).join(',')}).join(';')
+                        """) as? String
+                    probe.layouts[id, default: []].append(layout ?? "unreadable")
+                }
+            }
         }
-        defer { CommunityCockpitApplicationFactory.verificationPage = previous }
+        defer {
+            CommunityCockpitApplicationFactory.verificationPage = previousPage
+            CommunityCockpitApplicationFactory.verificationCockpitTrace = previousTrace
+        }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
-        let memoryAtLaunch = Self.webKitMemory()
+        let memoryAtLaunch = Self.webKitFootprints()
         let entry = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-g3-42",
             allowedEnvironment: environment, offline: true, readOnly: true), settingsStore: settings,
             createsNativePanels: false, bundleURL: app, cockpitEntryEnabled: true)
@@ -114,51 +145,63 @@ extension CommunityCockpitEntryTests {
         await entry.prepare()
         await entry.composition.start()
         do {
-            for _ in 0..<1000 where entry.composition.store.snapshot.delivery == nil { try await Task.sleep(for: .milliseconds(10)) }
-            XCTAssertNotNil(entry.composition.store.snapshot.delivery, "the engine session is up before the first click")
-            // A user clicks some seconds after launch; the app may use that time.
-            try await Task.sleep(for: .seconds(6))
-            print("G3-42-LAUNCH engineReadyToSettledMs=\(Self.ms(launch)) pagesBeforeClick=\(probe.made.count)")
+            for _ in 0..<3000 where probe.traced("warm.reply", after: launch) == nil { try await Task.sleep(for: .milliseconds(10)) }
+            let warmReady = try XCTUnwrap(probe.traced("warm.ready", after: launch), "the app loads a hidden page after launch")
+            let warmReply = try XCTUnwrap(probe.traced("warm.reply", after: launch), "and fills the last reply without a click")
+            let warm = try XCTUnwrap(probe.made.last)
+            XCTAssertEqual(probe.made.filter { $0.verificationWebView != nil }.count, 1, "one hidden page")
+            XCTAssertFalse(warm.window?.isVisible ?? true, "the hidden page is never ordered front")
+            XCTAssertFalse(warm.window?.isKeyWindow ?? true, "and never takes focus")
+            XCTAssertTrue(probe.renders(warm, after: launch).isEmpty, "nothing is rendered into a hidden page")
+            let memoryWarm = Self.webKitFootprints()
+            func kib(_ sample: [Int32: Int]) -> Int { sample.values.filter { $0 > 0 }.reduce(0, +) }
+            print("G3-42-PREWARM launchToWarmReadyMs=\(Self.ms(launch, warmReady)) launchToLastReplyMs=\(Self.ms(launch, warmReply)) "
+                + "webKitFootprintKiB atLaunch=\(kib(memoryAtLaunch)) warm=\(kib(memoryWarm)) "
+                + "newProcesses=\(Set(memoryWarm.keys).subtracting(memoryAtLaunch.keys).count)")
+            var closedAt = warmReady
             for run in 1...3 {
-                let pagesBefore = probe.made.count
-                let memoryBefore = Self.webKitMemory()
-                let click = ContinuousClock.now
-                let clickEpochMs = Date().timeIntervalSince1970 * 1000
-                entry.showConsole()
-                let deadline = ContinuousClock.now + .seconds(30)
-                func shown() -> CockpitWindowController? { probe.made.last?.page }
-                while ContinuousClock.now < deadline {
-                    if let page = shown(), probe.rendered[ObjectIdentifier(page)]?.contains(where: { $0 > click }) == true { break }
-                    try await Task.sleep(for: .milliseconds(2))
+                if run > 1 {
+                    for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
+                    let ready = try XCTUnwrap(probe.traced("warm.ready", after: closedAt), "run \(run): an empty page is loaded again after the close")
+                    print("G3-42-REWARM run=\(run) closeToWarmReadyMs=\(Self.ms(closedAt, ready)) webKitFootprintKiB=\(kib(Self.webKitFootprints()))")
+                    try await Task.sleep(for: .milliseconds(300))
                 }
-                let page = try XCTUnwrap(shown(), "the click shows a page")
-                let id = ObjectIdentifier(page)
-                let firstData = try XCTUnwrap(probe.rendered[id]?.first(where: { $0 > click }), "the shown page renders data")
-                let web = try XCTUnwrap(page.verificationWebView)
-                let timing = try? await web.evaluateJavaScript("""
-                    (()=>{const n=performance.getEntriesByType('navigation')[0];
-                    return JSON.stringify({origin:performance.timeOrigin,load:n?n.loadEventEnd:-1})})()
-                    """) as? String
-                let values = (timing.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Double]) ?? [:]
-                let navStart = values["origin"].map { Int($0 - clickEpochMs) } ?? -1
-                let pageLoad = values["load"].flatMap { load in values["origin"].map { Int($0 + load - clickEpochMs) } } ?? -1
-                let firstFile = probe.firstFile[id].map { $0 > click ? Self.ms(click, $0) : 0 } ?? -1
+                let pagesBefore = probe.made.count
+                let page = try XCTUnwrap(probe.made.last)
+                let click = ContinuousClock.now
+                entry.showConsole()
+                for _ in 0..<3000 where probe.renders(page, after: click).count < 2 { try await Task.sleep(for: .milliseconds(2)) }
+                let renders = probe.renders(page, after: click)
+                XCTAssertEqual(probe.made.count, pagesBefore, "run \(run): the click shows the prewarmed page and builds none")
+                XCTAssertNotNil(probe.traced("open.warm", after: click), "run \(run)")
+                let first = try XCTUnwrap(renders.first, "run \(run): the shown page renders data").at
+                let lastShown = try XCTUnwrap(probe.traced("display.last", after: click), "run \(run): the last reply is shown first")
+                let fresh = try XCTUnwrap(probe.traced("query.reply", after: click), "run \(run): a fresh reply follows")
+                XCTAssertLessThan(lastShown, fresh, "run \(run)")
+                XCTAssertGreaterThanOrEqual(renders.count, 2, "run \(run): the fresh reply is rendered too")
+                if renders.count >= 2 {
+                    XCTAssertEqual(renders[0].frame, renders[1].frame, "run \(run): the window does not move or resize")
+                    XCTAssertEqual(renders[0].rootHeight, renders[1].rootHeight, "run \(run)")
+                }
+                for _ in 0..<200 where (probe.layouts[ObjectIdentifier(page)]?.count ?? 0) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+                let layouts = probe.layouts[ObjectIdentifier(page)] ?? []
+                if layouts.count >= 2 { XCTAssertEqual(layouts[0], layouts[1], "run \(run): fresh data causes no layout jump") }
+                XCTAssertFalse(probe.trace.contains { $0.at > click && $0.step.hasPrefix("open.cold") }, "run \(run)")
                 let queryStart = ContinuousClock.now
                 _ = try await entry.composition.client.cockpit(timeout: .seconds(10))
                 let query = Self.ms(queryStart)
-                let memoryOpen = Self.webKitMemory()
-                let pageMadeByClick = probe.made.count > pagesBefore
-                print("G3-42-STAGES run=\(run) pageMadeByClick=\(pageMadeByClick) navStartMs=\(navStart) firstFileMs=\(firstFile) "
-                    + "pageLoadMs=\(pageLoad) firstDataMs=\(Self.ms(click, firstData)) queryMs=\(query) "
-                    + "renders=\(probe.rendered[id]?.count ?? 0) webKitProcesses=\(memoryOpen.count) "
-                    + "webKitRssKiB=\(memoryOpen.values.reduce(0, +)) beforeClickRssKiB=\(memoryBefore.values.reduce(0, +)) "
-                    + "atLaunchRssKiB=\(memoryAtLaunch.values.reduce(0, +))")
-                XCTAssertLessThan(Self.ms(click, firstData), 800, "run \(run): a click shows the cockpit with data without a WebKit cold start")
+                print("G3-42-STAGES run=\(run) shownMs=\(probe.traced("page.shown", after: click).map { Self.ms(click, $0) } ?? -1) "
+                    + "lastReplyShownMs=\(Self.ms(click, lastShown)) firstDataMs=\(Self.ms(click, first)) "
+                    + "freshReplyMs=\(Self.ms(click, fresh)) freshRenderedMs=\(renders.count > 1 ? Self.ms(click, renders[1].at) : -1) "
+                    + "queryAloneMs=\(query) webKitFootprintKiB=\(kib(Self.webKitFootprints()))")
+                XCTAssertLessThan(Self.ms(click, first), 800, "run \(run): a click shows the cockpit with data without a WebKit cold start")
                 page.requestClose()
                 for _ in 0..<300 where page.verificationWebView != nil { try await Task.sleep(for: .milliseconds(10)) }
-                XCTAssertNil(page.verificationWebView, "the user close discards the shown page")
-                try await Task.sleep(for: .seconds(4))
+                XCTAssertNil(page.verificationWebView, "run \(run): the user close discards the shown page")
+                closedAt = .now
             }
+            for _ in 0..<3000 where probe.traced("warm.ready", after: closedAt) == nil { try await Task.sleep(for: .milliseconds(10)) }
+            print("G3-42-IDLE webKitFootprintKiB=\(kib(Self.webKitFootprints())) pages=\(probe.made.count)")
         } catch {
             await entry.composition.stop()
             throw error
