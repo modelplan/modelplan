@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 import AppKit
-import OSLog
 import ModelPlanCore
 import ModelPlanShell
 import ModelPlanEngineClient
@@ -475,26 +474,9 @@ struct StatusNoticePresentation {
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
-        logStatusItemPlacementOnce()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
-    /// Owner-build diagnosis: one line after the menu bar has laid the item out, readable with
-    /// `log show --predicate 'subsystem == "org.modelplan.community"'`. Geometry only, no private content.
-    private func logStatusItemPlacementOnce() {
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            do {
-                let logger = Logger(subsystem: "org.modelplan.community", category: "status-item")
-                guard let self, let status = self.status else { logger.error("Status item missing after creation"); return }
-                let button = status.button, window = button?.window
-                let frame = window?.frame ?? .zero, screen = window?.screen?.frame ?? .zero
-                let occluded = !(window?.occlusionState.contains(.visible) ?? false)
-                let image = button?.image
-                logger.notice("Status item isVisible=\(status.isVisible, privacy: .public) imageLoaded=\(image != nil, privacy: .public) imageSize=\(NSStringFromSize(image?.size ?? .zero), privacy: .public) titleCharacters=\((button?.title ?? "").count, privacy: .public) fallbackTitle=\(button?.title == Self.statusFallbackTitle, privacy: .public) buttonFrame=\(NSStringFromRect(button?.frame ?? .zero), privacy: .public) buttonHidden=\(button?.isHiddenOrHasHiddenAncestor ?? true, privacy: .public) window=\(window != nil, privacy: .public) windowVisible=\(window?.isVisible ?? false, privacy: .public) occluded=\(occluded, privacy: .public) windowFrame=\(NSStringFromRect(frame), privacy: .public) screen=\(NSStringFromRect(screen), privacy: .public) length=\(Double(status.length), privacy: .public) autosave=\(status.autosaveName ?? "", privacy: .public) lookup=\(CommunityMenuBarResources.lastLookup, privacy: .public)")
-            }
-        }
-    }
     /// A caller supplying no autosave name owns a temporary, non-persisted item.
     func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
         guard status == nil, !terminating else { return }
