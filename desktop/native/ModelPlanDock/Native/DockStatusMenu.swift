@@ -113,10 +113,20 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
     public func attach(to button: NSButton) {
         let bounds = button.bounds
         let side: CGFloat = 7
-        frame = NSRect(x: max(bounds.minX, bounds.maxX - side),
-                       y: button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - side),
-                       width: side, height: side)
-        autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - side)
+        // MENU-06: the dot belongs to the icon's top right in every display style. With a
+        // percentage title after the leading icon, the button's right edge is the end of the
+        // text, so the dot ends at the icon's right edge instead and stays with the icon.
+        if !button.title.isEmpty, button.image != nil,
+           button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
+           let icon = button.cell?.imageRect(forBounds: bounds), !icon.isEmpty,
+           icon.maxX - side >= bounds.minX, icon.maxX < bounds.maxX {
+            frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
+            autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        } else {
+            frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
+            autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        }
         if superview !== button { button.addSubview(self) }
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}

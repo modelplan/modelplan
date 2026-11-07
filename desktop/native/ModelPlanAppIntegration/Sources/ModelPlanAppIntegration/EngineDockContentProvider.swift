@@ -217,7 +217,7 @@ public enum EngineDeadlineFacts {
                     case .missing,.invalid: number=nil
                     }
                     if let number { reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Credits":"点数",value:number,detail:reserveDetail())) }
-                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:String(balance),detail:reserveDetail(english ? "Currency not reported":"未报告币种")))
+                case "money": reserve.append(.init(id:"credits",kind:.reserve,label:english ? "Balance":"余额",value:M5CreditsDisplayFormat.moneyText(balance,english:english),detail:reserveDetail(english ? "Currency not reported":"未报告币种")))
                 default:
                     let unit=M5CreditsDisplayFormat.Unit(identifier:credits.unit)
                     switch M5CreditsDisplayFormat.unknownUnitText(balance,unit:unit,knowledge:.unknown,english:english) {

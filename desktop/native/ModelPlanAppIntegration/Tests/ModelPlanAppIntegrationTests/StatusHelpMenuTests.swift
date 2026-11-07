@@ -116,6 +116,45 @@ import ModelPlanEngineClient
         XCTAssertNil(view.emphasizedGripFrameForChecks)
     }
 
+    /// G3-12 (owner: Help missing or inactive). Help is chosen from the menu bar while the
+    /// widget is hidden by right-click Hide. Help must show the widget again and then present
+    /// the map over it, instead of reporting "Help unavailable".
+    func testG312HelpShowsAHiddenWidgetThenPresentsTheMap() async throws {
+        for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."),
+                                           ("zh-CN", "说明…", "说明暂不可用，请在额度挂件可见时重试。")] {
+            let app = try await application(language: language)
+            defer { app.composition.dock.close() }
+            app.allowDockPresentation()
+            let dock = app.composition.dock
+            for _ in 0..<250 where dock.edgePresentation?.state != .expanded { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertEqual(dock.edgePresentation?.state, .expanded, "precondition: first show, " + language)
+            // Hide through the widget's own menu, as the owner did (G3-18 path).
+            let hide = try XCTUnwrap(dock.menu().items.first { $0.title == (language == "en" ? "Hide Quota Widget" : "隐藏额度挂件") })
+            _ = try XCTUnwrap(hide.target as? NSObject).perform(try XCTUnwrap(hide.action), with: hide)
+            let editor = app.settingsHost.application.editor
+            for _ in 0..<250 where editor.snapshot?.preferences.showDock != false || editor.isSaving { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertFalse(dock.interactionEnvironment().active, "precondition: the widget is hidden, " + language)
+            // The map can only be drawn over a shown, painted, expanded widget. Without native
+            // panels the edge state stays expanded, so the shown state is the host's own gate.
+            var requests = 0, presented = 0
+            app.requestHelpMap = {
+                requests += 1
+                guard dock.interactionEnvironment().active, dock.edgePresentation?.state == .expanded,
+                      dock.edgePresentation?.paintedFrame != nil else { return false }
+                presented += 1
+                return true
+            }
+            try invoke(title, on: app)
+            for _ in 0..<250 where presented == 0 { try await Task.sleep(for: .milliseconds(20)) }
+            XCTAssertEqual(presented, 1, "Help shows the widget and then presents the map, " + language)
+            XCTAssertGreaterThanOrEqual(requests, 2, language)
+            XCTAssertTrue(dock.interactionEnvironment().active, language)
+            let saved = await app.foundationStore.snapshot()
+            XCTAssertTrue(saved.preferences.showDock, "Help shows the widget the same way Show Quota Widget does, " + language)
+            XCTAssertNotNil(app.statusHelpRequestID, "The presented map keeps the status request for focus return, " + language)
+            XCTAssertFalse(app.liveStatusMenu?.items.contains(where: { $0.title == failure }) == true, language)
+        }
+    }
     func testHelpMenuRequestsExistingMapAndReportsFailureInBothLanguages() async throws {
         for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."), ("zh-CN", "说明…", "说明暂不可用，请在额度挂件可见时重试。")] {
             let app = try await application(language: language)

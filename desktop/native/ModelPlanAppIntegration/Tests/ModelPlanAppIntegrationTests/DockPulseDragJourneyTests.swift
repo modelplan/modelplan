@@ -425,9 +425,12 @@ import ModelPlanShell
             XCTAssertEqual(host.edgePresentation?.placement?.edge, .right, label)
             let view = host.dockView
             let drag = try XCTUnwrap(view.backgroundDragDelegate, label)
-            let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).lazy.flatMap { y in
+            // Press the draggable body point farthest from the right edge. With the hover
+            // viewport (#537) and the painted grips (#529), the first point in scan order can
+            // sit within a few points of the edge, which would make the right edge nearer.
+            let local = try XCTUnwrap(stride(from: 4.0, to: view.bounds.height, by: 4).flatMap { y in
                 stride(from: 4.0, to: view.bounds.width, by: 4).map { CGPoint(x: $0, y: y) }
-            }.first { drag.backgroundCanDrag(local: $0) }, label)
+            }.filter { drag.backgroundCanDrag(local: $0) }.min { $0.x < $1.x }, label)
             let start = try XCTUnwrap(host.edgePresentation?.paintedFrame, label)
             let panel: NSPanel?
             #if MODELPLAN_DOCK_NATIVE_JOURNEY

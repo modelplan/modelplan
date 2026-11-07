@@ -56,6 +56,9 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         didSet { if keyboardTargetID != oldValue { helpFocusChanged() } }
     }
     public var onHelpFocusChanged: (() -> Void)?
+    /// G3-10: the pointer moved over (or left) the widget. The help owner re-samples which
+    /// element is under the pointer; repeated samples over one element stay silent there.
+    public var onHelpPointerMoved: (() -> Void)?
     public private(set) var registeredGripRects: [CGRect] = []
     public private(set) var focusedGripIndex: Int? {
         didSet { if focusedGripIndex != oldValue { updateGripEmphasis(); helpFocusChanged() } }
@@ -401,7 +404,7 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         workingLayerParents.values.forEach { $0.removeFromSuperlayer() }; workingLayerParents = [:]
         needsDisplay = true
     }
-    public func dispose(){setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
+    public func dispose(){setAccessibilityValue(nil);clearFocusedHelpExplanation();onHelpFocusChanged=nil;onHelpPointerMoved=nil;registeredGripRects=[];appearanceNotices=[:];nozzleEventDelegate?.cancelNozzle();nozzleEventDelegate=nil;keyboardTargetID=nil;backgroundDragDelegate?.cancelBackgroundMove();backgroundDragDelegate=nil;permitsAction=nil;if let edgeTracking{removeTrackingArea(edgeTracking);self.edgeTracking=nil};clearObservers();resetVisuals();failed=true;workingLayerParents.values.forEach{$0.removeFromSuperlayer()};workingLayerParents=[:];nodes=[:];readings=[:];orderedIDs=[];image=nil;restingInstrumentImage=nil;backgroundImage=nil;alphaData=nil;setAccessibilityChildren([]);onAction=nil;onEmptyAction=nil;permitsEmptyAction=nil;onVisualReset=nil}
     private func resetVisuals(){hoveredGripIndex=nil;updateGripEmphasis();cancelRefreshSweep();setNozzlePoses([:]);noticePulseLayers.forEach { $0.removeAllAnimations(); $0.removeFromSuperlayer() }; noticePulseLayers=[];onVisualReset?();for parent in workingLayerParents.values{parent.sublayers?.forEach{$0.removeFromSuperlayer()}}}
 
     /// Draws only the changed pose over the existing static material. The model, registered
@@ -672,9 +675,10 @@ public enum DockInstrumentAction: Equatable, Sendable {case subscription(String)
         let grip = isPainted(atLocal: p) ? registeredGripRects.firstIndex { $0.contains(p) } : nil
         if hoveredGripIndex != grip { hoveredGripIndex = grip; updateGripEmphasis() }
         if case .subscription(let id)?=pointerAction(atLocal:p),isPainted(atLocal:p){nozzleEventDelegate?.hoverNozzle(id)}else{nozzleEventDelegate?.hoverNozzle(nil)}
+        onHelpPointerMoved?()
     }
     public override func mouseEntered(with event:NSEvent){mouseMoved(with:event)}
-    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil)}
+    public override func mouseExited(with event:NSEvent){hoveredGripIndex=nil;updateGripEmphasis();nozzleEventDelegate?.hoverNozzle(nil);onHelpPointerMoved?()}
     public override func mouseDragged(with event:NSEvent){
         if nozzleEventDelegate?.hasCapture == true{nozzleEventDelegate?.moveNozzle(local:convert(event.locationInWindow,from:nil));return}
         guard let window,let handler=backgroundDragDelegate else{super.mouseDragged(with:event);return}

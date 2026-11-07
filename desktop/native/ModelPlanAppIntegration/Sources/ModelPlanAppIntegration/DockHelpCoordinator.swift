@@ -41,6 +41,9 @@ struct DockStatusHelpDismissal {
     private var mapSurface: DockHelpSurface?
     private var mapStatusFrame: CGRect?
     private var dismissingMap = false
+    private var explanationTask: Task<Void, Never>?
+    private var explanationInteraction: DockHelpInteraction?
+    var shownExplanationForChecks: HelpExplanation? { presenter?.shownExplanationForChecks }
     var isInstalled: Bool { !retired && presenter != nil && binding != nil }
 
     private init(dock: StaticDockPreviewHost, application: SettingsApplicationCoordinator,
@@ -133,6 +136,39 @@ struct DockStatusHelpDismissal {
         }
         router.installDock(binding)
         dock.dockHelpSurfaceDidChange = { [weak self] surface in self?.update(surface) }
+        dock.dockHelpInteractionDidChange = { [weak self] interaction in self?.interactionDidChange(interaction) }
+    }
+
+    /// G3-10: hover (after the 500 ms dwell) or keyboard focus (at once) shows the element's
+    /// explanation; VoiceOver reads the same text on the focused control. Leaving clears it.
+    private func interactionDidChange(_ interaction: DockHelpInteraction?) {
+        explanationTask?.cancel(); explanationTask = nil
+        presenter?.hideExplanation()
+        explanationInteraction = interaction
+        guard let interaction, !retired, !suspended, mapSurface == nil else { return }
+        let dwell: Duration = interaction.source == .keyboard ? .zero : .milliseconds(500)
+        explanationTask = Task { @MainActor [weak self] in
+            if dwell > .zero { try? await Task.sleep(for: dwell) }
+            guard let self, !Task.isCancelled else { return }
+            self.explanationTask = nil
+            self.presentExplanation(interaction)
+        }
+    }
+
+    private func presentExplanation(_ interaction: DockHelpInteraction) {
+        guard !retired, !suspended, mapSurface == nil, explanationInteraction == interaction, let dock,
+              dock.currentDockHelpInteraction == interaction, let surface = dock.currentDockHelpSurface,
+              dock.isCurrentDockHelpSurface(surface) else { return }
+        let language: InstrumentLanguage = application.latest?.effective.language == .chinese ? .chinese : .english
+        guard let explanation = DockHoverExplanation.explanation(anchorID: interaction.anchor.id, language: language,
+                                                                 refreshAvailable: dock.ringRefreshAvailable) else { return }
+        if interaction.source == .keyboard {
+            dock.setDockHelpAccessibilityExplanation(explanation.accessibleDescription, for: interaction, on: surface)
+        }
+        // A pointer explanation never covers the open quota card or a first-use hint.
+        guard presenter?.showsHint != true, interaction.source == .keyboard || dock.card.isHidden else { return }
+        _ = presenter?.showExplanation(explanation, id: interaction.receipt.uuidString,
+                                        anchor: interaction.anchor.rect, surface: surface)
     }
 
     private func update(_ surface: DockHelpSurface?) {
@@ -204,6 +240,7 @@ struct DockStatusHelpDismissal {
             }
             guard mapSurface == surface, !retired, !suspended, isCurrent(surface) else { finishMap(); return false }
             statusDismissal.arm(requestID)
+            dock?.helpMapHold = true
             return true
         } catch { finishMap(); return false }
     }
@@ -218,6 +255,7 @@ struct DockStatusHelpDismissal {
         if !retired && !suspended { update(dock?.currentDockHelpSurface) }
     }
     private func finishMap(reason: HelpUIDismissReason? = nil) {
+        dock?.helpMapHold = false
         let id = statusDismissal.take(reason: reason)
         mapSurface = nil; mapStatusFrame = nil; presenter?.endMap()
         if let id { statusDidDismiss(id) }
@@ -232,6 +270,7 @@ struct DockStatusHelpDismissal {
     func refresh() { update(dock?.currentDockHelpSurface) }
     func suspend() {
         guard !retired, !suspended else { return }
+        explanationTask?.cancel(); explanationTask = nil; explanationInteraction = nil; presenter?.hideExplanation()
         dismissRequestedMap()
         suspended = true
         if let binding { try? binding.update(nil, context: composition.host.hints.context, host: composition.host) }
@@ -244,7 +283,9 @@ struct DockStatusHelpDismissal {
     }
     func dispose() async {
         guard !retired else { return }
+        explanationTask?.cancel(); explanationTask = nil; explanationInteraction = nil
         dismissRequestedMap(); retired = true; activeSurface = nil; statusSurface = nil; dock?.dockHelpSurfaceDidChange = nil
+        dock?.dockHelpInteractionDidChange = nil
         if let binding { try? binding.retire(context: composition.host.hints.context, host: composition.host) }
         router.installDock(nil); presenter?.dispose(); presenter = nil; binding = nil
         await composition.flush()

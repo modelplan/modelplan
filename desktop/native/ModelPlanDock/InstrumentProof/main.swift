@@ -548,7 +548,7 @@ struct NativeFailure:Error {let message:String}
     statusMenu.onRestoreStatusFocus={menuFocus+=1};statusMenu.perform(.help);statusMenu.helpDidDismiss();statusMenu.helpDidDismiss();statusMenu.perform(.settings)
     try require(menuHelp==1 && menuFocus==1 && menuSettings==1,"Help uses injected map/focus callbacks once")
     let legacyMenu=DockStatusMenu(labels:labels,handlers:[:])
-    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.count==7 && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback preserves native seven-item compatibility")
+    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.map{$0.representedObject as! String}==DockMenuCommand.allCases.filter{$0 != .help}.map(\.rawValue) && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback keeps every other command in two groups (no update item, #533)")
     statusMenu.dispose();statusMenu.perform(.help);try require(menuHelp==1,"disposed menu cannot replay callback")
     legacyMenu.dispose()
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
