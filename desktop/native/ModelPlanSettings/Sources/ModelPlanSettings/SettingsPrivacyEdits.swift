@@ -22,12 +22,14 @@ public enum SettingsB22Edit: Sendable {
     }
 }
 public enum SettingsPublicLink: String, CaseIterable, Sendable {
-    case website, methodology, privacy, repository, feedback
+    case website, methodology, privacy, privacyLocal, privacyControls, repository, feedback
     public var url: URL {
         switch self {
         case .website: return URL(string: "https://modelplan.ai")!
         case .methodology: return URL(string: "https://modelplan.ai/methodology")!
         case .privacy: return URL(string: "https://modelplan.ai/privacy")!
+        case .privacyLocal: return URL(string: "https://modelplan.ai/privacy#local")!
+        case .privacyControls: return URL(string: "https://modelplan.ai/privacy#controls")!
         case .repository: return URL(string: "https://github.com/modelplan/modelplan")!
         case .feedback: return SettingsAbout.feedbackURL
         }
