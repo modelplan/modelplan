@@ -56,6 +56,7 @@ private actor V13SyntheticClient: EngineClient {
             ("cursor", "logo-cursor", "cd0e3e5d8991a4cdd4577f8896cd063105207665165c73e25a1ff918dd367eb7"),
             ("copilot", "logo-copilot", "ae3ac7a6dc1415aeaf7064c7a749d9efd7f1ec49a68450590df7cf0da8d83781"),
             ("kimi", "logo-kimi", "3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9"),
+            ("deepseek", "logo-deepseek", "357e144b8f2a169a0edb8eb4ef6472c9a6d4b5b8aa945561a61b09bed133e38d"),
             ("opencode", "logo-opencode", "4e84f87aa7bc2a5f8a72eeb08d3d4f1836b422189256d0bd5e7bfabc830d7ed0")
         ]
         for (vendor, expectedResource, expectedHash) in vendors {
