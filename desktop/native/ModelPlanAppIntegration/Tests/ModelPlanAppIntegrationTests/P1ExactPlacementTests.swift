@@ -375,10 +375,8 @@ private actor P1SyntheticEngine: EngineClient {
                     let innerEdge = skin.bounds.minX + CGFloat(x + 1) / pixels
                     let inward = station.centre.x - innerEdge
                     report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
-                    // Owner 11-07: the ring is centred in the visible face. `expected` is the prototype's
-                    // position (40 x D/52 plus the arc sag); the centred one takes half of that sag.
-                    XCTAssertEqual(depth, 38 * unit + (expected[index] - 40 * unit) / 2, accuracy: 0.5, "\(label) ring \(index): centre to screen edge")
-                    XCTAssertEqual(depth, inward, accuracy: 1.0, "\(label) ring \(index): as far from the screen edge as from the inner edge")
+                    XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
+                    XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
                     // The card measures its gap from the painted clock ring (prototype card.js:154-163).
                     let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
                     XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
@@ -571,7 +569,7 @@ private actor P1SyntheticEngine: EngineClient {
 
 // G3-30 colour and G3-32 ring marks, both through the normal entry (EngineRowsEntry + settings store).
 extension P1ExactPlacementTests {
-    private struct Station { let id: String; let vendorKey: String; let name: String; let accounts: Int; var remaining: Double? = nil }
+    private struct Station { let id: String; let vendorKey: String; let name: String; let accounts: Int; var remaining: Double? = nil; var weekly: Double? = nil; var resetIn: TimeInterval? = nil }
 
     private func synthetic(_ stations: [Station]) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -600,7 +598,14 @@ extension P1ExactPlacementTests {
                     windows[0]["current"] = true; windows[0]["observedAt"] = observed
                     windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
                     windows[0].removeValue(forKey: "modelScope")
-                    copy["windows"] = [windows[0]]; copy["route"] = "runtime_rpc"; copy["observedAt"] = observed
+                    if let resetIn = station.resetIn { windows[0]["resetsAt"] = ISO8601DateFormatter().string(from: Date().addingTimeInterval(resetIn)); windows[0]["validUntil"] = windows[0]["resetsAt"] }
+                    var live = [windows[0]]
+                    if let weekly = station.weekly {
+                        var week = windows[0]
+                        week["id"] = "week"; week["role"] = "weekly"; week["durationSeconds"] = 604800; week["limitKey"] = "weekly"; week["remainingPercent"] = weekly
+                        live.append(week)
+                    }
+                    copy["windows"] = live; copy["route"] = "runtime_rpc"; copy["observedAt"] = observed
                 }
                 return copy
             }
@@ -757,6 +762,21 @@ extension P1ExactPlacementTests {
         try await settled("the readout disappears") { !view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
         try await settings.commit(.showPercentages(true))
         try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
+    }
+
+    /// Bad case 1: the same reading as the prototype capture after-right-1-dark.png (Codex, 76%, L),
+    /// so the two can be compared at one scale, plus 3% for the owner's Build 8 reading.
+    func testRendersTheReadingsUsedForThePrototypeComparison() async throws {
+        let output = try visualOutput("prototype-compare")
+        for (remaining, name) in [(76.0, "train-L-76"), (3.0, "train-L-3")] {
+            let rows = try synthetic([Station(id: "compare", vendorKey: "openai", name: "Codex", accounts: 1, remaining: remaining, weekly: remaining, resetIn: 3 * 3600)])
+            let (app, view) = try await launch(rows, size: .large, percentages: true, stations: 1, tag: "compare")
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let writer = try XCTUnwrap(CGImageDestinationCreateWithURL(output.appendingPathComponent(name + ".png") as CFURL, "public.png" as CFString, 1, nil))
+            CGImageDestinationAddImage(writer, image, nil); XCTAssertTrue(CGImageDestinationFinalize(writer))
+            XCTAssertEqual(view.presentedReadingsForChecks.values.first?.readout, "\(Int(remaining))%")
+            await app.stopLifecycle(); app.composition.dock.close()
+        }
     }
 
     /// D42: catalogue rows such as Gemini carry no vendor key; the tool ID names their mark.
