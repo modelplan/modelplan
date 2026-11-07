@@ -148,12 +148,28 @@ struct CockpitUnavailableNotice {
         let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
     }
     private var fieldPanel:CockpitFieldPanel?
-    private func openField() {
-        guard let bundle=owner.verifiedBundle,let details=composition.store.snapshot.cockpit?.details,
-              let models=details.publishedModels,!models.isEmpty else { return }
+    var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
+    func fieldPayload() -> String? {
+        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
         let mine=details.publication?.models.map(\.id) ?? []
         let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
-        guard let data=try? JSONEncoder().encode(value),let payload=String(data:data,encoding:.utf8) else { return }
+        return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
+    }
+    func handle(_ intent:CockpitIntent) {
+        guard wantsVisible else { return }
+        switch intent {
+        case .chooseSetup,.openSettings:owner.settings?()
+        case .openHistory:unavailable(history:true)
+        case .openField:openField()
+        case .close:owner.coordinator?.requestClose()
+        case .detach,.putBack,.shutterToggle,.scopeSelect:
+            // The page owns shell controls; the coordinator validates and
+            // consumes scope selection. An unexpected escape fails closed.
+            hide()
+        }
+    }
+    private func openField() {
+        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
         let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
         fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
@@ -184,19 +200,7 @@ struct CockpitUnavailableNotice {
             owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
                 redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
             if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
-            owner.coordinator?.onIntent = { [weak self] intent in
-                guard let self,self.wantsVisible else { return }
-                switch intent {
-                case .chooseSetup,.openSettings:self.owner.settings?()
-                case .openHistory:self.unavailable(history:true)
-                case .openField:self.openField()
-                case .close:self.owner.coordinator?.requestClose()
-                case .detach,.putBack,.shutterToggle,.scopeSelect:
-                    // The page owns shell controls; the coordinator validates and
-                    // consumes scope selection. An unexpected escape fails closed.
-                    self.hide()
-                }
-            }
+            owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open();showTask=nil
         }
