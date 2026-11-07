@@ -104,8 +104,12 @@ type readerState struct {
 	NextAttemptAt      time.Time              `json:"nextAttemptAt"`
 	IntervalMinutes    int                    `json:"intervalMinutes"`
 	Failures           int                    `json:"failures"`
-	NextProfile        int                    `json:"nextProfile"`
-	Entries            []readerEntry          `json:"entries"`
+	// LocalBackoff: the latest read stopped at the credential, before any provider request.
+	// A later credential outcome overlays the entry, so this is kept apart from it, and a
+	// cache without it keeps its deadline: only recorded proof waives a back-off.
+	LocalBackoff bool          `json:"localBackoff,omitempty"`
+	NextProfile  int           `json:"nextProfile"`
+	Entries      []readerEntry `json:"entries"`
 }
 type readerContext struct {
 	Paths      Paths
@@ -215,6 +219,12 @@ func managedDue(p Paths, provider string, now time.Time) bool {
 // refreshManaged reserves one provider-wide read before any tool/credential I/O.
 // No caller, account switch or user refresh can bypass the five-minute floor.
 func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time) error {
+	return refreshManagedAfter(ctx, p, provider, now, false)
+}
+
+// refreshManagedAfter: localBackoffSpent is true only for the read following the user's
+// Keychain Allow, when the back-off came from failures that never reached the provider.
+func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time.Time, localBackoffSpent bool) error {
 	if err := nativeAdmissionError(provider); err != nil {
 		return err
 	}
@@ -235,7 +245,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 	if err != nil {
 		return err
 	}
-	if now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now) {
+	if !localBackoffSpent && (now.Before(s.NextAttemptAt) || !readerAttemptDue(p.Cache, provider, now)) {
 		return nil
 	}
 	n := nativeReaders[provider]
@@ -342,6 +352,7 @@ func refreshManaged(ctx context.Context, p Paths, provider string, now time.Time
 		s.GenerationDiscards = kept
 	}
 	s.clearPending(profileKey)
+	s.LocalBackoff = e.Status != "ok" && credentialStageFailure(e)
 	if e.Status != "ok" {
 		if !out.Invalidate {
 			e.Account, e.Metadata, e.Admission = previous.Account, previous.Metadata, previous.Admission
@@ -437,6 +448,10 @@ func readerProfileBasis(provider string) string { return "reader-profile:" + pro
 func AppendManagedRows(in *rows.Input, p Paths) {
 	if in == nil || p.Cache == "" || p.ReaderAccess == nil {
 		return
+	}
+	if p.ClaudeKeychainPending {
+		const keychainUnset = "unset" // keychain channel; maps to keychain_unset
+		in.KeychainBlocks = append(in.KeychainBlocks, rows.KeychainBlock{ToolID: "claude", Status: keychainUnset, Blocked: true})
 	}
 	providers := make([]string, 0, len(p.ReaderAccess.Grants))
 	for provider, g := range p.ReaderAccess.Grants {

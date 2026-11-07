@@ -1,0 +1,1 @@
+Claude Code's saved login is read by default. A login kept only in the macOS Keychain is never read before you allow it: the Claude Code row asks for Keychain permission instead, and the read right after Allow no longer waits for a back-off left by failures that never reached Anthropic.
