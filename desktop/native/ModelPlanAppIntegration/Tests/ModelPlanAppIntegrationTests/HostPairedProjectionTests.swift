@@ -648,11 +648,11 @@ actor EntrySyntheticClient: EngineClient {
             return try XCTUnwrap(content.rows.first { $0.id == "reserve" })
         }
         XCTAssertEqual(try balance().label, "Balance")
-        XCTAssertEqual(try balance().value, "14,207.86")
-        XCTAssertEqual(try balance().detail, "Currency not reported")
+        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
+        XCTAssertEqual(try balance().detail, "expired · Currency not reported")
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try balance().label, "余额")
-        XCTAssertEqual(try balance().value, "14,207.86")
+        XCTAssertEqual(try balance().value, "↺1 · 14,207.86")
     }
 
     /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.

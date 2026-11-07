@@ -75,9 +75,9 @@
       "betaOnly": false
     },
     "logo-grok": {
-      "path": "Marks/grok.png",
-      "sha256": "3a462c3c2524733c173bb05c431de737812f8219db8fa115b0025d12a347e086",
-      "bytes": 8332,
+      "path": "Marks/grok.svg",
+      "sha256": "de1e9ce2c033e7e2a6d11fd5981c2efeac5c8c5b094a62cabc2fbc4669057493",
+      "bytes": 975,
       "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
       "betaOnly": false
     },
@@ -165,8 +165,8 @@
     },
     "notice-vendors": {
       "path": "Marks/SOURCES.md",
-      "sha256": "51e35c5550e08027e9132cd81bfca489217d8ea3e261b0c0b849da878d7377cd",
-      "bytes": 3810,
+      "sha256": "3cb46555e5efea4fb2fe35b89ba1b45614a7f74163f32f5d1e80fdf4bb8d1159",
+      "bytes": 4077,
       "rights": "Source attribution; original third-party rights retained"
     }
   }
