@@ -194,6 +194,19 @@ class ProductBackupTests(unittest.TestCase):
         self.assertTrue(json.loads((self.root / 'backup' / 'restore-manifest.json').read_text())['restored'])
         self.assertEqual(product_backup.main(['verify', '--backup-dir', str(self.root / 'backup')]), 0)
 
+    def test_hard_linked_files_round_trip(self):
+        cache = self.home / 'Library' / 'Caches' / 'modelplan'; cache.mkdir(parents=True, exist_ok=True)
+        first = cache / 'state-a'; second = cache / 'state-b'
+        first.write_bytes(b'before'); os.link(first, second)
+        taken = product_backup.backup(self.home, self.root / 'hard-link-backup')
+        with tarfile.open(self.root / 'hard-link-backup' / product_backup.ARCHIVE) as archive:
+            self.assertFalse(any(member.islnk() for member in archive.getmembers()))
+        first.write_bytes(b'after')  # same inode: the subject changed both names
+        result = product_backup.restore(self.root / 'hard-link-backup', runner=self.runner)
+        self.assertTrue(result['restored'])
+        self.assertEqual((first.read_bytes(), second.read_bytes()), (b'before', b'before'))
+        self.assertEqual(product_backup.snapshot(self.home)[1], taken['files'])
+
     def test_absent_paths_stay_absent_and_the_domain_is_deleted(self):
         import shutil
         shutil.rmtree(self.home / 'Library' / 'Caches' / 'modelplan')

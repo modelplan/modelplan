@@ -149,7 +149,9 @@ def backup(home, dest, clock=time.time):
     dest.mkdir(mode=0o700, parents=False, exist_ok=False)
     archive = dest / ARCHIVE
     fd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w', format=tarfile.PAX_FORMAT) as tar:
+    with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w', format=tarfile.PAX_FORMAT, dereference=True) as tar:
+        # dereference: a hard-linked file is archived as a regular member, which restore accepts.
+        # snapshot has already refused every symlink.
         for record in files:
             full = home / record['path']
             info = tar.gettarinfo(str(full), arcname=record['path'])
