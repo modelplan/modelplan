@@ -331,6 +331,108 @@
       ],
       "type": "object"
     },
+    "CockpitCycle": {
+      "additionalProperties": false,
+      "properties": {
+        "hadDrop": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "number"
+        },
+        "resetsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "spent": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycleShare"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "startedAt",
+        "resetsAt",
+        "points",
+        "hadDrop",
+        "spent"
+      ],
+      "type": "object"
+    },
+    "CockpitCycleGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "cycles": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycle"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "kind",
+        "attribution",
+        "cycles"
+      ],
+      "type": "object"
+    },
+    "CockpitCycleShare": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "points": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "effort",
+        "fast",
+        "points"
+      ],
+      "type": "object"
+    },
     "CockpitData": {
       "additionalProperties": false,
       "properties": {
@@ -589,6 +691,13 @@
         "coverage": {
           "type": "string"
         },
+        "cycles": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycleGroup"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
         "daily": {
           "items": {
             "$ref": "#/$defs/CockpitSourceBucket"
@@ -665,7 +774,8 @@
         "dailyFrom",
         "daily",
         "hourly",
-        "projects"
+        "projects",
+        "cycles"
       ],
       "type": "object"
     },

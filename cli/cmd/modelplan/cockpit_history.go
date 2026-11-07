@@ -11,6 +11,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/snapshot"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -41,7 +42,7 @@ func admittedHistorySources(admission consent.Admission) map[string]bool {
 // binding (as the today totals); everything else stays in the unattributed rankings.
 func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, admission queries.CockpitAdmission, groups map[string][]wire.CockpitAccount) (wire.CockpitHistory, error) {
 	empty := wire.CockpitHistory{Version: 1, Sources: []string{}, Coverage: "unavailable", Subscriptions: []wire.CockpitSubscriptionHistory{},
-		Models: emptyCockpitEntityRanking(), Tools: emptyCockpitEntityRanking(), Daily: []wire.CockpitSourceBucket{}, Hourly: []wire.CockpitSourceBucket{}, Projects: emptyCockpitProjects()}
+		Models: emptyCockpitEntityRanking(), Tools: emptyCockpitEntityRanking(), Daily: []wire.CockpitSourceBucket{}, Hourly: []wire.CockpitSourceBucket{}, Projects: emptyCockpitProjects(), Cycles: []wire.CockpitCycleGroup{}}
 	current := consent.Capture()
 	fence := current.Fence()
 	if fence.StoreEpoch != admission.Stamp.Epoch || fence.Generation != admission.Stamp.Generation {
@@ -69,12 +70,16 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 	}
 	section := snapshot.BuildPerfHistory(perf, view.QuotaReport.Accounts, allowed, now)
 	out := wire.CockpitHistory{Version: 1, Sources: []string{}, Coverage: section.Coverage, RecordingSince: section.RecordingSince,
-		Subscriptions: []wire.CockpitSubscriptionHistory{}, Models: emptyCockpitEntityRanking(), Tools: emptyCockpitEntityRanking(), Daily: []wire.CockpitSourceBucket{}, Hourly: []wire.CockpitSourceBucket{}, Projects: emptyCockpitProjects()}
+		Subscriptions: []wire.CockpitSubscriptionHistory{}, Models: emptyCockpitEntityRanking(), Tools: emptyCockpitEntityRanking(), Daily: []wire.CockpitSourceBucket{}, Hourly: []wire.CockpitSourceBucket{}, Projects: emptyCockpitProjects(), Cycles: []wire.CockpitCycleGroup{}}
 	if section.Coverage == "local-history" {
 		out.Sources = append(out.Sources, "local-history")
 		if perf != nil {
 			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*perf, allowed, now)
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
+			if ledger, ok := history.LoadPace(s.cache); ok {
+				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}
+				out.Cycles = cockpitCycles(pace.GroupsShowing(cockpitCycleScan), snapshot.SourceBindings(view.QuotaReport.Accounts, now), allowed, groups, view.PublicModels)
+			}
 		}
 		out.Models, out.Tools = cockpitPublishedModels(cockpitEntityRanking(section.Models), view.PublicModels), cockpitEntityRanking(section.Tools)
 		for _, sub := range section.Subscriptions {
@@ -133,6 +138,85 @@ func cockpitBuckets(perf speed.PerfView, allowed map[string]bool, now time.Time)
 		from = &first
 	}
 	return from, bucket(days, 728), bucket(hours, 192)
+}
+
+const (
+	cockpitCycleLimit = 10
+	// cockpitCycleScan leaves room for open cycles above the closed ones in a newest-first list.
+	cockpitCycleScan = cockpitCycleLimit + 4
+)
+
+// cockpitCycles lists a subscription's ten newest closed cycles per window kind, oldest first, the
+// order the chart draws. One window per kind: the main limit if the source has one, then the
+// group with the newest closed cycle, so an old plan cannot hide the current one.
+func cockpitCycles(groups []history.PaceGroup, bindings map[string]string, allowed map[string]bool, verified map[string][]wire.CockpitAccount, models []digest.Model) []wire.CockpitCycleGroup {
+	type slot struct {
+		group  history.PaceGroup
+		closed []history.PaceCycleView
+	}
+	isMain := func(limit string) bool { return limit == "" || limit == "main" }
+	chosen := map[[2]string]slot{}
+	var order [][2]string
+	for _, g := range groups {
+		ref, ok := bindings[g.Source]
+		if _, known := verified[ref]; !ok || !known || !allowed[g.Source] {
+			continue
+		}
+		candidate := slot{group: g}
+		for _, c := range g.Cycles { // newest first
+			if c.Closed && len(candidate.closed) < cockpitCycleLimit {
+				candidate.closed = append(candidate.closed, c)
+			}
+		}
+		if len(candidate.closed) == 0 {
+			continue
+		}
+		key := [2]string{ref, g.Kind}
+		current, taken := chosen[key]
+		if !taken {
+			order = append(order, key)
+		}
+		switch {
+		case !taken:
+		case isMain(g.Limit) != isMain(current.group.Limit):
+			if !isMain(g.Limit) {
+				continue
+			}
+		case !candidate.closed[0].ResetsAt.After(current.closed[0].ResetsAt):
+			continue
+		}
+		chosen[key] = candidate
+	}
+	out := []wire.CockpitCycleGroup{}
+	for _, key := range order {
+		if len(out) == 64 {
+			break
+		}
+		picked := chosen[key]
+		entry := wire.CockpitCycleGroup{SubscriptionRef: key[0], Kind: key[1], Attribution: picked.group.Attribution, Cycles: []wire.CockpitCycle{}}
+		for i := len(picked.closed) - 1; i >= 0; i-- {
+			c := picked.closed[i]
+			cycle := wire.CockpitCycle{StartedAt: c.FirstObservedAt, ResetsAt: c.ResetsAt, Points: c.Points, HadDrop: c.HadDrop, Spent: []wire.CockpitCycleShare{}}
+			for n, share := range c.Spent {
+				if n == 16 {
+					break
+				}
+				item := wire.CockpitCycleShare{Fast: share.Fast, Points: share.Points}
+				if id := cockpitModelID(share.Model, picked.group.Source, models); id != "unknown" {
+					item.Model = &id
+				}
+				switch share.Effort {
+				case "low", "medium", "high", "xhigh", "max", "ultra":
+					effort := share.Effort
+					item.Effort = &effort
+				}
+				cycle.Spent = append(cycle.Spent, item)
+			}
+			entry.Cycles = append(entry.Cycles, cycle)
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 func emptyCockpitProjects() wire.CockpitProjectRanking {
