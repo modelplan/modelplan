@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import {test,expect} from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import {appearance,commands,pageId,shell} from '../fixture.mjs';
+import {appearance,commands,pageId,sampleWithDetails,shell} from '../fixture.mjs';
 import {visualFixture} from '../visual-fixture.mjs';
 
 test('admitted cockpit details populate faders and pin on release',async({page})=>{
@@ -47,4 +47,14 @@ test('C-09 page accepts absent and valid publication',async({page})=>{
  delete data.details.publication;expect(await receive(send('display',{data}))).toBe(true);
  data.details.publication={contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[]};
  expect(await receive(send('display',{data}))).toBe(true);
+});
+
+test('the normal entry shows faders from negotiated details, without the visual fixture',async({page})=>{
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance,shell}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data:sampleWithDetails()}))).toBe(true);
+ await expect(page.locator('.fd-ch:not(.empty)')).toHaveCount(2);await expect(page.locator('.fd-ch.empty')).toHaveCount(1);
+ await expect(page.locator('.fd-ch:not(.empty) .st-name').first()).toHaveText('Synthetic A');
 });
