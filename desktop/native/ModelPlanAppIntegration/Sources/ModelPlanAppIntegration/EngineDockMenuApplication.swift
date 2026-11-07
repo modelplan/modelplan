@@ -296,13 +296,13 @@ import ModelPlanMenuVerification
         context.capabilities.appCacheClearAvailable = true
         for key in [SettingKey.clearAppCache, .resetHints] { context.unavailableControls.removeValue(forKey: key) }
         if shortcutRegistrar != nil {
-            for key in [SettingKey.openShortcut, .dockShortcut] { context.unavailableControls.removeValue(forKey: key) }
+            context.unavailableControls.removeValue(forKey: .dockShortcut)
+            // A build without the cockpit entry has nothing for this shortcut to open.
+            if cockpitEntryEnabled { context.unavailableControls.removeValue(forKey: .openShortcut) }
+            else { context.unavailableControls[.openShortcut] = .init("Unavailable until this build can open the cockpit.", "此版本可打开驾驶舱前不可用。") }
         }
         settings.update(context: context)
         shortcutRegistrar?.onPress = { [weak self] action in self?.performShortcut(action) }
-        if let preferences = settings.editor.snapshot?.preferences {
-            registerShortcuts(openCockpit: preferences.openShortcut, toggleDock: preferences.dockShortcut)
-        }
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
@@ -314,6 +314,10 @@ import ModelPlanMenuVerification
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        // Saved chords exist only after the store has loaded.
+        if let preferences = settings.editor.snapshot?.preferences {
+            registerShortcuts(openCockpit: preferences.openShortcut, toggleDock: preferences.dockShortcut)
+        }
         if dockHelp == nil, !dockHelpSetupInProgress {
             dockHelpSetupInProgress = true
             let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings, statusAnchor: { [weak self] in
@@ -389,7 +393,8 @@ import ModelPlanMenuVerification
         guard let shortcutRegistrar else { return }
         shortcutRegistrar.unregisterAll()
         var observations: [SettingsShortcutObservation] = []
-        for (action, chord) in [(ShortcutAction.openCockpit, openCockpit), (.toggleDock, toggleDock)] where !chord.isUnassigned {
+        for (action, chord) in [(ShortcutAction.openCockpit, openCockpit), (.toggleDock, toggleDock)]
+        where !chord.isUnassigned && (action != .openCockpit || cockpitEntryEnabled) {
             let outcome = chord.isValid ? shortcutRegistrar.register(chord, action: action) : .unavailable
             observations.append(.init(action: action, chord: chord, registration: outcome))
         }

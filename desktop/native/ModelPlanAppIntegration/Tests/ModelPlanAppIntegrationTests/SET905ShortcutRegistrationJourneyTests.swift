@@ -47,6 +47,52 @@ import ModelPlanSettings
         XCTAssertEqual(editor.context.shortcutPolicy(preferences: try XCTUnwrap(editor.snapshot).preferences).dockRegistration, .conflict)
         await app.composition.stop()
     }
+    private func makeApp(_ profile: URL, cockpit: Bool = false) throws -> EngineDockMenuApplication {
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic",
+                                               allowedEnvironment: [:], offline: true, readOnly: true)
+        return EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, cockpitEntryEnabled: cockpit, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+    }
+    func testSET_9_05SavedChordRegistersAgainAfterRelaunch() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-05-relaunch-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let chord = ShortcutChord("K", modifiers: [.command, .option])
+        let first = try makeApp(profile)
+        first.shortcutRegistrar = JourneyShortcutRegistrar()
+        await first.prepare()
+        try await first.settingsHost.application.editor.commit(SettingsB21Edit.shortcut(.toggleDock, chord))
+        await first.composition.stop()
+        let registrar = JourneyShortcutRegistrar()
+        let second = try makeApp(profile)
+        second.shortcutRegistrar = registrar
+        await second.prepare()
+        XCTAssertEqual(registrar.registered[.toggleDock], chord, "a saved chord must work after a restart")
+        await second.composition.stop()
+    }
+    func testOpenCockpitShortcutFollowsTheCockpitEntry() async throws {
+        for cockpit in [false, true] {
+            let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-05-cockpit-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: profile) }
+            let chord = ShortcutChord("L", modifiers: [.command, .option])
+            let registrar = JourneyShortcutRegistrar()
+            let app = try makeApp(profile, cockpit: cockpit)
+            app.shortcutRegistrar = registrar
+            await app.prepare()
+            let editor = app.settingsHost.application.editor
+            let rows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+            XCTAssertEqual(rows.first { $0.key == .openShortcut }?.availability, cockpit ? .available : .serviceUnavailable)
+            XCTAssertEqual(rows.first { $0.key == .dockShortcut }?.availability, .available)
+            try await editor.commit(SettingsB21Edit.shortcut(.openCockpit, chord))
+            XCTAssertEqual(registrar.registered[.openCockpit], cockpit ? chord : nil)
+            await app.composition.stop()
+        }
+    }
+    func testQuotaResetNoticeHidesTheNameWhenProjectNamesAreOff() {
+        XCTAssertEqual(EngineResetNotifier.quotaResetText(name: "Codex", english: true, showNames: true).1, "Codex: a new quota cycle was read.")
+        XCTAssertEqual(EngineResetNotifier.quotaResetText(name: "Codex", english: true, showNames: false).1, "A new quota cycle was read.")
+        XCTAssertFalse(EngineResetNotifier.quotaResetText(name: "Codex", english: false, showNames: false).1.contains("Codex"))
+    }
     func testCarbonMappingCoversTheRecorderKeys() {
         XCTAssertEqual(CarbonShortcutRegistrar.keyCode("A"), 0)
         XCTAssertNotNil(CarbonShortcutRegistrar.keyCode("9"))

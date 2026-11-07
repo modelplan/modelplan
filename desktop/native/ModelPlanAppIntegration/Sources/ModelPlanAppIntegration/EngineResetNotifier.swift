@@ -76,7 +76,7 @@ import ModelPlanSettings
         await deliver(notice,identifier:"reset-"+event.rowID+"-"+notice.episodeID,stillCurrent:{ [weak self] in
             guard let self,let composition=self.composition else { return false }
             return self.isCurrent(event,composition)
-        }) { english in
+        }) { english,_ in
             (event.status == "confirmed" ? (english ? "Public reset confirmed":"公开重置已确认") : (english ? "Public reset announced":"已公告公开重置"),
              english ? "The public status does not confirm a personal quota reset.":"公开状态不代表个人额度已重置。")
         }
@@ -104,17 +104,22 @@ import ModelPlanSettings
                     await self?.deliver(notice,identifier:"quota-reset-"+memberID+"-"+episode,stillCurrent:{ [weak self] in
                         guard let self,let composition=self.composition else { return false }
                         return composition.accountMembers.members.contains { $0.id == memberID && $0.account.windows.contains { $0.id == windowID } }
-                    }) { isEnglish in
-                        isEnglish ? ("Quota reset", english+": a new quota cycle was read.") : ("额度已重置", chinese+"：已读取到新的额度周期。")
+                    }) { isEnglish,showNames in
+                        Self.quotaResetText(name:isEnglish ? english : chinese,english:isEnglish,showNames:showNames)
                     }
                 }
             }
         }
     }
+    /// "Project names" off also keeps names out of notifications, as the row promises.
+    static func quotaResetText(name:String,english:Bool,showNames:Bool) -> (String,String) {
+        if english { return ("Quota reset",showNames ? name+": a new quota cycle was read." : "A new quota cycle was read.") }
+        return ("额度已重置",showNames ? name+"：已读取到新的额度周期。" : "已读取到新的额度周期。")
+    }
     /// One serialized admission → delivery → ledger path for every kind. Authorization is the
     /// system's current state; this never requests permission (Settings' opt-in does that).
     private func deliver(_ notice:SettingsNotice,identifier:String,stillCurrent:@MainActor () -> Bool,
-                         text:(Bool) -> (String,String)) async {
+                         text:(Bool,Bool) -> (String,String)) async {
         guard let composition,stillCurrent() else { return }
         if deliveryOverride != nil || kindDeliveryOverride != nil { consumer.observeAuthorization(.authorized) }
         else {
@@ -127,7 +132,7 @@ import ModelPlanSettings
             if let kindDeliveryOverride { try await kindDeliveryOverride(notice.kind,notice.episodeID) }
             else if let deliveryOverride { try await deliveryOverride(notice.episodeID) }
             else {
-                let (title,body)=text(snapshot.preferences.language == .english)
+                let (title,body)=text(snapshot.preferences.language == .english,snapshot.preferences.showProjectNames)
                 let content=UNMutableNotificationContent()
                 content.title=title;content.body=body
                 try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier:identifier,content:content,trigger:nil))
