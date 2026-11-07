@@ -268,6 +268,8 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
         XCTAssertFalse(delivered.reduceMotion);XCTAssertEqual(delivered.locale,.en)
         surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
     /// SET-9-19: the committed setting reaches the appearance the page is given.
     @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
