@@ -25,10 +25,19 @@ import AppKit
                 MainActor.assumeIsolated {
                     guard let self, let owner = self.owner, let menu = note.object as? NSMenu, owner.ownsDockMenu(menu) else { return }
                     self.menus.add(menu)
+                    // MENU-12: tracking notifications are balanced and authoritative, unlike the delegate's menuDidClose.
+                    if name == NSMenu.didBeginTrackingNotification { owner.ownedMenuTrackingBegan() }
                 }
             }
             observers.append(observer)
         }
+        let endObserver = NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let owner = self.owner, let menu = note.object as? NSMenu, owner.ownsDockMenu(menu) else { return }
+                owner.ownedMenuTrackingEnded()
+            }
+        }
+        observers.append(endObserver)
     }
     deinit { for observer in observers { NotificationCenter.default.removeObserver(observer) } }
     func scrubAll() {

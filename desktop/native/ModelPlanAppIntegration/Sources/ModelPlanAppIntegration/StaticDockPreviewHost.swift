@@ -294,7 +294,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     @_spi(DockResourceChecks) public var registeredConsoleButtonForChecks: CGRect? { geometry.consoleButton }
     /// Synthetic offscreen captures may select a deterministic backing scale.
     @_spi(DockResourceChecks) public var captureBackingScaleForChecks: Int?
-    private var permitted = false, retired = false, retiring = false, rendering = false, menuOpen = false
+    private var permitted = false, retired = false, retiring = false, rendering = false
+    /// MENU-12: the menu-open signal is authoritative — a latch without a live tracking session is stale.
+    private var menuTracking = DockMenuTrackingState()
+    var menuOpen: Bool { menuTracking.protectsDock }
     private var lifecycleSuspended = false
     private var sliverPrepared = false
     private var preparedSliverGeometrySize: CGSize?
@@ -1309,7 +1312,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let component = DockSliverMenu(labels: [:], handlers: [:])
         component.owner = self
         component.onMenuActuallyOpen = { [weak self] open in
-            guard let self else { return }; self.menuOpen = open; self.edge.refresh()
+            guard let self else { return }; self.setMenuLatched(open)
         }
         let menu = component.menu
         component.retainWithMenu()
@@ -1341,8 +1344,16 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         component.replace(with: items)
         return menu
     }
-    public func menuWillOpen(_ menu: NSMenu) { menuOpen = true; edge.refresh() }
-    public func menuDidClose(_ menu: NSMenu) { menuOpen = false; edge.refresh() }
+    public func menuWillOpen(_ menu: NSMenu) { setMenuLatched(true) }
+    public func menuDidClose(_ menu: NSMenu) { setMenuLatched(false) }
+    private func setMenuLatched(_ open: Bool) {
+        if open { menuTracking.menuWillOpen() } else { menuTracking.menuDidClose() }
+        edge.refresh()
+    }
+    /// MENU-12: AppKit's balanced tracking notifications for menus this Dock owns. An ended
+    /// session is authoritative even when the delegate's `menuDidClose` is missed (scrub path).
+    func ownedMenuTrackingBegan() { menuTracking.trackingBegan(); edge.refresh() }
+    func ownedMenuTrackingEnded() { menuTracking.trackingEnded(); edge.refresh() }
     func acknowledgeDockReveal() {
         guard permitted, !retired else { return }
         try? attention.acknowledge(.dockRevealed, signals: attentionSignals, at: currentDate())
@@ -1514,6 +1525,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
         showConsole = nil; showSettings = nil; requestHideDock=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
+        menuTracking = DockMenuTrackingState()
     }
 }
 
