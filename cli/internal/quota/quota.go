@@ -288,8 +288,10 @@ type Report struct {
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
 
-// staleAfter: a harness meter older than this may have moved; advice should say so.
-const staleAfter = 60 * time.Minute
+// ObservationFreshness is the age after which a harness observation may have moved.
+const ObservationFreshness = 60 * time.Minute
+
+const staleAfter = ObservationFreshness
 
 var defaultMinutes = map[string]int{"five_hour": 300, "weekly": 10080, "monthly": 43200}
 
