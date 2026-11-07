@@ -56,7 +56,7 @@ in-memory use. Operations are bound to their session, generation and expiry,
 consumed once, and limited to one per provider, including while an explicit
 operation's read runs after its result arrives. An automatic saved-login refresh stays off the
 provider until 15 seconds after that read and is reported as deferred; a requested one waits
-only for the read. A Keychain Allow holds the provider from before the consent commit, so a
+only for the read, and takes over an automatic job already in the provider's slot. A Keychain Allow holds the provider from before the consent commit, so a
 background read cannot take the operation and drop the user's prompt. Background requests are
 non-interactive; foreground requests arise only from an explicit Keychain grant.
 

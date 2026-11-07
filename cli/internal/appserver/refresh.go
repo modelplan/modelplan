@@ -61,6 +61,7 @@ type RefreshScheduler struct {
 	autoNext       map[string]time.Time
 	autoReason     map[string]wire.MemberRefreshReason
 	autoStarted    bool
+	requested      map[string]bool
 	decisions      refreshDecisionRing
 }
 
@@ -89,7 +90,7 @@ const observeEvery = 30 * time.Second
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
-	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}}
+	s := &RefreshScheduler{config: config, ctx: ctx, cancel: cancel, done: make(chan struct{}), scheduled: map[string]refreshJob{}, wake: make(chan struct{}, 1), pending: map[string]time.Time{}, credentialWait: map[string]bool{}, autoDone: make(chan struct{}), autoWake: make(chan struct{}, 1), autoNext: map[string]time.Time{}, autoReason: map[string]wire.MemberRefreshReason{}, requested: map[string]bool{}}
 	go s.work()
 	return s
 }
@@ -247,6 +248,14 @@ func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestPar
 					}
 					scheduled.At = until.UTC()
 					disable(wire.RefreshCooldown)
+					// The job in the slot may be an automatic one that will be held. This request
+					// must not go with it.
+					if job, queued := s.scheduled[key]; !automatic && queued {
+						job.automatic = false
+						s.scheduled[key] = job
+					} else if !automatic {
+						s.requested[key] = true
+					}
 				} else if len(s.pending) >= len(consent.Definitions()) || len(s.scheduled) >= len(consent.Definitions()) {
 					scheduled.At = now.Add(5 * time.Minute).UTC()
 					disable(wire.RefreshCooldown)
@@ -340,6 +349,18 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	defer func() {
 		if !keepPending {
 			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
+			s.mu.Lock()
+			if held && s.requested[job.key] {
+				// A request arrived while this job was being held: it runs now instead.
+				delete(s.requested, job.key)
+				job.automatic, job.at = false, s.now()
+				s.scheduled[job.key] = job
+				s.signal()
+				s.mu.Unlock()
+				return
+			}
+			delete(s.requested, job.key)
+			s.mu.Unlock()
 			if held {
 				s.decisions.add(s.now(), job.scope, refreshDeferred, refreshInFlight)
 			} else if !attempted {
@@ -412,6 +433,12 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	}
 	if job.scope == consent.ScopeClaudeAccountUsageSavedLogin && s.config.CredentialHold != nil {
 		active, until := s.config.CredentialHold("claude")
+		s.mu.Lock()
+		if s.requested[job.key] {
+			delete(s.requested, job.key)
+			job.automatic = false
+		}
+		s.mu.Unlock()
 		if job.automatic && (active || until.After(s.now())) {
 			if !until.After(s.now()) {
 				until = s.now().Add(readerBusyRetry)
