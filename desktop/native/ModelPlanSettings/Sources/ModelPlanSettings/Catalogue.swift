@@ -387,7 +387,7 @@ public enum SettingsCatalogue {
         case .percentageMode: return choices(p.percentageMode)
         case .showPercentages: return .toggle(p.showPercentages)
         case .percentagePin: return perSub(options: PercentagePin.allCases.map(\.rawValue)) { (p.subscriptionSettings[$0.id]?.percentagePin ?? .auto).rawValue }
-        case .redBelow: return .choice(String(p.redBelow), options: [10,16,20,25].map(String.init))
+        case .redBelow: return .choice(String(p.effectiveRedBelow), options: SettingsPreferences.redBelowChoices.map(String.init))
         case .sliverAlert: return .toggle(p.sliverAlert)
         case .showDock: return .toggle(p.showDock)
         case .autoHide: return .toggle(p.autoHide)

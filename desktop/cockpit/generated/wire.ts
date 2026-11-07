@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: db1a4ca13e9dbf5216869348f59fb29a83bed5603f0e7e734b1a1356f4eb4d24
+// Schema SHA-256: 09741a545d12d9ca0b2ef1b75f719d01e9b7385f53203ee714a975796acf4914
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -179,7 +179,7 @@ export type WireCockpitPublicationModel = {
 };
 
 export type WireCockpitQueryParams = {
-  readonly "redBelow"?: 10 | 16 | 20 | 25;
+  readonly "redBelow"?: 10 | 15 | 20 | 25 | 30 | 40;
 };
 
 export type WireCockpitRankedEntity = {
@@ -1395,9 +1395,11 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "redBelow": {
         "enum": [
           10,
-          16,
+          15,
           20,
-          25
+          25,
+          30,
+          40
         ],
         "type": "integer"
       }
