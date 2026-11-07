@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 import { test,expect } from '../../../cockpit/node_modules/@playwright/test/index.mjs';
-import { appearance,commands,pageId,sample,currentSample,shell } from '../fixture.mjs';
+import { appearance,commands,pageId,sample,currentSample,shell,excludePortholeFlicker } from '../fixture.mjs';
+test.beforeEach(async({page})=>excludePortholeFlicker(page));
 import {renderVisualDeck,visualFixture} from '../visual-fixture.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { writeFile,mkdir } from 'node:fs/promises';

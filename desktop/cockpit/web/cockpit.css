@@ -56,3 +56,21 @@ html[data-reduce-motion="true"] #cockpit[data-active][data-shell] .ck-tape .t-cu
 /* Keep inactive MFD page labels legible against night-mode key faces. */
 html[data-theme="night"] #cockpit .mfd-pk .pk:not(.on)>span{color:#a1aab3}
 html[data-theme="night"] #cockpit .ek-all:not(.on)>span:not(.ki){color:#a1aab3}
+
+/* Porthole still (official edition; src/porthole-still.ts). The field shows only once painted. */
+.ck-port .ck-field[data-still=ready]{display:block!important;position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.ck-still{position:absolute;inset:0;overflow:hidden;isolation:isolate}
+.ck-still-stage{position:absolute;left:0;top:0;transform-origin:0 0}
+.ck-still-layer{position:absolute;display:block;background-size:100% 100%;background-repeat:no-repeat}
+.ck-still-add{mix-blend-mode:plus-lighter;z-index:1}
+/* Flame/halo flicker (owner D39/D-H; prototype composer.js:26,34): only on an active, open page; static under the
+   host's or the system's Reduce Motion. Hidden/closed pages have data-active=false or data-shell=closed. */
+@keyframes cockpit-porthole-flicker{from{opacity:.94;transform:scale(.985,.98)}to{opacity:1;transform:scale(1.015,1.02)}}
+@media (prefers-reduced-motion:no-preference){
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p1{animation-duration:.5s!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p2{animation-duration:.57s!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-p3{animation-duration:.64s!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o1{animation-delay:-.13s!important}
+html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o2{animation-delay:-.26s!important}
+}
