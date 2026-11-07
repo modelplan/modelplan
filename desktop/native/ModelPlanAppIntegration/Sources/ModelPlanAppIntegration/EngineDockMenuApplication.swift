@@ -117,6 +117,7 @@ struct StatusNoticePresentation {
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
     /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
     public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    public var openPublicURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
     /// Injection point for global shortcuts; the normal entry supplies the system registrar.
@@ -504,7 +505,7 @@ struct StatusNoticePresentation {
                     self.settings.update(context: context)
                 }
             }
-        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openPublicLink(let link): openPublicURL(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
@@ -885,7 +886,7 @@ struct StatusNoticePresentation {
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
         guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
-        NSWorkspace.shared.open(link.url)
+        openPublicURL(link.url)
     }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
