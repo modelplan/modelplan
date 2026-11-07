@@ -428,7 +428,8 @@ public enum EngineDeadlineFacts {
     private func makeInput(_ member:EngineAccountMember, now: Date) -> DockInstrumentInput {
         let row=member.row
         var input = DockInstrumentInput(id: member.id, name: member.name(english:english), windows: [])
-        input.vendorResourceKey = row.vendorKey
+        // D42: most catalogue rows carry no vendor key; their tool ID names the mark.
+        input.vendorResourceKey = row.vendorKey.flatMap { $0.isEmpty ? nil : $0 } ?? row.id
         input.duplicateAccountTag=member.duplicateTag
         // A non-fresh row remains non-fresh. The Dock model currently cannot
         // display a current weekly window while its overall input is non-fresh.
