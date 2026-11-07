@@ -18,8 +18,11 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
    port.tabIndex=0;port.setAttribute('role','button');
    const name=()=>port.setAttribute('aria-label',document.documentElement.lang==='en'?'Open the 3D view':'打开 3D 视图');name();
    port.addEventListener('focus',name,{signal:opener.signal});
-   port.addEventListener('click',e=>{if(e.isTrusted)enlarge();},{signal:opener.signal});
-   port.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();enlarge();}},{signal:opener.signal});
+   // The HUD lives inside the port and has its own actions; they must not open the field too.
+   // A HUD click repaints the rows before it bubbles here, so the event's path is read, not the detached target.
+   const inHud=(e:Event)=>e.composedPath().some(n=>n instanceof Element&&n.classList.contains('hud'));
+   port.addEventListener('click',e=>{if(e.isTrusted&&!inHud(e))enlarge();},{signal:opener.signal});
+   port.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!inHud(e)){e.preventDefault();enlarge();}},{signal:opener.signal});
   }
   // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
   const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};

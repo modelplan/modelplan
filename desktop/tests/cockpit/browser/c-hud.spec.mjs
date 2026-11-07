@@ -10,7 +10,7 @@ const models=Array.from({length:8},(_,i)=>model('m'+i,40+i,.1*(i+1)));models.pus
 const observed=()=>new Date().toISOString();
 async function open(page,{tier='tall',published=models,session=null,sessions=null,lineup=null,scope='all',edit=null}={}) {
  const {data}=visualFixture();if(published)data.details.publishedModels=published;if(session)data.details.sessions=[session];if(sessions)data.details.sessions=sessions;if(lineup)data.details.publication={contractVersion:1,publicationId:'a'.repeat(24),publishedAt:'2026-10-20T14:05:00Z',source:'client',models:lineup,truncated:false};edit?.(data);
- await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.addInitScript(()=>{window.__actions=[];window.webkit={messageHandlers:{cockpit:{postMessage(raw){const m=JSON.parse(raw);if(m.type==='action')window.__actions.push(m.action??m.payload?.action);}}}};});
  await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
  const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
  expect(await receive(send('load',{appearance,shell:{...shell,tier},redBelow:25}))).toBe(true);
@@ -79,6 +79,21 @@ test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before'
  await expect(page.locator('.mfd-back')).toBeVisible();await page.keyboard.press('Escape');await expect(page.locator('.fc')).toHaveCount(0);
  await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();
  await page.locator('.mfd-back').click();await expect(page.locator('.fc')).toHaveCount(0);
+});
+const fieldOpens=page=>page.evaluate(()=>window.__actions.filter(a=>a==='openField').length);
+test('CKP-PORT-06 a HUD click opens 档位 only; the port beside it still opens the field',async({page})=>{
+ await open(page);await page.locator('.ck-port').click({position:{x:520,y:120}});await expect.poll(()=>fieldOpens(page)).toBe(1);
+ await page.locator('.hud .hp').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+ await page.keyboard.press('Escape');await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+});
+for(const key of ['Enter','Space'])test(`CKP-PORT-06 ${key} on a HUD row opens 档位 only; on the port it opens the field`,async({page})=>{
+ await open(page);await page.locator('.ck-port').focus();await page.keyboard.press(key);await expect.poll(()=>fieldOpens(page)).toBe(1);
+ await page.locator('.hud .hp').first().focus();await page.keyboard.press(key);await expect(page.locator('.fc')).toBeVisible();expect(await fieldOpens(page)).toBe(1);
+});
+test('clearing the data leaves no HUD box and no Back button',async({page})=>{
+ const {send,receive}=await open(page);await page.locator('.hud .hp').first().click();await expect(page.locator('.mfd-back')).toBeVisible();
+ expect(await receive(send('clear',{viewRevision:'4'}))).toBe(true);await expect(page.locator('.hud')).toBeHidden();await expect(page.locator('.hud .hp')).toHaveCount(0);await expect(page.locator('.mfd-back')).toHaveCount(0);
+ await page.keyboard.press('Escape');await expect(page.locator('.mfd-back')).toHaveCount(0);
 });
 // Real public IDs and names from the publication: the roster key differs from the ID, and an older model shares a word.
 test('CKP-PORT-06 hovering a row lights its rocket by published name, for real public IDs',async({page})=>{

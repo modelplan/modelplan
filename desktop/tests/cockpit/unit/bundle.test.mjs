@@ -44,6 +44,8 @@ test('both editions have reproducible bounded manifests; community excludes rese
     if(edition==='official')assert.match(readFileSync(root+'src/field-page.js','utf8'),/await import\(url\)/);
     else assert.equal(Object.hasOwn(manifest.files,'src/field-page.js'),false);
     for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
+    if(edition==='official'){assert.ok(Object.hasOwn(manifest.files,'assets/brands/SOURCES.md'));assert.match(readFileSync(root+'NOTICES.txt','utf8'),/Vendor marks: third-party trademarks.*assets\/brands\/SOURCES[.]md/);}
+    else assert.equal(existsSync(root+'assets/brands'),false,'community has no vendor marks');
     const provenance=JSON.parse(readFileSync(root+'prototype/source.json'));
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
     assert.equal(provenance.fixtureAudit.copied,false);

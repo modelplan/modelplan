@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"1b943f9d438137a9699a77226ec9517208cb3e033ae563e0b32ab4bf3657442b",
-        "official":"837351729b31749e14026dba12d7e782703e82b13d682f3fa289c5cf072dabc3",
+        "community":"272e3bc723cf2d86f945ba4bd2fdea0d36a9b17b246ed205a44218246f0596f8",
+        "official":"7d3b81cc8ce462c1515b5ac03abf2aafe37ddfe74c465facfd3558ee44539c59",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -149,6 +149,7 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
+            self.fieldPanel?.close()
             self.pageOpened = false
             self.composition.dock.setCockpitPresentationBlocked(false)
         }
