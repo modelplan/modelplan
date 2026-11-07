@@ -73,6 +73,7 @@
         "InstrumentHelpCompositionTests",
         "InstrumentHintSourceRouterTests",
         "M5CreditsDisplayFormatTests",
+        "MenuHostDispatchJourneyTests",
         "NativeAccountDockProjectionTests",
         "NormalEntrySettingsJourneyTests",
         "ObservedPlacementAdapterTests",

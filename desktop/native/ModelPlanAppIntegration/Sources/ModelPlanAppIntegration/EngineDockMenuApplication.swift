@@ -64,14 +64,14 @@ import ModelPlanMenuVerification
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
-    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
-    var openExternalURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
+    var openExternalURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
