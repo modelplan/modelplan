@@ -78,7 +78,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
 			if ledger, ok := history.LoadPace(s.cache); ok {
 				pace := history.PaceView{Ledger: ledger, OK: true, Recording: !history.Off(), Now: now}
-				out.Cycles = cockpitCycles(pace.Groups(), snapshot.SourceBindings(view.QuotaReport.Accounts, now), allowed, groups, view.PublicModels)
+				out.Cycles = cockpitCycles(pace.GroupsShowing(cockpitCycleScan), snapshot.SourceBindings(view.QuotaReport.Accounts, now), allowed, groups, view.PublicModels)
 			}
 		}
 		out.Models, out.Tools = cockpitPublishedModels(cockpitEntityRanking(section.Models), view.PublicModels), cockpitEntityRanking(section.Tools)
@@ -140,28 +140,69 @@ func cockpitBuckets(perf speed.PerfView, allowed map[string]bool, now time.Time)
 	return from, bucket(days, 728), bucket(hours, 192)
 }
 
-// cockpitCycles keeps the last closed cycles of the windows a verified subscription can claim. One
-// window kind per subscription: a second limit of the same kind is left out rather than merged.
+const (
+	cockpitCycleLimit = 10
+	// cockpitCycleScan leaves room for open cycles above the closed ones in a newest-first list.
+	cockpitCycleScan = cockpitCycleLimit + 4
+)
+
+// cockpitCycles lists a subscription's ten newest closed cycles per window kind, oldest first, the
+// order the chart draws. One window per kind: the main limit if the source has one, then the
+// group with the newest closed cycle, so an old plan cannot hide the current one.
 func cockpitCycles(groups []history.PaceGroup, bindings map[string]string, allowed map[string]bool, verified map[string][]wire.CockpitAccount, models []digest.Model) []wire.CockpitCycleGroup {
-	out := []wire.CockpitCycleGroup{}
-	seen := map[[2]string]bool{}
+	type slot struct {
+		group  history.PaceGroup
+		closed []history.PaceCycleView
+	}
+	isMain := func(limit string) bool { return limit == "" || limit == "main" }
+	chosen := map[[2]string]slot{}
+	var order [][2]string
 	for _, g := range groups {
 		ref, ok := bindings[g.Source]
-		if _, known := verified[ref]; !ok || !known || !allowed[g.Source] || seen[[2]string{ref, g.Kind}] || len(out) == 64 {
+		if _, known := verified[ref]; !ok || !known || !allowed[g.Source] {
 			continue
 		}
-		entry := wire.CockpitCycleGroup{SubscriptionRef: ref, Kind: g.Kind, Attribution: g.Attribution, Cycles: []wire.CockpitCycle{}}
-		for _, c := range g.Cycles {
-			if !c.Closed {
+		candidate := slot{group: g}
+		for _, c := range g.Cycles { // newest first
+			if c.Closed && len(candidate.closed) < cockpitCycleLimit {
+				candidate.closed = append(candidate.closed, c)
+			}
+		}
+		if len(candidate.closed) == 0 {
+			continue
+		}
+		key := [2]string{ref, g.Kind}
+		current, taken := chosen[key]
+		if !taken {
+			order = append(order, key)
+		}
+		switch {
+		case !taken:
+		case isMain(g.Limit) != isMain(current.group.Limit):
+			if !isMain(g.Limit) {
 				continue
 			}
+		case !candidate.closed[0].ResetsAt.After(current.closed[0].ResetsAt):
+			continue
+		}
+		chosen[key] = candidate
+	}
+	out := []wire.CockpitCycleGroup{}
+	for _, key := range order {
+		if len(out) == 64 {
+			break
+		}
+		picked := chosen[key]
+		entry := wire.CockpitCycleGroup{SubscriptionRef: key[0], Kind: key[1], Attribution: picked.group.Attribution, Cycles: []wire.CockpitCycle{}}
+		for i := len(picked.closed) - 1; i >= 0; i-- {
+			c := picked.closed[i]
 			cycle := wire.CockpitCycle{StartedAt: c.FirstObservedAt, ResetsAt: c.ResetsAt, Points: c.Points, HadDrop: c.HadDrop, Spent: []wire.CockpitCycleShare{}}
-			for i, share := range c.Spent {
-				if i == 16 {
+			for n, share := range c.Spent {
+				if n == 16 {
 					break
 				}
 				item := wire.CockpitCycleShare{Fast: share.Fast, Points: share.Points}
-				if id := cockpitModelID(share.Model, g.Source, models); id != "unknown" {
+				if id := cockpitModelID(share.Model, picked.group.Source, models); id != "unknown" {
 					item.Model = &id
 				}
 				switch share.Effort {
@@ -173,13 +214,7 @@ func cockpitCycles(groups []history.PaceGroup, bindings map[string]string, allow
 			}
 			entry.Cycles = append(entry.Cycles, cycle)
 		}
-		if len(entry.Cycles) > 10 {
-			entry.Cycles = entry.Cycles[len(entry.Cycles)-10:]
-		}
-		if len(entry.Cycles) > 0 {
-			seen[[2]string{ref, g.Kind}] = true
-			out = append(out, entry)
-		}
+		out = append(out, entry)
 	}
 	return out
 }

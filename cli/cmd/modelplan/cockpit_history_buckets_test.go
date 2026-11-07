@@ -68,21 +68,51 @@ func TestCockpitModelRankingCarriesOnlyPublishedModels(t *testing.T) {
 	}
 }
 
-func TestCockpitCyclesKeepClosedCyclesOfBoundAdmittedSources(t *testing.T) {
-	ref, now := "0123456789abcdef", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
-	cycles := []history.PaceCycleView{{Closed: false, ResetsAt: now.Add(time.Hour)}}
-	for i := 0; i < 12; i++ {
-		cycles = append(cycles, history.PaceCycleView{Closed: true, ResetsAt: now.Add(-time.Duration(i) * time.Hour), Points: float64(i),
+// The real ledger path: Groups lists newest first, and an open cycle sits above the closed ones.
+func paceCycles(source, plan, limit string, now time.Time, closed int, newest time.Duration) []history.PaceCycle {
+	out := []history.PaceCycle{{Source: source, Plan: plan, Limit: limit, Kind: "five_hour", ResetsAt: now.Add(time.Hour), FirstObservedAt: now.Add(-time.Hour), LastObservedAt: now, Points: 99}}
+	for i := 0; i < closed; i++ {
+		reset := now.Add(-newest - time.Duration(i)*5*time.Hour)
+		out = append(out, history.PaceCycle{Source: source, Plan: plan, Limit: limit, Kind: "five_hour", ResetsAt: reset, FirstObservedAt: reset.Add(-4 * time.Hour), LastObservedAt: reset.Add(-time.Hour), Points: float64(i + 1),
 			Spent: []history.Share{{Model: "sol", Effort: "high", Points: 1}, {Model: "local-alias", Effort: "custom", Points: 1}}})
 	}
-	groups := []history.PaceGroup{{Source: "codex", Kind: "five_hour", Attribution: "unattributed", Cycles: cycles},
-		{Source: "codex", Kind: "five_hour", Limit: "other", Cycles: cycles}, {Source: "unbound", Kind: "weekly", Cycles: cycles}, {Source: "denied", Kind: "weekly", Cycles: cycles}}
-	got := cockpitCycles(groups, map[string]string{"codex": ref, "denied": ref}, map[string]bool{"codex": true, "unbound": true}, map[string][]wire.CockpitAccount{ref: {}}, []digest.Model{{ID: "sol"}})
+	return out
+}
+
+func TestCockpitCyclesListTheNewestTenClosedOldestFirst(t *testing.T) {
+	ref, now := "0123456789abcdef", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	view := history.PaceView{OK: true, Recording: true, Now: now, Ledger: history.PaceLedger{SchemaVersion: 1, Since: now.Add(-1000 * time.Hour), Cycles: paceCycles("codex", "plus", "", now, 12, time.Hour)}}
+	got := cockpitCycles(view.GroupsShowing(cockpitCycleScan), map[string]string{"codex": ref}, map[string]bool{"codex": true}, map[string][]wire.CockpitAccount{ref: {}}, []digest.Model{{ID: "sol"}})
 	if len(got) != 1 || len(got[0].Cycles) != 10 {
 		t.Fatalf("groups = %+v", got)
 	}
-	spent := got[0].Cycles[0].Spent
+	cycles := got[0].Cycles
+	// Points 1 is the newest closed cycle, 10 the oldest kept; 11, 12 and the open cycle (99) are out.
+	for i, c := range cycles {
+		if want := float64(10 - i); c.Points != want {
+			t.Fatalf("cycle %d points = %v, want %v", i, c.Points, want)
+		}
+		if i > 0 && !c.ResetsAt.After(cycles[i-1].ResetsAt) {
+			t.Fatalf("cycles are not oldest first: %+v", cycles)
+		}
+	}
+	spent := cycles[0].Spent
 	if *spent[0].Model != "sol" || *spent[0].Effort != "high" || spent[1].Model != nil || spent[1].Effort != nil {
 		t.Fatalf("spent = %+v", spent)
+	}
+}
+
+func TestCockpitCyclesPickTheMainLimitThenTheCurrentPlan(t *testing.T) {
+	ref, now := "0123456789abcdef", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	cycles := append(append(paceCycles("codex", "a-old-plan", "", now, 1, 100*time.Hour), paceCycles("codex", "b-new-plan", "", now, 2, time.Hour)...), paceCycles("codex", "z", "code_review", now, 3, time.Minute)...)
+	view := history.PaceView{OK: true, Recording: true, Now: now, Ledger: history.PaceLedger{SchemaVersion: 1, Since: now.Add(-1000 * time.Hour), Cycles: cycles}}
+	got := cockpitCycles(view.GroupsShowing(cockpitCycleScan), map[string]string{"codex": ref, "denied": ref}, map[string]bool{"codex": true}, map[string][]wire.CockpitAccount{ref: {}}, nil)
+	if len(got) != 1 || len(got[0].Cycles) != 2 {
+		t.Fatalf("the current plan's main limit should win: %+v", got)
+	}
+	unbound := cockpitCycles(view.GroupsShowing(cockpitCycleScan), map[string]string{}, map[string]bool{"codex": true}, map[string][]wire.CockpitAccount{ref: {}}, nil)
+	denied := cockpitCycles(view.GroupsShowing(cockpitCycleScan), map[string]string{"codex": ref}, map[string]bool{}, map[string][]wire.CockpitAccount{ref: {}}, nil)
+	if len(unbound) != 0 || len(denied) != 0 {
+		t.Fatalf("unbound %+v denied %+v", unbound, denied)
 	}
 }

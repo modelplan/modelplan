@@ -129,5 +129,7 @@ test('D36 the Subscription history shows closed cycles and reset rows',async({pa
  await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
  await page.locator('[data-opt="tab"] b').nth(1).click();
  await expect(page.locator('.cy')).toHaveCount(2);await expect(page.locator('.cy .drop')).toHaveCount(1);
+ // The wire is oldest first and the chart runs left to right, so the later cycle (with the drop) is on the right.
+ await expect(page.locator('.cy').nth(1).locator('.drop')).toHaveCount(1);await expect(page.locator('.cy').nth(0).locator('.drop')).toHaveCount(0);
  await expect(page.locator('.rs')).toHaveCount(2);await expect(page.locator('.rs.src-correction')).toHaveCount(1);await expect(page.locator('.rs.src-card')).toHaveCount(0);
 });

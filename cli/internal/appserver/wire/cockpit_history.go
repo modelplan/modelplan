@@ -23,7 +23,7 @@ type CockpitHistory struct {
 	Daily     []CockpitSourceBucket `json:"daily" schema:"maxItems=728"`
 	Hourly    []CockpitSourceBucket `json:"hourly" schema:"maxItems=192"`
 	Projects  CockpitProjectRanking `json:"projects"`
-	// Cycles holds the last closed cycles per window, under a subscription only through the
+	// Cycles holds up to ten newest closed cycles per window, oldest first, under a subscription only through the
 	// source's one current binding. Points are observed on this device and unattributed.
 	Cycles []CockpitCycleGroup `json:"cycles" schema:"maxItems=64"`
 }
