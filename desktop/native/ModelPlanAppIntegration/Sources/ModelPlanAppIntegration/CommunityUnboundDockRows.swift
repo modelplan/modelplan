@@ -17,6 +17,8 @@ public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
     public let nextStep: String
+    /// D41: the label of a local action the card offers for this row; empty when none.
+    public var actionLabel = ""
     public let originalObservedAt: Date?
     public let plan:String, sourceName:String
     public let resetTimes:[String:Date]
