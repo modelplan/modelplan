@@ -349,36 +349,37 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	defer func() {
 		if !keepPending {
 			currentFence := stampOfFence(consent.Capture().Fence()) == job.stamp
+			now := s.now()
+			// One section owns the flag and the slot: between them a request would see the slot
+			// taken, leave its flag and be lost when the slot is released.
 			s.mu.Lock()
 			if held && s.requested[job.key] {
 				// A request arrived while this job was being held: it runs now instead.
 				delete(s.requested, job.key)
-				job.automatic, job.at = false, s.now()
+				job.automatic, job.at = false, now
 				s.scheduled[job.key] = job
 				s.signal()
 				s.mu.Unlock()
 				return
 			}
 			delete(s.requested, job.key)
-			s.mu.Unlock()
-			if held {
-				s.decisions.add(s.now(), job.scope, refreshDeferred, refreshInFlight)
-			} else if !attempted {
-				s.decisions.add(s.now(), job.scope, refreshNotAttempted, refreshUnavailable)
-			}
-			s.mu.Lock()
 			// The worker is serial: a queued job for this key is a newer
 			// replacement, admitted after a credential wait expired. Its
 			// pending guard belongs to it, not to the completing job.
 			if _, replaced := s.scheduled[job.key]; !replaced {
 				if !attempted && !held && currentFence {
-					s.autoNext[job.key] = s.now().Add(10 * time.Minute)
+					s.autoNext[job.key] = now.Add(10 * time.Minute)
 					s.autoReason[job.key] = wire.MemberRefreshBudget
 				}
 				delete(s.pending, job.key)
 				delete(s.credentialWait, job.key)
 			}
 			s.mu.Unlock()
+			if held {
+				s.decisions.add(now, job.scope, refreshDeferred, refreshInFlight)
+			} else if !attempted {
+				s.decisions.add(now, job.scope, refreshNotAttempted, refreshUnavailable)
+			}
 		}
 		if s.ctx.Err() == nil && s.config.Changed != nil {
 			s.config.Changed()

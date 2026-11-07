@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -436,4 +438,73 @@ func TestRequestedRefreshSurvivesAutomaticJobBeingHeld(t *testing.T) {
 	}
 	close(release)
 	expectRead(t, ran)
+}
+
+// The request lands between the worker's last look at the flag and its release of the slot. The
+// clock is the seam: the third reading after the hold is the one in that gap on the old code.
+func TestRequestedRefreshInHeldJobCleanupIsNotLost(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	var readings atomic.Int32
+	var scheduler *RefreshScheduler
+	ran := make(chan struct{}, 2)
+	ready, fired := make(chan struct{}), make(chan struct{})
+	reader, slotTaken := "", false
+	scheduler = NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) {
+			readings.CompareAndSwap(0, 1)
+			return false, time.Now().Add(time.Minute)
+		},
+		Now: func() time.Time {
+			if readings.Load() > 0 && readings.Add(1) == 4 {
+				<-ready
+				// The caller's frame: Now's closure, RefreshScheduler.now, then the reader.
+				pc, _, _, _ := runtime.Caller(2)
+				reader = runtime.FuncForPC(pc).Name()
+				result, _, err := scheduler.Request(context.Background(), params)
+				if err != nil {
+					t.Error(err)
+				}
+				slotTaken = len(result) == 1 && result[0].DisabledReason != nil
+				close(fired)
+			}
+			return time.Now()
+		},
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	close(ready)
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("seam moved: the clock was not read a third time after the hold")
+	}
+	if !strings.HasSuffix(reader, ".(*RefreshScheduler).run.func1") || !slotTaken {
+		t.Fatalf("seam moved: the request fired from %q with slot taken=%v, not in the held job's cleanup", reader, slotTaken)
+	}
+	expectRead(t, ran)
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	if scheduler.requested["claude"] {
+		t.Fatal("stale requested flag")
+	}
 }
