@@ -99,15 +99,47 @@ private actor HeldClient: EngineClient {
 }
 final class CoordinatorTests: XCTestCase {
   @MainActor func testFirstOpenWithoutContextHasUnavailableActionAndNoPage() async {
-    var pages = 0, unavailable = 0
+    var pages = 0, unavailable: [CockpitUnavailableReason] = []
     let coordinator = EngineCockpitCoordinator { pages += 1; return PageProbe($0) }
     let client = HeldClient(); coordinator.bind(client: client)
-    coordinator.onUnavailable = { unavailable += 1 }
+    coordinator.onUnavailable = { unavailable.append($0) }
     coordinator.open()
-    XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, 1)
+    XCTAssertEqual(pages, 0); XCTAssertEqual(unavailable, [.noDelivery])
     let requests = await client.requests
     XCTAssertEqual(requests, 0)
     await coordinator.shutdown(); await client.stop()
+  }
+
+  @MainActor func testUnavailableNamesThePathThatFailed() async {
+    var unavailable: [CockpitUnavailableReason] = []
+    let coordinator = EngineCockpitCoordinator { _ in throw CockpitBridgeError.unavailable }
+    coordinator.onUnavailable = { unavailable.append($0) }
+    coordinator.open()
+    let client = HeldClient(); coordinator.bind(client: client)
+    await coordinator.consume(.context(EngineDeliveryContext(
+      sessionID: "s-" + UUID().uuidString.lowercased(),
+      floor: .init(storeEpoch: "synthetic", generation: 3), revision: 2)))
+    coordinator.open()
+    XCTAssertEqual(unavailable.map(\.path), ["open.noClient", "open.pageCreation.unavailable"])
+    await coordinator.shutdown(); await client.stop()
+  }
+
+  func testFailureLogSurvivesAClosedStderr() {
+    let saved = dup(STDERR_FILENO)
+    XCTAssertGreaterThanOrEqual(saved, 0)
+    close(STDERR_FILENO)
+    CockpitFailureLog.record("synthetic line with stderr closed")
+    dup2(saved, STDERR_FILENO); close(saved)
+  }
+
+  func testFailureLogKeepsErrorCaseNamesAndDropsTheirValues() {
+    enum Synthetic: Error { case account(String), plain }
+    struct Detailed: Error { let text = "synthetic-account" }
+    XCTAssertEqual(CockpitFailureLog.errorName(Synthetic.account("synthetic-account")), "account")
+    XCTAssertEqual(CockpitFailureLog.errorName(Synthetic.plain), "plain")
+    XCTAssertEqual(CockpitFailureLog.errorName(Detailed()), "Detailed")
+    XCTAssertEqual(CockpitFailureLog.errorName(EngineClientError.mutationOutcomeUnknown(
+      requestID: "synthetic-account", expected: .init(storeEpoch: "synthetic", generation: 1))), "mutationOutcomeUnknown")
   }
 
   @MainActor func testOrderedEngineDeliveryClearAckAndStaleReplyRejection() async throws {

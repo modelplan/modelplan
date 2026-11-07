@@ -174,6 +174,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     } catch { fail() }
   }
   private var lastVisibility: CockpitVisibility?
+  private var openedAt: TimeInterval?
   private var clearWaiter: CheckedContinuation<Void, Never>?
   private var deadline: Task<Void, Never>?
   private var ending = false
@@ -233,6 +234,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   required init?(coder: NSCoder) { nil }
   public func open() {
     closeTask?.cancel(); closeTask = nil
+    if openedAt == nil { openedAt = ProcessInfo.processInfo.systemUptime }
     guard web == nil, !bridge.disposed else {
       window?.alphaValue = 1
       window?.makeKeyAndOrderFront(nil)
@@ -731,8 +733,12 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       self?.discard()
     }
   }
-  private func fail(_ failure: CockpitWindowFailure = .localEncoding) {
+  private func fail(_ failure: CockpitWindowFailure = .localEncoding, at site: StaticString = #function, line: UInt = #line) {
     guard !ending else { return }
+    let age = openedAt.map { Int((ProcessInfo.processInfo.systemUptime - $0) * 1_000) }
+    CockpitFailureLog.record("page-failure failure=\(failure.rawValue) at=\(site):\(line) ageMs=\(age.map(String.init) ?? "none") "
+      + "ready=\(bridge.ready) visible=\(visibilityFence.isConfirmedVisible) rendered=\(freshnessHasRendered) "
+      + "displayPending=\(bridge.hasPendingDisplay) occluded=\(lastVisibility?.occluded.description ?? "unknown")")
     onFailure?(failure)
     discard()
   }
