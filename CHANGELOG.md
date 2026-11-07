@@ -6,6 +6,14 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.54, Codex plugin 0.15.40 and Claude Code plugin 0.7.39 (2026-11-07)
+
+This heading also covers v0.5.47 to v0.5.53, which were released without their own heading.
+
+- Standard readers are on by default. The app reads Codex's runtime, and its session logs as the fallback, on a profile with no recorded choices, without a consent click. A recorded refusal, a tool-level denial, a reset consent store and `MODELPLAN_READERS=off` still win.
+
+- One Codex account per ChatGPT login. While Codex's own live account reading is available, it is the only Codex account: session logs are no longer shown as a second account beside it, also after a plan upgrade. Only the current session's model, effort and allowance pool come from the logs. Without a live reading the session logs remain the Codex reading, and an older runtime plan never replaces a newer one.
+
 - A read that loses a lock to another ModelPlan process, such as a plugin hook, now retries after 15 seconds. Before, nothing had been read but the app waited 10 minutes, or 30 for Codex's runtime.
 
 - An older tool-level allow no longer switches off default-on reads added after it: for example Codex's runtime is read on such profiles, while a refusal, a denied source or a chosen non-native backend still wins. `doctor readers` now lists Codex.
@@ -27,6 +35,38 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - Granting Claude Keychain access in Settings now runs one foreground read right away, so the macOS prompt appears while you are there. Before, only two-second background reads ran, an unanswered prompt timed out, and the Keychain state stayed stuck so Claude never got a reading. Replays, grants without Keychain, and Keychain denials read nothing.
 
 - Extend the app–CLI contract to plugin installation: schemas cover every existing status, and real-binary synthetic captures verify both host tools, offline planning and partial failures. Schema/type/status drift is checked against the production Go model; install behavior is unchanged.
+
+- The Mac app now ships the owner-accepted app icon, so Finder, Launchpad and Spotlight no longer show a blank app.
+
+- Claude Code's saved login is read by default. A login kept only in the macOS Keychain is never read before you allow it: the Claude Code row asks for Keychain permission instead, and the read right after Allow no longer waits for a back-off left by failures that never reached Anthropic.
+
+- The cockpit's faders now show the published models for your subscriptions, models in use first, with pinning by a long press. They were empty before. The cockpit entry stays off in packaged builds until the v1 cockpit is enabled.
+
+- Cockpit record lines now link: hovering one lights its engine column, and clicking selects its subscription and opens the session list.
+
+- The cockpit's sessions now name their account, so a record line links to its column, and the app keeps quota history without a plugin.
+
+- Allow explicitly granted local Codex history to refresh when the retained runtime reading is too old to be usable.
+
+- The cockpit and Quota Widget now have automated checks for the status colours, the brand red rule and steady layout during state changes.
+
+- The red threshold choices are now 40, 30, 25, 20, 15 and 10 percent remaining, in Settings, the Quota Widget, the cockpit and the engine. An older saved 16 stays on disk and acts as 25.
+
+- Added checks for the Quota Widget's face gradient and grip position; nothing changes for users.
+
+- The Quota Widget's percentage switch in Settings now has its agreed name, and the app logs when a stale lock forces the widget to hide.
+
+- Added checks for more Quota Widget rules; nothing changes for users.
+
+- The Quota Widget's grip now lights with the prototype's warm ring and glow on hover and focus, with a gold outline for keyboard focus.
+
+- Flames now light on the Quota Widget while a Claude Code, Codex or ZCode turn is running, for the account that runs it, without any plugin; they go out when the turn ends or its evidence expires.
+
+- The Quota Widget's flames step at half rate on battery, and return to normal on AC at the next data change.
+
+- Once the cockpit entry is on, left-clicking the menu bar icon opens the cockpit and reopening the app from Spotlight or Launchpad does too. While it is off, as in current release packages, left-click shows the menu. Right-click or control-click always shows the menu.
+
+- Plugin updates now deliver a new CLI pin. Moving the pin left the plugin versions unchanged, so `claude plugin update` and Codex's marketplace upgrade reported nothing to do and users stayed on an old CLI; on a machine whose consent file a newer CLI had upgraded, that old CLI read no quota at all. `scripts/pin-cli.mjs` now moves the plugin versions with the pin, and CI fails a pin change without them. Codex asks you to allow the plugin's hooks again after this update.
 
 ## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-29)
 

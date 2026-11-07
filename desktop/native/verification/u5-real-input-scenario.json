@@ -4,7 +4,7 @@
   "profile": "synthetic",
   "maximumSeconds": 1200,
   "entryProduct": "ModelPlanCommunityApp",
-  "requiredNativeCLIVersion": "0.5.52",
+  "requiredNativeCLIVersion": "0.5.54",
   "route": [
     "CommunityApp",
     "ProductionDockFactory.community",
