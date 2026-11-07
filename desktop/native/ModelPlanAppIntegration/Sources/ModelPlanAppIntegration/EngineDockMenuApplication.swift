@@ -467,7 +467,10 @@ struct StatusNoticePresentation {
         switch action {
         case .openCockpit: showConsole()
         case .toggleDock:
-            guard settings.editor.snapshot?.preferences.showDock == true else { showDock(); return }
+            guard settings.editor.snapshot?.preferences.showDock == true else {
+                Task { @MainActor [weak self] in await self?.setDockShown(true) }
+                return
+            }
             Task { @MainActor [weak self] in _ = try? await self?.settings.editor.commit(SettingsB21Edit.showDock(false)) }
         }
     }
