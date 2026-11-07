@@ -497,6 +497,14 @@ def set_display(host):
     return host.helper("host")
 
 
+def quiet_desktop(host):
+    """A click on the wallpaper would sweep every window aside, the widget too (Sonoma and later)."""
+    env = dict(os.environ)
+    host.run(["defaults", "write", "com.apple.WindowManager", "EnableStandardClickToShowDesktop", "-bool", "false"], env)
+    host.run(["killall", "WindowManager"], env)
+    host.sleep(3)
+
+
 def doctor(host, cli, env, *flags):
     started = host.now()
     result = host.run([str(cli), "doctor", "readers", "--json", *flags], env, timeout=330)
@@ -648,6 +656,7 @@ def run(args, host):
         raise SystemExit("; ".join(problems))
     steps = json.loads(Path(args.steps).read_text(encoding="utf-8"))["steps"]
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
+    quiet_desktop(host)
     facts = set_display(host)
     frame = facts["screens"][0]["frame"]
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
