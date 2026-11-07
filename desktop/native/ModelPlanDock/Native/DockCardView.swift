@@ -101,7 +101,10 @@ import CryptoKit
     @_spi(DockResourceChecks) public var readoutWindowForChecks:CGRect?{windowRect}
     @_spi(DockResourceChecks) public func rowCellsForChecks(_ id:String)->[CGRect]{
         guard let row=rowViews["row."+id] else{return []}
-        return row.subviews.filter{!$0.isHidden}.map{row.convert($0.frame,to:self)}.sorted{$0.minX<$1.minX}
+        return row.subviews.filter{!$0.isHidden}.map{view in
+            // A text cell's frame carries the field's 2 pt inset; report the grid column itself.
+            row.convert(view is NSTextField ? view.frame.insetBy(dx:2,dy:0):view.frame,to:self)
+        }.sorted{$0.minX<$1.minX}
     }
     @_spi(DockResourceChecks) public func rowFrameForChecks(_ id:String)->CGRect?{rowViews["row."+id]?.frame}
     private func place(_ child:NSView,in parent:NSView){if child.superview !== parent{child.removeFromSuperview();parent.addSubview(child)}}
