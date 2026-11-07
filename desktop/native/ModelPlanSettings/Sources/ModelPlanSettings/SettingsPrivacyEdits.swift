@@ -33,9 +33,19 @@ public enum SettingsPublicLink: String, CaseIterable, Sendable {
         }
     }
 }
+/// Only these two System Settings panes; the host owns the URL and the open.
+public enum SettingsSystemPane: String, CaseIterable, Sendable {
+    case loginItems, notifications
+    public var url: URL {
+        switch self {
+        case .loginItems: return URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!
+        case .notifications: return URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
+        }
+    }
+}
 public enum SettingsUpdateState: String, Sendable { case unavailable, notChecked, current, available, failed }
 public enum SettingsB22Action: Sendable {
-    case clearAppCache, openLink(SettingsPublicLink), checkForUpdates, previewFirstRun
+    case clearAppCache, openLink(SettingsPublicLink), openSystemSettings(SettingsSystemPane), checkForUpdates, previewFirstRun
 }
 
 /// One app-owned instance wraps the existing policy. It never requests permission or posts an OS notice.
