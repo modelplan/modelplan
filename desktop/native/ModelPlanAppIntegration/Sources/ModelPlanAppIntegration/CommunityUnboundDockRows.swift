@@ -84,10 +84,14 @@ public struct DockContentRow: Sendable {
                 }
             }
         }
+        // The count and the credits can carry the same note; the folded line says it once.
+        var seen = Set<String>()
+        let notes = ([expiryText] + [count?.detail ?? "", credits?.detail ?? ""].flatMap { $0.components(separatedBy: " · ") })
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
         // The prototype has no money row: a money balance keeps its own name on the one line.
         let reserve = DockCardRow(id: "reserve", kind: .reserve, label: credits?.label ?? (english ? "Reserve" : "储备"),
             value: [count?.value ?? "", credits?.value ?? ""].filter { !$0.isEmpty }.joined(separator: " · "),
-            detail: [expiryText, count?.detail ?? "", credits?.detail ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
+            detail: notes.joined(separator: " · "))
         var placed = false
         return additionalRows.flatMap { row -> [DockCardRow] in
             guard row.id == "reset-count" || row.id == "credits" else { return [row] }
