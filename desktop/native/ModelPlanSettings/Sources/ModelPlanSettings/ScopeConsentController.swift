@@ -104,6 +104,7 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
         switch phase { case .sending, .waitingForFacts: return false; default: return true }
     }
     public var canInspect: Bool { commands.isReady && inspectionToken == nil && activeRequestToken == nil }
+    private var claudeRowState: RowsState?, keychainLater = false
     public func canChoose(_ id: String) -> Bool {
         guard canMutate, let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
         return scope.route.isKnown && scope.route != .knownUnknown && scope.detected && !scope.retired && scope.disabledReason == nil && scope.state != .allowed && !scope.cleanupPending
@@ -189,13 +190,52 @@ public enum ScopeConsentNotice: Sendable { case none, outcomeUnknown, committedA
         guard diagnosticsToken == token else { return }
         diagnosticsToken = nil; changed()
     }
-    public func receiveAcceptedRows(_ value: WireRowsSnapshot) { rowsSummary = value.projection.rowsSummary; changed() }
+    public func receiveAcceptedRows(_ value: WireRowsSnapshot) {
+        rowsSummary = value.projection.rowsSummary
+        claudeRowState = value.projection.rows.first { $0.id == "claude" }?.state
+        changed()
+    }
     public func clearAcceptedPrivateState() {
         lastIntentRequestID = nil; pluginToken = nil; pluginPhase = .idle; expectedPluginTool = nil; completedPluginRequestID = nil; pendingPluginResults = []
         activeRequestToken = nil; inspectionToken = nil; diagnosticsToken = nil; diagnosticsSummary = nil;diagnosticsPresentation=nil; notice = .none
-        facts = nil; rowsSummary = nil; selectedIDs = []; phase = .idle; changed()
+        facts = nil; rowsSummary = nil; claudeRowState = nil; keychainLater = false; selectedIDs = []; phase = .idle; changed()
+    }
+    /// D41: Claude Code's saved-login path, when it is here and usable.
+    private var claudeSavedLogin: WireConsentScope? {
+        facts?.scopes.first {
+            $0.tool == "claude" && $0.route == .savedLoginApi && $0.detected && !$0.retired && $0.disabledReason == nil && !$0.cleanupPending
+        }
+    }
+    /// D41: the first-run sheet asks once, unless the login reads without the Keychain or the
+    /// user already chose. Later only hides the question; nothing is recorded.
+    public var asksForKeychainOnFirstRun: Bool {
+        guard let scope = claudeSavedLogin, !keychainLater else { return false }
+        return scope.keychain == .unset && claudeRowState != .fresh
+    }
+    /// D41: the standing state after Later or a refusal. It is shown, never prompted.
+    public var needsKeychainAccess: Bool {
+        guard let scope = claudeSavedLogin, scope.keychain != .allow else { return false }
+        return scope.keychain == .deny || claudeRowState == .needsKeychain
+    }
+    public func chooseKeychainLater() { keychainLater = true; changed() }
+    /// D41: the button is the consent, so no second confirmation. The engine's foreground read
+    /// after this grant is what makes macOS show its dialog; nothing else may trigger it.
+    public func allowKeychain() async {
+        guard canMutate, let id = claudeSavedLogin?.scope else { return }
+        let value = ScopeConsentConfirmation(id: UUID(), intent: .init(mutation: .allow(scopes: [id], keychain: [id])))
+        phase = .confirmation(value)
+        await confirm(value.id)
     }
     public func isAllowed(_ id: String) -> Bool { facts?.scopes.first { $0.scope == id }?.state == .allowed }
+    /// D27 (owner 11-06): a standard reader the engine reads without a consent click — no saved
+    /// decision yet and on by the compiled policy (defaultCheck). Browser sessions always ask first.
+    public func isOnByDefault(_ id: String) -> Bool {
+        guard let scope = facts?.scopes.first(where: { $0.scope == id }) else { return false }
+        return scope.state == .unset && scope.defaultCheck && scope.route.isKnown && scope.route != .knownUnknown &&
+            scope.route != .browserSession && !scope.retired && scope.disabledReason == nil
+    }
+    /// Whether ModelPlan reads this path now: explicitly allowed or on by default.
+    public func isReading(_ id: String) -> Bool { isAllowed(id) || isOnByDefault(id) }
     public func choose(_ id: String, selected: Bool) {
         guard canChoose(id) else { return }
         if selected { selectedIDs.insert(id) } else { selectedIDs.remove(id) }; phase = .idle; changed()

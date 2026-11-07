@@ -1213,6 +1213,16 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 
 // observeLiveSessions never queries accounts; it only reuses local bindings already read above.
 func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report, now time.Time) {
+	observeLive(st, paths.CodexHome, quota.UniqueSubscriptionRefs(report.Accounts), report, now)
+}
+
+// observeLiveLogs is observeLiveSessions for a caller without a report: the current consent fences it.
+func observeLiveLogs(st *store.Store, codexHome string, refs map[string]string, now time.Time) {
+	fence := consent.Capture().Fence()
+	observeLive(st, codexHome, refs, quota.Report{ConsentStoreEpoch: fence.StoreEpoch, ConsentGeneration: fence.Generation}, now)
+}
+
+func observeLive(st *store.Store, codexHome string, refs map[string]string, report quota.Report, now time.Time) {
 	if speed.Off() || !consent.Allowed("claude", consent.Local) || !consent.Allowed("codex", consent.Local) {
 		return
 	}
@@ -1221,25 +1231,22 @@ func observeLiveSessions(st *store.Store, paths quota.Paths, report quota.Report
 	if claude == "" {
 		claude = filepath.Join(home, ".claude")
 	}
-	refs := map[string]string{}
-	for _, a := range report.Accounts {
-		if a.Subscription != nil {
-			refs[a.Source] = a.Subscription.Ref
-		}
-	}
 	reportWrite(report, func() error {
-		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, paths.CodexHome, now), projectLabels(), refs, now)
+		return speed.ObserveLive(st.Dir, speed.ActiveLogs(claude, codexHome, now), projectLabels(), refs, now)
 	})
 }
 
 // observeCodexSpeed measures what is new in the most recent Codex threads, skipping the ones Codex
 // runs by itself.
 func observeCodexSpeed(st *store.Store, now time.Time) {
+	observeCodexHomeSpeed(st, quotaPaths(st).CodexHome, now)
+}
+
+func observeCodexHomeSpeed(st *store.Store, home string, now time.Time) {
 	if !consent.Allowed("codex", consent.Local) {
 		return
 	}
 	_ = consent.LocalWrite("codex", func() error {
-		home := quotaPaths(st).CodexHome
 		return speed.ObserveCodex(st.Dir, quota.RecentRollouts(home, 8), func(p string) bool { return quota.Background(quota.ThreadOrigin(p), "") },
 			speed.Ingest{Labels: projectLabels(), Subscription: quota.CodexSubscription(st.Dir, now)}, now)
 	})

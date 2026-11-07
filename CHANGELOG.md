@@ -6,6 +6,10 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- A read that loses a lock to another ModelPlan process, such as a plugin hook, now retries after 15 seconds. Before, nothing had been read but the app waited 10 minutes, or 30 for Codex's runtime.
+
+- An older tool-level allow no longer switches off default-on reads added after it: for example Codex's runtime is read on such profiles, while a refusal, a denied source or a chosen non-native backend still wins. `doctor readers` now lists Codex.
+
 - Verification only: `MODELPLAN_VERIFY_READERS=<tool,...>` narrows every consent read (saved grants and default-on local/runtime scopes) to the listed tool IDs for device test runs. It never grants anything, an invalid entry denies every tool, and it is never written to the consent file. Unset, nothing changes.
 
 - A finished Codex reading is no longer lost when the consent lock is briefly held. Before, the reading was dropped and the next attempt waited 5 to 30 minutes.
@@ -13,22 +17,16 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 - Withdraw today statistics from subscribed account rows when their session evidence, day, or current source binding expires, even when no cache file changes.
 
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
-  请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
 
 - Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
-  C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
 
 - Accept the optional published `provisional: true` on a model's effort in the CLI, the public reader and the Codex plugin. `modelplan effort` marks that ability as provisional (`暂定`), `--json` carries the flag only when set, and quota hints never offer a provisional configuration as another model's alternative, nor compare a provisional current configuration across models. Other unknown effort fields are still rejected.
-  CLI、公开读取器和 Codex 插件接受发布数据中档位的可选字段 `provisional: true`。`modelplan effort` 会把该档能力标为「暂定」，`--json` 仅在设置时带上该字段；额度提示不会把暂定档位当作其他模型的替代，也不会拿暂定的当前档位跨模型比较。其他未知档位字段仍会被拒绝。
 
 - Add the pure CLI rows projection core: stable tool membership, contextual reason mapping, per-profile value states, conservative clocks, and field-specific privacy checks. Missing or retired allowed tools take priority over no-reader guidance. Production desktop integration follows the reader/consent adapters; quota output is unchanged.
-  新增纯 CLI 行投影核心：稳定工具成员、按上下文映射原因、按资料区分读数状态、保守时钟与逐字段隐私校验。已授权但缺失或退休的工具优先于无读取器提示；生产桌面接线随后与读取/授权适配器集成，额度输出不变。
 
 - Granting Claude Keychain access in Settings now runs one foreground read right away, so the macOS prompt appears while you are there. Before, only two-second background reads ran, an unanswered prompt timed out, and the Keychain state stayed stuck so Claude never got a reading. Replays, grants without Keychain, and Keychain denials read nothing.
-  在设置中允许 Claude 访问钥匙串后，会立即在前台读取一次，macOS 提示框会在你操作时弹出。以前只有两秒的后台读取，提示框来不及回应就超时，钥匙串状态被锁住，Claude 一直读不到数。重放请求、未涉及钥匙串的授权和拒绝钥匙串都不会读取。
 
 - Extend the app–CLI contract to plugin installation: schemas cover every existing status, and real-binary synthetic captures verify both host tools, offline planning and partial failures. Schema/type/status drift is checked against the production Go model; install behavior is unchanged.
-  App–CLI 契约新增插件安装：schema 覆盖全部现有状态，真实 CLI 的合成样例验证两个宿主、离线计划与部分失败；对照生产 Go 类型检查字段和状态漂移，不改变安装行为。
 
 ## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-29)
 

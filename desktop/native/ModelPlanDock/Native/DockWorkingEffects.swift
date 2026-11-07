@@ -2,7 +2,17 @@
 import AppKit
 import QuartzCore
 import CoreImage
+import IOKit.ps
 import ModelPlanPrimitives
+
+/// MOT-2.3-10: whether the Mac is running on battery. A Mac without one reports AC.
+public enum DockPowerSource {
+    public static func onBattery()->Bool {
+        guard let info=IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let type=IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() else{return false}
+        return (type as String) == kIOPSBatteryPowerValue
+    }
+}
 
 public enum DockEffectCompositing: Sendable {case sourceOver, screen}
 
@@ -32,13 +42,24 @@ public struct DockEffectRotation: Equatable, Sendable {
     public var interpolatedIDs:Set<String>{Set(interpolations.keys)}
     public var interpolationLayerCount:Int{interpolations.values.reduce(0){$0+$1.layerCount}}
     public var frameCounts:[String:Int]{consumers.mapValues(\.frameCount)}
+    public var cycleSeconds:[String:Double]{consumers.mapValues(\.cycleSeconds)}
     private let systemReduceMotion:()->Bool
+    private let onBattery:()->Bool
+    /// On battery the flames step at half rate, ~4.5 fps, without the blended frames. Power
+    /// is read each time effects are configured, so a change applies at the next data change.
+    public private(set) var isThrottled=false
+    private static let batteryCycleSeconds=2.0
     private var motionByID=[String:DockEffectRotation]()
     private var staticIDs=Set<String>()
     private static let rotationKey="dock-effect-rotation"
     public var rotatingIDs:Set<String>{Set(consumers.filter{$0.value.layer.animation(forKey:Self.rotationKey) != nil}.map(\.key))}
-    public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion},hostTime:@escaping ()->CFTimeInterval = {CACurrentMediaTime()}){
-        self.pool=pool;self.systemReduceMotion=systemReduceMotion;self.hostTime=hostTime
+    public var rotationPeriods:[String:Double] {
+        consumers.reduce(into:[:]) { result,item in
+            if let animation=item.value.layer.animation(forKey:Self.rotationKey) { result[item.key]=animation.duration }
+        }
+    }
+    public init(pool:EffectResourcePool,systemReduceMotion:@escaping ()->Bool = {NSWorkspace.shared.accessibilityDisplayShouldReduceMotion},onBattery:@escaping ()->Bool = DockPowerSource.onBattery,hostTime:@escaping ()->CFTimeInterval = {CACurrentMediaTime()}){
+        self.pool=pool;self.systemReduceMotion=systemReduceMotion;self.onBattery=onBattery;self.hostTime=hostTime
     }
     public func configure(view:DockInstrumentView,skin:DockInstrumentSkin,readings:[DockInstrumentReading],profile:RenderProfile,
                           magnification:[String:Double]=[:],compositing:DockEffectCompositing = .sourceOver,rotation:DockEffectRotation? = nil,quietIDs:Set<String> = [],sampling:DockEffectSampling = .stepped,provider:(DockInstrumentReading)->(any EffectFrameProvider)?) throws {
@@ -47,6 +68,7 @@ public struct DockEffectRotation: Equatable, Sendable {
         guard rotation?.valid ?? true else{throw DockArtworkError.invalidManifest}
         var effectiveProfile=profile
         effectiveProfile.reduceMotion = profile.reduceMotion || systemReduceMotion()
+        isThrottled=onBattery()
         view.onVisualReset={[weak self] in self?.stop()}
         if (compositing == .screen || sampling == .interpolatedCandidate) && !view.layerUsesCoreImageFilters {view.layerUsesCoreImageFilters=true}
         let rows=Dictionary(uniqueKeysWithValues:readings.map{($0.subscriptionID,$0)})
@@ -58,7 +80,8 @@ public struct DockEffectRotation: Equatable, Sendable {
             guard station.diameter.isFinite,(8...256).contains(station.diameter) else{unavailableIDs.insert(id);continue}
             let points=station.logicalPoints ?? Int(station.diameter.rounded())
             let request=EffectFrameRequest(profile:effectiveProfile,points:points,magnification:magnification[id] ?? 1,variant:reading.status.rawValue)
-            let effect=SteppedImageEffect(pool:pool);effect.configure(request:request,provider:source,working:true)
+            let effect=SteppedImageEffect(pool:pool);if isThrottled {effect.cycleSeconds=Self.batteryCycleSeconds}
+            effect.configure(request:request,provider:source,working:true)
             guard effect.isAvailable else{unavailableIDs.insert(id);effect.stop();continue}
             effect.layer.frame=parent.bounds
             if compositing == .screen {
@@ -69,7 +92,7 @@ public struct DockEffectRotation: Equatable, Sendable {
             // Quiet uses the existing atlas and static frame zero, without a second profile/cache.
             if quietIDs.contains(id) || effectiveProfile.reduceMotion {staticIDs.insert(id);effect.seekForCapture(0)}
             parent.addSublayer(effect.layer)
-            if sampling == .interpolatedCandidate,!effectiveProfile.reduceMotion,!quietIDs.contains(id) {
+            if sampling == .interpolatedCandidate,!isThrottled,!effectiveProfile.reduceMotion,!quietIDs.contains(id) {
                 guard let interpolation=DockInterpolatedFrames(effect:effect,epoch:epoch) else{effect.stop();effect.layer.removeFromSuperlayer();unavailableIDs.insert(id);continue}
                 interpolations[id]=interpolation
             }

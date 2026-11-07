@@ -89,6 +89,8 @@ if [ -z "$mark_path" ] || [ "$(printf '%s\n' "$mark_path" | wc -l | tr -d ' ')" 
     echo 'Expected exactly one beta-only Z.ai mark in the Dock resources bundle' >&2; exit 1
 fi
 rm -- "$mark_path"
+# The community build ships the official appearance, under the reserved visuals licence.
+cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
 cat > "$app/Contents/Info.plist" <<PLIST
@@ -99,6 +101,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <key>CFBundleDisplayName</key><string>ModelPlan Community</string>
 <key>CFBundleIdentifier</key><string>org.modelplan.community.swift.scaffold</string>
 <key>CFBundleExecutable</key><string>ModelPlanCommunity</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>

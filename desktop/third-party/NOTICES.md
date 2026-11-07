@@ -1542,7 +1542,7 @@ Licence: `Apache-2.0`.
 
 Copyright (c) 2026 qunqin24
 
-Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
+Used in: Native Dock shell and staged app-service adapters: PanelScreen, ActiveDisplayFollower, PanelPointerWatcher and PointerProbe, PointerEntryReporter, PanelPlacement, PulseDockPanel, PulseDockPresence and PulseLoginItem; PulseDockPanel also ports the initial placement, order-in and replacement sequence and exposes the borrowed display identity to the Dock topology adapter; Original Apache-2.0 headers and modification notices retained; per-file provenance is recorded in docs/borrowed/pulse/manifest.json; The pinned upstream has no literal NOTICE file; its complete THIRD_PARTY_NOTICES.md is retained as provenance, without importing Pulse icons, providers, tether, update stack or other components.
 
 Source: https://github.com/qunqin24/Pulse/tree/7668384cbcf357bba7dee4af85b4052a59c6e35d
 
@@ -2018,3 +2018,39 @@ V2EX, Venice, Vercel, Volcengine, Windsurf, Xiaomi MiMo, Z.ai and Zhipu — rema
 the property of their respective owners. Their inclusion identifies compatible
 services and does not imply endorsement.
 ````
+
+## three 0.186.1
+
+Licence: `MIT`.
+
+Copyright © 2010-2026 three.js authors
+
+Used in: Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole.
+
+Source: https://www.npmjs.com/package/three/v/0.186.1
+
+### LICENSE
+
+```text
+The MIT License
+
+Copyright © 2010-2026 three.js authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```

@@ -87,20 +87,21 @@ type ResetCardSource struct {
 }
 
 type Account struct {
-	Today            *AccountToday `json:"today,omitempty" null:"forbidden"`
-	ResetCards       *ResetCards   `json:"resetCards,omitempty" null:"forbidden"`
-	RefreshNotBefore **time.Time   `json:"refreshNotBefore,omitempty" null:"coalesced"`
-	Route            Route         `json:"route"`
-	SubscriptionRef  *string       `json:"subscriptionRef" null:"coalesced"`
-	AccountLocator   *string       `json:"accountLocator" null:"coalesced"`
-	Plan             Plan          `json:"plan"`
-	Beta             bool          `json:"beta"`
-	Credits          *Credits      `json:"credits" null:"coalesced"`
-	ValueState       ValueState    `json:"valueState"`
-	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
-	FreshUntil       *time.Time    `json:"freshUntil" null:"coalesced"`
-	LastFailure      *Failure      `json:"lastFailure" null:"coalesced"`
-	Windows          []Window      `json:"windows"`
+	Today            *AccountToday     `json:"today,omitempty" null:"forbidden"`
+	Activity         []AccountActivity `json:"activity,omitempty" null:"coalesced"`
+	ResetCards       *ResetCards       `json:"resetCards,omitempty" null:"forbidden"`
+	RefreshNotBefore **time.Time       `json:"refreshNotBefore,omitempty" null:"coalesced"`
+	Route            Route             `json:"route"`
+	SubscriptionRef  *string           `json:"subscriptionRef" null:"coalesced"`
+	AccountLocator   *string           `json:"accountLocator" null:"coalesced"`
+	Plan             Plan              `json:"plan"`
+	Beta             bool              `json:"beta"`
+	Credits          *Credits          `json:"credits" null:"coalesced"`
+	ValueState       ValueState        `json:"valueState"`
+	ObservedAt       *time.Time        `json:"observedAt" null:"coalesced"`
+	FreshUntil       *time.Time        `json:"freshUntil" null:"coalesced"`
+	LastFailure      *Failure          `json:"lastFailure" null:"coalesced"`
+	Windows          []Window          `json:"windows"`
 }
 
 // AccountToday contains only observed values; omission means unknown.
@@ -109,6 +110,17 @@ type AccountToday struct {
 	GenerationTps        *float64          `json:"generationTps,omitempty" null:"forbidden" schema:"minimum=0"`
 	RunningSessions      *int              `json:"runningSessions,omitempty" null:"forbidden" schema:"minimum=1"`
 	BindingBasis         TodayBindingBasis `json:"bindingBasis"`
+}
+
+// AccountActivity contains no path, transcript, raw session ID or credential.
+// SubscriptionRef must match its parent account; SessionRef is an opaque local ref.
+type AccountActivity struct {
+	SessionRef      string        `json:"sessionRef"`
+	SubscriptionRef string        `json:"subscriptionRef"`
+	BindingVerified bool          `json:"bindingVerified"`
+	Phase           ActivityPhase `json:"phase"`
+	RecordAt        time.Time     `json:"recordAt"`
+	ExpiresAt       time.Time     `json:"expiresAt"`
 }
 
 type Plan struct {

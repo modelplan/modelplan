@@ -20,6 +20,7 @@ public struct DockNozzleInteraction:Sendable {
     public private(set) var source:String?
     public private(set) var overflowHelpNeeded=false
     private var start=0.0,overflow=false,moved=false
+    private var receivedDrag = false
     private var catalogue=[String](),targets=[DockReorderTarget](),expected=DockSubscriptionPreferences()
     private var session:DockReorderSession?
     public init(){}
@@ -32,6 +33,7 @@ public struct DockNozzleInteraction:Sendable {
     }
     public mutating func move(along:Double,reducedMotion:Bool,canPreview:([String])->Bool = {_ in true})throws{
         guard let source,along.isFinite else{return}
+        receivedDrag = true
         guard moved || abs(along-start)>5 else{return};moved=true
         if overflow{overflowHelpNeeded=true;return}
         guard let target=targets.min(by:{abs($0.along-along)<abs($1.along-along)}) else{return}
@@ -43,7 +45,7 @@ public struct DockNozzleInteraction:Sendable {
         guard let source else{return .none}
         defer{cancel()}
         guard catalogue==self.catalogue,preferences==expected else{throw DockLogicError.staleReorder}
-        if !moved{return overSameSource ? .click(source):.none}
+        if !moved { return !receivedDrag && overSameSource ? .click(source) : .none }
         guard !overflow,insideMain,let preview,preview.order != (try preferences.orderedIDs(in:catalogue)) else{return .none}
         var proposal=preferences;try session!.commit(into:&proposal,catalogue:catalogue)
         let position=try proposal.orderedIDs(in:catalogue).firstIndex(of:source)!
@@ -52,7 +54,7 @@ public struct DockNozzleInteraction:Sendable {
     public func matches(catalogue:[String],preferences:DockSubscriptionPreferences)->Bool{
         source==nil || (self.catalogue==catalogue && expected==preferences)
     }
-    public mutating func cancel(){session?.cancel();session=nil;source=nil;preview=nil;overflowHelpNeeded=false;moved=false;targets=[]}
+    public mutating func cancel(){session?.cancel();session=nil;source=nil;preview=nil;overflowHelpNeeded=false;moved=false;receivedDrag=false;targets=[]}
     public static func keyboardMove(id:String,delta:Int,catalogue:[String],preferences:DockSubscriptionPreferences)throws->DockOrderRequest?{
         guard delta == -1 || delta == 1 else{throw DockLogicError.staleReorder}
         let order=try preferences.orderedIDs(in:catalogue);guard let i=order.firstIndex(of:id) else{throw DockLogicError.missingSubscription}

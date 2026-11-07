@@ -14,6 +14,12 @@
             }
           ]
         },
+        "activity": {
+          "items": {
+            "$ref": "#/$defs/AccountActivity"
+          },
+          "type": "array"
+        },
         "beta": {
           "type": "boolean"
         },
@@ -154,6 +160,46 @@
       ],
       "type": "object"
     },
+    "AccountActivity": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingVerified": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "model",
+            "tool",
+            "finished",
+            "fallback"
+          ],
+          "type": "string"
+        },
+        "recordAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sessionRef": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionRef",
+        "subscriptionRef",
+        "bindingVerified",
+        "phase",
+        "recordAt",
+        "expiresAt"
+      ],
+      "type": "object"
+    },
     "AccountToday": {
       "additionalProperties": false,
       "properties": {
@@ -282,6 +328,108 @@
       "required": [
         "balance",
         "observedAt"
+      ],
+      "type": "object"
+    },
+    "CockpitCycle": {
+      "additionalProperties": false,
+      "properties": {
+        "hadDrop": {
+          "type": "boolean"
+        },
+        "points": {
+          "type": "number"
+        },
+        "resetsAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "spent": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycleShare"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        "startedAt": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "startedAt",
+        "resetsAt",
+        "points",
+        "hadDrop",
+        "spent"
+      ],
+      "type": "object"
+    },
+    "CockpitCycleGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "attribution": {
+          "type": "string"
+        },
+        "cycles": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycle"
+          },
+          "maxItems": 10,
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subscriptionRef",
+        "kind",
+        "attribution",
+        "cycles"
+      ],
+      "type": "object"
+    },
+    "CockpitCycleShare": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fast": {
+          "type": "boolean"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "points": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "model",
+        "effort",
+        "fast",
+        "points"
       ],
       "type": "object"
     },
@@ -543,6 +691,13 @@
         "coverage": {
           "type": "string"
         },
+        "cycles": {
+          "items": {
+            "$ref": "#/$defs/CockpitCycleGroup"
+          },
+          "maxItems": 64,
+          "type": "array"
+        },
         "daily": {
           "items": {
             "$ref": "#/$defs/CockpitSourceBucket"
@@ -619,7 +774,8 @@
         "dailyFrom",
         "daily",
         "hourly",
-        "projects"
+        "projects",
+        "cycles"
       ],
       "type": "object"
     },
@@ -879,9 +1035,11 @@
         "redBelow": {
           "enum": [
             10,
-            16,
+            15,
             20,
-            25
+            25,
+            30,
+            40
           ],
           "type": "integer"
         }

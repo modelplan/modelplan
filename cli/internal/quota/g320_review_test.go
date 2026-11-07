@@ -161,6 +161,14 @@ func TestG320ReviewWithoutLiveReadingLogsAreTheFallback(t *testing.T) {
 				t.Fatal(err)
 			}
 		}, acctNow},
+		// G3-13 (#523): past the freshness interval but within the 6 h keep, the
+		// runtime reading is no longer available, so the logs are the reading.
+		{"reading stale", func(t *testing.T, cache string) {
+			bin, _ := fakeCodex(t, g320Limits("pro", primary, weekly))
+			if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(-3*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+		}, acctNow},
 		{"reading too old", func(t *testing.T, cache string) {
 			bin, _ := fakeCodex(t, g320Limits("pro", primary, weekly))
 			if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(-accountKeep-time.Hour)); err != nil {

@@ -23,8 +23,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"408390eb6885d4b62bac5069f0cb3b2a3c877c943e78b758d647bdfa8e3beb83",
-        "official":"b195f0ba4bb7cd3162e076b531886e7e4e0be2b6d7617f42a1dc3c11c826dd20",
+        "community":"9c1aef2d2191b15c7cdb30c2dea99e7ca91d2b18d15c2a0e1df3f589ccd0263d",
+        "official":"a0a12c8c0c2d9796ba96676d643be9ba7443ac73320fab3fb1e1e1b0b4650c8d",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -124,6 +124,7 @@ struct CockpitUnavailableNotice {
     let composition: EngineDockMenuComposition
     var showTask: Task<Void,Never>?
     var wantsVisible=false
+    private var pageOpened = false
     var fallback: EngineRowsConsole?
     private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
@@ -137,7 +138,17 @@ struct CockpitUnavailableNotice {
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
-        owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
+        let onOpened = owner.coordinator?.onOpened
+        owner.coordinator?.onOpened = { [weak self] in
+            self?.pageOpened = true
+            onOpened?()
+        }
+        owner.coordinator?.onClosed = { [weak self] in
+            guard let self else { return }
+            self.wantsVisible = false
+            self.pageOpened = false
+            self.composition.dock.setCockpitPresentationBlocked(false)
+        }
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {
@@ -153,10 +164,12 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
+        composition.dock.setCockpitPresentationBlocked(true)
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
-            guard !Task.isCancelled,wantsVisible else { showTask=nil;return }
+            guard !Task.isCancelled else { return }
+            guard wantsVisible else { showTask = nil; return }
             let theme:CockpitAppearance.Theme
             switch snapshot.preferences.theme {
             case .day:theme = .day
@@ -179,11 +192,21 @@ struct CockpitUnavailableNotice {
                 }
             }
             activate()
-            owner.coordinator?.open();showTask=nil
+            owner.coordinator?.open()
+            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
+            showTask = nil
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
-    func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;owner.coordinator?.close();fallback?.hide() }
+    func hide() {
+        wantsVisible = false
+        showTask?.cancel()
+        showTask = nil
+        owner.coordinator?.close()
+        pageOpened = false
+        composition.dock.setCockpitPresentationBlocked(false)
+        fallback?.hide()
+    }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
         let initiatedInForeground=isForeground()

@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import signal
 import subprocess
@@ -74,6 +75,20 @@ def assertions(report, helper, home, *, expect_unverified=False):
     return results
 
 
+def icon_problem(app):
+    """A bundle without its icon shows a blank app in Finder, Launchpad and Spotlight."""
+    try:
+        name = plistlib.loads((app / 'Contents/Info.plist').read_bytes()).get('CFBundleIconFile')
+    except (OSError, plistlib.InvalidFileException) as error:
+        return f'unreadable Info.plist: {error}'
+    if not isinstance(name, str) or not name:
+        return 'Info.plist has no CFBundleIconFile'
+    icon = app / 'Contents/Resources' / (name if name.endswith('.icns') else name + '.icns')
+    if not icon.is_file() or icon.read_bytes()[:4] != b'icns':
+        return f'{icon.name} is missing or is not an icon file'
+    return None
+
+
 def print_results(results):
     for name, passed, value in results:
         print(f'app-smoke {name} {"PASS" if passed else "FAIL"} {json.dumps(value, ensure_ascii=False, sort_keys=True)}', flush=True)
@@ -84,6 +99,9 @@ def launch(app, output, *, expect_unverified=False):
     executable = app / 'Contents/MacOS/ModelPlanCommunity'
     helper = app / 'Contents/Helpers/modelplan'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+    problem = icon_problem(app)
+    if problem:
+        raise ValueError(problem)
     expected = (app / 'Contents/Resources/modelplan.sha256').read_text().strip()
     if hashlib.sha256(helper.read_bytes()).hexdigest() != expected:
         raise ValueError('Bundled helper does not match its signed resource hash')
