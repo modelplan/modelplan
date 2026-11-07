@@ -34,7 +34,7 @@ jobs:
   # main first. merge_group has no paths filter, so this job applies the pull_request list above: a
   # group that adds nothing under those paths, or whose tree is the PR head's tree (the head already
   # contains the base and its own run tested exactly this), skips the jobs below. The GUI leg never
-  # runs here. trusted-mac.yml has no merge_group route to the self-hosted pool, so native-headless
+  # runs here. trusted-mac.yml has no merge_group route to the owner's Mac pool, so native-headless
   # uses a hosted Mac here.
   queue-scope:
     if: ${{ github.event_name == 'merge_group' }}
