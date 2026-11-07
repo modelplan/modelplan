@@ -77,6 +77,9 @@ type Snapshot struct {
 	// ProjectLabels: project labels are on, as they are unless the user turned them off
 	// (`modelplan project-labels off`).
 	ProjectLabels bool `json:"projectLabels"`
+	// PerfHistory: the 7/30-day observed performance windows per subscription and the model and
+	// tool rankings (v1.1); present only when the caller asked for it.
+	PerfHistory *PerfHistory `json:"perfHistory,omitempty"`
 	// Subscriptions: every subscription the accounts were bound to, with the accounts that read
 	// it, for a scope selector. References are random and local; they name no account.
 	Subscriptions []Subscription `json:"subscriptions"`
@@ -216,6 +219,8 @@ type Input struct {
 	Perf *speed.PerfView
 	// Pace: the pace ledger; nil leaves paceHistory empty.
 	Pace *history.PaceView
+	// PerfHistory: a prebuilt 7/30-day history section; nil leaves it out of the snapshot.
+	PerfHistory *PerfHistory
 	// Boundaries: advise.Boundaries for the same input.
 	Boundaries []time.Time
 	Recording  bool
@@ -268,6 +273,7 @@ func Build(in Input) Snapshot {
 		s.SessionRanking, s.ProjectRanking = in.Perf.Ranking(), in.Perf.Projects()
 	}
 	s.ProjectLabels = in.ProjectLabels
+	s.PerfHistory = in.PerfHistory
 	s.Subscriptions = subscriptions(in.Report.Accounts)
 	starRankings(&s, in.Digest, in.ProjectLabels)
 	s.PaceHistory = history.PaceView{OK: true, Recording: in.Recording, Now: in.Now}.History()
