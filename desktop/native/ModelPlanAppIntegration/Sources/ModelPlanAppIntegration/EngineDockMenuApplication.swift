@@ -64,6 +64,8 @@ import ModelPlanMenuVerification
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
+    var openExternalURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
@@ -378,7 +380,7 @@ import ModelPlanMenuVerification
                     self.settings.update(context: context)
                 }
             }
-        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openPublicLink(let link): openExternalURL(link.url)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
@@ -467,9 +469,9 @@ import ModelPlanMenuVerification
             .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
+            .init(title: label("Website", "网站"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.website.url) }),
+            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.methodology.url) }),
+            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.privacy.url) }),
         ]
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
@@ -573,7 +575,7 @@ import ModelPlanMenuVerification
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {
         guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
-        NSWorkspace.shared.open(link.url)
+        openExternalURL(link.url)
     }
     @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
