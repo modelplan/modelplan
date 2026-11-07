@@ -95,7 +95,8 @@ jobs:
         run: |
           set -eu
           # A pull_request checkout is the merge commit, so its first parent is the base.
-          if git diff --name-only HEAD^1 HEAD | grep -Eq '^(claude-code/|codex/hooks/|codex/cli-pin\.json$|\.github/workflows/ci\.yml$)'; then
+          # -z keeps paths Git would otherwise quote, such as non-ASCII names.
+          if git diff --name-only -z HEAD^1 HEAD | grep -qzE '^(claude-code/|codex/hooks/|codex/cli-pin\.json$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
