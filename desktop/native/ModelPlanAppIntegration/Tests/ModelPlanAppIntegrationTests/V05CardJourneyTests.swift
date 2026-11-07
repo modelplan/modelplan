@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import AppKit
 import XCTest
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
@@ -86,6 +86,29 @@ private actor V05SyntheticClient: EngineClient {
         func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
         let bar = try XCTUnwrap(views(dock.card).first { $0.accessibilityIdentifier().hasPrefix("dock.card.quota.") })
         XCTAssertEqual(bar.intrinsicContentSize, NSSize(width: 78, height: 7))
+        // G3-05 / G3-31 (R64 D-3, D-4): the prototype card look on the real card.
+        // Plate 304 with 10/11 padding, a dark readout window inset 11 pt, fixed 56/78/34 grid, header name 13 semibold.
+        let lcd = try XCTUnwrap(dock.card.readoutWindowForChecks, "the card has a readout window")
+        XCTAssertEqual(lcd.minX, 11, accuracy: 0.5); XCTAssertEqual(lcd.width, 304 - 22, accuracy: 0.5)
+        let quotaRow = try XCTUnwrap(dock.cardContent(for: id)?.rows.first { $0.kind == .quota })
+        let cells = dock.card.rowCellsForChecks(quotaRow.id)
+        XCTAssertGreaterThanOrEqual(cells.count, 3)
+        XCTAssertEqual(cells.prefix(3).map { $0.width.rounded() }, [56, 78, 34], "label / bar / percent columns")
+        XCTAssertEqual(cells[1].minX - cells[0].maxX, 5, accuracy: 0.5); XCTAssertEqual(cells[2].minX - cells[1].maxX, 5, accuracy: 0.5)
+        XCTAssertEqual(cells[0].minX, lcd.minX + 7, accuracy: 0.5, "rows start inside the window's 7 pt padding")
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(dock.card.rowFrameForChecks(quotaRow.id)).height, 18)
+        let nameField = try XCTUnwrap(views(dock.card).compactMap { $0 as? NSTextField }.first { $0.accessibilityIdentifier() == "dock.card.text.name" })
+        XCTAssertEqual(nameField.font?.pointSize, 13)
+        XCTAssertTrue(views(dock.card).compactMap { $0 as? NSButton }.filter { ["dock.card.enter", "dock.card.close"].contains($0.accessibilityIdentifier()) }.isEmpty, "D37: no card buttons")
+        // Material: flat plate #101b24 and window #03060a (face.css #card.c7), read back from the drawn card.
+        let rep = try XCTUnwrap(dock.card.bitmapImageRepForCachingDisplay(in: dock.card.bounds))
+        dock.card.cacheDisplay(in: dock.card.bounds, to: rep)
+        func colour(_ point: CGPoint) throws -> NSColor { try XCTUnwrap(rep.colorAt(x: Int(point.x * CGFloat(rep.pixelsWide) / dock.card.bounds.width), y: Int(point.y * CGFloat(rep.pixelsHigh) / dock.card.bounds.height))?.usingColorSpace(.sRGB)) }
+        let plate = try colour(CGPoint(x: 5, y: lcd.midY)), window = try colour(CGPoint(x: lcd.minX + 3, y: lcd.midY))
+        XCTAssertEqual(plate.redComponent * 255, 0x10, accuracy: 3); XCTAssertEqual(plate.greenComponent * 255, 0x1b, accuracy: 3); XCTAssertEqual(plate.blueComponent * 255, 0x24, accuracy: 3)
+        XCTAssertEqual(window.redComponent * 255, 0x03, accuracy: 3); XCTAssertEqual(window.greenComponent * 255, 0x06, accuracy: 3); XCTAssertEqual(window.blueComponent * 255, 0x0a, accuracy: 3)
+        // M-1: the ring whose card is open glows; closing the card clears it.
+        XCTAssertEqual(dock.dockView.hotNozzleForChecks, id)
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
         for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限"])] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))

@@ -2,6 +2,7 @@
 import AppKit
 import CryptoKit
 import ImageIO
+import QuartzCore
 import XCTest
 import ModelPlanCore
 @_spi(DockResourceChecks) import ModelPlanDock
@@ -347,6 +348,54 @@ import ModelPlanSettings
         report(2, "neutral-M-span=\(placement.sliverFrame.height) thickness=4 reveals=\(reveals)/10 collapses=\(collapses)/10")
     }
 
+    /// R64 D-9: reveal fades in over 0.16 s ease-out from 14 pt toward the edge; collapse fades out
+    /// over 0.12 s ease-in sliding 14 pt toward the edge. The real state and panel change at once.
+    /// Prototype: design-handoffs/opus-r7/src/rocket-r1/dock.css:25-29.
+    func testD9RevealFadesInAndCollapseSlidesTowardTheEdge() async throws {
+        let url = try temporaryURL(), settings = try SettingsStore(url: url)
+        try await settings.update { $0.autoHide = true }
+        let f = try BehaviourFixture(url: url); defer { f.host.close() }
+        await f.start()
+        let panel = try f.panel(), placement = try XCTUnwrap(f.host.edgePresentation?.placement)
+        XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+        let before = f.host.revealAnimationsForChecks
+        f.inputs.pointer = CGPoint(x: placement.wakeFrame.midX, y: placement.wakeFrame.midY)
+        f.host.refreshPresence(); f.tick(0.151)
+        XCTAssertEqual(f.host.edgePresentation?.state, .expanded)
+        XCTAssertEqual(f.host.revealAnimationsForChecks, before + 1, "the reveal animates")
+        XCTAssertFalse(panel.contentView is DockSliverView, "the expanded content is presented at once")
+        let animations = f.host.containerAnimationsForChecks
+        let fade = try XCTUnwrap(animations["dock.reveal.opacity"] as? CABasicAnimation)
+        XCTAssertEqual(fade.duration, 0.16, accuracy: 0.0001)
+        func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
+            guard let function else { return [] }
+            var result = [Float]()
+            for index in 1...2 { var value: [Float] = [0, 0]; function.getControlPoint(at: index, values: &value); result += value }
+            return result
+        }
+        XCTAssertEqual(controlPoints(fade.timingFunction), controlPoints(CAMediaTimingFunction(name: .easeOut)))
+        XCTAssertEqual((fade.fromValue as? NSNumber)?.doubleValue, 0)
+        if let slide = animations["dock.reveal.slide"] as? CABasicAnimation {
+            let from = try XCTUnwrap((slide.fromValue as? NSValue)?.caTransform3DValue)
+            XCTAssertEqual(from.m41, 14, accuracy: 0.0001, "a right-edge reveal starts 14 pt toward the edge")
+            XCTAssertEqual(from.m42, 0, accuracy: 0.0001)
+        }
+        f.tick(0.301)
+        f.leave()
+        XCTAssertEqual(f.host.edgePresentation?.state, .sliver)
+        XCTAssertTrue(panel.contentView is DockSliverView, "the sliver is presented at once")
+        XCTAssertTrue(f.host.collapseAnimatingForChecks, "the collapse plays in its own click-through panel")
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertFalse(f.host.collapseAnimatingForChecks, "the collapse ends after 0.12 s")
+        let motion = DockRevealMotion.animations(revealing: false, edge: .bottom, flipped: true, reduceMotion: false)
+        XCTAssertEqual(motion["dock.reveal.opacity"]?.duration ?? 0, 0.12, accuracy: 0.0001)
+        XCTAssertEqual(controlPoints(motion["dock.reveal.opacity"]?.timingFunction), controlPoints(CAMediaTimingFunction(name: .easeIn)))
+        let end = try XCTUnwrap((motion["dock.reveal.slide"]?.toValue as? NSValue)?.caTransform3DValue)
+        XCTAssertEqual(end.m42, 14, accuracy: 0.0001, "a bottom-edge collapse slides down toward the edge")
+        XCTAssertNil(DockRevealMotion.animations(revealing: true, edge: .left, flipped: true, reduceMotion: true)["dock.reveal.slide"],
+                     "Reduce Motion keeps the fade and drops the slide")
+    }
+
     func testItem3ThirtyPointerOnlyMovesCannotRepositionTheWindow() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start(); try await f.coordinator.editor.commit(.autoHide(false))
@@ -397,6 +446,40 @@ import ModelPlanSettings
         XCTAssertEqual(restored.host.edgePresentation?.placement, placement)
         XCTAssertEqual(try restored.panel().frame, savedFrame)
         report(4, "commits=\(commits.count) edge=\(placement.edge) fraction=\(commit.2) restored-frame=\(savedFrame)")
+    }
+
+    /// R64 M-2: carried off an edge, a click-through hairline marks the snap destination; it disappears
+    /// once the widget sits on that edge and on release. Prototype: face-view.js:23-25, face.css:136-137.
+    func testM2SnapPreviewOutlinesTheDestinationWhileCarried() async throws {
+        let url = try temporaryURL(), f = try BehaviourFixture(url: url)
+        defer { f.host.close() }
+        await f.start(); try f.reveal()
+        let panel = try f.panel()
+        XCTAssertNil(f.host.snapPreviewFrameForChecks)
+        let start = panel.convertPoint(toScreen: f.host.dockView.convert(CGPoint(x: 25, y: 30), to: nil))
+        f.inputs.pointer = start; f.inputs.presence.mouseButtonDown = true
+        panel.sendEvent(try f.event(.leftMouseDown, global: start))
+        let middle = CGPoint(x: 600, y: 450)
+        f.inputs.pointer = middle
+        panel.sendEvent(try f.event(.leftMouseDragged, global: middle))
+        let carried = try XCTUnwrap(f.host.edgePresentation)
+        XCTAssertEqual(carried.moving, true)
+        let destination = try XCTUnwrap(carried.placement?.frame)
+        if let frame = carried.carriedFrame, abs(frame.minX - destination.minX) + abs(frame.minY - destination.minY) > 1 {
+            XCTAssertEqual(f.host.snapPreviewFrameForChecks, destination, "the hairline sits on the snap destination")
+        } else {
+            XCTAssertNil(f.host.snapPreviewFrameForChecks, "no outline while the widget already sits on its destination")
+        }
+        let edge = CGPoint(x: 1199, y: 450)
+        f.inputs.pointer = edge
+        panel.sendEvent(try f.event(.leftMouseDragged, global: edge))
+        if let frame = f.host.edgePresentation?.carriedFrame, let target = f.host.edgePresentation?.placement?.frame,
+           abs(frame.minX - target.minX) + abs(frame.minY - target.minY) <= 1 {
+            XCTAssertNil(f.host.snapPreviewFrameForChecks, "attached: no outline")
+        }
+        f.inputs.presence.mouseButtonDown = false
+        panel.sendEvent(try f.event(.leftMouseUp, global: edge))
+        XCTAssertNil(f.host.snapPreviewFrameForChecks, "release removes the outline")
     }
 
     func testItem5TwoDisplaySelectionSurvivesRecreationAndPointerCrossing() async throws {

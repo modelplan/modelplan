@@ -836,13 +836,16 @@ private actor LifecycleEngine: EngineClient {
             nozzle.setAccessibilityFocused(true)
             try await wait { dock.detachedCardForChecks != nil }
             let card = try XCTUnwrap(dock.detachedCardForChecks)
-            let settingsButton = try XCTUnwrap(button("dock.card.enter", in: card))
-            let closeButton = try XCTUnwrap(button("dock.card.close", in: card))
-            XCTAssertEqual(settingsButton.accessibilityLabel(), settings)
-            XCTAssertEqual(closeButton.accessibilityLabel(), close)
-            XCTAssertTrue(closeButton.accessibilityPerformPress(), "An accepted accessibility press reports dispatch")
-            XCTAssertNil(dock.detachedCardForChecks)
-            XCTAssertFalse(closeButton.accessibilityPerformPress(), "A retired card button cannot dispatch")
+            // D37 (11-06): no Settings/Close buttons on the card; Esc closes the card the focused ring holds,
+            // and Settings stays reachable from the widget menu.
+            XCTAssertNil(button("dock.card.enter", in: card))
+            XCTAssertNil(button("dock.card.close", in: card))
+            XCTAssertTrue(dock.menu().items.contains { $0.title == settings + "…" })
+            XCTAssertFalse(dock.menu().items.contains { $0.title == close })
+            let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+            dock.dockView.keyDown(with: escape)
+            XCTAssertNil(dock.detachedCardForChecks, "Esc closes the card held by VoiceOver focus")
             nozzle.setAccessibilityFocused(false)
         }
     }
