@@ -981,6 +981,8 @@ import ModelPlanShell
             XCTAssertEqual(painted.layer?.contentsScale, CGFloat(display.backingScale), "D-05")
             try assertRaster(painted, scale: display.backingScale)
             let carried = panel.frame
+            // D12: the widget itself follows the pointer; no click-through outline marks a destination.
+            XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible && $0.ignoresMouseEvents }.isEmpty, "no snap outline while carried")
             host.refreshDockContent()
             NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
             host.refreshPresence()

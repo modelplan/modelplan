@@ -1,0 +1,41 @@
+name: Dock native journeys
+# Real panels and the real CLI on a hosted Mac, which has a window server. These journeys need
+# compile flags and a CLI that the trusted GUI leg does not provide.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'cli/**'
+      - 'desktop/native/**'
+      - 'desktop/official-visuals/dock/**'
+      - '.github/workflows/dock-journeys.yml'
+permissions:
+  contents: read
+concurrency:
+  group: dock-journeys-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  journeys:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache: false
+      - name: Build the actual public CLI
+        working-directory: cli
+        run: |
+          mkdir -p ../.tmp
+          go build -o ../.tmp/dock-cli ./cmd/modelplan
+      - name: Native, strip and context journeys with real panels
+        env:
+          MODELPLAN_DOCK_TEST_CLI: ${{ github.workspace }}/.tmp/dock-cli
+        run: |
+          swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/dock-journeys --jobs 2 \
+            -Xswiftc -DMODELPLAN_DOCK_NATIVE_JOURNEY -Xswiftc -DMODELPLAN_DOCK_REAL_STRIP_JOURNEY -Xswiftc -DMODELPLAN_DOCK_REAL_CONTEXT_JOURNEY \
+            --filter '(DockNativePlacementJourneyTests|DockStatusNoticeNativeTests|DockPulseDragJourneyTests|DockStripRealServerTests|DockCockpitReturnJourneyTests|DockResetRealServerTests|DockRealDiagnosticsMenuTests|StatusHelpMenuTests|EngineLifecycleNormalEntryTests|S04FirstUseHintJourneyTests)'
