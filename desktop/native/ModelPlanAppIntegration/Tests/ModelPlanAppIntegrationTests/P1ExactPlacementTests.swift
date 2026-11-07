@@ -700,6 +700,7 @@ extension P1ExactPlacementTests {
             ("kimi", "Kimi"), ("opencode", "OpenCode"), ("gemini", "Gemini"), ("grok", "Grok"), ("qwen", "Qwen"), ("kiro", "Kiro"),
             ("minimax", "MiniMax"), ("antigravity", "Antigravity"), ("amp", "Amp"), ("zai", "Z.ai"), ("zhipu", "智谱清言"),
             ("unknown-vendor", "Work Bench B")]
+        let output = try visualOutput("g3-32")
         for size in SettingsSize.allCases {
             for batch in stride(from: 0, to: vendors.count, by: 4) {
                 let slice = Array(vendors[batch..<min(batch + 4, vendors.count)])
@@ -714,6 +715,9 @@ extension P1ExactPlacementTests {
                 let glyphBox = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil }?.glyphRect, label)
                 let metrics = view.presentedTextMetricsForChecks
                 let readings = view.presentedReadingsForChecks
+                if let image = view.presentedImageForChecks, let writer = CGImageDestinationCreateWithURL(output.appendingPathComponent("rings-\(size.rawValue)-\(batch).png") as CFURL, "public.png" as CFString, 1, nil) {
+                    CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+                }
                 XCTAssertEqual(readings.count, expected, label)
                 for reading in readings.values {
                     let mark = DockVendorFallback.mark(reading.name)

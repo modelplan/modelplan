@@ -70,7 +70,7 @@ import XCTest
             let renderer = DockInstrumentRenderer(resources: official, supplementalResources: thirdParty)
             let skin = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, zaiMarkEnabled: enabled)
             let rendered = try renderer.render(skin: skin, readings: ["zhipu": reading], scale: 2)
-            XCTAssertEqual(rendered.metrics.contains { $0.text == "GLM" }, !enabled)
+            XCTAssertEqual(rendered.metrics.contains { $0.text == DockVendorFallback.mark("GLM") }, !enabled)
             XCTAssertGreaterThan(rendered.image.width, 0)
         }
     }
