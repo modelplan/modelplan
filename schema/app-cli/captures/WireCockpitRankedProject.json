@@ -1,0 +1,8 @@
+{
+  "ref": "synthetic",
+  "label": "synthetic",
+  "model": "synthetic",
+  "effort": "synthetic",
+  "observedOutputTokens": 1,
+  "share": 42.5
+}
