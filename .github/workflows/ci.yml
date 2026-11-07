@@ -112,6 +112,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # pin-cli.mjs --check compares with the base, HEAD^1
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
