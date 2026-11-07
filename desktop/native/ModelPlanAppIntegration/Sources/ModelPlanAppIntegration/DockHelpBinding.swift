@@ -58,12 +58,12 @@ public struct DockHelpSurface: Equatable {
         presenter.hide(offerID: offerID)
     }
 
-    /// The widget republishes its layout on most refreshes, a few times a second while it settles.
-    /// Only a new reveal, a drag or a moved anchor means the shown hint no longer points at its target.
+    /// The widget republishes its layout on most refreshes, a few times a second while it settles,
+    /// and its anchors move as rows arrive. A shown hint follows them; ending it would also spend it.
+    /// Only a new reveal, a drag or a lost anchor ends it.
     private static func keepsHint(_ kind: FirstUseHintKind, from old: DockHelpSurface?, to new: DockHelpSurface?) -> Bool {
-        guard let old, let new, old.revealID == new.revealID, new.visible, !new.dragging,
-              let anchor = new.anchors[kind] else { return false }
-        return old.anchors[kind] == anchor
+        guard let old, let new else { return false }
+        return old.revealID == new.revealID && new.visible && !new.dragging && new.anchors[kind] != nil
     }
 
     /// The composition supplies the complete current context, including cockpit/map state.

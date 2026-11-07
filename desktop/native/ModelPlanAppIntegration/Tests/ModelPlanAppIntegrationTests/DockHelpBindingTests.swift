@@ -83,7 +83,7 @@ private actor DockHelpMemory: HintPreferenceWriting {
         let saved = await store.snapshot()
         XCTAssertEqual(saved.preferences.helpHints.seen, [.findWidget])
     }
-    func testShownHintSurvivesALayoutRefreshButNotAMovedAnchor() async throws {
+    func testShownHintFollowsLayoutRefreshesAndEndsOnADrag() async throws {
         let store = DockHelpMemory(), clock = DockHelpClock(), timer = DockHelpTimer(), cockpit = DockHelpFake(), dock = DockHelpFake()
         dock.kinds = [.findWidget]
         let router = HelpOverlayRouter(cockpit: cockpit)
@@ -91,8 +91,8 @@ private actor DockHelpMemory: HintPreferenceWriting {
         let binding = DockHelpBinding(presenter: dock, isCurrent: { _ in true }); router.installDock(binding)
         var context = HintContext(); context.v1MinimalHints = true
         let reveal = UUID(), anchor = CGRect(x: 1, y: 1, width: 4, height: 4)
-        func surface(_ rect: CGRect) -> DockHelpSurface {
-            .init(revealID: reveal, layoutID: UUID(), visible: true, dragging: false, anchors: [.findWidget: rect])
+        func surface(_ rect: CGRect, dragging: Bool = false) -> DockHelpSurface {
+            .init(revealID: reveal, layoutID: UUID(), visible: true, dragging: dragging, anchors: [.findWidget: rect])
         }
         try binding.update(surface(anchor), context: context, host: host)
         XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget)
@@ -102,10 +102,13 @@ private actor DockHelpMemory: HintPreferenceWriting {
         clock.now = 0.5
         try binding.update(surface(anchor), context: context, host: host)
         XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget, "the kept hint stays verifiable on the newer surface")
-        XCTAssertTrue(dock.hidden.isEmpty)
         clock.now = 0.75
         try binding.update(surface(anchor.offsetBy(dx: 0, dy: 40)), context: context, host: host)
-        XCTAssertNil(host.hints.visible, "a hint must not keep pointing at where its target used to be")
+        XCTAssertEqual(host.hints.visible?.offer.kind, .findWidget, "rows arriving move the anchor, and the hint follows")
+        XCTAssertTrue(dock.hidden.isEmpty)
+        clock.now = 1
+        try binding.update(surface(anchor, dragging: true), context: context, host: host)
+        XCTAssertNil(host.hints.visible, "a drag takes the widget away from under the hint")
     }
     private func surface(_ id: UUID = UUID(), layout: UUID = UUID(), visible: Bool = true, dragging: Bool = false) -> DockHelpSurface {
         .init(revealID: id, layoutID: layout, visible: visible, dragging: dragging,
