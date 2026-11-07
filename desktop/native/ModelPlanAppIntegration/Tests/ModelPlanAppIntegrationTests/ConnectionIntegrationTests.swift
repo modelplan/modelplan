@@ -62,8 +62,11 @@ import ModelPlanCommunityHost
             makeFirstRun: { current in XCTAssertTrue(current === editor); factories += 1; return surface })
         await flow.restoreFirstRunIfNeeded()
         XCTAssertEqual(backend.detects, 1); XCTAssertEqual(backend.mutations, 0)
-        XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 1); XCTAssertEqual(activations, 0)
-        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 1)
+        // G3-37: an accessory app's window stays behind the front app unless the app activates.
+        XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 1); XCTAssertEqual(activations, 1, "the launch's first run comes to the front")
+        await flow.restoreFirstRunIfNeeded()
+        XCTAssertEqual(surface.shows, 2); XCTAssertEqual(activations, 1, "a restore after a wake takes no focus")
+        await flow.openFirstRun(); XCTAssertEqual(factories, 1); XCTAssertEqual(surface.shows, 3); XCTAssertEqual(activations, 2)
         flow.dispose()
     }
     func testExistingFirstRunActionReachesSurfaceWithoutTakingSystemEffectReceiver() async throws {
