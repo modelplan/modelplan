@@ -10,9 +10,10 @@ final class CockpitFieldPanelTests: XCTestCase {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let html = Data("<!doctype html><title>synthetic field</title>".utf8)
     try html.write(to: root.appendingPathComponent("field.html"))
+    try html.write(to: root.appendingPathComponent("index.html"))
     let manifest = try JSONSerialization.data(withJSONObject: [
       "schemaVersion": 1, "edition": "community", "interfaceOnly": true,
-      "files": ["field.html": VerifiedCockpitBundle.digest(html)],
+      "files": ["field.html": VerifiedCockpitBundle.digest(html), "index.html": VerifiedCockpitBundle.digest(html)],
     ])
     try manifest.write(to: root.appendingPathComponent("bundle-manifest.json"))
     return try VerifiedCockpitBundle(root: root, manifestSHA256: VerifiedCockpitBundle.digest(manifest))
