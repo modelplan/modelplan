@@ -186,8 +186,8 @@ public struct FirstUseHints: Sendable {
         guard !context.helpMapVisible else { return false }
         if context.v1MinimalHints {
             switch kind {
-            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable
-            case .findWidget: return context.widgetConcealed && context.statusAnchorAvailable
+            case .ringRefresh: return context.dockReveal != nil && context.ringRefreshAvailable && preferences.seen.contains(.findWidget)
+            case .findWidget: return context.dockReveal != nil && (!context.widgetConcealed || context.statusAnchorAvailable)
             default: return false
             }
         }
@@ -205,15 +205,15 @@ public struct FirstUseHints: Sendable {
     private func allowed(_ kind: FirstUseHintKind) -> Bool {
         guard contextSupports(kind), !preferences.seen.contains(kind),
               context.cockpitOpen == nil || !cockpitBudgetUsed else { return false }
-        if usesDock(kind) && dockBudgetUsed { return false }
+        if usesDock(kind) && dockBudgetUsed && !context.v1MinimalHints { return false }
         if [.ignition,.field,.drag].contains(kind) && !dwellReady.contains(kind) { return false }
         if kind == .trial && (!trialReady || trialRest == nil) { return false }
         return true
     }
     private mutating func offerContextualTriggers() {
         if context.v1MinimalHints {
-            if context.dockReveal != nil { request(.ringRefresh) }
-            if context.widgetConcealed && context.statusAnchorAvailable { request(.findWidget) }
+            if context.dockReveal != nil { request(.findWidget) }
+            if context.dockReveal != nil && preferences.seen.contains(.findWidget) { request(.ringRefresh) }
             return
         }
         if context.cockpitOpen != nil {
