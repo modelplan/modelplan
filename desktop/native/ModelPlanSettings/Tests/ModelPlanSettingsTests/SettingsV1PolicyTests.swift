@@ -36,6 +36,16 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertEqual(effective.opening, .quick, "V1 opens quickly even with a retained hold preference")
         XCTAssertNil(effective.ignitionSeconds)
     }
+    func testV1SystemFallbackRowsFollowTheObservedService() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        func keys() throws -> Set<SettingKey> { Set(try SettingsCatalogue.rows(preferences: .init(), context: context).map(\.key)) }
+        XCTAssertTrue(try keys().isDisjoint(with: [.loginSystemSettings, .notificationSystemSettings]), "nothing is wrong until the host has asked")
+        context.loginServiceObserved = true; context.notificationServiceObserved = true
+        context.capabilities.login = .requiresApproval; context.notificationAuthorization = .denied
+        XCTAssertTrue(try keys().isSuperset(of: [.loginSystemSettings, .notificationSystemSettings]))
+        context.capabilities.login = .enabled; context.notificationAuthorization = .authorized
+        XCTAssertTrue(try keys().isDisjoint(with: [.loginSystemSettings, .notificationSystemSettings]))
+    }
     func testV1NoEffectControlsAreDisabledWithVisibleReasons() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
