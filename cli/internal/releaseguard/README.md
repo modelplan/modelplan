@@ -24,7 +24,7 @@ grouping parentheses, nested setter values, and C-family/Swift branches.
 `MODELPLAN_TEST_ONLY_SPI` must exclude test-only SPI from release. **Computed or
 deliberately obfuscated selectors are out of scope for the source guard.**
 
-The macOS distribution workflow's `neutral-build` job builds the universal Swift
+The macOS distribution workflow's `neutral-build` job builds the Apple silicon (arm64) Swift
 app in release configuration, then scans its actual executable before archive
 or upload. The binary backstop checks a small compiled-name denylist, initially
 `_webProcessIdentifier`, across raw string/symbol/selector bytes. It covers those

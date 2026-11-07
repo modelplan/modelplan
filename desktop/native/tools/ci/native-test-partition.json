@@ -96,6 +96,10 @@
         "U8ConsentJourneyTests"
       ],
       "allowedSkips": {
+        "CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI": {
+          "leg": "headless",
+          "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
+        },
         "CommunityCockpitEntryTests/testNormalEntryReceivesCockpitDetailsFromRealAppServer": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build"

@@ -7,6 +7,8 @@ import ModelPlanEngineClient
 
 /// The exact construction route called by the community executable and synthetic-profile checks.
 @MainActor public enum EngineRowsEntry {
+	/// The first released CLI containing the v1 app-server feature set.
+	public static let minimumAppServerVersion = "0.5.52"
     /// One foundation document backs the normal Settings and Core entry.
     public static func makeSettingsStore(applicationSupport: URL, rowIDMap: [String: String] = [:],
                                          preferredLanguages: [String] = Locale.preferredLanguages) throws -> SettingsStore {
