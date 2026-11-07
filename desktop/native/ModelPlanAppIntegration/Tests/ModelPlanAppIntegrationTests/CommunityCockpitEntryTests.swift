@@ -66,6 +66,8 @@ private actor RouteClient: EngineClient {
         await withCheckedContinuation{waiter=$0}
     }
     func discard(){state.dispose();onClosed?()}
+    var appearances:[CockpitAppearance]=[]
+    func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
@@ -234,6 +236,38 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let stops=await client.stops
         XCTAssertEqual(stops,0,"Cockpit shutdown must not stop the application's borrowed client")
         await client.stop()
+    }
+
+    /// MOT-2.3-04: Settings Reduce Motion reaches the page at open and when it changes. The normal entry's
+    /// settings fan-out into `applySettings` is covered by NormalEntrySettingsJourneyTests.
+    @MainActor func testReduceMotionSettingReachesTheCockpitAtOpenAndOnChange() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-motion-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.motion = .on;$0.language = .chinese;$0.redBelow=16 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.reduceMotion)
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(owner.appearance.reduceMotion,"Opening keeps the setting")
+        XCTAssertEqual(owner.appearance.locale,.zhCN);XCTAssertEqual(owner.appearance.redBelow,16)
+        _=try await settings.update { $0.motion = .system;$0.language = .english }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
+        XCTAssertFalse(delivered.reduceMotion);XCTAssertEqual(delivered.locale,.en)
+        surface.hide();await coordinator.shutdown();await composition.stop()
     }
 
     @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {
