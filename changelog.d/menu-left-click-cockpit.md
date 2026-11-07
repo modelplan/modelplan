@@ -1,1 +1,1 @@
-Left-clicking the menu bar icon now opens the cockpit, and reopening the app from Spotlight or Launchpad does too; right-click or control-click shows the menu, and left-click keeps showing it while the cockpit entry is off.
+Once the cockpit entry is on, left-clicking the menu bar icon opens the cockpit and reopening the app from Spotlight or Launchpad does too. While it is off, as in current release packages, left-click shows the menu. Right-click or control-click always shows the menu.
