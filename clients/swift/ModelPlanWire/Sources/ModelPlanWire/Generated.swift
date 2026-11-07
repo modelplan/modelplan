@@ -17,7 +17,7 @@ public enum WireErrorCode {
 
 // Generated from Go supervision; key names only, never environment values.
 public enum WireChildEnvironment {
-    public static let allowedKeys: Set<String> = ["HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"]
+    public static let allowedKeys: Set<String> = ["HOME", "KIMI_CODE_API_KEY", "LANG", "LC_ALL", "LC_CTYPE", "MINIMAX_CODING_API_KEY", "MODELPLAN_CODEX_ACCOUNT", "MODELPLAN_READERS", "MODELPLAN_VERIFY_READERS", "OPENCODE_API_KEY", "PATH", "TMPDIR", "Z_AI_API_KEY"]
 }
 
 // This support code is emitted with the DTOs; it never stores engine state.
