@@ -733,12 +733,12 @@ extension P1ExactPlacementTests {
             }
             return count
         }
-        // The default threshold (25) makes 20% red; 16 makes the same reading amber; back to red.
+        // The default threshold (25) makes 20% red; 15 makes the same reading amber; back to red.
         XCTAssertEqual(try reading().status, .critical)
         XCTAssertEqual(try reading().outer?.status, .critical)
         let red = try ringRedPixels()
         XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
-        try await settings.commit(.redBelow(16))
+        try await settings.commit(.redBelow(15))
         try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
         XCTAssertEqual(try reading().status, .warning)
         XCTAssertEqual(try ringRedPixels(), 0, "no red band above the committed threshold")
