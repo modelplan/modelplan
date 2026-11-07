@@ -256,7 +256,7 @@ public enum SettingsCatalogue {
         .init(.language,"Language","语言","Choose Chinese or English.","选择中文或英文。"),
         .init(.opening,"Cockpit opening","打开驾驶舱方式","Open quickly when ignition is unavailable.","点火不可用时使用快速打开。"),
         .init(.countdown,"Countdown beat","倒数节奏","Three beats follow the 200 ms hold boundary.","按住200毫秒后开始三拍倒数。"),
-        .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and their open/reveal budgets.","重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
+        .init(.resetHints,"Show hints again","重新显示提示","Reset the nine first-use hints and the cockpit and Quota Widget open budgets.","重置九种首次提示及打开驾驶舱、额度挂件展开的提示预算。"),
         .init(.notificationConsent,"Enable notifications","开启通知","Ask for permission only after explicit opt-in.","仅在主动开启后请求通知权限。"),
         .init(.forecast,"May not last to reset","可能撑不到重置","Notify for a new forecast episode.","新出现的耗尽风险可通知。"),
         .init(.reset,"Quota reset","额度重置","Notify when a reset is read.","读取到重置时通知。"),
