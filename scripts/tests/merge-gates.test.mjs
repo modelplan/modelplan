@@ -84,6 +84,16 @@ test("tier gates: tier 1 any merge, tier 2 needs macrev2, macrev is advice on ti
   assert.equal(evalPr({ files: [file("docs/a.md")], comments: [comment("REVIEW-TIER: 1")] }).state, R.PENDING);
 });
 
+test("evidence: an exact-head trusted deferral to #470 clears a scenario, nothing looser does", () => {
+  const ledger = pr({ title: "G3-20 fix", body: "Scenarios: D-01" });
+  const later = `EVIDENCE-DEFERRED: D-01 @ ${H} issue=470`;
+  assert.equal(R.evidenceState(ledger, R.feed([comment(later)]), H).state, R.SUCCESS);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-01 @ ${OLD} issue=470`)]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-01 @ ${H} issue=1`)]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(later, { login: "spam", id: 9 })]), H).state, R.PENDING);
+  assert.equal(R.evidenceState(ledger, R.feed([comment(`EVIDENCE-DEFERRED: D-02 @ ${H} issue=470`)]), H).state, R.PENDING);
+});
+
 test("PR admission: trusted same-repo PRs into main only; drafts wait", () => {
   assert.equal(evalPr({ p: pr({ user: { login: "x", id: 1 } }) }).state, R.FAILURE);
   assert.equal(evalPr({ p: pr({ head: { sha: H, repo: { full_name: "fork/modelplan" } } }) }).state, R.FAILURE);

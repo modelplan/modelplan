@@ -698,6 +698,31 @@
         "desktop/native/ModelPlanDock/Logic/PulseRestingPlacement.swift",
         "desktop/native/ModelPlanDock/Logic/PulsePanelDrag.swift"
       ]
+    },
+    {
+      "id": "npm:three",
+      "kind": "bundled-npm",
+      "name": "three",
+      "version": "0.186.1",
+      "licenseSpdxId": "MIT",
+      "copyright": [
+        "Copyright © 2010-2026 three.js authors"
+      ],
+      "licenseTextPath": "licenses/three/LICENSE",
+      "licenseFiles": [
+        {
+          "path": "licenses/three/LICENSE",
+          "sourceFile": "LICENSE",
+          "sha256": "8b378ebe60e2fe500158cb0ac71cb5e8b7d92953c2abcc63a0eb90499653b5bc"
+        }
+      ],
+      "source": "https://www.npmjs.com/package/three/v/0.186.1",
+      "usedBy": [
+        "Official edition only: minified into the launch-field scene bundle, loaded on demand by the enlarged porthole"
+      ],
+      "paths": [
+        "desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"
+      ]
     }
   ]
 }

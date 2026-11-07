@@ -84,6 +84,7 @@ public struct EngineMenuRefreshResult {
         setLanguage(value.snapshot.preferences.language.rawValue)
         dock.apply(value)
         settingsDidChange?(value)
+        menuDidChange?()
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
@@ -224,6 +225,14 @@ public struct EngineMenuRefreshResult {
         resetNotifier?.deliveryOverride = delivery
         resetNotifier?.apply(store.snapshot)
     }
+    /// The same seam with the Settings notification kind (`.reset` quota resets, `.official`
+    /// public reset events).
+    public func setNotificationDelivery(_ delivery:@escaping @MainActor (NotificationKind,String) async throws -> Void) {
+        resetNotifier?.kindDeliveryOverride=delivery
+        resetNotifier?.apply(store.snapshot)
+    }
+    /// True only when reset notifications can actually be delivered (system or host adapter).
+    public var notificationDeliveryAvailable:Bool { resetNotifier?.delivers ?? false }
     private var fallbackStatusText: String {
         let english = adapter.language == "en"
         let fallback: String
@@ -245,34 +254,10 @@ public struct EngineMenuRefreshResult {
         let now = deadlineWall()
         let content = presentedContent(at: now)
         let detail = (content.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: statusQuotaTitle(content.snapshot.inputs, at: now),
-                     detail: detail.isEmpty ? fallbackStatusText : detail)
-    }
-
-    private func statusQuotaTitle(_ inputs: [DockInstrumentInput], at now: Date) -> String {
-        guard let preferences = latestSettings?.snapshot.preferences,
-              let ordered = try? preferences.presentedSubscriptionIDs(inputs.map(\.id)) else { return "" }
-        let visible = Set(ordered)
-        func tightest(_ period: DockQuotaPeriod? = nil) -> String? {
-            inputs.compactMap { input -> (remaining: Double, text: String)? in
-                guard visible.contains(input.id) else { return nil }
-                var quota = input
-                if let period { quota.windows = quota.windows.filter { $0.period == period } }
-                quota.selectedWindowID = nil
-                quota.showUsedPercent = false
-                guard let reading = try? DockInstrumentProjection.evaluate(quota, now: now),
-                      let remaining = reading.remainingPercent else { return nil }
-                return (remaining, reading.readout)
-            }.min { $0.remaining < $1.remaining }?.text
-        }
-        switch preferences.menuDisplay {
-        case .icon: return ""
-        case .tightest: return tightest() ?? ""
-        case .twoWindows:
-            let week = preferences.language == .chinese ? "周" : "Week"
-            return [tightest(.fiveHour).map { "5h " + $0 }, tightest(.week).map { week + " " + $0 }]
-                .compactMap { $0 }.joined(separator: " ")
-        }
+        let title = latestSettings.map {
+            EngineMenuBarTitle.make(inputs: content.snapshot.inputs, preferences: $0.snapshot.preferences, now: now)
+        } ?? ""
+        return .init(title: title, detail: detail.isEmpty ? fallbackStatusText : detail)
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }

@@ -110,6 +110,12 @@ struct StatusNoticePresentation {
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
+    public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Injection point for the cache action; the normal entry clears the app's own folder.
+    public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Injection point for global shortcuts; the normal entry supplies the system registrar.
+    var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
@@ -303,6 +309,10 @@ struct StatusNoticePresentation {
            bundle.bundleIdentifier != nil, bundle.bundleURL.pathExtension == "app" {
             notificationAuthorizationService = SystemNotificationAuthorizationService()
         }
+        if shortcutRegistrar == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            shortcutRegistrar = CarbonShortcutRegistrar()
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
@@ -311,16 +321,37 @@ struct StatusNoticePresentation {
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
+        context.loginServiceObserved = true
+        context.notificationServiceObserved = true
+        // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
+        else { context.unavailableControls[.login] = .init("Unavailable for this copy of the app. Use Login Items in System Settings.", "此应用副本不可用，请使用系统设置中的登录项。") }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
-        }
+        } else { context.unavailableControls[.notificationConsent] = .init("Unavailable for this copy of the app. Use Notifications in System Settings.", "此应用副本不可用，请使用系统设置中的通知。") }
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
+        }
+        // SET-9-18: the reset and official kinds are usable once delivery is wired.
+        if composition.notificationDeliveryAvailable { context.observeNotificationDelivery(true) }
+        // Dock, card and menu bar all read these through `applying(to:)` and `presentedSubscriptionIDs`.
+        for key in [SettingKey.percentagePin, .order, .visible, .alias] {
+            context.unavailableControls.removeValue(forKey: key)
+        }
+        // Language reaches every surface through `applySettings`; the menu bar reads its own display.
+        for key in [SettingKey.language, .menuDisplay] { context.unavailableControls.removeValue(forKey: key) }
+        context.capabilities.appCacheClearAvailable = true
+        for key in [SettingKey.clearAppCache, .resetHints] { context.unavailableControls.removeValue(forKey: key) }
+        if shortcutRegistrar != nil {
+            context.unavailableControls.removeValue(forKey: .dockShortcut)
+            // A build without the cockpit entry has nothing for this shortcut to open.
+            if cockpitEntryEnabled { context.unavailableControls.removeValue(forKey: .openShortcut) }
+            else { context.unavailableControls[.openShortcut] = .init("Unavailable until this build can open the cockpit.", "此版本可打开驾驶舱前不可用。") }
         }
         // Project names reach the cockpit through `applySettings`, so the row is a real control.
         context.unavailableControls.removeValue(forKey: .projectNames)
         settings.update(context: context)
+        shortcutRegistrar?.onPress = { [weak self] action in self?.performShortcut(action) }
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
@@ -332,6 +363,10 @@ struct StatusNoticePresentation {
         updateSystemAccessibility(SettingsWindowController.systemEnvironment())
         await settings.reload()
         guard !terminating else { return }
+        // Saved chords exist only after the store has loaded.
+        if let preferences = settings.editor.snapshot?.preferences {
+            registerShortcuts(openCockpit: preferences.openShortcut, toggleDock: preferences.dockShortcut)
+        }
         if dockHelp == nil, !dockHelpSetupInProgress {
             dockHelpSetupInProgress = true
             let help = await DockHelpCoordinator.restored(dock: composition.dock, application: settings, statusAnchor: { [weak self] in
@@ -413,6 +448,29 @@ struct StatusNoticePresentation {
         if dockPresentationGateOpen { allowDockPresentation() }
         renderMenu()
     }
+    /// D37: an unassigned chord registers nothing. Each outcome is recorded for that exact chord.
+    private func registerShortcuts(openCockpit: ShortcutChord, toggleDock: ShortcutChord) {
+        guard let shortcutRegistrar else { return }
+        shortcutRegistrar.unregisterAll()
+        var observations: [SettingsShortcutObservation] = []
+        for (action, chord) in [(ShortcutAction.openCockpit, openCockpit), (.toggleDock, toggleDock)]
+        where !chord.isUnassigned && (action != .openCockpit || cockpitEntryEnabled) {
+            let outcome = chord.isValid ? shortcutRegistrar.register(chord, action: action) : .unavailable
+            observations.append(.init(action: action, chord: chord, registration: outcome))
+        }
+        var context = settings.editor.context
+        context.shortcutObservations = observations
+        settings.update(context: context)
+    }
+    private func performShortcut(_ action: ShortcutAction) {
+        guard !terminating, !lifecyclePaused else { return }
+        switch action {
+        case .openCockpit: showConsole()
+        case .toggleDock:
+            guard settings.editor.snapshot?.preferences.showDock == true else { showDock(); return }
+            Task { @MainActor [weak self] in _ = try? await self?.settings.editor.commit(SettingsB21Edit.showDock(false)) }
+        }
+    }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
         guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
         if let adapter = loginServiceAdapter {
@@ -437,6 +495,10 @@ struct StatusNoticePresentation {
                 }
             }
         case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openSystemSettings(let pane): openSystemSettings(pane.url)
+        case .action(.clearAppCache): clearAppCache()
+        case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
+            registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
@@ -681,6 +743,7 @@ struct StatusNoticePresentation {
         let title = composition.menuPresentation.title
         // Never let the item collapse to zero width when the template image is unavailable.
         button.title = button.image == nil && title.isEmpty ? Self.statusFallbackTitle : title
+        button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
         button.toolTip = detail
         button.setAccessibilityHelp(detail)
     }
@@ -794,6 +857,7 @@ struct StatusNoticePresentation {
         settings.editor.onHostRequest = nil
         applicationSettingsItem.isEnabled = false
         applicationSettingsItem.keyEquivalent = ""
+        shortcutRegistrar?.unregisterAll()
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }
