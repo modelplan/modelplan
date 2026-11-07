@@ -118,6 +118,11 @@ public enum DockEdge: CaseIterable, Equatable, Sendable {
     case left, right, top, bottom
     /// Top and bottom run along x; left and right run along y.
     public var isHorizontal: Bool { self == .top || self == .bottom }
+    /// DOCK-3.6-13: Option-Left/Right on the bottom and top edges, Option-Up/Down on the sides.
+    public func optionArrowDelta(keyCode: UInt16) -> Int? {
+        let keys: [UInt16] = isHorizontal ? [123, 124] : [126, 125]
+        return keys.firstIndex(of: keyCode).map { $0 == 0 ? -1 : 1 }
+    }
 }
 /// Hover-retention geometry only, supplied by the eventual view.
 /// Slack/corridor rectangles MUST NOT be reused as native click-catching regions (B05b proves those separately).

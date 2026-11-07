@@ -13,6 +13,12 @@ final class T2SkinValueTests: XCTestCase {
         return (try XCTUnwrap(value.stations.first), value)
     }
 
+    /// DOCK-3.1-11: the seeded grain's constants.
+    func testFaceGrainConstants() {
+        XCTAssertEqual(T2Grain.seed, 23); XCTAssertEqual(T2Grain.octaves, 3); XCTAssertEqual(T2Grain.opacity, 0.018)
+        XCTAssertEqual(T2Grain.frequencyX, 0.91); XCTAssertEqual(T2Grain.frequencyY, 0.73)
+    }
+
     func testReadoutBoxScalesWithTheNozzle() throws {
         for diameter in [CGFloat(36), 44, 52] {
             let box = try skin(diameter).station.readout

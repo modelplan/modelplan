@@ -62,6 +62,7 @@
         "DockCodexRuntimeRealServerTests",
         "DockHoverExplanationTests", "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
+        "DockMotionPolicyTests",
         "DockPlacementGeometryTests",
         "DockPlacementProducerTests",
         "DockPointerObservationTests",
