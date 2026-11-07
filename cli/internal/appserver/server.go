@@ -45,6 +45,7 @@ type Config struct {
 	Handlers         map[string]Handler
 	SessionStarted   func()
 	RefreshDecisions func() []wire.RefreshDecision
+	LastErrorClass   func() string // a fixed class from store, for diagnostics/get
 	// Shorter durations are for synthetic transport tests; zero uses wire limits.
 	WriteTimeout   time.Duration
 	RequestTimeout time.Duration
@@ -373,6 +374,9 @@ func (s *Server) dispatch(r wire.Request) {
 			v := s.view
 			s.mu.Unlock()
 			diag := wire.Diagnostics{ProtocolVersion: wire.ProtocolVersion, ServerVersion: s.config.Version, UptimeSeconds: int64(time.Since(s.started).Seconds()), Scopes: v.Diagnostics}
+			if s.config.LastErrorClass != nil {
+				diag.LastErrorClass = s.config.LastErrorClass()
+			}
 			if s.clientCapabilities["refreshDecisionsV1"] && s.config.RefreshDecisions != nil {
 				items := s.config.RefreshDecisions()
 				diag.RefreshDecisions = &items

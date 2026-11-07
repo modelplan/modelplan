@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/modelplan/modelplan/cli/internal/netproxy"
 )
 
 const maxCacheBytes = 1 << 20
@@ -29,6 +31,7 @@ type Report struct {
 	OS            string   `json:"os"`
 	Arch          string   `json:"arch"`
 	ReaderMode    string   `json:"readerMode"`
+	Proxy         string   `json:"proxy"` // netproxy source: where the setting comes from, never its value
 	Publication   Source   `json:"publication"`
 	Sources       []Source `json:"sources"`
 }
@@ -47,7 +50,7 @@ func Collect(cache, version string) Report {
 	default:
 		mode = "unknown"
 	}
-	r := Report{SchemaVersion: 1, Version: version, OS: runtime.GOOS, Arch: runtime.GOARCH, ReaderMode: mode, Sources: []Source{}}
+	r := Report{SchemaVersion: 1, Version: version, OS: runtime.GOOS, Arch: runtime.GOARCH, ReaderMode: mode, Proxy: netproxy.Default.Status().Source, Sources: []Source{}}
 	var state struct {
 		PublicationID string `json:"publicationId"`
 	}

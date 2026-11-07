@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/netproxy"
 	"github.com/modelplan/modelplan/cli/internal/store"
 )
 
@@ -50,6 +51,8 @@ type Client struct {
 	Now       func() time.Time
 	// Jitter draws independent delays in [0, 60s]; tests may inject a source.
 	Jitter func() time.Duration
+	// ProxySource is netproxy's status source; it only tells a PAC failure from a plain network failure.
+	ProxySource func() string
 	// NoCheckDelay suppresses the pre-request delay for explicit user syncs.
 	// The interval still applies unless Sync is forced.
 	NoCheckDelay bool
@@ -69,13 +72,14 @@ func New(base string, st *store.Store, version string) (*Client, error) {
 		return nil, errors.New("publication base must be https (http only for localhost), without userinfo, query or fragment")
 	}
 	return &Client{
-		Base:      strings.TrimRight(base, "/"),
-		HTTP:      &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("publication redirects refused") }},
-		Store:     st,
-		UserAgent: "modelplan-cli/" + version,
-		Now:       time.Now,
-		Jitter:    func() time.Duration { return time.Duration(rand.Int64N(int64(maxCheckJitter) + 1)) },
-		wait:      waitForCheck,
+		Base:        strings.TrimRight(base, "/"),
+		HTTP:        &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return errors.New("publication redirects refused") }},
+		Store:       st,
+		UserAgent:   "modelplan-cli/" + version,
+		Now:         time.Now,
+		Jitter:      func() time.Duration { return time.Duration(rand.Int64N(int64(maxCheckJitter) + 1)) },
+		ProxySource: func() string { return netproxy.Default.Status().Source },
+		wait:        waitForCheck,
 	}, nil
 }
 
@@ -160,7 +164,8 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	st.LastAttemptAt = now
 	res, err := c.sync(ctx, &st)
 	if err != nil {
-		st.LastError = err.Error()
+		st.LastError = Class(err, c.ProxySource())
+		err = &syncError{st.LastError, err}
 	} else {
 		st.LastError = ""
 		st.CheckedAt = now
@@ -339,14 +344,14 @@ func (c *Client) getLimit(ctx context.Context, path, etag string, budget int64) 
 		if ctx.Err() != nil {
 			return nil, "", 0, ctx.Err()
 		}
-		return nil, "", 0, errors.New("publication request failed")
+		return nil, "", 0, classifyRequest(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotModified {
 		return nil, etag, resp.StatusCode, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", resp.StatusCode, fmt.Errorf("GET %s: HTTP %d", path, resp.StatusCode)
+		return nil, "", resp.StatusCode, &fetchError{store.LastErrorHTTP}
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, budget+1))
 	if err != nil {
