@@ -175,6 +175,20 @@ struct DockHelpInteraction: Equatable {
     private var cockpitPresentationBlocked = false
     private var locateTask: Task<Void, Never>?
     private var locating = false
+    /// G3-12: a requested Help map is drawn over the expanded widget, so the widget stays
+    /// expanded while the map is visible. Releasing the hold lets the normal hide resume.
+    var helpMapHold = false {
+        didSet {
+            guard helpMapHold != oldValue, !helpMapHold else { return }
+            Task { @MainActor [weak self] in
+                guard let self, !self.retired, !self.helpMapHold else { return }
+                self.edge.refresh()
+            }
+        }
+    }
+    /// Presentation is allowed by the lifecycle and not blocked by the cockpit, so a Show
+    /// request can make the widget visible now.
+    var canPresentForHelp: Bool { permitted && !retired && !retiring && !cockpitPresentationBlocked }
     public private(set) var menuNotice: DockNotice?
     /// The menu owner connects DockNoticeIndicatorView; no notification ledger is duplicated here.
     public var menuNoticeDidChange: ((DockNotice?, Bool) -> Void)?
@@ -736,6 +750,11 @@ struct DockHelpInteraction: Equatable {
     }
     private func bindEmptyStation(to view: DockInstrumentView) {
         view.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
+        // G3-10: the grip, ignition and event dot raise no other host event on hover.
+        view.onHelpPointerMoved = { [weak self, weak view] in
+            guard let self, let view, self.interactionView === view else { return }
+            self.publishDockHelpInteraction()
+        }
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
@@ -1119,7 +1138,7 @@ struct DockHelpInteraction: Equatable {
         presence.lifecycleActive = permitted && !retired
         presence.cockpitClosed = presence.cockpitClosed && !cockpitPresentationBlocked
         presence.allowedOverFullscreen = native.presence.allowedOverFullscreen || preferences.showOverFullscreen
-        presence.menuActuallyOpen = menuOpen; presence.locating = locating
+        presence.menuActuallyOpen = menuOpen; presence.locating = locating || helpMapHold
         presence.cardFocused = cardHasKeyboardFocus || interactionView.keyboardTargetID != nil
         // Preview does not claim to detect another app's fullscreen state or activate another Space.
         var auxiliary = cardPanel?.isVisible == true ? cardPanel?.frame : (!createsNativePanels ? native.cardFrame : nil)

@@ -76,7 +76,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -103,7 +103,7 @@ actor EntrySyntheticClient: EngineClient {
         account["valueState"] = readerFailed ? "retained" : "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
-        if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": "unknown"] }
+        if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": reserveUnit] }
         session["id"] = "session:18000:main:main"; session["role"] = "session"
         session["durationSeconds"] = 18000; session["limitKey"] = "main"; session["poolKey"] = "main"
         session.removeValue(forKey: "modelScope"); session["current"] = true
@@ -152,6 +152,11 @@ actor EntrySyntheticClient: EngineClient {
             session.removeValue(forKey: "source"); week.removeValue(forKey: "source")
         }
         windows = includeSession ? [session, week] : [week]
+        if extraWindow {
+            var extra = week
+            extra["id"] = "extra"; extra["role"] = "other"; extra["durationSeconds"] = 60; extra["remainingPercent"] = 1
+            windows.append(extra)
+        }
         if windowSources == .distinct || windowSources == .restrictedWithLegacyMember {
             session["source"] = "local_history"; session["observedAt"] = "2026-12-01T23:23:00Z"
             session["remainingPercent"] = 9
@@ -256,6 +261,7 @@ actor EntrySyntheticClient: EngineClient {
         application.update(environment: environment)
         _ = try await application.editor.commit(SettingsB20Edit.motion(.on))
         try await optionArrow(keyCode: 126, order: [first, second], announcement: "position 1 of 2")
+    }
 
     func testNormalSettingsQuotaControlsDriveTheDisplayedMembers() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("quota-settings-" + UUID().uuidString)
@@ -598,6 +604,90 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
     }
 
+    /// DOCK-3.8-07 / V-18: the card's reset time uses the glossary relative format in both languages.
+    func testNormalCardResetTimeUsesTheGlossaryRelativeFormat() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-copy-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let resets = ISO8601DateFormatter().string(from: wall.addingTimeInterval(2 * 3600 + 14 * 60))
+        let snapshot = try Self.rows(weekly: 75, weeklyDeadline: resets)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock
+        func weekly() throws -> String {
+            let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+            return try XCTUnwrap(content.rows.first { $0.id == "quota:weekly:604800:main:main" }?.detail)
+        }
+        let english = try weekly()
+        XCTAssertTrue(english.hasPrefix("resets in 2h 14m"), english)
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        let chinese = try weekly()
+        XCTAssertTrue(chinese.hasPrefix("2 小时 14 分后重置"), chinese)
+    }
+
+    /// G3-06 residual (DOCK-3.8-08): a money balance without a currency is grouped with at
+    /// most two decimals, never the raw floating-point value.
+    func testNormalCardShowsAMoneyBalanceWithoutTheRawFloat() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("money-balance-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let snapshot = try Self.rows(weekly: 75, reserveBalance: 14_207.8550653333, reserveUnit: "money")
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: snapshot) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock
+        func balance() throws -> DockCardRow {
+            let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+            return try XCTUnwrap(content.rows.first { $0.id == "credits" })
+        }
+        XCTAssertEqual(try balance().label, "Balance")
+        XCTAssertEqual(try balance().value, "14,207.86")
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.chinese))
+        XCTAssertEqual(try balance().label, "余额")
+        XCTAssertEqual(try balance().value, "14,207.86")
+    }
+
+    /// DOCK-3.6-18: an open card, including its scoped extra-quota rows, shows no native tooltip.
+    func testNormalCardShowsNoNativeTooltips() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("card-tooltips-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let wall = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
+        let readings = try Self.rows(weekly: 75, extraWindow: true)
+        var elapsed = 0.0
+        let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        var pointer = CGPoint(x: 700, y: 450)
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
+            dockEnvironment: { .init(displays: [display], layouts: [], primaryDisplayID: display.id, pointer: pointer) },
+            deadlineNow: { wall }, deadlineElapsed: { elapsed }, deadlineScheduling: EntryDeadlineTimer(),
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: readings) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare(); app.allowDockPresentation(); await app.composition.start()
+        let id = "aaaaaaaaaaaaaaaa", dock = app.composition.dock, view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
+        elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        let content = try XCTUnwrap(try dock.cardContent(for: id, at: wall))
+        XCTAssertTrue(content.rows.contains { $0.kind == .extraQuota }, "precondition: the card has a scoped extra row")
+        func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
+        XCTAssertEqual(tooltips(dock.card), [])
+    }
+
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("reserve-extent-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -834,7 +924,9 @@ actor EntrySyntheticClient: EngineClient {
         defer { try? FileManager.default.removeItem(at: root) }
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
         let clock = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-12-02T00:00:00Z"))
-        let readings = try Self.rows(weekly: 75, secondWeekly: 55)
+        // Keep the tightest window above the 50 % amber band (#562), so the readout is neutral
+        // ink, with ink-heavy digits ("58%") like the original 42.5 % fixture had.
+        let readings = try Self.rows(weekly: 75, fiveHour: 58, secondWeekly: 55)
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: settings, createsNativePanels: false,
             dockEnvironment: {
@@ -900,7 +992,9 @@ actor EntrySyntheticClient: EngineClient {
             XCTAssertNotEqual(try crop(nozzleFrame, origin: viewportOrigin), restingNozzle,
                               "Hover must transform pixels inside the registered nozzle, even with the viewport shift removed", line: line)
             let hoverInk = inkMask(try crop(station.readout, origin: viewportOrigin))
-            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(1, restingInk.count / 50),
+            // A moved readout changes most of its ink; two edge pixels are anti-aliasing next to
+            // the magnified neighbour (strong mode).
+            XCTAssertLessThanOrEqual(restingInk.symmetricDifference(hoverInk).count, max(2, restingInk.count / 50),
                                      "The painted readout must stay fixed in the skin coordinate space", line: line)
         }
         XCTAssertGreaterThan(view.bounds.width, skin.bounds.width, "The view reserves hover space beyond the approved skin")
@@ -1198,6 +1292,11 @@ actor EntrySyntheticClient: EngineClient {
         let button = NSButton(), icon = NSImage(size: .init(width: 16, height: 16))
         EngineDockMenuApplication.configureStatusButton(button, image: icon, barThickness: 22)
         let editor = app.settingsHost.application.editor
+        // MENU-04: the person can choose the display in Settings, not only through a commit.
+        XCTAssertNil(app.currentSettingsContext.unavailableControls[.menuDisplay])
+        let settingsRows = try SettingsCatalogue.rows(preferences: try XCTUnwrap(editor.snapshot).preferences, context: editor.context)
+        let menuDisplayRow = try XCTUnwrap(settingsRows.first { $0.key == .menuDisplay })
+        XCTAssertEqual(menuDisplayRow.availability, .available, "the menu-bar display control must be usable")
         func assertStatus(_ expected: String, line: UInt = #line) {
             app.applyStatusContent(to: button, detail: "")
             XCTAssertEqual(button.title, expected, line: line)
@@ -1205,6 +1304,14 @@ actor EntrySyntheticClient: EngineClient {
         }
         _ = try await editor.commit(SettingsB21Edit.menuDisplay(.tightest))
         assertStatus("9%")
+        // MENU-06: with the default tightest title, the reset dot stays at the icon's top right
+        // instead of moving to the end of "9%".
+        button.sizeToFit()
+        app.noticeIndicator.attach(to: button)
+        let iconRect = try XCTUnwrap(button.cell?.imageRect(forBounds: button.bounds))
+        XCTAssertEqual(app.noticeIndicator.frame.maxX, iconRect.maxX, accuracy: 0.5)
+        XCTAssertLessThan(app.noticeIndicator.frame.maxX, button.bounds.maxX - 8, "the dot must not sit after the percentage")
+        app.noticeIndicator.removeFromSuperview()
         _ = try await editor.commit(SettingsB20Edit.percentageMode(.used))
         _ = try await editor.commit(SettingsB20Edit.percentagePin("aaaaaaaaaaaaaaaa", .week))
         assertStatus("9%")
