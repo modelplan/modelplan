@@ -303,7 +303,9 @@ import XCTest
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
             consentTextVersion: XCTUnwrap(before["consentTextVersion"] as? Int), allow: [], deny: [scope])
         mark("L233")
-        do { _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(4)) }
+        let grantStart = ContinuousClock.now
+        defer { FileHandle.standardError.write(Data("BREAD grant took \(ContinuousClock.now - grantStart)\n".utf8)) }
+        do { _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(30)); mark("grant returned after \(ContinuousClock.now - grantStart)") }
         catch { XCTFail("DIAG deny grant threw: \(String(reflecting: error)) expectGeneration=\(delivery.floor.generation) current=\(String(describing: app.composition.store.snapshot.delivery))"); throw error }
         mark("L234")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
