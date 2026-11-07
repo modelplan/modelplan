@@ -40,6 +40,13 @@ func Definitions() []ScopeDefinition {
 		if id == ScopeOpenCodeV2LocalHistory {
 			d.DefaultCheck = false
 		}
+		// Claude Code's own saved login is a standard route too (owner decision D27,
+		// 2026-11-06, G3-19): read without a consent click. On macOS that login lives in
+		// the Keychain, whose read keeps its own recorded choice, so no Keychain prompt
+		// appears by default; a Keychain-only login waits for that choice.
+		if id == ScopeClaudeAccountUsageSavedLogin {
+			d.DefaultCheck = true
+		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin
 		out = append(out, d)
 	}
@@ -154,10 +161,13 @@ func (s State) AllowsScope(id, mode string) bool {
 		if s.RequireConsent {
 			return false
 		}
-		if _, decided := s.Tools[d.Tool]; decided {
+		if !d.DefaultCheck {
 			return false
 		}
-		if !d.DefaultCheck {
+		// An older tool-level allow predates this scope and did not refuse it. A tool
+		// denial, a stale consent text, a denied source or a chosen non-native backend
+		// still vetoes it, so migration never widens a CodexBar choice.
+		if r, decided := s.Tools[d.Tool]; decided && (!r.Allowed || r.ConsentTextVersion != TextVersion || r.DeniedSources[d.Class] || (r.Backend != "" && r.Backend != "native")) {
 			return false
 		}
 	}
