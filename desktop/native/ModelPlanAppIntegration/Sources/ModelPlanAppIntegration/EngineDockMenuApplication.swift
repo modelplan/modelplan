@@ -64,6 +64,8 @@ import ModelPlanMenuVerification
     /// Injection point for the OS login service; the normal entry supplies the live adapter.
     public var loginServiceAdapter: CommunityLoginServiceAdapter?
     public var notificationAuthorizationService: (any SettingsNotificationAuthorizationServing)?
+    /// Injection point for opening System Settings; the normal entry uses NSWorkspace.
+    public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
@@ -264,10 +266,14 @@ import ModelPlanMenuVerification
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
+        context.loginServiceObserved = true
+        context.notificationServiceObserved = true
+        // The choice stays visible; a service macOS refuses gets an honest reason and the fallback row.
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
+        else { context.unavailableControls[.login] = .init("Unavailable for this copy of the app. Use Login Items in System Settings.", "此应用副本不可用，请使用系统设置中的登录项。") }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)
-        }
+        } else { context.unavailableControls[.notificationConsent] = .init("Unavailable for this copy of the app. Use Notifications in System Settings.", "此应用副本不可用，请使用系统设置中的通知。") }
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
         }
@@ -379,6 +385,7 @@ import ModelPlanMenuVerification
                 }
             }
         case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
