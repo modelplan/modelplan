@@ -21,7 +21,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.redBelow, 25); XCTAssertTrue(p.sliverAlert)
         XCTAssertTrue(p.showDock); XCTAssertFalse(p.autoHide); XCTAssertEqual(p.revealMilliseconds, 150)
         XCTAssertFalse(p.showOverFullscreen); XCTAssertFalse(p.followActiveDisplay)
-        XCTAssertEqual(p.menuDisplay, .icon); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
+        XCTAssertEqual(p.menuDisplay, .tightest); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
         XCTAssertEqual(p.notifications.kinds, Set(NotificationKind.allCases))
         for bad in ["{\"theme\":\"custom\"}", "{\"theme\":null}", "{\"redBelow\":17}", "{\"revealMilliseconds\":0}", "{\"showDock\":\"false\"}"] {

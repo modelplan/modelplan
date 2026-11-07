@@ -399,7 +399,7 @@ struct NativeFailure:Error {let message:String}
     try require(!edgeDriver.backgroundCanDrag(local:CGPoint(x:30,y:80)) && !edgeDriver.backgroundCanDrag(local:CGPoint(x:10,y:220)),"nozzle and ignition never drag the dock")
     try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:925,y:515)),"painted body begins capture")
     edgeEnv.presence.autoHide=true;edgeEnv.presence.mouseButtonDown=true;edgeEnv.pointer=CGPoint(x:20,y:300);edgeTime=11.5;edgeDriver.updateBackgroundMove(global:edgeEnv.pointer!)
-    try require(edgeDriver.presentation?.snapPreview?.edge == .left && edgeDriver.isBackgroundMoving && edgeDriver.presentation?.placement?.edge == .right,"exact snap destination is separate from stationary dock")
+    try require(edgeDriver.presentation?.placement?.edge == .left && edgeDriver.isBackgroundMoving && edgeDriver.presentation?.carriedFrame != nil,"the panel is carried to the landing edge")
     var commits=0;edgeDriver.onCommittedPlacement={_ in commits+=1}
     edgeEnv.presence.mouseButtonDown=false;edgeTime=15;edgeDriver.endBackgroundMove(global:edgeEnv.pointer!)
     try require(commits==1 && edgeDriver.preference.edge == .left && !edgeDriver.isBackgroundMoving,"long drag release commits once before stale fallback")
@@ -408,7 +408,7 @@ struct NativeFailure:Error {let message:String}
     edgeDriver.dragRegions=edgeRegions
     try require(edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300)),"new drag admitted")
     edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500));edgeDriver.cancelBackgroundMove()
-    try require(commits==1 && edgeDriver.preference.edge == .left && edgeDriver.presentation?.snapPreview==nil,"Escape/cancel leaves committed placement")
+    try require(commits==1 && edgeDriver.preference.edge == .left && edgeDriver.presentation?.carriedFrame==nil,"Escape/cancel leaves committed placement")
     edgeTime=16;_ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:5),global:CGPoint(x:5,y:300))
     edgeDriver.updateBackgroundMove(global:CGPoint(x:980,y:500))
     let clearsBeforeRemoval=edgeClears.count
@@ -420,7 +420,7 @@ struct NativeFailure:Error {let message:String}
     _ = edgeDriver.beginBackgroundMove(local:CGPoint(x:5,y:20),global:CGPoint(x:925,y:anchorBefore+100))
     edgeEnv.presence.mouseButtonDown=true
     edgeDriver.updateBackgroundMove(global:CGPoint(x:925,y:anchorBefore+120))
-    try require(abs(edgeDriver.presentation!.snapPreview!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
+    try require(abs(edgeDriver.presentation!.placement!.sliverFrame.midY-(anchorBefore+20))<0.001,"same-edge grip drag preserves grab offset, no centre jump")
     edgeDriver.cancelBackgroundMove()
     edgeDriver.stop()
     let sliver=DockSliverView(frame:CGRect(x:0,y:0,width:3,height:20));var sliverPresses=0;sliver.onReveal={sliverPresses+=1}
@@ -430,8 +430,6 @@ struct NativeFailure:Error {let message:String}
     catch DockArtworkError.invalidManifest{checks+=1}
     try require(!sliver.accessibilityPerformPress() && !sliver.isPainted(atLocal:CGPoint(x:1,y:1)),"failed sliver cannot preserve old actions")
     sliver.dispose()
-    let outline=DockSnapOutlineView(frame:CGRect(x:0,y:0,width:40,height:40))
-    try require(outline.hitTest(CGPoint(x:10,y:10))==nil,"snap outline never catches input")
     let secondDisplay=DockDisplayArea(id:"other",frame:CGRect(x:2000,y:0,width:1000,height:800),visibleFrame:CGRect(x:2000,y:0,width:1000,height:800))
     var orderedEnv=DockEdgeEnvironment(displays:[display,secondDisplay],layouts:edgeLayouts,primaryDisplayID:"screen",pointer:CGPoint(x:999,y:400))
     orderedEnv.presence.autoHide=false
@@ -550,15 +548,15 @@ struct NativeFailure:Error {let message:String}
     statusMenu.onRestoreStatusFocus={menuFocus+=1};statusMenu.perform(.help);statusMenu.helpDidDismiss();statusMenu.helpDidDismiss();statusMenu.perform(.settings)
     try require(menuHelp==1 && menuFocus==1 && menuSettings==1,"Help uses injected map/focus callbacks once")
     let legacyMenu=DockStatusMenu(labels:labels,handlers:[:])
-    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.count==7 && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback preserves native seven-item compatibility")
+    try require(legacyMenu.menu.items.filter{!$0.isSeparatorItem}.map{$0.representedObject as! String}==DockMenuCommand.allCases.filter{$0 != .help}.map(\.rawValue) && legacyMenu.menu.items.filter(\.isSeparatorItem).count==2,"missing Help callback keeps every other command in two groups (no update item, #533)")
     statusMenu.dispose();statusMenu.perform(.help);try require(menuHelp==1,"disposed menu cannot replay callback")
     legacyMenu.dispose()
     let cardSurface=DockCardView(frame:CGRect(x:0,y:0,width:300,height:200))
     let cardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[.init(id:"extra",kind:.extraQuota,label:"Full extra name",value:"0%",remainingFraction:0,tone:.critical)])
     let templateBrand=NSImage(size:NSSize(width:20,height:20));templateBrand.isTemplate=true
     try cardSurface.apply(cardContent,brandImage:templateBrand);try require(!cardSurface.subviews.isEmpty,"native card builds bounded rows/footer")
-    let cardHeader=(cardSurface.subviews.first as! NSStackView).arrangedSubviews.first as! NSStackView
-    try require((cardHeader.arrangedSubviews.first as? NSImageView)?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
+    let cardBrand=cardSurface.subviews.compactMap{$0 as? NSImageView}.first
+    try require(cardBrand?.image?.isTemplate==false && templateBrand.isTemplate,"card brand copy remains intrinsic without mutating caller template")
     let unsafeCardContent=DockCardContent(subscriptionID:"a",name:"Synthetic",rows:[],links:[.init(label:"bad",url:URL(string:"file:///synthetic")!)])
     do{try cardSurface.apply(unsafeCardContent);throw NativeFailure(message:"unsafe card link admitted")}catch DockLogicError.invalidCatalogue{checks+=1}
     cardSurface.dispose()

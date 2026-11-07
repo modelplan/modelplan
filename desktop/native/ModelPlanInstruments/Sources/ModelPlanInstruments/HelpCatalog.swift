@@ -35,6 +35,7 @@ public struct HelpContext: Sendable {
 public struct HelpExplanation: Equatable, Sendable {
     public let title: String
     public let body: String
+    public init(title: String, body: String) { self.title = title; self.body = body }
     /// Views and accessibility consumers use this exact same two-line description.
     public var accessibleDescription: String { title + "\n" + body }
 }
@@ -53,13 +54,13 @@ public struct HelpCatalog: Sendable {
             basis = copy("这里只练习本地操作，不会改变真实会话。", "This is a local practice preview that leaves real sessions unchanged.")
         case .ignition:
             title = copy("点火钮", "Ignition")
-            basis = copy("点按打开驾驶舱，长按点火；快速打开设置会跳过点火。", "Tap to open the Cockpit or hold to ignite; Always quick skips ignition.")
+            basis = copy("点按打开驾驶舱。", "Tap to open the Cockpit.") // D37: holding the ignition is v1.1
         case .sliver:
-            title = copy("隐藏条", "Sliver")
+            title = copy("细条", "Sliver")
             basis = copy("靠近这里稍停可显示额度挂件，右键可打开菜单。", "Rest near this edge to reveal the Quota Widget or right-click for its menu.")
         case .dockMove:
             title = copy("移动额度挂件", "Move the Quota Widget")
-            basis = copy("拖动背景或端部握柄可移动整个额度挂件，松手贴合预览边缘；只能停在左、右或下边缘。", "Drag the background or end grips to move the whole Quota Widget, then release at the preview on the left, right or bottom edge.")
+            basis = copy("拖动背景或端部握柄可移动整个额度挂件，松手即贴到所在显示器的左、右、上或下边缘。", "Drag the background or end grips to move the whole Quota Widget, then release it on the left, right, top or bottom edge of any display.")
         case .pinned:
             title = copy("已钉住", "Pinned")
             basis = copy("按 Esc 或点别处取消，卡片不会随指针移动而关闭。", "Press Esc or click elsewhere to release the card.")
@@ -215,7 +216,7 @@ public struct HelpCatalog: Sendable {
         guard request.valid else { return nil }
         switch request.hint {
         case .trial: return copy("这只是本地比较，不会改你的会话", "Just a local comparison; your session is unchanged")
-        case .ignition: return copy("点按打开，长按点火", "Tap to open · hold to ignite")
+        case .ignition: return copy("点按打开驾驶舱", "Tap to open the Cockpit")
         case .pinned: return copy("已钉住，按 Esc 或点别处取消", "Pinned · Esc or click elsewhere to release")
         case .page: return copy("还有订阅在第 \(request.pageNumber!) 页", "More subscriptions on page \(request.pageNumber!)")
         case .cockpit: return copy("按住 ⌥ 查看说明", "Hold ⌥ for help")

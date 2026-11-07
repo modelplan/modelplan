@@ -9,7 +9,7 @@ import ModelPlanSettings
     func testSliverUsesRegisteredHullSpanAndAnchorAtEverySizeAndEdge() throws {
         for factor: CGFloat in [36.0 / 44, 1, 52.0 / 44] {
             for edge in SettingsDockEdge.allCases {
-                let vertical = edge != .bottom
+                let vertical = !edge.isHorizontal
                 let hull = CGRect(x: 10 * 44 / 52 * factor, y: 10 * 44 / 52 * factor,
                                   width: (vertical ? 60 : 147.3962) * 44 / 52 * factor,
                                   height: (vertical ? 147.3962 : 60) * 44 / 52 * factor)
@@ -22,7 +22,7 @@ import ModelPlanSettings
                                vertical ? size.height - hull.midY : hull.midX, accuracy: 0.0001)
                 let display = DockDisplayArea(id: "selected", frame: CGRect(x: -1200, y: -300, width: 1200, height: 900),
                                               visibleFrame: CGRect(x: -1200, y: -300, width: 1200, height: 875))
-                let dockEdge: DockEdge = edge == .bottom ? .bottom : edge == .left ? .left : .right
+                let dockEdge: DockEdge = edge == .bottom ? .bottom : edge == .top ? .top : edge == .left ? .left : .right
                 let layout = DockEdgeLayout(displayID: display.id, edge: dockEdge, expandedSize: size,
                     sliverLength: geometry.sliverLength, sliverThickness: geometry.sliverThickness,
                     hoverRects: [], alongAnchor: geometry.sliverAlongAnchor)
@@ -157,7 +157,7 @@ import ModelPlanSettings
         XCTAssertEqual(c.latest?.snapshot.preferences.redBelow, 25)
         XCTAssertFalse(try XCTUnwrap(c.latest).snapshot.preferences.followActiveDisplay)
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        for threshold in [25, 16] {
+        for threshold in [25, 20] {
             try await c.commit(.redBelow(threshold))
             let app = try XCTUnwrap(c.latest)
             for remaining in [Double(threshold) - 0.01, Double(threshold), Double(threshold) + 0.01] {
