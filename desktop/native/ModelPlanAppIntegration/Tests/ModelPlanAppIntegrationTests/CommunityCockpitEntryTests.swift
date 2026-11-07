@@ -67,6 +67,8 @@ private actor RouteClient: EngineClient {
         await withCheckedContinuation{waiter=$0}
     }
     func discard(){state.dispose();onClosed?()}
+    var appearances:[CockpitAppearance]=[]
+    func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
@@ -249,6 +251,33 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
         await app.composition.stop()
     }
+    // Owner D39/D-E: package-neutral.sh --owner-test writes ModelPlanCockpitEntryEnabled=true; the release and
+    // --unverified packages write false (preflight PF-08). The normal entry reads only the packaged Info.plist here
+    // (no cockpitEntryEnabled override), so this is the packaged switch, not a test seam.
+    @MainActor func testOwnerTestPackageOpensCockpitAndReleasePackageDoesNot() async throws {
+        for (mode, enabled) in [("owner-test", true), ("release", false)] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("d-e-\(mode)-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:root) }
+            let app=root.appendingPathComponent("ModelPlan Community.app"),contents=app.appendingPathComponent("Contents")
+            try FileManager.default.createDirectory(at:contents.appendingPathComponent("MacOS"),withIntermediateDirectories:true)
+            let info:[String:Any]=["CFBundleIdentifier":"org.modelplan.community.swift.scaffold","CFBundleExecutable":"ModelPlanCommunity",
+                                   "CFBundlePackageType":"APPL","ModelPlanCockpitEntryEnabled":enabled]
+            try PropertyListSerialization.data(fromPropertyList:info,format:.xml,options:0).write(to:contents.appendingPathComponent("Info.plist"))
+            let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+            let surface=ConsoleRouteProbe(); var constructed=0
+            let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,bundleURL:app,
+                makeClient:{_,_ in RouteClient()},makeConsole:{_ in constructed += 1; return surface},activateSettings:{})
+            await entry.prepare(); entry.composition.dock.setPresentationAllowed(true); entry.renderMenu()
+            let status=try XCTUnwrap(entry.liveStatusMenu)
+            let item=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") }, mode)
+            XCTAssertEqual(item.isEnabled,enabled,mode)
+            entry.perform(NSSelectorFromString("showConsoleMenu"))
+            entry.composition.dock.perform(NSSelectorFromString("openConsole"))
+            XCTAssertEqual(constructed,enabled ? 1 : 0,mode)
+            XCTAssertEqual(surface.shows,enabled ? 2 : 0,mode)
+            await entry.composition.stop()
+        }
+    }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-switch-"+UUID().uuidString)
@@ -304,6 +333,58 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let stops=await client.stops
         XCTAssertEqual(stops,0,"Cockpit shutdown must not stop the application's borrowed client")
         await client.stop()
+    }
+
+    /// MOT-2.3-04: Settings Reduce Motion reaches the page at open and when it changes. The normal entry's
+    /// settings fan-out into `applySettings` is covered by NormalEntrySettingsJourneyTests.
+    @MainActor func testReduceMotionSettingReachesTheCockpitAtOpenAndOnChange() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-motion-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.motion = .on;$0.language = .chinese;$0.redBelow=16 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.reduceMotion)
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(owner.appearance.reduceMotion,"Opening keeps the setting")
+        XCTAssertEqual(owner.appearance.locale,.zhCN);XCTAssertEqual(owner.appearance.redBelow,16)
+        _=try await settings.update { $0.motion = .system;$0.language = .english }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
+        XCTAssertFalse(delivered.reduceMotion);XCTAssertEqual(delivered.locale,.en)
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// SET-9-19: the committed setting reaches the appearance the page is given.
+    @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.showProjectNames=false;$0.redBelow=16 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertTrue(owner.appearance.showProjectNames)
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertFalse(owner.appearance.showProjectNames)
+        XCTAssertEqual(owner.appearance.redBelow,16)
+        await composition.stop()
     }
 
     @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {

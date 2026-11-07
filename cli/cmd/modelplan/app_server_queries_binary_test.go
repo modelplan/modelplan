@@ -276,6 +276,8 @@ func setupQueryHome(t *testing.T) string {
 	testenv.IsolateHome(t)
 	home := os.Getenv("HOME")
 	cache := filepath.Join(home, "cache")
+	// The CLI also searches system directories; a host's installed Codex must not start here.
+	t.Setenv("MODELPLAN_CODEX", filepath.Join(home, "no-real-codex"))
 	for name, value := range map[string]string{"MODELPLAN_CACHE": cache, "MODELPLAN_HISTORY": "", "MODELPLAN_READERS": "", "MODELPLAN_GEMINI": "", "MODELPLAN_GEMINI_HOME": "", "MODELPLAN_CODEX_ACCOUNT": "off", "MODELPLAN_CODEXBAR": "off"} {
 		t.Setenv(name, value)
 	}

@@ -146,6 +146,16 @@ type Window struct {
 	ObservedAt       *time.Time    `json:"observedAt" null:"coalesced"`
 	Current          bool          `json:"current"`
 	ValidUntil       *time.Time    `json:"validUntil" null:"coalesced"`
+	// Forecast stays out of the rows contract; the cockpit details project it when negotiated.
+	Forecast *WindowForecast `json:"-"`
+}
+
+// WindowForecast is the quota engine's outlook for one window. RunsOutAt is set only
+// when the window is forecast to be used up before its reset.
+type WindowForecast struct {
+	RunsOutAt *time.Time `null:"coalesced"`
+	Pace      string     // tight | on_track | surplus | exhausted
+	Basis     string     // recent-rate | cycle-average | none
 }
 
 type RowsSummary struct {

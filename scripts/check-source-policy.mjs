@@ -135,6 +135,11 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     assert.ok(code.includes('let name = scale == 1 ? "tray-outline.png" : "tray-outline@2x.png"'), "exact 1x/2x tray references");
     continue;
   }
+  if (p === "desktop/third-party/notices.json") {
+    assert.equal(code.split("official-visuals").length, 2, "one attribution reference in the notice catalog");
+    assert.ok(code.includes('"desktop/official-visuals/runtime/field-scene/cockpit-scene.bundle.js"'), "exact three.js attribution path");
+    continue;
+  }
   assert.ok(["desktop/build.mjs", "desktop/cockpit/build.mjs"].includes(p), "community build must not read the reserved visuals: " + p);
   const end = p === "desktop/cockpit/build.mjs" ? "} else {" : "} else if (external) {";
   const branch = code.slice(code.indexOf("if (official) {"), code.indexOf(end));

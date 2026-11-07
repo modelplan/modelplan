@@ -45,8 +45,9 @@ BUNDLE_ID = 'org.modelplan.community.swift.scaffold'
 RESOURCE_BUNDLES = ('ModelPlanAppIntegration_ModelPlanAppIntegration.bundle',
                     'ModelPlanOfficialDock_ModelPlanOfficialDock.bundle',
                     'ModelPlanDockResources_ModelPlanDockResources.bundle')
-COCKPIT_BUNDLE = 'ModelPlanCockpitWeb_ModelPlanCockpitWeb.bundle'  # copied by package-neutral.sh after #489
+COCKPIT_BUNDLE = 'Cockpit'  # the verified page CockpitConsoleOwner loads; package-neutral.sh --owner-test copies it
 VF_MARKER = 'ModelPlanVerificationFlavour'
+OWNER_TEST_KEY = 'ModelPlanOwnerTestBuild'
 UPDATER_KEYS = ('SUFeedURL', 'SUPublicEDKey', 'SUEnableAutomaticChecks')
 LANE_HOST = {'V1': 'macci', 'M1': 'dev-mac'}
 PROFILES = ('synthetic', 'real')
@@ -410,9 +411,14 @@ def candidate_checks(results, host, flavour, entry, expected_sha, artifacts_dir,
     marker = VF_MARKER in info
     updater = [k for k in UPDATER_KEYS if k in info] + \
               (['Sparkle.framework'] if any('/Sparkle.framework/' in n for n in names) else [])
-    flavour_ok = type(entry_flag) is bool and entry_flag == want_flag and marker == (flavour == 'verify') and not updater
+    # Owner D39/D-E: only the owner test flavour may carry the owner-test page admission marker.
+    owner_test = info.get(OWNER_TEST_KEY)
+    owner_test_ok = owner_test is True if flavour == 'test' else OWNER_TEST_KEY not in info
+    flavour_ok = type(entry_flag) is bool and entry_flag == want_flag and marker == (flavour == 'verify') and not updater \
+        and owner_test_ok
     check(results, 'PF-08', flavour_ok, f'ModelPlanCockpitEntryEnabled={entry_flag!r} (want {want_flag}); '
-          f'VF marker {"present" if marker else "absent"}; updater {updater or "none"}', **tag)
+          f'VF marker {"present" if marker else "absent"}; owner-test marker {owner_test!r}; '
+          f'updater {updater or "none"}', **tag)
     try:
         destination = Path(work) / flavour
         destination.mkdir(parents=True, exist_ok=False)

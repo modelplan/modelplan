@@ -174,6 +174,8 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if !state.Allows("codex", consent.Runtime, mode) {
 		return errors.New("Codex reader not permitted")
 	}
+	// A finished reading must survive a brief hold on the consent lock, and a timed-out read
+	// must still be recorded, so this bounded wait does not follow the read's context.
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		wait := AccountEvery
@@ -183,7 +185,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
 			return err
 		}
-		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
+		return consent.PublishContext(context.Background(), state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")

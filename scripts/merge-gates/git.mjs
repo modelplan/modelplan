@@ -35,10 +35,6 @@ export function contribution(cwd, from, to) {
   return git(cwd, ["diff", "--raw", "-z", "--no-renames", "--no-abbrev", "--no-ext-diff", "--no-textconv", from, to]);
 }
 
-export function changedPaths(cwd, from, to) {
-  return git(cwd, ["diff", "--name-only", "-z", "--no-renames", from, to]).split("\0").filter(Boolean);
-}
-
 // VERDICT-CARRY old -> new holds when new is a merge whose first parent is the reviewed head and whose
 // second parent is on main, and the PR's own contribution (reviewed head against its fork point from that
 // main commit, versus new against that main commit) is object-identical. A file that main also changed
