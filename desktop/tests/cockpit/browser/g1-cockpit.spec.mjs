@@ -33,8 +33,7 @@ test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero bou
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
  await page.getByRole('button',{name:'Subscription',exact:true}).click();const values=page.locator('.sa-list .sa .v');
- // The MFD's fmt.js keeps its old 41 % line until it follows D22, so 50 is still ok there.
- for(const [i,kind] of ['ok','ok','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
+ for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
 });
 
 test('CKP-STRIP-04 ALERT stays English while its accessible label localizes',async({page})=>{
