@@ -1392,6 +1392,33 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertNotNil(app.composition.store.snapshot.rows)
     }
 
+    /// glm-632-1: the two-window title uses the Dock's expiry rule, so a window that expired leaves the title.
+    func testV17TwoWindowTitleDropsAnExpiredWindow() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-two-expiry-" + UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let iso = ISO8601DateFormatter()
+        var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyDeadline: "2026-12-02T00:01:00Z")
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
+            dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
+            makeClient: { _, store in EntrySyntheticClient(store: store, rows: fixture) }, activateSettings: {})
+        addTeardownBlock { @MainActor in await app.composition.stop() }
+        await app.prepare()
+        app.allowDockPresentation()
+        await app.composition.start()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.menuDisplay(.twoWindows))
+        let button = NSButton()
+        EngineDockMenuApplication.configureStatusButton(button, image: NSImage(size: .init(width: 16, height: 16)), barThickness: 22)
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "5h 9% wk 15%")
+
+        wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:02:00Z"))
+        app.applyStatusContent(to: button, detail: "")
+        XCTAssertEqual(button.title, "5h 9%", "the expired weekly window must not keep its old percentage")
+    }
+
     func testNormalEntryKeepsLoadingAndFailureOutOfMenusWithoutAdmittedRows() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("paired-first-open-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
