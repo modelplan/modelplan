@@ -208,9 +208,10 @@ import XCTest
         XCTAssertEqual(window.source, .runtime)
         let weekly = "row.quota:" + window.id
         XCTAssertEqual(text(weekly + ".value", in: card), "--", "Retained metadata must not admit an expired number")
-        let retainedDetail = text(weekly + ".detail", in: card)
-        XCTAssertTrue(retainedDetail?.contains("Tool runtime · 3h ago") == true,
-                      "Retained window provenance: " + (retainedDetail ?? "missing"))
+        // One source: the header carries it, and the row does not repeat it.
+        let retainedSource = text("source", in: card)
+        XCTAssertTrue(retainedSource?.contains("Tool runtime · 3h ago") == true,
+                      "Retained window provenance: " + (retainedSource ?? "missing"))
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         try FileManager.default.removeItem(at: hold)
@@ -228,7 +229,7 @@ import XCTest
         if let displayed = dock.detachedCardForChecks { currentCard = displayed }
         else { currentCard = try openCard() }
         XCTAssertEqual(text(weekly + ".value", in: currentCard), "70%")
-        XCTAssertTrue(text(weekly + ".detail", in: currentCard)?.contains("Tool runtime · just now") == true)
+        XCTAssertTrue(text("source", in: currentCard)?.contains("Tool runtime · just now") == true)
 
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,

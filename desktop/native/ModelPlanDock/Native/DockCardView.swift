@@ -248,7 +248,9 @@ import CryptoKit
                 }else{h=style.barSize.height;top=(rowHeight-h)/2}
                 // The label's CJK face sits a point low beside the LCD digits and the bar.
                 let nudge:CGFloat=cell.view === l ? -style.labelLift : 0
-                cell.view.frame=CGRect(x:cell.x,y:max(0,top)+nudge,width:cell.width,height:h)
+                // A text field insets its text by 2 pt; the grid's columns are the text's edges.
+                let inset:CGFloat=cell.view is NSTextField ? 2:0
+                cell.view.frame=CGRect(x:cell.x-inset,y:max(0,top)+nudge,width:cell.width+2*inset,height:h)
             }
             if let detailBelow{
                 let dx=c[0]+g,dw=max(0,rowWidth-dx),dh=wrapped(detailBelow,width:dw)
