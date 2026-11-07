@@ -107,7 +107,6 @@ import AppKit
         if let input {
             if diagram == nil {
                 let view = SettingsDiagramView(input: input); diagram = view
-                view.playsOnHover = false
                 view.frame = illustration.bounds; view.autoresizingMask = [.width, .height]; illustration.addSubview(view)
             }
             diagram?.language = language

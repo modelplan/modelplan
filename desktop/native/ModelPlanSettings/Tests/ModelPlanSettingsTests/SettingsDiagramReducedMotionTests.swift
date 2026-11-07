@@ -4,13 +4,35 @@ import XCTest
 @testable import ModelPlanSettings
 
 /// MOT-2.3-03 (Settings leg) and SET-9-24 through the real window. With Reduce Motion a diagram takes
-/// its end state at once; otherwise focus and a value change each play it once, for 400 ms.
+/// its end state at once; otherwise hover, focus and a value change each play it once, for 400 ms.
 @MainActor final class SettingsDiagramReducedMotionTests: XCTestCase {
     private func store() throws -> SettingsStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("settings-diagram-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return try SettingsStore(url: directory.appendingPathComponent("preferences.json"))
+    }
+
+    private func entered(_ window: NSWindow) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+    }
+
+    func testHoverPlaysOnceInTheRealWindowAndStaysStaticUnderReducedMotion() async throws {
+        let controller = SettingsWindowController(editor: SettingsEditor(store: try store()), environmentProvider: { .init() })
+        await controller.prepare(); controller.selectPane("dock")
+        let diagram = try XCTUnwrap(controller.diagram(key: .size)), frame = diagram.frame, window = try XCTUnwrap(controller.window)
+        diagram.mouseEntered(with: try entered(window))
+        let animation = try XCTUnwrap(diagram.layer?.animation(forKey: "settings.lineMovement"), "hover")
+        XCTAssertEqual(animation.duration, 0.4); XCTAssertEqual(animation.repeatCount, 0); XCTAssertEqual(diagram.frame, frame)
+        controller.close()
+        var environment = SettingsEnvironment(); environment.reduceMotion = true
+        let reduced = SettingsWindowController(editor: SettingsEditor(store: try store()), environmentProvider: { environment })
+        await reduced.prepare(); reduced.selectPane("dock")
+        let still = try XCTUnwrap(reduced.diagram(key: .size))
+        still.mouseEntered(with: try entered(try XCTUnwrap(reduced.window)))
+        XCTAssertNil(still.layer?.animation(forKey: "settings.lineMovement"), "Reduce Motion stays static on hover")
+        reduced.close()
     }
 
     func testFocusAndValueChangeEachPlayOnceWithoutLoopingOrMovingLayout() async throws {
