@@ -73,6 +73,7 @@ public struct EngineMenuRefreshResult {
         setLanguage(value.snapshot.preferences.language.rawValue)
         dock.apply(value)
         settingsDidChange?(value)
+        menuDidChange?()
     }
     public init(configuration: EngineClientConfiguration, createsNativePanels: Bool = true,
                 dockEnvironment: (@MainActor () -> DockEdgeEnvironment)? = nil,
@@ -193,7 +194,10 @@ public struct EngineMenuRefreshResult {
     }
     public var menuPresentation: CommunityMenuBarPresentation {
         let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
+        let title = latestSettings.map {
+            EngineMenuBarTitle.make(inputs: presentedContent.snapshot.inputs, preferences: $0.snapshot.preferences, now: deadlineWall())
+        } ?? ""
+        return .init(title: title, detail: detail.isEmpty ? fallbackStatusText : detail)
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
