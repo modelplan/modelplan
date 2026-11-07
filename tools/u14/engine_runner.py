@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: MIT
 """Engine scenarios driven through the actual CLI and anonymous pipes."""
 from pathlib import Path
-import time
 
 from contracts import digest
 from candidate import regular_bytes
@@ -677,54 +676,35 @@ def admission(binary, home, plan):
             'observations': observations, 'wireMessages': messages, 'cleanup': 'exited'}
 
 
-def _runtime_projected(projection):
-    return any(row['id'] == 'codex' and any(account['route'] == 'runtime_rpc' and account['windows'] for account in row['accounts'])
-               for row in projection['rows'])
-
-
-def _wait_runtime_attempt(engine):
-    """Bounded wait for the scheduler's runtime attempt; a scheduler that made none still passes."""
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        reply = engine.request('diagnostics/get')
-        decisions = reply.get('result', {}).get('data', {}).get('refreshDecisions') or []
-        if any(item.get('scope') == 'codex.runtime_usage' and item.get('outcome') in ('succeeded', 'failed') for item in decisions):
-            return
-        time.sleep(.1)
-
-
 def shared_state(binary, home):
     fixture_input(home)
+    from contracts import encoded, write_private
+    from datetime import datetime, timezone
+    # A first run creates the consent store. The reading is then written while no engine runs:
+    # a fresh good reading makes every runtime refresh in the next run stop at its own due check,
+    # so no failure can replace it. No Codex is installed here.
+    with EngineProcess(binary, home, 'u14-shared-state-setup') as engine:
+        fixture_hello(engine)
+    captured = state(home)
+    observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
+    cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cache.unlink(missing_ok=True)
+    write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
+                                  'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
+                                  'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
     with EngineProcess(binary, home, 'u14-shared-state') as engine:
         hello = fixture_hello(engine)
-        from contracts import encoded, write_private
-        from datetime import datetime, timezone
         allowed_runtime = engine.request('consent/grant', decision(home, allow=['codex.runtime_usage']))
         require(allowed_runtime.get('result', {}).get('data', {}).get('committed'), 'runtime-grant-failed')
-        captured = state(home)
-        observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
-        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        # The grant starts a real runtime refresh. No Codex is installed here, so it records a
-        # failure, and that write can land after this fixture. Let it finish, then keep the
-        # fixture only once the rows show it.
-        _wait_runtime_attempt(engine)
-        for _ in range(25):
-            cache.unlink(missing_ok=True)
-            write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
-                                         'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
-                                         'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
-            before = row_projection(engine.request('rows/subscribe'))
-            if _runtime_projected(before):
-                break
-            time.sleep(.2)
+        before = row_projection(engine.request('rows/subscribe'))
         page = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
         require('error' not in page, 'initial-history-unavailable')
         cursor = page['result']['data']['nextCursor']
         failure = engine.request('history/query', {'kind': 'sessions', 'tool': 'codex', 'limit': 1})
         require(failure.get('error', {}).get('code') == -32050, 'query-error-not-isolated')
         require(row_projection(engine.request('rows/subscribe')) == before, 'failed-query-changed-rows')
-        require(_runtime_projected(before), 'positive-runtime-reading-not-projected')
+        require(any(row['id'] == 'codex' and any(account['route'] == 'runtime_rpc' and account['windows'] for account in row['accounts']) for row in before['rows']), 'positive-runtime-reading-not-projected')
         stale = decision(home, deny=['codex.local_history', 'codex.runtime_usage'])
         receipt = tighten(binary, home, deny=['codex.local_history', 'codex.runtime_usage'])
         changed = engine._find(lambda m: m.get('method') == 'consent/changed' and
