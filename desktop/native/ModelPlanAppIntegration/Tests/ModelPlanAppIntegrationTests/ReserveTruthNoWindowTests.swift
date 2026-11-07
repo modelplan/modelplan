@@ -55,7 +55,7 @@ private actor ReserveJourneyClient: EngineClient {
         let isRetained = state == .retained || state == .retainedExpired || (unknownDeadline && !currentUnknown)
         let isRevoked = state == .revoked || state == .revokedWithValues || state == .revokedFreshWithValues
         row["state"] = isRetained ? "stale" : "fresh"
-        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
         if isRetained {
             row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         } else {
