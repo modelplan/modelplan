@@ -8,6 +8,8 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 
 - An older tool-level allow no longer switches off default-on reads added after it: for example Codex's runtime is read on such profiles, while a refusal, a denied source or a chosen non-native backend still wins. `doctor readers` now lists Codex.
 
+- Withdraw today statistics from subscribed account rows when their session evidence, day, or current source binding expires, even when no cache file changes.
+
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
   请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
 

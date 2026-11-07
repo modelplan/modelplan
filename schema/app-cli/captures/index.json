@@ -6,6 +6,14 @@
       "type": "RowsAccount",
       "optional": [
         {
+          "field": "today",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
           "field": "resetCards",
           "omission": true,
           "null": false,
@@ -76,6 +84,39 @@
         "beta",
         "valueState",
         "windows"
+      ]
+    },
+    {
+      "file": "RowsAccountToday.json",
+      "type": "RowsAccountToday",
+      "optional": [
+        {
+          "field": "observedOutputTokens",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "generationTps",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        },
+        {
+          "field": "runningSessions",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
+        }
+      ],
+      "required": [
+        "bindingBasis"
       ]
     },
     {
