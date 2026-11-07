@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-// LBL-2.2-01..21 label/copy coverage (R48). Loads the shipped string catalogs
+// LBL-2.2-01..21 label/copy coverage (R48). Scope: desktop/native and
+// desktop/cockpit/src only; CLI and plugin text is not read. Loads the string catalogs
 // (Swift SettingsText pairs across desktop/native Sources, plus the cockpit
 // help triples) and asserts each LBL wording rule that is checkable from the
 // catalogs on Linux. Rules that need visual/device evidence are marked todo
@@ -145,7 +146,7 @@ test("LBL-2.2-12 quota is what is left (额度 · 剩余 / Quota · left)", todo
 
 test("LBL-2.2-13 user-visible surface and part names (glossary)", todo("LBL-2.2-13"), () => {
   const glossary = [["额度挂件", "Quota Widget"], ["驾驶舱", "Cockpit"], ["悬窗", "Window"], ["公共屏", "Main screen"],
-    ["推杆", "Fader"], ["注意灯", "Alert lamp"], ["点火钮", "Ignition"], ["隐藏条", "Sliver"]];
+    ["推杆", "Fader"], ["注意灯", "Alert lamp"], ["点火钮", "Ignition"], ["细条", "Sliver"]];
   const missing = glossary.filter(([z]) => !zh.some((s) => s.includes(z)));
   assert.deepEqual(missing, []);
 });
