@@ -41,7 +41,7 @@ func TestLegacySchemaOneProfileReadsThroughAppServer(t *testing.T) {
 	c.send(t, 2, "rows/subscribe", wire.Empty{})
 	c.response(t, 2)
 	state := filepath.Join(home, "cache", "observed", "readers", "gemini.json")
-	deadline := time.Now().Add(60 * time.Second)
+	deadline := time.Now().Add(90 * time.Second)
 	for {
 		// The file exists as soon as the attempt is reserved; wait for its recorded result.
 		var saved struct {
@@ -113,7 +113,7 @@ func TestReadLostToTheReaderLockRetriesSoon(t *testing.T) {
 	time.Sleep(4 * time.Second) // past the two-second lock wait
 	release()
 	state := filepath.Join(home, "cache", "observed", "readers", "gemini.json")
-	deadline := time.Now().Add(45 * time.Second)
+	deadline := time.Now().Add(90 * time.Second) // one automatic pass is a minute; the failure wait is ten
 	for {
 		var saved struct {
 			Entries []json.RawMessage `json:"entries"`

@@ -407,7 +407,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	err = s.config.Run(ctx, paths, job.scope, started)
 	outcome, reason := refreshNotAttempted, refreshUnavailable
 	// Lost to another reader before reading anything: nothing failed, so try again soon.
-	busy := errors.Is(err, consent.ErrReaderBusy)
+	busy := errors.Is(err, consent.ErrReaderBusy) || errors.Is(err, consent.ErrBusy)
 	if busy {
 		outcome, reason = refreshDeferred, refreshBudget
 	} else if err != nil {
