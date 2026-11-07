@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"time"
 
@@ -167,7 +168,21 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
-		appendReportRows(&in, report, false)
+		projectionReport := report
+		if admission.Allows("codex", consent.Local) {
+			// The generic native adapter can report the ungranted runtime
+			// route as off even when local history is independently allowed.
+			// Do not turn that route-specific status into a tool-wide veto.
+			sources := make([]quota.SourceStatus, 0, len(report.Sources))
+			for _, source := range report.Sources {
+				if source.Source == "native:codex" && source.Status == "off" && source.Reason == "reader-consent-or-privacy" {
+					continue
+				}
+				sources = append(sources, source)
+			}
+			projectionReport.Sources = sources
+		}
+		appendReportRows(&in, projectionReport, false)
 	} else {
 		appendReportRows(&in, quota.ReadDeclared(p, in.Now), true)
 	}
@@ -185,6 +200,18 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed {
 		if selections, err := quota.SelectionsWithAdmission(p, admission); err == nil {
 			for _, selected := range selections {
+				// Codex has a dedicated runtime reader outside the generic native
+				// reader registry. Its absence from that registry is not a veto of
+				// the separately admitted runtime or local-history routes.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
+					continue
+				}
+				// A denied generic runtime route must not veto the independently
+				// admitted local-history route. ReadPermitted still checks each
+				// scope and the row builder enforces tool denial and cleanup.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows("codex", consent.Local) {
+					continue
+				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
 			}
 		}
@@ -367,8 +394,37 @@ func grantError(err error) error {
 }
 
 type fileStamp struct {
+	path           string
 	size, modified int64
 	exists         bool
+}
+
+type localFileStamp struct {
+	path string
+	fileStamp
+}
+
+// codexLocalStamps observes metadata only for the same permitted local source
+// that buildView reads. It never opens rollout contents or exposes file paths.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+	tool, decided := admission.State().Tools["codex"]
+	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
+		return nil
+	}
+	paths := b.paths(admission)
+	if paths.CodexHome == "" {
+		return nil
+	}
+	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
+	sort.Strings(files)
+	stamps := make([]localFileStamp, 0, len(files))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err == nil {
+			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
+		}
+	}
+	return stamps
 }
 
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
@@ -377,6 +433,8 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
+			var codexStamps []localFileStamp
+			var nextCodexCheck time.Time
 			var todayDeadline time.Time
 			for {
 				select {
@@ -386,6 +444,17 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 					admission := consent.Capture()
 					paths := b.paths(admission)
 					now := b.now()
+					tool, decided := admission.State().Tools["codex"]
+					localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
+					if !localAllowed || paths.CodexHome == "" {
+						codexStamps = nil
+						nextCodexCheck = time.Time{}
+					} else if !now.Before(nextCodexCheck) {
+						// Match the local reader's recent files and its active thread;
+						// inspect metadata only, under the same admission fence.
+						codexStamps = b.codexLocalStamps(admission)
+						nextCodexCheck = now.Add(time.Second)
+					}
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
 					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
@@ -395,6 +464,11 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 							stamp = fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}
 						}
 						current = append(current, stamp)
+					}
+					for _, stamp := range codexStamps {
+						observed := stamp.fileStamp
+						observed.path = stamp.path
+						current = append(current, observed)
 					}
 					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
 						last = current

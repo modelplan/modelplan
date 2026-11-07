@@ -131,6 +131,7 @@ enum SettingsWords {
     private let empty = NSTextField(wrappingLabelWithString: "")
     private var rows: [SettingKey: SettingsNativeRow] = [:]
     private var displayedKeys: [SettingKey] = []
+    private var sectionHeadings: [String: NSTextField] = [:]
     private var observers: [NSObjectProtocol] = []
     private var appearanceObservation: NSKeyValueObservation?
     private let environmentProvider: @MainActor () -> SettingsEnvironment
@@ -320,6 +321,10 @@ enum SettingsWords {
             let diagrams: [SettingKey: SettingsDiagramInput] = [.dockEdge: inputs[0], .showPercentages: inputs[1], .autoHide: inputs[2], .size: inputs[3], .percentagePin: inputs[4]]
             let keys = visible.map(\.key)
             if keys != displayedKeys {
+                for heading in sectionHeadings.values {
+                    stack.removeArrangedSubview(heading); heading.removeFromSuperview()
+                }
+                sectionHeadings.removeAll()
                 let remaining = Set(keys)
                 for key in displayedKeys where !remaining.contains(key) {
                     if let row = rows[key] { row.retireControls(); stack.removeArrangedSubview(row); row.removeFromSuperview() }
@@ -332,21 +337,32 @@ enum SettingsWords {
                         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
                     }
                 }
+                for item in visible {
+                    let sectionID = "\(item.paneID).\(item.groupID)"
+                    guard item.groupTitle != nil, sectionHeadings[sectionID] == nil,
+                          let row = rows[item.key], let index = stack.arrangedSubviews.firstIndex(of: row) else { continue }
+                    let label = NSTextField(labelWithString: "")
+                    label.font = .systemFont(ofSize: 12, weight: .semibold)
+                    label.setAccessibilityIdentifier("settings.section.\(sectionID)")
+                    stack.insertArrangedSubview(label, at: index)
+                    sectionHeadings[sectionID] = label
+                }
                 displayedKeys = keys
             }
-            var previousGroup = ""
             for item in visible {
-                let groupID = item.paneID + "." + item.groupID
+                if let title = item.groupTitle {
+                    sectionHeadings["\(item.paneID).\(item.groupID)"]?.stringValue = title.value(language)
+                }
+            }
+            for item in visible {
                 rows[item.key]?.apply(item, language: language, saving: editor.isSaving, input: diagrams[item.key],
                                      reduced: effective.reduceMotion, onChoice: #selector(changeChoice(_:)), target: self,
-                                     showGroup: !query.isEmpty || groupID != previousGroup,
                                      snapshot: snapshot, context: editor.context,
                                      holdAvailable: editor.environment.macOSMajor >= 15 && editor.environment.entranceAccepted && !effective.reduceMotion,
                                      hasHost: editor.onHostRequest != nil,
                                      onEdit: { [weak self] sender, edit in self?.changeBehavior(edit, sender: sender) },
                                      onSurfaceAction: { [weak self] sender, action in self?.perform(action, sender: sender) },
                                      onDraftCleared: { [weak self] sender in guard let self, self.owns(sender) else { return }; self.refresh() })
-                previousGroup = groupID
             }
             // Hidden diagrams also stop immediately on a runtime accessibility transaction.
             if effective.reduceMotion { for row in rows.values { row.diagram?.stop() } }
