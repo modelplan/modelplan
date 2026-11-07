@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 338920a5c19011a3cf0a14456874f0897dc692b2535dfc5a35628bbae5a052f8
+// Schema SHA-256: d5180584f583a13e3ecb1631ebaecc099e148d17d18b1f03146d5e70a7e8cd01
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -43,6 +43,28 @@ export type WireCockpitAlert = {
 export type WireCockpitCredits = {
   readonly "balance": number | null;
   readonly "observedAt": string;
+};
+
+export type WireCockpitCycle = {
+  readonly "hadDrop": boolean;
+  readonly "points": number;
+  readonly "resetsAt": string;
+  readonly "spent": ReadonlyArray<WireCockpitCycleShare>;
+  readonly "startedAt": string;
+};
+
+export type WireCockpitCycleGroup = {
+  readonly "attribution": string;
+  readonly "cycles": ReadonlyArray<WireCockpitCycle>;
+  readonly "kind": string;
+  readonly "subscriptionRef": string;
+};
+
+export type WireCockpitCycleShare = {
+  readonly "effort": string | null;
+  readonly "fast": boolean;
+  readonly "model": string | null;
+  readonly "points": number;
 };
 
 export type WireCockpitData = {
@@ -89,6 +111,7 @@ export type WireCockpitForecast = {
 
 export type WireCockpitHistory = {
   readonly "coverage": string;
+  readonly "cycles": ReadonlyArray<WireCockpitCycleGroup>;
   readonly "daily": ReadonlyArray<WireCockpitSourceBucket>;
   readonly "dailyFrom": string | null;
   readonly "hourly": ReadonlyArray<WireCockpitSourceBucket>;
@@ -643,6 +666,108 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "CockpitCycle": {
+    "additionalProperties": false,
+    "properties": {
+      "hadDrop": {
+        "type": "boolean"
+      },
+      "points": {
+        "type": "number"
+      },
+      "resetsAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "spent": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycleShare"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "startedAt": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "required": [
+      "startedAt",
+      "resetsAt",
+      "points",
+      "hadDrop",
+      "spent"
+    ],
+    "type": "object"
+  },
+  "CockpitCycleGroup": {
+    "additionalProperties": false,
+    "properties": {
+      "attribution": {
+        "type": "string"
+      },
+      "cycles": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycle"
+        },
+        "maxItems": 10,
+        "type": "array"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "subscriptionRef",
+      "kind",
+      "attribution",
+      "cycles"
+    ],
+    "type": "object"
+  },
+  "CockpitCycleShare": {
+    "additionalProperties": false,
+    "properties": {
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "fast": {
+        "type": "boolean"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "points": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "model",
+      "effort",
+      "fast",
+      "points"
+    ],
+    "type": "object"
+  },
   "CockpitData": {
     "additionalProperties": false,
     "properties": {
@@ -870,6 +995,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "coverage": {
         "type": "string"
       },
+      "cycles": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycleGroup"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
       "daily": {
         "items": {
           "$ref": "#/$defs/CockpitSourceBucket"
@@ -946,7 +1078,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "dailyFrom",
       "daily",
       "hourly",
-      "projects"
+      "projects",
+      "cycles"
     ],
     "type": "object"
   },
