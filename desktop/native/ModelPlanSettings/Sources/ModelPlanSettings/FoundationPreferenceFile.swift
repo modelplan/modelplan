@@ -96,6 +96,7 @@ enum FoundationPreferenceFile {
     struct Hooks {
         var onLegacyRead: ((Migration.Source) -> Void)?
         var beforePublish: (() throws -> Void)?
+        var onMigrationLog: ((String) -> Void)?
     }
     private enum Read { case absent, bytes(Data), invalid(Migration.Failure) }
     private static func posix() -> NSError { .init(domain: NSPOSIXErrorDomain, code: Int(errno)) }
@@ -215,6 +216,10 @@ enum FoundationPreferenceFile {
                 throw posix()
             }
             guard fsync(fd) == 0 else { throw FoundationPreferenceError.durabilityUncertain }
+            if candidate.selection.settings != .defaults || candidate.selection.core != .defaults {
+                let message = "Settings migration completed"
+                if let log = hooks.onMigrationLog { log(message) } else { NSLog("%@", message) }
+            }
             return .init(location: location, document: document, bytes: initialBytes, directoryIdentity: id, writeBlocked: false,
                 status: .init(path: location.target, createdByMigration: true, readOnlyRecovery: false, selection: candidate.selection, issues: candidate.issues))
         }
