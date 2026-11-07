@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -258,5 +259,66 @@ func TestRefreshUsesBoundCredentialAgentWithoutSecondOperation(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("agent-backed reader did not run")
+	}
+}
+
+func TestCredentialHoldKeepsAutomaticReadsOffAndDelaysRequestedOnes(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	var active atomic.Bool
+	active.Store(true)
+	ran := make(chan struct{}, 2)
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) { return active.Load(), time.Time{} },
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	defer scheduler.Close()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if result, _, err := scheduler.request(context.Background(), params, true); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("automatic read was not scheduled", result, err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		scheduler.mu.Lock()
+		_, pending := scheduler.pending["claude"]
+		until := scheduler.autoNext["claude"]
+		scheduler.mu.Unlock()
+		if !pending && until.After(time.Now().Add(10*time.Second)) && until.Before(time.Now().Add(time.Minute)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("automatic read was not held: pending=%v until=%v", pending, until)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// The held read leaves no job in the way of one the user asks for.
+	if result, _, err := scheduler.Request(context.Background(), params); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("requested read was refused", result, err)
+	}
+	select {
+	case <-ran:
+		t.Fatal("requested read ran during the operation")
+	case <-time.After(3 * credentialHoldPoll):
+	}
+	active.Store(false)
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("requested read did not run after the operation")
 	}
 }

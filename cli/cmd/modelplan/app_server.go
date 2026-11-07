@@ -116,7 +116,12 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify})
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+			if server == nil {
+				return false, time.Time{}
+			}
+			return server.CredentialHold(provider)
+		}})
 		handlers["refresh/request"] = scheduler.Handler()
 		shared.RefreshDeadline = scheduler.PendingDeadline
 		shared.CredentialSink = broker
