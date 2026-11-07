@@ -6,6 +6,13 @@ import ModelPlanSettings
 
 /// Presentation locators never assert a subscription ref or verified account join.
 public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale, errorLastGood, error }
+public struct DockWindowObservation: Sendable {
+    public let sourceName: String
+    public let observedAt: Date?
+    // Retained provenance conveys neither a numeric reading nor an active reset deadline.
+    var verifiedRetained = false
+}
+
 public struct DockContentRow: Sendable {
     public let input: DockInstrumentInput
     public let reason: String
@@ -15,12 +22,16 @@ public struct DockContentRow: Sendable {
     public let resetTimes:[String:Date]
     public let windowDescriptions:[String:String]
     public let additionalRows:[DockCardRow]
+    let resetCountExpiry: Date?
+    public let links: [DockCardLink]
+    public let windowObservations: [String: DockWindowObservation]?
     public let cardReadingState: DockCardReadingState
     public init(input: DockInstrumentInput, reason: String, nextStep: String, originalObservedAt: Date? = nil,
-                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],cardReadingState:DockCardReadingState?=nil) {
+                plan:String="",sourceName:String="",resetTimes:[String:Date]=[:],windowDescriptions:[String:String]=[:],additionalRows:[DockCardRow]=[],resetCountExpiry: Date? = nil,links:[DockCardLink]=[],windowObservations:[String:DockWindowObservation]?=nil,cardReadingState:DockCardReadingState?=nil) {
         self.input = input; self.reason = reason; self.nextStep = nextStep
         self.originalObservedAt = originalObservedAt
-        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows
+        self.plan=plan;self.sourceName=sourceName;self.resetTimes=resetTimes;self.windowDescriptions=windowDescriptions;self.additionalRows=additionalRows;self.resetCountExpiry=resetCountExpiry;self.links=links
+        self.windowObservations = windowObservations
         self.cardReadingState = cardReadingState ?? {
             switch input.dataState { case .fresh: return .ok; case .loading: return .loading; case .stale: return .stale; case .unavailable: return .error }
         }()
@@ -28,10 +39,24 @@ public struct DockContentRow: Sendable {
     private func cardAge(at now:Date,english:Bool) -> String {
         CommunityObservationAge.cardText(observedAt: originalObservedAt, now: now, english: english)
     }
-    public func cardSourceAndAge(at now:Date,english:Bool) -> String {
+    public func cardSourceAndAge(at now:Date,english:Bool,selectedWindowID:String?=nil) -> String {
+        if let selectedWindowID, windowObservations != nil {
+            return observationText(for: selectedWindowID, at: now, english: english)
+        }
         let age = cardAge(at: now, english: english)
         return sourceName.isEmpty ? age : sourceName + " · " + age
     }
+    private func observationText(for windowID: String?, at now: Date, english: Bool) -> String {
+        let fact = windowID.flatMap { id -> DockWindowObservation? in
+            guard let window = input.windows.first(where: { $0.id == id }) else { return nil }
+            if case .verifiedCurrent(let until) = window.validity, now >= until { return nil }
+            return windowObservations?[id]
+        }
+        let source = fact?.sourceName ?? (english ? "Unknown source" : "未知来源")
+        let age = CommunityObservationAge.cardText(observedAt: fact?.observedAt, now: now, english: english)
+        return source + " · " + age
+    }
+
     public func cardBadge(at now:Date,english:Bool) -> String {
         let age=cardAge(at:now,english:english)
         switch cardReadingState {
@@ -42,12 +67,38 @@ public struct DockContentRow: Sendable {
         case .error: return reason.isEmpty ? (english ? "Read failed · no reading" : "读取失败 · 无可用读数") : reason
         }
     }
+    func cardAdditionalRows(at now: Date, english: Bool) -> [DockCardRow] {
+        guard let expiry = resetCountExpiry,
+              let index = additionalRows.firstIndex(where: { $0.id == "reset-count" }) else { return additionalRows }
+        let seconds = expiry.timeIntervalSince(now)
+        guard seconds.isFinite, seconds < Double(Int.max) else { return additionalRows }
+        let suffix: String
+        if seconds <= 0 {
+            suffix = english ? "expired" : "已到期"
+        } else {
+            let hours = seconds >= 3600
+            let quantity = Int(ceil(seconds / (hours ? 3600 : 60)))
+            let duration = hours ? (english ? "\(quantity)h" : "\(quantity) 小时") :
+                (english ? "\(quantity)m" : "\(quantity) 分钟")
+            suffix = english ? "expire in " + duration : duration + "后到期"
+        }
+        var rows = additionalRows
+        let row = rows[index]
+        rows[index] = .init(id: row.id, kind: row.kind, label: row.label + " · " + suffix, value: row.value,
+                            detail: row.detail, remainingFraction: row.remainingFraction, tone: row.tone)
+        return rows
+    }
     public func resetDetails(at now:Date,english:Bool) -> [String:String] {
         input.windows.reduce(into:[:]) { result,window in
             let reset=Self.resetDetail(resetTimes[window.id] ?? window.resetsAt,now:now,english:english)
-            if let description=windowDescriptions[window.id],!description.isEmpty,description != window.label {
-                result[window.id]=description+" · "+reset
-            } else { result[window.id]=reset }
+            var detail = reset
+            if let description = windowDescriptions[window.id], !description.isEmpty, description != window.label {
+                detail = description + " · " + detail
+            }
+            if windowObservations != nil {
+                detail += " · " + observationText(for: window.id, at: now, english: english)
+            }
+            result[window.id] = detail
         }
     }
     private static func resetDetail(_ reset:Date?,now:Date,english:Bool) -> String {
@@ -57,10 +108,11 @@ public struct DockContentRow: Sendable {
         guard seconds > 0 else { return english ? "Reset time passed":"已过重置时间" }
         let minutes=Int(ceil(seconds/60)),days=minutes/1440,hours=(minutes%1440)/60,rest=minutes%60
         let value:String
-        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days)天\(hours)小时" }
-        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours)小时\(rest)分" }
-        else { value=english ? "\(rest)m":"\(rest)分" }
-        return english ? "Resets in "+value:value+"后重置"
+        // Glossary relative format (V-18): "2 小时 14 分后重置" / "resets in 2h 14m".
+        if days > 0 { value=english ? "\(days)d \(hours)h":"\(days) 天 \(hours) 小时" }
+        else if hours > 0 { value=english ? "\(hours)h \(rest)m":"\(hours) 小时 \(rest) 分" }
+        else { value=english ? "\(rest)m":"\(rest) 分" }
+        return english ? "resets in "+value:value+"后重置"
     }
     public func sourceAndAge(at now: Date) -> String {
         CommunityObservationAge.text(observedAt: originalObservedAt, now: now)

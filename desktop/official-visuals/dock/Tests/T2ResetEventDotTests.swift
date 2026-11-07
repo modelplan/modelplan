@@ -15,9 +15,11 @@ final class T2ResetEventDotTests: XCTestCase {
                 XCTAssertEqual(withReading.eventRect.midY, station.readoutCentre.y, accuracy: 1e-7)
                 XCTAssertEqual(rim.eventRect.midX, station.centre.x + diameter * 0.25, accuracy: 1e-7)
                 XCTAssertEqual(rim.eventRect.midY, station.centre.y - diameter * 0.433013, accuracy: 1e-7)
-                XCTAssertEqual(try XCTUnwrap(rim.eventSolidDiameter), 5 * diameter / 52, accuracy: 1e-7)
-                XCTAssertEqual(try XCTUnwrap(rim.eventHollowDiameter), 6 * diameter / 52, accuracy: 1e-7)
-                XCTAssertEqual(try XCTUnwrap(rim.eventStrokeWidth), 1.2 * diameter / 52, accuracy: 1e-7)
+                for skin in [withReading, rim] {
+                    XCTAssertEqual(try XCTUnwrap(skin.eventSolidDiameter), 5 * diameter / 52, accuracy: 1e-7)
+                    XCTAssertEqual(try XCTUnwrap(skin.eventHollowDiameter), 5 * diameter / 52, accuracy: 1e-7)
+                    XCTAssertEqual(try XCTUnwrap(skin.eventStrokeWidth), 1.2 * diameter / 52, accuracy: 1e-7)
+                }
             }
         }
     }

@@ -24,6 +24,7 @@ public enum SettingsDockPlacementText {
         case .left: edge = .init("left", "左侧")
         case .right: edge = .init("right", "右侧")
         case .bottom: edge = .init("bottom", "底部")
+        case .top: edge = .init("top", "顶部")
         }
         let name = displays.first { $0.id == observation.displayID }?.name
         let display = name.map { SettingsText($0, $0) } ?? .init("Unknown display", "未知显示器")

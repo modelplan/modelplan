@@ -9,20 +9,29 @@ import CryptoKit
     init(_ title:String,_ invoke:@escaping ()->Void){super.init(frame:.zero);self.title=title;self.invoke=invoke;bezelStyle = .rounded;target=self;action=#selector(pressed)}
     required init?(coder:NSCoder){fatalError()}
     @objc private func pressed(){invoke?()}
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled, !isHiddenOrHasHiddenAncestor, let invoke else { return false }
+        invoke()
+        return true
+    }
     func retire(){invoke=nil;focusChanged=nil;isEnabled=false;target=nil;action=nil}
 }
 /// Neutral complete card; official geometry/material/font/brand image is an injected appearance input.
 @MainActor public struct DockCardStyle {
     public var width:CGFloat=300,padding:CGFloat=12,fontSize:CGFloat=12,brandSize:CGFloat=16
+    /// The ten-segment quota bar: size and gap between segments.
+    public var barSize=CGSize(width:96,height:10),barGap:CGFloat=2
     public var background:NSColor = .windowBackgroundColor,ink:NSColor = .labelColor,track:NSColor = .separatorColor
     public var quota:[DockQuotaStatus:NSColor]=[.normal:.controlAccentColor,.warning:.systemOrange,.critical:.systemRed,.unknown:.secondaryLabelColor]
     public init(){}
 }
 @MainActor private final class DockCardBar:NSView {
     var fraction:Double?,on:NSColor,track:NSColor
+    var size=CGSize(width:96,height:10){didSet{invalidateIntrinsicContentSize();needsDisplay=true}}
+    var gap:CGFloat=2{didSet{needsDisplay=true}}
     init(row:DockCardRow,on:NSColor,track:NSColor){self.fraction=row.remainingFraction;self.on=on;self.track=track;super.init(frame:CGRect(x:0,y:0,width:96,height:10));setAccessibilityElement(true);setAccessibilityRole(.levelIndicator);setAccessibilityValue(row.remainingFraction.map{NSNumber(value:$0*100)});setAccessibilityMinValue(0);setAccessibilityMaxValue(100);setAccessibilityLabel(row.label);setAccessibilityHelp([row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));setAccessibilityIdentifier("dock.card.quota."+row.id)}
     required init?(coder:NSCoder){fatalError()}
-    override var intrinsicContentSize:NSSize{NSSize(width:96,height:10)}
+    override var intrinsicContentSize:NSSize{size}
     func apply(row:DockCardRow,on:NSColor,track:NSColor){
         let changed=fraction != row.remainingFraction
         fraction=row.remainingFraction;self.on=on;self.track=track
@@ -31,7 +40,7 @@ import CryptoKit
         if changed{NSAccessibility.post(element:self,notification:.valueChanged)}
     }
     override func draw(_ dirtyRect:NSRect){
-        let gap:CGFloat=2,w=max(0,(bounds.width-9*gap)/10)
+        let w=max(0,(bounds.width-9*gap)/10)
         for i in 0..<10{let r=CGRect(x:CGFloat(i)*(w+gap),y:0,width:w,height:bounds.height);track.setFill();r.fill()
             if let fraction{let fill=max(0,min(1,fraction*10-Double(i)));on.setFill();CGRect(x:r.minX,y:0,width:w*fill,height:r.height).fill()}}
     }
@@ -76,8 +85,10 @@ import CryptoKit
         self.style=style;content=value;let token=generation
         for (i,c) in edges.enumerated(){c.constant=(i==1 || i==3) ? -style.padding:style.padding}
         var usedLabels=Set<String>(),usedGroups=Set<String>(),usedButtons=Set<String>(),usedBars=Set<String>()
-        func label(_ id:String,_ text:String)->NSTextField{
-            usedLabels.insert(id);let l=labels[id] ?? NSTextField(wrappingLabelWithString:"");labels[id]=l
+        func label(_ id:String,_ text:String, wraps:Bool = true)->NSTextField{
+            usedLabels.insert(id)
+            let l = labels[id] ?? (wraps ? NSTextField(wrappingLabelWithString: "") : NSTextField(labelWithString: ""))
+            labels[id] = l
             l.stringValue=text;l.font = .systemFont(ofSize:style.fontSize);l.textColor=style.ink;l.toolTip=nil
             l.setAccessibilityLabel(text);l.setAccessibilityIdentifier("dock.card.text."+id);return l
         }
@@ -100,14 +111,16 @@ import CryptoKit
         var children:[NSView]=[head]
         for (id,text) in [("source",value.sourceAndAge),("state",value.stateLabel)] where !text.isEmpty{children.append(label(id,text))}
         for row in value.rows{
-            let l=label("row."+row.id+".label",row.label);if row.kind == .extraQuota{l.toolTip=row.label}
+            let l=label("row."+row.id+".label",row.label);if row.kind == .extraQuota{l.setAccessibilityLabel(row.label)} // DOCK-3.6-18: no native tooltip
             let h=group("row."+row.id);var fields:[NSView]=[l]
             if row.kind == .quota || row.kind == .extraQuota{
                 usedBars.insert(row.id)
                 let bar=bars[row.id] ?? DockCardBar(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track)
-                bars[row.id]=bar;bar.apply(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track);fields.append(bar)
+                bars[row.id]=bar;bar.apply(row:row,on:style.quota[row.tone] ?? style.ink,track:style.track)
+                bar.size=style.barSize;bar.gap=style.barGap;fields.append(bar)
             }
-            fields.append(label("row."+row.id+".value",row.value));arrange(h,fields)
+            // Inline values need an intrinsic width; wrapping labels may collapse to their padding.
+            fields.append(label("row."+row.id+".value",row.value,wraps:false));arrange(h,fields)
             h.setAccessibilityLabel([row.label,row.value,row.detail].filter{!$0.isEmpty}.joined(separator:" · "));children.append(h)
             if !row.detail.isEmpty{children.append(label("row."+row.id+".detail",row.detail))}
         }
@@ -129,6 +142,7 @@ import CryptoKit
         for id in Array(bars.keys) where !usedBars.contains(id){bars.removeValue(forKey:id)?.setAccessibilityElement(false)}
         labels=labels.filter{usedLabels.contains($0.key)};groups=groups.filter{usedGroups.contains($0.key)}
         frame.size=CGSize(width:style.width,height:max(40,stack.fittingSize.height+2*style.padding))
+        layoutSubtreeIfNeeded()
         setAccessibilityElement(true);needsDisplay=true
     }
     private func current(_ value:DockCardContent,token:UInt64)->Bool{

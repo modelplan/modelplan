@@ -5,14 +5,17 @@ import ObjectiveC
 private var dockSliverMenuAssociationKey: UInt8 = 0
 
 /// One caller-supplied menu row. A nil title denotes a separator; a nil action is read-only.
+/// A non-nil `checked` makes a checkable item: a constant title with the system checkmark
+/// (NSMenuItem.state) showing the current setting, never a title that switches wording.
 @MainActor public struct DockMenuPresentationItem {
     public let title: String?, accessibilityID: String?, keyEquivalent: String
     public let action: (() -> Void)?
     public let target: AnyObject?, selector: Selector?
+    public let checked: Bool?
     public init(title: String?, accessibilityID: String? = nil, keyEquivalent: String = "",
-                target: AnyObject? = nil, selector: Selector? = nil, action: (() -> Void)? = nil) {
+                target: AnyObject? = nil, selector: Selector? = nil, checked: Bool? = nil, action: (() -> Void)? = nil) {
         self.title = title; self.accessibilityID = accessibilityID; self.keyEquivalent = keyEquivalent
-        self.target = target; self.selector = selector; self.action = action
+        self.target = target; self.selector = selector; self.checked = checked; self.action = action
     }
 }
 
@@ -43,6 +46,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.target = value.selector == nil ? (value.action == nil ? nil : self) : value.target
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
+            if let checked = value.checked { item.state = checked ? .on : .off }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }
@@ -89,6 +93,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.target = value.selector == nil ? (value.action == nil ? nil : self) : value.target
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
+            if let checked = value.checked { item.state = checked ? .on : .off }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }
@@ -109,6 +114,25 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         guard value != nil,!reducedMotion,let animation=firstAppearanceAnimation?.copy() as? CAAnimation,animation.duration.isFinite,(0...2).contains(animation.duration) else{return}
         animation.repeatCount=0;animation.repeatDuration=0;animation.isRemovedOnCompletion=true
         layer?.add(animation,forKey:"dock-notice-once")
+    }
+    public func attach(to button: NSButton) {
+        let bounds = button.bounds
+        let side: CGFloat = 7
+        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - side)
+        // MENU-06: the dot belongs to the icon's top right in every display style. With a
+        // percentage title after the leading icon, the button's right edge is the end of the
+        // text, so the dot ends at the icon's right edge instead and stays with the icon.
+        if !button.title.isEmpty, button.image != nil,
+           button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
+           let icon = button.cell?.imageRect(forBounds: bounds), !icon.isEmpty,
+           icon.maxX - side >= bounds.minX, icon.maxX < bounds.maxX {
+            frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
+            autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        } else {
+            frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
+            autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        }
+        if superview !== button { button.addSubview(self) }
     }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
     public override func draw(_ dirtyRect:NSRect){guard let notice else{return};let color=colors[notice.tone] ?? .secondaryLabelColor

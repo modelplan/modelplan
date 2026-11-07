@@ -50,13 +50,13 @@ public struct HelpMapCatalog: Sendable {
         case .record: return copy("会话记录：运行中的在前，按一行查看详情。", "Session record: running sessions come first; press a row for details.")
         case .base: return copy("火焰：表示这个订阅正在用，不表示额度告警。", "Flame: this subscription is working now; it does not mean an alert.")
         case .nozzle: return copy("喷口：每个是一个订阅，悬停查看卡片、点按刷新，拖动可排序，⌥ 加方向键移动一位。", "Nozzle: each is a subscription; hover for its card, click to refresh, drag to reorder or use Option arrows to move one place.")
-        case .dockMove: return copy("背景与握柄：拖动可移动整个额度挂件，松手贴合预览的左、右或下边缘。", "Background and grips: drag to move the whole Quota Widget; release at the preview on the left, right or bottom edge.")
+        case .dockMove: return copy("背景与握柄：拖动可移动整个额度挂件，松手即贴到左、右或下边缘。", "Background and grips: drag to move the whole Quota Widget; release it on the left, right or bottom edge.")
         case .overflow: return copy("更多订阅：暂不支持拖动排序，可用 ⌥ 加方向键移动一位。", "Overflow: pointer dragging is unavailable; use Option arrows to reorder one place.")
         case .rings: return copy("额度圈：外圈较短、内圈较长，两个都表示剩余。", "Quota rings: outer is shorter and inner longer; both show quota left.")
         case .number: return copy("数字：显示这个喷口当前选中周期的剩余额度。", "Number: quota left in the window selected for this nozzle.")
         case .eventDot: return copy("事件点：橙色风险、蓝色公开重置、白色正在用点数。", "Event dot: amber risk, blue public reset, white credits in use.")
         case .ignition: return copy("点火钮：点按打开驾驶舱。", "Ignition: tap to open the Cockpit.")
-        case .sliver: return copy("隐藏条：靠近稍停显示额度挂件，右键打开菜单。", "Sliver: rest near it to reveal the Quota Widget or right-click for its menu.")
+        case .sliver: return copy("细条：额度挂件收起后贴在边缘，靠近稍停即可展开，右键打开菜单。", "Sliver: rest near it to reveal the Quota Widget or right-click for its menu.")
         }
     }
 }

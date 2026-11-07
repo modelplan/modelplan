@@ -34,13 +34,16 @@ import ModelPlanEngineClient
         XCTAssertEqual(restarted.composition.dock.currentMenuBarPreferences?.dockDisplayID,"drag-display")
         XCTAssertEqual(restarted.composition.dock.currentMenuBarPreferences?.dockEdge,.left)
         XCTAssertEqual(restarted.composition.dock.currentMenuBarPreferences?.dockAlongFraction,0.31)
-        try XCTUnwrap(dock.requestHideDock)()
+        // G3-28: the widget menu's Auto-Collapse writes the same stored setting as Settings.
+        let autoCollapse=try XCTUnwrap(dock.requestAutoCollapse)
+        autoCollapse(false)
         for _ in 0..<100 {
-            if await store.snapshot().preferences.showDock == false { break }
+            if await store.snapshot().preferences.autoHide == false { break }
             try await Task.sleep(for:.milliseconds(10))
         }
-        let hidden=await store.snapshot()
-        XCTAssertFalse(hidden.preferences.showDock)
+        let collapsed=await store.snapshot()
+        XCTAssertFalse(collapsed.preferences.autoHide)
+        XCTAssertTrue(collapsed.preferences.showDock, "Auto-Collapse never turns the widget off")
         dock.close();restarted.composition.dock.close()
     }
     func testMenusFollowSettingsLanguageAndSpecOrder() async throws {
@@ -50,18 +53,55 @@ import ModelPlanEngineClient
         for enabled in [false,true] {
             let entry=app(store,cockpitEntryEnabled:enabled)
             for language in [SettingsLanguage.chinese,.english] {
-                try await store.update { $0.language=language };await entry.prepare()
+                try await store.update { $0.language=language };await entry.prepare();entry.allowDockPresentation()
                 let en=language == .english
-                let cockpit = enabled ? (en ? "Open Cockpit" : "打开驾驶舱") : (en ? "Coming soon" : "即将推出")
+                // Owner HIG decision 11-06: [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q]; no Hide item.
                 let dock=entry.composition.dock.menu().items
-                XCTAssertEqual(Array(dock.suffix(3)).map(\.title),[cockpit,en ? "Settings…" : "设置…",en ? "Hide Quota Widget" : "隐藏额度挂件"])
-                XCTAssertEqual(dock.first { $0.title == cockpit }?.isEnabled, enabled)
+                let dockTitles=dock.map { $0.isSeparatorItem ? "—" : $0.title }
+                let group=[en ? "Auto-Collapse" : "自动收起",en ? "Settings…" : "设置…","—",en ? "Quit ModelPlan" : "退出 ModelPlan"]
+                XCTAssertEqual(dockTitles,enabled ? [en ? "Open Cockpit" : "打开驾驶舱","—"]+group : group)
+                XCTAssertFalse(dockTitles.contains { $0.contains("Hide") || $0.contains("隐藏") || $0.contains("Close") || $0.contains("关闭") })
+                let toggle=try XCTUnwrap(dock.first { $0.title == (en ? "Auto-Collapse" : "自动收起") })
+                let storedAutoHide=await store.snapshot().preferences.autoHide
+                XCTAssertEqual(toggle.state,storedAutoHide ? .on : .off)
+                let settings=try XCTUnwrap(dock.first { $0.title == (en ? "Settings…" : "设置…") })
+                XCTAssertEqual(settings.keyEquivalent,",");XCTAssertEqual(settings.keyEquivalentModifierMask,[.command])
+                let quit=try XCTUnwrap(dock.last)
+                XCTAssertEqual(quit.keyEquivalent,"q");XCTAssertEqual(quit.keyEquivalentModifierMask,[.command])
                 let titles=try XCTUnwrap(entry.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
-                XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About","Quit"]:["网站","方法论","隐私","说明…","设置…","关于","退出"])
+                XCTAssertEqual(Array(titles.suffix(7)),en ? ["Website","Methodology","Privacy","Help…","Settings…","About ModelPlan","Quit ModelPlan"]:["网站","方法论","隐私","说明…","设置…","关于 ModelPlan","退出 ModelPlan"])
                 XCTAssertFalse(titles.contains { $0.contains(" / ") })
             }
             entry.composition.dock.close()
         }
+    }
+    /// G3-28: the widget menu's checkable Auto-Collapse, Settings' "鼠标离开后自动收起" switch
+    /// and the stored setting stay in sync in both directions; the title never changes.
+    func testWidgetMenuAutoCollapseAndSettingsSwitchStayInSync() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:root) }
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .chinese; $0.autoHide = false }
+        let entry=app(store);await entry.prepare();entry.allowDockPresentation()
+        defer { entry.composition.dock.close() }
+        let editor=entry.settingsHost.application.editor
+        func row() throws -> SettingsRow {
+            let snapshot=try XCTUnwrap(editor.snapshot)
+            return try XCTUnwrap(SettingsCatalogue.rows(preferences:snapshot.preferences,context:editor.context,paneID:nil).first { $0.key == .autoHide })
+        }
+        XCTAssertEqual(try row().title.chinese,"鼠标离开后自动收起")
+        for expected in [true,false] {
+            let item=try XCTUnwrap(entry.composition.dock.menu().items.first { $0.title == "自动收起" })
+            XCTAssertEqual(item.state,expected ? .off : .on);XCTAssertTrue(item.isEnabled)
+            _ = try XCTUnwrap(item.target as? NSObject).perform(try XCTUnwrap(item.action),with:item)
+            try await waitForSettings(editor) { editor.snapshot?.preferences.autoHide == expected && !editor.isSaving }
+            XCTAssertEqual(try row().value,.toggle(expected),"the Settings switch follows the widget menu")
+            let saved=await store.snapshot()
+            XCTAssertEqual(saved.preferences.autoHide,expected);XCTAssertTrue(saved.preferences.showDock)
+        }
+        _ = try await editor.commit(SettingsB21Edit.autoHide(true))
+        let item=try XCTUnwrap(entry.composition.dock.menu().items.first { $0.title == "自动收起" })
+        XCTAssertEqual(item.state,.on,"the widget menu follows the Settings switch")
     }
     func testUnreadableFaceShowsReasonAndClearsItWithRows() throws {
         let view=DockInstrumentView(frame:.zero),now=Date()
