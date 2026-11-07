@@ -32,7 +32,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // ALERT lamp or the overview's "+N" line, closed by "‹ Back to <page>", Esc, a page key or a second lamp press.
  let alertsView:{from:'caution'|'mfd'}|null=null;root.dataset.detailsAvailable=String(details.liveSessions!==null);
  // The study controller's fixed three-channel skeleton. No fixture data is
- // bundled; absent publication and session capabilities leave all bays empty.
+ // bundled; absent publication and session capabilities leave all bays empty, and the bank row says so.
  const skeleton=(i:number)=>`<div class="fd-ch empty" data-slot="${i}"><div class="fd-leds"></div><button class="fd-strip" data-mat="well" tabindex="-1"></button>
   <div class="fd-travel" role="slider" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="4" tabindex="-1"><span class="fd-slot"></span><span class="fd-marks"></span><span class="fd-peek"></span><span class="fd-ghost" data-mat="part" hidden></span><span class="fd-cap" data-mat="part" hidden></span></div></div>`;
  channels.innerHTML=Array.from({length:3},(_,i)=>skeleton(i)).join('');
@@ -69,7 +69,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
    for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-tick')].entries())el.style.setProperty('--k',String(c.ticks[j]));const rec=marks.querySelector<HTMLElement>('.fd-rec');rec?.style.setProperty('--k',String(c.recK));for(const [j,el] of [...marks.querySelectorAll<HTMLElement>('.fd-dot')].entries())el.style.setProperty('--k',String(c.dots[j].k));
    for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.eb')].entries()){const b=c.bars[j];if(!b.none)el.style.setProperty('--h',(3+b.h*8).toFixed(1)+'px');}for(const [j,el] of [...strip.querySelectorAll<HTMLElement>('.st-vend b')].entries())el.style.setProperty('--v',c.segments[j]);
   }
-  bank.innerHTML=bankView(model);for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
+  bank.innerHTML=bankView(model);if(!model.all.length)bank.append(node('p','mp-empty sm',locale==='en'?'Data unavailable':'暂无数据'));for(const b of bank.querySelectorAll<HTMLButtonElement>('[data-bank]'))b.onclick=e=>{if(!e.isTrusted)return;bankIndex+=b.dataset.bank==='1'?1:-1;paintFaders();};
  }
 
  const bar=node('div','mfd-pk'),screen=node('div','mfd-screen'),page=node('div','mfd-page pg-overview'),footer=node('div','mfd-ok');bar.setAttribute('role','toolbar');screen.dataset.mat='well';page.dataset.fill='page';screen.append(page);

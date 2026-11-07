@@ -142,7 +142,7 @@ The owner-released G/P6 prototype at
 hierarchy, layout calculation and CSS. [Provenance and exclusions](../../docs/borrowed/cockpit-web.md)
 record the MIT release and source hashes. Resource imports, vendor logos, mock
 bootstrap, canvas/3D and timer loops are removed. Tool names are text. The Go DTO
-populates quota and available details, while absent publication, session and history data remain unavailable. The standard bridge does not yet supply publication to the faders, so their channels remain unavailable; no prototype fixture is loaded in production. Scope selection is session-only and does not sync to the Dock.
+populates quota and available details, while absent publication, session and history data remain unavailable. The faders read the publication the engine fetches by itself; until it arrives, or while it cannot be fetched, their channels stay empty and the bank row says the data is unavailable. No prototype fixture is loaded in production. Scope selection is session-only and does not sync to the Dock.
 The empty canopy awaits U12 media. Native owner review still confirms final fidelity.
 
 The target App + WebContent CPU is at most **6% of one core** in the U11a scenario.
