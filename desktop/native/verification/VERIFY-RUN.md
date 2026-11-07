@@ -254,6 +254,10 @@ python3 $B/detach.py wait --record "$RUN_DIR/guardian.json" --timeout 60
   ends `stopped`. It exits 0 with `stoppedBy: hold-complete`. A subject that ends early gives exit 3
   with `stoppedBy: subject-ended-before-hold`, and the stop file is written too, so closure can
   still be confirmed. Any other stop keeps its own reason and exit 3.
+- During a hold the launcher tolerates a 15-second gap in the guardian heartbeat instead of 3, so
+  a brief stall (seen on a busy disk) does not end the run. A dead guardian still stops the subject
+  with `guardian-heartbeat-stale`, up to 15 seconds later. Admission and pointer input keep their
+  strict limits.
 - Probes need `app-zip`, and `doctor readers --json` is the only one allowed (cache only, sanitised).
   The launcher runs the candidate's `Contents/Helpers/modelplan` with the launch-contract keys of
   the subject environment, one probe at a time, for at most 30 seconds. A probe still running when

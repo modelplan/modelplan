@@ -26,6 +26,10 @@ HOLD_DONE = 'hold-complete'
 HOLD_SHORT = 'subject-ended-before-hold'
 PROBES = (('doctor', 'readers', '--json'),)  # sanitised and cache only, so a probe reads no provider
 PROBE_SECONDS = 30.0
+# A hold spans minutes, long enough to meet a stall of several seconds in the guardian's fsync'd
+# heartbeat write. A dead guardian still stops the subject, this many seconds later. Starting a
+# subject and pointer input keep their own strict limits.
+HEARTBEAT_GRACE = 15
 CLOSE_RESERVE = 60  # guardian's 30-second reserve, plus subject start and a last probe
 CONTRACT = Path(__file__).resolve().parents[4] / 'schema' / 'app-cli' / 'child-environment.json'
 

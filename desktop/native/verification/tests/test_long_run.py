@@ -196,12 +196,32 @@ class LaunchHoldTests(Base):
             def wait(self, timeout=None): return self.returncode
         hold = mock.Mock(); hold.tick.return_value = True
         config = self.config()
-        reasons = lambda c, now: 'stop-file' if Path(c['stopPath']).exists() else None
+        reasons = lambda c, now, stale=3: 'stop-file' if Path(c['stopPath']).exists() else None
         child = Child()
         with mock.patch.object(launch, 'stop_reason', side_effect=reasons):
             self.assertEqual(launch.supervise(child, config, sleep=lambda _: None, hold=hold), 'stop-file')
         self.assertEqual(json.loads(Path(config['stopPath']).read_text())['reason'], 'hold-complete')
         self.assertEqual(child.returncode, -15)
+
+    def test_heartbeat_gap_is_tolerated_only_during_a_hold_and_only_up_to_the_grace(self):
+        lease = dict(runID='r', epoch='e', notBefore=0, expiresAt=5000, ownerPreempted=False, exclusive=True,
+                     guardianHeartbeatAt=1000)
+        path = self.root / 'lease.json'; path.write_text(json.dumps(lease))
+        config = self.config(leasePath=str(path), lease=lease)
+        self.assertEqual(launch.stop_reason(config, 1004), 'guardian-heartbeat-stale')
+        self.assertIsNone(launch.stop_reason(config, 1004, stale=hold_run.HEARTBEAT_GRACE))
+        self.assertEqual(launch.stop_reason(config, 1016, stale=hold_run.HEARTBEAT_GRACE), 'guardian-heartbeat-stale')
+
+        class Child:
+            returncode = None
+            def poll(self): return self.returncode
+            def terminate(self): self.returncode = -15
+            def wait(self, timeout=None): return self.returncode
+        hold = mock.Mock(); hold.tick.return_value = False
+        now = iter([1004, 1004, 1016])
+        self.assertEqual(launch.supervise(Child(), config, clock=lambda: next(now), sleep=lambda _: None, hold=hold),
+                         'guardian-heartbeat-stale')
+        hold.tick.assert_called_once()  # 1004 survived; 1016 stopped the subject
 
     def test_exit_status_says_whether_the_hold_was_kept(self):
         config = self.config()

@@ -253,6 +253,32 @@ class LongRunFromShortToolCalls(M1Sequence):
         self.assertGreaterEqual(hold['heldSeconds'], 4)
         self.assertEqual(self.finish(ident, 'run-hold', 'epoch-hold').returncode, 0)
 
+    def test_a_stalled_guardian_does_not_end_the_hold(self):
+        lease_path = self.root / 'lease.json'; release_path = self.root / 'release.json'
+        stop_path = self.root / 'STOP'; pid_file = self.root / 'subject.pid'
+        ident, _ = self.booking(minutes=2, run_id='run-stall', epoch='epoch-stall', lease_path=lease_path)
+        guardian_out = self.root / 'guardian.out'; guardian = self.root / 'guardian.record'
+        self.tool_call(guardian, guardian_out, self.root / 'guardian.err', PY, str(BIN / 'guardian.py'),
+                       '--lease', str(lease_path), '--stop', str(stop_path), '--subject-pid-file', str(pid_file))
+        wait_until(lambda: self.beating(lease_path), 10, 'guardian did not take over the lease heartbeat')
+        self.release(ident, lease_path, release_path)
+        config = self.launch_config(ident, lease_path, release_path, stop_path, pid_file,
+                                    self.root / 'home', self.root / 'tmp', [self.app])
+        launch_out = self.root / 'launch.out'; launch = self.root / 'launch.record'
+        self.tool_call(launch, launch_out, self.root / 'launch.err', PY, str(BIN / 'launch.py'),
+                       '--config', str(config), '--execute', '--hold-seconds', '7')
+        self.registered_subject(pid_file)
+        pid = self.read_json(guardian)['pid']
+        os.kill(pid, signal.SIGSTOP)  # a stall longer than the 3-second limit outside a hold
+        try:
+            time.sleep(5)
+        finally:
+            os.kill(pid, signal.SIGCONT)
+        self.assertEqual(self.detached_exit(launch), 0)
+        self.assertEqual(self.json_lines(launch_out, 2)[-1]['stoppedBy'], 'hold-complete')
+        self.assertEqual(self.detached_exit(guardian), 0)
+        self.assertEqual(self.finish(ident, 'run-stall', 'epoch-stall').returncode, 0)
+
     def test_subject_that_ends_early_is_reported_and_still_closes(self):
         lease_path = self.root / 'lease.json'; release_path = self.root / 'release.json'
         stop_path = self.root / 'STOP'; pid_file = self.root / 'subject.pid'

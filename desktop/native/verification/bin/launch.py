@@ -347,13 +347,13 @@ def launch_services(c,bundle,pid_path,env):
     sweep(scope,helper);reason,code=ended(c,reason)
     print(json.dumps({'ownedPID':child.pid,'exit':None,'openExit':helper.returncode,'stoppedBy':reason,'launchMode':'launchservices'}))
     raise SystemExit(code)
-def stop_reason(c,now):
+def stop_reason(c,now,stale=3):
     if Path(c['stopPath']).exists():return 'stop-file'
     try:lease=json.loads(Path(c['leasePath']).read_text())
     except (OSError,ValueError):return 'lease-unreadable'
     if any(lease.get(k)!=c['lease'].get(k) for k in ('runID','epoch','notBefore','expiresAt')):return 'lease-identity-changed'
     if lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:return 'lease-revoked'
-    if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
+    if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>stale:return 'guardian-heartbeat-stale'
     if now>=lease['expiresAt']:return 'deadline'
     return None
 def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,announce=None,hold=None):
@@ -364,12 +364,14 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
     Authority is re-read after every blocking wait: a relaunch never spawns once the old child's
     shutdown wait saw STOP, revocation or the deadline, and a child that ended while authority was
     withdrawn is a supervised stop, never one that ended by itself. With `hold`, an elapsed hold
-    writes the stop file, so the run closes on the same path as any other stop."""
+    writes the stop file, so the run closes on the same path as any other stop, and a heartbeat
+    gap is tolerated up to HEARTBEAT_GRACE."""
     marker=Path(c['relaunchPath']) if spawn is not None and c.get('relaunchPath') else None
     token=0
+    limits={} if hold is None else {'stale':hold_run.HEARTBEAT_GRACE}
     while True:
         if child.poll() is None:
-            reason=stop_reason(c,clock())
+            reason=stop_reason(c,clock(),**limits)
             if reason:
                 child.terminate()
                 try:child.wait(10)
@@ -386,7 +388,7 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                     child.terminate() # ended deliberately: a relaunch step, not a crash
                     try:child.wait(10)
                     except subprocess.TimeoutExpired:child.kill();child.wait()
-                    reason=stop_reason(c,clock()) # re-admit after the blocking shutdown wait
+                    reason=stop_reason(c,clock(),**limits) # re-admit after the blocking shutdown wait
                     if reason:return reason
                     try:
                         child=spawn()
@@ -403,7 +405,7 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                 continue
         # The child is gone. If authority was withdrawn meanwhile (e.g. the guardian closed the subject on
         # STOP between two polls), that is a supervised stop, never a child that ended by itself.
-        return stop_reason(c,clock())
+        return stop_reason(c,clock(),**limits)
 def no_subject_proof(code,lookup=None):
     """A launcher that exits non-zero before reserving the subject slot leaves `<subjectPidPath>.no-subject.json`
     (run identity, exit status, launcher identity), written under the registration lock only while no
