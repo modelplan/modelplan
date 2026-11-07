@@ -83,6 +83,11 @@ func ClearProjectLabels(cache string) error {
 			l.Sessions[i].ProjectLabel, changed = "", true
 		}
 	}
+	for i := range l.Live {
+		if l.Live[i].ProjectLabel != "" {
+			l.Live[i].ProjectLabel, changed = "", true
+		}
+	}
 	if !changed {
 		return nil
 	}

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: d5180584f583a13e3ecb1631ebaecc099e148d17d18b1f03146d5e70a7e8cd01
+// Schema SHA-256: db1a4ca13e9dbf5216869348f59fb29a83bed5603f0e7e734b1a1356f4eb4d24
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
   readonly "accountLocator": string | null;
+  readonly "activity"?: ReadonlyArray<WireAccountActivity>;
   readonly "beta": boolean;
   readonly "credits": WireCredits | null;
   readonly "freshUntil": string | null;
@@ -18,6 +19,15 @@ export type WireAccount = {
   readonly "today"?: WireAccountToday | null;
   readonly "valueState": "current" | "retained" | "none";
   readonly "windows": ReadonlyArray<WireWindow>;
+};
+
+export type WireAccountActivity = {
+  readonly "bindingVerified": boolean;
+  readonly "expiresAt": string;
+  readonly "phase": "model" | "tool" | "finished" | "fallback";
+  readonly "recordAt": string;
+  readonly "sessionRef": string;
+  readonly "subscriptionRef": string;
 };
 
 export type WireAccountToday = {
@@ -407,6 +417,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "activity": {
+        "items": {
+          "$ref": "#/$defs/AccountActivity"
+        },
+        "type": "array"
+      },
       "beta": {
         "type": "boolean"
       },
@@ -544,6 +560,46 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "freshUntil",
       "lastFailure",
       "windows"
+    ],
+    "type": "object"
+  },
+  "AccountActivity": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingVerified": {
+        "type": "boolean"
+      },
+      "expiresAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "phase": {
+        "enum": [
+          "model",
+          "tool",
+          "finished",
+          "fallback"
+        ],
+        "type": "string"
+      },
+      "recordAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "sessionRef": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionRef",
+      "subscriptionRef",
+      "bindingVerified",
+      "phase",
+      "recordAt",
+      "expiresAt"
     ],
     "type": "object"
   },

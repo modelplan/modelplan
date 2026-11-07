@@ -356,6 +356,19 @@ type Fence struct {
 func (s State) Fence() Fence    { return Fence{s.StoreEpoch, s.Generation} }
 func CurrentFence(f Fence) bool { s, err := Load(Path()); return err == nil && s.Fence() == f }
 
+// lockConsent takes the consent lock for something the user asked for. A background reader can
+// be saving a finished read, so a brief hold must not fail the request; it waits as publish does.
+func lockConsent(file string) (func(), error) {
+	deadline := time.Now().Add(time.Second)
+	for {
+		unlock, err := lockFile(file + ".lock")
+		if err == nil || !errors.Is(err, ErrBusy) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // ReaderLock coordinates refresh/snapshot writers with Forget readings. A
 // revoked provider is reselected only after this lock, never from a stale list.
 func ReaderLock() (func(), error) {
