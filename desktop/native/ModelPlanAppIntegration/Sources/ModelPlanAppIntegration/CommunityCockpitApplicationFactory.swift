@@ -112,6 +112,7 @@ struct CockpitUnavailableNotice {
     var showTask: Task<Void,Never>?
     var wantsVisible=false
     var fallback: EngineRowsConsole?
+    private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
     private let activate: @MainActor () -> Void
     private let requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
@@ -124,6 +125,17 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
         owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
+    }
+    /// The page follows the committed settings live; a cockpit opened later starts from them.
+    func applySettings(_ value: SettingsApplication) {
+        appliedSettings=value
+        owner.appearance=cockpitAppearance(value)
+        owner.coordinator?.updateAppearance(owner.appearance)
+    }
+    private func cockpitAppearance(_ value: SettingsApplication) -> CockpitAppearance {
+        let e=value.effective
+        return .init(theme:owner.appearance.theme,locale:e.language == .english ? .en:.zhCN,profile:.full,
+            reduceMotion:e.reduceMotion,reduceTransparency:e.reduceTransparency,redBelow:e.redBelow)
     }
     func show() {
         wantsVisible=true
@@ -138,7 +150,8 @@ struct CockpitUnavailableNotice {
             case .night:theme = .night
             case .system:theme=NSApp.effectiveAppearance.bestMatch(from:[.aqua,.darkAqua]) == .darkAqua ? .night:.day
             }
-            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full)
+            owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,redBelow:snapshot.preferences.redBelow)
+            if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
             owner.coordinator?.onIntent = { [weak self] intent in
                 guard let self,self.wantsVisible else { return }
                 switch intent {
