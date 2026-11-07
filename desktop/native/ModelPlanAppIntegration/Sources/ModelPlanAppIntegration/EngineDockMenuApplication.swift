@@ -68,6 +68,8 @@ import ModelPlanMenuVerification
     public var openSystemSettings: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Injection point for the cache action; the normal entry clears the app's own folder.
     public var clearAppCache: () -> Void = { EngineAppCache.clearCurrentApp() }
+    /// Injection point for global shortcuts; the normal entry supplies the system registrar.
+    var shortcutRegistrar: (any EngineShortcutRegistering)?
     private let notificationConsumer = SettingsNotificationConsumer()
     /// The default uses the native first-run window. Synthetic composition tests
     /// may supply an in-memory surface before preparation; no system service runs.
@@ -262,6 +264,10 @@ import ModelPlanMenuVerification
            bundle.bundleIdentifier != nil, bundle.bundleURL.pathExtension == "app" {
             notificationAuthorizationService = SystemNotificationAuthorizationService()
         }
+        if shortcutRegistrar == nil, let bundle = Bundle(url: appBundleURL),
+           bundle.bundleURL.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL, bundle.bundleURL.pathExtension == "app" {
+            shortcutRegistrar = CarbonShortcutRegistrar()
+        }
         let observedAuthorization = await notificationAuthorizationService?.authorization() ?? .unavailable
         guard !terminating else { return }
         notificationConsumer.observeAuthorization(observedAuthorization)
@@ -289,7 +295,14 @@ import ModelPlanMenuVerification
         for key in [SettingKey.language, .menuDisplay] { context.unavailableControls.removeValue(forKey: key) }
         context.capabilities.appCacheClearAvailable = true
         for key in [SettingKey.clearAppCache, .resetHints] { context.unavailableControls.removeValue(forKey: key) }
+        if shortcutRegistrar != nil {
+            for key in [SettingKey.openShortcut, .dockShortcut] { context.unavailableControls.removeValue(forKey: key) }
+        }
         settings.update(context: context)
+        shortcutRegistrar?.onPress = { [weak self] action in self?.performShortcut(action) }
+        if let preferences = settings.editor.snapshot?.preferences {
+            registerShortcuts(openCockpit: preferences.openShortcut, toggleDock: preferences.dockShortcut)
+        }
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
             firstRunFlow = try? CommunityConnectionFlow(application: settings,
@@ -371,6 +384,28 @@ import ModelPlanMenuVerification
         composition.suspendDeadlines(); composition.dock.pauseForLifecycle(); console?.hide(); settingsHost.suspend(); firstRunFlow?.suspend()
         renderMenu()
     }
+    /// D37: an unassigned chord registers nothing. Each outcome is recorded for that exact chord.
+    private func registerShortcuts(openCockpit: ShortcutChord, toggleDock: ShortcutChord) {
+        guard let shortcutRegistrar else { return }
+        shortcutRegistrar.unregisterAll()
+        var observations: [SettingsShortcutObservation] = []
+        for (action, chord) in [(ShortcutAction.openCockpit, openCockpit), (.toggleDock, toggleDock)] where !chord.isUnassigned {
+            let outcome = chord.isValid ? shortcutRegistrar.register(chord, action: action) : .unavailable
+            observations.append(.init(action: action, chord: chord, registration: outcome))
+        }
+        var context = settings.editor.context
+        context.shortcutObservations = observations
+        settings.update(context: context)
+    }
+    private func performShortcut(_ action: ShortcutAction) {
+        guard !terminating, !lifecyclePaused else { return }
+        switch action {
+        case .openCockpit: showConsole()
+        case .toggleDock:
+            guard settings.editor.snapshot?.preferences.showDock == true else { showDock(); return }
+            Task { @MainActor [weak self] in _ = try? await self?.settings.editor.commit(SettingsB21Edit.showDock(false)) }
+        }
+    }
     private func dispatchHostRequest(_ request: SettingsHostRequest) {
         guard !terminating, let current = settings.editor.snapshot, request.revision == current.revision else { return }
         if let adapter = loginServiceAdapter {
@@ -397,6 +432,8 @@ import ModelPlanMenuVerification
         case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
+        case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
+            registerShortcuts(openCockpit: openCockpit, toggleDock: toggleDock)
         case .firstRunCompleted(let effects, _):
             for effect in effects {
                 switch effect {
@@ -619,6 +656,7 @@ import ModelPlanMenuVerification
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !terminating else { return .terminateLater }
         terminating = true; settings.editor.onHostRequest = nil
+        shortcutRegistrar?.unregisterAll()
         dockHelp?.suspend()
         if let showSettingsObserver { settings.editor.removeChangeObserver(showSettingsObserver); self.showSettingsObserver = nil }
         if let accessibilityObserver { NSWorkspace.shared.notificationCenter.removeObserver(accessibilityObserver); self.accessibilityObserver = nil }

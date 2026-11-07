@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MIT
+import Foundation
+import XCTest
+import ModelPlanEngineClient
+@testable import ModelPlanAppIntegration
+import ModelPlanSettings
+
+@MainActor private final class JourneyShortcutRegistrar: EngineShortcutRegistering {
+    var onPress: ((ShortcutAction) -> Void)?
+    var outcome: ShortcutRegistration = .registered
+    private(set) var registered: [ShortcutAction: ShortcutChord] = [:]
+    func register(_ chord: ShortcutChord, action: ShortcutAction) -> ShortcutRegistration {
+        if outcome == .registered { registered[action] = chord }
+        return outcome
+    }
+    func unregisterAll() { registered = [:] }
+}
+
+/// SET-9-05 / SET-9-06 (D37) through the normal entry: nothing registers by default, a saved
+/// chord registers, Settings shows the outcome, and pressing it reaches its consumer.
+@MainActor final class SET905ShortcutRegistrationJourneyTests: XCTestCase {
+    func testSET_9_05SavedChordRegistersAndTogglesTheDock() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-05-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic",
+                                               allowedEnvironment: [:], offline: true, readOnly: true)
+        let app = EngineRowsEntry.make(configuration: config,
+            settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
+            createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        let registrar = JourneyShortcutRegistrar()
+        app.shortcutRegistrar = registrar
+        await app.prepare()
+        let editor = app.settingsHost.application.editor
+        XCTAssertTrue(registrar.registered.isEmpty, "D37: a fresh profile registers nothing")
+        XCTAssertNil(editor.context.unavailableControls[.dockShortcut])
+        let chord = ShortcutChord("K", modifiers: [.command, .option])
+        try await editor.commit(SettingsB21Edit.shortcut(.toggleDock, chord))
+        XCTAssertEqual(registrar.registered[.toggleDock], chord)
+        XCTAssertEqual(editor.context.shortcutPolicy(preferences: try XCTUnwrap(editor.snapshot).preferences).dockRegistration, .registered)
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, true)
+        registrar.onPress?(.toggleDock)
+        for _ in 0..<100 where editor.snapshot?.preferences.showDock == true { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, false)
+        registrar.outcome = .conflict
+        let taken = ShortcutChord("J", modifiers: [.command, .option])
+        try await editor.commit(SettingsB21Edit.shortcut(.toggleDock, taken))
+        XCTAssertEqual(editor.context.shortcutPolicy(preferences: try XCTUnwrap(editor.snapshot).preferences).dockRegistration, .conflict)
+        await app.composition.stop()
+    }
+    func testCarbonMappingCoversTheRecorderKeys() {
+        XCTAssertEqual(CarbonShortcutRegistrar.keyCode("A"), 0)
+        XCTAssertNotNil(CarbonShortcutRegistrar.keyCode("9"))
+        XCTAssertNil(CarbonShortcutRegistrar.keyCode("é"))
+        XCTAssertNotEqual(CarbonShortcutRegistrar.modifiers(.init("A", modifiers: [.command, .shift])), 0)
+    }
+}
