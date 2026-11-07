@@ -668,18 +668,35 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
-    func withdrawAdmittedContent(privacy: Bool) {
-        guard !retired else { return }
+    @discardableResult
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+        guard !retired else { return false }
+        let keepCard = !privacy && cardPresentedGeneration != nil && (cardID.map(members.contains) ?? false)
+        if keepCard {
+            // Leave only an empty shell during the synchronous replacement.
+            // Its old labels, AX nodes and action generation retire before recompute.
+            cardPresentedGeneration = nil
+            card.dispose()
+        } else {
+            dismissCard()
+        }
         inputGeneration &+= 1
         model = nil; contentMenuStatusLines = []; contentEmptyText = nil
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        catalogueKey = ""; catalogueChanged?([])
-        dismissCard(); try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
+        if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
+        try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
+        return keepCard
+    }
+
+    func finishCardReplacement() -> Bool {
+        guard cardID != nil, cardPresentedGeneration == nil else { return false }
+        dismissCard()
+        return true
     }
 
     /// Installs the content consumer without replacing window/input ownership.
@@ -1399,10 +1416,14 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     public func cardContent(for id:String,at date:Date? = nil) throws -> DockCardContent? {
         let now=date ?? currentDate()
         guard !retired,let input=model?.inputs.first(where:{$0.id == id}) else { return nil }
-        return try DockCardProjection.content(input: memberSafePreferences.applying(to: input),
+        let projected = memberSafePreferences.applying(to: input)
+        let row = model?.presentationRows[id]
+        let selected = row?.windowObservations == nil ? nil :
+            try DockInstrumentProjection.evaluate(projected, now: now, redBelow: Double(preferences.redBelow)).selectedWindowID
+        return try DockCardProjection.content(input: projected,
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
-                sourceAndAge: model?.presentationRows[id]?.cardSourceAndAge(at:now,english:preferences.language == .english) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
+                sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
                 windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
                 additionalRows: model?.presentationRows[id]?.additionalRows ?? [],

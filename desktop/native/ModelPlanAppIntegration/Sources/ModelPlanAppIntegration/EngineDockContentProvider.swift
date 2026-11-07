@@ -156,6 +156,7 @@ public enum EngineDeadlineFacts {
             inputs.append(input)
             let message = message(row, now: context.now)
             let account=member.account
+            let hasWindowSources = account.windows.contains { $0.source != nil }
             var resets:[String:Date]=[:]
             var descriptions:[String:String]=[:]
             for window in account.windows {
@@ -168,7 +169,9 @@ public enum EngineDeadlineFacts {
                 }
             }
             var reserve:[DockCardRow]=[]
-            reserve.append(.init(id:"source",kind:.statistic,label:english ? "Source":"来源",value:sourceName(account.route)))
+            if !hasWindowSources {
+                reserve.append(.init(id:"source",kind:.statistic,label:english ? "Source":"来源",value:sourceName(account.route)))
+            }
             let memberEvents=events.filter { event in
                 event.rowID == member.rowID && event.publishedAt <= context.now && context.now < event.expiresAt &&
                 (event.planIDs.map { $0.contains(member.account.plan.id) } ?? true)
@@ -237,10 +240,21 @@ public enum EngineDeadlineFacts {
             } else {
                 cardState = input.dataState == .fresh ? .ok : .error
             }
+            let observations: [String: DockWindowObservation]? = hasWindowSources
+                ? Dictionary(grouping: account.windows, by: \.id).compactMapValues { windows in
+                    guard windows.count == 1, let window = windows.first else { return nil }
+                    let observed = date(window.observedAt)
+                    let verifiedRetained = account.valueState == .retained && member.isStable &&
+                        member.subscriptionRef == member.id && sourceState(member, now: context.now) == .stale &&
+                        window.source?.isKnown == true && (observed.map { $0 <= context.now } ?? false)
+                    return DockWindowObservation(sourceName: windowSourceName(window.source),
+                                                 observedAt: observed, verifiedRetained: verifiedRetained)
+                }
+                : nil
             reasons[member.id] = .init(input: input, reason: text(message.0.text),
                 nextStep: message.1.map { text($0.text) } ?? "",
                 originalObservedAt:date(account.observedAt),plan:account.plan.name.map{text($0)} ?? "",
-                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,cardReadingState:cardState)
+                sourceName:sourceName(account.route),resetTimes:resets,windowDescriptions:descriptions,additionalRows:reserve,windowObservations:observations,cardReadingState:cardState)
         }
         let status: String
         switch value.status {
@@ -334,6 +348,16 @@ public enum EngineDeadlineFacts {
         case .statusLine:return english ? "Tool status line":"工具状态栏"
         case .manual:return english ? "Manual reading":"手动读数"
         case .knownUnknown,.unknown:return english ? "Unknown source":"未知来源"
+        }
+    }
+    private func windowSourceName(_ source: RowsWindowSource?) -> String {
+        switch source {
+        case .localHistory: return sourceName(.localLog)
+        case .runtime: return sourceName(.runtimeRpc)
+        case .savedLogin: return sourceName(.savedLoginApi)
+        case .apiKey: return sourceName(.apiKeyApi)
+        case .other: return english ? "Other source" : "其他来源"
+        case .none, .unknown: return sourceName(.knownUnknown)
         }
     }
     private func message(_ row: RowsRow, now: Date) -> (RowsReason, RowsNextStep?) {
