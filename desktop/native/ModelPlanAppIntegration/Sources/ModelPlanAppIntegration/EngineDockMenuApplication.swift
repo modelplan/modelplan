@@ -67,6 +67,9 @@ struct StatusNoticePresentation {
     private var helpRevealTask: Task<Void, Never>?
     private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
     private var autoCollapseFailed = false
+    /// True only for a sealed owner-test package; a release package never offers or applies these.
+    var ownerTestOptions: Bool
+    private static let ringsCentredKey = "ModelPlanOwnerTestRingsCentred"
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -140,6 +143,7 @@ struct StatusNoticePresentation {
         self.scopeBinding = EngineScopeConsentBinding(composition: composition)
         self.foundationStore = settingsStore
         self.appBundleURL = bundleURL
+        self.ownerTestOptions = CommunityConsentBundleIdentity.matchesOwnerTest(bundle: bundleURL)
         self.cockpitEntryEnabled = cockpitEntryEnabled ?? (Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "ModelPlanCockpitEntryEnabled") as? Bool ?? false)
         self.makeSettingsSurface = makeSettingsSurface; self.makeConsole = makeConsole; self.activateSettings = activateSettings
         let contextSource = EngineSettingsContext(bundle: bundleURL, executable: configuration.executableURL)
