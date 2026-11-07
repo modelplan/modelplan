@@ -6,6 +6,9 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+- Allow explicitly granted local Codex history to refresh when the retained runtime reading is too old to be usable.
+  当保留的运行时读数已过旧、无法使用时，允许已明确授权的本机 Codex 历史刷新读数。
+
 - Verification only: `MODELPLAN_VERIFY_READERS=<tool,...>` narrows every consent read (saved grants and default-on local/runtime scopes) to the listed tool IDs for device test runs. It never grants anything, an invalid entry denies every tool, and it is never written to the consent file. Unset, nothing changes.
 
 - A finished Codex reading is no longer lost when the consent lock is briefly held. Before, the reading was dropped and the next attempt waited 5 to 30 minutes.
