@@ -23,7 +23,7 @@ const costFormat = new Intl.NumberFormat('en-US', {maximumSignificantDigits: 2, 
 export const costMultiple = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? '×' + costFormat.format(v) : null;
 const costRatio = (a, b) => a != null && b != null && b > 0 ? a / b : null;
 // Ability against the current effort: +4.7, −2.9, ±0.
-export const delta = v => v > .05 ? '+' + v.toFixed(1) : v < -.05 ? '−' + Math.abs(v).toFixed(1) : '±0';
+export const delta = v => v == null || !Number.isFinite(v) ? '--' : v > .05 ? '+' + v.toFixed(1) : v < -.05 ? '−' + Math.abs(v).toFixed(1) : '±0';
 // A session's age for tooltips (the record strip uses it too): "running 12m" or −6m.
 export const agoText = x => x.running ? t('fad.running', {t: dhm(x.startedMin)}) : `−${dhm(x.endedMin)}`;
 
@@ -55,7 +55,7 @@ function channel(f, ui, colour) {
   const trialEff = v ? (row(v.trial) ? v.trial : base) : tEff;
   if (v || tEff || tFast != null) {
     const e = trialEff || base, fast = tFast ?? f.currentFast;
-    trial = {effort: e, fast: tFast, matchesCurrent: e === cur && fast === f.currentFast, matchesRec: e === f.rec && !fast, cost: costRatio(costOf(e, fast), costOf(base, f.currentFast)), abl: row(e)[1] - row(base)[1], speed: speedOf(fast) / speedOf(f.currentFast)};
+    trial = {effort: e, fast: tFast, matchesCurrent: e === cur && fast === f.currentFast, matchesRec: e === f.rec && !fast, cost: costRatio(costOf(e, fast), costOf(base, f.currentFast)), abl: row(e)[1] == null || row(base)[1] == null ? null : row(e)[1] - row(base)[1], speed: speedOf(fast) / speedOf(f.currentFast)};
   }
   // Effort bars: the published ability, normalised within the model (lowest → 3 px, highest → 11 px).
   const ab = f.e.map(r => r[1]).filter(x => x != null), a0 = Math.min(...ab), a1 = Math.max(...ab);
