@@ -74,3 +74,7 @@ html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="o
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o1{animation-delay:-.13s!important}
 html:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker.ck-o2{animation-delay:-.26s!important}
 }
+/* CKP-MFD-24: website links are small secondary text. */
+#cockpit .website-link{font:9px/9px var(--f-lcd);color:var(--lcd-muted);text-decoration:none;white-space:nowrap}
+#cockpit .website-link:hover,#cockpit .website-link:focus-visible{color:var(--lcd-ink)}
+#cockpit .sp-h .website-link{margin-left:auto;flex:none}
