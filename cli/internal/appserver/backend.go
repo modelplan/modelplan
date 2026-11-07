@@ -154,6 +154,15 @@ func ResetEventLinksEnabled(ctx context.Context) bool {
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
 
+const CapabilityAccountTodayV1 = "accountTodayV1"
+
+type accountTodayContextKey struct{}
+
+func AccountTodayEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(accountTodayContextKey{}).(bool)
+	return enabled
+}
+
 type cockpitDetailsContextKey struct{}
 
 func CockpitDetailsEnabled(ctx context.Context) bool {
