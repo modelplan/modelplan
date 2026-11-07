@@ -7,7 +7,7 @@
 // the roster is the public study fleet.
 // Prototype: rocket-r1/porthole.js:187-192 (syncStill) and study/porthole-sprites/composer.js:13-31,34.
 export type StillLayer={left:number;top:number;width:number;height:number;file:string};
-export type StillModel={id:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
+export type StillModel={id:string;name?:string;nozzle:{x:number;y:number};body?:StillLayer;flame?:StillLayer;halo?:StillLayer};
 export type StillProjection={id:string;theme:'night'|'day';layout:890|640;width:number;height:number;background:string;models:StillModel[]};
 export type StillPack={base:string;projections:StillProjection[]};
 export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:StillPack|null,enlarge?:()=>void):{dispose():void}|null{
@@ -21,8 +21,8 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
    port.addEventListener('click',e=>{if(e.isTrusted)enlarge();},{signal:opener.signal});
    port.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();enlarge();}},{signal:opener.signal});
   }
-  // A HUD row lights its rocket when the still's roster has it; published IDs carry the roster name.
-  const lit=(event:Event)=>{const id=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model]'))e.classList.toggle('ck-hot',!!id&&id.includes(e.dataset.model!));};
+  // A HUD row lights its rocket by published display name, the one key the still's roster and the publication share.
+  const lit=(event:Event)=>{const name=(event as CustomEvent<string|null>).detail;for(const e of field.querySelectorAll<HTMLElement>('[data-model-name]'))e.classList.toggle('ck-hot',e.dataset.modelName===name);};
   cockpit.addEventListener('hud-hover',lit,{signal:opener.signal});
   const host=document.createElement('div');host.className='ck-still';host.setAttribute('aria-hidden','true');field.prepend(host);
   const base=new URL(pack.base,document.baseURI).href;let painted='';
@@ -48,7 +48,7 @@ export function mountPortholeStill(field:HTMLElement,cockpit:HTMLElement,pack:St
       // Prototype composer.js:26: per-model period 0.43 + (i mod 4) x 0.07 s and phase -(i mod 3) x 0.13 s, scaled about the nozzle.
       const flicker=kind==='body'?'':` ck-flicker ck-p${index%4} ck-o${index%3}`;
       const e=layer('ck-still-'+kind+(kind!=='body'&&m.halo?' ck-still-add':'')+flicker,l,l.file);
-      if(kind==='body')e.dataset.model=m.id;
+      if(kind==='body'&&m.name)e.dataset.modelName=m.name;
       if(flicker)e.style.transformOrigin=`${m.nozzle.x-l.left}px ${m.nozzle.y-l.top}px`;
     }
     host.replaceChildren(stage);host.dataset.projection=frame.id;field.dataset.still='ready';

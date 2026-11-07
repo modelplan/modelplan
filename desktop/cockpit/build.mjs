@@ -54,13 +54,15 @@ if (official) {
   const fleet=pack.projections.find(p=>p.id===pack.defaultProjectionId)?.models.map(m=>m.id).join();
   if(!fleet)throw Error('Porthole default projection missing');
   const layer=l=>l&&{left:l.left,top:l.top,width:l.width,height:l.height,file:l.file};
+  // The published display name is what joins a rocket to a published model; roster IDs differ from public IDs.
+  const names=new Map(pack.sprites.map(s=>[s.modelId,s.name]));
   const stills={base:'runtime/porthole-stills/',projections:[]};
   for(const theme of ['night','day'])for(const layout of [890,640]){
     const matches=pack.projections.filter(p=>p.theme===theme&&p.layout===layout&&p.models.map(m=>m.id).join()===fleet);
     if(matches.length!==1)throw Error(`Porthole default fleet needs exactly one ${theme} ${layout} projection`);
     const p=matches[0];
     stills.projections.push({id:p.id,theme,layout,width:p.width,height:p.height,background:p.background,
-      models:p.models.map(m=>({id:m.id,nozzle:m.nozzle??{x:m.root.x,y:(m.flame??m.body).top},body:layer(m.body),flame:layer(m.flame),halo:layer(m.halo)}))});
+      models:p.models.map(m=>({id:m.id,name:names.get(m.id),nozzle:m.nozzle??{x:m.root.x,y:(m.flame??m.body).top},body:layer(m.body),flame:layer(m.flame),halo:layer(m.halo)}))});
   }
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0\nexport default '+JSON.stringify(stills)+';\n');
   css+='\n'+await readFile(resolve(assets,'cockpit/cockpit.css'),'utf8');

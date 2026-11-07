@@ -34,7 +34,7 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  for(const m of stars){
   const row=seen.get(m.id);
   if(row&&row!==m.sel&&row[0]!==m.sel[0]&&row[2]>0){root.append(svg('line',{class:'hud-link',x1:X(m.sel).toFixed(1),y1:Y(m.sel).toFixed(1),x2:X(row).toFixed(1),y2:Y(row).toFixed(1)}),svg('circle',{class:'hud-cur',cx:X(row).toFixed(1),cy:Y(row).toFixed(1),r:2.2}));}
-  root.append(svg('circle',{class:'hud-dot'+(leaders.has(m.id)?'':' dominated'),cx:X(m.sel).toFixed(1),cy:Y(m.sel).toFixed(1),r:2.6,'data-hud-model':m.id}));
+  root.append(svg('circle',{class:'hud-dot'+(leaders.has(m.id)?'':' dominated'),cx:X(m.sel).toFixed(1),cy:Y(m.sel).toFixed(1),r:2.6,'data-hud-model':m.id,'data-hud-name':m.name}));
  }
  return root;
 }
@@ -45,7 +45,7 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
  if(!compact){const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(data,rows),162,77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);}
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
-  const row=document.createElement('button');row.type='button';row.className='hp';row.dataset.hudModel=m.id;row.title=m.name;
+  const row=document.createElement('button');row.type='button';row.className='hp';row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
   const n=document.createElement('span');n.className='hp-n';n.textContent=String(i+1);
   const name=document.createElement('b');name.textContent=m.short;
   const rec=document.createElement('span');rec.className='hp-rec';rec.textContent='★'+m.rec;
@@ -56,9 +56,9 @@ export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,co
 /** A row or point opens the model on 档位; hovering one tells the porthole which rocket to light. */
 export function wireHud(host:HTMLElement,pick:(id:string)=>void):()=>void {
  const controller=new AbortController(),{signal}=controller,idOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-model]')?.getAttribute('data-hud-model')??null;
- const hover=(id:string|null)=>host.dispatchEvent(new CustomEvent('hud-hover',{detail:id,bubbles:true}));
+ const hover=(name:string|null)=>host.dispatchEvent(new CustomEvent('hud-hover',{detail:name,bubbles:true})),nameOf=(e:Event)=>(e.target as Element).closest?.('[data-hud-name]')?.getAttribute('data-hud-name')??null;
  host.addEventListener('click',e=>{const id=idOf(e);if(id&&e.isTrusted)pick(id);},{signal});
- host.addEventListener('pointerover',e=>hover(idOf(e)),{signal});host.addEventListener('pointerleave',()=>hover(null),{signal});
- host.addEventListener('focusin',e=>hover(idOf(e)),{signal});host.addEventListener('focusout',()=>hover(null),{signal});
+ host.addEventListener('pointerover',e=>hover(nameOf(e)),{signal});host.addEventListener('pointerleave',()=>hover(null),{signal});
+ host.addEventListener('focusin',e=>hover(nameOf(e)),{signal});host.addEventListener('focusout',()=>hover(null),{signal});
  return ()=>controller.abort();
 }

@@ -44,9 +44,14 @@ test('CKP-PORT-06 a row opens 档位 and Esc or Back returns to the page before'
  await page.locator('.hud-dot').first().click();await expect(page.locator('.fc')).toBeVisible();
  await page.locator('.mfd-back').click();await expect(page.locator('.fc')).toHaveCount(0);
 });
-test('CKP-PORT-06 hovering a row lights its rocket when the still has it',async({page})=>{
- await open(page,{published:[model('dominated-sol',30,2)]});
- await page.locator('.hud .hp').first().hover();await expect(page.locator('.ck-still-body.ck-hot')).toHaveCount(1);
+// Real public IDs and names from the publication: the roster key differs from the ID, and an older model shares a word.
+test('CKP-PORT-06 hovering a row lights its rocket by published name, for real public IDs',async({page})=>{
+ const real=(id,name)=>({...model(id,40,.1),name});
+ await open(page,{published:[real('sol-6.1','GPT-6.1 Sol'),real('sol','GPT-6 Sol'),real('auto:anthropic:ccb37fec2677f068','Claude Haiku 5.5')]});
+ const rows=page.locator('.hud .hp');
+ await rows.nth(0).hover();await expect(page.locator('.ck-still-body.ck-hot')).toHaveCount(1);await expect(page.locator('.ck-still-body.ck-hot')).toHaveAttribute('data-model-name','GPT-6.1 Sol');
+ await rows.nth(1).hover();await expect(page.locator('.ck-still-body.ck-hot')).toHaveCount(0);
+ await rows.nth(2).hover();await expect(page.locator('.ck-still-body.ck-hot')).toHaveAttribute('data-model-name','Claude Haiku 5.5');
  await page.mouse.move(1,1);await expect(page.locator('.ck-still-body.ck-hot')).toHaveCount(0);
 });
 test('an older engine shows no HUD',async({page})=>{
