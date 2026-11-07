@@ -21,7 +21,7 @@ public enum T2DockSkin {
         var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "deepseek":"logo-deepseek", "opencode":"logo-opencode",
                      "gemini":"logo-gemini", "grok":"logo-grok", "x":"logo-x", "qwen":"logo-qwen", "minimax":"logo-minimax", "xiaomi":"logo-xiaomi",
                      "kiro":"logo-kiro", "amp":"logo-amp", "antigravity":"logo-antigravity", "droid":"logo-droid",
-                     "zhipu":"logo-zhipu", "glm":"logo-zai", "zai":"logo-zai"]
+                     "zhipu":"logo-zhipu", "glm":"logo-zhipu", "zai":"logo-zhipu"]
         if zaiMarkEnabled { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
         let outerWidth = d * 0.058, innerWidth = d * 0.031
         // workbench-engine.js draws the 52-point nozzle before CSS zoom.
