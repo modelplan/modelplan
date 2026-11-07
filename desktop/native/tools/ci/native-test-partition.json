@@ -60,7 +60,7 @@
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
         "DockCodexRuntimeRealServerTests",
-        "DockHoverExplanationTests", "DockIgnitionStateTests", "DockInteractionHostPortTests",
+        "DockHoverExplanationTests", "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
         "DockPlacementGeometryTests",
         "DockPlacementProducerTests",

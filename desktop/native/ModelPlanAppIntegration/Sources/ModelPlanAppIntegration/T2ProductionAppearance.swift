@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 import CoreGraphics
 import Foundation
-import ImageIO
 @_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanOfficialDock
 import ModelPlanDockResources
@@ -10,20 +9,6 @@ import ModelPlanSettings
 /// Connects verified artwork and the registered T2 geometry to the production host.
 @MainActor enum T2ProductionAppearance {
     enum Failure: Error { case missingDisplay }
-    /// The A5 exports the ignition's hover and press states reuse; unmodified, verified by the bundle loader.
-    struct IgnitionArt { let idle: CGImage, pressed: CGImage, innerContact: CGImage }
-    private static var cachedIgnitionArt: IgnitionArt?
-    static func ignitionArt() -> IgnitionArt? {
-        if let cachedIgnitionArt { return cachedIgnitionArt }
-        func image(_ name: String) -> CGImage? {
-            guard let data = try? T2BundledArtwork.data(name), let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-            return CGImageSourceCreateImageAtIndex(source, 0, nil)
-        }
-        guard let idle = image("a5-cap-night-idle-44x44@3x.png"), let pressed = image("a5-cap-night-pressed-44x44@3x.png"),
-              let inner = image("a5-inner-contact-shadow-52x52@3x.png") else { return nil }
-        cachedIgnitionArt = .init(idle: idle, pressed: pressed, innerContact: inner)
-        return cachedIgnitionArt
-    }
     static func apply(_ view: DockInstrumentView, _ rows: [DockInstrumentReading], _ preferences: SettingsPreferences) throws -> StaticDockGeometry {
         guard let screen = view.appearanceDisplaySize, screen.width > 0, screen.height > 0 else { throw Failure.missingDisplay }
         let edge: T2Edge
@@ -105,8 +90,6 @@ import ModelPlanSettings
         view.registerGripRects([hit], art: [centred(artSize)])
         var result = StaticDockGeometry(hoverRects: [restingFrame], consoleButton: button,
                                         dragRegions: view.registeredDragRegions(excluding: [button]))
-        result.ignitionArt = ignitionArt()
-        result.ignitionGuardSide = 34 * unit; result.ignitionCapSide = 34 * unit * 44 / 52
         let horizontal = edge == .bottom || edge == .top
         for station in geometry.stations {
             let position = horizontal ? station.centre.x : station.centre.y

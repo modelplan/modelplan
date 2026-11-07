@@ -34,8 +34,6 @@ public struct StaticDockGeometry {
     /// Normalized along-axis member pitch ranges registered by the active appearance.
     public var quotaPitchRanges: [String: ClosedRange<Double>] = [:]
     var hoverStations: [String: DockHoverStation] = [:]
-    var ignitionArt: T2ProductionAppearance.IgnitionArt?
-    var ignitionCapSide: CGFloat = 0, ignitionGuardSide: CGFloat = 0
     public init(hoverRects: [CGRect], sliverLength: CGFloat = 52, sliverThickness: CGFloat = 4, consoleButton: CGRect? = nil, dragRegions: DockBackgroundDragRegions? = nil, sliverAlongAnchor: CGFloat? = nil, sliverImage: CGImage? = nil, sliverScale: Int = 1) {
         self.hoverRects = hoverRects; self.sliverLength = sliverLength; self.sliverThickness = sliverThickness
         self.consoleButton = consoleButton; self.dragRegions = dragRegions
@@ -47,7 +45,6 @@ public struct StaticDockGeometry {
             .init(x: r.minX * factor, y: r.minY * factor, width: r.width * factor, height: r.height * factor)
         }
         hoverRects = hoverRects.map(rect); sliverLength *= factor; sliverThickness *= factor
-        ignitionCapSide *= factor; ignitionGuardSide *= factor
         sliverAlongAnchor = sliverAlongAnchor.map { $0 * factor }; consoleButton = consoleButton.map(rect)
         if let regions = dragRegions {
             var transform = CGAffineTransform(scaleX: factor, y: factor)
@@ -74,44 +71,6 @@ public struct StaticDockGeometry {
 
 @MainActor private final class DockIgnitionButton: NSButton {
     var onHelpFocusChanged: (() -> Void)?
-    private var hovering = false, pressing = false, tracking: NSTrackingArea?
-    private let capLayer = CALayer(), contactLayer = CALayer()
-    var reduceMotion: () -> Bool = { false }
-    private(set) var capState = DockIgnitionState.rest
-
-    /// D-6: the states sit over the resting raster, so at rest nothing here paints.
-    func installStateArt(_ art: T2ProductionAppearance.IgnitionArt?, capSide: CGFloat, guardSide: CGFloat) {
-        wantsLayer = true
-        guard let host = layer, let art else { capLayer.removeFromSuperlayer(); contactLayer.removeFromSuperlayer(); return }
-        for (sublayer, side) in [(capLayer, capSide), (contactLayer, guardSide)] {
-            sublayer.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
-            sublayer.contentsGravity = .resizeAspect
-            if sublayer.superlayer == nil { host.addSublayer(sublayer); sublayer.opacity = 0 }
-        }
-        capArt = art; contactLayer.contents = art.innerContact
-        applyCapState()
-    }
-    private var capArt: T2ProductionAppearance.IgnitionArt?
-    private func applyCapState() {
-        let next = DockIgnitionState.resolve(enabled: isEnabled, hovering: hovering, focused: keyboardFocused, pressing: pressing)
-        capState = next
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(reduceMotion() ? 0 : DockIgnitionState.transition)
-        capLayer.contents = next == .pressed ? capArt?.pressed : capArt?.idle
-        capLayer.opacity = next == .rest ? 0 : 1
-        capLayer.transform = CATransform3DMakeTranslation(0, next.capLift, 0)
-        contactLayer.opacity = next.extraContact
-        CATransaction.commit()
-    }
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        let next = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
-        addTrackingArea(next); tracking = next
-    }
-    override func mouseEntered(with event: NSEvent) { hovering = true; applyCapState() }
-    override func mouseExited(with event: NSEvent) { hovering = false; applyCapState() }
-    override func highlight(_ flag: Bool) { super.highlight(flag); pressing = flag; applyCapState() }
     private var keyboardFocused = false
     private var assistiveFocused = false
 
@@ -150,7 +109,6 @@ public struct StaticDockGeometry {
         if let keyboard { keyboardFocused = keyboard }
         if let assistive { assistiveFocused = assistive }
         if wasFocused != (keyboardFocused || assistiveFocused) { onHelpFocusChanged?() }
-        applyCapState()
     }
 }
 
@@ -861,7 +819,6 @@ struct DockHelpInteraction: Equatable {
         self.prepareDetachedAlternateAppearances = prepareDetachedAlternateAppearances
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
-        consoleButton.reduceMotion = { [weak self] in self?.application?.effective.reduceMotion ?? false }
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
@@ -1208,10 +1165,7 @@ struct DockHelpInteraction: Equatable {
         }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
-        if let rect = geometry.consoleButton {
-            consoleButton.frame = rect
-            consoleButton.installStateArt(geometry.ignitionArt, capSide: geometry.ignitionCapSide, guardSide: geometry.ignitionGuardSide)
-        }
+        if let rect = geometry.consoleButton { consoleButton.frame = rect }
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
