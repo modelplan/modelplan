@@ -76,6 +76,8 @@ import ModelPlanMenuVerification
     public var makeFirstRunSurface: (@MainActor (SettingsEditor) -> any SettingsWindowSurface)?
     public var makeFirstRunSurfaceWithConsent: (@MainActor (SettingsEditor, ScopeConsentEntry) -> any SettingsWindowSurface)?
     private let activateSettings: @MainActor () -> Void
+    /// Every public link from a menu or Settings leaves through here; tests read the URL instead of a browser.
+    var openExternalURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     public private(set) lazy var settingsHost = SettingsWindowHost(application: settings, canPresent: { [weak self] in self?.terminating == false && self?.lifecyclePaused == false }, activate: activateSettings, scopeConsentEntry: scopeConsentEntry, makeSurface: makeSettingsSurface)
     public init(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                 createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -436,7 +438,7 @@ import ModelPlanMenuVerification
                     self.settings.update(context: context)
                 }
             }
-        case .openPublicLink(let link): NSWorkspace.shared.open(link.url)
+        case .openPublicLink(let link): openExternalURL(link.url)
         case .openSystemSettings(let pane): openSystemSettings(pane.url)
         case .action(.clearAppCache): clearAppCache()
         case .shortcutPreferencesChanged(let openCockpit, let toggleDock):
@@ -529,9 +531,9 @@ import ModelPlanMenuVerification
             .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
-            .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
-            .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
-            .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
+            .init(title: label("Website", "网站"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.website.url) }),
+            .init(title: label("Methodology", "方法论"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.methodology.url) }),
+            .init(title: label("Privacy", "隐私"), action: { [weak self] in self?.openExternalURL(SettingsPublicLink.privacy.url) }),
         ]
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
@@ -635,10 +637,6 @@ import ModelPlanMenuVerification
         }
     }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func openPublicLink(_ sender:NSMenuItem) {
-        guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
-        NSWorkspace.shared.open(link.url)
-    }
     @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {
