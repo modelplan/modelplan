@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MIT
 package rows
 
+type TodayBindingBasis string
+
+const (
+	TodaySourceWideCurrentBinding TodayBindingBasis = "source-wide-current-binding"
+	TodaySessionBinding           TodayBindingBasis = "session-binding"
+)
+
 type Kind string
 
 const (
