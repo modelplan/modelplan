@@ -21,9 +21,9 @@ const qbar = (r, lv, colour) => { const f = fillColour(lv, colour); return f ? b
 export const glyph = a => (a.colourLogo || ['nozzle-p1/zai-white.svg', 'zhipu.svg'].includes(a.logo)) ? `<img class="mg orig" src="assets/brands/${esc(a.logo)}" alt="">`
   : `<i class="mg" style="--v:${a.colour};-webkit-mask-image:url('assets/brands/${esc(a.logo)}');mask-image:url('assets/brands/${esc(a.logo)}')"></i>`;
 
-function header(a) {
+function header(a, ui) {
   const age = a.ageMin == null ? t('mfd.ageNow') : a.ageMin >= 60 ? t('age.hours', {h: Math.round(a.ageMin / 60)}) : t('mfd.ageMin', {m: a.ageMin});
-  return `<div class="sp-h">${glyph(a)}<b>${esc(a.name)}</b>${secondaryLink(planUrl(a.vendor),websiteWords().plans)}</div><div class="sp-sub"><em class="pl">${esc(a.plan)}</em><em title="${esc(a.source === 'native' || !VIA[a.source] ? 'modelplan CLI' : t(VIA[a.source]))}" class="src ${a.state === 'ok' ? '' : 'amber'}">${t(VIA[a.source] || 'mfd.viaNative')} · ${esc(age)}</em></div>`;
+  return `<div class="sp-h">${glyph(a)}<b>${esc(a.name)}</b>${a.vendor === 'unknown' ? '' : secondaryLink(planUrl(a.vendor),websiteWords(ui.lang).plans)}</div><div class="sp-sub"><em class="pl">${esc(a.plan)}</em><em title="${esc(a.source === 'native' || !VIA[a.source] ? 'modelplan CLI' : t(VIA[a.source]))}" class="src ${a.state === 'ok' ? '' : 'amber'}">${t(VIA[a.source] || 'mfd.viaNative')} · ${esc(age)}</em></div>`;
 }
 
 /* ---------- 概况 ---------- */
@@ -150,12 +150,12 @@ export const plans = {
     if (!a) return list(d, ui);
     if (ui.subTab === 'hist') {
       const k = cycleKind(a, ui), w = a.windows.find(x => x.kind === k), cy = cycles(d, a, ui, k);
-      return `${header(a)}<div class="sec"><span class="lbl">${t('mfd.resets')}</span><em>${esc(w?.label || '')}</em></div>${resets(a, ui, k)}
+      return `${header(a, ui)}<div class="sec"><span class="lbl">${t('mfd.resets')}</span><em>${esc(w?.label || '')}</em></div>${resets(a, ui, k)}
         ${cy ? `<div class="sec"><span class="lbl">${t('mfd.cycles')}</span><em>${esc(w?.label || '')}</em></div><div class="mfd-fill" data-fill="cyc">${cy}</div>` : ''}`;
     }
     // polish A: the blocks spread over the screen's height (spacers of 4–24 px between them)
     const blocks = [`<div class="sp-ws"${a.extras.length ? ' style="--lbw:54px"' : ''}>${windows(a, ui)}</div>`, cardsBlock(a, ui), creditsBlock(a, ui), peak(a, ui), usageBlock(a,ui)].filter(Boolean);
-    return `<div class="sp-now">${header(a)}${VG}${blocks.join(VG)}</div>`;
+    return `<div class="sp-now">${header(a, ui)}${VG}${blocks.join(VG)}</div>`;
   },
   onClick(act, val, ui, d) {
     if (act === 'scope') return {scope: val};

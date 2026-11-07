@@ -38,7 +38,7 @@ public enum CockpitBridgeDiagnostic: String {
   case rejectedMessage = "cockpit.bridge.message-rejected"
 }
 
-private final class BundleScheme: NSObject, WKURLSchemeHandler {
+final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   let observed: ((String) -> Void)?
   init(_ bundle: VerifiedCockpitBundle, observed: ((String) -> Void)? = nil) { self.bundle = bundle; self.observed = observed }

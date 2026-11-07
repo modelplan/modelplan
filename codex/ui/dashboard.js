@@ -153,7 +153,7 @@ function renderResets(){
  const safe=v=>{try{const u=new URL(v);return ['https:','http:'].includes(u.protocol)?u.href:null;}catch{return null;}};
  const eventHtml=e=>{
   const scope=lang==='en'?({'所有付费订阅':'All paid plans','全体用户':'All users','global':'Global'}[e.scope]??e.scope??t.unknown):(e.scope??t.unknown);
-  const title=({reset_credit_issued:lang==='zh'?'重置卡发放公告':'Reset credit issued',direct_reset_announced:lang==='zh'?'额度重置预告':'Reset announced',direct_reset_reported_complete:lang==='zh'?'额度重置完成公告':'Reset reported complete'}[e.eventType]);
+  const title=({reset_credit_issued:lang==='zh'?'额外重置发放公告':'Extra resets issued',direct_reset_announced:lang==='zh'?'额度重置预告':'Reset announced',direct_reset_reported_complete:lang==='zh'?'额度重置完成公告':'Reset reported complete'}[e.eventType]);
   const status=e.status==='upstream-confirmed'?t.confirmed:e.status==='upstream-announced'?t.announced:t.unknown;
   const timing=e.at&&e.precision==='instant'?t.effective+' '+dateTime(e.at):e.at&&e.precision==='day'?date(e.at)+' · '+(lang==='zh'?'仅日期':'Date only'):t.timeUnknown;
   const link=safe(e.url);

@@ -43,6 +43,9 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var page: (any CockpitPageSurface)?
   private var pageGeneration: UUID?
   public private(set) var selectedScope = "all"
+  /// The calendar day the scope was chosen; the clock is replaced only by tests.
+  private var scopeDay: DateComponents?
+  var currentDate: () -> Date = { Date() }
   private var scopeMembers = Set<String>()
   private var request: Task<Void, Never>?
   private var requestToken: UUID?
@@ -128,6 +131,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
       self?.onClosed?()
     }
     page = newPage
+    retireScopeFromAnotherDay()
     newPage.updateScope(selectedScope)
     newPage.open()
     if page === newPage { onOpened?() }
@@ -135,9 +139,14 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private func receiveIntent(_ intent:CockpitIntent) {
     if case .scopeSelect(let key)=intent {
       guard delivery != nil,scopeMembers.contains(key) else { return }
-      selectedScope=key; page?.updateScope(key); return
+      selectedScope=key; scopeDay=calendarDay(currentDate()); page?.updateScope(key); return
     }
     onIntent?(intent)
+  }
+  private func calendarDay(_ date:Date) -> DateComponents { Calendar.current.dateComponents([.era,.year,.month,.day],from:date) }
+  /// CKP-ENTRY-04: a scope lasts for the day it was chosen; the first open on a later day starts at All.
+  private func retireScopeFromAnotherDay() {
+    if selectedScope != "all", scopeDay != calendarDay(currentDate()) { selectedScope="all" }
   }
   public func updateAppearance(_ appearance: CockpitAppearance) { page?.updateAppearance(appearance) }
   /// User close retains the page until its normal transition completes.

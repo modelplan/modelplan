@@ -457,6 +457,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 	base = context.WithValue(base, resetEventLinksContextKey{}, s.clientCapabilities[CapabilityResetEventLinksV1])
 	base = context.WithValue(base, cockpitDetailsContextKey{}, s.clientCapabilities[CapabilityCockpitDetailsV1])
 	base = context.WithValue(base, cockpitForecastContextKey{}, s.clientCapabilities[CapabilityCockpitForecastV1])
+	base = context.WithValue(base, cockpitModelsContextKey{}, s.clientCapabilities[CapabilityCockpitModelsV1])
 	base = context.WithValue(base, cockpitHistoryContextKey{}, s.clientCapabilities[CapabilityCockpitHistoryV1])
 	base = context.WithValue(base, accountTodayContextKey{}, s.clientCapabilities[CapabilityAccountTodayV1])
 	ctx, cancel := context.WithTimeout(base, timeout)
