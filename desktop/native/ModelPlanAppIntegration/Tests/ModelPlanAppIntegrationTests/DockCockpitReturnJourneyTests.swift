@@ -145,8 +145,8 @@ import ModelPlanWire
             try await Task.sleep(for: .milliseconds(150))
             XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Returning to the wake band cancels the hide")
             move(to: outside)
-            try await Task.sleep(for: .milliseconds(550))
-            XCTAssertEqual(dock.edgePresentation?.state, .sliver, "Continuous absence hides after the grace period")
+            // A fixed 550 ms left a 500 ms grace 50 ms of slack on a loaded hosted Mac.
+            try await waitForSurface(.sliver)
             let panelOnly = try XCTUnwrap(placement.globalHoverRects.map {
                 CGPoint(x: $0.midX, y: $0.midY)
             }.first { display.usableFrame.contains($0) && !placement.wakeFrame.contains($0) })

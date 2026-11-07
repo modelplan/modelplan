@@ -41,7 +41,7 @@ import ModelPlanSettings
         if let edit { _ = try await store.update { edit(&$0) } }
         EngineRowsEntry.nativeJourneyProfile = root
         return EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
-            applicationVersion: "dock-native-journey", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path],
+            applicationVersion: "dock-native-journey", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin", "LANG": "C"],
             offline: true, readOnly: true), settingsStore: store, createsNativePanels: true,
             dockEnvironment: topology.read, activateSettings: {})
     }
