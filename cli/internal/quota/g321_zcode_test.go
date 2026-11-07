@@ -94,6 +94,10 @@ func TestG321FreshProfileReadsZCodeCodingPlanByDefault(t *testing.T) {
 	for _, a := range report.Accounts {
 		if a.Source == "native:zai" && len(a.Windows) > 0 && a.Windows[0].UsedPercent != nil {
 			found = true
+			// The working signal binds ZCode's turns to this account; it needs no second key read.
+			if ref := ZCodeSubscription(cache); ref == "" || a.Subscription == nil || a.Subscription.Ref != ref {
+				t.Fatalf("ZCode account ref = %q, binding = %+v", ref, a.Subscription)
+			}
 		}
 	}
 	if !found {

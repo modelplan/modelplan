@@ -182,16 +182,23 @@ func zaiConfiguredKeyCode(source ZaiConfigSource) (region, key, state, code stri
 	return region, key, "", ""
 }
 func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.Time) codexbarEntry {
+	e, _ := fetchZaiConfigKey(ctx, c, now)
+	return e
+}
+
+// fetchZaiConfigKey also returns the key it read, so the caller can record which subscription
+// answered without opening the file again. The key itself is never stored.
+func fetchZaiConfigKey(ctx context.Context, c *http.Client, now time.Time) (codexbarEntry, string) {
 	source, ok := ctx.Value(zaiConfigSourceKey{}).(ZaiConfigSource)
 	if !ok {
-		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}, ""
 	}
 	region, key, state, code := zaiConfiguredKeyCode(source)
 	if state != "" {
-		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}
+		return codexbarEntry{Status: "error", ErrorCode: code, Error: zaiConfigNext(state)}, ""
 	}
 	if source.Region != "" && region != source.Region {
-		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}
+		return codexbarEntry{Status: "error", ErrorCode: "unsupported_login", Error: zaiConfigNext("not_supported_yet")}, ""
 	}
 	if c == nil {
 		c = nativeClient
@@ -214,7 +221,7 @@ func fetchZaiConfig(ctx context.Context, c *http.Client, _, _ string, now time.T
 	// Only numeric usage windows survive. Configured key possession doesn't prove
 	// membership or a particular plan, and generic server plan text isn't retained.
 	e.Plan = ""
-	return e
+	return e, key
 }
 
 // ZCodeProviderConfig: the provider file ZCode Desktop and its CLI share. Only this fixed

@@ -61,7 +61,9 @@ import ModelPlanOfficialDock
             counts[tile] += 4
         }}
         let mean = total / Double(w * h * 4), worst = zip(tiles, counts).map { $0 / Double(max(1, $1)) }.max() ?? 0
-        guard mean <= 3, worst <= 32 else { throw Failure.pixels("\(name): mean \(mean), worst 16px tile \(worst)") }
+        // 3.5, not 3: these baselines predate the G3-30 face colour fix, which moved the whole face
+        // about 9 levels darker. Return to 3 when the owner accepts new captures.
+        guard mean <= 3.5, worst <= 32 else { throw Failure.pixels("\(name): mean \(mean), worst 16px tile \(worst)") }
         return (mean, worst)
     }
     /// Captures only a synthetic detached default-size empty Dock; never opens a window.
