@@ -26,6 +26,9 @@ function expectedFiles(porthole) {
       files.set(`canopy-c01/${layer}-${tier}-${scale}x.png`, { kind: 'canopy-layer', tier, scale });
     }
   }
+  // Owner D39/D-A: the minified launch-field scene (reserved licence, official edition only, loaded on demand).
+  files.set('field-scene/README.md', { kind: 'notice' });
+  files.set('field-scene/cockpit-scene.bundle.js', { kind: 'field-scene' });
   if (porthole) for (const f of porthole.descriptors) {
     const meta = { kind: f.kind };
     for (const k of ['theme', 'scale']) if (Object.hasOwn(f, k)) meta[k] = f[k];
@@ -41,7 +44,7 @@ function walk(directory, relative = '') {
     const path = join(directory, item), stat = lstatSync(path);
     assert.ok(!stat.isSymbolicLink(), `symlink in runtime pack: ${name}`);
     if (stat.isDirectory()) {
-      assert.ok(['ignition-a5', 'canopy-c01', 'porthole-stills', 'porthole-stills/assets', 'porthole-stills/assets/projected'].includes(name), 'directory outside manifest');
+      assert.ok(['ignition-a5', 'canopy-c01', 'field-scene', 'porthole-stills', 'porthole-stills/assets', 'porthole-stills/assets/projected'].includes(name), 'directory outside manifest');
       files.push(...walk(path, name));
     }
     else {
@@ -88,6 +91,8 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
       assert.equal(entry.size, null, 'notice dimensions');
       assert.ok(bytes.toString().includes('SPDX-License-Identifier') && bytes.toString().includes(license), 'notice licence');
       if (entry.kind === 'notice') assert.match(bytes.toString(), /ModelPlan.*trademark/i);
+      // The minified scene embeds three.js's own MIT notice, so it is registered by hash like a binary.
+      if (entry.kind === 'field-scene') pngs[prefix + entry.file] = entry.sha256;
     } else {
       keys(entry.size, ['width', 'height']);
       assert.deepEqual(pngSize(bytes), entry.size, 'PNG dimensions mismatch');
@@ -109,7 +114,7 @@ export function verifyVisualPack(root = fileURLToPath(new URL('..', import.meta.
   const policy = JSON.parse(readFileSync(join(root, 'source-policy.json'), 'utf8'));
   const registry = Object.fromEntries(Object.entries(policy.reservedVisuals.binaries).filter(([path]) => path.startsWith(prefix)));
   assert.deepEqual(registry, pngs, 'source-policy binary registry mismatch');
-  return { manifestSha256: sha256(raw), pngCount: Object.keys(pngs).length,
+  return { manifestSha256: sha256(raw), pngCount: Object.keys(pngs).filter(k => k.endsWith('.png')).length,
     pngBytes: manifest.files.filter(e => e.size !== null).reduce((n, e) => n + e.bytes, 0) };
 }
 

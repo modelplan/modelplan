@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -237,7 +238,7 @@ func refreshManagedAfter(ctx context.Context, p Paths, provider string, now time
 	}
 	unlock, ok := lockFile(readerPath(p.Cache, provider)+".lock", now, time.Minute)
 	if !ok {
-		return errors.New("another provider read is running")
+		return fmt.Errorf("another provider read is running: %w", consent.ErrReaderBusy)
 	}
 	defer unlock()
 	s, err := loadReaderState(p.Cache, provider)
