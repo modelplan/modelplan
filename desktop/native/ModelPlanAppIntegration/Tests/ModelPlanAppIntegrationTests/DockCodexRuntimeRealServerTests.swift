@@ -74,17 +74,7 @@ import XCTest
         return root.subviews.lazy.compactMap { self.text(name, in: $0) }.first
     }
 
-    /// Passed on the M2 lane with producer 8a74bc08 (CLI #523, runtime fallback, still open). This
-    /// journey holds the runtime reply and has not run against the merged CLI, so it runs only
-    /// when that producer is supplied (MODELPLAN_DOCK_RUNTIME_PRODUCER=1).
-    private func requireRuntimeProducer() throws {
-        guard ProcessInfo.processInfo.environment["MODELPLAN_DOCK_RUNTIME_PRODUCER"] == "1" else {
-            throw XCTSkip("Needs the Codex runtime-fallback producer from CLI #523 (8a74bc08)")
-        }
-    }
-
     func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
-        try requireRuntimeProducer()
         let (root, helper, environment) = try sandbox()
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
         let payload = root.appendingPathComponent("rpc-response.json")
