@@ -290,7 +290,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
 
   const missing = [];
   if (evidence.state === PENDING) missing.push(evidence.why);
-  if (tier === 2 && lanes.get("(macrev2)") !== "merge") missing.push("VERDICT (macrev2) merge");
+  // Owner 2026-11-07: while Codex quota is out, a Sonnet reviewer stands in for macrev2 under its own label.
+  if (tier === 2 && lanes.get("(macrev2)") !== "merge" && lanes.get("(sonnet)") !== "merge") missing.push("VERDICT (macrev2) or (sonnet) merge");
   if (tier === 1 && ![...lanes.values()].includes("merge")) missing.push("a VERDICT merge");
   if (design.touching) {
     const d = designVerdict(items, head, carried);
