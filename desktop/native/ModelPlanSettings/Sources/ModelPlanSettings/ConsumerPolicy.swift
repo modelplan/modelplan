@@ -169,6 +169,9 @@ public struct SettingsCapabilities: Sendable {
     public var login: LoginServiceState = .notRegistered
     public var appCacheClearAvailable = false
     public var updateServiceAvailable = false
+    /// True only while the engine reports its forecast producer (F1). Injected from the
+    /// engine's negotiated capability, never persisted or inferred from the saved kinds.
+    public var forecastProducerAvailable = false
     public var firstRunPreviewAvailable = false
     public var helpMapAvailable = false
     public var helpMapUsesDock = false
