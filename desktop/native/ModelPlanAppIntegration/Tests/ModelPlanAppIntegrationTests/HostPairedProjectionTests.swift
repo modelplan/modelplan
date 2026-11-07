@@ -581,12 +581,9 @@ actor EntrySyntheticClient: EngineClient {
         events.hoverNozzle(nil)
         try open("bbbbbbbbbbbbbbbb")
         XCTAssertEqual(text("source", in: dock.card), "Saved sign-in · 23m ago")
-        XCTAssertEqual(text("row.source.label", in: dock.card), "Source")
-        XCTAssertEqual(text("row.source.value", in: dock.card), "Saved sign-in")
+        XCTAssertNil(text("row.source.label", in: dock.card), "The header names the source")
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(text("source", in: dock.card), "已有登录 · 23分钟前")
-        XCTAssertEqual(text("row.source.label", in: dock.card), "来源")
-        XCTAssertEqual(text("row.source.value", in: dock.card), "已有登录")
         _ = try await editor.commit(SettingsB21Edit.language(.english))
 
         dock.interactionControllerForChecks?.dismissCard()
@@ -732,8 +729,8 @@ actor EntrySyntheticClient: EngineClient {
         }
         for (language, title) in [(SettingsLanguage.english, "Reserve"), (.chinese, "储备")] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
-            let name = try XCTUnwrap(field(dock.card, id: "row.credits.label"))
-            let value = try XCTUnwrap(field(dock.card, id: "row.credits.value"))
+            let name = try XCTUnwrap(field(dock.card, id: "row.reserve.label"))
+            let value = try XCTUnwrap(field(dock.card, id: "row.reserve.value"))
             try assertVisible(name, text: title)
             try assertVisible(value, text: "19,614")
             XCTAssertLessThanOrEqual(dock.card.convert(name.bounds, from: name).maxX,
@@ -756,8 +753,8 @@ actor EntrySyntheticClient: EngineClient {
     func testNormalOpenCardUpdatesReportedResetExpiryWithoutNewRows() async throws {
         let captureDirectory = ProcessInfo.processInfo.environment["MODELPLAN_546_CARD_CAPTURE_DIR"].map { URL(fileURLWithPath: $0) }
         for (language, labels) in [
-            ("en", ["1 reset · expire in 12m", "1 reset · expire in 9m", "1 reset · expired"]),
-            ("zh", ["重置 1 次 · 12 分钟后到期", "重置 1 次 · 9 分钟后到期", "重置 1 次 · 已到期"]),
+            ("en", ["exp in 12m", "exp in 9m", "expired"]),
+            ("zh", ["12m 后到期", "9m 后到期", "已到期"]),
         ] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("reset-expiry-" + UUID().uuidString)
             addTeardownBlock { try? FileManager.default.removeItem(at: root) }
@@ -797,7 +794,7 @@ actor EntrySyntheticClient: EngineClient {
                 }
                 XCTAssertFalse(dock.card.isHidden, language)
                 XCTAssertTrue(text(dock.card).contains(label), "Expected drawn label: " + label)
-                XCTAssertEqual(try dock.cardContent(for: id, at: wall)?.rows.first { $0.id == "reset-count" }?.label, label)
+                XCTAssertEqual(try dock.cardContent(for: id, at: wall)?.rows.first { $0.id == "reserve" }?.detail, label)
                 XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
                 XCTAssertEqual(app.composition.store.snapshot.rows?.sequence, snapshot.sequence)
                 XCTAssertEqual(app.settingsHost.application.editor.snapshot?.revision, revision)

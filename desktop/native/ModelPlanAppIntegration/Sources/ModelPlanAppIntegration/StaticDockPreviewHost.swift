@@ -797,16 +797,20 @@ struct DockHelpInteraction: Equatable {
         style.brandSize = QuotaWidgetCardGeometry.headingIconSize
         style.headerGap = QuotaWidgetCardGeometry.headingGap
         style.headerBottomGap = QuotaWidgetCardGeometry.headingBottomGap
+        style.headerMinimumHeight = QuotaWidgetCardGeometry.headingMinimumHeight; style.labelLift = QuotaWidgetCardGeometry.rowLabelLift
         style.windowRadius = QuotaWidgetCardGeometry.lcdRadius
-        style.windowPadding = NSEdgeInsets(top: QuotaWidgetCardGeometry.lcdVerticalPadding, left: QuotaWidgetCardGeometry.lcdHorizontalPadding,
-                                           bottom: QuotaWidgetCardGeometry.lcdVerticalPadding, right: QuotaWidgetCardGeometry.lcdHorizontalPadding)
+        let rowMargin = QuotaWidgetCardGeometry.rowVerticalMargin
+        style.windowPadding = NSEdgeInsets(top: QuotaWidgetCardGeometry.lcdVerticalPadding + rowMargin, left: QuotaWidgetCardGeometry.lcdHorizontalPadding,
+                                           bottom: QuotaWidgetCardGeometry.lcdVerticalPadding + rowMargin, right: QuotaWidgetCardGeometry.lcdHorizontalPadding)
+        style.rowGap = rowMargin; style.rowOutset = QuotaWidgetCardGeometry.rowOutset
+        style.readoutBottomGap = QuotaWidgetCardGeometry.readoutBottomGap
         style.columns = QuotaWidgetCardGeometry.rowFixedColumns
         style.columnGap = QuotaWidgetCardGeometry.rowColumnGap
         style.rowMinimumHeight = QuotaWidgetCardGeometry.rowMinimumHeight
         style.barSize = CGSize(width: QuotaWidgetCardGeometry.rowFixedColumns[1], height: QuotaWidgetCardGeometry.barHeight)
         style.barGap = QuotaWidgetCardGeometry.barSegmentGap
         style.nameFontSize = M.nameFontSize; style.smallFontSize = M.smallFontSize; style.readoutSize = M.valueFontSize
-        style.background = colour(M.plate); style.seam = colour(M.seam)
+        style.background = colour(M.plate); style.seam = colour(M.seam); style.rowHighlight = colour(M.rowHighlight)
         style.window = colour(M.window); style.windowSeam = colour(M.windowSeam)
         style.ink = colour(M.ink); style.muted = colour(M.muted); style.track = colour(M.ghost)
         style.quota = [.normal: colour(M.normal), .warning: colour(M.warning), .critical: colour(M.critical), .unknown: colour(M.muted)]
@@ -820,7 +824,10 @@ struct DockHelpInteraction: Equatable {
         if let font = cardFonts[size] { return font }
         guard let store = cardResourceStore(zaiMarkEnabled: false),
               let font = try? store.font(QuotaWidgetCardMaterial.readoutFontResource, size: size) else { return nil }
-        let value = font as NSFont
+        // AppKit text cannot draw an unregistered graphics font: Latin and digits come out blank while
+        // CJK falls back. Register the verified face for this process, then ask AppKit for it by name.
+        _ = CTFontManagerRegisterGraphicsFont(CTFontCopyGraphicsFont(font, nil), nil)
+        guard let value = NSFont(name: CTFontCopyPostScriptName(font) as String, size: size) else { return nil }
         cardFonts[size] = value
         return value
     }
@@ -1973,12 +1980,12 @@ struct DockHelpInteraction: Equatable {
         let row = model?.presentationRows[id]
         let selected = row?.windowObservations == nil ? nil :
             try DockInstrumentProjection.evaluate(projected, now: now, redBelow: effectiveRedBelow).selectedWindowID
-        return try DockCardProjection.content(input: projected,
+        return try DockCardProjection.content(input: projected, selectedWindowID: selected,
                 revision: application?.snapshot.revision ?? 0,
                 plan:model?.presentationRows[id]?.plan ?? "",
                 sourceAndAge: row?.cardSourceAndAge(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? CommunityDockObservation.text(input: memberSafePreferences.applying(to: input), snapshot: snapshot, model: model, now: now, language: preferences.language),
                 stateLabel: model?.presentationRows[id]?.cardBadge(at: now, english: preferences.language == .english) ?? (input.dataState == .fresh ? "" : (preferences.language == .english ? "Unavailable or stale" : "不可用或已过期")),
-                windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english) ?? [:],
+                windowDetails:model?.presentationRows[id]?.resetDetails(at:now,english:preferences.language == .english,selectedWindowID:selected) ?? [:],
                 additionalRows: model?.presentationRows[id]?.cardAdditionalRows(at: now, english: preferences.language == .english) ?? [],
                 links: currentCardSourceLinks(for: id, at: now),
                 enterLabel: (cardUsesSettings(id) ? EngineRowsText.contextSettings : EngineRowsText.cockpitAction).value(preferences.language),
