@@ -209,7 +209,8 @@ import XCTest
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
         XCTAssertTrue(FileManager.default.fileExists(atPath: hold.path), "DIAG hold after requested wait: " + ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).joined(separator: ","))
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
-        try FileManager.default.removeItem(at: hold)
+        do { try FileManager.default.removeItem(at: hold) }
+        catch { XCTFail("DIAG first release failed; exists=\(FileManager.default.fileExists(atPath: hold.path)) dir=\(((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).joined(separator: ",")) error=\(error)"); throw error }
         try await wait { account(in: app)?.valueState == .current && account(in: app)?.windows.first?.remainingPercent == 70 }
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
         let recovered = try XCTUnwrap(account(in: app)?.windows.first)
@@ -240,6 +241,7 @@ import XCTest
         try FileManager.default.removeItem(at: requested)
         XCTAssertFalse(FileManager.default.fileExists(atPath: hold.path), "DIAG hold before second write")
         try Data().write(to: hold)
+        print("DIAG reached denied launch")
         let denied = await makeApplication()
         _ = try await denied.composition.client.start()
         _ = try await denied.composition.client.subscribeRows(timeout: .seconds(4))
