@@ -36,6 +36,16 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertEqual(effective.opening, .quick, "V1 opens quickly even with a retained hold preference")
         XCTAssertNil(effective.ignitionSeconds)
     }
+    func testV1SystemFallbackRowsFollowTheObservedService() throws {
+        var context = SettingsPageContext(); context.configureV1NormalEntry()
+        func keys() throws -> Set<SettingKey> { Set(try SettingsCatalogue.rows(preferences: .init(), context: context).map(\.key)) }
+        XCTAssertTrue(try keys().isDisjoint(with: [.loginSystemSettings, .notificationSystemSettings]), "nothing is wrong until the host has asked")
+        context.loginServiceObserved = true; context.notificationServiceObserved = true
+        context.capabilities.login = .requiresApproval; context.notificationAuthorization = .denied
+        XCTAssertTrue(try keys().isSuperset(of: [.loginSystemSettings, .notificationSystemSettings]))
+        context.capabilities.login = .enabled; context.notificationAuthorization = .authorized
+        XCTAssertTrue(try keys().isDisjoint(with: [.loginSystemSettings, .notificationSystemSettings]))
+    }
     func testV1NoEffectControlsAreDisabledWithVisibleReasons() throws {
         var context = SettingsPageContext(); context.configureV1NormalEntry()
         let rows = try SettingsCatalogue.rows(preferences: .init(), context: context)
@@ -65,15 +75,19 @@ final class SettingsV1PolicyTests: XCTestCase {
             let row = SettingsNativeRow(key: key)
             row.apply(try XCTUnwrap(rows.first { $0.key == key }), language: .english, saving: false,
                 input: nil, reduced: false, onChoice: #selector(V1RowTarget.selected(_:)), target: target,
-                showGroup: false, snapshot: snapshot, context: context, holdAvailable: false, hasHost: hasHost,
+                snapshot: snapshot, context: context, holdAvailable: false, hasHost: hasHost,
                 onEdit: { _, _ in }, onSurfaceAction: { _, _ in }, onDraftCleared: { _ in })
             return row
         }
         let shortcut = try apply(.openShortcut, hasHost: false)
         XCTAssertFalse(try XCTUnwrap(shortcut.shortcut).isEnabled)
-        let text = shortcut.controls.arrangedSubviews.compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " ")
-        XCTAssertTrue(text.contains("Unavailable")); XCTAssertFalse(text.contains("works in app"))
-        XCTAssertTrue(shortcut.subtitle.stringValue.contains("Unavailable"))
+        let reason = try XCTUnwrap(context.unavailableControls[.openShortcut]).value(.english)
+        XCTAssertFalse(shortcut.subtitle.isHiddenOrHasHiddenAncestor, "The disabled reason must be visible")
+        XCTAssertEqual(shortcut.subtitle.stringValue, reason)
+        XCTAssertTrue(reason.contains("Unavailable")); XCTAssertFalse(reason.contains("works in app"))
+        let rightSideText = shortcut.controls.arrangedSubviews.compactMap { $0 as? NSTextField }
+            .filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
+        XCTAssertFalse(rightSideText.contains(reason), "The visible reason must not be duplicated below the control")
         let feedback = try apply(.feedback, hasHost: true)
         XCTAssertFalse(try XCTUnwrap(feedback.surfaceAction).isEnabled, "A host alone cannot enable an unavailable action")
         let diagnostics = try apply(.diagnostics, hasHost: false)

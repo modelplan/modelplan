@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
+var cockpitSubscriptionRef = regexp.MustCompile(`^[a-f0-9]{16}$`)
+
 func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, admission queries.CockpitAdmission, groups map[string][]wire.CockpitAccount) (wire.CockpitDetails, error) {
 	result := wire.CockpitDetails{Version: 1, Sources: []string{"quota-reserve", "quota-thresholds"}, Subscriptions: []wire.CockpitSubscriptionDetails{}, Sessions: []wire.CockpitSession{}, SessionCoverage: "unavailable", ResetEvents: []rows.ResetEvent{}, Alerts: []wire.CockpitAlert{}}
 	current := consent.Capture()
@@ -32,7 +35,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	if err != nil {
 		return result, err
 	}
-	result.Publication = selectCockpitPublication(published, view.Projection)
+	result.Publication = selectCockpitPublication(published, view.Projection, nil)
 	now := time.Now()
 	redBelow := admission.RedBelow
 	if redBelow == 0 {
@@ -145,7 +148,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 					continue
 				}
 				v := *window.RemainingPercent
-				if v < 0 || v > 100 || math.IsNaN(v) || v >= 41 {
+				if v < 0 || v > 50 || math.IsNaN(v) {
 					continue
 				}
 				severity := "warning"
@@ -155,6 +158,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				result.Alerts = append(result.Alerts, wire.CockpitAlert{Source: row.ID, SubscriptionRef: *account.SubscriptionRef, WindowID: window.ID, Severity: severity, RemainingPercent: v})
 			}
 		}
+	}
+	if appserver.CockpitForecastEnabled(ctx) {
+		result.Forecasts = wire.ProjectForecasts(view.Projection, func(ref string) bool { return byRef[ref] != nil }, now)
 	}
 	sort.Slice(result.Alerts, func(i, j int) bool {
 		a, b := result.Alerts[i], result.Alerts[j]
@@ -195,7 +201,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	result.SessionCoverage = "local-last-seen"
 	result.Sources = append(result.Sources, "local-history")
 	sort.Strings(result.Sources)
-	for _, today := range cockpitTodayTotals(view.QuotaReport.Accounts, perf) {
+	for _, today := range appserver.CockpitTodayTotals(view.QuotaReport.Accounts, perf) {
 		out := byRef[today.SubscriptionRef]
 		if out != nil && allowed[sourceScope[today.Source]] && len(out.Today) < 4 {
 			out.Today = append(out.Today, wire.CockpitToday{Source: today.Source, ObservedOutputTokens: today.OutputTokens, GenerationTps: today.GenerationTPS, BindingBasis: today.BindingBasis})
@@ -216,7 +222,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := session.Effort
 			effort = &v
 		}
-		if labels && session.ProjectRef != nil {
+		if labels && session.ProjectRef != nil && safeCockpitLabel(session.ProjectLabel) {
+			v := session.ProjectLabel
+			label = &v
+		} else if labels && session.ProjectRef != nil {
 			for _, saved := range perf.Ledger.Sessions {
 				if saved.Ref == session.Ref && saved.Source == session.Source && saved.ProjectRef == *session.ProjectRef && safeCockpitLabel(saved.ProjectLabel) {
 					v := saved.ProjectLabel
@@ -225,9 +234,20 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 				}
 			}
 		}
-		// The existing live ledger does not prove a per-session binding. #410 may
-		// supply that evidence; never substitute a source-wide current binding.
-		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+		// The live record's account is the same evidence the working signal binds on. A reference
+		// outside this cockpit's subscriptions stays unbound; never substitute a source-wide one.
+		var subscription *string
+		if session.SubscriptionRef != nil && byRef[*session.SubscriptionRef] != nil {
+			subscription = session.SubscriptionRef
+		}
+		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, SubscriptionRef: subscription, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+	}
+	inUse := map[string]bool{}
+	for _, session := range result.Sessions {
+		inUse[session.Model] = true
+	}
+	if len(inUse) > 0 {
+		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
 }

@@ -38,9 +38,15 @@ func startQueryBinary(t *testing.T, binary string) *queryBinary {
 	return startQueryBinaryCaps(t, binary, []string{"rows", "consent", "history", "cockpit", "refresh", "publication"})
 }
 func startQueryBinaryCaps(t *testing.T, binary string, capabilities []string) *queryBinary {
+	return startQueryBinaryCapsArgs(t, binary, capabilities)
+}
+func startQueryBinaryCapsWithArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
+	return startQueryBinaryCapsArgs(t, binary, capabilities, args...)
+}
+func startQueryBinaryCapsArgs(t *testing.T, binary string, capabilities []string, args ...string) *queryBinary {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	cmd := exec.CommandContext(ctx, binary, "app-server")
+	cmd := exec.CommandContext(ctx, binary, append([]string{"app-server"}, args...)...)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -270,6 +276,8 @@ func setupQueryHome(t *testing.T) string {
 	testenv.IsolateHome(t)
 	home := os.Getenv("HOME")
 	cache := filepath.Join(home, "cache")
+	// The CLI also searches system directories; a host's installed Codex must not start here.
+	t.Setenv("MODELPLAN_CODEX", filepath.Join(home, "no-real-codex"))
 	for name, value := range map[string]string{"MODELPLAN_CACHE": cache, "MODELPLAN_HISTORY": "", "MODELPLAN_READERS": "", "MODELPLAN_GEMINI": "", "MODELPLAN_GEMINI_HOME": "", "MODELPLAN_CODEX_ACCOUNT": "off", "MODELPLAN_CODEXBAR": "off"} {
 		t.Setenv(name, value)
 	}

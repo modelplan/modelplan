@@ -58,6 +58,21 @@ func (r *refreshDecisionRing) add(at time.Time, scope string, outcome refreshOut
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// A scope that still cannot run says so on every scheduler pass. Repeating it would push the
+	// decisions that matter out of the ring, so only its time moves.
+	if outcome == refreshNotAttempted {
+		for i := 1; i <= r.count; i++ {
+			at0 := (r.next - i + len(r.items)) % len(r.items)
+			if r.items[at0].scope != scope {
+				continue
+			}
+			if r.items[at0].outcome == outcome && r.items[at0].reason == reason {
+				r.items[at0].at = at
+				return
+			}
+			break
+		}
+	}
 	r.items[r.next] = refreshDecision{at: at, scope: scope, outcome: outcome, reason: reason}
 	r.next = (r.next + 1) % len(r.items)
 	if r.count < len(r.items) {

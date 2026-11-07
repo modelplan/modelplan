@@ -33,8 +33,11 @@ public struct CockpitAppearance: Equatable, Sendable {
   public let theme: Theme, locale: Locale, profile: Profile
   public let reduceMotion: Bool, reduceTransparency: Bool, shutterClosed: Bool, detached: Bool
   public let redBelow: Int
-  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil) {
-    if let redBelow, [10, 16, 20, 25].contains(redBelow) {
+  /// Settings "Project names": off withholds project labels from every cockpit surface.
+  public let showProjectNames: Bool
+  public init(theme: Theme, locale: Locale, profile: Profile, reduceMotion: Bool = false, reduceTransparency: Bool = false, shutterClosed: Bool = false, detached: Bool = false, redBelow: Int? = nil, showProjectNames: Bool = true) {
+    self.showProjectNames = showProjectNames
+    if let redBelow, [10, 15, 20, 25, 30, 40].contains(redBelow) {
       self.redBelow = redBelow
     } else {
       self.redBelow = 25
@@ -244,6 +247,7 @@ public final class CockpitBridgeState {
         "appearance": [
           "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
           "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
+          "showProjectNames": appearance.showProjectNames,
         ],
         "shell": shell.fields, "redBelow": appearance.redBelow,
       ], receipt: "ready")
@@ -254,7 +258,7 @@ public final class CockpitBridgeState {
     return try envelope("appearance", extra: [
       "theme": appearance.theme.rawValue, "locale": appearance.locale.rawValue,
       "reduceMotion": appearance.reduceMotion, "reduceTransparency": appearance.reduceTransparency,
-      "redBelow": appearance.redBelow,
+      "showProjectNames": appearance.showProjectNames, "redBelow": appearance.redBelow,
     ], appearanceDeadline: correlated)
   }
   public func setShell(_ shell: CockpitShellState) throws -> String {

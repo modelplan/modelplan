@@ -23,7 +23,7 @@ public enum SettingsB20Edit: Equatable, Sendable {
             if let id = subscriptionID, !id.isEmpty, let v = PercentagePin(rawValue: value) {
                 self = .percentagePin(id, v); return
             }
-        case .redBelow: if let v = Int(value), [10, 16, 20, 25].contains(v) { self = .redBelow(v); return }
+        case .redBelow: if let v = Int(value), SettingsPreferences.redBelowChoices.contains(v) { self = .redBelow(v); return }
         case .sliverAlert: if let v = Bool(value) { self = .sliverAlert(v); return }
         default: break
         }
@@ -187,6 +187,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             guard context.capabilities.appCacheClearAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .action(.clearAppCache)
         case .openLink(let link): intent = .openPublicLink(link)
+        case .openSystemSettings(let pane): intent = .openSystemSettings(pane)
         case .checkForUpdates:
             guard context.capabilities.updateServiceAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .checkForUpdates

@@ -53,8 +53,11 @@ final class DecodeTests: XCTestCase {
 
     func testCockpitThresholdIsStrictAndBounded() throws {
         let decoder = JSONDecoder()
-        XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(#"{"redBelow":16}"#.utf8)).redBelow, 16)
-        for json in [#"{"redBelow":17}"#, #"{"redBelow":"16"}"#, #"{"redBelow":null}"#] {
+        for value in [10, 15, 20, 25, 30, 40] {
+            let json = "{\"redBelow\":\(value)}"
+            XCTAssertEqual(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)).redBelow, value)
+        }
+        for json in [#"{"redBelow":16}"#, #"{"redBelow":17}"#, #"{"redBelow":"15"}"#, #"{"redBelow":null}"#] {
             XCTAssertThrowsError(try decoder.decode(WireCockpitQueryParams.self, from: Data(json.utf8)))
         }
     }
@@ -90,7 +93,7 @@ final class DecodeTests: XCTestCase {
     func testEveryRealGoCaptureUsesGeneratedProductionDecoder() throws {
         let catalog = try index()
         XCTAssertEqual(catalog.version, 1)
-        XCTAssertEqual(catalog.cases.count, 69)
+        XCTAssertEqual(catalog.cases.count, 85)
         for entry in catalog.cases {
             XCTAssertNoThrow(try decodeCapture(entry.type, data(entry.file)), entry.type)
             var future = try object(entry.file)
@@ -115,7 +118,7 @@ final class DecodeTests: XCTestCase {
                 try check(entry.type, wrongType, accepted: field.wrongType, context: entry.type + "." + field.field + " type")
             }
         }
-        XCTAssertEqual(fields, 95)
+        XCTAssertEqual(fields, 116)
     }
 
     func testModelScopeAndResetEventsRejectMalformedValues() throws {

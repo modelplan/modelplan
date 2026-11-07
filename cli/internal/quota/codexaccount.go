@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
@@ -103,16 +104,21 @@ func loadAccount(cache string) *accountSnap {
 }
 
 // CodexRuntimeAvailable reports only whether an admitted runtime snapshot was
-// successful. It exposes no provider values or identity.
+// successful and still fresh. At the exact freshness deadline it permits the
+// conservative local fallback even though Evaluate marks stale strictly after it.
+// It exposes no provider values or identity.
 func CodexRuntimeAvailable(cache string, admission consent.Admission, now time.Time) bool {
 	if off() || !admission.Allows("codex", consent.Runtime) {
 		return false
 	}
 	s := loadAccount(cache)
-	if s == nil || s.Status != "ok" || s.ObservedAt.After(now) || now.Sub(s.ObservedAt) > accountKeep || !admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
+	if s == nil || s.Status != "ok" || s.ObservedAt.After(now) || now.Sub(s.ObservedAt) >= staleAfter || !admission.State().CaptureAllowed(s.Admission, consent.ScopeCodexRuntimeUsage) {
 		return false
 	}
 	for _, window := range s.Windows {
+		if window.ObservedAt.IsZero() || window.ObservedAt.After(now) || now.Sub(window.ObservedAt) >= staleAfter || finite(window.UsedPercent, 0, 1000) == nil {
+			continue
+		}
 		if window.ResetsAt == nil || now.Before(*window.ResetsAt) {
 			return true
 		}
@@ -169,6 +175,8 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 	if !state.Allows("codex", consent.Runtime, mode) {
 		return errors.New("Codex reader not permitted")
 	}
+	// A finished reading must survive a brief hold on the consent lock, and a timed-out read
+	// must still be recorded, so this bounded wait does not follow the read's context.
 	commit := func(s *accountSnap) error {
 		s.Admission = state.CaptureStamp(consent.ScopeCodexRuntimeUsage)
 		wait := AccountEvery
@@ -178,7 +186,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 		if err := reserveReaderAttempt(cache, "codex", now.Add(wait)); err != nil {
 			return err
 		}
-		return consent.Publish(state.Fence(), func() error { return save(cache, s) })
+		return consent.PublishContext(context.Background(), state.Fence(), func() error { return save(cache, s) })
 	}
 	if off() {
 		return errors.New("disabled by MODELPLAN_CODEX_ACCOUNT")
@@ -186,7 +194,7 @@ func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time
 
 	unlock, ok := lock(cache, now)
 	if !ok {
-		return errors.New("another refresh is running")
+		return fmt.Errorf("another refresh is running: %w", consent.ErrReaderBusy)
 	}
 	defer unlock()
 	next, err := codexRefreshNext(cache)

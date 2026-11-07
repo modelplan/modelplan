@@ -32,6 +32,17 @@
             }
           }
         ],
+        "forecasts": [
+          {
+            "source": "synthetic",
+            "subscriptionRef": "0123456789abcdef",
+            "windowId": "synthetic",
+            "runsOutAt": "2026-10-29T12:00:00.123456789Z",
+            "pace": "tight",
+            "basis": "recent-rate",
+            "observedAt": "2026-10-29T12:00:00.123456789Z"
+          }
+        ],
         "rowsVersion": 1,
         "rows": [
           {
@@ -67,6 +78,22 @@
             },
             "accounts": [
               {
+                "today": {
+                  "observedOutputTokens": 12000,
+                  "generationTps": 42,
+                  "runningSessions": 1,
+                  "bindingBasis": "source-wide-current-binding"
+                },
+                "activity": [
+                  {
+                    "sessionRef": "aaaaaaaaaaaaaaaa",
+                    "subscriptionRef": "bbbbbbbbbbbbbbbb",
+                    "bindingVerified": true,
+                    "phase": "tool",
+                    "recordAt": "2026-10-29T12:00:00Z",
+                    "expiresAt": "2026-10-29T12:05:00Z"
+                  }
+                ],
                 "resetCards": {
                   "state": "complete",
                   "count": 1,

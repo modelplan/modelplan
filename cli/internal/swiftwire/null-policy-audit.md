@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # Optional wire null audit
 
-This inventory covers the 78 optional/nullable fields reachable from the production
+This inventory covers the 79 optional/nullable fields reachable from the production
 wire roots, including shared rows. It audits the consumer, not just Go's pointer
 representation. `null` tags describe the field's state model; required-key and
 outcome/authorization constraints apply separately. In particular, a required
@@ -42,7 +42,7 @@ schema/Swift rule before the operation can be consumed; rejected input leaves th
 operation available for a valid result. AccessToken is therefore forbidden-null.
 No credential content is logged or included in assertion messages.
 
-## Outputs (67 fields)
+## Outputs (68 fields)
 
 Evidence references name the producer and the production decoder consuming each
 field. `coalesced` means no third state is exposed: absence/null both produce the
@@ -64,6 +64,12 @@ containers and failure ID retain their required-key checks.
 | CockpitResetCount.ExpiresAt | coalesced | Null means no known expiry; expired cards are withheld by the producer. |
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
+| CockpitDetails.Forecasts | forbidden | Omission means not negotiated or nothing to report; explicit null is rejected. |
+| RowsProjection.Forecasts | forbidden | Omission means not negotiated; explicit null is rejected. |
+| CockpitCycleShare.Model | coalesced | Null means no verified publication ID; the local string never crosses. |
+| CockpitCycleShare.Effort | coalesced | Null means an unknown or default effort. |
+| CockpitForecast.RunsOutAt | coalesced | Null means no run-out before the reset is forecast; it is never a past or invented moment. |
+| WindowForecast.RunsOutAt | coalesced | In-process only (the field is not on the wire); nil matches the cockpit field. |
 | CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |
 | CockpitSession.Effort | coalesced | Null means an unreported or unsupported effort. |
 | CockpitSession.ProjectLabel | coalesced | Null means no permitted local label; the producer honors the project-label switch. |
@@ -109,6 +115,7 @@ containers and failure ID retain their required-key checks.
 | rows.ResetSource.Links | coalesced | Absent/null both mean no typed source links; only policy-admitted links are published, and a failing candidate is omitted without dropping the event. |
 | rows.ResetSource.URL | coalesced | Absent/null both mean no source link; only producer-approved links can be emitted. |
 | rows.Account.SubscriptionRef | coalesced | [values.go:56](../rows/values.go#L56), `buildAccounts`; `RowsAccount` absent/null both have no subscription reference; present references still validate. |
+| rows.Account.Activity | coalesced | `rows.buildAccounts` publishes admitted per-session activity only for its verified account. Generated `RowsAccount.init(from:)` normalizes absent/null or malformed optional lists to nil. `EngineDockContentProvider` then has no working evidence; valid lists still require matching member/binding, phase and record/expiry times, never a provider or peer-rate fallback. Generated capture mutations and `NormalEntryActivityTests` cover absent, working, stale, mismatched, expiry and lifecycle behavior. |
 | rows.Account.AccountLocator | coalesced | Same projection/decoder: absent/null both have no account locator; present locators still validate. |
 | rows.Account.Credits | coalesced | Same projection/decoder: absent/null both have no credit reading. |
 | rows.Account.ObservedAt | coalesced | Same projection/decoder: absent/null both have no observation timestamp. |

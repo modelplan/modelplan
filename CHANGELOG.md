@@ -6,31 +6,67 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
-## CLI v0.5.53 (2026-11-07)
+## CLI v0.5.54, Codex plugin 0.15.40 and Claude Code plugin 0.7.39 (2026-11-07)
 
-This heading also covers v0.5.47 to v0.5.52, which were released without their own heading. Plugin versions are unchanged; both plugins and their bundled Skill now pin CLI v0.5.53 and its published archive checksums.
+This heading also covers v0.5.47 to v0.5.53, which were released without their own heading.
 
 - Standard readers are on by default. The app reads Codex's runtime, and its session logs as the fallback, on a profile with no recorded choices, without a consent click. A recorded refusal, a tool-level denial, a reset consent store and `MODELPLAN_READERS=off` still win.
 
 - One Codex account per ChatGPT login. While Codex's own live account reading is available, it is the only Codex account: session logs are no longer shown as a second account beside it, also after a plan upgrade. Only the current session's model, effort and allowance pool come from the logs. Without a live reading the session logs remain the Codex reading, and an older runtime plan never replaces a newer one.
 
+- A read that loses a lock to another ModelPlan process, such as a plugin hook, now retries after 15 seconds. Before, nothing had been read but the app waited 10 minutes, or 30 for Codex's runtime.
+
+- An older tool-level allow no longer switches off default-on reads added after it: for example Codex's runtime is read on such profiles, while a refusal, a denied source or a chosen non-native backend still wins. `doctor readers` now lists Codex.
+
+- Verification only: `MODELPLAN_VERIFY_READERS=<tool,...>` narrows every consent read (saved grants and default-on local/runtime scopes) to the listed tool IDs for device test runs. It never grants anything, an invalid entry denies every tool, and it is never written to the consent file. Unset, nothing changes.
+
+- A finished Codex reading is no longer lost when the consent lock is briefly held. Before, the reading was dropped and the next attempt waited 5 to 30 minutes.
+
+- Withdraw today statistics from subscribed account rows when their session evidence, day, or current source binding expires, even when no cache file changes.
+
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
-  请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
 
 - Keep C14 local default-effort suggestions off by default until the owner's go-live (earliest 2026-11-07; no automatic activation). Explicit local opt-in limits delivery to text history and the status line within 24 hours of a weekly reset, sharing one notice per rolling week. Hooks and desktop JSON no longer expose suggestions; the three-week minimum, local-only calculation and history opt-out remain.
-  C14 本机默认档位建议默认关闭，等待所有者批准上线（最早 2026-11-07，不自动启用）。明确在本机开启后，只在周重置后的 24 小时内通过历史文本和状态栏提示，每滚动七天共享一次；钩子与桌面 JSON 不再输出建议，仍需三个已结束周周期、只在本机计算并尊重历史关闭设置。
 
 - Accept the optional published `provisional: true` on a model's effort in the CLI, the public reader and the Codex plugin. `modelplan effort` marks that ability as provisional (`暂定`), `--json` carries the flag only when set, and quota hints never offer a provisional configuration as another model's alternative, nor compare a provisional current configuration across models. Other unknown effort fields are still rejected.
-  CLI、公开读取器和 Codex 插件接受发布数据中档位的可选字段 `provisional: true`。`modelplan effort` 会把该档能力标为「暂定」，`--json` 仅在设置时带上该字段；额度提示不会把暂定档位当作其他模型的替代，也不会拿暂定的当前档位跨模型比较。其他未知档位字段仍会被拒绝。
 
 - Add the pure CLI rows projection core: stable tool membership, contextual reason mapping, per-profile value states, conservative clocks, and field-specific privacy checks. Missing or retired allowed tools take priority over no-reader guidance. Production desktop integration follows the reader/consent adapters; quota output is unchanged.
-  新增纯 CLI 行投影核心：稳定工具成员、按上下文映射原因、按资料区分读数状态、保守时钟与逐字段隐私校验。已授权但缺失或退休的工具优先于无读取器提示；生产桌面接线随后与读取/授权适配器集成，额度输出不变。
 
 - Granting Claude Keychain access in Settings now runs one foreground read right away, so the macOS prompt appears while you are there. Before, only two-second background reads ran, an unanswered prompt timed out, and the Keychain state stayed stuck so Claude never got a reading. Replays, grants without Keychain, and Keychain denials read nothing.
-  在设置中允许 Claude 访问钥匙串后，会立即在前台读取一次，macOS 提示框会在你操作时弹出。以前只有两秒的后台读取，提示框来不及回应就超时，钥匙串状态被锁住，Claude 一直读不到数。重放请求、未涉及钥匙串的授权和拒绝钥匙串都不会读取。
 
 - Extend the app–CLI contract to plugin installation: schemas cover every existing status, and real-binary synthetic captures verify both host tools, offline planning and partial failures. Schema/type/status drift is checked against the production Go model; install behavior is unchanged.
-  App–CLI 契约新增插件安装：schema 覆盖全部现有状态，真实 CLI 的合成样例验证两个宿主、离线计划与部分失败；对照生产 Go 类型检查字段和状态漂移，不改变安装行为。
+
+- The Mac app now ships the owner-accepted app icon, so Finder, Launchpad and Spotlight no longer show a blank app.
+
+- Claude Code's saved login is read by default. A login kept only in the macOS Keychain is never read before you allow it: the Claude Code row asks for Keychain permission instead, and the read right after Allow no longer waits for a back-off left by failures that never reached Anthropic.
+
+- The cockpit's faders now show the published models for your subscriptions, models in use first, with pinning by a long press. They were empty before. The cockpit entry stays off in packaged builds until the v1 cockpit is enabled.
+
+- Cockpit record lines now link: hovering one lights its engine column, and clicking selects its subscription and opens the session list.
+
+- The cockpit's sessions now name their account, so a record line links to its column, and the app keeps quota history without a plugin.
+
+- Allow explicitly granted local Codex history to refresh when the retained runtime reading is too old to be usable.
+
+- The cockpit and Quota Widget now have automated checks for the status colours, the brand red rule and steady layout during state changes.
+
+- The red threshold choices are now 40, 30, 25, 20, 15 and 10 percent remaining, in Settings, the Quota Widget, the cockpit and the engine. An older saved 16 stays on disk and acts as 25.
+
+- Added checks for the Quota Widget's face gradient and grip position; nothing changes for users.
+
+- The Quota Widget's percentage switch in Settings now has its agreed name, and the app logs when a stale lock forces the widget to hide.
+
+- Added checks for more Quota Widget rules; nothing changes for users.
+
+- The Quota Widget's grip now lights with the prototype's warm ring and glow on hover and focus, with a gold outline for keyboard focus.
+
+- Flames now light on the Quota Widget while a Claude Code, Codex or ZCode turn is running, for the account that runs it, without any plugin; they go out when the turn ends or its evidence expires.
+
+- The Quota Widget's flames step at half rate on battery, and return to normal on AC at the next data change.
+
+- Once the cockpit entry is on, left-clicking the menu bar icon opens the cockpit and reopening the app from Spotlight or Launchpad does too. While it is off, as in current release packages, left-click shows the menu. Right-click or control-click always shows the menu.
+
+- Plugin updates now deliver a new CLI pin. Moving the pin left the plugin versions unchanged, so `claude plugin update` and Codex's marketplace upgrade reported nothing to do and users stayed on an old CLI; on a machine whose consent file a newer CLI had upgraded, that old CLI read no quota at all. `scripts/pin-cli.mjs` now moves the plugin versions with the pin, and CI fails a pin change without them. Codex asks you to allow the plugin's hooks again after this update.
 
 ## CLI v0.5.46, Codex plugin 0.15.38 and Claude Code plugin 0.7.37 (2026-10-29)
 

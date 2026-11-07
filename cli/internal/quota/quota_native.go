@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/keychain"
 	"github.com/modelplan/modelplan/cli/internal/toolcli"
@@ -249,7 +250,7 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 	}
 	unlock, ok := lockFile(filepath.Join(p.Cache, "observed", "native.lock"), now, time.Duration(len(on)+len(managed)+1)*nativeTimeout)
 	if !ok {
-		return errors.New("another refresh is running")
+		return fmt.Errorf("another refresh is running: %w", consent.ErrReaderBusy)
 	}
 	defer unlock()
 	var refreshErr error
@@ -374,13 +375,19 @@ func refreshNativeSelected(ctx context.Context, p Paths, now time.Time, diagnost
 // getJSON: one GET with the key as a bearer token, bounded, decoded into v. The error names the
 // HTTP status, never the key or the body.
 func getJSON(ctx context.Context, c *http.Client, url, key string, v any) error {
+	return getJSONAuthorization(ctx, c, url, "Bearer "+key, v)
+}
+
+// getJSONAuthorization is getJSON with the complete Authorization value supplied by the
+// caller, for a vendor contract that takes the key without a scheme prefix.
+func getJSONAuthorization(ctx context.Context, c *http.Client, url, authorization string, v any) error {
 	ctx, cancel := context.WithTimeout(ctx, nativeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return codeError("other", "bad request")
 	}
-	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "modelplan")
 	resp, err := c.Do(req)
@@ -604,6 +611,8 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	if profileKey == "" {
 		return errors.New("identity key unavailable")
 	}
+	// Decide before the outcome below clears the failure facts this reads.
+	localBackoff := claudeBackoffIsLocal(p.Cache)
 	// This operation is interactive even when the remote budget is closed. Keep
 	// its credential only in this stack frame and reuse it if a remote read is due.
 	credential := g.Credential
@@ -633,5 +642,25 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 	g.Credential = func(context.Context) ([]byte, string) { return value, "" }
 	access := &ReaderAccess{Grants: map[string]ReaderGrant{provider: g}}
 	p.ReaderAccess = access
-	return refreshManaged(ctx, p, provider, now)
+	return refreshManagedAfter(ctx, p, provider, now, localBackoff)
+}
+
+// claudeBackoffIsLocal: every recorded failure stopped at the credential, before any
+// provider request, so the back-off protects nothing the user's Allow should wait for.
+// A provider failure or a success keeps its floor and any Retry-After.
+func claudeBackoffIsLocal(cache string) bool {
+	s, err := loadReaderState(cache, "claude")
+	if err != nil || s.Failures == 0 || !s.LocalBackoff || len(s.Entries) == 0 {
+		return false
+	}
+	for _, e := range s.Entries {
+		if e.Status == "ok" || !credentialStageFailure(e) {
+			return false
+		}
+	}
+	return true
+}
+
+func credentialStageFailure(e readerEntry) bool {
+	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
 }

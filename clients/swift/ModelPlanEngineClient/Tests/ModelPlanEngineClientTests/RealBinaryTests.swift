@@ -14,14 +14,15 @@ enum TestFailure: Error { case timeout, childFailed }
 actor EventProbe: EngineClientEventConsumer {
     var events: [EngineClientEvent] = []
     var pauseClear = false
-    var pauseResponse = false
+    var pauseDiagnostics = false
     var responseWaiter: CheckedContinuation<Void, Never>?
     var clearWaiter: CheckedContinuation<Void, Never>?
     var timeline: [String] = []
     func consume(_ event: EngineClientEvent) async {
         events.append(event)
-        if case .response = event, pauseResponse {
-            pauseResponse = false
+        // Only the diagnostics reply: an unrelated reply landing first must not take the pause.
+        if case .response(_, .diagnostics) = event, pauseDiagnostics {
+            pauseDiagnostics = false
             await withCheckedContinuation { responseWaiter = $0 }
         }
         let dataRevision: UInt64?
@@ -42,7 +43,7 @@ actor EventProbe: EngineClientEventConsumer {
         }
         if case .clearPrivateViews(let value) = event { timeline.append("clear-ack:" + String(value.revision)) }
     }
-    func suspendNextResponse() { pauseResponse = true }
+    func suspendNextDiagnostics() { pauseDiagnostics = true }
     func responseIsPaused() -> Bool { responseWaiter != nil }
     func resumeResponse() { responseWaiter?.resume(); responseWaiter = nil }
     func suspendNextClear() { pauseClear = true }

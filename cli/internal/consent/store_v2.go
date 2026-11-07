@@ -24,12 +24,21 @@ func validEpoch(s string) bool {
 
 // Load migrates schema 1 exactly once while holding the same lock as mutations.
 // A missing store has no epoch and no grants until the first transaction.
+// MODELPLAN_VERIFY_READERS narrows the returned permissions (never the file).
 func Load(file string) (State, error) {
+	s, err := loadAuthoritative(file)
+	if err != nil {
+		return s, err
+	}
+	return narrowForVerification(s), nil
+}
+
+func loadAuthoritative(file string) (State, error) {
 	s, _, err := loadRaw(file)
 	if err != nil || s.SchemaVersion != 1 {
 		return s, err
 	}
-	unlock, err := lockFile(file + ".lock")
+	unlock, err := lockConsent(file)
 	if err != nil {
 		return Empty(), errors.New("consent busy; retry")
 	}
@@ -98,7 +107,7 @@ func Reset(file string) (State, error) {
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}
-	unlock, err := lockFile(file + ".lock")
+	unlock, err := lockConsent(file)
 	if err != nil {
 		return Empty(), err
 	}

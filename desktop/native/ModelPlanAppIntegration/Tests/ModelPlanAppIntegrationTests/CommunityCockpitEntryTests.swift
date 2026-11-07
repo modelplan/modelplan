@@ -4,6 +4,7 @@ import XCTest
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
+import ModelPlanDock
 @testable import ModelPlanCockpitWeb
 import ModelPlanWire
 @testable import ModelPlanAppIntegration
@@ -66,9 +67,107 @@ private actor RouteClient: EngineClient {
         await withCheckedContinuation{waiter=$0}
     }
     func discard(){state.dispose();onClosed?()}
+    var appearances:[CockpitAppearance]=[]
+    func updateAppearance(_ appearance:CockpitAppearance){appearances.append(appearance)}
 }
 
 final class CommunityCockpitEntryTests:XCTestCase {
+    // G3-13 / R-06: exercise the ordinary entry and real CLI transport. No
+    // refresh or second subscription is sent after the synthetic local update.
+    @MainActor func testG313RealCLIRecoversRetainedWeeklyCard() async throws {
+        guard let binary = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"], !binary.isEmpty else {
+            if ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_REQUIRED"] == "1" {
+                XCTFail("U11 must provide the real synthetic-test CLI")
+                throw CancellationError()
+            }
+            throw XCTSkip("Build the real synthetic-test CLI for the normal-entry recovery test")
+        }
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: binary), "U11 CLI must be executable")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g313-entry-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sessions = root.appendingPathComponent(".codex/sessions/2026/11/05", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let log = sessions.appendingPathComponent("rollout-synthetic.jsonl")
+        let old = Date().addingTimeInterval(-3 * 3600 - 10)
+        func record(_ at: Date, used: Int) throws -> Data {
+            let formatter = ISO8601DateFormatter()
+            let value: [String: Any] = ["timestamp": formatter.string(from: at), "type": "event_msg",
+                "payload": ["type": "token_count", "rate_limits": ["limit_id": "codex", "plan_type": "plus",
+                    "primary": ["used_percent": used, "window_minutes": 10080,
+                                "resets_at": Int(Date().addingTimeInterval(86400).timeIntervalSince1970)]]]]
+            var data = try JSONSerialization.data(withJSONObject: value)
+            data.append(0x0a)
+            return data
+        }
+        try record(old, used: 80).write(to: log)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("settings"), preferredLanguages: ["en-US"])
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: binary),
+            applicationVersion: "g313-synthetic", allowedEnvironment: ["HOME": root.path, "TMPDIR": root.path, "PATH": "/usr/bin:/bin"], offline: true),
+            settingsStore: settings, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        do {
+            await app.prepare()
+            await app.composition.start()
+            var memberID: String?
+            var oldCard: DockCardContent?
+            for _ in 0..<300 {
+                if let member = app.composition.accountMembers.members.first(where: { $0.rowID == "codex" }),
+                   let card = try app.composition.dock.cardContent(for: member.id), card.stateLabel.contains("Stale") {
+                    memberID = member.id; oldCard = card; break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let id = try XCTUnwrap(memberID, "the real CLI must deliver a retained Codex card")
+            let before = try XCTUnwrap(oldCard)
+            XCTAssertTrue(before.sourceAndAge.contains("Local history"), before.sourceAndAge)
+            XCTAssertTrue(before.sourceAndAge.contains("3h ago"), before.sourceAndAge)
+            XCTAssertTrue(before.stateLabel.contains("Stale"), before.stateLabel)
+            XCTAssertTrue(before.rows.contains { $0.label == "Weekly" }, "the retained card must have a weekly row")
+            let file = try FileHandle(forWritingTo: log)
+            try file.seekToEnd()
+            let updatedAt = Date()
+            try file.write(contentsOf: record(updatedAt, used: 30))
+            try file.close()
+            var recovered: DockCardContent?
+            for _ in 0..<300 {
+                if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
+                   card.rows.contains(where: { $0.label == "Weekly" && $0.value == "70%" }) {
+                    recovered = card; break
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            let after = try XCTUnwrap(recovered, "new local observation did not automatically recover the card")
+            XCTAssertTrue(after.sourceAndAge.contains("Local history"), after.sourceAndAge)
+            XCTAssertTrue(after.sourceAndAge.contains("just now"), after.sourceAndAge)
+            let observed = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
+            XCTAssertLessThan(abs(observed.timeIntervalSince(updatedAt)), 2)
+            // R-01: two more real local observations show 4% then 3% on the
+            // same subscribed normal-entry card, with the latter's real age.
+            for (used, expected) in [(96, "4%"), (97, "3%")] {
+                let nextAt = Date()
+                let writer = try FileHandle(forWritingTo: log)
+                try writer.seekToEnd()
+                try writer.write(contentsOf: record(nextAt, used: used))
+                try writer.close()
+                var current: DockCardContent?
+                for _ in 0..<300 {
+                    if let card = try app.composition.dock.cardContent(for: id), card.stateLabel.isEmpty,
+                       card.rows.contains(where: { $0.label == "Weekly" && $0.value == expected }) {
+                        current = card; break
+                    }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let card = try XCTUnwrap(current, "subscribed card did not deliver \(expected)")
+                XCTAssertTrue(card.sourceAndAge.contains("Local history"), card.sourceAndAge)
+                XCTAssertTrue(card.sourceAndAge.contains("just now"), card.sourceAndAge)
+                let actual = try XCTUnwrap(app.composition.presentedContent.snapshot.presentationRows[id]?.originalObservedAt)
+                XCTAssertLessThan(abs(actual.timeIntervalSince(nextAt)), 2)
+            }
+            await app.composition.stop()
+        } catch {
+            await app.composition.stop()
+            throw error
+        }
+    }
     @MainActor func testNormalEntryRejectsOutdatedCLI() async throws {
         guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"] else {
             throw XCTSkip("Build the unversioned synthetic CLI for the normal-entry test")
@@ -152,6 +251,33 @@ final class CommunityCockpitEntryTests:XCTestCase {
         XCTAssertEqual(surface.shows,2);XCTAssertEqual(constructions,1);XCTAssertEqual(clients,1)
         await app.composition.stop()
     }
+    // Owner D39/D-E: package-neutral.sh --owner-test writes ModelPlanCockpitEntryEnabled=true; the release and
+    // --unverified packages write false (preflight PF-08). The normal entry reads only the packaged Info.plist here
+    // (no cockpitEntryEnabled override), so this is the packaged switch, not a test seam.
+    @MainActor func testOwnerTestPackageOpensCockpitAndReleasePackageDoesNot() async throws {
+        for (mode, enabled) in [("owner-test", true), ("release", false)] {
+            let root=FileManager.default.temporaryDirectory.appendingPathComponent("d-e-\(mode)-"+UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at:root) }
+            let app=root.appendingPathComponent("ModelPlan Community.app"),contents=app.appendingPathComponent("Contents")
+            try FileManager.default.createDirectory(at:contents.appendingPathComponent("MacOS"),withIntermediateDirectories:true)
+            let info:[String:Any]=["CFBundleIdentifier":"org.modelplan.community.swift.scaffold","CFBundleExecutable":"ModelPlanCommunity",
+                                   "CFBundlePackageType":"APPL","ModelPlanCockpitEntryEnabled":enabled]
+            try PropertyListSerialization.data(fromPropertyList:info,format:.xml,options:0).write(to:contents.appendingPathComponent("Info.plist"))
+            let store=try EngineRowsEntry.makeSettingsStore(applicationSupport:root,preferredLanguages:["en"])
+            let surface=ConsoleRouteProbe(); var constructed=0
+            let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),settingsStore:store,createsNativePanels:false,bundleURL:app,
+                makeClient:{_,_ in RouteClient()},makeConsole:{_ in constructed += 1; return surface},activateSettings:{})
+            await entry.prepare(); entry.composition.dock.setPresentationAllowed(true); entry.renderMenu()
+            let status=try XCTUnwrap(entry.liveStatusMenu)
+            let item=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") }, mode)
+            XCTAssertEqual(item.isEnabled,enabled,mode)
+            entry.perform(NSSelectorFromString("showConsoleMenu"))
+            entry.composition.dock.perform(NSSelectorFromString("openConsole"))
+            XCTAssertEqual(constructed,enabled ? 1 : 0,mode)
+            XCTAssertEqual(surface.shows,enabled ? 2 : 0,mode)
+            await entry.composition.stop()
+        }
+    }
     @MainActor func testNormalEntryCockpitSwitchBlocksBothRoutesWithoutConstructingSurface() async throws {
         for enabled in [false, true] {
             let root=FileManager.default.temporaryDirectory.appendingPathComponent("cockpit-switch-"+UUID().uuidString)
@@ -166,8 +292,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
             XCTAssertEqual(statusItem.isEnabled,enabled)
             let menu=app.composition.dock.menu()
-            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
-            XCTAssertEqual(item.isEnabled,enabled)
+            // The widget menu lists the cockpit only when its entry is on (owner HIG decision 11-06).
+            if enabled { XCTAssertTrue(try XCTUnwrap(menu.items.first { $0.title == "Open Cockpit" }).isEnabled) }
+            else { XCTAssertFalse(menu.items.contains { $0.title == "Coming soon" || $0.title == "Open Cockpit" }) }
             app.composition.dock.perform(NSSelectorFromString("openConsole"))
             app.perform(NSSelectorFromString("showConsoleMenu"))
             XCTAssertEqual(constructed,enabled ? 1 : 0)
@@ -179,11 +306,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
                 let chinese = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "即将推出" })
                 XCTAssertFalse(chinese.isEnabled)
                 let chineseDock = app.composition.dock.menu()
-                XCTAssertFalse(try XCTUnwrap(chineseDock.items.first { $0.title == "即将推出" }).isEnabled)
+                XCTAssertFalse(chineseDock.items.contains { $0.title == "即将推出" })
                 app.composition.dock.pauseForLifecycle()
                 let paused = app.composition.dock.menu()
                 XCTAssertTrue(paused.items.contains { $0.title == "退出 ModelPlan" })
-                XCTAssertTrue(paused.items.contains { $0.title == "即将推出" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "自动收起" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "设置…" && !$0.isEnabled })
             }
             await app.composition.stop()
         }
@@ -207,6 +335,58 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let stops=await client.stops
         XCTAssertEqual(stops,0,"Cockpit shutdown must not stop the application's borrowed client")
         await client.stop()
+    }
+
+    /// MOT-2.3-04: Settings Reduce Motion reaches the page at open and when it changes. The normal entry's
+    /// settings fan-out into `applySettings` is covered by NormalEntrySettingsJourneyTests.
+    @MainActor func testReduceMotionSettingReachesTheCockpitAtOpenAndOnChange() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-motion-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.motion = .on;$0.language = .chinese;$0.redBelow=15 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient();await client.suspendCockpit()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertFalse(owner.appearance.reduceMotion)
+        let page=ClearingPage(try .init(sessionID:UUID(),storeEpoch:"synthetic",generation:1),sink:ClearSink())
+        let coordinator=EngineCockpitCoordinator { _ in page }
+        coordinator.bind(client:client);owner.coordinator=coordinator
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let context=EngineDeliveryContext(sessionID:"s-"+page.state.context.sessionID.uuidString.lowercased(),floor:.init(storeEpoch:"synthetic",generation:1),revision:1)
+        await coordinator.consume(.context(context));surface.show()
+        for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(owner.appearance.reduceMotion,"Opening keeps the setting")
+        XCTAssertEqual(owner.appearance.locale,.zhCN);XCTAssertEqual(owner.appearance.redBelow,15)
+        _=try await settings.update { $0.motion = .system;$0.language = .english }
+        await app.reload()
+        surface.applySettings(try XCTUnwrap(applied.last))
+        let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
+        XCTAssertFalse(delivered.reduceMotion);XCTAssertEqual(delivered.locale,.en)
+        surface.hide();await coordinator.shutdown();await composition.stop()
+    }
+
+    /// SET-9-19: the committed setting reaches the appearance the page is given.
+    @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.showProjectNames=false;$0.redBelow=15 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertTrue(owner.appearance.showProjectNames)
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertFalse(owner.appearance.showProjectNames)
+        XCTAssertEqual(owner.appearance.redBelow,15)
+        await composition.stop()
     }
 
     @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {

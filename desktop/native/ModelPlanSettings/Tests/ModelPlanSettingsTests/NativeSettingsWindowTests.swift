@@ -124,6 +124,47 @@ import XCTest
         }
         controller.close()
     }
+    /// SET-9-23: exactly the five line diagrams, on their own rows of the real window.
+    func testSET923FiveDiagramsAreTheOnlyOnes() async throws {
+        let controller = SettingsWindowController(editor: SettingsEditor(store: try store()), environmentProvider: { SettingsEnvironment() })
+        await controller.prepare(); controller.selectPane("dock")
+        XCTAssertEqual(SettingsDiagramKind.allCases, [.edge, .percentages, .autoCollapse, .size, .quotaWindow])
+        let illustrated: Set<SettingKey> = [.dockEdge, .showPercentages, .autoHide, .size, .percentagePin]
+        XCTAssertTrue(illustrated.isSubset(of: Set(controller.visibleSettingKeys)))
+        for key in controller.visibleSettingKeys {
+            XCTAssertEqual(controller.diagram(key: key) != nil, illustrated.contains(key), key.rawValue)
+        }
+        controller.close()
+    }
+    /// SET-9-24: focus and a value change each play one 400 ms pass; hover uses the same play().
+    /// Nothing loops or moves the layout, and Reduce Motion shows the end state at once.
+    func testSET924DiagramAnimatesOnceWithoutShiftingLayoutOrUnderReduceMotion() async throws {
+        let controller = SettingsWindowController(editor: SettingsEditor(store: try store()), environmentProvider: { SettingsEnvironment() })
+        await controller.prepare(); controller.selectPane("dock")
+        let popup = try XCTUnwrap(controller.choice(key: .size)), window = try XCTUnwrap(controller.window)
+        let diagram = try XCTUnwrap(controller.diagram(key: .size)), frame = diagram.frame
+        func movement() -> CAAnimation? { diagram.layer?.animation(forKey: "settings.lineMovement") }
+        func assertOnePass(_ context: String) throws {
+            let animation = try XCTUnwrap(movement(), context)
+            XCTAssertEqual(animation.duration, 0.4, accuracy: 0.0001, context)
+            XCTAssertEqual(animation.repeatCount, 0, context); XCTAssertEqual(animation.repeatDuration, 0, context)
+            XCTAssertFalse(animation.autoreverses, context); XCTAssertTrue(animation.isRemovedOnCompletion, context)
+            XCTAssertEqual(diagram.frame, frame, context)
+        }
+        diagram.stop(); XCTAssertNil(movement())
+        XCTAssertTrue(window.makeFirstResponder(popup))
+        try assertOnePass("focus")
+        diagram.stop()
+        let current = diagram.input
+        diagram.apply(current, reduceMotion: false, animate: true); XCTAssertNil(movement(), "an unchanged value does not play")
+        diagram.apply(.size(.large), reduceMotion: false, animate: true); try assertOnePass("value change")
+        diagram.play(); try assertOnePass("hover")
+        diagram.apply(.size(.small), reduceMotion: true, animate: true)
+        XCTAssertNil(movement(), "Reduce Motion stops the pass and plays none")
+        diagram.play(); XCTAssertNil(movement(), "Reduce Motion holds the end state")
+        XCTAssertEqual(diagram.input, .size(.small)); XCTAssertEqual(diagram.frame, frame)
+        controller.close()
+    }
     func testAccessibilityTransactionKeepsNativeFocusAndStopsFiniteIllustration() async throws {
         var environment = SettingsEnvironment()
         let store = try store()

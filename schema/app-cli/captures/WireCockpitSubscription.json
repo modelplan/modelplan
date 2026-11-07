@@ -4,6 +4,22 @@
     {
       "tool": "codex",
       "account": {
+        "today": {
+          "observedOutputTokens": 12000,
+          "generationTps": 42,
+          "runningSessions": 1,
+          "bindingBasis": "source-wide-current-binding"
+        },
+        "activity": [
+          {
+            "sessionRef": "aaaaaaaaaaaaaaaa",
+            "subscriptionRef": "bbbbbbbbbbbbbbbb",
+            "bindingVerified": true,
+            "phase": "tool",
+            "recordAt": "2026-10-29T12:00:00Z",
+            "expiresAt": "2026-10-29T12:05:00Z"
+          }
+        ],
         "resetCards": {
           "state": "complete",
           "count": 1,

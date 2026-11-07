@@ -145,7 +145,11 @@ Notification:
 
 ### Cockpit display DTO
 
-`cockpit/query` takes an empty object. It returns `CockpitData` with the existing
+When `cockpitDetailsV1` is negotiated, `cockpit/query` may specify `redBelow`
+as 10, 15, 20, 25, 30 or 40 (remaining percent). Omission defaults to 25;
+other values, including 16 and explicit null, are invalid.
+
+`cockpit/query` accepts an empty object. It returns `CockpitData` with the existing
 `RowsProjection` in `projection` and a `subscriptions` array. Go groups verified
 subscription references; each group contains `subscriptionRef` and an `accounts`
 array of `{tool, account}` using stable tool IDs and the existing account display
@@ -368,9 +372,10 @@ model carries `id`, `name`, `developerId`, `recommended`, and `efforts`; each
 effort carries `effort`, `label`, `star`, nullable `ability`, `cost`, and `time`,
 plus optional `multiplier` and `provisional`. Missing values stay absent or null;
 no relative multiplier is calculated. The producer uses only current admitted
-readings to select matching vendors, preserves the verified publication model-array
-order, emits at most three models and sets `truncated` when more match. The
-current publication does not contain a global cross-vendor ranking.
+readings to select matching vendors, puts models with a current session first, then
+keeps the verified publication model-array order, emits at most three models and sets
+`truncated` when more match. The current publication does not contain a global
+cross-vendor ranking.
 
 ### Public reset event capability
 

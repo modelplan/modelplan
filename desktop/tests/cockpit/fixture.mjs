@@ -8,7 +8,7 @@ export function commands() {
   let sequence=0;
   return (type,extra={})=>JSON.stringify({version:2,pageId,sessionId,requestId:`00000000-0000-4000-8000-${String(++sequence).padStart(12,'0')}`,sequence:String(sequence),storeEpoch:'epoch-z',generation:'41',viewRevision:'3',type,...extra});
 }
-export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false};
+export const appearance={theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true};
 export const shell={profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all'};
 export function sample() {
   const value=capture();
@@ -50,4 +50,15 @@ export async function excludePortholeFlicker(page){
     const style=window.getComputedStyle;
     window.getComputedStyle=function(element,pseudo){const s=style.call(window,element,pseudo);return element?.closest?.('.ck-still')?new Proxy(s,{get:(t,k)=>k==='animationIterationCount'?'1':Reflect.get(t,k)}):s;};
   });
+}
+
+// A client that negotiated details, with the shape the engine sends: the verified publication and
+// no session or Today producer yet (#549, #548). Unlike visualFixture(), this models the normal entry.
+export function sampleWithDetails(){
+ const data=sample();
+ data.details={version:1,sources:['quota-reserve','quota-thresholds'],subscriptions:[],sessions:[],sessionCoverage:'unavailable',resetEvents:[],alerts:[],publication:{contractVersion:1,publicationId:'0123456789abcdef01234567',publishedAt:'2026-10-24T12:00:00Z',source:'client',truncated:false,models:[
+  {id:'model-a',name:'Synthetic A',developerId:'openai',recommended:'medium',efforts:[{effort:'low',label:'Low',star:false,ability:30,cost:1,time:null},{effort:'medium',label:'Med',star:true,ability:40,cost:2,time:null}]},
+  {id:'model-b',name:'Synthetic B',developerId:'anthropic',recommended:'high',efforts:[{effort:'high',label:'High',star:true,ability:50,cost:3,time:null}]},
+ ]}};
+ return data;
 }

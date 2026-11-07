@@ -27,8 +27,11 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
-	Now               func() time.Time
-	Plan              func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
+	// Observe records what the local logs show: sessions and speed. It runs every 30 seconds, so
+	// it reads only local logs and ModelPlan's own cache: no provider request, no credential.
+	Observe func(time.Time)
+	Now     func() time.Time
+	Plan    func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }
 type refreshJob struct {
 	at         time.Time
@@ -67,6 +70,13 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 	}
 	return quota.PlanScopeRefresh(paths, scope, now)
 }
+
+// readerBusyRetry: another process, such as a plugin hook, held the reader lock past the
+// two-second wait. The failure back-off is for reads that ran.
+const readerBusyRetry = 15 * time.Second
+
+// observeEvery matches the live session window closely enough for a current rate.
+const observeEvery = 30 * time.Second
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
@@ -402,7 +412,11 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	attempted = true
 	err = s.config.Run(ctx, paths, job.scope, started)
 	outcome, reason := refreshNotAttempted, refreshUnavailable
-	if err != nil {
+	// Lost to another reader before reading anything: nothing failed, so try again soon.
+	busy := errors.Is(err, consent.ErrReaderBusy) || errors.Is(err, consent.ErrBusy)
+	if busy {
+		outcome, reason = refreshDeferred, refreshBudget
+	} else if err != nil {
 		outcome = refreshFailed
 	} else if job.scope == consent.ScopeCodexLocalHistory {
 		outcome, reason = refreshSucceeded, refreshCompleted
@@ -421,6 +435,9 @@ func (s *RefreshScheduler) run(job refreshJob) {
 		if job.scope == consent.ScopeCodexRuntimeUsage {
 			wait = 30 * time.Minute
 		}
+	}
+	if busy {
+		wait = readerBusyRetry
 	}
 	if stampOfFence(consent.Capture().Fence()) == job.stamp {
 		s.mu.Lock()

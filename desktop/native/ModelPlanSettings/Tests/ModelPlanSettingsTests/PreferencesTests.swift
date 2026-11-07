@@ -21,7 +21,7 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(p.redBelow, 25); XCTAssertTrue(p.sliverAlert)
         XCTAssertTrue(p.showDock); XCTAssertFalse(p.autoHide); XCTAssertEqual(p.revealMilliseconds, 150)
         XCTAssertFalse(p.showOverFullscreen); XCTAssertFalse(p.followActiveDisplay)
-        XCTAssertEqual(p.menuDisplay, .icon); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
+        XCTAssertEqual(p.menuDisplay, .tightest); XCTAssertEqual(p.opening, .hold); XCTAssertEqual(p.beatMilliseconds, 250)
         XCTAssertTrue(p.showProjectNames); XCTAssertFalse(p.notifications.optedIn)
         XCTAssertEqual(p.notifications.kinds, Set(NotificationKind.allCases))
         for bad in ["{\"theme\":\"custom\"}", "{\"theme\":null}", "{\"redBelow\":17}", "{\"revealMilliseconds\":0}", "{\"showDock\":\"false\"}"] {
@@ -67,12 +67,13 @@ final class PreferencesTests: XCTestCase {
         let stored = try JSONDecoder().decode(SettingsPreferences.self, from: data)
         let restored = try JSONDecoder().decode(SettingsPreferences.self, from: JSONEncoder().encode(stored))
         XCTAssertEqual(restored.redBelow, 16)
+        XCTAssertEqual(restored.effectiveRedBelow, 25, "D22: an older 16 is kept on disk and acts as the default")
         XCTAssertTrue(restored.followActiveDisplay)
         XCTAssertFalse(restored.autoHide)
         XCTAssertFalse(restored.sliverAlert)
     }
     func testExplicitDefaultsSurviveRestartAndUnrelatedEdits() async throws {
-        for threshold in [10, 16, 20, 25] {
+        for threshold in [10, 15, 20, 25, 30, 40] {
             let url = try file(), store = try SettingsStore(url: url)
             try await store.update { p in
                 p.redBelow = threshold; p.size = .small; p.dockEdge = .left

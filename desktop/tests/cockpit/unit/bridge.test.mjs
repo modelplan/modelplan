@@ -116,7 +116,7 @@ test('v2 readiness, strict live appearance and native shell state',()=>{
   const f=fixture(), ready=f.events.find(e=>e.type==='ready');
   assert.equal(ready.appearanceVersion,2);
   assert.deepEqual(ready.capabilities,['appearanceUpdates','shellState','shellActions']);
-  const appearance={theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:false};
+  const appearance={theme:'day',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
   assert.equal(f.bridge.receive(f.send('appearance',appearance),source),true);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,unknown:true}),source),false);
   assert.equal(f.bridge.receive(f.send('appearance',{...appearance,reduceMotion:'yes'}),source),false);
@@ -143,7 +143,7 @@ test('ready capabilities are present when DOM readiness follows load',()=>{
   const bridge=new CockpitBridge(pageId,source.origin,value=>events.push(JSON.parse(value)),view,()=>pageId),send=commands();
   assert.equal(bridge.receive(send('load',{appearance,shell}),source),true);assert.equal(events.length,0);bridge.ready();
   assert.equal(events[0].appearanceVersion,2);assert.deepEqual(events[0].capabilities,['appearanceUpdates','shellState','shellActions']);
-  const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false});
+  const m=send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true});
   assert.equal(bridge.receive(m,{...source,isMainFrame:false}),false);assert.equal(bridge.receive(m,source),true);assert.equal(bridge.receive(m,source),false);
   assert.equal(bridge.receive(send('shell',{profile:'open',attached:true,forcedClosed:false,tier:'tall',scope:'all',viewRevision:'4'}),source),false);
   assert.equal(bridge.receive(send('unload'),source),true);
@@ -153,7 +153,7 @@ test('ready capabilities are present when DOM readiness follows load',()=>{
 test('frozen v2 load requires exact initial appearance and tiered shell before ready',()=>{
   const calls=[],events=[],view={clear(){calls.push('clear');},render(){},configure(x){calls.push(['appearance',x]);},updateAppearance(){},shell(x){calls.push(['shell',x]);},active(){},dispose(){}};
   const b=new CockpitBridge(pageId,source.origin,s=>events.push(JSON.parse(s)),view,()=>pageId),send=commands();
-  const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false};
+  const a={theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true};
   const shell={profile:'closed',attached:true,forcedClosed:true,tier:'compact',scope:'all'};
   const base=JSON.parse(send('load',{appearance:a,shell}));base.version=2;
   for(const bad of [{...base,version:1},{...base,shell:undefined},{...base,shell:{...shell,scope:undefined}},{...base,shell:{...shell,scope:'bad/path'}},{...base,appearance:{...a,profile:'full'}},{...base,shell:{...shell,tier:'full',scope:'all'}},{...base,shell:{...shell,profile:'compact'}},{...base,shell:{...shell,extra:true}}])assert.equal(b.receive(JSON.stringify(bad),source),false);
@@ -230,19 +230,19 @@ test('deadline reports echo the triggering display, appearance or tick request',
  const f=fixture(),display=JSON.parse(f.send('display',{data:capture()}));
  assert.equal(f.bridge.receive(JSON.stringify(display),source),true);
  const tail=f.events.slice(-2);assert.deepEqual(tail.map(x=>x.type),['rendered','nextDeadline']);assert.equal(tail[0].requestId,display.requestId);assert.equal(tail[1].requestId,display.requestId);assert.equal(BigInt(tail[1].sequence),BigInt(tail[0].sequence)+1n);assert.equal(tail[1].deadlineUnixMs,null);
- const appearance=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(appearance),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,appearance.requestId);assert.equal(f.events.at(-1).deadlineUnixMs,null);
+ const appearance=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false,showProjectNames:true}));assert.equal(f.bridge.receive(JSON.stringify(appearance),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,appearance.requestId);assert.equal(f.events.at(-1).deadlineUnixMs,null);
  const tick=JSON.parse(f.send('tick',{nowUnixMs:'1793620800000',reason:'wake'}));assert.equal(f.bridge.receive(JSON.stringify(tick),source),true);assert.equal(f.events.at(-1).type,'nextDeadline');assert.equal(f.events.at(-1).requestId,tick.requestId);
 });
 
 test('appearance and tick reports obey visibility, replay and generation fences',()=>{
  const f=fixture(),data=capture(),readings=()=>f.events.filter(x=>x.type==='nextDeadline'),render=JSON.parse(f.send('display',{data}));
  assert.equal(f.bridge.receive(JSON.stringify(render),source),true);const first=readings().at(-1);assert.equal(first.requestId,render.requestId);
- const older=JSON.parse(f.send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false})),newer=JSON.parse(f.send('tick',{nowUnixMs:'1793275320000',reason:'wake'}));
+ const older=JSON.parse(f.send('appearance',{theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true})),newer=JSON.parse(f.send('tick',{nowUnixMs:'1793275320000',reason:'wake'}));
  assert.equal(f.bridge.receive(JSON.stringify(newer),source),true);const second=readings().at(-1);assert.equal(second.requestId,newer.requestId);assert.ok(BigInt(second.sequence)>BigInt(first.sequence));
  const count=readings().length;assert.equal(f.bridge.receive(JSON.stringify(older),source),false);assert.equal(f.bridge.receive(JSON.stringify(newer),source),false);assert.equal(readings().length,count);
- assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);const hidden=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false}));assert.equal(f.bridge.receive(JSON.stringify(hidden),source),true);assert.equal(readings().length,count);
- assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
- assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false}),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('visibility',{visible:false,occluded:false,key:false}),source),true);const hidden=JSON.parse(f.send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:false,reduceTransparency:false,showProjectNames:true}));assert.equal(f.bridge.receive(JSON.stringify(hidden),source),true);assert.equal(readings().length,count);
+ assert.equal(f.bridge.clear(f.send('clear',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'41',viewRevision:'3',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true}),source),false);assert.equal(readings().length,count);
+ assert.equal(f.bridge.receive(f.send('unload',{generation:'42',viewRevision:'4'}),source),true);assert.equal(f.bridge.receive(f.send('appearance',{generation:'42',viewRevision:'4',theme:'night',locale:'en',reduceMotion:false,reduceTransparency:false,showProjectNames:true}),source),false);assert.equal(readings().length,count);
 });
 
 test('display and appearance receive the bridge clock, while ticks use the host-supplied instant',()=>{
@@ -260,7 +260,7 @@ test('display and appearance receive the bridge clock, while ticks use the host-
 test('redBelow is optional, validated and logged on load and appearance without weakening strict keys',()=>{
  const logs=[],original=console.warn;console.warn=(...args)=>logs.push(args);
  try{
-  for(const [input,expected,warn] of [[10,10,false],[16,16,false],[20,20,false],[25,25,false],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
+  for(const [input,expected,warn] of [[10,10,false],[15,15,false],[20,20,false],[25,25,false],[30,30,false],[40,40,false],[16,25,true],[undefined,25,true],[17,25,true],['private-synthetic-value',25,true],[null,25,true],[{},25,true],[20.5,25,true]]){
    const seen=[],view={clear(){},configure(_a,n){seen.push(n);},updateAppearance(_a,_now,n){seen.push(n);},shell(){},active(){},dispose(){},nextDeadline(){return null;},render(){},tick(){}};
    const send=commands(),b=new CockpitBridge(pageId,source.origin,()=>{},view,()=>sessionId,()=>1000);b.documentHidden(false);b.ready();
    const extra=input===undefined?{}:{redBelow:input},before=logs.length;

@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
@@ -17,11 +19,18 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // SharedConfig adapts the existing production constructors. It owns no parallel
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
+	now func() time.Time
+	// Reported receives the report the rows were just built from, at most once a minute, so
+	// quota history is kept without a second read.
+	Reported func(quota.Report, time.Time)
+	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
+	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
 	ResetPublication  func() (*digest.Digest, error)
 	Detect            func() detect.Report
 	Paths             func(consent.Admission) quota.Paths
@@ -29,10 +38,23 @@ type SharedConfig struct {
 	Offline, ReadOnly bool
 }
 
+func (b *SharedBackend) now() time.Time {
+	if b.config.now != nil {
+		return b.config.now()
+	}
+	return time.Now()
+}
+
 type SharedBackend struct {
-	config  SharedConfig
-	changes chan struct{}
-	once    sync.Once
+	activityMu    sync.Mutex
+	activity      []rows.ActivityInput
+	activityStamp Stamp
+	activityBusy  atomic.Bool
+	reportBusy    atomic.Bool
+	reportedAt    time.Time
+	config        SharedConfig
+	changes       chan struct{}
+	once          sync.Once
 	// Bound by the constructor before Serve. Credentials remain in the
 	// scheduler's one-use memory callback and are never persisted here.
 	CredentialSink  CredentialReceiver
@@ -63,7 +85,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1, CapabilityAccountTodayV1, CapabilityCockpitForecastV1, CapabilityForecastProducerV1, CapabilityCockpitHistoryV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents, CapabilityResetEventLinksV1)
 	}
@@ -128,10 +150,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	p := b.paths(admission)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
-	in := admission.RowsInput(time.Now())
+	in := admission.RowsInput(b.now())
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
 	in.IdentityOff = quota.IdentityOff()
+	if !changed {
+		in.Activities = b.activityFor(stampOf(admission.Fence()))
+	}
 	for _, tool := range detection.Tools {
 		id := rows.CanonicalTool(tool.ProviderID)
 		detected[id] = tool.Detected
@@ -158,7 +183,22 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
-		appendReportRows(&in, report, false)
+		b.reported(report, in.Now)
+		projectionReport := report
+		if admission.Allows("codex", consent.Local) {
+			// The generic native adapter can report the ungranted runtime
+			// route as off even when local history is independently allowed.
+			// Do not turn that route-specific status into a tool-wide veto.
+			sources := make([]quota.SourceStatus, 0, len(report.Sources))
+			for _, source := range report.Sources {
+				if source.Source == "native:codex" && source.Status == "off" && source.Reason == "reader-consent-or-privacy" {
+					continue
+				}
+				sources = append(sources, source)
+			}
+			projectionReport.Sources = sources
+		}
+		appendReportRows(&in, projectionReport, false)
 	} else {
 		appendReportRows(&in, quota.ReadDeclared(p, in.Now), true)
 	}
@@ -176,6 +216,18 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed {
 		if selections, err := quota.SelectionsWithAdmission(p, admission); err == nil {
 			for _, selected := range selections {
+				// Codex has a dedicated runtime reader outside the generic native
+				// reader registry. Its absence from that registry is not a veto of
+				// the separately admitted runtime or local-history routes.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "no-native-reader" {
+					continue
+				}
+				// A denied generic runtime route must not veto the independently
+				// admitted local-history route. ReadPermitted still checks each
+				// scope and the row builder enforces tool denial and cleanup.
+				if selected.Provider == "codex" && selected.Backend == quota.BackendNative && selected.Blocked == "reader-consent-or-privacy" && admission.Allows("codex", consent.Local) {
+					continue
+				}
 				in.Admissions = append(in.Admissions, rows.Admission{ToolID: selected.Provider, Veto: selected.Blocked})
 			}
 		}
@@ -247,6 +299,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	}
 	if !changed {
 		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
+		if !speed.Off() {
+			ledger, ok := speed.LoadPerf(p.Cache)
+			if ok && !ledger.Since.IsZero() {
+				perf := (speed.PerfView{Ledger: ledger, OK: true, Recording: true, Now: in.Now}).Admitted(admission)
+				attachAccountToday(&projection, report.Accounts, perf)
+			}
+		}
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
@@ -351,22 +410,87 @@ func grantError(err error) error {
 }
 
 type fileStamp struct {
+	path           string
 	size, modified int64
 	exists         bool
 }
 
+type localFileStamp struct {
+	path string
+	fileStamp
+}
+
+// codexLocalStamps observes metadata only for the same permitted local source
+// that buildView reads. It never opens rollout contents or exposes file paths.
+func (b *SharedBackend) codexLocalStamps(admission consent.Admission) []localFileStamp {
+	tool, decided := admission.State().Tools["codex"]
+	if !admission.Allows("codex", consent.Local) || admission.CleanupPending("codex") || (decided && (!tool.Allowed || tool.ConsentTextVersion != consent.TextVersion)) {
+		return nil
+	}
+	paths := b.paths(admission)
+	if paths.CodexHome == "" {
+		return nil
+	}
+	files := quota.CodexRollouts(paths.CodexHome, paths.CodexThread, 8)
+	sort.Strings(files)
+	stamps := make([]localFileStamp, 0, len(files))
+	for _, file := range files {
+		info, err := os.Stat(file)
+		if err == nil {
+			stamps = append(stamps, localFileStamp{file, fileStamp{size: info.Size(), modified: info.ModTime().UnixNano(), exists: true}})
+		}
+	}
+	return stamps
+}
+
 func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 	b.once.Do(func() {
+		if b.config.Activity != nil {
+			go func() {
+				ticker := time.NewTicker(2 * time.Second)
+				defer ticker.Stop()
+				launch := func(at time.Time) {
+					if b.activityBusy.CompareAndSwap(false, true) {
+						go func() { defer b.activityBusy.Store(false); b.observeActivity(ctx, at) }()
+					}
+				}
+				launch(time.Now())
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case at := <-ticker.C:
+						launch(at)
+					}
+				}
+			}()
+		}
 		go func() {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
+			var codexStamps []localFileStamp
+			var nextCodexCheck time.Time
+			var todayDeadline time.Time
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					paths := b.paths(consent.Capture())
+					admission := consent.Capture()
+					paths := b.paths(admission)
+					now := b.now()
+					tool, decided := admission.State().Tools["codex"]
+					localAllowed := admission.Allows("codex", consent.Local) && !admission.CleanupPending("codex") && (!decided || tool.Allowed && tool.ConsentTextVersion == consent.TextVersion)
+					if !localAllowed || paths.CodexHome == "" {
+						codexStamps = nil
+						nextCodexCheck = time.Time{}
+					} else if !now.Before(nextCodexCheck) {
+						// Match the local reader's recent files and its active thread;
+						// inspect metadata only, under the same admission fence.
+						codexStamps = b.codexLocalStamps(admission)
+						nextCodexCheck = now.Add(time.Second)
+					}
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
 					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
@@ -377,8 +501,14 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						}
 						current = append(current, stamp)
 					}
-					if !reflect.DeepEqual(last, current) {
+					for _, stamp := range codexStamps {
+						observed := stamp.fileStamp
+						observed.path = stamp.path
+						current = append(current, observed)
+					}
+					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
 						last = current
+						todayDeadline = nextAccountTodayDeadline(paths, admission, now)
 						b.notify()
 					}
 				}
@@ -386,6 +516,48 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 		}()
 	})
 	return b.changes
+}
+
+func (b *SharedBackend) observeActivity(ctx context.Context, now time.Time) {
+	admission := consent.Capture()
+	stamp := stampOf(admission.Fence())
+	values := b.config.Activity(ctx, admission, now)
+	if ctx.Err() != nil {
+		return
+	}
+	current := consent.Capture()
+	if current.Fence() != admission.Fence() {
+		values = nil
+		stamp = stampOf(current.Fence())
+	}
+	b.activityMu.Lock()
+	changed := b.activityStamp != stamp || !reflect.DeepEqual(b.activity, values)
+	b.activity = values
+	b.activityStamp = stamp
+	b.activityMu.Unlock()
+	if changed {
+		b.Notify()
+	}
+}
+func (b *SharedBackend) reported(report quota.Report, now time.Time) {
+	if b.config.Reported == nil || !b.reportBusy.CompareAndSwap(false, true) {
+		return
+	}
+	if !now.After(b.reportedAt.Add(time.Minute)) {
+		b.reportBusy.Store(false)
+		return
+	}
+	b.reportedAt = now
+	go func() { defer b.reportBusy.Store(false); b.config.Reported(report, now) }()
+}
+
+func (b *SharedBackend) activityFor(stamp Stamp) []rows.ActivityInput {
+	b.activityMu.Lock()
+	defer b.activityMu.Unlock()
+	if stamp != b.activityStamp {
+		return nil
+	}
+	return append([]rows.ActivityInput(nil), b.activity...)
 }
 
 // Notify coalesces a completed shared reader operation into a fresh snapshot.

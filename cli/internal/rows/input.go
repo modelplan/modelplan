@@ -8,8 +8,9 @@ import "time"
 // building and must not mutate them until the build completes. All fields are
 // excluded from JSON: raw adapter facts must never be exported as display rows.
 type Input struct {
-	Now               time.Time `json:"-"`
-	ConsentGeneration uint64    `json:"-"`
+	Activities        []ActivityInput `json:"-"`
+	Now               time.Time       `json:"-"`
+	ConsentGeneration uint64          `json:"-"`
 	// ConsentChanged requests the fail-closed shape after the publication retry: declared rows only.
 	ConsentChanged bool             `json:"-"`
 	ReadersOff     bool             `json:"-"`
@@ -26,6 +27,14 @@ type Input struct {
 	// Union of keys from local.json plans, windows and resetCards, not array positions.
 	DeclaredPlanIDs []string        `json:"-"`
 	KeychainBlocks  []KeychainBlock `json:"-"`
+}
+
+// ActivityInput is admitted session provenance, not a provider-level working flag.
+type ActivityInput struct {
+	ToolID, SubscriptionRef, SessionRef string
+	BindingVerified                     bool
+	Phase                               ActivityPhase
+	RecordAt, ExpiresAt                 time.Time
 }
 
 // CatalogueEntry contains evaluated catalogue facts, not remote display text,
@@ -129,6 +138,7 @@ type WindowInput struct {
 	RemainingPercent *float64
 	ResetsAt         *time.Time
 	ObservedAt       *time.Time
+	Forecast         *WindowForecast
 }
 
 // SourceState preserves distinct emitting channels so exhaustive mapping tests

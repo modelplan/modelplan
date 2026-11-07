@@ -154,10 +154,33 @@ func ResetEventLinksEnabled(ctx context.Context) bool {
 // CapabilityCockpitDetailsV1 opts in to the versioned local details projection.
 const CapabilityCockpitDetailsV1 = "cockpitDetailsV1"
 
+const CapabilityAccountTodayV1 = "accountTodayV1"
+
+type accountTodayContextKey struct{}
+
+func AccountTodayEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(accountTodayContextKey{}).(bool)
+	return enabled
+}
+
 type cockpitDetailsContextKey struct{}
 
 func CockpitDetailsEnabled(ctx context.Context) bool {
 	enabled, _ := ctx.Value(cockpitDetailsContextKey{}).(bool)
+	return enabled
+}
+
+// CapabilityCockpitForecastV1 opts in to per-window forecasts in the cockpit details.
+const CapabilityCockpitForecastV1 = "cockpitForecastV1"
+
+// CapabilityForecastProducerV1 tells the App this engine produces forecasts, so
+// Settings can offer the forecast notification kind.
+const CapabilityForecastProducerV1 = "forecastProducerV1"
+
+type cockpitForecastContextKey struct{}
+
+func CockpitForecastEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitForecastContextKey{}).(bool)
 	return enabled
 }
 

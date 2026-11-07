@@ -4,8 +4,12 @@ from pathlib import Path
 
 from contracts import digest
 from candidate import regular_bytes
-from engine_process import EngineFailure, EngineProcess
+from engine_process import EngineFailure, EngineProcess, EngineTimeout
 from shape_home import safe_relative
+
+
+class RowsUnsettled(EngineFailure):
+    """Consent kept changing for the whole wait; no frame was rejected."""
 
 
 def require(condition, code):
@@ -118,15 +122,31 @@ def row_projection(message):
     return message['result']['data']['projection']
 
 
-def fresh_rows(engine):
+def fresh_rows(engine, seconds=3):
     import time
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + seconds
     while True:
-        result = engine.request('rows/subscribe')
+        result = engine.request('rows/subscribe', timeout=max(5, seconds))
         if result.get('error', {}).get('code') not in (-32013, -32023):
             return row_projection(result)
-        require(time.monotonic() < deadline, 'rows-publication-did-not-stabilize')
+        if time.monotonic() >= deadline:
+            raise RowsUnsettled('rows-publication-did-not-stabilize')
         time.sleep(.01)
+
+
+def await_pending(engine, projection, seconds):
+    # The pending fault churns consent on two of three view builds, so one request can land
+    # on the stable build. Only "no answer yet" is retried: a frame the validator rejected
+    # is a protocol or privacy failure and must end the scenario.
+    import time
+    deadline = time.monotonic() + seconds
+    while projection['rowsSummary']['state'] != 'pending' and time.monotonic() < deadline:
+        time.sleep(.01)
+        try:
+            projection = fresh_rows(engine, 2)
+        except (RowsUnsettled, EngineTimeout):
+            continue
+    return projection
 
 
 def null_selectors(binary, home):
@@ -193,9 +213,17 @@ def empty_states(binary, home, fault_binary):
         engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
+        if empty == 'pending':
+            # Background reads build views too; this case is only about the consent fault.
+            engine.environment['MODELPLAN_NATIVE'] = 'off'
+            engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
         with engine:
             fixture_hello(engine)
-            projection = fresh_rows(engine)
+            # Consent churn can outlast a short wait on a loaded machine.
+            patience = 20 if empty == 'pending' else 3
+            projection = fresh_rows(engine, patience)
+            if empty == 'pending':
+                projection = await_pending(engine, projection, patience)
             require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
@@ -239,7 +267,15 @@ def backpressure(binary, home):
             engine._bytes_ready(3)
             engine.buffer.extend(os.read(engine.process.stdout.fileno(), 1))
             with (case / '.config/modelplan/consent.json.readers.lock').open('a') as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # A background read may hold this lock for a moment; wait for it to finish.
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        require(time.monotonic() < deadline, 'readers-lock-unavailable')
+                        time.sleep(.01)
                 engine.send(12, 'consent/grant', revoke)
                 deadline = time.monotonic() + 3
                 while state(case)['generation'] == hello['consentGeneration']:
@@ -642,19 +678,25 @@ def admission(binary, home, plan):
 
 def shared_state(binary, home):
     fixture_input(home)
+    from contracts import encoded, write_private
+    from datetime import datetime, timezone
+    # A first run creates the consent store. The reading is then written while no engine runs:
+    # a fresh good reading makes every runtime refresh in the next run stop at its own due check,
+    # so no failure can replace it. No Codex is installed here.
+    with EngineProcess(binary, home, 'u14-shared-state-setup') as engine:
+        fixture_hello(engine)
+    captured = state(home)
+    observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
+    cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cache.unlink(missing_ok=True)
+    write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
+                                  'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
+                                  'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
     with EngineProcess(binary, home, 'u14-shared-state') as engine:
         hello = fixture_hello(engine)
-        from contracts import encoded, write_private
-        from datetime import datetime, timezone
         allowed_runtime = engine.request('consent/grant', decision(home, allow=['codex.runtime_usage']))
         require(allowed_runtime.get('result', {}).get('data', {}).get('committed'), 'runtime-grant-failed')
-        captured = state(home)
-        observed = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-        cache = Path(home) / '.cache/modelplan/observed/codex-account.json'
-        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        write_private(cache, encoded({'schemaVersion': 1, 'status': 'ok', 'observedAt': observed,
-                                     'admission': {'storeEpoch': captured['storeEpoch'], 'generation': captured['generation'], 'scope': 'codex.runtime_usage'},
-                                     'windows': [{'kind': 'five_hour', 'observedAt': observed, 'usedPercent': 25}]}))
         before = row_projection(engine.request('rows/subscribe'))
         page = engine.request('history/query', {'kind': 'tokens', 'tool': 'codex', 'limit': 1})
         require('error' not in page, 'initial-history-unavailable')
