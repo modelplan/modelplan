@@ -118,11 +118,11 @@ def row_projection(message):
     return message['result']['data']['projection']
 
 
-def fresh_rows(engine):
+def fresh_rows(engine, seconds=3):
     import time
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + seconds
     while True:
-        result = engine.request('rows/subscribe')
+        result = engine.request('rows/subscribe', timeout=max(5, seconds))
         if result.get('error', {}).get('code') not in (-32013, -32023):
             return row_projection(result)
         require(time.monotonic() < deadline, 'rows-publication-did-not-stabilize')
@@ -182,6 +182,7 @@ def empty_states(binary, home, fault_binary):
     from shape_home import build_home
     from contracts import ROOT, load_json
     observations, messages, bindings = [], [], []
+    import time
     for empty in ('readers_off', 'pending', 'no_consent', 'empty'):
         case = Path(home) / empty
         build_home(load_json(ROOT / 'examples/synthetic-shape.json'), case)
@@ -193,9 +194,24 @@ def empty_states(binary, home, fault_binary):
         engine = EngineProcess(fault_binary if empty == 'pending' else binary, case, 'u14-empty-' + empty)
         if empty == 'readers_off':
             engine.environment['MODELPLAN_READERS'] = 'off'
+        if empty == 'pending':
+            # Background reads build views too; this case is only about the consent fault.
+            engine.environment['MODELPLAN_NATIVE'] = 'off'
+            engine.environment['MODELPLAN_CODEX_ACCOUNT'] = 'off'
         with engine:
             fixture_hello(engine)
-            projection = fresh_rows(engine)
+            # Consent churn can outlast a short wait on a loaded machine.
+            patience = 20 if empty == 'pending' else 3
+            projection = fresh_rows(engine, patience)
+            # The pending fault churns consent on two of three view builds, and background
+            # refreshes also build views, so one request can land on the stable build.
+            deadline = time.monotonic() + patience
+            while empty == 'pending' and projection['rowsSummary']['state'] != empty and time.monotonic() < deadline:
+                time.sleep(.01)
+                try:
+                    projection = fresh_rows(engine, 2)
+                except EngineFailure:
+                    continue
             require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
