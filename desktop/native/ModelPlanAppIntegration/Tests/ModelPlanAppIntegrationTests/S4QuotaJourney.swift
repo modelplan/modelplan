@@ -874,7 +874,7 @@ private actor S4RowsClient: EngineClient {
         entry.composition.setNotificationDelivery { kind,episode in deliveries.append(kind.rawValue+"|"+episode) }
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
-        let id=(events[0]["id"] as! String)+":announced"
+        let id=events[0]["id"] as! String
         if kindOn {
             for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
             try require(deliveries == ["official|"+id],"a public reset event must deliver one Official extra reset notice: \(deliveries)")
