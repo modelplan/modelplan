@@ -7,6 +7,7 @@ from pathlib import Path
 import time
 
 import book
+import subject_options
 from release import HOSTS, IDENTITY_FIELDS, host_role, validate_release
 
 LAUNCH_MODES = ('direct', 'launchservices')
@@ -39,6 +40,9 @@ def validate(config, now):
             raise ValueError('relaunchPath must be an absolute path')
         if config.get('launchMode', 'direct') != 'direct':
             raise ValueError('relaunch needs direct launch mode')
+    subject_options.validate(config)  # readers / subjectEnv / backup: restrict only
+    if config.get('booking') is not None:
+        book.check_identity(config['booking'])  # fail at contract time, not mid-launch
     lease = config['lease']
     validate_release(lease, config['release'], host)  # dev-mac: M1 receipt; macci: V1 + coordinator GO
     expected = config.get('expectedLease')
