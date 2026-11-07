@@ -427,7 +427,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         case .detach: setAttached(false)
         case .putBack: setAttached(true)
         case .shutterToggle:
-          if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+          toggleShutter()
         case .close: closeAnimated()
         default: onIntent?(intent)
         }
@@ -606,7 +606,10 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     dragRegion?.frame = .init(x: 64, y: fit.rootHeight + 2, width: 390, height: 28)
     publishAppearance()
   }
-  private func setAttached(_ attached: Bool) {
+  func toggleShutter() {
+    if layout?.forcedClosed != true { shellSession.shutterClosed.toggle(); applyLayout() }
+  }
+  func setAttached(_ attached: Bool) {
     guard let window, shellSession.detached == attached else { return }
     if !attached {
       shellSession.detached = true; shellSession.remember(window.frame.origin, arrangement: arrangement)
@@ -689,7 +692,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       return event
     }
   }
-  private func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
+  func outsidePress(_ point: CGPoint,eventType:NSEvent.EventType) {
     guard !shellSession.detached, let window, !window.frame.contains(point) else { return }
     // The owned tray completes one toggle on mouse-up. Its mouse-down is not
     // a competing outside dismissal, including with Reduce Motion/long holds.
