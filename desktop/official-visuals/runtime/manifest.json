@@ -13227,6 +13227,22 @@
       },
       "theme": "night",
       "scale": 2
+    },
+    {
+      "file": "field-scene/README.md",
+      "kind": "notice",
+      "sha256": "9a074634be45bc82fa583c78278165e318d51cf89bcea2e3cb36f201597d074c",
+      "bytes": 1283,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": null
+    },
+    {
+      "file": "field-scene/cockpit-scene.bundle.js",
+      "kind": "field-scene",
+      "sha256": "f9b3d095b2566cb732abb26d4e902ff587ebc1ba25920febaae946b5dcfa5daa",
+      "bytes": 678363,
+      "license": "LicenseRef-ModelPlan-Visuals-1.0",
+      "size": null
     }
   ],
   "baselines": [

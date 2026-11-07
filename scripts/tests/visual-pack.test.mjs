@@ -23,11 +23,12 @@ function fixture(t) {
     files: [], baselines: [] };
   const policy = { reservedVisuals: { binaries: {} } };
   function add(file, kind, extra = {}) {
-    const bytes = kind === 'notice' ? Buffer.from(`<!-- SPDX-License-Identifier: ${license} -->\nModelPlan trademark notice.\n`) : png;
+    const bytes = kind === 'notice' ? Buffer.from(`<!-- SPDX-License-Identifier: ${license} -->\nModelPlan trademark notice.\n`)
+      : kind === 'field-scene' ? Buffer.from(`/*! SPDX-License-Identifier: ${license} */\nexport {};\n`) : png;
     mkdirSync(join(pack, file, '..'), { recursive: true });
     writeFileSync(join(pack, file), bytes);
     const entry = { file, kind, sha256: hash(bytes), bytes: bytes.length, license,
-      size: kind === 'notice' ? null : { width: 1, height: 1 }, ...extra };
+      size: kind === 'notice' || kind === 'field-scene' ? null : { width: 1, height: 1 }, ...extra };
     manifest.files.push(entry);
     if (kind !== 'notice') policy.reservedVisuals.binaries['desktop/official-visuals/runtime/' + file] = entry.sha256;
     return entry;
@@ -45,6 +46,8 @@ function fixture(t) {
       add(`canopy-c01/${layer}-${tier}-${scale}x.png`, 'canopy-layer', { tier, scale });
     }
   }
+  add('field-scene/README.md', 'notice');
+  add('field-scene/cockpit-scene.bundle.js', 'field-scene');
   function save() {
     writeFileSync(join(pack, 'manifest.json'), JSON.stringify(manifest));
     writeFileSync(join(root, 'source-policy.json'), JSON.stringify(policy));
