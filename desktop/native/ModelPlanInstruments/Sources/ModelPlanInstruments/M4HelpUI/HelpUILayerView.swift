@@ -168,7 +168,9 @@ import AppKit
         let catalog=HelpMapCatalog(input.language)
         header.isHidden=result.mapHeader==nil;header.stringValue=catalog.metaphor+"\n"+catalog.dismissal
         header.font=headerFont;header.textColor=ink
-        if let frame=result.mapHeader { header.frame=frame.insetBy(dx:8,dy:5) }
+        // Layouts measure map text at the frame width less 8 pt a side. A wrapping NSTextField adds
+        // 2 pt of line-fragment padding a side, so its frame is inset 6 pt to leave the text that width.
+        if let frame=result.mapHeader { header.frame=frame.insetBy(dx:6,dy:5) }
         let visible=Set(result.mapLabels.map(\.id))
         for id in Array(labels.keys) where !visible.contains(id) { labels.removeValue(forKey:id)?.removeFromSuperview() }
         for item in result.mapLabels {
@@ -176,7 +178,7 @@ import AppKit
             if labels[item.id]==nil { labels[item.id]=label;addSubview(label) }
             label.stringValue=item.text;label.maximumNumberOfLines=0
             label.font=captionFont;label.textColor=ink
-            label.frame=item.frame.insetBy(dx:8,dy:5);label.setAccessibilityLabel(item.text)
+            label.frame=item.frame.insetBy(dx:6,dy:5);label.setAccessibilityLabel(item.text)
             label.setAccessibilityIdentifier("help.map."+item.id)
         }
         if let frame=result.mapSourceFrame,let id=input.map.sourceActionID,let text=input.map.sourceActionTitle {
