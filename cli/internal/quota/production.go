@@ -141,7 +141,7 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 // the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
 // (allow with another source, or deny) always takes precedence.
 func defaultZCodeGrant(home string, state consent.State, mode string, configured bool) (ReaderGrant, bool) {
-	if _, decided := state.Tools["zai"]; decided || configured || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
+	if r, decided := state.Tools["zai"]; (decided && (!r.Allowed || zaiRecordChoseSource(r))) || configured || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
 		return ReaderGrant{}, false
 	}
 	file := ZCodeProviderConfig(home)
@@ -163,6 +163,12 @@ func defaultZCodeGrant(home string, state consent.State, mode string, configured
 			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
 		},
 		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
+}
+
+// zaiRecordChoseSource: a legacy GLM allow can be a bare tool grant from before ZCode's
+// route existed; only a recorded key, profile or other backend is a choice of source.
+func zaiRecordChoseSource(r consent.Record) bool {
+	return r.KeyEnv != "" || len(r.Profiles) > 0 || (r.Backend != "" && r.Backend != BackendNative)
 }
 
 // glmSourceConfigured: a GLM (Z.ai) source the user already chose in connections.json or
