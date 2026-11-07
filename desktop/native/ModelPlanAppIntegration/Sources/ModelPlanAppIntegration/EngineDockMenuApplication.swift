@@ -294,6 +294,11 @@ struct StatusNoticePresentation {
         if let value = composition.latestSettings { console?.applySettings(value) }
         console?.show()
     }
+    /// G3-40: the status icon toggles the cockpit where it is, attached or detached. Every other
+    /// entry (menu item, ignition, shortcut, reopening the app) only ever opens.
+    func toggleConsole() {
+        if let console, console.isShowing { console.requestClose() } else { showConsole() }
+    }
     /// OS accessibility changes are presentation facts, never saved user choices.
     func updateSystemAccessibility(_ observed: SettingsEnvironment) {
         guard !terminating else { return }
@@ -613,7 +618,7 @@ struct StatusNoticePresentation {
         }
     }
 
-    /// D44: a plain left click opens the cockpit. The menu stays attached to the status item, so
+    /// D44: a plain left click opens the cockpit, and closes it again while it is open (G3-40). The menu stays attached to the status item, so
     /// right-click, control-click, keyboard and accessibility presses show it natively, and so does
     /// a left click while the cockpit cannot open. Command stays free for dragging the icon.
     func handleStatusClick(_ event: NSEvent) -> Bool {
@@ -621,7 +626,7 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
-            if onStatusItem { showConsole() }
+            if onStatusItem { toggleConsole() }
             return true
         }
         guard event.type == .leftMouseDown, onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
