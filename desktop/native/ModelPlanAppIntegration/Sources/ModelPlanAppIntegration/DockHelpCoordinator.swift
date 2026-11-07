@@ -272,7 +272,12 @@ struct DockStatusHelpDismissal {
         return dock?.isCurrentDockHelpSurface(surface) == true
     }
 
-    func refresh() { update(dock?.currentDockHelpSurface) }
+    func refresh() {
+        // New content leaves the surface stale until the next publish, which reports the change
+        // itself. Read as "no surface", that gap would end a shown hint and spend it.
+        guard dock?.dockHelpSurfaceAwaitsPublish != true else { return }
+        update(dock?.currentDockHelpSurface)
+    }
     func suspend() {
         guard !retired, !suspended else { return }
         explanationTask?.cancel(); explanationTask = nil; explanationInteraction = nil; presenter?.hideExplanation()
