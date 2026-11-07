@@ -137,8 +137,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 desktop/native/tools/distribution/fetch_credential_artifact.py --output "$RUNNER_TEMP/credential-agent-input" --github-env "$GITHUB_ENV"
-      - name: Fetch the current plugin CLI pin for the unverified smoke build
-        run: python3 desktop/native/tools/distribution/release.py fetch-cli --pin codex/cli-pin.json --output "$RUNNER_TEMP/smoke-cli-archives"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+      # Owner test builds: the same archive layout release.yml publishes and fetch-cli writes
+      # (modelplan_darwin_<arch>.tar.gz with modelplan_darwin_<arch>/{modelplan,LICENSE,THIRD-PARTY-NOTICES.md}
+      # plus checksums.txt), built from the checked-out commit. Archives stay outside the source tree.
+      - name: Build the CLI from this commit for the unverified smoke build
+        working-directory: cli
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          pinned=$(python3 -c 'import json; print(json.load(open("../codex/cli-pin.json"))["version"])')
+          IFS=. read -r major minor patch <<< "$pinned"
+          version="$major.$minor.$((patch + 1))+dev.${SOURCE_SHA:0:8}"
+          echo "CLI version $version (pinned release was $pinned)"
+          out="$RUNNER_TEMP/smoke-cli-archives" stage="$RUNNER_TEMP/smoke-cli-stage"
+          mkdir "$out" "$stage"
+          for arch in arm64 amd64; do
+            name="modelplan_darwin_$arch"
+            mkdir "$stage/$name"
+            CGO_ENABLED=0 GOOS=darwin GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=$version" \
+              -o "$stage/$name/modelplan" ./cmd/modelplan
+            cp ../LICENSE THIRD-PARTY-NOTICES.md "$stage/$name/"
+            tar -C "$stage" -czf "$out/$name.tar.gz" "$name"
+            file "$stage/$name/modelplan"
+          done
+          (cd "$out" && shasum -a 256 modelplan_darwin_arm64.tar.gz modelplan_darwin_amd64.tar.gz > checksums.txt && cat checksums.txt)
+          test -z "$(git status --porcelain)"
       - name: Package the actual Apple silicon Community app with unverified consent identity
         env:
           PACKAGE_MODE: ${{ inputs.owner_test && '--owner-test' || '--unverified' }}
