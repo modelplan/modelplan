@@ -227,6 +227,10 @@ extension ProcessEngineClient {
                         protocolMismatch(); return
                     }
                     let result = try decodeEnvelope(envelope, as: WireInitializeResult.self).value
+                    if let minimum = configuration.minimumServerVersion,
+                       !meetsMinimumServerVersion(result.data.serverVersion, minimum: minimum) {
+                        protocolMismatch(); return
+                    }
                     capabilities = Set(result.data.capabilities); handshaken = true
                     finishRequest(key)
                     if !adopt(EngineConsentFloor(storeEpoch: envelope.storeEpoch, generation: envelope.consentGeneration)) {

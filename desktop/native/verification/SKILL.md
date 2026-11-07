@@ -168,6 +168,12 @@ process name and never reads any process's environment or arguments. If the laun
 registering, the guardian stops any owned process inside that scope, rescans after a settle delay and reports
 `subject: never-started` when nothing was ever found, which permits `finish --cleaned`. A stray it
 had to stop (`unregistered-stopped`) or anything unconfirmed keeps the booking started.
+A launcher that exits non-zero before reserving (for example an admission refusal) leaves a
+run-bound `<subjectPidPath>.no-subject.json`; the guardian then also reports `never-started`.
+
+Reader scope, allow-listed candidate environment and the real-profile product backup
+(`--readers off|passive|codex,zcode`, `--backup product`, the run manifest) are specified in
+[VERIFY-RUN.md](VERIFY-RUN.md#candidate-environment-reader-scope-and-product-backup-launchpy-packaged_candidatepy).
 
 If the booking is abandoned **before start**, use this instead of start/release/launch:
 
@@ -222,6 +228,8 @@ M2 owns `bin/cleanup-run.py` and its tests. It quits owned processes, verifies c
 M0 owns the verification skill; changes are reviewed by the coordinator (Claude). M1 independently checks post-run closure. Stable commands live in `bin/`; do not rewrite them in each lane.
 
 For named status-menu actions and native arrival correlation, follow [StatusMenu/README.md](StatusMenu/README.md) before driving the item.
+
+Batch GUI runs (verification plan v2): `bin/preflight.py` (PF-01..PF-12, fail closed) and `bin/verify-run.py`, which chains the section 1 sequence per segment from a batch manifest and per-ID step files in `scenarios/`. Contract, step-file format and outputs: [VERIFY-RUN.md](VERIFY-RUN.md).
 
 Non-GUI qualification:
 

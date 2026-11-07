@@ -89,11 +89,24 @@ elif name == 'swift':
         duplicate.parent.mkdir(parents=True)
         duplicate.write_text('synthetic duplicate')
 elif name == 'xcrun':
+    if args[:2] == ['lipo', '-archs']:
+        print(os.environ.get('PACKAGING_ARCHS', 'arm64')); raise SystemExit(0)
     if args[:2] != ['lipo', '-create']:
         raise SystemExit('unsupported fixture xcrun command')
     split = args.index('-output')
     Path(args[split + 1]).write_bytes(b''.join(Path(p).read_bytes() for p in args[2:split]))
+elif name == 'npm':
+    # Synthetic canonical cockpit editions; the real build and pin check run in CI (u11-native).
+    cockpit = Path(args[args.index('--prefix') + 1])
+    for edition in ('community', 'official'):
+        out = cockpit / '.tmp' / edition
+        out.mkdir(parents=True, exist_ok=True)
+        (out / 'index.html').write_text('synthetic ' + edition + ' cockpit')
 elif name == 'python3':
+    if args and args[0].endswith('/check-bundle-pins.py'):
+        raise SystemExit(int(os.environ.get('PACKAGING_PIN_EXIT', '0')))
+    if args and args[0].endswith('/check_app_architectures.py'):
+        raise SystemExit(0)
     if args and args[0].endswith('/embed_fixed_helper.py'):
         raise SystemExit(int(os.environ.get('PACKAGING_EMBED_EXIT', '0')))
     if args and args[0].endswith('/check_embedded_agent.py'):
@@ -104,7 +117,7 @@ elif name == 'python3':
 # assert the actual shell forwards pins and propagates verifier failures;
 # real universal/signature validation belongs to the canonical U7 tool tests.
 '''
-        for name in ['git', 'swift', 'xcrun', 'codesign', 'python3']:
+        for name in ['git', 'swift', 'xcrun', 'codesign', 'python3', 'npm']:
             command = self.bin / name
             command.write_text(stub)
             command.chmod(0o700)
@@ -235,6 +248,80 @@ class PackageNeutralHookTests(unittest.TestCase):
         result = self.fixture.run(environment={'PACKAGING_FINAL_CHECK_EXIT': '48'})
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.fixture.commands()[-1]['command'], 'python3')
+
+
+class AppleSiliconPackageTests(unittest.TestCase):
+    def test_neutral_package_builds_and_embeds_only_arm64(self):
+        with tempfile.TemporaryDirectory() as root:
+            fixture = PackageNeutralFixture(Path(root))
+            result = fixture.run()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            commands = fixture.commands()
+            builds = [c for c in commands if c['command'] == 'swift' and 'build' in c['args']]
+            self.assertEqual(len(builds), 1)
+            self.assertIn('arm64-apple-macosx14.0', builds[0]['args'])
+            embed = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/embed_fixed_helper.py'))
+            self.assertIn('--universal', embed['args'])
+            check = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/check_app_architectures.py'))
+            self.assertEqual(check['args'][check['args'].index('--approved-helper-sha256') + 1], fixture.credential_sha)
+            self.assertFalse(any(c['command'] == 'xcrun' and c['args'][:2] == ['lipo', '-create'] for c in commands))
+
+    def test_intel_or_universal_executable_stops_before_app_seal(self):
+        for archs in ('x86_64', 'arm64 x86_64', ''):
+            with self.subTest(archs=archs), tempfile.TemporaryDirectory() as root:
+                fixture = PackageNeutralFixture(Path(root))
+                result = fixture.run(environment={'PACKAGING_ARCHS': archs})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('exactly arm64', result.stderr)
+                self.assertFalse(any(c['command'] == 'codesign' for c in fixture.commands()))
+
+
+class OwnerTestCockpitEntryTests(unittest.TestCase):
+    """Owner D39/D-E: only --owner-test opens the cockpit entry; preflight PF-08 checks the same flag."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.fixture = PackageNeutralFixture(Path(self.temp.name))
+
+    def info(self):
+        import plistlib
+        return plistlib.loads((self.fixture.output / 'ModelPlan Community.app/Contents/Info.plist').read_bytes())
+
+    def test_release_and_unverified_packages_keep_the_cockpit_entry_closed(self):
+        for arguments in ((), ('--unverified',)):
+            with self.subTest(arguments=arguments):
+                with tempfile.TemporaryDirectory() as folder:
+                    self.fixture = PackageNeutralFixture(Path(folder))
+                    result = self.fixture.run(arguments=arguments)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], False)
+                    self.assertNotIn('ModelPlanOwnerTestBuild', self.info())
+                    resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
+                    self.assertFalse((resources / 'Cockpit').exists())
+                    self.assertFalse((resources / 'build-edition.json').exists())
+                    self.assertFalse(any(c['command'] == 'npm' for c in self.fixture.commands()))
+
+    def test_owner_test_package_opens_the_entry_with_the_pinned_official_cockpit(self):
+        result = self.fixture.run(arguments=('--owner-test',))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIs(self.info()['ModelPlanCockpitEntryEnabled'], True)
+        self.assertIs(self.info()['ModelPlanOwnerTestBuild'], True)
+        resources = self.fixture.output / 'ModelPlan Community.app/Contents/Resources'
+        self.assertEqual((resources / 'Cockpit/index.html').read_text(), 'synthetic official cockpit')
+        self.assertEqual(json.loads((resources / 'build-edition.json').read_text())['edition'], 'official')
+        commands = self.fixture.commands()
+        pins = next(i for i, c in enumerate(commands) if c['command'] == 'python3' and c['args'][0].endswith('/check-bundle-pins.py'))
+        builds = [i for i, c in enumerate(commands) if c['command'] == 'npm' and c['args'][0] == 'run']
+        self.assertEqual([commands[i]['args'][1] for i in builds], ['build', 'build:official'])
+        self.assertLess(max(builds), pins)
+        self.assertLess(pins, next(i for i, c in enumerate(commands) if c['command'] == 'swift'))
+        identity = next(c for c in commands if c['command'] == 'python3' and c['args'][0].endswith('/write-consent-bundle-identity.py'))
+        self.assertEqual(identity['args'][identity['args'].index('--mode') + 1], 'unverified')
+
+    def test_owner_test_package_stops_on_a_cockpit_pin_mismatch(self):
+        result = self.fixture.run(arguments=('--owner-test',), environment={'PACKAGING_PIN_EXIT': '1'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(c['command'] in ('swift', 'codesign') for c in self.fixture.commands()))
 
 
 if __name__ == '__main__':

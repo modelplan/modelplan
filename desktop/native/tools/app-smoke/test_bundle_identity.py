@@ -82,12 +82,31 @@ class BundleIdentityModeTests(unittest.TestCase):
         smoke_package = calls(smoke, 'tools/package-neutral.sh')
         release_package = calls(release, 'tools/package-neutral.sh')
         self.assertEqual(len(smoke_package), 1)
-        self.assertIn('--unverified', smoke_package[0])
+        # Unverified by default; the owner test build (D39/D-E) is the only other mode, chosen by the
+        # dispatch input. The release workflow uses neither, so its package keeps the cockpit closed.
+        self.assertEqual(smoke_package[0][-1], '$PACKAGE_MODE')
+        self.assertIn("PACKAGE_MODE: ${{ inputs.owner_test && '--owner-test' || '--unverified' }}", smoke)
         self.assertTrue(release_package)
-        self.assertTrue(all('--unverified' not in command for command in release_package))
+        self.assertTrue(all('--unverified' not in command and '--owner-test' not in command for command in release_package))
         checker = calls(smoke, 'app-smoke/check-app-smoke.py')
         self.assertEqual(len(checker), 1)
         self.assertIn('--expect-unverified', checker[0])
+
+    def test_smoke_artifact_is_built_from_the_exact_head_it_is_labelled_with(self):
+        # A pull_request run's default checkout is the synthetic merge commit; the artifact is
+        # labelled with the PR head, so the job must check that head out and refuse to publish an
+        # artifact whose bundle source or checkout differs from the label (macrevb-567-5).
+        smoke = (ROOT / '.github/workflows/desktop.yml').read_text().split('  app-smoke:', 1)[1].split('  native:', 1)[0]
+        head = '${{ github.event.pull_request.head.sha || github.sha }}'
+        checkout = smoke.split('- uses: actions/checkout@v4', 1)[1].split('- uses:', 1)[0]
+        self.assertIn('ref: ' + head, checkout)
+        zipping = smoke.split('Zip the packaged native app', 1)[1].split('- uses:', 1)[0]
+        self.assertIn('SOURCE_SHA: ' + head, zipping)
+        self.assertIn('Print :ModelPlanPublicSource', zipping)
+        self.assertIn('git rev-parse HEAD', zipping)
+        guard = zipping.index('"$SOURCE_SHA" ]')
+        self.assertLess(guard, zipping.index('ditto -c'))  # refused before anything is zipped
+        self.assertIn("name: native-app-${{ inputs.owner_test && 'test' || 'unverified' }}-" + head, smoke)
 
 
 if __name__ == '__main__':

@@ -202,3 +202,20 @@ const (
 	MemberRefreshNotGranted MemberRefreshReason = "not_granted"
 	MemberRefreshOffline    MemberRefreshReason = "offline"
 )
+
+type ForecastPace string
+
+const (
+	ForecastTight     ForecastPace = "tight"
+	ForecastOnTrack   ForecastPace = "on_track"
+	ForecastSurplus   ForecastPace = "surplus"
+	ForecastExhausted ForecastPace = "exhausted"
+)
+
+type ForecastBasis string
+
+const (
+	ForecastRecentRate   ForecastBasis = "recent-rate"
+	ForecastCycleAverage ForecastBasis = "cycle-average"
+	ForecastNoBasis      ForecastBasis = "none"
+)

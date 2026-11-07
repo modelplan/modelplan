@@ -36,7 +36,7 @@ def tree(root):
 receipt = {'schemaVersion': 1, 'cases': [], 'toolchainAcceptance': 'separate-build-receipt-required', 'intelRuntimeTested': False}
 for binary in [exe, helper]:
     archs = run(['/usr/bin/lipo', '-archs', binary])
-    assert archs.returncode == 0 and set(archs.stdout.decode().split()) == {'arm64', 'x86_64'}
+    assert archs.returncode == 0 and archs.stdout.decode().split() == ['arm64']
     signature = run(['/usr/bin/codesign', '-dvvv', '--entitlements', ':-', binary])
     assert signature.returncode == 0 and b'runtime' in signature.stderr
     if signature.stdout.strip().startswith(b'<?xml'):
@@ -51,7 +51,7 @@ assert 'WebKit.framework' not in links and 'RealityKit.framework' not in links
 assert (app / 'Contents/Resources/CLI-THIRD-PARTY-NOTICES.md').exists()
 receipt['directWebKitRealityKitLinks'] = False
 receipt['minimumSystemVersion'] = plistlib.loads((app / 'Contents/Info.plist').read_bytes())['LSMinimumSystemVersion']
-assert receipt['minimumSystemVersion'] == '14.0'
+assert receipt['minimumSystemVersion'] == '15.0'
 
 with tempfile.TemporaryDirectory(prefix='modelplan-access-proof-') as temporary:
     root = Path(temporary)
@@ -116,6 +116,6 @@ with tempfile.TemporaryDirectory(prefix='modelplan-access-proof-') as temporary:
     assert tree(isolated) == before
     receipt['offlinePublicationEmptyCache'] = {'exitCode': 3, 'stdoutBytes': 0, 'homeUnchanged': True}
 (output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
-print('PASS packaged universal app/helper signatures and synthetic observed/unavailable/Unix-denied read-only access')
+print('PASS packaged arm64 app/helper signatures and synthetic observed/unavailable/Unix-denied read-only access')
 print('PASS actual CLI v0.5.35 and publication offline exit3 with no stdout or fixture writes')
 print('Access evidence only; consult the separate toolchain, native-surface and runtime receipts')

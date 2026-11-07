@@ -55,6 +55,20 @@ to validate the runner without changing the general switch or launching all
 product checks. Acceptance must verify the assigned runner identity and the
 probe result; an online status alone is insufficient.
 
+## Merge queue
+
+A PR does not have to merge `main` before it lands. The queue builds "PR + latest
+`main`" and the `modelplan-gates` status on that commit requires `ci` and `desktop`
+to pass there (`QUEUE_WORKFLOWS` in `scripts/merge-gates/rules.mjs`). `desktop`'s
+`queue-scope` job applies the workflow's pull-request path list, because
+`merge_group` has no paths filter, and skips the jobs when the group changes none
+of those paths or its tree equals the PR head. Otherwise `app`, `shell`,
+`native-partition`, `app-smoke` and `native-headless` run on the group commit. The
+pinned `trusted-mac.yml` has no `merge_group` route to the self-hosted group, so
+`native-headless` falls through to a hosted Mac there. Routing it to the dedicated
+group needs a new pin and a runner-group update together, as above. The GUI leg and
+the path-scoped `u*` workflows do not run in the queue.
+
 ## Migration
 
 Keep the legacy `MAC_CI_RUNNER` unset or `hosted`. The versioned switch prevents
@@ -65,10 +79,12 @@ rerunning the old run is not a migration.
 
 ## Scratch and recovery
 
-After synthetic evidence uploads succeed, checks acknowledge
-`MODELPLAN_CI_ARTIFACTS_UPLOADED=1` for the completion hook. Missing acknowledgment
-retains the failure scene. Cleanup preserves the temporary root and dependency
-checkouts, bounding only generated compiler products. Hosted fallback is selected
+After a synthetic evidence upload produces an artifact ID, the job writes a
+receipt in its runner temporary directory. The completion hook checks the run
+ID, attempt, and job before pruning generated compiler products. A missing or
+mismatched receipt skips pruning. The workflows remove their own scratch only
+when the upload produced an artifact. Cleanup preserves dependency checkouts.
+Hosted fallback is selected
 before a job is queued: changing a variable does not retarget an existing queued
 job, and offline self-hosted jobs do not automatically migrate to hosted runners.
 Recover only the affected jobs after confirming ownership and delivery state.

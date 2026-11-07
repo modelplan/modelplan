@@ -4,6 +4,7 @@ package appserver
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,11 +31,22 @@ func candidateBinary(t *testing.T, pkg string) string {
 	}
 	return binary
 }
+
+// noRealCodex keeps a host's installed Codex out of the test: the CLI also searches system
+// directories, so a restricted PATH alone does not hide it. A test's own bin/codex still runs.
+func noRealCodex(home string) []string {
+	if _, err := os.Lstat(filepath.Join(home, "bin", "codex")); err == nil {
+		return nil
+	}
+	return []string{"MODELPLAN_CODEX=" + filepath.Join(home, "no-real-codex")}
+}
+
 func candidateClient(t *testing.T, bin, home string, args, extraEnv []string) (*pipeClient, *bytes.Buffer) {
 	t.Helper()
 	stderr := &bytes.Buffer{}
 	cmd := exec.Command(bin, append([]string{"app-server"}, args...)...)
-	cmd.Env = append([]string{"HOME=" + home, "PATH=" + filepath.Join(home, "bin"), "TMPDIR=" + home, "LANG=C", "MODELPLAN_CACHE=" + filepath.Join(home, "cache")}, extraEnv...)
+	cmd.Env = append([]string{"HOME=" + home, "PATH=" + filepath.Join(home, "bin"), "TMPDIR=" + home, "LANG=C", "MODELPLAN_CACHE=" + filepath.Join(home, "cache")}, noRealCodex(home)...)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.Stderr = stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -48,6 +60,14 @@ func candidateClient(t *testing.T, bin, home string, args, extraEnv []string) (*
 		t.Fatal(err)
 	}
 	c := &pipeClient{in: stdin.(*os.File), out: stdout.(*os.File), done: make(chan struct{})}
+	c.exitDetail = func() string {
+		select {
+		case <-c.done:
+			return fmt.Sprintf("exit=%v stderr=%q", cmd.ProcessState, stderr.String())
+		default:
+			return "still running"
+		}
+	}
 	go func() { _ = cmd.Wait(); close(c.done) }()
 	t.Cleanup(func() {
 		_ = stdin.Close()
@@ -235,8 +255,12 @@ func TestRealBinaryRefreshSharedBudgetAndDeferrals(t *testing.T) {
 			if err := os.MkdirAll(binDir, 0700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
-				t.Fatal(err)
+			// Codex's runtime is read by default (owner decision 2026-11-06), so a scope
+			// that is not Codex's runs without a Codex runtime present.
+			if test.scope == consent.ScopeCodexRuntimeUsage {
+				if err := os.Symlink(runtimeHost, filepath.Join(binDir, "codex")); err != nil {
+					t.Fatal(err)
+				}
 			}
 			trace := filepath.Join(home, "runtime.jsonl")
 			budgetPath := filepath.Join(home, "cache", "observed", "reader-attempts", "codex.json")

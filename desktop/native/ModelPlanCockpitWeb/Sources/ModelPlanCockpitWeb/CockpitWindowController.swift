@@ -34,6 +34,10 @@ enum CockpitSchemeResponse {
   }
 }
 
+public enum CockpitBridgeDiagnostic: String {
+  case rejectedMessage = "cockpit.bridge.message-rejected"
+}
+
 private final class BundleScheme: NSObject, WKURLSchemeHandler {
   let bundle: VerifiedCockpitBundle
   let observed: ((String) -> Void)?
@@ -173,6 +177,8 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   public var onRendered: (() -> Void)?
   public var onClosed: (() -> Void)?
   public var onFailure: ((CockpitWindowFailure) -> Void)?
+  public var onBridgeDiagnostic: ((CockpitBridgeDiagnostic) -> Void)?
+  public private(set) var rejectedBridgeMessageCount: UInt64 = 0
   #if MODELPLAN_TEST_ONLY_SPI
     var verificationNoWindowDelivery: ((String, @escaping (CockpitDeliveryResult) -> Void) -> Void)?
     var verificationNoWindowClock: (() -> UInt64)?
@@ -393,12 +399,11 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
       message.frameInfo.securityOrigin.host == "bundle", message.frameInfo.securityOrigin.port == 0,
       message.frameInfo.request.url == pageURL, web?.url == pageURL,
       let raw = message.body as? String
-    else { return }
+    else { recordRejectedBridgeMessage(); return }
     receiveRaw(raw, source: .init(mainFrame: true, origin: "modelplan-cockpit://bundle"))
   }
   private func receiveRaw(_ raw: String, source: CockpitMessageSource) {
-    do {
-      let receipt = try bridge.accept(raw, source: source)
+    guard let receipt = acceptBridgeReply(raw, source: source) else { return }
       switch receipt {
       case .ready:
         web?.isHidden = false
@@ -443,14 +448,22 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
         receiptWatchdog.cancel(); freshnessDriver.accept(deadline: value)
         if appearanceGate.retry(visible: visibilityFence.isConfirmedVisible, displayPending: bridge.hasPendingDisplay) { publishAppearance() }
       }
-    } catch CockpitBridgeError.unsupportedPageContract { fail(.pageAPIUnavailable) }
-      catch { /* Reject without logging private message bodies. */ }
+  }
+  private func recordRejectedBridgeMessage() {
+    if rejectedBridgeMessageCount < UInt64.max { rejectedBridgeMessageCount += 1 }
+    onBridgeDiagnostic?(.rejectedMessage)
+  }
+  func acceptBridgeReply(_ raw: String, source: CockpitMessageSource) -> CockpitReceipt? {
+    do { return try bridge.accept(raw, source: source) }
+    catch CockpitBridgeError.unsupportedPageContract { recordRejectedBridgeMessage(); fail(.pageAPIUnavailable); return nil }
+    catch { recordRejectedBridgeMessage(); return nil }
   }
   private func suspendForHiddenPage() {
     refreshAfterHiddenDisplay = refreshAfterHiddenDisplay || bridge.hasPendingDisplay
     appearanceGate.deferUntilVisible(); appearanceWatchdog.cancel(); orderedDelivery.invalidate()
     freshnessDriver.hide(); bridge.cancelDeadlineReports(); pendingFreshnessReason = nil
     receiptWatchdog.cancel(); renderWatchdog.cancel()
+
   }
   private func visibilityChanged() {
     guard !ending, closeTask == nil, let window, bridge.queryTicket != nil else { return }
@@ -524,7 +537,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
   }
   public func updateAppearance(_ value: CockpitAppearance) {
     appearance = CockpitAppearance(theme: .night, locale: value.locale, profile: appearance.profile,
-      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow)
+      reduceMotion: value.reduceMotion, reduceTransparency: value.reduceTransparency, shutterClosed: appearance.shutterClosed, detached: shellSession.detached, redBelow: value.redBelow, showProjectNames: value.showProjectNames)
     if value.reduceMotion {
       if closeTask != nil { discard(); return }
       window?.alphaValue = 1
@@ -585,7 +598,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
           let fit = CockpitShellLayout.fit(usable: usable, anchor: icon, shutterClosed: shellSession.shutterClosed) else { return }
     layout = fit
     appearance = .init(theme: .night, locale: appearance.locale, profile: fit.profile,
-      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow)
+      reduceMotion: appearance.reduceMotion, reduceTransparency: appearance.reduceTransparency, shutterClosed: fit.shutterClosed, detached: shellSession.detached, redBelow: appearance.redBelow, showProjectNames: appearance.showProjectNames)
     let frame = shellSession.detached ? fit.clamping(origin: shellSession.origin(for: arrangement) ?? window.frame.origin, usable: usable) : fit.frame
     window.setFrame(frame, display: true)
     window.contentView?.setBoundsSize(.init(width: 636, height: fit.rootHeight + 34))

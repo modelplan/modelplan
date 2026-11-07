@@ -17,16 +17,25 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/resetevents"
 	"github.com/modelplan/modelplan/cli/internal/rows"
+	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
 // SharedConfig adapts the existing production constructors. It owns no parallel
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
+	now               func() time.Time
 	ResetPublication  func() (*digest.Digest, error)
 	Detect            func() detect.Report
 	Paths             func(consent.Admission) quota.Paths
 	Cleanup           func(string, bool) error
 	Offline, ReadOnly bool
+}
+
+func (b *SharedBackend) now() time.Time {
+	if b.config.now != nil {
+		return b.config.now()
+	}
+	return time.Now()
 }
 
 type SharedBackend struct {
@@ -63,7 +72,7 @@ func NewSharedBackend(config SharedConfig) (*SharedBackend, error) {
 	return b, nil
 }
 func (b *SharedBackend) Capabilities() []string {
-	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1}
+	caps := []string{"rows", "consent", "credentials", "diagnostics", "refreshDecisionsV1", CapabilityWindowSources, CapabilityCockpitDetailsV1, CapabilityAccountTodayV1, CapabilityCockpitForecastV1, CapabilityForecastProducerV1, CapabilityCockpitHistoryV1}
 	if b.config.ResetPublication != nil {
 		caps = append(caps, CapabilityResetEvents, CapabilityResetEventLinksV1)
 	}
@@ -128,7 +137,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	p := b.paths(admission)
 	detection := b.config.Detect()
 	detected := map[string]bool{}
-	in := admission.RowsInput(time.Now())
+	in := admission.RowsInput(b.now())
 	in.ReadOnly = b.config.ReadOnly
 	in.Offline = b.config.Offline
 	in.IdentityOff = quota.IdentityOff()
@@ -247,6 +256,13 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	}
 	if !changed {
 		b.populateRefreshDeadlines(&projection, p, admission, scopes, in.Now)
+		if !speed.Off() {
+			ledger, ok := speed.LoadPerf(p.Cache)
+			if ok && !ledger.Since.IsZero() {
+				perf := (speed.PerfView{Ledger: ledger, OK: true, Recording: true, Now: in.Now}).Admitted(admission)
+				attachAccountToday(&projection, report.Accounts, perf)
+			}
+		}
 	}
 	health := wire.Health{State: wire.HealthReady, Code: "ok"}
 	for _, fact := range facts.Scopes {
@@ -361,12 +377,15 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 			ticker := time.NewTicker(200 * time.Millisecond)
 			defer ticker.Stop()
 			var last []fileStamp
+			var todayDeadline time.Time
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					paths := b.paths(consent.Capture())
+					admission := consent.Capture()
+					paths := b.paths(admission)
+					now := b.now()
 					files := []string{consent.Path(), filepath.Join(paths.Cache, "state.json"), paths.LocalFile, filepath.Join(paths.Cache, "observed"), filepath.Join(paths.Cache, "observed", "readers")}
 					current := make([]fileStamp, 0, len(files))
 					for _, file := range files {
@@ -377,8 +396,9 @@ func (b *SharedBackend) Changes(ctx context.Context) <-chan struct{} {
 						}
 						current = append(current, stamp)
 					}
-					if !reflect.DeepEqual(last, current) {
+					if !reflect.DeepEqual(last, current) || (!todayDeadline.IsZero() && !now.Before(todayDeadline)) {
 						last = current
+						todayDeadline = nextAccountTodayDeadline(paths, admission, now)
 						b.notify()
 					}
 				}

@@ -22,7 +22,14 @@ test('both editions have reproducible bounded manifests; community excludes rese
     assert.ok(!Object.keys(manifest.files).some(name=>name.includes('session-state')));
     assert.doesNotMatch(readFileSync(root+'cockpit.css','utf8'),/--session-|session-transition-flash|[.]session-state/);
     for(const [name,hash]of Object.entries(manifest.files))assert.equal(digest(readFileSync(root+name)),hash,name);
-    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\binfinite\b/i,name);
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.css'))){
+      const css=readFileSync(root+name,'utf8');
+      const cursor='#cockpit[data-active="true"][data-shell="open"] .ck-tape .t-cur{animation:cockpit-running-cursor 1.06s steps(1,end) infinite!important}';
+      // Owner D39/D-H: the porthole flicker is the one other infinite animation, gated like the cursor and on Reduce Motion.
+      const flicker='@media (prefers-reduced-motion:no-preference){\nhtml:not([data-reduce-motion="true"]) #cockpit[data-active="true"][data-shell="open"] .ck-still .ck-flicker{animation:cockpit-porthole-flicker .43s ease-in-out 0s infinite alternate!important}';
+      if(name==='cockpit.css'){assert.equal(css.split(cursor).length-1,1,'one scoped running-cursor animation');assert.equal(css.split(flicker).length-1,1,'one gated porthole flicker');}
+      assert.doesNotMatch(css.replace(cursor,'').replace(flicker,''),/\binfinite\b/i,name);
+    }
     const html=readFileSync(root+'index.html','utf8');
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');
@@ -39,6 +46,20 @@ test('both editions have reproducible bounded manifests; community excludes rese
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);
+    // Porthole still placement: null without the reserved pack; the official edition carries exactly the
+    // default fleet's night/day x 890/640 projections, and every layer they name is a bundled file.
+    const stills=readFileSync(root+'src/porthole-stills-data.js','utf8');
+    if(edition==='community')assert.equal(stills,'// SPDX-License-Identifier: MIT\nexport default null;\n');
+    else{
+      assert.match(stills,/^\/\/ SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1\.0\n/);
+      const pack=JSON.parse(stills.split('\n')[1].replace(/^export default /,'').replace(/;$/,''));
+      assert.deepEqual(pack.projections.map(p=>`${p.theme}-${p.layout}-${p.id}`),['night-890-4ff2bad27654','night-640-a92b7ce62cfe','day-890-52b72f54aee9','day-640-28592ba812cd']);
+      for(const p of pack.projections){
+        assert.deepEqual(p.models.map(m=>m.id),['sol','glm','opus','luna','sonnet','astra','haiku']);
+        for(const file of [p.background,...p.models.flatMap(m=>[m.body,m.flame,m.halo].filter(Boolean).map(l=>l.file))])
+          assert.ok(Object.hasOwn(manifest.files,pack.base+file),file);
+      }
+    }
     if(edition==='community') {
       assert.equal(existsSync(root+'runtime'),false);assert.equal(existsSync(root+'VISUAL-LICENSE.md'),false);
       assert.equal(existsSync(root+'fonts'),false);
