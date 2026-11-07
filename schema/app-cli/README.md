@@ -261,7 +261,8 @@ a verified subscription, with `pace`, `basis` (`recent-rate`, `cycle-average` or
 forecast to run out before its reset. `runsOutAt` is derived from the reading and
 does not move with the clock. Without the capability the field is omitted. An
 engine that produces forecasts also reports `forecastProducerV1`, so the App can
-offer the forecast notification.
+offer the forecast notification. The same capability adds `forecasts` to rows
+snapshots and changes, so the App can notify while the cockpit is closed.
 
 Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
 `diagnostics/get`. The array holds at most 20 recent in-memory scheduling and

@@ -65,6 +65,7 @@ containers and failure ID retain their required-key checks.
 | CockpitCredits.Balance | coalesced | Null is unavailable balance, distinct from a reported zero. |
 | CockpitToday.GenerationTps | coalesced | Null means insufficient or unavailable eligible observations; it never becomes zero. |
 | CockpitDetails.Forecasts | forbidden | Omission means not negotiated or nothing to report; explicit null is rejected. |
+| RowsProjection.Forecasts | forbidden | Omission means not negotiated; explicit null is rejected. |
 | CockpitForecast.RunsOutAt | coalesced | Null means no run-out before the reset is forecast; it is never a past or invented moment. |
 | WindowForecast.RunsOutAt | coalesced | In-process only (the field is not on the wire); nil matches the cockpit field. |
 | CockpitSession.SubscriptionRef | coalesced | Null means no verified session binding; present identity remains strictly validated and is never inferred from a source-wide account. |

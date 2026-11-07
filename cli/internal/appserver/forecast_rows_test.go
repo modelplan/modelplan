@@ -38,3 +38,17 @@ func TestForecastTravelsFromReportToProjectionButNotOntoTheRowsWire(t *testing.T
 		t.Fatalf("forecast leaked onto the rows wire: %s", encoded)
 	}
 }
+
+func TestRowsCarryForecastsOnlyWhenNegotiated(t *testing.T) {
+	now := time.Now().UTC()
+	ref, until, out := "0123456789abcdef", now.Add(time.Hour), now.Add(20*time.Minute)
+	p := rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{
+		{ID: "weekly:a", Current: true, ValidUntil: &until, ObservedAt: &now, Forecast: &rows.WindowForecast{RunsOutAt: &out, Pace: "tight", Basis: "recent-rate"}}}}}}}}
+	if got := wire.ProjectWithEvents(p, nil, false, false, false, false, false, false).Forecasts; got != nil {
+		t.Fatalf("forecasts without negotiation: %+v", got)
+	}
+	got := wire.ProjectWithEvents(p, nil, false, false, false, false, false, true).Forecasts
+	if got == nil || len(*got) != 1 || (*got)[0].WindowID != "weekly:a" {
+		t.Fatalf("forecasts = %+v", got)
+	}
+}

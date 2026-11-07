@@ -2,6 +2,7 @@
 package wire
 
 import (
+	"sort"
 	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/rows"
@@ -54,6 +55,40 @@ type CockpitForecast struct {
 	Pace            ForecastPace  `json:"pace"`
 	Basis           ForecastBasis `json:"basis"`
 	ObservedAt      time.Time     `json:"observedAt"`
+}
+
+// ProjectForecasts reports only windows the alert rule could also see: a current reading of a
+// verified subscription the caller admits, still inside its validity.
+func ProjectForecasts(projection rows.Projection, admit func(string) bool, now time.Time) []CockpitForecast {
+	out := []CockpitForecast{}
+	for _, row := range projection.Rows {
+		for _, account := range row.Accounts {
+			if account.SubscriptionRef == nil || !admit(*account.SubscriptionRef) || account.ValueState != rows.ValueStateCurrent {
+				continue
+			}
+			for _, window := range account.Windows {
+				f := window.Forecast
+				if f == nil || !window.Current || window.ValidUntil == nil || !now.Before(*window.ValidUntil) || window.ObservedAt == nil {
+					continue
+				}
+				out = append(out, CockpitForecast{Source: row.ID, SubscriptionRef: *account.SubscriptionRef, WindowID: window.ID, RunsOutAt: f.RunsOutAt, Pace: ForecastPace(f.Pace), Basis: ForecastBasis(f.Basis), ObservedAt: *window.ObservedAt})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Source != b.Source {
+			return a.Source < b.Source
+		}
+		if a.SubscriptionRef != b.SubscriptionRef {
+			return a.SubscriptionRef < b.SubscriptionRef
+		}
+		return a.WindowID < b.WindowID
+	})
+	if len(out) > 128 {
+		out = out[:128]
+	}
+	return out
 }
 
 // CockpitPublication contains only facts from a verified public publication.

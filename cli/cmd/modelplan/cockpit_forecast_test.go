@@ -27,7 +27,7 @@ func TestCockpitForecastsOnlyCoverCurrentVerifiedWindows(t *testing.T) {
 		{SubscriptionRef: &other, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{current("weekly:unadmitted")}},
 		{ValueState: rows.ValueStateCurrent, Windows: []rows.Window{current("weekly:unverified")}},
 	}}}}
-	got := cockpitForecasts(projection, map[string]*wire.CockpitSubscriptionDetails{ref: {}}, now)
+	got := wire.ProjectForecasts(projection, func(r string) bool { return r == ref }, now)
 	if len(got) != 1 {
 		t.Fatalf("forecasts = %+v", got)
 	}

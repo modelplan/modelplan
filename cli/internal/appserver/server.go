@@ -526,7 +526,7 @@ func (s *Server) startPolicy(r wire.Request, query, control, data, private bool,
 				if reply.subscribe {
 					s.subscribed = true
 					reply.Scopes = s.view.Scopes
-					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1], s.clientCapabilities[CapabilityAccountTodayV1])}
+					reply.Data = wire.RowsSnapshot{Sequence: s.sequence, Projection: wire.ProjectWithEvents(s.view.Projection, s.view.ResetEvents, s.clientCapabilities[CapabilityResetEvents], s.clientCapabilities[CapabilityWindowSources], s.clientCapabilities[CapabilityMemberRefresh], s.clientCapabilities[CapabilityResetEventLinksV1], s.clientCapabilities[CapabilityAccountTodayV1], s.clientCapabilities[CapabilityCockpitForecastV1])}
 				}
 				s.out.dataMessage(success(session, r.ID, reply.Stamp, reply.Scopes, reply.Data), reply.Stamp, true, func(err error) { s.sendError(r.ID, errorCode(err)) })
 				return nil
@@ -694,6 +694,7 @@ func (s *Server) readView(ctx context.Context) error {
 	membersEnabled := s.clientCapabilities[CapabilityMemberRefresh]
 	linksEnabled := s.clientCapabilities[CapabilityResetEventLinksV1]
 	todayEnabled := s.clientCapabilities[CapabilityAccountTodayV1]
+	forecastEnabled := s.clientCapabilities[CapabilityCockpitForecastV1]
 	for key, op := range s.credentials {
 		if op.stamp != v.Stamp {
 			op.timer.Stop()
@@ -715,7 +716,7 @@ func (s *Server) readView(ctx context.Context) error {
 				s.rowsPending = false
 			}
 			s.mu.Unlock()
-			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled, todayEnabled)}), v.Stamp, func(error) {
+			s.out.rowsMessage(notification(session, "rows/changed", v.Stamp, v.Scopes, wire.RowsSnapshot{Sequence: seq, Projection: wire.ProjectWithEvents(v.Projection, v.ResetEvents, eventsEnabled, sourcesEnabled, membersEnabled, linksEnabled, todayEnabled, forecastEnabled)}), v.Stamp, func(error) {
 				s.mu.Lock()
 				if s.sequence == seq {
 					s.rowsPending = true

@@ -64,6 +64,7 @@ public struct EngineMenuRefreshResult {
         set { clock.now = newValue }
     }
     private var resetNotifier:EngineResetNotifier?
+    private var forecastNotifier:EngineForecastNotifier?
     private var resetScratch:URL?
     public var menuDidChange: (() -> Void)?
     public private(set) var latestSettings: SettingsApplication?
@@ -168,6 +169,8 @@ public struct EngineMenuRefreshResult {
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
         }
+        let forecasts=EngineForecastNotifier(settings:settings,cacheURL:base.appendingPathComponent("forecast-notifications.json"),deliverToSystem:live,now:{ [weak self] in self?.currentDate() ?? Date() })
+        forecastNotifier=forecasts;_=store.attach(forecasts)
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
