@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelplan/modelplan/cli/internal/consent"
 
@@ -24,8 +25,16 @@ func TestAppServerCockpitHistoryCapabilityNegotiation(t *testing.T) {
 	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off")
 	t.Setenv("MODELPLAN_CODEXBAR", "off")
 	t.Setenv("MODELPLAN_READERS", "")
-	// A fresh profile has no consent store, and cockpit/query refuses without one.
+	// cockpit/query refuses a profile with no admitted scope, so give the test one source.
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := consent.EnsureStore(consent.Path()); err != nil {
+		t.Fatal(err)
+	}
+	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+		return consent.Set(s, "codex", true, "native:codex", "native", time.Now().UTC())
+	}); err != nil {
 		t.Fatal(err)
 	}
 	fixture, err := os.ReadFile(filepath.Join("testdata", "cockpit-history", "perf.json"))
