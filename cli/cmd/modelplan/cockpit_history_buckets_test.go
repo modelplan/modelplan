@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -53,5 +54,15 @@ func TestCockpitProjectsCarryLabelsOnlyWhileTheyAreOn(t *testing.T) {
 	}
 	if off := cockpitProjects(r, false, nil); off.Recent7d[0].Label != nil {
 		t.Fatalf("off = %+v", off)
+	}
+}
+
+func TestCockpitModelRankingCarriesOnlyPublishedModels(t *testing.T) {
+	window := wire.CockpitEntityWindow{Entities: 3, TotalObservedOutputTokens: 30, Top: []wire.CockpitRankedEntity{
+		{Name: "sol", ObservedOutputTokens: 10}, {Name: "harness-alias", ObservedOutputTokens: 10}, {Name: "synthetic-unverified-model-alias", ObservedOutputTokens: 10}}}
+	models := []digest.Model{{ID: "sol"}, {ID: "opus", HarnessIDs: map[string][]string{"claude-code": {"harness-alias"}}}}
+	got := cockpitPublishedModels(wire.CockpitEntityRanking{Recent7d: window, Recent30d: window}, models).Recent7d
+	if len(got.Top) != 2 || got.Top[0].Name != "sol" || got.Top[1].Name != "opus" || got.TotalObservedOutputTokens != 30 {
+		t.Fatalf("top = %+v", got)
 	}
 }

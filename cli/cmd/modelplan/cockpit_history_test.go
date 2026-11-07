@@ -14,6 +14,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/appserver/queries"
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/consent"
+	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
@@ -66,7 +67,7 @@ func TestCockpitHistoryBindsWindowsAndRanks(t *testing.T) {
 	cache := t.TempDir()
 	writeHistoryLedger(t, cache, historyLedger(t, state.StoreEpoch, now))
 	refA, refB := "0123456789abcdef", "fedcba9876543210"
-	view := appserver.View{QuotaReport: quota.Report{Accounts: []quota.Account{
+	view := appserver.View{PublicModels: []digest.Model{{ID: "gpt-5.3"}, {ID: "sonnet"}, {ID: "opus"}}, QuotaReport: quota.Report{Accounts: []quota.Account{
 		{Source: "codex", Subscription: &quota.Binding{Ref: refA, Status: "verified", ObservedAt: now.Add(-30 * time.Minute)}},
 		{Source: "claude-code", Subscription: &quota.Binding{Ref: refB, Status: "verified", ObservedAt: now.Add(-30 * time.Minute)}},
 	}}}

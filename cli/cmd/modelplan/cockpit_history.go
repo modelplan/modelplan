@@ -76,7 +76,7 @@ func (s sharedCockpit) cockpitHistory(ctx context.Context, view appserver.View, 
 			out.DailyFrom, out.Daily, out.Hourly = cockpitBuckets(*perf, allowed, now)
 			out.Projects = cockpitProjects(perf.Projects(), projectLabels(), view.PublicModels)
 		}
-		out.Models, out.Tools = cockpitEntityRanking(section.Models), cockpitEntityRanking(section.Tools)
+		out.Models, out.Tools = cockpitPublishedModels(cockpitEntityRanking(section.Models), view.PublicModels), cockpitEntityRanking(section.Tools)
 		for _, sub := range section.Subscriptions {
 			if _, ok := groups[sub.SubscriptionRef]; !ok {
 				continue // only references the grouped cockpit rows already verified
@@ -178,6 +178,27 @@ func cockpitEntityRanking(r speed.EntityRanking) wire.CockpitEntityRanking {
 		Recent7d:  cockpitEntityWindow(r.Recent7d),
 		Recent30d: cockpitEntityWindow(r.Recent30d)}
 	return out
+}
+
+// Ledger model strings are local observations; only verified publication IDs cross. The window's
+// totals still count every model.
+func cockpitPublishedModels(r wire.CockpitEntityRanking, models []digest.Model) wire.CockpitEntityRanking {
+	filter := func(w wire.CockpitEntityWindow) wire.CockpitEntityWindow {
+		top := []wire.CockpitRankedEntity{}
+		for _, e := range w.Top {
+			for source := range cockpitSourceScopes {
+				if id := cockpitModelID(e.Name, source, models); id != "unknown" {
+					e.Name = id
+					top = append(top, e)
+					break
+				}
+			}
+		}
+		w.Top = top
+		return w
+	}
+	r.Recent7d, r.Recent30d = filter(r.Recent7d), filter(r.Recent30d)
+	return r
 }
 
 func cockpitEntityWindow(w speed.EntityWindow) wire.CockpitEntityWindow {

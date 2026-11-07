@@ -4,7 +4,7 @@
 // stays null, never zero, and the page says nothing about days before the recording began.
 import type {WireCockpitData} from '../generated/wire.js';
 
-const DAY=864e5,HOUR=36e5;
+const HOUR=36e5,DAYS=182;
 const dayKey=(at:number)=>{const d=new Date(at);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const startOfDay=(key:string)=>{const [y,m,d]=key.split('-').map(Number);return new Date(y!,m!-1,d!).getTime();};
 
@@ -19,17 +19,22 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
  const daily:{accountId:string;values:(number|null)[];coverageStart:number}[]=[],hourly:{accountId:string;instants:number[];values:(number|null)[]}[]=[];
  const first=h.dailyFrom?startOfDay(h.dailyFrom):null;
- const hourStart=Math.floor(now/HOUR)*HOUR,instants=Array.from({length:24},(_,i)=>hourStart-(23-i)*HOUR);
+ // Local top of the hour, which is not a UTC hour in a fractional-offset zone. Steps stay absolute, so a repeated
+ // daylight-saving hour keeps its own bucket.
+ const clock=new Date(now),top=now-clock.getMinutes()*6e4-clock.getSeconds()*1e3-clock.getMilliseconds();
+ const instants=Array.from({length:24},(_,i)=>top-(23-i)*HOUR);
+ // The study pages read a series from its end, so index 181 is today and the days before the record began stay null.
+ const end=new Date(now),days=Array.from({length:DAYS},(_,i)=>dayKey(new Date(end.getFullYear(),end.getMonth(),end.getDate()-(DAYS-1-i)).getTime()));
  for(const sub of h.subscriptions){
   const accountId=ids.get(sub.subscriptionRef);if(!accountId)continue;
   const sources=new Set(sub.sources.map(s=>s.source));
   if(first!==null){
    const byDay=new Map<string,number>();for(const b of h.daily)if(sources.has(b.source))byDay.set(b.at,(byDay.get(b.at)??0)+b.observedOutputTokens);
-   const values:(number|null)[]=[];for(let at=first;at<=now;at=new Date(new Date(at).getFullYear(),new Date(at).getMonth(),new Date(at).getDate()+1).getTime())values.push(byDay.get(dayKey(at))??null);
-   daily.push({accountId,values,coverageStart:first});
+   daily.push({accountId,values:days.map(day=>byDay.get(day)??null),coverageStart:first});
   }
-  const byHour=new Map<number,number>();for(const b of h.hourly){const at=Date.parse(b.at);if(sources.has(b.source)&&Number.isFinite(at))byHour.set(at,(byHour.get(at)??0)+b.observedOutputTokens);}
-  hourly.push({accountId,instants,values:instants.map(at=>byHour.get(at)??null)});
+  const values:(number|null)[]=instants.map(()=>null);
+  for(const b of h.hourly){const index=Math.floor((Date.parse(b.at)-instants[0]!)/HOUR);if(sources.has(b.source)&&index>=0&&index<values.length)values[index]=(values[index]??0)+b.observedOutputTokens;}
+  hourly.push({accountId,instants,values});
  }
  const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??(locale==='en'?`Project ${i+1}`:`项目 ${i+1}`),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
  return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)}};
