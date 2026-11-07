@@ -116,18 +116,40 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			return nil, func() {}, err
 		}
 		handlers["cockpit/query"] = cockpit
-		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify})
+		scheduler = appserver.NewRefreshScheduler(ctx, appserver.RefreshConfig{Backend: shared, Paths: paths, Run: quota.ExecuteScopeRefresh, Observe: observeForApp(st), Offline: options.Offline, ReadOnly: options.ReadOnly, Changed: shared.Notify, CredentialHold: func(provider string) (bool, time.Time) {
+			if server == nil {
+				return false, time.Time{}
+			}
+			return server.CredentialHold(provider)
+		}})
 		handlers["refresh/request"] = scheduler.Handler()
 		shared.RefreshDeadline = scheduler.PendingDeadline
 		shared.CredentialSink = broker
 		broker.Changed = shared.Notify
 		closeBackend = scheduler.Close
 	}
-	var sessionStarted func()
+	var fetcher *appPublication
+	if !options.Offline && !options.ReadOnly {
+		fetcher = newAppPublication(ctx, st, appPublicationBase())
+	}
+	if fetcher != nil {
+		closeScheduler := closeBackend
+		closeBackend = func() {
+			closeScheduler()
+			fetcher.Close()
+		}
+	}
 	var decisions func() []wire.RefreshDecision
 	if scheduler != nil {
-		sessionStarted = scheduler.StartAutomatic
 		decisions = scheduler.Decisions
+	}
+	sessionStarted := func() {
+		if scheduler != nil {
+			scheduler.StartAutomatic()
+		}
+		if fetcher != nil {
+			fetcher.Start()
+		}
 	}
 	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions})
 	broker.Request = server.ReadCredential

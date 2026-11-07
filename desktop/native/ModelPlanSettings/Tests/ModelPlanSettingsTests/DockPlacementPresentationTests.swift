@@ -34,8 +34,8 @@ final class DockPlacementPresentationTests: XCTestCase {
         for key in [SettingKey.dockEdge, .dockDisplay, .dockPosition] {
             let row = try XCTUnwrap(rows.first { $0.key == key })
             XCTAssertTrue(row.title.english.hasPrefix("Preferred"))
-            XCTAssertTrue(row.subtitle.english.contains("has not been observed"))
-            XCTAssertTrue(row.subtitle.chinese.contains("尚未观测"))
+            XCTAssertTrue(row.subtitle.english.contains("is not known yet"))
+            XCTAssertTrue(row.subtitle.chinese.contains("还不知道"))
         }
     }
     func testActualFactsCanChangeWithoutRewritingSavedIntentOrExposingRawDisplayID() throws {

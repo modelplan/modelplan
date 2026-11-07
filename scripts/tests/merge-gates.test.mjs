@@ -139,6 +139,13 @@ test("design gate: paths, pin-only bundle updates, DESIGN lines only in design-c
   assert.equal(evalPr({ files: [file("desktop/official-visuals/dock/a.svg")], comments: [] }).state, R.PENDING, "tier 0 design-touching still needs DESIGN");
 });
 
+test("design gate: only the pinned CLI identity file is excluded by name; other generated-looking files are reviewed", () => {
+  const identity = "desktop/native/ModelPlanAppIntegration/Sources/ModelPlanAppIntegration/CommunityConsentCLIIdentity.generated.swift";
+  assert.equal(R.designTouch([file(identity)], conf).touching, false);
+  for (const other of [identity.replace("CommunityConsentCLIIdentity", "DockFace"), identity.replace(".generated.swift", ".swift"), `${identity}.swift`, identity.replace("ModelPlanAppIntegration/Sources/ModelPlanAppIntegration", "ModelPlanDock/Native")])
+    assert.equal(R.designTouch([file(other)], conf).touching, true, other);
+});
+
 test("GLM gate: seams only, exact head, comment must start with the line, latest wins", () => {
   const files = [file("cli/main.go")];
   const merge = comment(v("merge"));

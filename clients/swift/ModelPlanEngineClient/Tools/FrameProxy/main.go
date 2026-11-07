@@ -108,6 +108,8 @@ func main() {
 	}
 	args := append([]string{"app-server"}, os.Args[2:]...)
 	child := exec.Command(p.plan.Binary, args...)
+	// The client refuses this key, so the proxy keeps the engine off the public publication host.
+	child.Env = append(os.Environ(), "MODELPLAN_BASE=http://127.0.0.1:1")
 	child.Stderr = io.Discard
 	input, e := child.StdinPipe()
 	if e != nil {

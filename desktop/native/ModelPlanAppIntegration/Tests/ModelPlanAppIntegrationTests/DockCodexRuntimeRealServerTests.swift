@@ -74,17 +74,7 @@ import XCTest
         return root.subviews.lazy.compactMap { self.text(name, in: $0) }.first
     }
 
-    /// Passed on the M2 lane with producer 8a74bc08 (CLI #523, runtime fallback, still open). This
-    /// journey holds the runtime reply and has not run against the merged CLI, so it runs only
-    /// when that producer is supplied (MODELPLAN_DOCK_RUNTIME_PRODUCER=1).
-    private func requireRuntimeProducer() throws {
-        guard ProcessInfo.processInfo.environment["MODELPLAN_DOCK_RUNTIME_PRODUCER"] == "1" else {
-            throw XCTSkip("Needs the Codex runtime-fallback producer from CLI #523 (8a74bc08)")
-        }
-    }
-
     func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
-        try requireRuntimeProducer()
         let (root, helper, environment) = try sandbox()
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
         let payload = root.appendingPathComponent("rpc-response.json")
@@ -136,8 +126,8 @@ import XCTest
         try encode(["schemaVersion": 1, "nextAttemptAt": old]).write(to: reservation, options: .atomic)
         try response(used: 30)
 
+        // The sandbox teardown removes this file with everything else.
         try Data().write(to: hold)
-        defer { try? FileManager.default.removeItem(at: hold) }
 
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
@@ -234,7 +224,10 @@ import XCTest
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
             consentTextVersion: XCTUnwrap(before["consentTextVersion"] as? Int), allow: [], deny: [scope])
-        _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(4))
+        // The product's limit, with a loose bound: withdrawal took about 7 s on the hosted runner.
+        let revokeStarted = ContinuousClock.now
+        _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: nil)
+        XCTAssertLessThan(revokeStarted.duration(to: .now), .seconds(20), "Consent withdrawal must not creep toward the 30 s limit")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
         _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))

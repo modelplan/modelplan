@@ -30,5 +30,5 @@ test('D-B an effort without a published cost is not plotted',async({page})=>{
 });
 test('D-B an older engine shows no chart and says so',async({page})=>{
  await open(page,null);
- await expect(page.locator('.fc')).toHaveCount(0);await expect(page.locator('.mp-empty')).toHaveText('Data unavailable');
+ await expect(page.locator('.fc')).toHaveCount(0);await expect(page.locator('.mfd-page .mp-empty')).toHaveText('Data unavailable');
 });

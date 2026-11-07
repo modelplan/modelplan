@@ -71,6 +71,9 @@ type Server struct {
 	stop                                            context.CancelFunc
 	started                                         time.Time
 	credentials                                     map[string]*credentialOperation
+	credentialReads                                 map[string]int
+	credentialReadEnded                             map[string]time.Time
+	credentialGrants                                map[string]int
 }
 
 func New(config Config) *Server {
@@ -298,6 +301,7 @@ func (s *Server) dispatch(r wire.Request) {
 		}
 		control := len(p.Deny) > 0 || len(p.Forget) > 0
 		s.start(r, false, control, false, func(ctx context.Context) (Reply, error) {
+			defer s.holdCredentialForGrant(p)()
 			result, err := s.backend.Grant(ctx, p)
 			if err != nil && !result.Receipt.Committed {
 				stamp := result.Stamp
@@ -310,13 +314,13 @@ func (s *Server) dispatch(r wire.Request) {
 			}
 			// Even a canceled request returns a committed receipt, including cleanup.
 			reply := Reply{Stamp: result.Stamp, Data: result.Receipt}
-			s.scheduleRefresh()
 			for _, need := range result.Credentials {
 				if need.Interactive && p.Keychain[need.Scope] != wire.KeychainAllow {
 					continue
 				}
 				_, _ = s.requestCredential(need, true)
 			}
+			s.scheduleRefresh()
 			return reply, nil
 		})
 		return
