@@ -138,7 +138,8 @@ class PreflightTests(unittest.TestCase):
                        ('PF-08', dict(plist=info(ModelPlanCockpitEntryEnabled=None))),
                        ('PF-08', dict(plist=info(SUFeedURL='https://example.invalid/feed'))),
                        ('PF-08', dict(extra=('Frameworks/Sparkle.framework/Sparkle',))),
-                       ('PF-08', dict(plist=info(ModelPlanVerificationFlavour='verify')))]
+                       ('PF-08', dict(plist=info(ModelPlanVerificationFlavour='verify'))),
+                       ('PF-08', dict(plist=info(ModelPlanOwnerTestBuild=True)))]
         for check, kwargs in list(cases.items()) + cases_extra:
             with self.subTest(check=check, case=sorted(kwargs)):
                 digest = write_artifact(self.artifacts, NAME, inner=inner_zip(**kwargs))
@@ -151,8 +152,14 @@ class PreflightTests(unittest.TestCase):
         digest = write_artifact(self.artifacts, name, inner=inner_zip(plist=info(ModelPlanCockpitEntryEnabled=True)))
         receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
         self.assertIn('PF-07', self.failed(receipt))
+        # Without the owner-test page admission marker the page could never load (Q1/Q2 on #611).
         digest = write_artifact(self.artifacts, name, inner=inner_zip(
             plist=info(ModelPlanCockpitEntryEnabled=True), bundles=preflight.RESOURCE_BUNDLES + (preflight.COCKPIT_BUNDLE,)))
+        receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
+        self.assertEqual(self.failed(receipt), ['PF-08'])
+        digest = write_artifact(self.artifacts, name, inner=inner_zip(
+            plist=info(ModelPlanCockpitEntryEnabled=True, ModelPlanOwnerTestBuild=True),
+            bundles=preflight.RESOURCE_BUNDLES + (preflight.COCKPIT_BUNDLE,)))
         receipt = self.run_preflight(digest, manifest=manifest(digest, flavour='test', name=name))
         self.assertEqual(self.failed(receipt), [])
 
