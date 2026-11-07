@@ -198,6 +198,9 @@ func ReaderDiagnostics(p Paths, now time.Time) []ReaderDiagnostic {
 			if selectionErr != nil {
 				row.State = "unavailable:config_unavailable"
 			}
+			if id == "zai" && p.ZCodeNoProviderFile && row.Consent != "denied" {
+				row.State = "unavailable:no_provider_file"
+			}
 		case managed:
 			s, err := loadReaderState(p.Cache, id)
 			if err != nil {

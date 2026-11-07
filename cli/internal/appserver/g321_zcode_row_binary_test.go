@@ -69,3 +69,48 @@ func TestG321FreshProfileZCodeIsARowThroughAppServer(t *testing.T) {
 		t.Fatalf("unexpected protocol stderr: %s", stderr.String())
 	}
 }
+
+// G3-21 (Builds 11 and 12): a ZCode whose data folder keeps no provider_config.json (ZCode
+// Desktop's setting.json/config.json layout, or a sign-in without a plaintext key) can never
+// be read. Through the real binary its row must give that fixed reason rather than wait for
+// a first reading forever. The fixture files are canaries and are never opened.
+func TestG321ZCodeWithoutProviderFileRowSaysNotSupported(t *testing.T) {
+	bin := candidateBinary(t, "./cmd/modelplan")
+	home := t.TempDir()
+	dir := filepath.Join(home, ".zcode", "v2")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"setting.json", "config.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(`{"canary":"must-not-be-read"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(home, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, stderr := candidateClient(t, bin, home, nil, nil)
+	c.initialize(t)
+	c.send(t, 2, "rows/subscribe", wire.Empty{})
+	m := c.response(t, 2)
+	var snapshot wire.Envelope[wire.RowsSnapshot]
+	if err := json.Unmarshal(m["result"], &snapshot); err != nil {
+		t.Fatalf("rows/subscribe: %s", m["error"])
+	}
+	var zcode *rows.Row
+	for i := range snapshot.Data.Projection.Rows {
+		if snapshot.Data.Projection.Rows[i].ID == "zai" {
+			zcode = &snapshot.Data.Projection.Rows[i]
+		}
+	}
+	if zcode == nil {
+		t.Fatal("installed ZCode has no row")
+	}
+	if zcode.Reason.Code != rows.CodeUnsupportedLogin {
+		t.Fatalf("ZCode without a provider file: state=%s reason=%s, want %s", zcode.State, zcode.Reason.Code, rows.CodeUnsupportedLogin)
+	}
+	finishCandidate(t, c)
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected protocol stderr: %s", stderr.String())
+	}
+}

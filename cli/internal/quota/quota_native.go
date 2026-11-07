@@ -420,6 +420,7 @@ func applyNative(r *Report, p Paths, now time.Time) {
 	// Apply local state after native accounts, including early-return paths.
 	// Both Read and the production ReadPermitted flow pass through this hook.
 	defer applyClaudeSessions(r, p, now)
+	defer applyZCodeNoProviderFile(r, p)
 	ss, err := Selections(p)
 	if err != nil {
 		r.Sources = append(r.Sources, SourceStatus{Source: "connections", Status: "invalid", Reason: errorCode(err), ErrorCode: errorCode(err)})
@@ -663,4 +664,18 @@ func claudeBackoffIsLocal(cache string) bool {
 
 func credentialStageFailure(e readerEntry) bool {
 	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
+}
+
+// applyZCodeNoProviderFile reports ZCode's unreadable layout as a fixed reason, never a
+// pending first reading, unless another ZCode/GLM source already reported (G3-21).
+func applyZCodeNoProviderFile(r *Report, p Paths) {
+	if !p.ZCodeNoProviderFile {
+		return
+	}
+	for _, s := range r.Sources {
+		if s.Source == "native:zai" {
+			return
+		}
+	}
+	r.Sources = append(r.Sources, SourceStatus{Source: "native:zai", Status: "unavailable", Reason: "unsupported_login", ErrorCode: "unsupported_login"})
 }
