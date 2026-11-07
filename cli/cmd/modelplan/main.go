@@ -23,6 +23,7 @@ import (
 	"github.com/modelplan/modelplan/cli/internal/digest"
 	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/localusage"
+	"github.com/modelplan/modelplan/cli/internal/netproxy"
 	"github.com/modelplan/modelplan/cli/internal/publication"
 	"github.com/modelplan/modelplan/cli/internal/quota"
 	"github.com/modelplan/modelplan/cli/internal/qwenusage"
@@ -191,7 +192,10 @@ func env(k, def string) string {
 	return def
 }
 
-func main() { os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)) }
+func main() {
+	netproxy.Install()
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+}
 
 // startDetached runs this binary again in the background; tests replace it.
 var startDetached = detach.Start
@@ -373,7 +377,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return exitBusy
 		}
 		if err != nil {
-			fmt.Fprintln(stderr, "sync:", err)
+			fmt.Fprintln(stderr, "sync:", publication.Explain(err, c.lang))
 			return exitErr
 		}
 		if !*quiet {
@@ -515,10 +519,11 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		s, _ := st.State()
 		d, _, lerr := publication.Load(st)
 		s.Base = publication.DisplayBase(s.Base)
+		s.LastError = store.CleanLastError(s.LastError)
+		out := map[string]any{"version": version, "base": publication.DisplayBase(c.base), "cache": st.Dir, "state": s, "proxy": netproxy.Default.Status()}
 		if s.LastError != "" {
-			s.LastError = "previous sync failed"
+			out["syncReason"] = publication.Reason(s.LastError, c.lang)
 		}
-		out := map[string]any{"version": version, "base": publication.DisplayBase(c.base), "cache": st.Dir, "state": s}
 		if d != nil {
 			out["source"], out["release"], out["models"], out["units"] = d.Source, d.Release, len(d.Models), d.Units
 		}
@@ -658,7 +663,7 @@ func load(client *publication.Client, st *store.Store, c common, stderr io.Write
 		_, err := client.Sync(ctx, false)
 		cancel()
 		if err != nil && !errors.Is(err, store.ErrBusy) {
-			fmt.Fprintln(stderr, "sync:", err, "(using cached data)")
+			fmt.Fprintln(stderr, "sync:", publication.Explain(err, c.lang), "(using cached data)")
 		}
 	}
 	d, s, err := publication.Load(st)

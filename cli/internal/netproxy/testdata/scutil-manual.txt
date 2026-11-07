@@ -1,0 +1,25 @@
+<dictionary> {
+  ExceptionsList : <array> {
+    0 : *.local
+    1 : 169.254/16
+    2 : intranet.example.com
+  }
+  ExcludeSimpleHostnames : 1
+  FTPPassive : 1
+  HTTPEnable : 1
+  HTTPPort : 7890
+  HTTPProxy : 127.0.0.1
+  HTTPSEnable : 1
+  HTTPSPort : 7891
+  HTTPSProxy : proxy.example.com
+  HTTPSUser : fixture-user
+  ProxyAutoConfigEnable : 0
+  SOCKSEnable : 0
+  __SCOPED__ : <dictionary> {
+    en0 : <dictionary> {
+      HTTPSEnable : 1
+      HTTPSPort : 1
+      HTTPSProxy : scoped.example.com
+    }
+  }
+}

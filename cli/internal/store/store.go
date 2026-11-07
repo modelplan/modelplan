@@ -28,6 +28,27 @@ type State struct {
 	LastError     string    `json:"lastError,omitempty"`
 }
 
+// LastError values: fixed classes, so a saved error can never carry a path, URL or proxy address.
+const (
+	LastErrorProxyInvalid     = "proxy-invalid"
+	LastErrorProxyAuth        = "proxy-auth-required"
+	LastErrorProxyUnreachable = "proxy-unreachable"
+	LastErrorPAC              = "pac-unsupported"
+	LastErrorNetwork          = "network-unreachable"
+	LastErrorTimeout          = "network-timeout"
+	LastErrorHTTP             = "http-error"
+	LastErrorSync             = "sync-failed"
+)
+
+// CleanLastError is the read side: a cache written by an older version may hold free text.
+func CleanLastError(saved string) string {
+	switch saved {
+	case "", LastErrorProxyInvalid, LastErrorProxyAuth, LastErrorProxyUnreachable, LastErrorPAC, LastErrorNetwork, LastErrorTimeout, LastErrorHTTP, LastErrorSync:
+		return saved
+	}
+	return LastErrorSync
+}
+
 type Store struct{ Dir string }
 
 // Open uses $MODELPLAN_CACHE, else os.UserCacheDir()/modelplan, and creates it.
