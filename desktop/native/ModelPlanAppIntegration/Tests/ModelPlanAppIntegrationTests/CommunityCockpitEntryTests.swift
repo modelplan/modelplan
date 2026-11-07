@@ -292,8 +292,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
             XCTAssertEqual(statusItem.isEnabled,enabled)
             let menu=app.composition.dock.menu()
-            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
-            XCTAssertEqual(item.isEnabled,enabled)
+            // The widget menu lists the cockpit only when its entry is on (owner HIG decision 11-06).
+            if enabled { XCTAssertTrue(try XCTUnwrap(menu.items.first { $0.title == "Open Cockpit" }).isEnabled) }
+            else { XCTAssertFalse(menu.items.contains { $0.title == "Coming soon" || $0.title == "Open Cockpit" }) }
             app.composition.dock.perform(NSSelectorFromString("openConsole"))
             app.perform(NSSelectorFromString("showConsoleMenu"))
             XCTAssertEqual(constructed,enabled ? 1 : 0)
@@ -305,11 +306,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
                 let chinese = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "即将推出" })
                 XCTAssertFalse(chinese.isEnabled)
                 let chineseDock = app.composition.dock.menu()
-                XCTAssertFalse(try XCTUnwrap(chineseDock.items.first { $0.title == "即将推出" }).isEnabled)
+                XCTAssertFalse(chineseDock.items.contains { $0.title == "即将推出" })
                 app.composition.dock.pauseForLifecycle()
                 let paused = app.composition.dock.menu()
                 XCTAssertTrue(paused.items.contains { $0.title == "退出 ModelPlan" })
-                XCTAssertTrue(paused.items.contains { $0.title == "即将推出" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "自动收起" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "设置…" && !$0.isEnabled })
             }
             await app.composition.stop()
         }
@@ -341,7 +343,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-reduce-motion-"+UUID().uuidString)
         defer{try? FileManager.default.removeItem(at:root)}
         let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
-        _=try await settings.update { $0.motion = .on;$0.language = .chinese;$0.redBelow=16 }
+        _=try await settings.update { $0.motion = .on;$0.language = .chinese;$0.redBelow=15 }
         var applied:[SettingsApplication]=[]
         let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
         await app.reload()
@@ -358,7 +360,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         await coordinator.consume(.context(context));surface.show()
         for _ in 0..<100 { if await client.cockpitPending { break };try await Task.sleep(for:.milliseconds(10)) }
         XCTAssertTrue(owner.appearance.reduceMotion,"Opening keeps the setting")
-        XCTAssertEqual(owner.appearance.locale,.zhCN);XCTAssertEqual(owner.appearance.redBelow,16)
+        XCTAssertEqual(owner.appearance.locale,.zhCN);XCTAssertEqual(owner.appearance.redBelow,15)
         _=try await settings.update { $0.motion = .system;$0.language = .english }
         await app.reload()
         surface.applySettings(try XCTUnwrap(applied.last))
@@ -372,7 +374,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
         defer{try? FileManager.default.removeItem(at:root)}
         let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
-        _=try await settings.update { $0.showProjectNames=false;$0.redBelow=16 }
+        _=try await settings.update { $0.showProjectNames=false;$0.redBelow=15 }
         var applied:[SettingsApplication]=[]
         let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
         await app.reload()
@@ -383,7 +385,7 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
         surface.applySettings(try XCTUnwrap(applied.last))
         XCTAssertFalse(owner.appearance.showProjectNames)
-        XCTAssertEqual(owner.appearance.redBelow,16)
+        XCTAssertEqual(owner.appearance.redBelow,15)
         await composition.stop()
     }
 

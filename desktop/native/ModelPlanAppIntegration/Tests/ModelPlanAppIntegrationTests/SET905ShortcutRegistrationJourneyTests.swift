@@ -41,6 +41,8 @@ import ModelPlanSettings
         registrar.onPress?(.toggleDock)
         for _ in 0..<100 where editor.snapshot?.preferences.showDock == true { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.showDock, false)
+        // The press saves on its own task; let it finish, as a person's next action would.
+        for _ in 0..<500 where editor.isSaving { try await Task.sleep(for: .milliseconds(10)) }
         registrar.outcome = .conflict
         let taken = ShortcutChord("J", modifiers: [.command, .option])
         try await editor.commit(SettingsB21Edit.shortcut(.toggleDock, taken))

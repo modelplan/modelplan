@@ -84,6 +84,57 @@ func TestCockpitDetailsReserveThresholdAndFence(t *testing.T) {
 	}
 }
 
+func TestCockpitDetailsWarningBand(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("MODELPLAN_HISTORY", "off")
+	if _, err := consent.EnsureStore(consent.Path()); err != nil {
+		t.Fatal(err)
+	}
+	fence := consent.Capture().Fence()
+	stamp := appserver.Stamp{Epoch: fence.StoreEpoch, Generation: fence.Generation}
+	ref := "0123456789abcdef"
+	until := time.Now().Add(time.Hour)
+	for _, tc := range []struct {
+		name      string
+		threshold int
+		remaining *float64
+		want      string
+	}{
+		{"40 critical", 40, ptrFloat(40), "critical"},
+		{"41 warning", 40, ptrFloat(41), "warning"},
+		{"50 warning", 40, ptrFloat(50), "warning"},
+		{"51 normal", 40, ptrFloat(51), ""},
+		{"10 critical", 10, ptrFloat(10), "critical"},
+		{"11 warning", 10, ptrFloat(11), "warning"},
+		{"50 warning with 10", 10, ptrFloat(50), "warning"},
+		{"51 normal with 10", 10, ptrFloat(51), ""},
+		{"default critical", 0, ptrFloat(25), "critical"},
+		{"default warning", 0, ptrFloat(26), "warning"},
+		{"50 warning with default", 0, ptrFloat(50), "warning"},
+		{"51 normal with default", 0, ptrFloat(51), ""},
+		{"unknown", 40, nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			view := appserver.View{Projection: rows.Projection{Rows: []rows.Row{{ID: "codex", Accounts: []rows.Account{{SubscriptionRef: &ref, ValueState: rows.ValueStateCurrent, Windows: []rows.Window{{ID: "weekly", Current: true, ValidUntil: &until, RemainingPercent: tc.remaining}}}}}}}}
+			got, err := (sharedCockpit{}).cockpitDetails(context.Background(), view, queries.CockpitAdmission{Stamp: stamp, RedBelow: tc.threshold}, map[string][]wire.CockpitAccount{ref: {}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if len(got.Alerts) != 0 {
+					t.Fatalf("unexpected alerts: %+v", got.Alerts)
+				}
+				return
+			}
+			if len(got.Alerts) != 1 || got.Alerts[0].Severity != tc.want {
+				t.Fatalf("alerts = %+v, want %s", got.Alerts, tc.want)
+			}
+		})
+	}
+}
+
+func ptrFloat(v float64) *float64 { return &v }
+
 func TestCockpitLabelRejectsPathsAndControlCharacters(t *testing.T) {
 	for _, s := range []string{"secret/path", "secret\\path", "line\nbreak", ""} {
 		if safeCockpitLabel(s) {

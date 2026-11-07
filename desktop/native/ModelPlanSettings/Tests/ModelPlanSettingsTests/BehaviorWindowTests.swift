@@ -5,10 +5,18 @@ import XCTest
 
 /// Native delegate/action paths with synthetic context; no window ordering or service execution.
 @MainActor final class BehaviorWindowTests: XCTestCase {
+    /// Any alias text is now accepted (cut to the limit), so a failed save means a failed write.
+    private var storeDirectory: URL?
+    private func lockStore() throws {
+        let directory = try XCTUnwrap(storeDirectory)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+    }
     private func makeEditor() async throws -> SettingsEditor {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("settings-behavior-window-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        storeDirectory = directory
         let store = try SettingsStore(url: directory.appendingPathComponent("preferences.json"))
         try await store.update { $0.language = .english }
         var context = SettingsPageContext()
@@ -147,6 +155,7 @@ import XCTest
         let revision = editor.snapshot!.revision, invalid = String(repeating: "x", count: 129)
         var commits = 0, requests = 0
         editor.onCommit = { _, _ in commits += 1 }; editor.onHostRequest = { _ in requests += 1 }
+        try lockStore()
         field.stringValue = invalid
         field.controlTextDidBeginEditing(Notification(name: NSControl.textDidBeginEditingNotification, object: field))
         field.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))

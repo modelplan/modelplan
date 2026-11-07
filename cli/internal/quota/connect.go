@@ -192,6 +192,12 @@ func SelectionsWithAdmission(p Paths, admission consent.Admission) ([]Selection,
 		x.KeyEnv = r.KeyEnv
 		by[id] = x
 	}
+	// ZCode's own Coding Plan key, on by default when no GLM source is configured (G3-21).
+	if g, ok := p.ReaderAccessGrant("zai"); ok && g.ConfigSource != nil && g.ConfigSource.Tool == "zcode" {
+		if _, configured := by["zai"]; !configured {
+			by["zai"] = Selection{Provider: "zai", Backend: BackendNative, Origin: "zcode-config"}
+		}
+	}
 	out := make([]Selection, 0, len(by))
 	for _, x := range by {
 		x.Name = ProviderName(x.Provider)

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 import CoreGraphics
+import AppKit
 import XCTest
 import ModelPlanDock
 import ModelPlanSettings
+@testable import ModelPlanAppIntegration
 
 @MainActor func normalEntryTestEnvironment() -> DockEdgeEnvironment {
     .init(displays:[.init(id:"synthetic-display",frame:.init(x:0,y:0,width:1440,height:900),visibleFrame:.init(x:0,y:80,width:1440,height:820))],
@@ -36,6 +38,28 @@ import ModelPlanSettings
                                 condition:@escaping @MainActor () -> Bool) async throws {
     let completed=await SettingsConditionWait(editor,condition:condition).wait()
     if !completed { XCTFail("Settings event did not deliver the required committed state",file:file,line:line);throw CancellationError() }
+}
+
+/// The status menu's checkable Show Quota Widget item (owner decision 11-06, G3-18): waits until
+/// the item is actionable with its checkmark showing `checked`, chooses it, then waits until the
+/// stored switch and the checkmark both show the opposite. Titles never change while toggling.
+@MainActor func chooseShowQuotaWidget(_ app: EngineDockMenuApplication, checked: Bool, title: String = "Show Quota Widget",
+                                      file: StaticString = #filePath, line: UInt = #line) async throws {
+    func item() -> NSMenuItem? { app.liveStatusMenu?.items.first { $0.title == title } }
+    func ready(_ state: Bool) -> Bool {
+        guard let item = item() else { return false }
+        return item.isEnabled && item.state == (state ? .on : .off)
+    }
+    let start = ContinuousClock.now
+    while !ready(checked) && ContinuousClock.now - start < .seconds(5) { try await Task.sleep(for: .milliseconds(20)) }
+    let current = try XCTUnwrap(item(), "Missing status item \(title)", file: file, line: line)
+    XCTAssertTrue(ready(checked), "\(title) must be actionable and show checked=\(checked)", file: file, line: line)
+    _ = try XCTUnwrap(current.target as? NSObject, file: file, line: line).perform(try XCTUnwrap(current.action, file: file, line: line), with: current)
+    let editor = app.settingsHost.application.editor
+    try await waitForSettings(editor, file: file, line: line) { editor.snapshot?.preferences.showDock == !checked && !editor.isSaving }
+    let settled = ContinuousClock.now
+    while !ready(!checked) && ContinuousClock.now - settled < .seconds(5) { try await Task.sleep(for: .milliseconds(20)) }
+    XCTAssertTrue(ready(!checked), "the checkmark follows the saved switch", file: file, line: line)
 }
 
 @MainActor final class SettingsWaitEventTests: XCTestCase {

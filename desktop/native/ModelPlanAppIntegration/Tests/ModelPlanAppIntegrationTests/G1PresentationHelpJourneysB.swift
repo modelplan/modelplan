@@ -88,8 +88,9 @@ private actor G1BEngine: EngineClient {
         let id = try XCTUnwrap(app.composition.presentedContent.snapshot.inputs.first?.id)
         let deadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2099-01-01T00:00:00Z"))
         for (language, expectations) in [
-            (SettingsLanguage.english, ["45m", "3h 18m", "3d 5h"]),
-            (.chinese, ["45分", "3小时18分", "3天5小时"])
+            // D40: the prototype's compact card form (window-time.js duration, strings/card.js resetIn).
+            (SettingsLanguage.english, ["resets 45m", "resets 3h18", "resets 3d5h"]),
+            (.chinese, ["45m 后重置", "3h18 后重置", "3d5h 后重置"])
         ] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
             for (seconds, expected) in zip([2700.0, 11880.0, 277200.0], expectations) {
@@ -97,6 +98,8 @@ private actor G1BEngine: EngineClient {
                 let detail = try XCTUnwrap(card.rows.first { $0.id == "quota:five" }?.detail)
                 XCTAssertTrue(detail.contains(expected), "Expected relative reset time: \(detail)")
                 XCTAssertFalse(detail.contains("2099"))
+                // The source age stays sane even with this far-future clock (was "632675小时前").
+                XCTAssertNil(detail.range(of: #"\d{3,}(小时前|h ago)"#, options: .regularExpression), "Absurd age: \(detail)")
             }
         }
     }
@@ -119,17 +122,18 @@ private actor G1BEngine: EngineClient {
         let app = try await entry(profile: profile(), preferredLanguages: ["zh-CN"], fixture: quotaFixture())
         let menu = try XCTUnwrap(app.liveStatusMenu)
         // This healthy synthetic fixture has no provider diagnostics or update action.
-        let expected = ["刷新", "显示额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"]
+        let expected = ["刷新", "显示额度挂件", "即将推出", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         let statusTitles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
         let dockTitles = app.composition.dock.menu().items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(statusTitles.count, 1)
         XCTAssertGreaterThanOrEqual(dockTitles.count, 3)
         XCTAssertEqual(statusTitles, expected)
-        XCTAssertEqual(Array(dockTitles.suffix(3)), ["即将推出", "设置…", "隐藏额度挂件"])
+        // Owner HIG decision 11-06: the widget menu is [✓自动收起, 设置…] — [退出 ModelPlan]; no Hide.
+        XCTAssertEqual(dockTitles, ["自动收起", "设置…", "退出 ModelPlan"])
         _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(.english))
         let english = try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }.map(\.title)
         XCTAssertGreaterThan(english.count, 1)
-        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"])
+        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Coming soon", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"])
         XCTAssertNotEqual(english, expected, "The check must reject English app-owned actions")
     }
 

@@ -16,10 +16,13 @@ public struct EngineAccountMember:Sendable {
     }
     public let row:RowsRow
     public let account:RowsAccount
+    /// D40 / DOCK-3.5-01: subscriptions that share a name keep it plain for the first one and
+    /// add " · 2", " · 3" for the rest. A user alias replaces the number where the name is shown
+    /// with its alias (the card header: `withDuplicateAlias`).
     func name(english:Bool) -> String {
         let base=english ? row.name.en:row.name.zh
-        guard let duplicateTag else { return base }
-        return base + (english ? " · Account ":" · 账号 ") + String(duplicateTag)
+        guard let duplicateTag, duplicateTag > 1 else { return base }
+        return base + " · " + String(duplicateTag)
     }
 }
 
@@ -31,10 +34,10 @@ public struct EngineAccountMemberCatalogue:Sendable {
     public let unstableKeys:Set<String>
     public let memberKeysByRow:[String:[String]]
     public init(rows:[RowsRow]) {
-        let candidates=rows.flatMap { row -> [EngineAccountMember] in
+        let drafts=rows.flatMap { row -> [(key:String,source:String,unstable:Bool,row:RowsRow,account:RowsAccount)] in
             let unbound=Dictionary(grouping:row.accounts.filter{$0.subscriptionRef == nil},by:{$0.route.rawValue})
             var ordinals:[String:Int]=[:]
-            return row.accounts.enumerated().map { index,account in
+            return row.accounts.map { account in
                 let source=account.route.rawValue,base=row.id+"#"+source
                 let unstable=account.subscriptionRef == nil && (unbound[source]?.count ?? 0) > 1
                 let key:String
@@ -42,9 +45,19 @@ public struct EngineAccountMemberCatalogue:Sendable {
                     let ordinal=(ordinals[source] ?? 0)+1
                     ordinals[source]=ordinal;key=base+"#"+String(ordinal)
                 } else { key=account.subscriptionRef ?? base }
-                return EngineAccountMember(id:key,rowID:row.id,source:source,subscriptionRef:account.subscriptionRef,
-                    duplicateTag:row.accounts.count > 1 ? index+1:nil,isStable:!unstable,row:row,account:account)
+                return (key,source,unstable,row,account)
             }
+        }
+        // D40: members that share a displayed name, within a row or across rows, are numbered
+        // in delivery order; a unique name carries no tag.
+        func nameKey(_ row:RowsRow) -> String { row.name.en+"\u{0}"+row.name.zh }
+        let sharing=Dictionary(grouping:drafts,by:{nameKey($0.row)}).mapValues(\.count)
+        var seen=[String:Int]()
+        let candidates=drafts.map { draft -> EngineAccountMember in
+            let name=nameKey(draft.row)
+            seen[name,default:0]+=1
+            return EngineAccountMember(id:draft.key,rowID:draft.row.id,source:draft.source,subscriptionRef:draft.account.subscriptionRef,
+                duplicateTag:(sharing[name] ?? 0) > 1 ? seen[name]:nil,isStable:!draft.unstable,row:draft.row,account:draft.account)
         }
         let grouped=Dictionary(grouping:candidates,by:\.id)
         memberKeysByRow=rows.reduce(into:[:]) { result,row in

@@ -27,9 +27,10 @@ func (a Admission) RowsInput(now time.Time) rows.Input {
 		in.Consents = append(in.Consents, rows.ConsentRecord{ToolID: id, Generation: a.Generation(), State: decision,
 			Outdated: record.ConsentTextVersion != TextVersion, CleanupPending: a.CleanupPending(id)})
 	}
-	// Only these established credential-free readers have automatic implicit
-	// permission. A newly shipped credential reader never gains an implicit grant.
-	for _, id := range []string{"claude", "codex"} {
+	// Only these established readers have automatic implicit permission. ZCode joined
+	// them with the owner decision of 2026-11-06 (standard local readers are on by
+	// default, G3-21). A newly shipped credential reader never gains an implicit grant.
+	for _, id := range []string{"claude", "codex", "zai"} {
 		if _, decided := a.state.Tools[id]; !decided && a.Allows(id, Local) {
 			in.Consents = append(in.Consents, rows.ConsentRecord{ToolID: id, Generation: a.Generation(), State: rows.ConsentImplicit})
 		}
