@@ -19,7 +19,8 @@ process's environment is ever read.
 import argparse,hashlib,json,os,plistlib,re,shutil,signal,subprocess,sys,time
 from pathlib import Path
 from admission import validate,load_and_admit
-from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup,registration
+from guardian import register,mark_launching,add_helper,identity,stop_identities,cleanup,registration,stop as write_stop
+import hold as hold_run
 import process_scan
 import product_backup
 import subject_options
@@ -49,13 +50,14 @@ def real_env():
     env={k.decode():v.decode('utf-8','surrogateescape') for k,v in os.environb.items() if k!=b'CFFIXED_USER_HOME'}
     env.setdefault('PATH','/usr/bin:/bin')
     return env
-RUN={'children':[],'pidPath':None,'leasePath':None,'manifest':None} # this process's launch, for exit paths
+RUN={'children':[],'pidPath':None,'leasePath':None,'manifest':None,'hold':None} # this process's launch, for exit paths
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter);p.add_argument('--config',type=Path,required=True);p.add_argument('--execute',action='store_true')
     # Brief shorthands; each fills the run config's field of the same name and refuses a different value there.
     p.add_argument('--profile',choices=('synthetic','real'));p.add_argument('--readers',help='off | passive | comma list of tool IDs (zcode = zai)')
-    p.add_argument('--backup',choices=subject_options.BACKUPS);a=p.parse_args(argv)
-    c=subject_options.merge_flags(json.loads(a.config.read_text()),profile=a.profile,readers=a.readers,backup=a.backup)
+    p.add_argument('--backup',choices=subject_options.BACKUPS)
+    p.add_argument('--hold-seconds',type=int,help='keep the subject open this long, then close normally (see hold.py)');a=p.parse_args(argv)
+    c=subject_options.merge_flags(json.loads(a.config.read_text()),profile=a.profile,readers=a.readers,backup=a.backup,holdSeconds=a.hold_seconds)
     if not a.execute:validate(c,time.time());print('Run contract valid; no process launched');return
     if isinstance(c.get('subjectPidPath'),str) and isinstance(c.get('leasePath'),str):
         RUN.update(pidPath=Path(c['subjectPidPath']),leasePath=Path(c['leasePath'])) # for the never-started proof
@@ -79,8 +81,12 @@ def main(argv=None):
     # A restriction the engine never receives must not run, or be recorded as if it applied.
     env_manifest['engineDelivery']=subject_options.engine_delivery(kind,bundle,env_manifest['subjectEnv'])
     if subject_options.VERIFY_READERS in env_manifest['subjectEnv']:env_manifest['engineHonoursReaders']=True
+    if c.get('holdSeconds'):
+        hold_run.check_fits(c,time.time())
+        helper=bundle['app']/'Contents'/'Helpers'/'modelplan' if kind=='app-zip' else None
+        RUN['hold']=hold_run.Hold(c['holdSeconds'],hold_run.probe_dir(c),helper,env)
     manifest=RUN['manifest']=dict(schemaVersion=1,runID=c.get('lease',{}).get('runID'),epoch=c.get('lease',{}).get('epoch'),profile=profile,
-                                  home=str(home),launchMode=mode,environment=env_manifest,backup=None,restore=None)
+                                  home=str(home),launchMode=mode,environment=env_manifest,backup=None,restore=None,hold=None)
     if c.get('backup')=='product':
         taken=product_backup.backup(home,c['backupDir']) # before the subject exists; restored after it ends
         manifest['backup']=dict(backupDir=c['backupDir'],archiveSHA256=taken['archiveSHA256'],roots=taken['roots'],
@@ -88,7 +94,9 @@ def main(argv=None):
     try:return run_subject(c,mode,profile,home,tmp,bundle,env,env_manifest)
     finally:finish_run(c)
 def finish_run(c):
-    """Every exit after the backup: end any subject still alive, restore, write the run manifest."""
+    """Every exit after the backup: end any probe and subject still alive, restore, write the run manifest."""
+    hold=RUN['hold'];RUN['hold']=None
+    if hold is not None:hold.close(time.time())
     for child in RUN['children']:
         try:
             if child.poll() is None:
@@ -98,6 +106,7 @@ def finish_run(c):
         except Exception:pass
     manifest=RUN['manifest']
     if manifest is None:return
+    if hold is not None:manifest['hold']=hold.summary(time.time())
     if manifest['backup'] is not None:
         try:manifest['restore']=product_backup.restore(c['backupDir'],home=manifest['home'])
         except Exception as error:manifest['restore']=dict(restored=False,error=str(error) or type(error).__name__)
@@ -151,10 +160,20 @@ def run_subject(c,mode,profile,home,tmp,bundle,env,env_manifest):
     # so a dead guardian still fails closed. Exit status 0 only when the child ended by itself.
     def announce(token,pid):
         print(json.dumps(subject_line(c,pid,profile,home_field,evidence,token=token)),flush=True)
-    reason=supervise(child,c,spawn=spawn,announce=announce)
-    child=state['child']
+    if RUN['hold']:RUN['hold'].begin(time.time())
+    reason=supervise(child,c,spawn=spawn,announce=announce,hold=RUN['hold'])
+    child=state['child'];reason,code=ended(c,reason)
     print(json.dumps({'ownedPID':child.pid,'exit':child.returncode,'stoppedBy':reason,'launchMode':mode,'profile':profile}))
-    raise SystemExit(0 if reason is None else 3)
+    raise SystemExit(code)
+def ended(c,reason):
+    """(stoppedBy, launcher exit). A hold run also writes the stop file if the subject ended first:
+    no later step may be there to do it, and a launcher exiting without it reads as launcher-lost."""
+    hold=RUN['hold']
+    if hold is None:return reason,0 if reason is None else 3
+    if hold.done and reason=='stop-file':return hold_run.HOLD_DONE,0
+    try:write_stop(Path(c['stopPath']),'launch-ended',time.time())
+    except OSError:pass # the guardian then reports launcher-lost: closure stays unconfirmed
+    return reason or hold_run.HOLD_SHORT,3
 GATE='import os,sys\nif sys.stdin.buffer.read(1)!=b"g":sys.exit(97)\nos.execv(sys.argv[1],sys.argv[1:])'
 class AuthorityWithdrawn(RuntimeError):pass
 def spawn_gated(gate,env,pid_path,launcher,on_unregistered,admit=None):
@@ -323,37 +342,44 @@ def launch_services(c,bundle,pid_path,env):
         print(json.dumps(failure),file=sys.stderr,flush=True)
         stop_child() # Never leave an unregistered subject running.
     print(json.dumps({'runID':c['lease']['runID'],'epoch':c['lease']['epoch'],'ownedPID':child.pid,'launchMode':'launchservices',**bundle['evidence']}),flush=True)
-    reason=supervise(child,c)
-    sweep(scope,helper)
+    if RUN['hold']:RUN['hold'].begin(time.time())
+    reason=supervise(child,c,hold=RUN['hold'])
+    sweep(scope,helper);reason,code=ended(c,reason)
     print(json.dumps({'ownedPID':child.pid,'exit':None,'openExit':helper.returncode,'stoppedBy':reason,'launchMode':'launchservices'}))
-    raise SystemExit(0 if reason is None else 3)
-def stop_reason(c,now):
+    raise SystemExit(code)
+def stop_reason(c,now,stale=3):
     if Path(c['stopPath']).exists():return 'stop-file'
     try:lease=json.loads(Path(c['leasePath']).read_text())
     except (OSError,ValueError):return 'lease-unreadable'
     if any(lease.get(k)!=c['lease'].get(k) for k in ('runID','epoch','notBefore','expiresAt')):return 'lease-identity-changed'
     if lease.get('ownerPreempted') is not False or lease.get('exclusive') is not True:return 'lease-revoked'
-    if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>3:return 'guardian-heartbeat-stale'
+    if not isinstance(lease.get('guardianHeartbeatAt'),(int,float)) or now-lease['guardianHeartbeatAt']>stale:return 'guardian-heartbeat-stale'
     if now>=lease['expiresAt']:return 'deadline'
     return None
-def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,announce=None):
+def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,announce=None,hold=None):
     """Stay attached until the subject ends by itself (returns None) or a stop condition fires
     (returns its reason). With `spawn`, a relaunch marker (an increasing integer in the config's
     relaunchPath) stops the current child and starts a fresh gated one with the same argv,
     environment and HOME: one supervised slot, several launches, identities never mixed.
     Authority is re-read after every blocking wait: a relaunch never spawns once the old child's
     shutdown wait saw STOP, revocation or the deadline, and a child that ended while authority was
-    withdrawn is a supervised stop, never one that ended by itself."""
+    withdrawn is a supervised stop, never one that ended by itself. With `hold`, an elapsed hold
+    writes the stop file, so the run closes on the same path as any other stop, and a heartbeat
+    gap is tolerated up to HEARTBEAT_GRACE."""
     marker=Path(c['relaunchPath']) if spawn is not None and c.get('relaunchPath') else None
     token=0
+    limits={} if hold is None else {'stale':hold_run.HEARTBEAT_GRACE}
     while True:
         if child.poll() is None:
-            reason=stop_reason(c,clock())
+            reason=stop_reason(c,clock(),**limits)
             if reason:
                 child.terminate()
                 try:child.wait(10)
                 except subprocess.TimeoutExpired:child.kill();child.wait()
                 return reason
+            if hold is not None and hold.tick(clock()):
+                write_stop(Path(c['stopPath']),hold_run.HOLD_DONE,clock())
+                continue
             if marker is not None:
                 try:value=int(marker.read_text().strip() or 0)
                 except (OSError,ValueError):value=0
@@ -362,7 +388,7 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                     child.terminate() # ended deliberately: a relaunch step, not a crash
                     try:child.wait(10)
                     except subprocess.TimeoutExpired:child.kill();child.wait()
-                    reason=stop_reason(c,clock()) # re-admit after the blocking shutdown wait
+                    reason=stop_reason(c,clock(),**limits) # re-admit after the blocking shutdown wait
                     if reason:return reason
                     try:
                         child=spawn()
@@ -379,7 +405,7 @@ def supervise(child,c,poll=0.5,clock=time.time,sleep=time.sleep,spawn=None,annou
                 continue
         # The child is gone. If authority was withdrawn meanwhile (e.g. the guardian closed the subject on
         # STOP between two polls), that is a supervised stop, never a child that ended by itself.
-        return stop_reason(c,clock())
+        return stop_reason(c,clock(),**limits)
 def no_subject_proof(code,lookup=None):
     """A launcher that exits non-zero before reserving the subject slot leaves `<subjectPidPath>.no-subject.json`
     (run identity, exit status, launcher identity), written under the registration lock only while no

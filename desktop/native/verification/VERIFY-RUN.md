@@ -224,6 +224,47 @@ is gone and still no reservation exists, as `subject: never-started`, so the SKI
 finishes the booking as cleaned instead of leaving it held. Without the proof it still reports
 `subject: none`.
 
+### Long runs from short-lived tool calls (detach.py, hold.py)
+
+An agent tool call can end every process it started. `guardian.py` and `launch.py` must outlive
+the call that starts them, or the run stops with `guardian-heartbeat-stale` or `launcher-lost`
+(exit 3). When the steps of a run are separate tool calls, start both with `detach.py`, and give
+the launcher a hold instead of keeping it attached:
+
+```sh
+B=desktop/native/verification/bin
+python3 $B/detach.py start --record "$RUN_DIR/guardian.json" --stdout "$GUARDIAN_OUT" --stderr "$RUN_DIR/guardian.err" -- \
+  python3 "$PWD/$B/guardian.py" --lease "$LEASE_PATH" --stop "$STOP_PATH" --subject-pid-file "$SUBJECT_PID_PATH"
+python3 $B/release.py ...
+python3 $B/detach.py start --record "$RUN_DIR/launch.json" --stdout "$RUN_DIR/launch.out" --stderr "$RUN_DIR/launch.err" -- \
+  python3 "$PWD/$B/launch.py" --config "$RUN_CONFIG" --execute --hold-seconds 200
+# Any later tool call, while the subject is open:
+python3 $B/hold.py --config "$RUN_CONFIG" doctor readers --json
+# Close: 0 ended, 2 still running (call it again), 3 lost. Use the printed `exit` values as
+# CONTROLLER_STATUS and GUARDIAN_STATUS in the SKILL.md close rule, then `book.py finish`.
+python3 $B/detach.py wait --record "$RUN_DIR/launch.json" --timeout 60
+python3 $B/detach.py wait --record "$RUN_DIR/guardian.json" --timeout 60
+```
+
+- `--record` must not exist yet. Pass absolute paths in the command: the runner works from `/`.
+- `holdSeconds` (`--hold-seconds`; also on `packaged_candidate.py prepare`, and then detach
+  `packaged_candidate.py run`) starts counting when the subject starts. launch.py refuses a hold
+  that would end less than 60 seconds before the lease expires.
+- When the hold ends, launch.py writes the stop file, so the normal close runs and the guardian
+  ends `stopped`. It exits 0 with `stoppedBy: hold-complete`. A subject that ends early gives exit 3
+  with `stoppedBy: subject-ended-before-hold`, and the stop file is written too, so closure can
+  still be confirmed. Any other stop keeps its own reason and exit 3.
+- During a hold the launcher tolerates a 15-second gap in the guardian heartbeat instead of 3, so
+  a brief stall (seen on a busy disk) does not end the run. A dead guardian still stops the subject
+  with `guardian-heartbeat-stale`, up to 15 seconds later. Admission and pointer input keep their
+  strict limits.
+- Probes need `app-zip`, and `doctor readers --json` is the only one allowed (cache only, sanitised).
+  The launcher runs the candidate's `Contents/Helpers/modelplan` with the launch-contract keys of
+  the subject environment, one probe at a time, for at most 30 seconds. A probe still running when
+  the hold ends extends it, and any probe is over before the restore. Output stays in
+  `<subjectPidPath>.probes/`; the run manifest's `hold` records requested and held seconds,
+  `complete`, and each probe's command, exit and output hash.
+
 ## Outputs
 
 - `preflight.json`, `README.md` (candidate identity, layout, segments and closure, system settings before

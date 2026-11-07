@@ -175,6 +175,10 @@ Reader scope, allow-listed candidate environment and the real-profile product ba
 (`--readers off|passive|codex,zcode`, `--backup product`, the run manifest) are specified in
 [VERIFY-RUN.md](VERIFY-RUN.md#candidate-environment-reader-scope-and-product-backup-launchpy-packaged_candidatepy).
 
+When the steps are separate tool calls, a background `&` does not survive the call. Use the
+[long-run mode](VERIFY-RUN.md#long-runs-from-short-lived-tool-calls-detachpy-holdpy) (`detach.py`,
+`--hold-seconds`, in-run probes) instead.
+
 If the booking is abandoned **before start**, use this instead of start/release/launch:
 
 ```sh

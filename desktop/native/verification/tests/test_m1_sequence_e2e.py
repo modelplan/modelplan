@@ -30,6 +30,7 @@ verification/tests/, not this directory):
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -201,6 +202,102 @@ class M1Sequence(unittest.TestCase):
             lines = [json.loads(line) for line in text.splitlines() if line.strip()]
             return lines if len(lines) >= count else None
         return wait_until(parsed, timeout, f'expected {count} JSON report line(s)')
+
+
+class LongRunFromShortToolCalls(M1Sequence):
+    """Each step is a tool call whose whole process group is killed as soon as the step returns."""
+    def tool_call(self, record, out, err, *command):
+        call = subprocess.Popen(['/bin/sh', '-c', '"$@"; sleep 60', 'call', PY, str(BIN / 'detach.py'), 'start',
+                                 '--record', str(record), '--stdout', str(out), '--stderr', str(err), '--', *command],
+                                stdout=subprocess.DEVNULL, start_new_session=True)
+        self.procs.append(call)
+        wait_until(record.exists, 15, 'detached command did not start')
+        os.killpg(call.pid, signal.SIGKILL)
+        call.wait(10)
+
+    def detached_exit(self, record, timeout=30):
+        result = self.cli('detach.py', 'wait', '--record', str(record), '--timeout', str(timeout))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)['exit']
+
+    def test_run_outlives_the_calls_that_started_it_and_closes_cleanly(self):
+        lease_path = self.root / 'lease.json'; release_path = self.root / 'release.json'
+        stop_path = self.root / 'STOP'; pid_file = self.root / 'subject.pid'
+        ident, _ = self.booking(minutes=2, run_id='run-hold', epoch='epoch-hold', lease_path=lease_path)
+        guardian_out = self.root / 'guardian.out'; guardian = self.root / 'guardian.record'
+        self.tool_call(guardian, guardian_out, self.root / 'guardian.err', PY, str(BIN / 'guardian.py'),
+                       '--lease', str(lease_path), '--stop', str(stop_path), '--subject-pid-file', str(pid_file))
+        wait_until(lambda: self.beating(lease_path), 10, 'guardian did not take over the lease heartbeat')
+        self.release(ident, lease_path, release_path)
+        config = self.launch_config(ident, lease_path, release_path, stop_path, pid_file,
+                                    self.root / 'home', self.root / 'tmp', [self.app])
+        manifest_path = self.root / 'run-manifest.json'
+        config.write_text(json.dumps({**self.read_json(config), 'runManifestPath': str(manifest_path)}))
+        launch_out = self.root / 'launch.out'; launch = self.root / 'launch.record'
+        self.tool_call(launch, launch_out, self.root / 'launch.err', PY, str(BIN / 'launch.py'),
+                       '--config', str(config), '--execute', '--hold-seconds', '4')
+        subject = self.registered_subject(pid_file)
+        started = time.monotonic()
+        time.sleep(2)  # a later step: the heartbeat and the subject are both still going
+        self.assertTrue(alive(subject['pid']))
+        self.assertTrue(self.beating(lease_path))
+        self.assertFalse(stop_path.exists())
+        self.assertEqual(self.detached_exit(launch), 0)
+        self.assertGreaterEqual(time.monotonic() - started, 3)
+        self.assertEqual(self.detached_exit(guardian), 0)
+        self.assertEqual(self.read_json(guardian_out)['guardian'], 'stopped')
+        self.assertFalse(alive(subject['pid']))
+        self.assertEqual(self.json_lines(launch_out, 2)[-1]['stoppedBy'], 'hold-complete')
+        hold = self.read_json(manifest_path)['hold']
+        self.assertTrue(hold['complete'])
+        self.assertGreaterEqual(hold['heldSeconds'], 4)
+        self.assertEqual(self.finish(ident, 'run-hold', 'epoch-hold').returncode, 0)
+
+    def test_a_stalled_guardian_does_not_end_the_hold(self):
+        lease_path = self.root / 'lease.json'; release_path = self.root / 'release.json'
+        stop_path = self.root / 'STOP'; pid_file = self.root / 'subject.pid'
+        ident, _ = self.booking(minutes=2, run_id='run-stall', epoch='epoch-stall', lease_path=lease_path)
+        guardian_out = self.root / 'guardian.out'; guardian = self.root / 'guardian.record'
+        self.tool_call(guardian, guardian_out, self.root / 'guardian.err', PY, str(BIN / 'guardian.py'),
+                       '--lease', str(lease_path), '--stop', str(stop_path), '--subject-pid-file', str(pid_file))
+        wait_until(lambda: self.beating(lease_path), 10, 'guardian did not take over the lease heartbeat')
+        self.release(ident, lease_path, release_path)
+        config = self.launch_config(ident, lease_path, release_path, stop_path, pid_file,
+                                    self.root / 'home', self.root / 'tmp', [self.app])
+        launch_out = self.root / 'launch.out'; launch = self.root / 'launch.record'
+        self.tool_call(launch, launch_out, self.root / 'launch.err', PY, str(BIN / 'launch.py'),
+                       '--config', str(config), '--execute', '--hold-seconds', '7')
+        self.registered_subject(pid_file)
+        pid = self.read_json(guardian)['pid']
+        os.kill(pid, signal.SIGSTOP)  # a stall longer than the 3-second limit outside a hold
+        try:
+            time.sleep(5)
+        finally:
+            os.kill(pid, signal.SIGCONT)
+        self.assertEqual(self.detached_exit(launch), 0)
+        self.assertEqual(self.json_lines(launch_out, 2)[-1]['stoppedBy'], 'hold-complete')
+        self.assertEqual(self.detached_exit(guardian), 0)
+        self.assertEqual(self.finish(ident, 'run-stall', 'epoch-stall').returncode, 0)
+
+    def test_subject_that_ends_early_is_reported_and_still_closes(self):
+        lease_path = self.root / 'lease.json'; release_path = self.root / 'release.json'
+        stop_path = self.root / 'STOP'; pid_file = self.root / 'subject.pid'
+        ident, _ = self.booking(minutes=2, run_id='run-short', epoch='epoch-short', lease_path=lease_path)
+        guardian_out = self.root / 'guardian.out'; guardian = self.root / 'guardian.record'
+        self.tool_call(guardian, guardian_out, self.root / 'guardian.err', PY, str(BIN / 'guardian.py'),
+                       '--lease', str(lease_path), '--stop', str(stop_path), '--subject-pid-file', str(pid_file))
+        wait_until(lambda: self.beating(lease_path), 10, 'guardian did not take over the lease heartbeat')
+        self.release(ident, lease_path, release_path)
+        config = self.launch_config(ident, lease_path, release_path, stop_path, pid_file,
+                                    self.root / 'home', self.root / 'tmp', [self.app, 'crash'])
+        launch_out = self.root / 'launch.out'; launch = self.root / 'launch.record'
+        self.tool_call(launch, launch_out, self.root / 'launch.err', PY, str(BIN / 'launch.py'),
+                       '--config', str(config), '--execute', '--hold-seconds', '30')
+        self.assertEqual(self.detached_exit(launch), 3)
+        self.assertEqual(self.json_lines(launch_out, 2)[-1]['stoppedBy'], 'subject-ended-before-hold')
+        self.assertEqual(self.detached_exit(guardian), 0)
+        self.assertEqual(self.read_json(guardian_out)['guardian'], 'stopped')
+        self.assertEqual(self.finish(ident, 'run-short', 'epoch-short').returncode, 0)
 
 
 class LaunchModeHappyPath(M1Sequence):
