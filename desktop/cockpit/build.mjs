@@ -84,7 +84,7 @@ if (official) {
 } else {
   notices.push('Community edition excludes reserved artwork.');
   // The launch field is official only; its page has no place in this edition.
-  for(const name of ['src/field-page.js','src/field-model.js'])await rm(resolve(output,name),{force:true});
+  await rm(resolve(output,'src/field-page.js'),{force:true});
   await writeFile(resolve(output,'src/porthole-stills-data.js'),'// SPDX-License-Identifier: MIT\nexport default null;\n');
 }
 await writeFile(resolve(output,'cockpit.css'),css);

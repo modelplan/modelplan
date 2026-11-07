@@ -9,6 +9,7 @@ import {cockpitMembers} from './members.js';
 import {cautionItems} from './caution.js';
 import {prototypeEngineSupplement,currentWindow,displayWindow,scopedWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
 import {historyView,usageStats} from './prototype-history.js';
+import {FIELD_LIMIT,fieldModel} from './field-model.js';
 import {scaleView,levelK,bankView,faderModel,lcdView,indicatorView,marksView,stripAria} from '../study/rocket-r1/fader-view.js';
 import {setLanguage,t,formatCredits} from '../study/rocket-r1/i18n.js';
 import {overview} from '../study/rocket-r1/mfd-pages/overview.js';
@@ -90,7 +91,9 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
   const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,text:locale==='en'?x.text.en:x.text.zh})):[];
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
-  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),paceHistory:{},sessionRanking:lastSeen(members,ids),models:[],lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:[]},empty:accounts.length===0,ids,members};
+  // Public model data for the frontier (owner D39/D-B): the user's vendors first, then publication order, ten at most.
+  const published=(data?.details?.publishedModels??[]).flatMap(m=>{const f=fieldModel(m);return f?[f]:[];}),lineup=new Set(data?.details?.publication?.models.map(m=>m.id)??[]);
+  return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),paceHistory:{},sessionRanking:lastSeen(members,ids),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published.filter(m=>lineup.has(m.id)).concat(published.filter(m=>!lineup.has(m.id))).slice(0,FIELD_LIMIT)},empty:accounts.length===0,ids,members};
  }
  function paint(keepFaders=false,now?:number){
   if(now!==undefined)renderedNow=now;
