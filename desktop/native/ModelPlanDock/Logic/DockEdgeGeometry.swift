@@ -6,8 +6,10 @@ public enum DockEdgeError: Error, Equatable { case invalidGeometry, duplicateLay
 /// Session-resolved identity only; the shared display owner persists durable identity.
 public struct DockDisplayArea: Equatable, Sendable {
     public let id:String, frame:CGRect, visibleFrame:CGRect, usableFrame:CGRect
-    public init(id:String,frame:CGRect,visibleFrame:CGRect,safeFrame:CGRect? = nil){
+    public let backingScale: Int, name: String?
+    public init(id:String,frame:CGRect,visibleFrame:CGRect,safeFrame:CGRect? = nil,backingScale:Int = 1,name:String? = nil){
         self.id=id;self.frame=frame;self.visibleFrame=visibleFrame
+        self.backingScale=backingScale;self.name=name
         usableFrame=frame.intersection(visibleFrame).intersection(safeFrame ?? frame)
     }
 }
@@ -60,70 +62,6 @@ public enum DockEdgeGeometry {
             guard keys.insert(p.displayID+"/"+String(describing:p.edge)).inserted else{throw DockEdgeError.duplicateLayout}
         }
     }
-    /// Exposed usable along-intervals, subtracting every adjoining/overlapping display at the physical edge.
-    public static func exposedIntervals(on display:DockDisplayArea,edge:DockEdge,displays:[DockDisplayArea],cornerClearance:CGFloat=24)->[ClosedRange<CGFloat>]{
-        guard edge != .top,cornerClearance.isFinite,cornerClearance>=0,finite(display.frame),finite(display.usableFrame),displays.allSatisfy({finite($0.frame)}) else{return []}
-        let u=display.usableFrame,f=display.frame,vertical=edge != .bottom
-        let lower=(vertical ? u.minY:u.minX)+cornerClearance,upper=(vertical ? u.maxY:u.maxX)-cornerClearance
-        guard lower<upper else{return []};var intervals=[lower...upper]
-        for other in displays where other.id != display.id{
-            let n=other.frame,shared:Bool
-            switch edge{
-            case .left:shared=n.minX<f.minX && n.maxX>=f.minX
-            case .right:shared=n.maxX>f.maxX && n.minX<=f.maxX
-            case .bottom:shared=n.minY<f.minY && n.maxY>=f.minY
-            case .top:shared=false
-            }
-            guard shared else{continue}
-            let a=vertical ? n.minY:n.minX,b=vertical ? n.maxY:n.maxX
-            intervals=intervals.flatMap{r->[ClosedRange<CGFloat>] in
-                if b<=r.lowerBound || a>=r.upperBound{return [r]}
-                var next=[ClosedRange<CGFloat>]()
-                if a>r.lowerBound{next.append(r.lowerBound...min(a,r.upperBound))}
-                if b<r.upperBound{next.append(max(b,r.lowerBound)...r.upperBound)}
-                return next
-            }
-        };return intervals
-    }
-    private static func reserved(_ edge:DockEdge,on d:DockDisplayArea)->Bool{
-        switch edge{
-        case .left:return d.visibleFrame.minX>d.frame.minX
-        case .right:return d.visibleFrame.maxX<d.frame.maxX
-        case .bottom:return d.visibleFrame.minY>d.frame.minY
-        case .top:return true
-        }
-    }
-    private static func candidate(_ p:DockEdgeLayout,on d:DockDisplayArea,displays:[DockDisplayArea],fraction:Double,point:CGPoint?,corner:CGFloat,wake:CGFloat)->DockEdgePlacement?{
-        let u=d.usableFrame,vertical=p.edge != .bottom
-        let along=vertical ? p.expandedSize.height:p.expandedSize.width
-        let cross=vertical ? p.expandedSize.width:p.expandedSize.height
-        let before=max(p.alongAnchor,p.sliverLength/2),after=max(along-p.alongAnchor,p.sliverLength/2)
-        let total=before+after,span=vertical ? u.height:u.width
-        guard cross<=(vertical ? u.width:u.height),p.sliverThickness<=cross,wake<=(vertical ? u.width:u.height),p.sliverLength<=span else{return nil}
-        let intervals=exposedIntervals(on:d,edge:p.edge,displays:displays,cornerClearance:corner).filter{$0.upperBound-$0.lowerBound>=total}
-        guard !intervals.isEmpty else{return nil}
-        let desired=point.map{vertical ? $0.y:$0.x} ?? ((vertical ? u.minY:u.minX)+CGFloat(max(0,min(1,fraction)))*span)
-        let centres=intervals.map{r in max(r.lowerBound+before,min(r.upperBound-after,desired))}
-        let centre=centres.min{abs($0-desired)<abs($1-desired)}!
-        let frame:CGRect,sliver:CGRect,wakeRect:CGRect
-        switch p.edge{
-        case .left:
-            frame=CGRect(x:u.minX,y:centre-p.alongAnchor,width:cross,height:along)
-            sliver=CGRect(x:u.minX,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
-            wakeRect=CGRect(x:u.minX,y:sliver.minY,width:wake,height:sliver.height)
-        case .right:
-            frame=CGRect(x:u.maxX-cross,y:centre-p.alongAnchor,width:cross,height:along)
-            sliver=CGRect(x:u.maxX-p.sliverThickness,y:centre-p.sliverLength/2,width:p.sliverThickness,height:p.sliverLength)
-            wakeRect=CGRect(x:u.maxX-wake,y:sliver.minY,width:wake,height:sliver.height)
-        case .bottom:
-            frame=CGRect(x:centre-p.alongAnchor,y:u.minY,width:along,height:cross)
-            sliver=CGRect(x:centre-p.sliverLength/2,y:u.minY,width:p.sliverLength,height:p.sliverThickness)
-            wakeRect=CGRect(x:sliver.minX,y:u.minY,width:sliver.width,height:wake)
-        case .top:return nil
-        }
-        let actual=Double((centre-(vertical ? u.minY:u.minX))/span)
-        return .init(displayID:d.id,edge:p.edge,alongFraction:actual,frame:frame,sliverFrame:sliver,wakeFrame:wakeRect,layout:p)
-    }
     /// Retention rectangles include boundaries, but an exact adjoining-display endpoint must not wake.
     public static func canWake(at point:CGPoint,placement:DockEdgePlacement,displays:[DockDisplayArea])->Bool{
         let r=placement.wakeFrame
@@ -132,9 +70,9 @@ public enum DockEdgeGeometry {
         for other in displays where other.id != d.id{
             let f=d.frame,n=other.frame
             switch placement.edge{
-            case .left:if n.minX<f.minX && n.maxX>=f.minX && point.y>=n.minY && point.y<=n.maxY{return false}
-            case .right:if n.maxX>f.maxX && n.minX<=f.maxX && point.y>=n.minY && point.y<=n.maxY{return false}
-            case .bottom:if n.minY<f.minY && n.maxY>=f.minY && point.x>=n.minX && point.x<=n.maxX{return false}
+            case .left:if point.x<=f.minX && n.minX<f.minX && n.maxX>=f.minX && point.y>=n.minY && point.y<=n.maxY{return false}
+            case .right:if point.x>=f.maxX && n.maxX>f.maxX && n.minX<=f.maxX && point.y>=n.minY && point.y<=n.maxY{return false}
+            case .bottom:if point.y<=f.minY && n.minY<f.minY && n.maxY>=f.minY && point.x>=n.minX && point.x<=n.maxX{return false}
             case .top:return false
             }
         };return true
@@ -143,34 +81,15 @@ public enum DockEdgeGeometry {
         try validate(displays:displays,layouts:layouts)
         guard preference.alongFraction.isFinite,cornerClearance.isFinite,cornerClearance>=0,wakeDepth.isFinite,wakeDepth>0,
               pointer.map({$0.x.isFinite && $0.y.isFinite}) ?? true else{throw DockEdgeError.invalidGeometry}
-        let sorted=displays.sorted{$0.id<$1.id}
-        let preferred=sorted.first{$0.id==preference.displayID}
-        // A missing fixed display recovers to primary without following pointer motion.
-        // nil identity is the explicit follow mode; the host resolves primary-only choices.
-        let followed = preference.displayID == nil ? pointer.flatMap{p in sorted.first{$0.frame.contains(p)}} : nil
-        let chosen=preferred ?? followed ?? sorted.first{$0.id==primaryID} ?? sorted.first
-        var candidates=[DockEdgePlacement]()
-        for d in sorted where nearest || d.id==chosen?.id{
-            for edge in allowedEdges{
-                let migrationPoint=preference.edge == .top ? CGPoint(x:d.usableFrame.minX+CGFloat(max(0,min(1,preference.alongFraction)))*d.usableFrame.width,y:d.usableFrame.maxY):nil
-                guard let layout=layouts.first(where:{$0.displayID==d.id && $0.edge==edge}),let c=candidate(layout,on:d,displays:sorted,fraction:preference.alongFraction,point:nearest ? pointer:migrationPoint,corner:cornerClearance,wake:wakeDepth) else{continue}
-                candidates.append(c)
-            }
+        let sorted = displays.sorted { $0.id < $1.id }
+        if nearest {
+            guard let pointer, let display = PulsePanelDrag.display(at: pointer, in: sorted) else { return nil }
+            let intent = PulsePanelDrag.nearestPlacement(pointer: pointer, display: display)
+            return PulseRestingPlacement.resolve(preference: intent, display: display, layouts: layouts,
+                                                corner: cornerClearance, wake: wakeDepth)
         }
-        // If the preferred display has no usable exposed/registered edge, safely fall back to another display.
-        if candidates.isEmpty && !nearest,let chosen{
-            // Automatic recovery is not a drag: keep the stored along-edge intent and use
-            // the chosen display as a stable distance anchor, never the moving pointer.
-            return try resolve(preference:.init(displayID:chosen.id,edge:preference.edge,alongFraction:preference.alongFraction),displays:sorted,layouts:layouts,pointer:nil,primaryID:primaryID,nearest:true,cornerClearance:cornerClearance,wakeDepth:wakeDepth)
-        }
-        let alternatives=candidates.filter{c in !reserved(c.edge,on:sorted.first{$0.id==c.displayID}!)}
-        if !alternatives.isEmpty{candidates=alternatives}
-        if !nearest,let exact=candidates.first(where:{$0.edge==preference.edge}){return exact}
-        guard let target=(nearest ? pointer:nil) ?? chosen.map({CGPoint(x:$0.usableFrame.midX,y:preference.edge == .top ? $0.usableFrame.maxY:$0.usableFrame.midY)}) else{return candidates.first}
-        func distance(_ c:DockEdgePlacement)->CGFloat{
-            let x=max(c.sliverFrame.minX,min(c.sliverFrame.maxX,target.x)),y=max(c.sliverFrame.minY,min(c.sliverFrame.maxY,target.y))
-            return hypot(target.x-x,target.y-y)
-        }
-        return candidates.enumerated().min{a,b in let x=distance(a.element),y=distance(b.element);return x==y ? a.offset<b.offset:x<y}?.element
+        let chosen = PulseRestingPlacement.display(preference: preference, displays: sorted, pointer: pointer, primaryID: primaryID)
+        return PulseRestingPlacement.resolve(preference: preference, display: chosen, layouts: layouts,
+                                            corner: cornerClearance, wake: wakeDepth)
     }
 }

@@ -23,10 +23,15 @@ import ModelPlanEngineClient
         let app = try await application()
         defer { app.composition.dock.close() }
         let expected = app.composition.menuPresentation.title
-        // A concurrent preference writer makes the explicit Show request stale.
         _ = try await app.foundationStore.update { $0.showDock = false; $0.dockEdge = .left }
+        await app.settingsHost.application.editor.reload()
+        // The settings folder becomes read-only, so the explicit Show cannot be saved.
+        let status = await app.foundationStore.foundationStatus()
+        let folder = try XCTUnwrap(status).path.deletingLastPathComponent()
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
         try invoke("Show Quota Widget", on: app)
-        let feedback = "Settings changed. Choose Show Quota Widget again."
+        let feedback = "Could not show Quota Widget. Check Settings and try again."
         for _ in 0..<250 {
             if app.liveStatusMenu?.items.contains(where: { $0.title == feedback }) == true { break }
             try await Task.sleep(for: .milliseconds(20))

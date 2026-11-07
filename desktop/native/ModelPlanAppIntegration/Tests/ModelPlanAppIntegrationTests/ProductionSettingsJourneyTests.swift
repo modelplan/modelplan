@@ -337,7 +337,7 @@ import ModelPlanDock
         let drop = CGPoint(x: 1, y: 450)
         pointer = drop; handler.updateBackgroundMove(global: drop)
         XCTAssertTrue(handler.isBackgroundMoving)
-        XCTAssertEqual(host.edgePresentation?.snapPreview?.edge, .left,
+        XCTAssertEqual(host.edgePresentation?.placement?.edge, .left,
             "The actual official factory must register a left destination, not just its starting edge")
         XCTAssertNotNil(host.dockView.registeredMoveOutlinePath, "The actual official hull has an exact move-outline path")
         presence.mouseButtonDown = false; handler.endBackgroundMove(global: drop)
@@ -350,7 +350,7 @@ import ModelPlanDock
         XCTAssertTrue(row.subtitle.chinese.contains("当前位于左侧"))
         host.setPresentationAllowed(false)
         XCTAssertNil(host.dockView.backgroundDragDelegate)
-        XCTAssertNil(host.nativePanel); XCTAssertNil(host.nativeMovePreviewPanel)
+        XCTAssertNil(host.nativePanel)
     }
 
 }
