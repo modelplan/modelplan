@@ -77,7 +77,7 @@ actor EntrySyntheticClient: EngineClient {
         var restarted = false
     }
 
-    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", accountFreshUntil: String? = nil, resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
+    static func rows(weekly: Double, fiveHour: Double? = nil, secondWeekly: Double? = nil, sequence: Int = 7, weeklyDeadline: String = "2028-12-01T00:00:00Z", weeklyResetsAt: String? = nil, resetID: String? = nil, unbound: Bool = false, reserveBalance: Double? = nil, reserveUnit: String = "unknown", resetCardClock: Date? = nil, resetConfirmed: Bool = false, resetFacts: ResetFactsFixture = .init(), windowSources: WindowSources = .captured, readerFailed: Bool = false, includeSession: Bool = true, extraWindow: Bool = false) throws -> WireRowsSnapshot {
         let captures = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json")
         var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: captures)) as? [String: Any])
@@ -102,7 +102,7 @@ actor EntrySyntheticClient: EngineClient {
         if unbound { account["subscriptionRef"] = NSNull() }
         else { account["subscriptionRef"] = "aaaaaaaaaaaaaaaa" }
         account["valueState"] = readerFailed ? "retained" : "current"
-        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = accountFreshUntil ?? weeklyDeadline
+        account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = weeklyDeadline
         account["lastFailure"] = NSNull()
         if let reserveBalance { account["credits"] = ["balance": reserveBalance, "unit": reserveUnit] }
         session["id"] = "session:18000:main:main"; session["role"] = "session"
@@ -114,7 +114,7 @@ actor EntrySyntheticClient: EngineClient {
         var week = session
         week["id"] = "weekly:604800:main:main"; week["role"] = "weekly"; week["durationSeconds"] = 604800
         week["remainingPercent"] = weekly; week["validUntil"] = weeklyDeadline
-        week["resetsAt"] = weeklyDeadline
+        week["resetsAt"] = weeklyResetsAt ?? weeklyDeadline
         if let wall = resetCardClock {
             let stamp = ISO8601DateFormatter()
             let scheduled = stamp.string(from: wall.addingTimeInterval(3600))
@@ -1399,7 +1399,9 @@ actor EntrySyntheticClient: EngineClient {
         let iso = ISO8601DateFormatter()
         var wall = try XCTUnwrap(iso.date(from: "2026-12-02T00:00:00Z"))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyDeadline: "2026-12-02T00:01:00Z", accountFreshUntil: "2028-12-01T00:00:00Z")
+        // The window is still marked current; only its reset has passed. The provider keeps the number and the
+        // Dock evaluator refuses it, so this is the case where the title used to disagree with the Dock.
+        let fixture = try Self.rows(weekly: 15, fiveHour: 9, weeklyResetsAt: "2026-12-02T00:01:00Z")
         let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
             applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: normalEntryTestEnvironment, deadlineNow: { wall },
