@@ -43,6 +43,16 @@
     },
     {
       "admitted": "no",
+      "beta": false,
+      "consent": "denied",
+      "detected": "yes",
+      "last": "unknown",
+      "provider": "codex",
+      "state": "unavailable:denied",
+      "windows": 0
+    },
+    {
+      "admitted": "no",
       "beta": true,
       "consent": "denied",
       "detected": "yes",

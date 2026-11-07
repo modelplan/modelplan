@@ -34,6 +34,29 @@ import ModelPlanEngineClient
         XCTAssertNil(entry.showFeedbackText(.english))
     }
 
+    /// D-6 (ignition.css:86-106): hover lifts the cap 1 pt and brightens the track; press sinks it,
+    /// swaps the pressed art and deepens the contact shadow. A disabled ignition does neither.
+    func testIgnitionHoverAndPressPoses() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("ignition-"+UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at:root) }
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        _ = try await store.update { $0.showDock=true }
+        let entry=app(store,cockpitEntryEnabled:true);await entry.prepare()
+        addTeardownBlock { @MainActor in entry.composition.dock.close() }
+        let dock=entry.composition.dock;dock.refreshDockContent()
+        XCTAssertEqual(dock.ignitionPoseForChecks.pose,"resting")
+        dock.hoverIgnitionForChecks(true)
+        var pose=dock.ignitionPoseForChecks
+        XCTAssertEqual(pose.pose,"raised");XCTAssertEqual(abs(pose.capOffset),1);XCTAssertFalse(pose.pressedArt);XCTAssertEqual(pose.track,0.85)
+        dock.pressIgnitionForChecks(true)
+        pose=dock.ignitionPoseForChecks
+        XCTAssertEqual(pose.pose,"pressed");XCTAssertTrue(pose.pressedArt);XCTAssertEqual(pose.inner,0.55)
+        dock.pressIgnitionForChecks(false);dock.hoverIgnitionForChecks(false)
+        XCTAssertEqual(dock.ignitionPoseForChecks.pose,"resting");XCTAssertEqual(dock.ignitionPoseForChecks.track,0.25)
+        dock.cockpitEntryEnabled=false;dock.hoverIgnitionForChecks(true)
+        XCTAssertEqual(dock.ignitionPoseForChecks.pose,"resting")
+    }
+
     func testDragCommitSurvivesContentRebuildAndRestart() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }

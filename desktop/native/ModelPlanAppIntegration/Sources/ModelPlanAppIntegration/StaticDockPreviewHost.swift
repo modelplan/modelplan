@@ -73,6 +73,66 @@ public struct StaticDockGeometry {
     var onHelpFocusChanged: (() -> Void)?
     private var keyboardFocused = false
     private var assistiveFocused = false
+    // D-6 (ignition.css): the painted cap stays in the Dock image; these layers repeat it above
+    // the Dock so it can lift on hover and sink on press. Nothing shows without official art.
+    private let capLayer = CALayer(), innerLayer = CALayer(), guardLayer = CALayer(), trackLayer = CAShapeLayer()
+    private var art: T2IgnitionArt?
+    private var hovered = false, pressed = false
+    private var hoverArea: NSTrackingArea?
+    enum Pose: Equatable { case resting, raised, pressed }
+    var poseForChecks: Pose { pose }
+    var capOffsetForChecks: CGFloat { capLayer.affineTransform().ty }
+    var capIsPressedArtForChecks: Bool { art != nil && capLayer.contents as AnyObject? === art?.pressed }
+    var innerOpacityForChecks: Float { innerLayer.opacity }
+    var trackOpacityForChecks: Float { trackLayer.opacity }
+    private var pose: Pose {
+        guard isEnabled else { return .resting }
+        if pressed { return .pressed }
+        return hovered || keyboardFocused ? .raised : .resting
+    }
+    func installArt(_ value: T2IgnitionArt?, guardSide: CGFloat) {
+        art = value
+        wantsLayer = true
+        guard let root = layer, let value, guardSide > 0 else { return }
+        if capLayer.superlayer == nil { [trackLayer, capLayer, innerLayer, guardLayer].forEach(root.addSublayer) }
+        CATransaction.begin(); CATransaction.setDisableActions(true); defer { CATransaction.commit() }
+        let centre = CGPoint(x: bounds.midX, y: bounds.midY)
+        func box(_ side: CGFloat) -> CGRect { CGRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side) }
+        capLayer.frame = box(guardSide * 44 / 52); innerLayer.frame = box(guardSide); guardLayer.frame = box(guardSide)
+        innerLayer.contents = value.inner; guardLayer.contents = value.guardRing
+        // face-view.js: r 16.7 in a 40-unit box drawn at the guard's size.
+        let radius = guardSide * 16.7 / 40
+        trackLayer.frame = bounds; trackLayer.fillColor = nil; trackLayer.lineWidth = guardSide * 0.65 / 40
+        trackLayer.strokeColor = CGColor(srgbRed: 0xed/255, green: 0x92/255, blue: 0x70/255, alpha: 1)
+        trackLayer.path = CGPath(ellipseIn: CGRect(x: centre.x - radius, y: centre.y - radius, width: 2 * radius, height: 2 * radius), transform: nil)
+        updatePose(animated: false)
+    }
+    private func updatePose(animated: Bool = true) {
+        guard let art else { return }
+        let current = pose
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0.12 : 0)
+        defer { CATransaction.commit() }
+        // A resting cap is the painted one; the repeat shows only while it moves.
+        let moving = current != .resting
+        capLayer.isHidden = !moving; innerLayer.isHidden = !moving; guardLayer.isHidden = !moving
+        capLayer.contents = current == .pressed ? art.pressed : art.idle
+        let lift: CGFloat = current == .raised ? 1 : current == .pressed ? -1 : 0
+        capLayer.setAffineTransform(CGAffineTransform(translationX: 0, y: isFlipped ? -lift : lift))
+        innerLayer.opacity = current == .pressed ? 0.55 : 0.33
+        trackLayer.opacity = moving ? 0.85 : 0.25
+    }
+    func setHoveredForChecks(_ value: Bool) { hovered = value; updatePose(animated: false) }
+    func setPressedForChecks(_ value: Bool) { pressed = value; updatePose(animated: false) }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area); hoverArea = area
+    }
+    override func mouseEntered(with event: NSEvent) { hovered = true; updatePose() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updatePose() }
+    override func highlight(_ flag: Bool) { super.highlight(flag); pressed = flag; updatePose() }
 
     private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
     var hasHelpFocus: Bool { canPresentHelp && (keyboardFocused || assistiveFocused) }
@@ -108,6 +168,7 @@ public struct StaticDockGeometry {
         let wasFocused = keyboardFocused || assistiveFocused
         if let keyboard { keyboardFocused = keyboard }
         if let assistive { assistiveFocused = assistive }
+        updatePose()
         if wasFocused != (keyboardFocused || assistiveFocused) { onHelpFocusChanged?() }
     }
 }
@@ -135,6 +196,15 @@ struct DockHelpInteraction: Equatable {
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
+    private func installIgnitionArt() {
+        let side = dockView.presentedSkinForChecks?.fixedLayers.first { $0.resource.contains("recessed-guard") }?.rect.width ?? 0
+        consoleButton.installArt(side > 0 ? T2IgnitionArt.shared : nil, guardSide: side)
+    }
+    var ignitionPoseForChecks: (pose: String, capOffset: CGFloat, pressedArt: Bool, inner: Float, track: Float) {
+        ("\(consoleButton.poseForChecks)", consoleButton.capOffsetForChecks, consoleButton.capIsPressedArtForChecks, consoleButton.innerOpacityForChecks, consoleButton.trackOpacityForChecks)
+    }
+    func hoverIgnitionForChecks(_ value: Bool) { consoleButton.setHoveredForChecks(value) }
+    func pressIgnitionForChecks(_ value: Bool) { consoleButton.setPressedForChecks(value) }
     public var cockpitEntryEnabled = true {
         didSet {
             consoleButton.isEnabled = cockpitEntryEnabled
@@ -1166,6 +1236,7 @@ struct DockHelpInteraction: Equatable {
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
         if let rect = geometry.consoleButton { consoleButton.frame = rect }
+        installIgnitionArt()
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
@@ -1431,6 +1502,7 @@ struct DockHelpInteraction: Equatable {
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
             if let rect = current.consoleButton { consoleButton.frame = rect }
+            installIgnitionArt()
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }

@@ -8,8 +8,8 @@ enum EngineRowsText {
     static let autoCollapse = SettingsText("Auto-Collapse", "自动收起")
     /// One-time hint after the widget is turned off from the status menu or Settings.
     static let widgetTurnedOffHint = SettingsText(
-        "Quota Widget is off. To turn it back on, choose Show Quota Widget from the menu bar icon.",
-        "额度挂件已关闭，可在菜单栏图标里勾选「显示额度挂件」重新打开")
+        "Quota Widget is off. Right-click the menu bar icon and choose Show Quota Widget.",
+        "额度挂件已关闭，可右键点菜单栏图标，勾选「显示额度挂件」重新打开")
     static let refresh = SettingsText("Refresh", "刷新")
     static let settings = SettingsText("Settings…", "设置…")
     static let contextSettings = SettingsText("Settings", "设置")
