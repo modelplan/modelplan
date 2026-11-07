@@ -122,7 +122,7 @@ private actor S04SyntheticClient: EngineClient {
     }
 
     /// Normal entry on real panels with the real display topology; only the pointer is supplied.
-    private func journeyApplication(_ name: String, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
+    private func journeyApplication(_ name: String, onboarded: Bool = false, pointer: @escaping @MainActor () -> CGPoint?) async throws -> (EngineDockMenuApplication, URL) {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent(name + "-" + UUID().uuidString)
         EngineRowsEntry.nativeJourneyProfile = profile
@@ -135,6 +135,7 @@ private actor S04SyntheticClient: EngineClient {
         projection["rows"] = records; root["projection"] = projection
         let rows = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        if onboarded { _ = try await store.update { preferences in preferences.onboarding.next(in: .task65) } }
         let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("synthetic"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
         let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: true,
             dockEnvironment: {
@@ -182,7 +183,7 @@ private actor S04SyntheticClient: EngineClient {
     /// dismissal returns the request to the status item (focus return). Before the fix the
     /// coordinator was built without the status request, so no dismissal ever reached it.
     func testG312StatusHelpMapDismissalReturnsToTheStatusItem() async throws {
-        let (app, profile) = try await journeyApplication("g312-focus", pointer: { nil })
+        let (app, profile) = try await journeyApplication("g312-focus", onboarded: true, pointer: { nil })
         defer { EngineRowsEntry.nativeJourneyProfile = nil; try? FileManager.default.removeItem(at: profile) }
         defer { app.composition.dock.close() }
         let dock = app.composition.dock

@@ -110,10 +110,11 @@ import ModelPlanSettings
             if case .dismissHint(let id, _) = action, id == offer.id { self.dismiss(id) }
         }
         window.setFrame(screenRect, display: true); window.orderFrontRegardless()
+        // Not this panel's occlusionState: AppKit updates it later, so a panel just ordered in never
+        // reports .visible here. isCurrent carries the settled state of the window the hint belongs to.
         guard !retired, generation == token, currentOffer == offer, currentSurfaceValue == surface,
               isCurrent(surface), window.isVisible, !window.isMiniaturized, window.alphaValue > 0,
               window.sharingType == policy.0, window.collectionBehavior == policy.1,
-              window.occlusionState.contains(.visible),
               layer.visibleRect.contains(rect), layer.presentation?.card == placement else {
             window.orderOut(nil); currentOffer = nil; currentSurfaceValue = nil; return false
         }
@@ -169,7 +170,8 @@ import ModelPlanSettings
               layer.presentation?.mapHeader != nil else { return false }
         let token = generation
         window.orderFrontRegardless()
-        guard window.isVisible, window.alphaValue > 0, window.occlusionState.contains(.visible), isCurrent(surface) else {
+        // As in show: occlusionState lags the order, and isCurrent has the settled state.
+        guard window.isVisible, window.alphaValue > 0, isCurrent(surface) else {
             window.orderOut(nil); return false
         }
         var optionHeld = NSEvent.modifierFlags.contains(.option)
