@@ -155,7 +155,6 @@ import XCTest
 
         mark("L132")
         try Data().write(to: hold)
-        defer { try? FileManager.default.removeItem(at: hold) }
 
         mark("L135")
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
@@ -304,7 +303,8 @@ import XCTest
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
             consentTextVersion: XCTUnwrap(before["consentTextVersion"] as? Int), allow: [], deny: [scope])
         mark("L233")
-        _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(4))
+        do { _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(4)) }
+        catch { XCTFail("DIAG deny grant threw: \(String(reflecting: error)) expectGeneration=\(delivery.floor.generation) current=\(String(describing: app.composition.store.snapshot.delivery))"); throw error }
         mark("L234")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
         mark("L235")
