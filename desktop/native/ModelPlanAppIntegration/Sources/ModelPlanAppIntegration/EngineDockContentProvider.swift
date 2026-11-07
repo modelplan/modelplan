@@ -246,7 +246,7 @@ public enum EngineDeadlineFacts {
         switch value.status {
         case .loading: status = english ? "Loading readings…" : "正在读取…"
         case .empty: status = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
-        case .failed: status = english ? "Readings unavailable. Check the engine connection." : "读数不可用，请检查引擎连接。"
+        case .failed: status = EngineRowsText.readingServiceUnavailable.value(english ? .english : .chinese)
         case .cleared: status = english ? "Readings cleared. Waiting for current data." : "读数已清除，正在等待当前数据。"
         case .ready: status = value.summary.map { text($0.text) } ?? (english ? "Readings" : "读数")
         }
