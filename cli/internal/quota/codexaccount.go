@@ -157,6 +157,42 @@ func CodexBin(home string) string {
 	return toolcli.Find(home, exe, "/Applications/Codex.app/Contents/Resources/"+exe)
 }
 
+// AccountRefresh is the outcome of an explicit refresh. It covers Codex only: no other source
+// has one, each keeps its own schedule.
+type AccountRefresh struct {
+	Source string     `json:"source"`
+	Status string     `json:"status"`           // refreshed | too_soon | failed | not_allowed
+	NextAt *time.Time `json:"nextAt,omitempty"` // too_soon: when asking again is allowed
+	Reason string     `json:"reason,omitempty"` // failed, or why too_soon follows a failure
+}
+
+// RefreshAccountNow runs RefreshCodexAccount and says what came of it: that call returns nil
+// both when it is too soon to ask and when it caches a failure.
+func RefreshAccountNow(ctx context.Context, cache, codex string, now time.Time) *AccountRefresh {
+	r := &AccountRefresh{Source: "codex"}
+	failure := func() string {
+		if s := loadAccount(cache); s != nil && s.Status != "ok" {
+			return s.Error
+		}
+		return ""
+	}
+	if next, err := codexRefreshNext(cache); err == nil && now.Before(next) {
+		at := next.UTC()
+		r.Status, r.NextAt, r.Reason = "too_soon", &at, failure()
+		return r
+	}
+	if err := RefreshCodexAccount(ctx, cache, codex, now); err != nil {
+		r.Status, r.Reason = "failed", err.Error()
+		return r
+	}
+	if s := loadAccount(cache); s == nil || s.Status != "ok" {
+		r.Status, r.Reason = "failed", failure()
+		return r
+	}
+	r.Status = "refreshed"
+	return r
+}
+
 // RefreshCodexAccount asks Codex for the account's windows and credits and caches the answer
 // (or the failure, so a missing login is not retried for half an hour). One refresh at a time.
 func RefreshCodexAccount(ctx context.Context, cache, codex string, now time.Time) error {

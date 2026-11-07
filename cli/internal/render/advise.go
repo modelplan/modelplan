@@ -34,8 +34,8 @@ type adviceText struct {
 
 var adviceZH = adviceText{
 	None: "现在没有需要提醒的事。", Tentative: "（待确认）", Unknown: "未知",
-	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有重置卡可用（需要你自己兑换）",
-	OnCredits: "继续用会扣点数，剩 %s", OnUnlimited: "继续用会扣点数（不限量）", CardToo: "；另有重置卡可用（需要你自己兑换）", ReadingAge: "（%s前的读数）",
+	Exhausted: "%s额度已用完，%s后重置", Wait: "等重置或换用其他套餐", UseCard: "有额外重置可用（需要你自己兑换）",
+	OnCredits: "继续用会扣点数，剩 %s", OnUnlimited: "继续用会扣点数（不限量）", CardToo: "；另有额外重置可用（需要你自己兑换）", ReadingAge: "（%s前的读数）",
 	Tight: "%s额度偏紧（剩 %s，%s后重置）", TightOut: "%s额度偏紧（剩 %s，按最近的用量约 %s后用完，%s后才重置）", Down: "降到 %s%s",
 	EffortFree: "这个套餐按请求次数计，降档不省额度；重活可以留到重置后", WaitOffpeak: "这个套餐按请求次数计，降档不省额度；%s后进入低倍率时段（%s → %s），不急的活可以等", Stay: "保持当前档，重活留给强模型",
 	ModelFirst: "换 %s %s%s，能力不降（这个任务确实需要当前模型的话就不换）；不换就%s",
@@ -47,10 +47,10 @@ var adviceZH = adviceText{
 	FastFirst: "先关掉 %s（额度消耗 ×%s）；", FastFirstThen: "先关掉 %s（额度消耗 ×%s）；还不够再%s",
 	BackFast: "，并关掉 %s（额度消耗 ×%s）", FastOff: "可以关掉 %s 了（额度消耗 ×%s）",
 	Peak: "%s %s后进入高峰：%s 额度消耗 %s → %s%s，重活可以提前做", Offpeak: "%s %s后进入优惠时段：%s 额度消耗 %s → %s%s，不急的活可以等",
-	CardsExpire: "%s 有 %d 张%s重置卡 %s后过期",
+	CardsExpire: "%s 有 %d 次%s额外重置 %s后过期",
 	Public: map[string]string{
 		"direct_reset_reported_complete": "Codex 官方刚重置了额度", "direct_reset_announced": "Codex 官方宣布将重置额度",
-		"reset_credit_issued": "Codex 官方发放了重置卡", "": "Codex 官方有新的重置消息",
+		"reset_credit_issued": "Codex 官方发放了额外重置", "": "Codex 官方有新的重置消息",
 	},
 	PublicTail: "，你的余量以本机读数为准",
 	Notice:     "ModelPlan：",
@@ -58,8 +58,8 @@ var adviceZH = adviceText{
 
 var adviceEN = adviceText{
 	None: "Nothing to flag right now.", Tentative: " (tentative)", Unknown: "unknown",
-	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "a reset card is available (redeem it yourself)",
-	OnCredits: "further use draws on credits, %s left", OnUnlimited: "further use draws on credits (unlimited)", CardToo: "; a reset card is also available (redeem it yourself)", ReadingAge: " (read %s ago)",
+	Exhausted: "%s used up, resets in %s", Wait: "wait for the reset or use another plan", UseCard: "an extra reset is available (redeem it yourself)",
+	OnCredits: "further use draws on credits, %s left", OnUnlimited: "further use draws on credits (unlimited)", CardToo: "; an extra reset is also available (redeem it yourself)", ReadingAge: " (read %s ago)",
 	Tight: "%s is tight (%s left, resets in %s)", TightOut: "%s is tight (%s left; at the recent rate it runs out in %s, before the reset in %s)", Down: "step down to %s%s",
 	EffortFree: "this plan counts requests, so a lower effort saves no quota; save heavy work for after the reset", WaitOffpeak: "this plan counts requests, so a lower effort saves no quota; the rate drops in %s (%s → %s), so work that can wait is cheaper then", Stay: "stay at this effort and keep the strong model for the hard parts",
 	ModelFirst: "switch to %s %s%s, which scores as high (unless this task needs the current model); otherwise %s",
@@ -71,10 +71,10 @@ var adviceEN = adviceText{
 	FastFirst: "turn %s off first (it draws quota ×%s); ", FastFirstThen: "turn %s off first (it draws quota ×%s); if that is not enough, %s",
 	BackFast: " and turn %s off (it draws quota ×%s)", FastOff: "turn %s off now (it draws quota ×%s)",
 	Peak: "%s enters peak hours in %s: %s quota rate %s → %s%s; do heavy work first", Offpeak: "%s enters off-peak in %s: %s quota rate %s → %s%s; work that can wait is cheaper then",
-	CardsExpire: "%s: %d %s reset card(s) expire in %s",
+	CardsExpire: "%s: %d %s extra reset(s) expire in %s",
 	Public: map[string]string{
 		"direct_reset_reported_complete": "Codex just reset usage limits", "direct_reset_announced": "Codex announced a usage reset",
-		"reset_credit_issued": "Codex issued reset credits", "": "New Codex reset news",
+		"reset_credit_issued": "Codex issued extra resets", "": "New Codex reset news",
 	},
 	PublicTail: "; your own balance is the local reading",
 	Notice:     "ModelPlan: ",
