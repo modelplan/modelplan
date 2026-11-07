@@ -58,7 +58,7 @@ import ModelPlanSettings
             if case .ready = app.composition.store.snapshot.connection { return true }
             return false
         }
-        XCTAssertTrue(ready, "The real app-server must handshake")
+        XCTAssertTrue(ready, "The real app-server must handshake: \(app.composition.store.snapshot.connection), paused \(app.lifecyclePaused)")
     }
     private func firstShow(disabled: Bool) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
