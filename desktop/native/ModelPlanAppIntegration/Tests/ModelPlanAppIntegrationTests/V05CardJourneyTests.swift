@@ -51,7 +51,7 @@ private actor V05SyntheticClient: EngineClient {
         var account = accounts[0], windows = try XCTUnwrap(account["windows"] as? [[String: Any]])
         row["id"] = "codex"; row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock"]
         row["expiresAt"] = "2028-12-01T00:00:00Z"
-        row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        row["reason"] = ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
         row["nextStep"] = ["action": "open_settings_consent", "text": ["en": "Check read access in Settings", "zh": "在设置检查读取权限"], "availableAt": NSNull(), "disabledReason": NSNull()]
         account["subscriptionRef"] = "aaaaaaaaaaaaaaaa"; account["valueState"] = "current"
         account["observedAt"] = "2026-12-01T00:00:00Z"; account["freshUntil"] = "2028-12-01T00:00:00Z"
@@ -82,7 +82,7 @@ private actor V05SyntheticClient: EngineClient {
         elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
         XCTAssertFalse(dock.card.isHidden)
         func textFields(_ view: NSView) -> [NSTextField] { ((view as? NSTextField).map { [$0] } ?? []) + view.subviews.flatMap(textFields) }
-        for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings"]), (.chinese, "储备", ["未报告单位", "读数可用", "在设置检查读取权限"])] {
+        for (language, label, forbidden) in [(SettingsLanguage.english, "Reserve", ["unit not reported", "reading available", "check read access in settings"]), (.chinese, "储备", ["未报告单位", "已读到用量", "在设置检查读取权限"])] {
             _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
             let texts = textFields(dock.card).filter { !$0.isHiddenOrHasHiddenAncestor }.map(\.stringValue)
             XCTAssertTrue(texts.contains(label), "The real card must retain the reserve row")

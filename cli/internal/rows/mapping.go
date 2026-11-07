@@ -10,7 +10,7 @@ type Outcome struct {
 }
 
 var outcomes = map[Code]Outcome{
-	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "读数可用"}},
+	CodeOK:                            {State: StateFresh, Code: CodeOK, Action: ActionNone, Text: Text{EN: "Reading available", ZH: "已读到用量"}},
 	CodeEstimated:                     {State: StateFresh, Code: CodeEstimated, Action: ActionNone, Text: Text{EN: "Estimated reading", ZH: "估算读数"}},
 	CodeStaleReading:                  {State: StateStale, Code: CodeStaleReading, Action: ActionRefresh, Text: Text{EN: "A retained reading is shown", ZH: "正在显示保留的旧读数"}},
 	CodeObservationTimeUnknown:        {State: StateStale, Code: CodeObservationTimeUnknown, Action: ActionRefresh, Text: Text{EN: "The observation time is unknown", ZH: "观测时间未知"}},
