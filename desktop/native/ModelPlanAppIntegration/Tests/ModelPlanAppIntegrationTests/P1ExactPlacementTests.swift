@@ -590,8 +590,13 @@ extension P1ExactPlacementTests {
                 copy["subscriptionRef"] = String(format: "%016x", serial)
                 copy["valueState"] = "current"; copy["freshUntil"] = "2099-01-01T00:00:00Z"
                 if let remaining = station.remaining, var windows = copy["windows"] as? [[String: Any]], !windows.isEmpty {
-                    windows[0]["remainingPercent"] = remaining
-                    copy["windows"] = windows
+                    // A live reading: the capture's window is past its validity.
+                    let observed = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
+                    windows[0]["remainingPercent"] = remaining; windows[0]["role"] = "session"; windows[0]["durationSeconds"] = 18000
+                    windows[0]["current"] = true; windows[0]["observedAt"] = observed
+                    windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
+                    windows[0].removeValue(forKey: "modelScope")
+                    copy["windows"] = [windows[0]]; copy["route"] = "runtime_rpc"; copy["observedAt"] = observed
                 }
                 return copy
             }
