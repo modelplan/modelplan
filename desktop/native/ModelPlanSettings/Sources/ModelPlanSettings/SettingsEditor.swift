@@ -187,6 +187,7 @@ public enum SettingsEditorError: Error, Equatable { case notLoaded, editInProgre
             guard context.capabilities.appCacheClearAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .action(.clearAppCache)
         case .openLink(let link): intent = .openPublicLink(link)
+        case .openSystemSettings(let pane): intent = .openSystemSettings(pane)
         case .checkForUpdates:
             guard context.capabilities.updateServiceAvailable else { throw SettingsEditorError.actionUnavailable }
             intent = .checkForUpdates

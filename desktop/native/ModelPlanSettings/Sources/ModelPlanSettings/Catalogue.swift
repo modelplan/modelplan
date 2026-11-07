@@ -15,6 +15,7 @@ public enum SettingKey: String, CaseIterable, Sendable {
     case appVersion, cliStatus, architecture, diagnostics, readerDetails, refreshHistory, feedback, licenses, consentHelp
     case dockEdge, dockDisplay, dockPosition, detectedReaders, optionalReaders
     case updateStatus, websiteLink, methodologyLink, privacyLink, repositoryLink
+    case loginSystemSettings, notificationSystemSettings
 }
 public enum SettingAvailability: Equatable, Sendable {
     case available, readOnly, unsupportedCaptureHiding, cliOwned, serviceUnavailable, cacheUnavailable
@@ -116,6 +117,16 @@ public struct SettingsDisplayChoice: Equatable, Sendable {
 public struct SettingsPageContext: Sendable {
     /// True only for the shipping normal-entry v1 surface.
     public var v1NormalEntry = false
+    /// SET-9-26: the service state, not the toggle, decides when a v1 fallback row appears.
+    public var systemSettingsFallbacks: Set<SettingsSystemPane> {
+        var panes: Set<SettingsSystemPane> = []
+        if loginServiceObserved, [.requiresApproval, .unavailable].contains(capabilities.login) { panes.insert(.loginItems) }
+        if notificationServiceObserved, [.denied, .unavailable].contains(notificationAuthorization) { panes.insert(.notifications) }
+        return panes
+    }
+    /// Set by the host once it has asked the system; before that nothing is known to be wrong.
+    public var loginServiceObserved = false
+    public var notificationServiceObserved = false
     public var unavailableControls: [SettingKey: SettingsText] = [:]
     public mutating func configureV1NormalEntry() {
         v1NormalEntry = true
@@ -135,6 +146,29 @@ public struct SettingsPageContext: Sendable {
         unavailableControls[.updateStatus] = .init("Unavailable until an update service is connected.", "更新服务接通前不可用。")
         unavailableControls[.clearAppCache] = .init("Unavailable until app cache clearing is supported.", "支持清除应用缓存前不可用。")
         unavailableControls[.resetHints] = .init("Unavailable until help hints are connected.", "帮助提示接通前不可用。")
+    }
+    /// The Quota Widget settings whose effect the widget itself applies. Each becomes usable in
+    /// v1 only once the widget reports that it consumes that key; until then the row keeps its
+    /// visible reason. The saved preferences are never changed here.
+    public static let widgetConsumedKeys: Set<SettingKey> = [.magnification, .showPercentages, .sliverAlert, .fullscreen, .redBelow]
+    /// Called by the Quota Widget host with the keys it applies (from the committed
+    /// `SettingsPreferences`: `magnification`, `showPercentages`, `sliverAlert`,
+    /// `showOverFullscreen`, `redBelow`). Keys outside `widgetConsumedKeys` are ignored.
+    public mutating func observeWidgetConsumers(_ keys: Set<SettingKey>) {
+        let dock = SettingsText("Unavailable until Quota Widget supports this setting.", "额度挂件支持此设置前不可用。")
+        for key in Self.widgetConsumedKeys {
+            if keys.contains(key) { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = dock }
+        }
+    }
+    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
+    public mutating func observeNotificationDelivery(_ available: Bool) {
+        let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        for key in [SettingKey.reset, .official] {
+            if available { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = notices }
+        }
     }
     /// SET-9-18 / SET-9-29: the forecast-exhaustion kind is offered only while the engine
     /// reports a forecast producer (F1); without one the v1 row is hidden, not shown disabled.
@@ -235,6 +269,8 @@ public enum SettingsCatalogue {
         .init(.projectNames,"Project names","项目名称","Shown by default; hiding also applies to notifications.","默认显示；隐藏时通知也不显示名称。"),
         .init(.retention,"Local retention","本地保留时间","CLI-owned: sessions 35 days; daily totals 371 days.","CLI管理：会话35天，日汇总371天。"),
         .init(.clearCLI,"Clear CLI data","清除CLI数据","Unavailable here; no mutating CLI command is issued.","此处不可用；不会执行写入型CLI命令。"),
+        .init(.loginSystemSettings,"Open Login Items","打开登录项设置","macOS could not turn this on from here. Allow ModelPlan in System Settings.","macOS 无法在此开启，请在系统设置中允许 ModelPlan。"),
+        .init(.notificationSystemSettings,"Open Notification Settings","打开通知设置","macOS is not allowing ModelPlan notifications. Change this in System Settings.","macOS 未允许 ModelPlan 发送通知，请在系统设置中更改。"),
         .init(.clearAppCache,"Clear app cache","清除应用缓存","Only app-owned derived caches; preferences and CLI data are kept.","仅清除应用衍生缓存，保留偏好和CLI数据。"),
         .init(.privacyStatement,"Privacy statement","隐私说明","No local uploads; only public downloads.","不上传本机数据，仅下载公开数据。"),
         .init(.appVersion,"App version","应用版本","Application build version.","应用构建版本。"),
@@ -274,6 +310,8 @@ public enum SettingsCatalogue {
                     // nil means that no history producer is connected; do not show a dead row.
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
+                    if c.v1NormalEntry && key == .loginSystemSettings && !c.systemSettingsFallbacks.contains(.loginItems) { return nil }
+                    if c.v1NormalEntry && key == .notificationSystemSettings && !c.systemSettingsFallbacks.contains(.notifications) { return nil }
                     // SET-9-18 (owner 11-06, D36): "Resets expiring" and "Data stopped arriving" are
                     // v1.1; v1 offers the forecast, reset and official-announcement kinds.
                     if c.v1NormalEntry && [.expiring, .stale].contains(key) { return nil }
@@ -367,6 +405,7 @@ public enum SettingsCatalogue {
         case .opening: return choices(p.opening)
         case .countdown: return .choice(String(p.beatMilliseconds), options: [150,200,250].map(String.init))
         case .resetHints: return .action(.resetHelpHints)
+        case .loginSystemSettings, .notificationSystemSettings: return .action(nil)
         case .notificationConsent: return .toggle(p.notifications.optedIn)
         case .forecast, .reset, .official, .expiring, .stale: return .toggle(p.notifications.kinds.contains(NotificationKind(rawValue: k.rawValue)!))
         case .visible: return perSub(options: ["true", "false"]) { String(!p.subscriptions.hiddenIDs.contains($0.id)) }
