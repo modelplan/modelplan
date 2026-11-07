@@ -283,6 +283,8 @@ import ModelPlanMenuVerification
         for key in [SettingKey.percentagePin, .order, .visible, .alias] {
             context.unavailableControls.removeValue(forKey: key)
         }
+        // Language reaches every surface through `applySettings`; the menu bar reads its own display.
+        for key in [SettingKey.language, .menuDisplay] { context.unavailableControls.removeValue(forKey: key) }
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {
@@ -549,7 +551,9 @@ import ModelPlanMenuVerification
     /// Shared by the native status item and detached presentation checks.
     /// Feedback belongs to the menu/accessibility detail; the title remains the quota value.
     func applyStatusContent(to button: NSButton, detail: String) {
-        button.title = composition.menuPresentation.title
+        let title = composition.menuPresentation.title
+        button.title = title
+        button.imagePosition = title.isEmpty ? .imageOnly : .imageLeading
         button.toolTip = detail
         button.setAccessibilityHelp(detail)
     }
