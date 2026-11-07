@@ -58,7 +58,7 @@ jobs:
           if [ "$p1" = "$BASE" ] && [ "$extra" = x ] && git merge-base --is-ancestor "$BASE" "$p2" \
             && [ "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$p2^{tree}")" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "PR head $p2 contains the queue base: reusing its checks"
-          elif git diff --no-renames --name-only "$BASE" HEAD | grep -qE "$QUEUE_PATHS"; then
+          elif git diff --no-renames --name-only -z "$BASE" HEAD | grep -qzE "$QUEUE_PATHS"; then
             echo "run=true" >> "$GITHUB_OUTPUT"; echo "group changes desktop paths: running checks on the group commit"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"; echo "group changes no desktop path"

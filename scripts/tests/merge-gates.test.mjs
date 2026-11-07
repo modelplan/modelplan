@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as R from "../merge-gates/rules.mjs";
 import * as G from "../merge-gates/git.mjs";
 import { workflowProblems } from "../workflow-policy.mjs";
@@ -281,6 +281,36 @@ test("clean-merge proof: the group tree is exactly Git's merge of its parents", 
     assert.equal(G.verifyCleanMerge(r.dir, r.g("rev-parse", "HEAD~1")).ok, false, "not a merge");
     assert.equal(G.verifyCleanMerge(r.dir, "0".repeat(40)).ok, false);
   } finally { r.done(); }
+});
+
+test("queue-scope sees every changed path, whatever Git would quote", () => {
+  // Git quotes non-ASCII, quote and control characters in plain --name-only output, which would hide the
+  // desktop/ prefix from the anchored match and let a group skip its Mac checks. Runs the shipped command.
+  const desktop = readFileSync(join(root, ".github/workflows/desktop.yml"), "utf8");
+  const paths = /^\s+QUEUE_PATHS: (.+)$/m.exec(desktop)[1];
+  const command = /^\s+elif (git diff .+); then$/m.exec(desktop)[1];
+  const scoped = (name) => {
+    const dir = mkdtempSync(join(tmpdir(), "queue-scope-"));
+    try {
+      const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd: dir, stdio: "pipe" });
+      git("init", "-q");
+      git("commit", "-q", "--allow-empty", "-m", "base");
+      const base = git("rev-parse", "HEAD").toString().trim();
+      mkdirSync(dirname(join(dir, name)), { recursive: true });
+      writeFileSync(join(dir, name), "x");
+      git("add", "-A");
+      git("commit", "-q", "-m", "change");
+      return spawnSync("bash", ["-c", command], { cwd: dir, env: { ...process.env, BASE: base, QUEUE_PATHS: paths } }).status === 0;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+  for (const name of ["desktop/native/a.swift", "desktop/native/测试.swift", 'desktop/a"b.swift', "desktop/a\tb.swift", "desktop/a\nb.swift", "codex/cli-pin.json"]) {
+    assert.equal(scoped(name), true, `queue-scope misses ${JSON.stringify(name)}`);
+  }
+  for (const name of ["docs/mac-ci.md", "docs/desktop/测试.md", "codex/cli-pin.json.bak"]) {
+    assert.equal(scoped(name), false, `queue-scope wrongly selects ${JSON.stringify(name)}`);
+  }
 });
 
 test("shipped files: design rules parse, gate workflows pass the workflow policy", () => {
