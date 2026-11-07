@@ -29,3 +29,9 @@ export function currentWindow(account:WireAccount,window:WireWindow,now:number):
 export function displayWindow(account:WireAccount,window:WireWindow,now:number):boolean {
  return account.valueState==='retained' || currentWindow(account,window,now);
 }
+
+// A window limited to named models or a named pool is a 专项 / scoped extra:
+// listed under its subscription, never chosen as the plan-wide tightest window.
+export function scopedWindow(window:WireWindow):boolean {
+ return (window.modelScope?.models?.length??0)>0 || window.poolKey!=='main';
+}
