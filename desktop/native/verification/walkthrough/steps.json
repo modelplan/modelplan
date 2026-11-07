@@ -424,6 +424,66 @@
       ]
     },
     {
+      "id": "help-map",
+      "title": "Help map from the status menu",
+      "expected": "Help in the status menu draws the help map over the visible widget.",
+      "requires": [
+        "widget-shown-again"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "status.help"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 2.5
+        }
+      ],
+      "shot": {},
+      "checks": []
+    },
+    {
+      "id": "help-map-dismissed",
+      "title": "Help map dismissed",
+      "expected": "Escape closes the help map.",
+      "requires": [
+        "help-map"
+      ],
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": []
+    },
+    {
       "id": "popup-card",
       "title": "Popup card",
       "expected": "A click on a ring opens its card with the synthetic windows and reset times. It stays open after the pointer leaves until the cockpit opens; compare that with the prototype.",
