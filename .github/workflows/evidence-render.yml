@@ -1,0 +1,25 @@
+name: Evidence render
+on:
+  pull_request:
+    paths: ['.github/workflows/evidence-render.yml']
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render
+        env:
+          EVIDENCE_OUT: ${{ runner.temp }}/evidence
+        run: swift test --package-path desktop/native/ModelPlanAppIntegration --scratch-path .tmp/evidence --jobs 2 --filter EvidenceRenderTests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-render
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: warn
+          retention-days: 3
