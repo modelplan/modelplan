@@ -69,7 +69,7 @@ private actor EvidenceEngine: EngineClient {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("evidence-" + UUID().uuidString)
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
         _ = try await store.update { p in p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = .large; p.showPercentages = true; for _ in 0..<16 { p.onboarding.next() } }
-        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795), backingScale: 2)
+        let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795))
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
             dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
             makeClient: { _, target in EvidenceEngine(store: target, rows: rows) }, activateSettings: {})
