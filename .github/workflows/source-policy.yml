@@ -24,5 +24,6 @@ jobs:
       - run: node --test scripts/tests/workflow-policy.test.mjs
       - run: node --test scripts/tests/mac-scope.test.mjs
       - run: node --test scripts/tests/merge-gates.test.mjs
+      - run: node --test scripts/tests/lbl-coverage.test.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund --prefix reader
       - run: npm test --prefix reader
