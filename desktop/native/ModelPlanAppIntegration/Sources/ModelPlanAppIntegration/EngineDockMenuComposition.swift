@@ -26,6 +26,7 @@ public struct EngineMenuRefreshResult {
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
+    private var cardReplacementMembers: Set<String> = []
     private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
     private let deadlineWall: @MainActor () -> Date
     private let deadlineElapsed: () -> TimeInterval
@@ -35,11 +36,14 @@ public struct EngineMenuRefreshResult {
             clear: { [weak self] in
                 guard let self else { return }
                 self.admittedCache.clear()
-                self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared)
-                // Rebuild from the empty, localized cache after scrubbing so the
-                // Dock menu has a next step even if no new projection is admitted.
-                self.dock.refreshDockContent()
-                self.menuDidChange?()
+                let keepCard = self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared,
+                                                                 keepingCardFor: self.cardReplacementMembers)
+                // On withdrawal or a failed replacement the empty cache still
+                // supplies the localized menu next step.
+                if !keepCard {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
             }, recompute: { [weak self] now in
                 guard let self else { return nil }
                 defer {
@@ -55,7 +59,13 @@ public struct EngineMenuRefreshResult {
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
-            installValidatedUnknown: true)
+            installValidatedUnknown: true, presentationInterval: 60, refreshPresentation: { [weak self] now in
+                guard let self else { return }
+                if !self.refreshCurrentPresentation(at:now) {
+                    self.pairedProjection.invalidate()
+                    if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+                }
+            })
     }()
     private let clock: EngineDockClock
     // Internal injection seam: the production entry retains the system clock.
@@ -120,31 +130,57 @@ public struct EngineMenuRefreshResult {
         provider.dockContentDidChange = { [weak self] in
             guard let self else { return }
             self.adapter.scrubInvalidatedMenus()
+            let previous = self.pairedProjection.acceptedDelivery
             self.pairedProjection.invalidate()
             if self.pairedProjection.isProjecting { self.pendingProjectionReplacement = true; return }
-            if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            guard !self.deadlineLifecycleSuspended else { return }
+
+            let content = self.provider.dockContent
+            self.cardReplacementMembers = []
+            if let previous, self.store.snapshot.delivery == previous, content.status == .ready {
+                let catalogue = EngineAccountMemberCatalogue(rows: content.dockRows)
+                self.cardReplacementMembers = Set(catalogue.members.compactMap { member in
+                    guard member.subscriptionRef == member.id, member.isStable,
+                          member.row.state == .fresh || member.row.state == .stale,
+                          member.row.consent == .allowed || member.row.consent == .implicit || member.row.consent == .notRequired,
+                          member.account.valueState == .retained || member.account.valueState == .current else { return nil }
+                    return member.id
+                })
+            }
+            defer {
+                self.cardReplacementMembers = []
+                if self.dock.finishCardReplacement() {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
+            }
+            self.deadlineDriver.replace()
         }
     }
-    public var presentedContent: DockContent { admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: deadlineWall())) }
+    public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
+
+    private func presentedContent(at now: Date) -> DockContent {
+        admittedCache.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
+    }
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
-        // A locale change does not replace the accepted delivery. Reproject
-        // atomically only if the existing cache and source are still current,
-        // preserving an open card without retaining stale source data.
-        if !deadlineLifecycleSuspended, !pairedProjection.isProjecting {
-            let now = deadlineWall(), token = pairedProjection.generation
-            if admittedCache.isAdmissible(at: now),
-               let candidate = try? pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now)),
-               candidate.sourceToken == token, pairedProjection.isCurrent(token) {
-                admittedCache.install(candidate.value, evaluatedAt: now)
-                dock.refreshDockContent(); menuDidChange?()
-                return
-            }
-        }
+        if refreshCurrentPresentation(at:deadlineWall()) { return }
         pairedProjection.invalidate()
         if pairedProjection.isProjecting { pendingProjectionReplacement = true; return }
         if !deadlineLifecycleSuspended { deadlineDriver.replace() }
+    }
+    /// Re-evaluate only the current admitted source inside its original validity interval.
+    /// Countdown/age ticks and locale changes use the same atomic path; neither renews source freshness.
+    private func refreshCurrentPresentation(at now:Date) -> Bool {
+        guard !deadlineLifecycleSuspended, !pairedProjection.isProjecting else { return false }
+        let token=pairedProjection.generation
+        guard admittedCache.isAdmissible(at:now),
+              let candidate=try? pairedProjection.make(.init(snapshot:nil,diagnostics:.init(),now:now)),
+              candidate.sourceToken == token, pairedProjection.isCurrent(token) else { return false }
+        admittedCache.install(candidate.value,evaluatedAt:now)
+        dock.refreshDockContent();menuDidChange?()
+        return true
     }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
@@ -156,14 +192,16 @@ public struct EngineMenuRefreshResult {
     public var memberInstability:[String:Bool] {
         Dictionary(uniqueKeysWithValues: presentedContent.snapshot.subscriptions.map { ($0.id, $0.isUnstable) })
     }
-    func installResetEvents(settings:SettingsStore,live:Bool) {
-        let base:URL
-        if live {
+    func installResetEvents(settings: SettingsStore, live: Bool, isolatedLedger: URL? = nil) {
+        let base: URL
+        if let isolatedLedger {
+            base = isolatedLedger.deletingLastPathComponent()
+        } else if live {
             guard let appSupport=FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask).first else { return }
             base=appSupport.appendingPathComponent("ModelPlan",isDirectory:true)
         } else { base=FileManager.default.temporaryDirectory.appendingPathComponent("modelplan-s4-"+UUID().uuidString,isDirectory:true);resetScratch=base }
         do {
-            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live)
+            let notifier=try EngineResetNotifier.recovering(composition:self,settings:settings,cacheURL:isolatedLedger ?? base.appendingPathComponent("reset-notifications.json"),deliverToSystem:live && isolatedLedger == nil)
             resetNotifier=notifier;notifier.start()
         } catch {
             Logger(subsystem:"ai.modelplan.notifications",category:"reset-ledger").error("Reset notification service could not be started.")
@@ -171,7 +209,11 @@ public struct EngineMenuRefreshResult {
     }
     /// A synthetic delivery adapter can be supplied by a non-windowed host.
     public func setResetNotificationDelivery(_ delivery:@escaping @MainActor (String) async throws -> Void) {
-        resetNotifier?.deliveryOverride=delivery
+        setResetNotificationDelivery { id, _ in try await delivery(id) }
+    }
+
+    func setResetNotificationDelivery(_ delivery: @escaping @MainActor (String, String) async throws -> Void) {
+        resetNotifier?.deliveryOverride = delivery
         resetNotifier?.apply(store.snapshot)
     }
     private var fallbackStatusText: String {
@@ -183,7 +225,7 @@ public struct EngineMenuRefreshResult {
         case .empty:
             fallback = english ? "No readings are available. Check Settings." : "暂无读数，请检查设置。"
         case .failed:
-            fallback = english ? "Readings unavailable. Check the engine connection in Settings." : "读数不可用，请在设置中检查引擎连接。"
+            fallback = EngineRowsText.readingServiceUnavailable.value(english ? .english : .chinese)
         case .cleared:
             fallback = english ? "Readings cleared. Check Settings to reconnect." : "读数已清除，请在设置中重新连接。"
         case .ready:
@@ -192,8 +234,37 @@ public struct EngineMenuRefreshResult {
         return fallback
     }
     public var menuPresentation: CommunityMenuBarPresentation {
-        let detail = (presentedContent.menuStatusLines ?? []).joined(separator: " · ")
-        return .init(title: "", detail: detail.isEmpty ? fallbackStatusText : detail)
+        let now = deadlineWall()
+        let content = presentedContent(at: now)
+        let detail = (content.menuStatusLines ?? []).joined(separator: " · ")
+        return .init(title: statusQuotaTitle(content.snapshot.inputs, at: now),
+                     detail: detail.isEmpty ? fallbackStatusText : detail)
+    }
+
+    private func statusQuotaTitle(_ inputs: [DockInstrumentInput], at now: Date) -> String {
+        guard let preferences = latestSettings?.snapshot.preferences,
+              let ordered = try? preferences.presentedSubscriptionIDs(inputs.map(\.id)) else { return "" }
+        let visible = Set(ordered)
+        func tightest(_ period: DockQuotaPeriod? = nil) -> String? {
+            inputs.compactMap { input -> (remaining: Double, text: String)? in
+                guard visible.contains(input.id) else { return nil }
+                var quota = input
+                if let period { quota.windows = quota.windows.filter { $0.period == period } }
+                quota.selectedWindowID = nil
+                quota.showUsedPercent = false
+                guard let reading = try? DockInstrumentProjection.evaluate(quota, now: now),
+                      let remaining = reading.remainingPercent else { return nil }
+                return (remaining, reading.readout)
+            }.min { $0.remaining < $1.remaining }?.text
+        }
+        switch preferences.menuDisplay {
+        case .icon: return ""
+        case .tightest: return tightest() ?? ""
+        case .twoWindows:
+            let week = preferences.language == .chinese ? "周" : "Week"
+            return [tightest(.fiveHour).map { "5h " + $0 }, tightest(.week).map { week + " " + $0 }]
+                .compactMap { $0 }.joined(separator: " ")
+        }
     }
     public func start() async {
         do { _ = try await client.start(); _ = try await client.subscribeRows(timeout: nil) }
@@ -221,5 +292,5 @@ public struct EngineMenuRefreshResult {
     }
     func suspendDeadlines() { deadlineLifecycleSuspended = true; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }

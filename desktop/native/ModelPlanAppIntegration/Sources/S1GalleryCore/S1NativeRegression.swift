@@ -157,7 +157,8 @@ import ModelPlanOfficialDock
                   let reading = host.dockView.presentedReadingsForChecks["claude"], reading.status == status,
                   reading.outer?.fraction == 0.75, reading.inner == nil, reading.vendorResourceKey == "claude", reading.jetEligible,
                   let skin = host.dockView.presentedSkinForChecks, let station = skin.stations.first(where: { $0.subscriptionID == "claude" }),
-                  abs(station.diameter - 52) <= 0.001, let layer = host.dockView.layer else { throw Failure.appearance("flame " + state) }
+                  abs(station.diameter - 52) <= 0.001,
+                  let nozzleFrame = host.dockView.interactionAnchor("claude"), let layer = host.dockView.layer else { throw Failure.appearance("flame " + state) }
             for pose in 0..<9 {
                 let name = "native-working-\(state)-pose\(pose).png"; guard let digest = poses[name] else { throw Failure.fixture(name) }
                 let reference = try verified(name, hash: digest, root: root)
@@ -166,7 +167,7 @@ import ModelPlanOfficialDock
                 guard let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
                     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw Failure.pixels(name + " context") }
                 c.translateBy(x: 0, y: CGFloat(h)); c.scaleBy(x: 2, y: -2); host.dockView.displayIfNeeded(); layer.render(in: c)
-                let rect = CGRect(x: ((station.centre.x - 26 - skin.bounds.minX) * 2).rounded(), y: ((station.centre.y - 26 - skin.bounds.minY) * 2).rounded(), width: 104, height: 104)
+                let rect = CGRect(x: (nozzleFrame.minX * 2).rounded(), y: (nozzleFrame.minY * 2).rounded(), width: 104, height: 104)
                 guard let image = c.makeImage()?.cropping(to: rect), image.width == 104, image.height == 104,
                       let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { throw Failure.pixels(name + " render") }
                 let (mean, tile) = try compare(reference, png, name: name)

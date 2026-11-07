@@ -18,7 +18,7 @@ import ModelPlanShell
         .init(displays: displays, layouts: displays.flatMap { display in
             DockEdgeGeometry.allowedEdges.map { edge in
                 .init(displayID: display.id, edge: edge,
-                    expandedSize: edge == .bottom ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
+                    expandedSize: edge.isHorizontal ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
                     sliverLength: 140, sliverThickness: 4, hoverRects: [], alongAnchor: 73)
             }
         }, primaryDisplayID: display.id, pointer: CGPoint(x: -500, y: 200))
@@ -37,19 +37,43 @@ import ModelPlanShell
             XCTAssertTrue(display.usableFrame.insetBy(dx: -1e-8, dy: -1e-8).contains(actual.frame))
         } }
     }
-    func testDisplayRecoveryAndAdjoiningSeamRemainPolicyWithoutSavingIntent() throws {
+    func testRestingInnerEdgeAndDisplayRecoveryKeepSavedIntent() throws {
         let neighbour = DockDisplayArea(id: "next", frame: CGRect(x: 0, y: -200, width: 1000, height: 900),
             visibleFrame: CGRect(x: 0, y: -200, width: 1000, height: 875))
         let preference = DockEdgePreference(displayID: display.id, edge: .right, alongFraction: 0.61)
         let joined = try XCTUnwrap(PulseDockPositioning.resolve(.init(preference: preference, environment: environment([display, neighbour]))))
-        XCTAssertNotEqual(joined.edge, .right, "a physical adjoining edge is not a wake destination")
+        XCTAssertEqual(joined.edge, .right)
+        XCTAssertTrue(DockEdgeGeometry.canWake(at: CGPoint(x: joined.sliverFrame.midX, y: joined.sliverFrame.midY),
+            placement: joined, displays: [display, neighbour]))
+        XCTAssertFalse(DockEdgeGeometry.canWake(at: CGPoint(x: display.frame.maxX, y: joined.sliverFrame.midY),
+            placement: joined, displays: [display, neighbour]))
         let recovered = try XCTUnwrap(PulseDockPositioning.resolve(.init(preference: preference, environment: environment([neighbour]))))
         XCTAssertEqual(recovered.displayID, neighbour.id)
         XCTAssertEqual(preference.displayID, display.id); XCTAssertEqual(preference.edge, .right)
         let restored = try XCTUnwrap(PulseDockPositioning.resolve(.init(preference: preference, environment: environment([display]))))
         XCTAssertEqual(restored.edge, .right); XCTAssertEqual(restored.displayID, display.id)
     }
-    func testOneControllerUsesBorrowedPositioningForPlacementPreviewReleaseAndStop() throws {
+    func testInvalidGeometryRetriesOnNextSample() throws {
+        var env = environment([display])
+        env.presence.autoHide = false
+        env.displays = [.init(id: display.id, frame: .zero, visibleFrame: .zero)]
+        var elapsed: TimeInterval = 0
+        let scheduler = PulsePositionScheduler()
+        let controller = DockEdgeController(preference: .init(displayID: display.id), clock: { elapsed },
+            scheduler: scheduler, read: { env }, position: PulseDockPositioning.resolve)
+        controller.start()
+        defer { controller.stop() }
+        XCTAssertNil(controller.presentation?.paintedFrame)
+        let retry = try XCTUnwrap(scheduler.action)
+        env = environment([display])
+        env.presence.autoHide = false
+        elapsed = 1
+        retry()
+        XCTAssertEqual(controller.presentation?.state, .expanded)
+        XCTAssertEqual(controller.presentation?.placement?.displayID, display.id)
+    }
+
+    func testOneControllerUsesBorrowedPositioningForCarryReleaseAndStop() throws {
         var env = environment([display]); env.presence.autoHide = false
         var elapsed: TimeInterval = 0
         let scheduler = PulsePositionScheduler()
@@ -66,15 +90,15 @@ import ModelPlanShell
         XCTAssertTrue(controller.beginBackgroundMove(local: CGPoint(x: 20, y: 20), global: CGPoint(x: initial.frame.midX, y: initial.frame.midY)))
         let destination = CGPoint(x: display.usableFrame.minX, y: display.usableFrame.midY)
         controller.updateBackgroundMove(global: destination)
-        XCTAssertEqual(controller.presentation?.snapPreview?.edge, .left)
+        XCTAssertEqual(controller.presentation?.placement?.edge, .left)
         XCTAssertTrue(commits.isEmpty, "preview never persists")
         controller.endBackgroundMove(global: destination); controller.endBackgroundMove(global: destination)
         XCTAssertEqual(commits.count, 1); XCTAssertEqual(commits.first?.edge, .left)
-        XCTAssertGreaterThan(nearestCalls, 0); XCTAssertGreaterThan(fixedCalls, 0)
+        XCTAssertEqual(nearestCalls, 0); XCTAssertGreaterThan(fixedCalls, 0)
         let staleSample = scheduler.action
         controller.stop(); staleSample?()
         XCTAssertEqual(controller.presentation?.state, .suppressed(.lifecycle))
-        XCTAssertNil(controller.presentation?.snapPreview); XCTAssertNil(scheduler.action)
+        XCTAssertNil(controller.presentation?.placement); XCTAssertNil(scheduler.action)
         XCTAssertEqual(commits.count, 1, "stopped work cannot create a late commit")
     }
 }
