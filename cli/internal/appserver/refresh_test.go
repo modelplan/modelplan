@@ -437,3 +437,84 @@ func TestRequestedRefreshSurvivesAutomaticJobBeingHeld(t *testing.T) {
 	close(release)
 	expectRead(t, ran)
 }
+
+// The request lands between the worker's last look at the flag and its release of the slot. The
+// clock is the seam: the third reading after the hold is the one in that gap on the old code.
+func TestRequestedRefreshInHeldJobCleanupIsNotLost(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	var readings atomic.Int32
+	var scheduler *RefreshScheduler
+	ran := make(chan struct{}, 2)
+	ready := make(chan struct{})
+	scheduler = NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) {
+			readings.Store(1)
+			return false, time.Now().Add(time.Minute)
+		},
+		Now: func() time.Time {
+			if readings.Load() > 0 && readings.Add(1) == 4 {
+				<-ready
+				if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+					t.Error(err)
+				}
+			}
+			return time.Now()
+		},
+		Run: func(context.Context, quota.Paths, string, time.Time) error {
+			ran <- struct{}{}
+			return nil
+		},
+	})
+	t.Cleanup(scheduler.Close)
+	close(ready)
+	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
+		t.Fatal(err)
+	}
+	expectRead(t, ran)
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	if scheduler.requested["claude"] {
+		t.Fatal("stale requested flag")
+	}
+}
+
+// A request that joins a credential wait is answered by that wait's read. Its flag must not stay
+// behind and turn a later automatic job into a requested one.
+func TestCredentialWaitClearsRequestedFlag(t *testing.T) {
+	scheduler, _ := heldReadScheduler(t, func(string) (bool, time.Time) { return false, time.Time{} }, nil)
+	scheduler.mu.Lock()
+	scheduler.pending["claude"] = time.Now().Add(time.Minute)
+	scheduler.credentialWait["claude"] = true
+	scheduler.mu.Unlock()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+		t.Fatal(err)
+	}
+	scheduler.mu.Lock()
+	defer scheduler.mu.Unlock()
+	if scheduler.requested["claude"] {
+		t.Fatal("request left a flag behind a credential wait")
+	}
+	// A flag from just before the wait began ends with the wait.
+	scheduler.requested["claude"] = true
+	scheduler.mu.Unlock()
+	_ = scheduler.AcceptCredential(context.Background(), Stamp{}, CredentialNeed{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin}, wire.CredentialResult{})
+	scheduler.mu.Lock()
+	if scheduler.requested["claude"] {
+		t.Fatal("credential wait ended with a stale flag")
+	}
+}

@@ -53,8 +53,10 @@ The backend owns consent, migration, receipts, reader admission, publication
 fences, budgets and shared-store synchronization. The transport does not create
 a second store. `CredentialReceiver` repeats admission/fence/budget checks before
 in-memory use. Operations are bound to their session, generation and expiry,
-consumed once, and limited to one per provider, including while an explicit
-operation's read runs after its result arrives. An automatic saved-login refresh stays off the
+consumed once, and limited to one open operation per provider. A background operation also
+waits while an explicit operation's read runs after its result arrives, or while a Keychain
+Allow is committing. An explicit operation waits only for an open one: its read may start
+while an earlier explicit read runs, and the reader lock serialises the two. An automatic saved-login refresh stays off the
 provider until 15 seconds after that read and is reported as deferred; a requested one waits
 only for the read, and takes over an automatic job already in the provider's slot. A Keychain Allow holds the provider from before the consent commit, so a
 background read cannot take the operation and drop the user's prompt. Background requests are
