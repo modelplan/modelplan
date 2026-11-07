@@ -12,8 +12,10 @@ export interface HistoryView {
  readonly daily:readonly {accountId:string;values:(number|null)[];coverageStart:number}[];
  readonly hourly:readonly {accountId:string;instants:number[];values:(number|null)[]}[];
  readonly projectRanking:{recent7d:unknown[];recent30d:unknown[]};
+ readonly paceHistory:Record<string,Record<string,unknown[]>>;
 }
-export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]}};
+const kinds:Readonly<Record<string,string>>={five_hour:'5h',weekly:'week',monthly:'month'};
+export const noHistory:HistoryView={daily:[],hourly:[],projectRanking:{recent7d:[],recent30d:[]},paceHistory:{}};
 
 export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<string,string>,now:number,locale:string):HistoryView {
  const h=data?.history;if(!h||h.coverage!=='local-history')return noHistory;
@@ -37,7 +39,12 @@ export function historyView(data:WireCockpitData|null|undefined,ids:ReadonlyMap<
   hourly.push({accountId,instants,values});
  }
  const projects=(rows:typeof h.projects.recent7d)=>rows.map((p,i)=>({project:p.label??(locale==='en'?`Project ${i+1}`:`项目 ${i+1}`),tokens:p.observedOutputTokens,tokenScope:'combined',share:p.share,configs:[{model:p.model??'',effort:p.effort,recommendedEffort:null}]}));
- return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)}};
+ const paceHistory:Record<string,Record<string,unknown[]>>={};
+ for(const group of h.cycles){
+  const accountId=ids.get(group.subscriptionRef),kind=kinds[group.kind];if(!accountId||!kind)continue;
+  (paceHistory[accountId]??={})[kind]=group.cycles.map(c=>({start:c.startedAt,end:c.resetsAt,points:c.points,hadDrop:c.hadDrop,spent:c.spent.map(s=>({model:s.model??'',effort:s.effort,fast:s.fast,points:s.points}))}));
+ }
+ return {daily,hourly,projectRanking:{recent7d:projects(h.projects.recent7d),recent30d:projects(h.projects.recent30d)},paceHistory};
 }
 
 /** The 7|30 usage block for one subscription: several linked tools add up; an unknown kind stays unknown. */
@@ -50,4 +57,16 @@ export function usageStats(data:WireCockpitData|null|undefined,ref:string|null|u
    metrics:{generationTps:one===null?{status:'unknown',value:null}:{status:'ok',value:one}}};
  };
  return {recent7d:window('recent7d'),recent30d:window('recent30d')};
+}
+
+/** Reset history for one subscription, newest first: each closed cycle's reset, and public confirmed resets. A drop
+ * inside a cycle is shown as a correction, because the readings cannot prove a reset card was used. */
+export function resetHistory(data:WireCockpitData|null|undefined,ref:string|null|undefined,rowId:string,now:number) {
+ const rows:{kind:string;at:number;source:string}[]=[];
+ for(const group of data?.history?.cycles??[]){
+  const kind=kinds[group.kind];if(group.subscriptionRef!==ref||!kind)continue;
+  for(const c of group.cycles){const at=Date.parse(c.resetsAt);if(Number.isFinite(at)&&at<=now)rows.push({kind,at,source:c.hadDrop?'correction':'natural'});}
+ }
+ for(const e of data?.details?.resetEvents??[])if(e.rowId===rowId&&e.status==='confirmed'){const at=Date.parse(e.publishedAt);if(Number.isFinite(at))for(const kind of new Set(rows.map(r=>r.kind)))rows.push({kind,at,source:'official'});}
+ return rows.sort((a,b)=>b.at-a.at);
 }

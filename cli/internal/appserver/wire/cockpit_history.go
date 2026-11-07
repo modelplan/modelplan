@@ -23,6 +23,33 @@ type CockpitHistory struct {
 	Daily     []CockpitSourceBucket `json:"daily" schema:"maxItems=728"`
 	Hourly    []CockpitSourceBucket `json:"hourly" schema:"maxItems=192"`
 	Projects  CockpitProjectRanking `json:"projects"`
+	// Cycles holds up to ten newest closed cycles per window, oldest first, under a subscription only through the
+	// source's one current binding. Points are observed on this device and unattributed.
+	Cycles []CockpitCycleGroup `json:"cycles" schema:"maxItems=64"`
+}
+
+// CockpitCycleGroup is one window kind of one subscription.
+type CockpitCycleGroup struct {
+	SubscriptionRef string         `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	Kind            string         `json:"kind"`
+	Attribution     string         `json:"attribution"`
+	Cycles          []CockpitCycle `json:"cycles" schema:"maxItems=10"`
+}
+
+// CockpitCycle is a closed cycle. HadDrop means the meter fell inside it: a reset card or a
+// correction, which the readings cannot tell apart.
+type CockpitCycle struct {
+	StartedAt time.Time           `json:"startedAt"`
+	ResetsAt  time.Time           `json:"resetsAt"`
+	Points    float64             `json:"points"`
+	HadDrop   bool                `json:"hadDrop"`
+	Spent     []CockpitCycleShare `json:"spent" schema:"maxItems=16"`
+}
+type CockpitCycleShare struct {
+	Model  *string `json:"model" null:"coalesced"`
+	Effort *string `json:"effort" null:"coalesced"`
+	Fast   bool    `json:"fast"`
+	Points float64 `json:"points"`
 }
 
 // CockpitSourceBucket is one source's observed output in one local day or hour. Sources are
