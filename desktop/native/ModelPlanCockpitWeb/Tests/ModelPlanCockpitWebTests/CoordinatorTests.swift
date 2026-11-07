@@ -244,7 +244,7 @@ extension CoordinatorTests {
     XCTAssertEqual(pages.last?.scopeUpdates.first?.0,"all")
     for _ in 0..<100 { if await client.requests==3 { break };await Task.yield() }
     await client.complete();await coordinator.joinCurrentQueryForVerification()
-    await coordinator.shutdown()
+    await coordinator.shutdown();await client.stop()
   }
   @MainActor func testScopeIsValidatedRetainedOnReopenAndClearedAtPrivacyBarrier() async throws {
     var pages:[PageProbe]=[]
