@@ -220,6 +220,10 @@ export function evidenceState(pr, items, head) {
     for (const line of lines(item.body)) {
       const match = /^VERIFIED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) evidence=[^ ]+/.exec(line);
       if (match && match[2] === head) verified.add(match[1]);
+      // Owner 2026-11-07: device evidence runs once after v1 development. An exact-head deferral lets the PR land;
+      // #470 stays open until every deferred scenario has real evidence, so this is never a VERIFIED line.
+      const deferred = /^EVIDENCE-DEFERRED: ([A-Z][A-Z0-9]{0,3}-[0-9]{2}) @ ([0-9a-f]{40}) issue=470$/.exec(line);
+      if (deferred && deferred[2] === head) verified.add(deferred[1]);
     }
   }
   const missing = scenarios.filter((id) => !verified.has(id));

@@ -275,7 +275,30 @@
           "share": 42.5
         }
       ]
-    }
+    },
+    "cycles": [
+      {
+        "subscriptionRef": "0123456789abcdef",
+        "kind": "tokens",
+        "attribution": "synthetic",
+        "cycles": [
+          {
+            "startedAt": "2026-10-29T12:00:00.123456789Z",
+            "resetsAt": "2026-10-29T12:00:00.123456789Z",
+            "points": 42.5,
+            "hadDrop": false,
+            "spent": [
+              {
+                "model": "synthetic",
+                "effort": "synthetic",
+                "fast": false,
+                "points": 42.5
+              }
+            ]
+          }
+        ]
+      }
+    ]
   },
   "projection": {
     "resetEvents": [
