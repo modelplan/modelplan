@@ -101,13 +101,14 @@ func (b *memoryBackend) AcceptCredential(ctx context.Context, stamp Stamp, need 
 }
 
 type pipeClient struct {
-	validate func(map[string]json.RawMessage) error
-	pending  []map[string]json.RawMessage
-	in       *os.File
-	out      *os.File
-	messages chan map[string]json.RawMessage
-	done     chan struct{}
-	server   *Server
+	exitDetail func() string
+	validate   func(map[string]json.RawMessage) error
+	pending    []map[string]json.RawMessage
+	in         *os.File
+	out        *os.File
+	messages   chan map[string]json.RawMessage
+	done       chan struct{}
+	server     *Server
 }
 
 func startClient(t *testing.T, config Config) *pipeClient {
@@ -174,7 +175,11 @@ func (c *pipeClient) next(t *testing.T, predicate func(map[string]json.RawMessag
 		select {
 		case m, ok := <-c.messages:
 			if !ok {
-				t.Fatal("server closed before expected response")
+				detail := ""
+				if c.exitDetail != nil {
+					detail = c.exitDetail()
+				}
+				t.Fatalf("server closed before expected response: %s", detail)
 			}
 			if c.validate != nil {
 				if err := c.validate(m); err != nil {
@@ -186,7 +191,11 @@ func (c *pipeClient) next(t *testing.T, predicate func(map[string]json.RawMessag
 			}
 			c.pending = append(c.pending, m)
 		case <-timeout.C:
-			t.Fatal("timed out waiting for message")
+			detail := ""
+			if c.exitDetail != nil {
+				detail = c.exitDetail()
+			}
+			t.Fatalf("timed out waiting for message: %s", detail)
 		}
 	}
 }
