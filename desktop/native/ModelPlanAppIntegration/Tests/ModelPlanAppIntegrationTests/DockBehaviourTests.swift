@@ -311,6 +311,19 @@ import ModelPlanSettings
         print("placement-producer saved=right effective=left recovery=true restored-right=true unknown-cleared=true retired-cleared=true durable-unchanged=true panels-closed=true")
     }
 
+    func testSET_9_12TheDockStaysSharedWithScreenCaptureByDefault() async throws {
+        // SET-9-12 (owner decision C19, 2026-11-01): hide-from-screen-capture is OFF by default —
+        // "off, so screenshots show the Dock as users expect" — and v1 ships no switch for it.
+        // The dock panel must never exclude itself from screen capture.
+        let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
+        await f.start()
+        let panel = try f.panel()
+        XCTAssertNotEqual(panel.sharingType, .none, "SET-9-12: the Dock must appear in screen capture by default")
+        try f.reveal()
+        XCTAssertNotEqual(try f.panel().sharingType, .none, "SET-9-12: reveal must not turn capture exclusion on")
+        report(1, "sharingType=\(panel.sharingType == .none ? "none" : "shared")")
+    }
+
     func testItem1FirstLaunchIsInsideMainVisibleFrame() async throws {
         let f = try BehaviourFixture(url: temporaryURL()); defer { f.host.close() }
         await f.start()
