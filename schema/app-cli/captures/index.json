@@ -14,6 +14,14 @@
           "nullPolicy": "forbidden"
         },
         {
+          "field": "activity",
+          "omission": true,
+          "null": true,
+          "wrongType": true,
+          "strict": false,
+          "nullPolicy": "coalesced"
+        },
+        {
           "field": "resetCards",
           "omission": true,
           "null": false,
@@ -84,6 +92,19 @@
         "beta",
         "valueState",
         "windows"
+      ]
+    },
+    {
+      "file": "RowsAccountActivity.json",
+      "type": "RowsAccountActivity",
+      "optional": [],
+      "required": [
+        "sessionRef",
+        "subscriptionRef",
+        "bindingVerified",
+        "phase",
+        "recordAt",
+        "expiresAt"
       ]
     },
     {

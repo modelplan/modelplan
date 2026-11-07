@@ -11,7 +11,7 @@ import (
 // CockpitQueryParams carries the App's committed display threshold.
 // Omission uses the documented default. Explicit null is not a threshold.
 type CockpitQueryParams struct {
-	RedBelow int `json:"redBelow,omitempty" schema:"minimum=10,maximum=25" null:"forbidden"`
+	RedBelow int `json:"redBelow,omitempty" schema:"minimum=10,maximum=40" null:"forbidden"`
 }
 
 // CockpitData contains display DTOs only. Consent context belongs in Envelope.

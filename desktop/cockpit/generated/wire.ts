@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 1585835764e5548bf712e10f8b69fcaa5806014f8859abd6783b25caa3e7a04e
+// Schema SHA-256: 09741a545d12d9ca0b2ef1b75f719d01e9b7385f53203ee714a975796acf4914
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
   readonly "accountLocator": string | null;
+  readonly "activity"?: ReadonlyArray<WireAccountActivity>;
   readonly "beta": boolean;
   readonly "credits": WireCredits | null;
   readonly "freshUntil": string | null;
@@ -18,6 +19,15 @@ export type WireAccount = {
   readonly "today"?: WireAccountToday | null;
   readonly "valueState": "current" | "retained" | "none";
   readonly "windows": ReadonlyArray<WireWindow>;
+};
+
+export type WireAccountActivity = {
+  readonly "bindingVerified": boolean;
+  readonly "expiresAt": string;
+  readonly "phase": "model" | "tool" | "finished" | "fallback";
+  readonly "recordAt": string;
+  readonly "sessionRef": string;
+  readonly "subscriptionRef": string;
 };
 
 export type WireAccountToday = {
@@ -78,7 +88,6 @@ export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
   readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
   readonly "publication"?: WireCockpitPublication | null;
-  readonly "publishedModels"?: ReadonlyArray<WireCockpitPublicationModel>;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
   readonly "sessions": ReadonlyArray<WireCockpitSession>;
@@ -170,7 +179,7 @@ export type WireCockpitPublicationModel = {
 };
 
 export type WireCockpitQueryParams = {
-  readonly "redBelow"?: 10 | 16 | 20 | 25;
+  readonly "redBelow"?: 10 | 15 | 20 | 25 | 30 | 40;
 };
 
 export type WireCockpitRankedEntity = {
@@ -408,6 +417,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "activity": {
+        "items": {
+          "$ref": "#/$defs/AccountActivity"
+        },
+        "type": "array"
+      },
       "beta": {
         "type": "boolean"
       },
@@ -545,6 +560,46 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "freshUntil",
       "lastFailure",
       "windows"
+    ],
+    "type": "object"
+  },
+  "AccountActivity": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingVerified": {
+        "type": "boolean"
+      },
+      "expiresAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "phase": {
+        "enum": [
+          "model",
+          "tool",
+          "finished",
+          "fallback"
+        ],
+        "type": "string"
+      },
+      "recordAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "sessionRef": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionRef",
+      "subscriptionRef",
+      "bindingVerified",
+      "phase",
+      "recordAt",
+      "expiresAt"
     ],
     "type": "object"
   },
@@ -834,13 +889,6 @@ export const definitions: Readonly<Record<string, Schema>> = {
             "type": "null"
           }
         ]
-      },
-      "publishedModels": {
-        "items": {
-          "$ref": "#/$defs/CockpitPublicationModel"
-        },
-        "maxItems": 256,
-        "type": "array"
       },
       "resetEvents": {
         "items": {
@@ -1347,9 +1395,11 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "redBelow": {
         "enum": [
           10,
-          16,
+          15,
           20,
-          25
+          25,
+          30,
+          40
         ],
         "type": "integer"
       }

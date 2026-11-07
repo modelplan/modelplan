@@ -67,6 +67,8 @@ final class BundleScheme: NSObject, WKURLSchemeHandler {
 public final class CockpitWindowController: NSWindowController, NSWindowDelegate,
   WKNavigationDelegate, WKUIDelegate
 {
+  /// DOCK-3.1-26: a short press opens with this fade.
+  static let openFade: TimeInterval = 0.18
   private let bundle: VerifiedCockpitBundle
   private var appearance: CockpitAppearance
   private let shellSession: CockpitShellSession
@@ -311,7 +313,7 @@ public final class CockpitWindowController: NSWindowController, NSWindowDelegate
     panel.alphaValue = appearance.reduceMotion ? 1 : 0
     panel.makeKeyAndOrderFront(nil)
     if !appearance.reduceMotion {
-      NSAnimationContext.runAnimationGroup { context in context.duration = 0.18; panel.animator().alphaValue = 1 }
+      NSAnimationContext.runAnimationGroup { context in context.duration = Self.openFade; panel.animator().alphaValue = 1 }
     }
     #if MODELPLAN_TEST_ONLY_SPI
       verificationDidOpen?(view, panel)

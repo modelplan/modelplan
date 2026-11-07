@@ -17,5 +17,6 @@ Build: esbuild 0.28.1, `--bundle --format=esm --minify --legal-comments=eof`, th
 
 Loading rule: only `node desktop/cockpit/build.mjs --official` includes it, and the
 cockpit page may load it only on demand when the enlarged view opens. The community
-edition never contains it. Vendor marks the scene can draw on its plates are not
-included here; without them the plates fall back to text.
+edition never contains it. Vendor marks are not included here: the official build copies
+them from `desktop/third-party/dock-resources/Resources/Marks` to `assets/brands/` under
+the names the scene asks for. A vendor without a mark falls back to text on its plate.

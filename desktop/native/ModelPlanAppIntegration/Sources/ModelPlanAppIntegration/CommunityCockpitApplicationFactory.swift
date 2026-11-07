@@ -127,6 +127,7 @@ struct CockpitUnavailableNotice {
     let composition: EngineDockMenuComposition
     var showTask: Task<Void,Never>?
     var wantsVisible=false
+    private var pageOpened = false
     var fallback: EngineRowsConsole?
     private var appliedSettings: SettingsApplication?
     private let isForeground: @MainActor () -> Bool
@@ -140,7 +141,17 @@ struct CockpitUnavailableNotice {
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
         owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
         owner.pageFailure = { [weak self] in self?.unavailable() }
-        owner.coordinator?.onClosed = { [weak self] in self?.wantsVisible=false }
+        let onOpened = owner.coordinator?.onOpened
+        owner.coordinator?.onOpened = { [weak self] in
+            self?.pageOpened = true
+            onOpened?()
+        }
+        owner.coordinator?.onClosed = { [weak self] in
+            guard let self else { return }
+            self.wantsVisible = false
+            self.pageOpened = false
+            self.composition.dock.setCockpitPresentationBlocked(false)
+        }
     }
     /// Public model data only: the launch field never receives personal readings. The official page is
     /// the only one that asks; a community bundle has no field page, so the panel is not offered.
@@ -187,10 +198,12 @@ struct CockpitUnavailableNotice {
     func show() {
         wantsVisible=true
         guard showTask == nil else { return }
+        composition.dock.setCockpitPresentationBlocked(true)
         showTask=Task { @MainActor [weak self] in
             guard let self else { return }
             let snapshot=await owner.settingsStore.snapshot()
-            guard !Task.isCancelled,wantsVisible else { showTask=nil;return }
+            guard !Task.isCancelled else { return }
+            guard wantsVisible else { showTask = nil; return }
             let theme:CockpitAppearance.Theme
             switch snapshot.preferences.theme {
             case .day:theme = .day
@@ -202,11 +215,22 @@ struct CockpitUnavailableNotice {
             if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
             owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
-            owner.coordinator?.open();showTask=nil
+            owner.coordinator?.open()
+            if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
+            showTask = nil
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
-    func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;fieldPanel?.close();owner.coordinator?.close();fallback?.hide() }
+    func hide() {
+        wantsVisible = false
+        showTask?.cancel()
+        showTask = nil
+        fieldPanel?.close()
+        owner.coordinator?.close()
+        pageOpened = false
+        composition.dock.setCockpitPresentationBlocked(false)
+        fallback?.hide()
+    }
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
         let initiatedInForeground=isForeground()

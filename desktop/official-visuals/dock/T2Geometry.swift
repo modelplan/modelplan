@@ -18,10 +18,12 @@ public struct T2GeometryInput: Sendable {
     public let showsPercentages: Bool
     public let along: CGFloat
     public let ignitionAtEnd: Bool
+    /// Owner test option only: each ring sits halfway across the face at its own height.
+    public let centresRings: Bool
     public init(coordinates: T2EdgeCoordinates, diameter: CGFloat = 44,
                 showsPercentages: Bool = true, along: CGFloat = 0.5,
-                ignitionAtEnd: Bool? = nil) {
-        self.coordinates = coordinates; self.diameter = diameter
+                ignitionAtEnd: Bool? = nil, centresRings: Bool = false) {
+        self.coordinates = coordinates; self.diameter = diameter; self.centresRings = centresRings
         self.showsPercentages = showsPercentages; self.along = along
         self.ignitionAtEnd = ignitionAtEnd ?? (coordinates.edge == .bottom)
     }
@@ -227,7 +229,8 @@ public struct T2Geometry: Sendable {
         }
         let buttonU = (low + high) / 2
         let stations = selected.indices.map { i -> T2Station in
-            let slot = selected[i], s = m.positions[i], point = screen(m.local(s, depth))
+            let slot = selected[i], s = m.positions[i], local = m.local(s, depth)
+            let point = screen(p.centresRings ? CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2) : local)
             let readout = vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
                 ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
                 CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)

@@ -102,7 +102,7 @@ final class T2OracleTests: XCTestCase {
         let neutral = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true)
         let beta = try T2DockSkin.make(geometry: geometry, rows: [reading], showsPercentages: true, zaiMarkEnabled: true)
         let station = try XCTUnwrap(beta.stations.first)
-        XCTAssertNil(neutral.stations.first?.glyphs["zhipu"])
+        XCTAssertEqual(neutral.stations.first?.glyphs["zhipu"], "logo-zhipu", "D43: Zhipu has its own mark when the beta mark is off")
         XCTAssertEqual(station.glyphs["zhipu"], "logo-zai-white")
         XCTAssertEqual(station.layers, ["a1-01-bell-wall-44px@3x.webp", "a1-03-deep-centre-44px@3x.webp", "a1-02-throat-lip-44px@3x.webp", "a1-04-exit-lip-44px@3x.webp"])
         let depth = try XCTUnwrap(station.radialOverlay)

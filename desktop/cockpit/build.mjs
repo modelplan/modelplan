@@ -47,6 +47,9 @@ if (official) {
   verifyVisualPack(repo);
   await cp(resolve(assets,'runtime'),resolve(output,'runtime'),{recursive:true});
   await cp(resolve(here,'web/field.html'),resolve(output,'field.html'));
+  // D43: the field scene draws vendor marks on its plates and asks for them by these names under ./assets/brands/.
+  const marks=resolve(repo,'desktop/third-party/dock-resources/Resources/Marks'),brands=resolve(output,'assets/brands');await mkdir(brands,{recursive:true});
+  for(const [name,source] of Object.entries({'openai-white.svg':'openai.svg','claude-rounded.svg':'claude.svg','zhipu.svg':'zhipu.svg','x-white.svg':'x.svg','qwen.svg':'qwen.svg','deepseek.svg':'deepseek.svg','kimi-white.svg':'kimi.svg','minimax.svg':'minimax.svg','gemini.svg':'gemini.svg','xiaomi.svg':'xiaomi.svg','SOURCES.md':'SOURCES.md'}))await cp(resolve(marks,source),resolve(brands,name));
   // The CSP forbids fetch, so the porthole still's placement table ships as a module carrying the
   // default public fleet's four projections (src/porthole-still.ts). Derived from the reserved pack,
   // it carries the pack's licence; the community edition gets null below.
@@ -82,7 +85,7 @@ if (official) {
   // Fonts are independently public OFL assets; keep their notices beside them.
   await cp(resolve(repo,'desktop/third-party/fonts'),resolve(output,'fonts'),{recursive:true});
   css="@import url('./fonts/fonts.css');\n"+css;
-  notices.push('Official appearance/artwork: LicenseRef-ModelPlan-Visuals-1.0; see VISUAL-LICENSE.md.','Fonts: OFL-1.1; see fonts/*/OFL.txt and fonts/README.md.');
+  notices.push('Official appearance/artwork: LicenseRef-ModelPlan-Visuals-1.0; see VISUAL-LICENSE.md.','Fonts: OFL-1.1; see fonts/*/OFL.txt and fonts/README.md.','Vendor marks: third-party trademarks, not under our licences; see assets/brands/SOURCES.md.');
 } else {
   notices.push('Community edition excludes reserved artwork.');
   // The launch field is official only; its page has no place in this edition.

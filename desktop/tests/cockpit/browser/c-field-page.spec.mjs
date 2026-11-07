@@ -46,3 +46,9 @@ test('the official porthole opens the field by click and keyboard',async({page})
  await port.click();await port.focus();await page.keyboard.press('Enter');
  expect(await page.evaluate(()=>window.posted.filter(m=>m.type==='action'&&m.action==='openField').length)).toBe(2);
 });
+test('D43 every vendor mark the scene asks for loads under the page CSP, square',async({page})=>{
+ await open(page);
+ const sizes=await page.evaluate(async names=>Promise.all(names.map(name=>new Promise(done=>{const image=new Image();image.onload=()=>done([name,image.naturalWidth>0,image.naturalWidth===image.naturalHeight]);image.onerror=()=>done([name,false,false]);image.src='./assets/brands/'+name;}))),
+  ['openai-white.svg','claude-rounded.svg','zhipu.svg','x-white.svg','qwen.svg','deepseek.svg','kimi-white.svg','minimax.svg','gemini.svg','xiaomi.svg']);
+ for(const [name,loaded,square] of sizes){expect(loaded,name).toBe(true);expect(square,name).toBe(true);}
+});

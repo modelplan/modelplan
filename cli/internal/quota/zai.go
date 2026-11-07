@@ -53,6 +53,13 @@ type zaiResponse struct {
 }
 
 func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.Time) codexbarEntry {
+	return fetchZaiAuthorization(ctx, c, region, key, "Bearer "+key, now)
+}
+
+// fetchZaiAuthorization: ZCode's own quota call sends the selected key as the complete
+// Authorization value, without "Bearer" (zai-org/ZCode docs/coding-plan-quota-remaining-api.md
+// and its bigmodelUsageQuotaProvider); the ZCode source follows that contract exactly.
+func fetchZaiAuthorization(ctx context.Context, c *http.Client, region, key, authorization string, now time.Time) codexbarEntry {
 	c = accountReadClient(consent.ScopeZaiAccountUsageAPIKey, c)
 	e := codexbarEntry{Status: "error", ObservedAt: now.UTC()}
 	host := zaiHosts[region]
@@ -65,7 +72,7 @@ func fetchZai(ctx context.Context, c *http.Client, region, key string, now time.
 		return e
 	}
 	var r zaiResponse
-	if err := getJSON(ctx, c, host+"/api/monitor/usage/quota/limit", key, &r); err != nil {
+	if err := getJSONAuthorization(ctx, c, host+"/api/monitor/usage/quota/limit", authorization, &r); err != nil {
 		e.Error = err.Error()
 		e.ErrorCode = errorCode(err)
 		return e

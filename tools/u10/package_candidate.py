@@ -108,7 +108,7 @@ def stage_resources(app, root=ROOT):
     copy_tree(fonts, resources / 'ThirdParty/fonts')
     copy_tree(root / 'desktop/third-party/licenses', resources / 'ThirdParty/licenses')
     shutil.copyfile(regular(root / 'desktop/third-party/NOTICES.md'), resources / 'ThirdParty/NOTICES.md')
-    shutil.copyfile(regular(visuals / 'icons/icon.icns'), resources / 'ModelPlan.icns')
+    shutil.copyfile(regular(visuals / 'icons/AppIcon.icns'), resources / 'ModelPlan.icns')
     shutil.copyfile(regular(visuals / 'LICENSE.md'), resources / 'VISUAL-LICENSE.md')
     cockpit = root / 'desktop/cockpit/dist'
     if cockpit.exists():

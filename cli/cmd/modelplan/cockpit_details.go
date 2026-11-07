@@ -35,7 +35,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	if err != nil {
 		return result, err
 	}
-	result.Publication = selectCockpitPublication(published, view.Projection)
+	result.Publication = selectCockpitPublication(published, view.Projection, nil)
 	if appserver.CockpitModelsEnabled(ctx) {
 		result.PublishedModels = allCockpitModels(published)
 	}
@@ -151,7 +151,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 					continue
 				}
 				v := *window.RemainingPercent
-				if v < 0 || v > 100 || math.IsNaN(v) || v >= 41 {
+				if v < 0 || v > 50 || math.IsNaN(v) {
 					continue
 				}
 				severity := "warning"
@@ -225,7 +225,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := session.Effort
 			effort = &v
 		}
-		if labels && session.ProjectRef != nil {
+		if labels && session.ProjectRef != nil && safeCockpitLabel(session.ProjectLabel) {
+			v := session.ProjectLabel
+			label = &v
+		} else if labels && session.ProjectRef != nil {
 			for _, saved := range perf.Ledger.Sessions {
 				if saved.Ref == session.Ref && saved.Source == session.Source && saved.ProjectRef == *session.ProjectRef && safeCockpitLabel(saved.ProjectLabel) {
 					v := saved.ProjectLabel
@@ -237,6 +240,13 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		// The existing live ledger does not prove a per-session binding. #410 may
 		// supply that evidence; never substitute a source-wide current binding.
 		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+	}
+	inUse := map[string]bool{}
+	for _, session := range result.Sessions {
+		inUse[session.Model] = true
+	}
+	if len(inUse) > 0 {
+		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
 }
