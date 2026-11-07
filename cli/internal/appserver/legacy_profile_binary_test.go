@@ -45,7 +45,11 @@ func TestLegacySchemaOneProfileReadsThroughAppServer(t *testing.T) {
 	state := filepath.Join(home, "cache", "observed", "readers", "gemini.json")
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		if _, err := os.Stat(state); err == nil {
+		// The file exists as soon as the attempt is reserved; wait for its recorded result.
+		var saved struct {
+			Entries []json.RawMessage `json:"entries"`
+		}
+		if b, err := os.ReadFile(state); err == nil && json.Unmarshal(b, &saved) == nil && len(saved.Entries) > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
