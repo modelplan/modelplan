@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -459,18 +461,25 @@ func TestRequestedRefreshInHeldJobCleanupIsNotLost(t *testing.T) {
 	var readings atomic.Int32
 	var scheduler *RefreshScheduler
 	ran := make(chan struct{}, 2)
-	ready := make(chan struct{})
+	ready, fired := make(chan struct{}), make(chan struct{})
+	reader, slotTaken := "", false
 	scheduler = NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
 		CredentialHold: func(string) (bool, time.Time) {
-			readings.Store(1)
+			readings.CompareAndSwap(0, 1)
 			return false, time.Now().Add(time.Minute)
 		},
 		Now: func() time.Time {
 			if readings.Load() > 0 && readings.Add(1) == 4 {
 				<-ready
-				if _, _, err := scheduler.Request(context.Background(), params); err != nil {
+				// The caller's frame: Now's closure, RefreshScheduler.now, then the reader.
+				pc, _, _, _ := runtime.Caller(2)
+				reader = runtime.FuncForPC(pc).Name()
+				result, _, err := scheduler.Request(context.Background(), params)
+				if err != nil {
 					t.Error(err)
 				}
+				slotTaken = len(result) == 1 && result[0].DisabledReason != nil
+				close(fired)
 			}
 			return time.Now()
 		},
@@ -484,37 +493,18 @@ func TestRequestedRefreshInHeldJobCleanupIsNotLost(t *testing.T) {
 	if _, _, err := scheduler.request(context.Background(), params, true); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("seam moved: the clock was not read a third time after the hold")
+	}
+	if !strings.HasSuffix(reader, ".(*RefreshScheduler).run.func1") || !slotTaken {
+		t.Fatalf("seam moved: the request fired from %q with slot taken=%v, not in the held job's cleanup", reader, slotTaken)
+	}
 	expectRead(t, ran)
 	scheduler.mu.Lock()
 	defer scheduler.mu.Unlock()
 	if scheduler.requested["claude"] {
 		t.Fatal("stale requested flag")
-	}
-}
-
-// A request that joins a credential wait is answered by that wait's read. Its flag must not stay
-// behind and turn a later automatic job into a requested one.
-func TestCredentialWaitClearsRequestedFlag(t *testing.T) {
-	scheduler, _ := heldReadScheduler(t, func(string) (bool, time.Time) { return false, time.Time{} }, nil)
-	scheduler.mu.Lock()
-	scheduler.pending["claude"] = time.Now().Add(time.Minute)
-	scheduler.credentialWait["claude"] = true
-	scheduler.mu.Unlock()
-	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
-	if _, _, err := scheduler.Request(context.Background(), params); err != nil {
-		t.Fatal(err)
-	}
-	scheduler.mu.Lock()
-	defer scheduler.mu.Unlock()
-	if scheduler.requested["claude"] {
-		t.Fatal("request left a flag behind a credential wait")
-	}
-	// A flag from just before the wait began ends with the wait.
-	scheduler.requested["claude"] = true
-	scheduler.mu.Unlock()
-	_ = scheduler.AcceptCredential(context.Background(), Stamp{}, CredentialNeed{Provider: "claude", Scope: consent.ScopeClaudeAccountUsageSavedLogin}, wire.CredentialResult{})
-	scheduler.mu.Lock()
-	if scheduler.requested["claude"] {
-		t.Fatal("credential wait ended with a stale flag")
 	}
 }

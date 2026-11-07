@@ -253,7 +253,7 @@ func (s *RefreshScheduler) request(ctx context.Context, p wire.RefreshRequestPar
 					if job, queued := s.scheduled[key]; !automatic && queued {
 						job.automatic = false
 						s.scheduled[key] = job
-					} else if !automatic && !s.credentialWait[key] {
+					} else if !automatic {
 						s.requested[key] = true
 					}
 				} else if len(s.pending) >= len(consent.Definitions()) || len(s.scheduled) >= len(consent.Definitions()) {
@@ -540,7 +540,6 @@ func (s *RefreshScheduler) AcceptCredential(ctx context.Context, stamp Stamp, ne
 		if s.credentialWait[need.Provider] {
 			delete(s.pending, need.Provider)
 			delete(s.credentialWait, need.Provider)
-			delete(s.requested, need.Provider)
 		}
 		s.mu.Unlock()
 		if s.ctx.Err() == nil && s.config.Changed != nil {
