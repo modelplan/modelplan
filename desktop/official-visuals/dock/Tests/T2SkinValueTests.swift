@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-ModelPlan-Visuals-1.0
 import CoreGraphics
 import XCTest
+import ModelPlanDock
 @testable import ModelPlanOfficialDock
 
 /// Values the production Dock draws from, checked on the real skin at every size.
