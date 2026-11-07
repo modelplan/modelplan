@@ -270,6 +270,9 @@ Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`
 source, and `projects` (labels only while the project-labels preference is on).
 All of it is observed on this device. A day or hour that is not listed has no
 observation, which is not a known zero.
+`cycles` lists the last closed cycles of each window kind for a subscription, with
+its one current binding; a meter drop inside a cycle cannot be told apart from a
+correction.
 
 Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
 `diagnostics/get`. The array holds at most 20 recent in-memory scheduling and

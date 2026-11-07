@@ -22,7 +22,7 @@ function fixture(extra={}) {
   subscriptions:[{subscriptionRef:ref,sources:[{source:'codex',bindingBasis:'source-wide-current-binding',recent7d:sums(1200,300),recent30d:sums(4800,900)}]}],
   models:ranking,tools:ranking,
   daily:[{at:localDay(1),source:'codex',observedOutputTokens:1000},{at:localDay(0),source:'codex',observedOutputTokens:200},{at:localDay(1),source:'other',observedOutputTokens:9999}],hourly:[],
-  projects:{recent7d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}],recent30d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}]},...extra};
+  projects:{recent7d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}],recent30d:[{ref:'p1',label:null,model:null,effort:'high',observedOutputTokens:1200,share:1}]},cycles:[],...extra};
  return {data,ref};
 }
 
@@ -117,4 +117,17 @@ test('SET-9-19 project names off: a labelled project in the ranking is named by 
  await expect(page.locator('.wh-n').first()).toHaveText('Project 1');
  expect(await receive(send('appearance',{...appearance,showProjectNames:true}))).toBe(true);
  await expect(page.locator('.wh-n').first()).toHaveText('desktop-secret');
+});
+
+// H6/H7: closed cycles and their resets under the subscription, never a reset card claimed from a drop.
+test('D36 the Subscription history shows closed cycles and reset rows',async({page})=>{
+ const {data,ref}=fixture();const at=d=>new Date(NOW-d*864e5).toISOString();
+ data.history.cycles=[{subscriptionRef:ref,kind:'five_hour',attribution:'unattributed',cycles:[
+  {startedAt:at(3),resetsAt:at(2.8),points:40,hadDrop:false,spent:[{model:null,effort:'high',fast:false,points:40}]},
+  {startedAt:at(2),resetsAt:at(1.8),points:60,hadDrop:true,spent:[]}]}];
+ await open(page,data);
+ await page.keyboard.press('1');await page.getByRole('button',{name:'Subscription',exact:true}).click();
+ await page.locator('[data-opt="tab"] b').nth(1).click();
+ await expect(page.locator('.cy')).toHaveCount(2);await expect(page.locator('.cy .drop')).toHaveCount(1);
+ await expect(page.locator('.rs')).toHaveCount(2);await expect(page.locator('.rs.src-correction')).toHaveCount(1);await expect(page.locator('.rs.src-card')).toHaveCount(0);
 });

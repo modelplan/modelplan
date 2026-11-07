@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelplan/modelplan/cli/internal/appserver/wire"
 	"github.com/modelplan/modelplan/cli/internal/digest"
+	"github.com/modelplan/modelplan/cli/internal/history"
 	"github.com/modelplan/modelplan/cli/internal/speed"
 )
 
@@ -64,5 +65,24 @@ func TestCockpitModelRankingCarriesOnlyPublishedModels(t *testing.T) {
 	got := cockpitPublishedModels(wire.CockpitEntityRanking{Recent7d: window, Recent30d: window}, models).Recent7d
 	if len(got.Top) != 2 || got.Top[0].Name != "sol" || got.Top[1].Name != "opus" || got.TotalObservedOutputTokens != 30 {
 		t.Fatalf("top = %+v", got)
+	}
+}
+
+func TestCockpitCyclesKeepClosedCyclesOfBoundAdmittedSources(t *testing.T) {
+	ref, now := "0123456789abcdef", time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	cycles := []history.PaceCycleView{{Closed: false, ResetsAt: now.Add(time.Hour)}}
+	for i := 0; i < 12; i++ {
+		cycles = append(cycles, history.PaceCycleView{Closed: true, ResetsAt: now.Add(-time.Duration(i) * time.Hour), Points: float64(i),
+			Spent: []history.Share{{Model: "sol", Effort: "high", Points: 1}, {Model: "local-alias", Effort: "custom", Points: 1}}})
+	}
+	groups := []history.PaceGroup{{Source: "codex", Kind: "five_hour", Attribution: "unattributed", Cycles: cycles},
+		{Source: "codex", Kind: "five_hour", Limit: "other", Cycles: cycles}, {Source: "unbound", Kind: "weekly", Cycles: cycles}, {Source: "denied", Kind: "weekly", Cycles: cycles}}
+	got := cockpitCycles(groups, map[string]string{"codex": ref, "denied": ref}, map[string]bool{"codex": true, "unbound": true}, map[string][]wire.CockpitAccount{ref: {}}, []digest.Model{{ID: "sol"}})
+	if len(got) != 1 || len(got[0].Cycles) != 10 {
+		t.Fatalf("groups = %+v", got)
+	}
+	spent := got[0].Cycles[0].Spent
+	if *spent[0].Model != "sol" || *spent[0].Effort != "high" || spent[1].Model != nil || spent[1].Effort != nil {
+		t.Fatalf("spent = %+v", spent)
 	}
 }
