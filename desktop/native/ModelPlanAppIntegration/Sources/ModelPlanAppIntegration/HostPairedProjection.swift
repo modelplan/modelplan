@@ -14,6 +14,7 @@ import ModelPlanDock
     private var pinnedEvents: EngineRowsEventState?
     var isProjecting: Bool { pinnedEvents != nil }
     private var captured: HostRowsSnapshotFence.Capture?
+    var acceptedDelivery: EngineDeliveryContext? { captured?.delivery }
     private(set) var evaluatedAt: Date?
     private(set) var generation: UInt64 = 0
 

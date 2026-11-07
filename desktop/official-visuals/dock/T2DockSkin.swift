@@ -18,7 +18,10 @@ public enum T2DockSkin {
         let sourceSize = d <= 44 ? 44 : 52
         let layers = names.map { "\($0)-\(sourceSize)px@3x.webp" }
         let available = Dictionary(uniqueKeysWithValues: rows.map { ($0.subscriptionID, $0) })
-        var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "opencode":"logo-opencode"]
+        var logos = ["openai":"logo-openai", "claude":"logo-claude", "cursor":"logo-cursor", "copilot":"logo-copilot", "kimi":"logo-kimi", "deepseek":"logo-deepseek", "opencode":"logo-opencode",
+                     "gemini":"logo-gemini", "grok":"logo-grok", "x":"logo-x", "qwen":"logo-qwen", "minimax":"logo-minimax", "xiaomi":"logo-xiaomi",
+                     "kiro":"logo-kiro", "amp":"logo-amp", "antigravity":"logo-antigravity", "droid":"logo-droid",
+                     "zhipu":"logo-zhipu", "glm":"logo-zai", "zai":"logo-zai"]
         if zaiMarkEnabled { for key in ["zhipu", "glm", "zai"] { logos[key] = "logo-zai-white" } }
         let outerWidth = d * 0.058, innerWidth = d * 0.031
         // workbench-engine.js draws the 52-point nozzle before CSS zoom.
@@ -55,7 +58,7 @@ public enum T2DockSkin {
                 "singleWindowCaseInnerRadius":max(0,singleWindowRadius),
                 "radialOverlay":["radius":throatRadius,"alphas":throatAlphas],
                 "showsReadout":showsPercentages, "fallbackVendorName":true,
-                "eventSolidDiameter":5*unit, "eventHollowDiameter":6*unit, "eventStrokeWidth":1.2*unit,
+                "eventSolidDiameter":5*unit, "eventHollowDiameter":5*unit, "eventStrokeWidth":1.2*unit,
                 "eventBackdropKey":"eventBackdrop", "eventOutlineKey":"eventOutline", "eventSolidOutlineWidth":unit
             ]
             if let id=station.subscription?.id, let reading=available[id] {

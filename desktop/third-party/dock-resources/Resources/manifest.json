@@ -23,6 +23,97 @@
       "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
       "betaOnly": false
     },
+    "logo-deepseek": {
+      "path": "Marks/deepseek.svg",
+      "sha256": "357e144b8f2a169a0edb8eb4ef6472c9a6d4b5b8aa945561a61b09bed133e38d",
+      "bytes": 3629,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-gemini": {
+      "path": "Marks/gemini.png",
+      "sha256": "5e7cfecaa53f4f65a313fe89b0f389548126544a78fad8489510c70ae641a4a1",
+      "bytes": 61823,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-zhipu": {
+      "path": "Marks/zhipu.png",
+      "sha256": "94ff9c00af67774e5178428942a6e0a9952c7e2f3aba4c25f3b05c782841ee4c",
+      "bytes": 1441,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-zai": {
+      "path": "Marks/zai.png",
+      "sha256": "e7fa404fb412b9788f460bb69f2536c4d7fc7dc1c7f3bba231d3b355ca971395",
+      "bytes": 12321,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-qwen": {
+      "path": "Marks/qwen.png",
+      "sha256": "cd9390bc4209c319121d111f3a1f535b3c7dd909b8f860d41acc9744138d58df",
+      "bytes": 1658,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-x": {
+      "path": "Marks/x.png",
+      "sha256": "a83542eb0563242949d7dbde720014fb7ab48ae14ed59f43eec34907cb90c477",
+      "bytes": 13160,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-grok": {
+      "path": "Marks/grok.png",
+      "sha256": "3a462c3c2524733c173bb05c431de737812f8219db8fa115b0025d12a347e086",
+      "bytes": 8332,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-xiaomi": {
+      "path": "Marks/xiaomi.png",
+      "sha256": "cbd7602e878c987180cbb14e86aa241541e3523e85362e1ac0bc7b896f93ea65",
+      "bytes": 4594,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-kiro": {
+      "path": "Marks/kiro.png",
+      "sha256": "eaf4e3a56ad089982e2b06d1d7bcbded64b24b7df946a3991ad8fcc778ee46c6",
+      "bytes": 2635,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-amp": {
+      "path": "Marks/amp.png",
+      "sha256": "d4e6d7bab74bfcebf3edc2b14549d92b3e4384e6ec6629781a074a816d42ea08",
+      "bytes": 74739,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-antigravity": {
+      "path": "Marks/antigravity.png",
+      "sha256": "193ba1805de11c23cd0c7a1df92aa0a886708e57350f6f7766100afe5befed73",
+      "bytes": 32382,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-droid": {
+      "path": "Marks/droid.png",
+      "sha256": "8b6270e882a878c8c962b2f48c4d4d3813b06ac9689f4fbd8309777067ee78e0",
+      "bytes": 18555,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
+    "logo-minimax": {
+      "path": "Marks/minimax.jpg",
+      "sha256": "d095a4fff8770ace5d8b537a9f642e3c4f1230a56a36177a16537d36d84b2e33",
+      "bytes": 18199,
+      "rights": "Vendor trademark; identification only; not covered by the ModelPlan visual license",
+      "betaOnly": false
+    },
     "logo-kimi": {
       "path": "Marks/kimi.svg",
       "sha256": "3821ae593eebce6940992f56e2fee3f55a08bbbba78713303c23ea714d44c5f9",
@@ -81,8 +172,8 @@
     },
     "notice-vendors": {
       "path": "Marks/SOURCES.md",
-      "sha256": "50732c6a4008722b6340255044e85529a83b051412d2176ce9595460d3ab9ada",
-      "bytes": 2100,
+      "sha256": "89682bcb778b7ad055434a7923a4e3b9fccd12873ca9c1275f65fbde94cc53ba",
+      "bytes": 4692,
       "rights": "Source attribution; original third-party rights retained"
     }
   }

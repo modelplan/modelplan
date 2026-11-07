@@ -27,7 +27,7 @@ import CryptoKit
     func testOriginalMarkAndFontBytesPassCanonicalValidation() async throws {
         let manifest = try manifest(true)
         let store = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: manifest)
-        XCTAssertEqual(manifest.files.keys.filter { $0.hasPrefix("logo-") }.count, 7)
+        XCTAssertEqual(manifest.files.keys.filter { $0.hasPrefix("logo-") }.count, 20)
         for key in manifest.files.keys { _ = try store.checkedURL(key) }
         for key in manifest.files.keys where key.hasPrefix("logo-") {
             let image = try store.image(key, maximumPixelSize: 64)
