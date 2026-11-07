@@ -126,6 +126,7 @@ register('mfd', {
   project: ['lcd', '项目', 'Project'],
   running: ['lcd', '运行中', 'Running'],
   ended: ['lcd', '已结束', 'Ended'],
+  lastSeen: ['lcd', '最近读数', 'Last seen'],
   noSessions: ['line', '这段时间没有会话', 'No sessions in this period'],
   endedAgo: ['line', '−{ago} · 用了 {took}', '−{ago} · took {took}'],
   output: ['lcd', '输出', 'Output'],

@@ -7,7 +7,7 @@ import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
 import {cautionItems,cautionLevel} from './caution.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow} from './prototype-data-adapter.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -30,12 +30,13 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const ids=new Map<string,number>(),bases=new Map<string,number>(),meanings=new Map<string,number>(),semantics=new Map<WireWindow,string>();
   for(const w of account.windows){const meaning=semantic(w),key=base(w);semantics.set(w,meaning);ids.set(w.id,(ids.get(w.id)??0)+1);bases.set(key,(bases.get(key)??0)+1);meanings.set(meaning,(meanings.get(meaning)??0)+1);}
   const validId=(w:WireWindow)=>{const key=base(w),count=bases.get(key)??0;if(count===1)return w.id===key;const suffix=w.id.startsWith(key+':')?w.id.slice(key.length+1):'';return /^[1-9]\d*$/.test(suffix)&&Number.isSafeInteger(Number(suffix))&&Number(suffix)<=count;};
-  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,trend:null,durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
+  const runOut=(w:WireWindow)=>runOutMinutes(data,row.id,account,w,now);
+  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
-  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)},runOutMin:null}));
+  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:null,event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
  // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
  const items=cautionItems(data,now,redBelow());
