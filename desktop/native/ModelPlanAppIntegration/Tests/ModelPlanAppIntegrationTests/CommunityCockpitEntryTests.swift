@@ -268,6 +268,24 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let delivered=try XCTUnwrap(page.appearances.last,"A change reaches the open page")
         XCTAssertFalse(delivered.reduceMotion);XCTAssertEqual(delivered.locale,.en)
         surface.hide();await coordinator.shutdown();await composition.stop()
+    /// SET-9-19: the committed setting reaches the appearance the page is given.
+    @MainActor func testProjectNamesSettingReachesTheCockpitAppearance() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("u11-project-names-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root)
+        _=try await settings.update { $0.showProjectNames=false;$0.redBelow=16 }
+        var applied:[SettingsApplication]=[]
+        let app=SettingsApplicationCoordinator(store:settings) { applied.append($0) }
+        await app.reload()
+        let client=RouteClient()
+        let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
+        let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
+        XCTAssertTrue(owner.appearance.showProjectNames)
+        let surface=SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{true},activate:{})
+        surface.applySettings(try XCTUnwrap(applied.last))
+        XCTAssertFalse(owner.appearance.showProjectNames)
+        XCTAssertEqual(owner.appearance.redBelow,16)
+        await composition.stop()
     }
 
     @MainActor func testForegroundFeatureFailureRequestsExactlyOneRecoveryNoticeInBothOrders() async throws {

@@ -103,3 +103,18 @@ for(const [zone,clock,buckets,last] of [
   const values=await totals(page);expect(values.length).toBe(24);expect(values.slice(-last.length)).toEqual(last);
  });
 });
+
+test('SET-9-19 project names off: a labelled project in the ranking is named by its rank',async({page})=>{
+ const {data}=fixture();data.history.projects.recent30d[0].label='desktop-secret';
+ await page.addInitScript(()=>{window.webkit={messageHandlers:{cockpit:{postMessage(){}}}};});
+ await page.clock.setFixedTime(new Date(NOW));
+ await page.goto('/?pageId='+pageId);await page.waitForFunction(()=>!!window.modelPlanCockpit);
+ const send=commands(),receive=raw=>page.evaluate(raw=>window.modelPlanCockpit.receive(raw),raw);
+ expect(await receive(send('load',{appearance:{...appearance,showProjectNames:false},shell,redBelow:25}))).toBe(true);
+ expect(await receive(send('visibility',{visible:true,occluded:false,key:true}))).toBe(true);
+ expect(await receive(send('display',{data}))).toBe(true);
+ await page.getByRole('button',{name:'Breakdown',exact:true}).click();
+ await expect(page.locator('.wh-n').first()).toHaveText('Project 1');
+ expect(await receive(send('appearance',{...appearance,showProjectNames:true}))).toBe(true);
+ await expect(page.locator('.wh-n').first()).toHaveText('desktop-secret');
+});
