@@ -469,6 +469,28 @@ public enum EngineDeadlineFacts {
             return a == b ? left.id < right.id:a < b
         }
         input.dataState = input.windows.contains { $0.remainingPercent != nil } ? .fresh : .unavailable
+        if source.dockContent.status == .ready, accountCurrent, member.isStable, let ref=member.subscriptionRef {
+            let admitted=(account.activity ?? []).compactMap { activity -> Date? in
+                guard activity.bindingVerified, activity.subscriptionRef == ref,
+                      let recorded=date(activity.recordAt), let expiry=date(activity.expiresAt),
+                      recorded <= now, now < expiry else { return nil }
+                let grace:TimeInterval
+                switch activity.phase {
+                case .model: grace=90
+                case .tool: grace=300
+                case .fallback: grace=30
+                case .finished,.unknown: return nil
+                }
+                guard abs(expiry.timeIntervalSince(recorded)-grace) < 0.001 else { return nil }
+                return expiry
+            }
+            // One live, verified session is sufficient for this account only. Use
+            // the member key, never its shared provider/row ID or a peer's rate.
+            if let expiry=admitted.max() {
+                input.working = .init(subscriptionID:member.id,bindingVerified:true,fresh:true,
+                    observedOutput:false,observedInFlight:true,expiresAt:expiry)
+            }
+        }
         return input
     }
 

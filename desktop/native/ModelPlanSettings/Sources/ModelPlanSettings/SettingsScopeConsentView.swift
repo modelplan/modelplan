@@ -109,6 +109,8 @@ import ModelPlanWire
     }
     /// D27 / G3-19: first launch shows one line — what is read and where to turn it off — and no
     /// per-reader choices. Sensitive (browser-session) readers ask when they are first needed.
+    private static let activityDisclosure = SettingsText("Local session files are read to show tool activity. Their contents are not uploaded.",
+                                                         "读取本地会话文件以显示工具活动状态，文件内容不会上传。")
     private func renderFirstRunNotice() {
         label(.init("Reading usage", "读取用量"), heading: true)
         var tools: [SettingsText] = []
@@ -124,6 +126,7 @@ import ModelPlanWire
                     "ModelPlan 会读取本机 " + zh.joined(separator: "、") + " 的用量。可在 设置 › 数据与隐私 中关闭。")
         label(text, secondary: true)
         arrangedSubviews.last?.setAccessibilityIdentifier("scope.firstRun.notice")
+        label(Self.activityDisclosure, secondary: true)
         guard controller.asksForKeychainOnFirstRun else { return }
         gap()
         label(.init("Claude Code keeps its login in the Keychain. Reading its quota needs your permission once: macOS will ask, please choose \"Always Allow\".",
@@ -148,6 +151,7 @@ import ModelPlanWire
         wrappingLabels = []
         if firstRun { renderFirstRunNotice(); return }
         label(.init("Reading permissions", "读取权限"), heading: true)
+        label(Self.activityDisclosure, secondary: true)
         if controller.needsKeychainAccess {
             label(.init("Keychain access needed to read Claude Code", "需要允许读取钥匙串"))
             arrangedSubviews.last?.setAccessibilityIdentifier("scope.keychain.needed")
