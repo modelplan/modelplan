@@ -198,6 +198,7 @@ struct CockpitUnavailableNotice {
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
+    var isOpen: Bool { pageOpened || fallback?.isOpen == true }
     func hide() {
         wantsVisible = false
         showTask?.cancel()

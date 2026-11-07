@@ -5,10 +5,11 @@ import XCTest
 
 /// G3-22: the menu bar item must never be blank. Uses the window server (status bar), so GUI leg.
 @MainActor private final class StatusClickConsole: EngineRowsConsoleSurface {
-    var shows = 0
-    func show() { shows += 1 }
+    var shows = 0, hides = 0
+    var isOpen = false
+    func show() { shows += 1; isOpen = true }
     func render() {}
-    func hide() {}
+    func hide() { hides += 1; isOpen = false }
 }
 
 @MainActor final class StatusItemLaunchTests: XCTestCase {
@@ -29,6 +30,19 @@ import XCTest
         XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
         XCTAssertEqual(console.shows, 1)
         XCTAssertFalse(app.handleStatusClick(try click(.leftMouseUp, on: button)), "an unpaired mouse-up is not a click")
+    }
+
+    func testLeftClickClosesAnOpenCockpitAndTheNextOneOpensItAgain() async throws {
+        let console = StatusClickConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        for _ in 0..<3 {
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+            XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        }
+        XCTAssertEqual(console.shows, 2); XCTAssertEqual(console.hides, 1); XCTAssertTrue(console.isOpen)
     }
 
     /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.

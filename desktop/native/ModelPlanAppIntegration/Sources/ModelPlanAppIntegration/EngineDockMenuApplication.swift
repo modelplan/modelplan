@@ -607,7 +607,7 @@ struct StatusNoticePresentation {
         }
     }
 
-    /// D44: a plain left click opens the cockpit. The menu stays attached to the status item, so
+    /// D44: a plain left click opens the cockpit, or closes it when open. The menu stays attached to the status item, so
     /// right-click, control-click, keyboard and accessibility presses show it natively, and so does
     /// a left click while the cockpit cannot open. Command stays free for dragging the icon.
     func handleStatusClick(_ event: NSEvent) -> Bool {
@@ -615,7 +615,9 @@ struct StatusNoticePresentation {
         if event.type == .leftMouseUp {
             guard statusPressPending else { return false }
             statusPressPending = false
-            if onStatusItem { showConsole() }
+            if onStatusItem {
+                if console?.isOpen == true { console?.hide() } else { showConsole() }
+            }
             return true
         }
         guard onStatusItem, event.modifierFlags.isDisjoint(with: [.control, .command]),
