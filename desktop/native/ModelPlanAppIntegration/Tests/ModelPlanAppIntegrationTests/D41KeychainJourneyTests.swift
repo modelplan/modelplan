@@ -73,17 +73,18 @@ private actor D41Engine: EngineClient {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("d41-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: profile) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
-        let facts = try facts(keychain: keychain), rows = try rows(state: rowState, code: code)
-        var engine: D41Engine?
+        let consent = try facts(keychain: keychain), snapshot = try rows(state: rowState, code: code)
+        final class Holder: @unchecked Sendable { var engine: D41Engine? }
+        let holder = Holder()
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]),
             settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment,
-            makeClient: { _, target in let value = D41Engine(store: target, facts: facts, rows: rows); engine = value; return value }, activateSettings: {})
+            makeClient: { _, target in let value = D41Engine(store: target, facts: consent, rows: snapshot); holder.engine = value; return value }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let controller = app.scopeConsentEntry.controller
         for _ in 0..<500 where controller.facts == nil || (app.composition.accountMembers.members.isEmpty) { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(controller.facts)
         addTeardownBlock { @MainActor in await app.composition.stop(); app.composition.dock.close() }
-        return (app, try XCTUnwrap(engine))
+        return (app, try XCTUnwrap(holder.engine))
     }
     private func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
     private func view(_ id: String, in root: NSView) -> NSView? { views(root).first { $0.accessibilityIdentifier() == id } }
