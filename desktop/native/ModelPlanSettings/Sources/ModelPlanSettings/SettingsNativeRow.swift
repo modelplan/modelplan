@@ -15,6 +15,9 @@ import AppKit
     var order: SettingsOrderControl?
     var resetHints: SettingsActionControl?
     var surfaceAction: SettingsActionControl?
+    /// Per-reader "What it reads" links on the optional reader rows.
+    var readerLinks: [String: SettingsActionControl] = [:]
+    static func readsLinkTitle(_ language: SettingsLanguage) -> String { SettingsWords.text("What it reads ↗", "读取了什么 ↗", language) }
     private var licenseView: SettingsLicenseView?
     private var aliasLines: [String: NSStackView] = [:]
     private var aliasLabels: [String: NSTextField] = [:]
@@ -79,6 +82,8 @@ import AppKit
         diagram?.stop()
         for popup in choices.values { popup.retire() }
         for field in aliases.values { field.retire() }
+        for link in readerLinks.values { link.retire() }
+        readerLinks = [:]
         shortcut?.retire(); order?.retire(); resetHints?.retire(); surfaceAction?.retire()
         for view in controls.arrangedSubviews { controls.removeArrangedSubview(view); view.removeFromSuperview() }
         choices = [:]; subscriptionLabels = [:]; readerDescriptions = [:]; memberReasonLabels = [:]; controlIDs = []
@@ -89,6 +94,7 @@ import AppKit
     func owns(_ view: NSView) -> Bool {
         choices.values.contains { $0 === view } || aliases.values.contains { $0 === view }
             || shortcut === view || order === view || resetHints === view || surfaceAction === view
+            || readerLinks.values.contains { $0 === view }
     }
 
     func apply(_ row: SettingsRow, language: SettingsLanguage, saving: Bool, input: SettingsDiagramInput?,
@@ -141,6 +147,7 @@ import AppKit
         case .methodologyLink: action = .request(.openLink(.methodology))
         case .privacyLink: action = .request(.openLink(.privacy))
         case .repositoryLink: action = .request(.openLink(.repository))
+        case .detectedReaders: action = .request(.openLink(.privacyLocal))
         case .updateStatus: action = .request(.checkForUpdates)
         case .loginSystemSettings: action = .request(.openSystemSettings(.loginItems))
         case .notificationSystemSettings: action = .request(.openSystemSettings(.notifications))
@@ -152,8 +159,9 @@ import AppKit
                 button.onInvoke = { onSurfaceAction($0, action) }; controls.addArrangedSubview(button)
             }
             surfaceAction?.title = key == .diagnostics ? SettingsWords.text("Copy diagnostics", "复制诊断信息", language)
-                : key == .updateStatus ? SettingsWords.text("Check for updates", "检查更新", language) : row.title.value(language)
-            surfaceAction?.isEnabled = !saving && (key == .diagnostics || (hasHost && row.availability == .available))
+                : key == .updateStatus ? SettingsWords.text("Check for updates", "检查更新", language)
+                : key == .detectedReaders ? Self.readsLinkTitle(language) : row.title.value(language)
+            surfaceAction?.isEnabled = !saving && (key == .diagnostics || (hasHost && (row.availability == .available || key == .detectedReaders)))
                 && (key != .clearAppCache || context.capabilities.appCacheClearAvailable)
                 && (key != .updateStatus || context.capabilities.updateServiceAvailable)
             if key == .updateStatus {
@@ -169,6 +177,10 @@ import AppKit
                 case .failed: words = ("Could not check for updates", "无法检查更新")
                 }
                 readout.stringValue = SettingsWords.text(words.0, words.1, language)
+            }
+            if key == .detectedReaders, case .readers(let readers) = row.value {
+                if readout.superview == nil { controls.addArrangedSubview(readout) }
+                readout.stringValue = readers.map { $0.title + " · " + Self.readerStatus($0.observation, language: language) + "\n" + $0.description.value(language) }.joined(separator: "\n")
             }
             return
         }
@@ -208,7 +220,11 @@ import AppKit
                         description.maximumNumberOfLines = 0
                         description.preferredMaxLayoutWidth = 230
                         description.setContentCompressionResistancePriority(.required, for: .vertical)
-                        let block = NSStackView(views: [line,description]); block.orientation = .vertical; block.alignment = .leading
+                        let link = SettingsActionControl(key: key); link.isBordered = false; link.font = .systemFont(ofSize: 11)
+                        link.contentTintColor = .secondaryLabelColor; link.setAccessibilityIdentifier("settings.reads." + id)
+                        link.onInvoke = { onSurfaceAction($0, .request(.openLink(.privacyControls))) }
+                        readerLinks[id] = link
+                        let block = NSStackView(views: [line,description,link]); block.orientation = .vertical; block.alignment = .leading
                         controls.addArrangedSubview(block)
                         line.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
                         block.widthAnchor.constraint(equalTo: controls.widthAnchor).isActive = true
@@ -248,6 +264,7 @@ import AppKit
             memberReasonLabels[id]?.isHidden = unstableReason == nil
             if case .readers(let readers) = row.value, let reader = readers.first(where: { $0.id.rawValue == id }) {
                 readerDescriptions[id]?.stringValue = reader.description.value(language) + " · " + Self.readerStatus(reader.observation, language: language)
+                readerLinks[id]?.title = Self.readsLinkTitle(language); readerLinks[id]?.isEnabled = !saving && hasHost
             }
         }
         if values.isEmpty {

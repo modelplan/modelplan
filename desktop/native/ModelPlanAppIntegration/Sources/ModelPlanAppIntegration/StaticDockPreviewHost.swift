@@ -328,6 +328,10 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let overflowTray = DockOverflowTrayView(frame: .zero)
     private let overflowScroll = NSScrollView(frame: .zero)
     private var overflowPanel: NSPanel?
+    /// DOCK-3.1-18: what the open tray presents, read-only.
+    var overflowSurfaceForChecks: (opaque: Bool, scrolls: Bool, shown: Bool) {
+        (overflowScroll.drawsBackground, overflowScroll.hasVerticalScroller, overflowPanel?.isVisible == true)
+    }
     private var interactionView: DockInstrumentView {
         let orientation = edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)
         return edgeViews[orientation] ?? dockView
