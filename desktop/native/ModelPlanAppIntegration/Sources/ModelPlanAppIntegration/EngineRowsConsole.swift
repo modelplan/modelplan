@@ -5,11 +5,16 @@ import ModelPlanSettings
 
 @MainActor public protocol EngineRowsConsoleSurface: AnyObject {
     func show()
+    /// Open or retain the current session. Toggle surfaces must implement this separately.
+    func reveal()
     func render()
     func hide()
     func applySettings(_ value: SettingsApplication)
 }
-public extension EngineRowsConsoleSurface { func applySettings(_ value: SettingsApplication) {} }
+public extension EngineRowsConsoleSurface {
+    func reveal() { show() }
+    func applySettings(_ value: SettingsApplication) {}
+}
 /// Read-only native Dock-reading status; no private cockpit or producer is constructed.
 @MainActor final class EngineRowsConsole: NSWindowController, EngineRowsConsoleSurface {
     private let composition: EngineDockMenuComposition
