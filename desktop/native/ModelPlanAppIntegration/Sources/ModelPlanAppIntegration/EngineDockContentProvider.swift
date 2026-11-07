@@ -246,8 +246,10 @@ public enum EngineDeadlineFacts {
                 ? Dictionary(grouping: account.windows, by: \.id).compactMapValues { windows in
                     guard windows.count == 1, let window = windows.first else { return nil }
                     let observed = date(window.observedAt)
+                    // A single unbound account, such as local Codex history, has no subscription
+                    // reference but is still one stable member: its card keeps its source and age.
                     let verifiedRetained = account.valueState == .retained && member.isStable &&
-                        member.subscriptionRef == member.id && sourceState(member, now: context.now) == .stale &&
+                        (member.subscriptionRef == nil || member.subscriptionRef == member.id) && sourceState(member, now: context.now) == .stale &&
                         window.source?.isKnown == true && (observed.map { $0 <= context.now } ?? false)
                     return DockWindowObservation(sourceName: windowSourceName(window.source),
                                                  observedAt: observed, verifiedRetained: verifiedRetained)
