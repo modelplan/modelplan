@@ -1,0 +1,1 @@
+Allowing Keychain access now makes one credential read. An automatic refresh could slip in beside the read you just approved, read the credential a second time, and if it was slow make your approved read fail.

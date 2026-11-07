@@ -55,7 +55,7 @@ private actor ReserveJourneyClient: EngineClient {
         let isRetained = state == .retained || state == .retainedExpired || (unknownDeadline && !currentUnknown)
         let isRevoked = state == .revoked || state == .revokedWithValues || state == .revokedFreshWithValues
         row["state"] = isRetained ? "stale" : "fresh"
-        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "读数可用"]]
+        row["reason"] = isRetained ? staleReason : ["code": "ok", "text": ["en": "Reading available", "zh": "已读到用量"]]
         if isRetained {
             row["nextStep"] = refresh; row["expiresAt"] = NSNull(); row["stateAfterExpiry"] = NSNull()
         } else {
@@ -83,7 +83,7 @@ private actor ReserveJourneyClient: EngineClient {
         }
         if unknownDeadline {
             if isRetained {
-                row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The observation time is unknown", "zh": "观测时间未知"]]
+                row["reason"] = ["code": "observation_time_unknown", "text": ["en": "The reading time is unknown", "zh": "读取时间未知"]]
                 account["observedAt"] = NSNull(); window["observedAt"] = NSNull()
             }
             row["expiresAt"] = malformed ? "invalid-deadline" as Any : NSNull()
