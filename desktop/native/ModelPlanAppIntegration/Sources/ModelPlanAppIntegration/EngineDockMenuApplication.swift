@@ -33,7 +33,7 @@ import ModelPlanMenuVerification
     private var accessibilityObserver: NSObjectProtocol?
     private var showSettingsObserver: UUID?
     private var showRequestInFlight = false
-    private var showFeedback: ShowQuotaWidgetOutcome?
+    private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -110,13 +110,8 @@ import ModelPlanMenuVerification
             self.console?.applySettings(value)
             self.dockHelp?.refresh()
         }
-        let application=settings
-        composition.dock.requestHideDock = { [weak application] in
-            // Same bounded path as Show: a hint-ledger write must not silently drop Hide.
-            Task { @MainActor in
-                guard let editor = application?.editor else { return }
-                _ = await ShowQuotaWidgetRequest.setVisible(false, editor: editor)
-            }
+        composition.dock.requestHideDock = { [weak self] in
+            Task { @MainActor [weak self] in await self?.hideDock() }
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -545,17 +540,30 @@ import ModelPlanMenuVerification
         helpMapUnavailable = requestHelpMap?() != true
         renderMenu()
     }
-    private func showFeedbackText(_ language: SettingsLanguage) -> String? {
+    func showFeedbackText(_ language: SettingsLanguage) -> String? {
+        switch hideFeedback {
+        case .changed: return SettingsText("Settings changed. Hide Quota Widget again if you still want it hidden.", "设置已更改；如仍要隐藏额度挂件，请再次选择隐藏。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not hide Quota Widget. Check Settings and try again.", "无法隐藏额度挂件，请检查设置后重试。").value(language)
+        case .ready, nil: break
+        }
         switch showFeedback {
         case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择显示额度挂件。").value(language)
         case .failed, .unavailable: return SettingsText("Could not show Quota Widget. Check Settings and try again.", "无法显示额度挂件，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
     }
+    /// Same bounded path as Show, so a hint-ledger write cannot drop Hide. A Hide that did not
+    /// take effect is reported where a failed Show is: the widget is still on screen.
+    func hideDock(commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
+        let outcome = await ShowQuotaWidgetRequest.setVisible(false, editor: settings.editor, commit: commit)
+        guard !terminating else { return }
+        hideFeedback = outcome == .ready ? nil : outcome
+        renderMenu()
+    }
     private func showDock() {
         guard ShowQuotaWidgetRequest.availability(paused: terminating,
                 loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
-        showRequestInFlight = true; showFeedback = nil; renderMenu()
+        showRequestInFlight = true; showFeedback = nil; hideFeedback = nil; renderMenu()
         Task { @MainActor [weak self] in
             guard let self else { return }
             let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor)

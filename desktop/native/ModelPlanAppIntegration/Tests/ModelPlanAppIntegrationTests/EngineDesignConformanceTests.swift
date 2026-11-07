@@ -10,6 +10,25 @@ import ModelPlanEngineClient
     private func app(_ store:SettingsStore, cockpitEntryEnabled: Bool = false) -> EngineDockMenuApplication {
         EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/modelplan"),applicationVersion:"synthetic",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:cockpitEntryEnabled)
     }
+    /// A Hide that fails leaves the widget on screen, so the status menu says so; a later Hide clears it.
+    func testFailedHideIsShownAndAWorkingHideClearsIt() async throws {
+        struct WriteFailed: Error {}
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("hide-failure-"+UUID().uuidString)
+        addTeardownBlock { try? FileManager.default.removeItem(at:root) }
+        let store=try SettingsStore(url:root.appendingPathComponent("settings.json"))
+        _ = try await store.update { $0.showDock=true }
+        let entry=app(store);await entry.prepare()
+        addTeardownBlock { @MainActor in entry.composition.dock.close() }
+        await entry.hideDock(commit:{ _ in throw WriteFailed() })
+        XCTAssertEqual(entry.showFeedbackText(.english),"Could not hide Quota Widget. Check Settings and try again.")
+        let kept=await store.snapshot()
+        XCTAssertTrue(kept.preferences.showDock)
+        await entry.hideDock()
+        XCTAssertNil(entry.showFeedbackText(.english))
+        let hidden=await store.snapshot()
+        XCTAssertFalse(hidden.preferences.showDock)
+    }
+
     func testDragCommitSurvivesContentRebuildAndRestart() async throws {
         let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at:root) }

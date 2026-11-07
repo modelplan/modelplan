@@ -55,10 +55,11 @@ the chosen display, edge and relative position once. Escape restores the startin
 placement. A pointer in a gap keeps the last carried frame and a release in the
 gap cancels.
 
-The internal defaults key `ModelPlanDockDragMode` selects mode 1 (follow with
-edge hold and strong snap) or mode 2 (always attached). Mode 1 is the default.
-`ModelPlanDockSnapDistance` and `ModelPlanDockBreakDistance` are in points, with
-defaults of 96 and 120. The break distance is at least the snap distance.
+In debug builds only, the test defaults key `ModelPlanDockDragMode` selects mode 1
+(follow with edge hold and strong snap) or mode 2 (always attached).
+`ModelPlanDockSnapDistance` and `ModelPlanDockBreakDistance` are in points. Release
+builds ignore all three and use mode 1, 96 and 120. The break distance is at least
+the snap distance.
 
 The failing-first commit is `a398985f`. The two detached controls cover carry,
 release, all three edges and their along-edge endpoints, held topology samples

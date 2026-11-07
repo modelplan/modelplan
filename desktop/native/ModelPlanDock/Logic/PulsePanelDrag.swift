@@ -19,6 +19,8 @@ struct PulsePanelDrag {
         self.press = press
         grab = CGPoint(x: (press.x - placement.frame.minX) / placement.frame.width,
                        y: (press.y - placement.frame.minY) / placement.frame.height)
+        // Test controls only: a release build ignores these keys and uses the defaults.
+        #if DEBUG
         alwaysAttached = defaults.integer(forKey: "ModelPlanDockDragMode") == 2
         func threshold(_ key: String, fallback: CGFloat) -> CGFloat {
             let value = defaults.double(forKey: key)
@@ -26,6 +28,9 @@ struct PulsePanelDrag {
         }
         snapDistance = threshold("ModelPlanDockSnapDistance", fallback: 96)
         breakDistance = max(snapDistance, threshold("ModelPlanDockBreakDistance", fallback: 120))
+        #else
+        alwaysAttached = false; snapDistance = 96; breakDistance = 120
+        #endif
         heldDisplay = placement.displayID
         heldEdge = placement.edge
     }
