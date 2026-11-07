@@ -145,7 +145,11 @@ Notification:
 
 ### Cockpit display DTO
 
-`cockpit/query` takes an empty object. It returns `CockpitData` with the existing
+When `cockpitDetailsV1` is negotiated, `cockpit/query` may specify `redBelow`
+as 10, 15, 20, 25, 30 or 40 (remaining percent). Omission defaults to 25;
+other values, including 16 and explicit null, are invalid.
+
+`cockpit/query` accepts an empty object. It returns `CockpitData` with the existing
 `RowsProjection` in `projection` and a `subscriptions` array. Go groups verified
 subscription references; each group contains `subscriptionRef` and an `accounts`
 array of `{tool, account}` using stable tool IDs and the existing account display

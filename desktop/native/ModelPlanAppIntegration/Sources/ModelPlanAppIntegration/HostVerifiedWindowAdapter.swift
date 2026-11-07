@@ -127,7 +127,13 @@ enum HostVerifiedWindowError: Error, Equatable {
                 // Public reset notices are independently admitted by the Provider;
                 // missing private quota proof must not erase that public status.
                 additionalRows: admitted ? row.additionalRows : row.additionalRows.filter { $0.kind == .notice && $0.id.hasPrefix("reset-event:") },
+                resetCountExpiry: admitted ? row.resetCountExpiry : nil,
+                links: row.links,
+                windowObservations: row.windowObservations.map { observations in
+                    admitted ? observations.filter { provenIDs.contains($0.key) || $0.value.verifiedRetained } : [:]
+                },
                 cardReadingState: unproved ? .error : (admitted || row.cardReadingState == .loading ? row.cardReadingState : .error))
+            rows[input.id]?.actionLabel = row.actionLabel
         }
         let snapshot = CommunityDockSnapshot(inputs: inputs, subscriptions: original.subscriptions,
             presentationRows: rows, unavailableReason: original.unavailableReason,

@@ -269,8 +269,8 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(try DockInstrumentProjection.evaluate(heldInput, now: firstDeadline).readout, "--")
             XCTAssertEqual(held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.reason, "A retained reading is shown")
             XCTAssertEqual(held.snapshot.subscriptions.first?.source, .stale)
-            let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve }
-            XCTAssertEqual(heldReserve?.value, "13"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
+            let heldReserve = held.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
+            XCTAssertEqual(heldReserve?.value, "13 credits"); XCTAssertEqual(heldReserve?.detail, "Last known reading")
             // Isolate the representation gap: even an explicitly supplied valid
             // weekly value is suppressed when overall state is stale.
             var staleProbe = heldInput
@@ -312,7 +312,7 @@ private actor ReserveJourneyClient: EngineClient {
             let refreshedInput = try XCTUnwrap(refreshed.snapshot.inputs.first)
             XCTAssertEqual(refreshedInput.dataState, .fresh)
             XCTAssertEqual(refreshedInput.windows.first { $0.period == .week }?.remainingPercent, 75.0)
-            XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            XCTAssertNotNil(refreshed.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
             let withdrawnPair = provider.makeContentAndDeadline(.init(snapshot: nil, diagnostics: .init(), now: after))
@@ -331,7 +331,7 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertEqual(firstProof.remainingPercent, 42.5); XCTAssertEqual(secondProof.remainingPercent, 75.0)
             XCTAssertEqual(firstProof.windowID, "session:18000:main:main"); XCTAssertEqual(secondProof.windowID, firstProof.windowID)
             func reserveRow(_ snapshot: CommunityDockSnapshot, _ id: String) -> DockCardRow? {
-                snapshot.presentationRows[id]?.additionalRows.first { $0.kind == .reserve }
+                snapshot.presentationRows[id]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve }
             }
             XCTAssertNotNil(reserveRow(content.snapshot, "aaaaaaaaaaaaaaaa"))
             XCTAssertNotNil(reserveRow(content.snapshot, "bbbbbbbbbbbbbbbb"))
@@ -384,16 +384,16 @@ private actor ReserveJourneyClient: EngineClient {
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
         }
         if clearAfter {
-            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+            XCTAssertNotNil(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
             await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context,
                 nextFloor: .init(storeEpoch: "synthetic", generation: 2))))
             let cleared = provider.makeContent(.init(snapshot: nil, diagnostics: .init(), now: now))
             XCTAssertTrue(source.dockContent.dockRows.isEmpty)
             XCTAssertNil(cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"])
             return (cleared.snapshot.inputs.first { $0.id == "aaaaaaaaaaaaaaaa" },
-                    cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+                    cleared.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
         }
-        return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
+        return (input, content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
     }
 
     private func reserve(balance: Any?, unit: String, english: Bool) async throws -> DockCardRow? {
@@ -402,11 +402,11 @@ private actor ReserveJourneyClient: EngineClient {
 
     func testZeroAndFiniteBalancesRemainReportedAndNegativeIsWithheld() async throws {
         let zero = try await reserve(balance: 0, unit: "credits", english: true)
-        XCTAssertEqual(zero?.value, "0")
+        XCTAssertEqual(zero?.value, "0 credits")
         let thousands = try await reserve(balance: 1_500, unit: "credits", english: true)
-        XCTAssertEqual(thousands?.value, "1,500")
+        XCTAssertEqual(thousands?.value, "1,500 credits")
         let fractional = try await reserve(balance: 12.5, unit: "credits", english: true)
-        XCTAssertEqual(fractional?.value, "13")
+        XCTAssertEqual(fractional?.value, "13 credits")
         let amount = try await reserve(balance: 12.5, unit: "money", english: true)
         XCTAssertEqual(amount?.value, "12.5")
         XCTAssertEqual(amount?.detail, "Currency not reported")
@@ -415,11 +415,11 @@ private actor ReserveJourneyClient: EngineClient {
         let negative = try await reserve(balance: -1, unit: "credits", english: true)
         XCTAssertNil(negative)
         let boundary = try await reserve(balance: 1_000_000_000_000_000.0, unit: "credits", english: true)
-        XCTAssertEqual(boundary?.value, "1,000,000,000,000,000")
+        XCTAssertEqual(boundary?.value, "1,000,000,000,000,000 credits")
         let outsideBound = try await reserve(balance: 1_000_000_000_000_001.0, unit: "credits", english: true)
         XCTAssertNotNil(outsideBound)
         let fallback = try await reserve(balance: 1e21, unit: "credits", english: true)
-        XCTAssertEqual(fallback?.value, "1,000,000,000,000,000,000,000")
+        XCTAssertEqual(fallback?.value, "1,000,000,000,000,000,000,000 credits")
         let largeOther = try await reserve(balance: 1_000_000_000_000_001.0, unit: "other", english: true)
         XCTAssertEqual(largeOther?.value, "1,000,000,000,000,001")
     }
@@ -497,10 +497,12 @@ private actor ReserveJourneyClient: EngineClient {
             settingsStore: settings, createsNativePanels: false, makeClient: { _, store in ReserveJourneyClient(store: store, rows: rows) }, activateSettings: {})
         await app.prepare(); await app.composition.start()
         let content = app.composition.presentedContent
-        let retained = try XCTUnwrap(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.kind == .reserve })
-        XCTAssertEqual(retained.value, "13"); XCTAssertEqual(retained.detail, "Last known reading")
+        let retained = try XCTUnwrap(content.snapshot.presentationRows["aaaaaaaaaaaaaaaa"]?.additionalRows.first { $0.id == "credits" && $0.kind == .reserve })
+        XCTAssertEqual(retained.value, "13 credits"); XCTAssertEqual(retained.detail, "Last known reading")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: "aaaaaaaaaaaaaaaa"))
-        XCTAssertEqual(card.rows.first { $0.kind == .reserve }?.detail, "Last known reading")
+        // The card folds credits into the one reserve line (card.js:76-81); a stale reading stays labelled there.
+        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.value, "↺1 · 13 credits")
+        XCTAssertEqual(card.rows.first { $0.id == "reserve" && $0.kind == .reserve }?.detail, "expired · Last known reading")
         let delivery = EngineDeliveryContext(sessionID: "reserve-synthetic", floor: .init(storeEpoch: "reserve-synthetic", generation: 1), revision: 1)
         await app.composition.store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: delivery,
             nextFloor: .init(storeEpoch: "reserve-synthetic", generation: 2))))
@@ -647,7 +649,7 @@ private actor ReserveJourneyClient: EngineClient {
                 overrideNow: Date(timeIntervalSince1970: 1_900_000_000))
             XCTAssertEqual(early.0?.dataState, .unavailable); XCTAssertEqual(later.0?.dataState, .unavailable)
             // Characterizes the existing gap; it does not approve indefinite retention.
-            XCTAssertEqual(early.1?.value, "13"); XCTAssertEqual(later.1?.value, "13")
+            XCTAssertEqual(early.1?.value, "13 credits"); XCTAssertEqual(later.1?.value, "13 credits")
         }
     }
 
@@ -663,7 +665,7 @@ private actor ReserveJourneyClient: EngineClient {
             })
             XCTAssertEqual(projected.0?.dataState, .fresh)
             XCTAssertEqual(projected.0?.windows.first?.remainingPercent, 42.5)
-            XCTAssertEqual(projected.1?.value, "13")
+            XCTAssertEqual(projected.1?.value, "13 credits")
             // These characterize today's nil fallbacks, not approval of the result.
         }
         _ = try await projection(balance: 12.5, unit: "credits", english: true, state: .currentWindowMissingObservation,
@@ -762,21 +764,21 @@ private actor ReserveJourneyClient: EngineClient {
 
     func testFreshRetainedAndExpiredProjectionStatesAndReserve() async throws {
         let fresh = try await projection(balance: 12.5, unit: "credits", english: true, state: .fresh)
-        XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "13")
+        XCTAssertEqual(fresh.0?.dataState, .fresh); XCTAssertEqual(fresh.1?.value, "13 credits")
         let retained = try await projection(balance: 12.5, unit: "credits", english: true, state: .retained)
-        XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "13")
+        XCTAssertEqual(retained.0?.dataState, .unavailable); XCTAssertEqual(retained.1?.value, "13 credits")
         let retainedDeadline = try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-12-01T00:00:00Z"))
         XCTAssertLessThan(Date(timeIntervalSince1970: 1_800_000_000), retainedDeadline)
         let atExpiry = try await projection(balance: 12.5, unit: "credits", english: true, state: .atExpiry)
         XCTAssertEqual(atExpiry.0?.dataState, .unavailable); XCTAssertEqual(atExpiry.1?.detail, "Last known reading")
         let retainedExpired = try await projection(balance: 12.5, unit: "credits", english: true, state: .retainedExpired)
-        XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertEqual(retainedExpired.1?.value, "13")
+        XCTAssertEqual(retainedExpired.0?.dataState, .unavailable); XCTAssertEqual(retainedExpired.1?.value, "13 credits")
         XCTAssertEqual(retainedExpired.1?.detail, "Last known reading")
         let expired = try await projection(balance: 12.5, unit: "credits", english: true, state: .expired)
-        XCTAssertEqual(expired.0?.dataState, .unavailable); XCTAssertEqual(expired.1?.value, "13")
+        XCTAssertEqual(expired.0?.dataState, .unavailable); XCTAssertEqual(expired.1?.value, "13 credits")
         XCTAssertEqual(expired.1?.detail, "Last known reading")
         let refreshed = try await projection(balance: 12.5, unit: "credits", english: true, state: .refreshed)
-        XCTAssertEqual(refreshed.0?.dataState, .fresh); XCTAssertEqual(refreshed.1?.value, "13")
+        XCTAssertEqual(refreshed.0?.dataState, .fresh); XCTAssertEqual(refreshed.1?.value, "13 credits")
         let beforeExpiry = Date(timeIntervalSince1970: 1_800_000_000)
         let afterExpiry = Date(timeIntervalSince1970: 1_830_000_000)
         let freshReading = try DockInstrumentProjection.evaluate(XCTUnwrap(fresh.0), now: beforeExpiry)
@@ -792,6 +794,19 @@ private actor ReserveJourneyClient: EngineClient {
 
     // Empty and unrecognized units are decoder-boundary inputs; the current
     // producer normalizes both to "other" and does not emit them directly.
+    func testV06UnknownUnitUsesReserveLabelWithoutUnitText() async throws {
+        let examples: [(Double, String)] = [(3, "3"), (3.5, "4"), (3.456, "3"),
+                                             (0.004, "<1"), (1_234_567.891, "1,234,568")]
+        for english in [true, false] {
+            for (value, expected) in examples {
+                let row = try await reserve(balance: value, unit: "other", english: english)
+                XCTAssertEqual(row?.label, english ? "Reserve" : "储备")
+                XCTAssertEqual(row?.value, expected)
+                XCTAssertEqual(row?.detail, "")
+            }
+        }
+    }
+
     func testUnknownAndEmptyUnitAreNotMisreportedOrEchoed() async throws {
         for english in [true, false] {
             let label = english ? "Reserve" : "储备"

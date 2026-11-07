@@ -5,7 +5,7 @@ import ModelPlanDock
 @testable import ModelPlanSettings
 
 final class DockPlacementPresentationTests: XCTestCase {
-    func testExposedEdgeRecoveryIsShownSeparatelyFromSavedRightIntent() throws {
+    func testInnerEdgeReportsActualRightPlacementAndPreservesIntent() throws {
         let frame = CGRect(x: 0, y: 0, width: 1200, height: 900)
         let displays = [DockDisplayArea(id: "main", frame: frame, visibleFrame: frame),
                         DockDisplayArea(id: "adjacent", frame: frame.offsetBy(dx: 1200, dy: 0), visibleFrame: frame.offsetBy(dx: 1200, dy: 0))]
@@ -16,16 +16,15 @@ final class DockPlacementPresentationTests: XCTestCase {
         let intent = DockEdgePreference(displayID: "main", edge: .right, alongFraction: 0.5)
         let placement = try XCTUnwrap(DockEdgeGeometry.resolve(preference: intent, displays: displays, layouts: layouts,
                                                               pointer: nil, primaryID: "main"))
-        XCTAssertTrue(DockEdgeGeometry.exposedIntervals(on: displays[0], edge: .right, displays: displays).isEmpty)
-        XCTAssertEqual(placement.edge, .left); XCTAssertEqual(intent.edge, .right)
+        XCTAssertEqual(placement.edge, .right); XCTAssertEqual(intent.edge, .right)
         var preferences = SettingsPreferences(); preferences.dockEdge = .right
         var context = SettingsPageContext(); context.displays = [.init(id: "main", name: "Fixture display")]
-        context.dockPlacementObservation = try .init(displayID: placement.displayID, edge: .left,
-            alongFraction: placement.alongFraction, recovering: true)
+        context.dockPlacementObservation = try .init(displayID: placement.displayID, edge: .right,
+            alongFraction: placement.alongFraction, recovering: false)
         let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .dockEdge })
         XCTAssertEqual(row.title.english, "Preferred Quota Widget edge")
-        XCTAssertTrue(row.subtitle.english.contains("Currently left"))
-        XCTAssertTrue(row.subtitle.chinese.contains("当前位于左侧"))
+        XCTAssertTrue(row.subtitle.english.contains("Currently right"))
+        XCTAssertTrue(row.subtitle.chinese.contains("当前位于右侧"))
         guard case .choice(let value, _) = row.value else { return XCTFail("saved choice missing") }
         XCTAssertEqual(value, "right"); XCTAssertEqual(preferences.dockEdge, .right)
     }
@@ -47,5 +46,17 @@ final class DockPlacementPresentationTests: XCTestCase {
         XCTAssertFalse(row.subtitle.english.contains("opaque-display-id")); XCTAssertFalse(row.subtitle.english.contains("recovery"))
         XCTAssertEqual(preferences.dockEdge, .right)
         XCTAssertThrowsError(try SettingsDockPlacementObservation(displayID: "screen", edge: .left, alongFraction: .nan, recovering: true))
+    }
+    /// G3-27: the top edge is a saved choice of its own and reports where the widget actually is.
+    func testTopEdgeIsOfferedSavedAndReportedBelowTheMenuBar() throws {
+        var preferences = SettingsPreferences(); preferences.dockEdge = .top
+        let decoded = try JSONDecoder().decode(SettingsPreferences.self, from: JSONEncoder().encode(preferences))
+        XCTAssertEqual(decoded.dockEdge, .top)
+        var context = SettingsPageContext()
+        context.dockPlacementObservation = try .init(displayID: "screen", edge: .top, alongFraction: 0.5, recovering: false)
+        let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .dockEdge })
+        guard case .choice(let value, let options) = row.value else { return XCTFail("saved choice missing") }
+        XCTAssertEqual(value, "top"); XCTAssertTrue(options.contains("top"))
+        XCTAssertTrue(row.subtitle.english.contains("Currently top")); XCTAssertTrue(row.subtitle.chinese.contains("当前位于顶部"))
     }
 }

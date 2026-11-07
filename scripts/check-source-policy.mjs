@@ -125,7 +125,8 @@ for (const p of tracked.filter((p) => p.startsWith("desktop/") && !inReserved(p)
     continue;
   }
   if (p === "desktop/native/tools/package-neutral.sh") {
-    assert.equal(code.split("official-visuals").length, 2, "one native visual license reference");
+    assert.equal(code.split("official-visuals").length, 3, "one native visual license reference and one app icon reference");
+    assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/icons/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"'), "exact native app icon copy");
     assert.ok(code.includes('cp "$repo_root/desktop/official-visuals/LICENSE.md" "$app/Contents/Resources/VISUAL-LICENSE.md"'), "exact native visual license copy");
     continue;
   }

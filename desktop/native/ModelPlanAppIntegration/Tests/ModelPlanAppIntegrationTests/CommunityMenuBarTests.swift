@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import XCTest
 import ModelPlanCore
+import ModelPlanDock
 import ModelPlanShell
 import ModelPlanSettings
 @testable import ModelPlanCommunityHost
@@ -30,6 +31,30 @@ import ModelPlanSettings
             XCTFail("Construction must not create Settings or runtime"); throw SettingsConnectionFailure.unavailable
         }
     }
+    func testNoticeUsesTheVisualTopRightOfFlippedAndUnflippedButtons() {
+        final class FlippedButton: NSButton {
+            override var isFlipped: Bool { true }
+        }
+        final class UnflippedButton: NSButton {
+            override var isFlipped: Bool { false }
+        }
+        let frame = CGRect(x: 0, y: 0, width: 32, height: 24)
+        for button in [FlippedButton(frame: frame), UnflippedButton(frame: frame)] {
+            button.bounds.origin = CGPoint(x: 4, y: 6)
+            let notice = DockNoticeIndicatorView(frame: .zero)
+            notice.attach(to: button)
+            XCTAssertTrue(notice.superview === button)
+            XCTAssertEqual(notice.frame.maxX, button.bounds.maxX)
+            if button.isFlipped {
+                XCTAssertEqual(notice.frame.minY, button.bounds.minY)
+                XCTAssertTrue(notice.autoresizingMask.contains(.maxYMargin))
+            } else {
+                XCTAssertEqual(notice.frame.maxY, button.bounds.maxY)
+                XCTAssertTrue(notice.autoresizingMask.contains(.minYMargin))
+            }
+        }
+    }
+
     func testActualFactoryWiresExistingTemplateAndIconOnlyEmptyStateWithoutAStatusItem() throws {
         let host = delegate(), button = NSButton()
         button.contentTintColor = .red
