@@ -36,6 +36,9 @@ public struct T2Station: Sendable {
     public let inwardNormal: CGVector
     public let readoutCentre: CGPoint
     public let pitch: CGFloat
+    /// geometry.js's position, kept for the oracle tests. The owner moved the ring from it (11-07).
+    public let prototypeCentre: CGPoint
+    public let prototypeReadoutCentre: CGPoint
 }
 
 /// Pure native translation of the accepted T2 study's geometry.js.
@@ -227,13 +230,21 @@ public struct T2Geometry: Sendable {
         }
         let buttonU = (low + high) / 2
         let stations = selected.indices.map { i -> T2Station in
-            let slot = selected[i], s = m.positions[i], point = screen(m.local(s, depth))
-            let readout = vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
-                ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
-                CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)
+            let slot = selected[i], s = m.positions[i], local = m.local(s, depth)
+            // Owner 11-07: a ring sits in the middle of the visible face at its own height:
+            // halfway between the screen edge (0) and the face's inner edge there. The study
+            // kept it 14 x D/52 from the edge plus the whole arc sag, which reads as off-centre.
+            let point = screen(CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2))
+            let prototype = screen(local)
+            func readoutCentre(_ point: CGPoint) -> CGPoint {
+                vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
+                    ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
+                    CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)
+            }
             return T2Station(subscription: slot.subscription, isOverflow: slot.overflow, isEmpty: slot.empty,
                 arcPosition: s, centre: point, inwardNormal: c.direction(along: sin(s / m.radius), inward: cos(s / m.radius)),
-                readoutCentre: readout, pitch: m.pitches[i])
+                readoutCentre: readoutCentre(point), pitch: m.pitches[i],
+                prototypeCentre: prototype, prototypeReadoutCentre: readoutCentre(prototype))
         }
         let gripS = p.ignitionAtEnd ? m.start + 18 * scale : m.end - 18 * scale
         return Self(input: p, stations: stations, shown: visible, overflow: more, outline: localOutline.map(screen),

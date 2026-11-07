@@ -375,8 +375,10 @@ private actor P1SyntheticEngine: EngineClient {
                     let innerEdge = skin.bounds.minX + CGFloat(x + 1) / pixels
                     let inward = station.centre.x - innerEdge
                     report.append("\(label) ring\(index) diameter \(station.diameter) centre-to-screen-edge \(depth) centre-to-inner-edge \(inward) y \(station.centre.y) pitch-prev \(index > 0 ? station.centre.y - stations[index - 1].centre.y : 0)")
-                    XCTAssertEqual(depth, expected[index], accuracy: 0.5, "\(label) ring \(index): centre to screen edge (prototype \(expected[index]))")
-                    XCTAssertEqual(inward, 36 * unit, accuracy: 1.0, "\(label) ring \(index): centre to the face's inner edge")
+                    // Owner 11-07: the ring is centred in the visible face. `expected` is the prototype's
+                    // position (40 x D/52 plus the arc sag); the centred one takes half of that sag.
+                    XCTAssertEqual(depth, 38 * unit + (expected[index] - 40 * unit) / 2, accuracy: 0.5, "\(label) ring \(index): centre to screen edge")
+                    XCTAssertEqual(depth, inward, accuracy: 1.0, "\(label) ring \(index): as far from the screen edge as from the inner edge")
                     // The card measures its gap from the painted clock ring (prototype card.js:154-163).
                     let cardRing = try XCTUnwrap(view.cardRingAnchor(try XCTUnwrap(station.subscriptionID)))
                     XCTAssertEqual(cardRing.width, 2 * (26 + 2.2 + 0.75) * unit, accuracy: 0.05, "\(label) card ring")
@@ -581,6 +583,7 @@ extension P1ExactPlacementTests {
         projection["rows"] = stations.enumerated().map { order, station -> [String: Any] in
             var row = template
             row["id"] = station.id; row["order"] = order + 1; row["vendorKey"] = station.vendorKey
+            if station.vendorKey.isEmpty { row.removeValue(forKey: "vendorKey") }
             row["name"] = ["en": station.name, "zh": station.name]
             row["state"] = "fresh"; row["consent"] = "allowed"; row["surfaces"] = ["dock", "menu", "settings"]
             row["expiresAt"] = "2099-01-01T00:00:00Z"
@@ -737,6 +740,9 @@ extension P1ExactPlacementTests {
         XCTAssertEqual(try reading().status, .critical)
         XCTAssertEqual(try reading().outer?.status, .critical)
         let red = try ringRedPixels()
+        if let image = view.presentedImageForChecks, let writer = CGImageDestinationCreateWithURL(try visualOutput("ring-centre").appendingPathComponent("ring-M-20.png") as CFURL, "public.png" as CFString, 1, nil) {
+            CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+        }
         XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
         try await settings.commit(.redBelow(15))
         try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
@@ -751,6 +757,15 @@ extension P1ExactPlacementTests {
         try await settled("the readout disappears") { !view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
         try await settings.commit(.showPercentages(true))
         try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
+    }
+
+    /// D42: catalogue rows such as Gemini carry no vendor key; the tool ID names their mark.
+    func testARowWithoutAVendorKeyShowsTheMarkForItsToolID() async throws {
+        let rows = try synthetic([Station(id: "gemini", vendorKey: "", name: "Gemini CLI", accounts: 1)])
+        let (app, view) = try await launch(rows, size: .medium, percentages: false, stations: 1, tag: "nokey")
+        XCTAssertEqual(view.presentedReadingsForChecks.values.first?.vendorResourceKey, "gemini")
+        XCTAssertFalse(view.presentedTextMetricsForChecks.contains { $0.text == "Ge" }, "the mark is drawn, not the fallback")
+        await app.stopLifecycle(); app.composition.dock.close()
     }
 
     /// G3-32: a ring shows the vendor's checked mark; without one, its initials fit the face.

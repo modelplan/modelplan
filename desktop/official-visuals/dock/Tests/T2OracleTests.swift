@@ -30,11 +30,11 @@ final class T2OracleTests: XCTestCase {
             let stations = try XCTUnwrap(test["stations"] as? [[String: Any]])
             XCTAssertEqual(actual.stations.count, stations.count)
             for (station, reference) in zip(actual.stations, stations) {
-                XCTAssertEqual(station.centre.x, try XCTUnwrap(reference["x"] as? Double), accuracy: 1e-7)
-                XCTAssertEqual(station.centre.y, try XCTUnwrap(reference["y"] as? Double), accuracy: 1e-7)
+                XCTAssertEqual(station.prototypeCentre.x, try XCTUnwrap(reference["x"] as? Double), accuracy: 1e-7)
+                XCTAssertEqual(station.prototypeCentre.y, try XCTUnwrap(reference["y"] as? Double), accuracy: 1e-7)
                 let readout = try XCTUnwrap(reference["readout"] as? [Double])
-                XCTAssertEqual(station.readoutCentre.x, readout[0], accuracy: 1e-7)
-                XCTAssertEqual(station.readoutCentre.y, readout[1], accuracy: 1e-7)
+                XCTAssertEqual(station.prototypeReadoutCentre.x, readout[0], accuracy: 1e-7)
+                XCTAssertEqual(station.prototypeReadoutCentre.y, readout[1], accuracy: 1e-7)
                 XCTAssertEqual(station.pitch, try XCTUnwrap(reference["pitch"] as? Double), accuracy: 1e-7)
             }
             XCTAssertEqual(actual.shown.map(\.id), test["shown"] as? [String])
