@@ -62,3 +62,19 @@ func TestChildEnvironmentContractMatchesSupervisor(t *testing.T) {
 		t.Fatal("caller changed the canonical allow-list")
 	}
 }
+
+func TestProxyKeysReachTheChild(t *testing.T) {
+	keys := map[string]bool{}
+	for _, key := range appserver.ChildEnvironmentKeys() {
+		keys[key] = true
+	}
+	for _, key := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"} {
+		if !keys[key] {
+			t.Fatalf("%s is not in the child environment", key)
+		}
+	}
+	got := appserver.ChildEnvironment([]string{"HTTPS_PROXY=http://proxy.invalid:1", "SSL_CERT_FILE=/x", "UNRELATED_SECRET=x"})
+	if len(got) != 1 || got[0] != "HTTPS_PROXY=http://proxy.invalid:1" {
+		t.Fatalf("child environment: %v", got)
+	}
+}

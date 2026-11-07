@@ -2,7 +2,10 @@
   "$comment": "SPDX-License-Identifier: MIT. Generated from appserver.ChildEnvironmentKeys; run go run ./internal/swiftwire/cmd --write from cli/.",
   "version": 1,
   "allowedKeys": [
+    "ALL_PROXY",
     "HOME",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
     "KIMI_CODE_API_KEY",
     "LANG",
     "LC_ALL",
@@ -11,9 +14,14 @@
     "MODELPLAN_CODEX_ACCOUNT",
     "MODELPLAN_READERS",
     "MODELPLAN_VERIFY_READERS",
+    "NO_PROXY",
     "OPENCODE_API_KEY",
     "PATH",
     "TMPDIR",
-    "Z_AI_API_KEY"
+    "Z_AI_API_KEY",
+    "all_proxy",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy"
   ]
 }

@@ -1,0 +1,7 @@
+<dictionary> {
+  HTTPEnable : 0
+  HTTPSEnable : 0
+  ProxyAutoConfigEnable : 1
+  ProxyAutoConfigURLString : http://127.0.0.1:1089/proxy.pac
+  ProxyAutoDiscoveryEnable : 0
+}
