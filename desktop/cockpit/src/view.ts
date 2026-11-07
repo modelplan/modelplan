@@ -76,6 +76,8 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
    const at=Date.parse(w.validUntil);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);
   }
   for(const event of data.details?.resetEvents??[]){const at=Date.parse(event.expiresAt);if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
+  // A run-out stops being a forecast when it passes; the amber lamp, row and cell must clear then, with no new reading.
+  for(const forecast of data.details?.forecasts??[]){const at=forecast.runsOutAt?Date.parse(forecast.runsOutAt):NaN;if(Number.isFinite(at)&&at>now)next=Math.min(next,at);}
   return Number.isFinite(next)?next:null;
  }
  function preserveFocus(update:()=>void,replacing=false){

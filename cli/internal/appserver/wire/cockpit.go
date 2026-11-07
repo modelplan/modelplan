@@ -40,6 +40,20 @@ type CockpitDetails struct {
 	SessionCoverage string                       `json:"sessionCoverage"`
 	ResetEvents     []rows.ResetEvent            `json:"resetEvents" schema:"maxItems=64"`
 	Alerts          []CockpitAlert               `json:"alerts" schema:"maxItems=128"`
+	// Forecasts is present only for a client that negotiated cockpitForecastV1.
+	Forecasts []CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
+}
+
+// CockpitForecast is the engine's outlook for one current window. RunsOutAt is
+// present only when the window is forecast to run out before its reset.
+type CockpitForecast struct {
+	Source          string        `json:"source"`
+	SubscriptionRef string        `json:"subscriptionRef" schema:"pattern=^[a-f0-9]{16}$,maxLength=16"`
+	WindowID        string        `json:"windowId"`
+	RunsOutAt       *time.Time    `json:"runsOutAt" null:"coalesced"`
+	Pace            ForecastPace  `json:"pace"`
+	Basis           ForecastBasis `json:"basis"`
+	ObservedAt      time.Time     `json:"observedAt"`
 }
 
 // CockpitPublication contains only facts from a verified public publication.

@@ -618,6 +618,14 @@
           "wrongType": false,
           "strict": true,
           "nullPolicy": "forbidden"
+        },
+        {
+          "field": "forecasts",
+          "omission": true,
+          "null": false,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "forbidden"
         }
       ],
       "required": [
@@ -628,6 +636,28 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ]
+    },
+    {
+      "file": "WireCockpitForecast.json",
+      "type": "WireCockpitForecast",
+      "optional": [
+        {
+          "field": "runsOutAt",
+          "omission": true,
+          "null": true,
+          "wrongType": false,
+          "strict": true,
+          "nullPolicy": "coalesced"
+        }
+      ],
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "pace",
+        "basis",
+        "observedAt"
       ]
     },
     {

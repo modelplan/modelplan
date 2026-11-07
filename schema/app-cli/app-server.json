@@ -355,6 +355,13 @@
           "maxItems": 128,
           "type": "array"
         },
+        "forecasts": {
+          "items": {
+            "$ref": "#/$defs/CockpitForecast"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
         "publication": {
           "anyOf": [
             {
@@ -411,6 +418,64 @@
         "sessionCoverage",
         "resetEvents",
         "alerts"
+      ],
+      "type": "object"
+    },
+    "CockpitForecast": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "recent-rate",
+            "cycle-average",
+            "none"
+          ],
+          "type": "string"
+        },
+        "observedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "pace": {
+          "enum": [
+            "tight",
+            "on_track",
+            "surplus",
+            "exhausted"
+          ],
+          "type": "string"
+        },
+        "runsOutAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "maxLength": 16,
+          "pattern": "^[a-f0-9]{16}$",
+          "type": "string"
+        },
+        "windowId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "subscriptionRef",
+        "windowId",
+        "runsOutAt",
+        "pace",
+        "basis",
+        "observedAt"
       ],
       "type": "object"
     },

@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 	"time"
+
+	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
 const dayRateLook = 24 * time.Hour
@@ -66,6 +68,42 @@ func (w Window) LastDayRunout(now time.Time) *int {
 
 // projectedRunout is shared by the short burst and full-day rates. Count from
 // the latest reading; a forecast at or after reset is not a run-out warning.
+// RunOutForecast is the window's outlook for a consumer that needs a stable moment rather
+// than a countdown: it is derived from the reading, so it does not move with the clock. A
+// recent rate wins over the cycle average, the same order evalWindow uses for its pace.
+func (w Window) RunOutForecast() *rows.WindowForecast {
+	switch w.Pace {
+	case "tight", "on_track", "surplus", "exhausted":
+	default:
+		return nil
+	}
+	out := &rows.WindowForecast{Pace: w.Pace, Basis: "none"}
+	if w.Pace == "exhausted" || w.UsedPercent == nil || w.ResetsAt == nil || w.ObservedAt.IsZero() {
+		return out
+	}
+	left := 100 - *w.UsedPercent
+	var minutes float64
+	switch {
+	case w.RunsOutInMinutes != nil && w.RecentPercentPerHour != nil && *w.RecentPercentPerHour > 0:
+		out.Basis, minutes = "recent-rate", left / *w.RecentPercentPerHour * 60
+	case w.Pace == "tight" && w.ProjectedPercent != nil && *w.ProjectedPercent > 100 && *w.UsedPercent > 0:
+		elapsed := float64(w.WindowMinutes) - w.ResetsAt.Sub(w.ObservedAt).Minutes()
+		if elapsed <= 0 {
+			return out
+		}
+		out.Basis, minutes = "cycle-average", left*elapsed / *w.UsedPercent
+	default:
+		return out
+	}
+	at := w.ObservedAt.Add(time.Duration(minutes * float64(time.Minute)))
+	if !at.Before(*w.ResetsAt) {
+		out.Basis = "none"
+		return out
+	}
+	out.RunsOutAt = &at
+	return out
+}
+
 func projectedRunout(w *Window, rate float64, now time.Time) *int {
 	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) || w.ResetsInMinutes == nil {
 		return nil

@@ -3,13 +3,13 @@
 // the blink conditions and the public-screen list.
 // - RED: a current window at or below the red line T (Settings threshold), which includes an exhausted window.
 //   "Credits being drawn" is red too, but no reader reports it yet, so it never appears here.
-// - AMBER: a quota forecast to run out before its reset while still above T. It needs the forecast producer;
-//   until that exists no amber condition is created.
+// - AMBER: a quota forecast to run out before its reset while still above T (cockpitForecastV1). An engine
+//   that does not negotiate it creates no amber condition.
 // - Public reset announcements/confirmations and stale (retained) readings are list-only (blue); they never
 //   light the lamp.
 import type {WireCockpitData} from '../generated/wire.js';
 import {cockpitMembers} from './members.js';
-import {currentWindow} from './prototype-data-adapter.js';
+import {currentWindow,runOutMinutes} from './prototype-data-adapter.js';
 
 export type CautionLevel='red'|'amber';
 export interface CautionItem {
@@ -29,8 +29,13 @@ export function cautionItems(data:WireCockpitData,now:number,redBelow:number):Ca
    continue;
   }
   for(const w of account.windows){
-   if(!currentWindow(account,w,now)||w.remainingPercent===null||w.remainingPercent>redBelow)continue;
+   if(!currentWindow(account,w,now)||w.remainingPercent===null)continue;
    const r=Math.round(w.remainingPercent),resetAt=w.resetsAt?Date.parse(w.resetsAt):NaN,left=Number.isFinite(resetAt)&&resetAt>now?span((resetAt-now)/60000):null;
+   if(w.remainingPercent>redBelow){
+    if(left&&runOutMinutes(data,row.id,account,w,now)!==null)lamp.push({remaining:w.remainingPercent,resetAt,item:{id:JSON.stringify([key,w.id,w.resetsAt,'forecast']),level:'amber',member:key,
+     text:{en:`${row.name.en} ${w.label.en} ${r}% · won't last ${left}`,zh:`${row.name.zh} ${w.label.zh} ${r}% · 撑不到 ${left} 后重置`}}});
+    continue;
+   }
    lamp.push({remaining:w.remainingPercent,resetAt:Number.isFinite(resetAt)?resetAt:Infinity,item:{id:JSON.stringify([key,w.id,w.resetsAt]),level:'red',member:key,
     text:{en:`${row.name.en} ${w.label.en} ${r}% left${left?` · resets in ${left}`:''}`,zh:`${row.name.zh} ${w.label.zh} 剩 ${r}%${left?` · ${left}后重置`:''}`}}});
   }

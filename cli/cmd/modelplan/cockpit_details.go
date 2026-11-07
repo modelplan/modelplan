@@ -159,6 +159,9 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			}
 		}
 	}
+	if appserver.CockpitForecastEnabled(ctx) {
+		result.Forecasts = cockpitForecasts(view.Projection, byRef, now)
+	}
 	sort.Slice(result.Alerts, func(i, j int) bool {
 		a, b := result.Alerts[i], result.Alerts[j]
 		if a.Source != b.Source {
@@ -233,6 +236,40 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
 	}
 	return result, ctx.Err()
+}
+
+// cockpitForecasts reports only windows the alert rule could also see: a current
+// reading of a verified subscription, still inside its validity.
+func cockpitForecasts(projection rows.Projection, byRef map[string]*wire.CockpitSubscriptionDetails, now time.Time) []wire.CockpitForecast {
+	out := []wire.CockpitForecast{}
+	for _, row := range projection.Rows {
+		for _, account := range row.Accounts {
+			if account.SubscriptionRef == nil || byRef[*account.SubscriptionRef] == nil || account.ValueState != rows.ValueStateCurrent {
+				continue
+			}
+			for _, window := range account.Windows {
+				f := window.Forecast
+				if f == nil || !window.Current || window.ValidUntil == nil || !now.Before(*window.ValidUntil) || window.ObservedAt == nil {
+					continue
+				}
+				out = append(out, wire.CockpitForecast{Source: row.ID, SubscriptionRef: *account.SubscriptionRef, WindowID: window.ID, RunsOutAt: f.RunsOutAt, Pace: wire.ForecastPace(f.Pace), Basis: wire.ForecastBasis(f.Basis), ObservedAt: *window.ObservedAt})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Source != b.Source {
+			return a.Source < b.Source
+		}
+		if a.SubscriptionRef != b.SubscriptionRef {
+			return a.SubscriptionRef < b.SubscriptionRef
+		}
+		return a.WindowID < b.WindowID
+	})
+	if len(out) > 128 {
+		out = out[:128]
+	}
+	return out
 }
 
 func safeCockpitLabel(s string) bool {
