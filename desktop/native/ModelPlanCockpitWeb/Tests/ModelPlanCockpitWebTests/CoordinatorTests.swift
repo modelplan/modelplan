@@ -124,7 +124,7 @@ final class CoordinatorTests: XCTestCase {
     await coordinator.shutdown(); await client.stop()
   }
 
-  func testFailureLogSurvivesAClosedStderr() {
+  @MainActor func testFailureLogSurvivesAClosedStderr() {
     let saved = dup(STDERR_FILENO)
     XCTAssertGreaterThanOrEqual(saved, 0)
     close(STDERR_FILENO)

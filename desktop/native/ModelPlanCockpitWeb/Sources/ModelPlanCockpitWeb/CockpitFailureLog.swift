@@ -26,7 +26,13 @@ public enum CockpitFailureLog {
   private static let logger = Logger(subsystem: "org.modelplan.community", category: "cockpit")
   // A pipe whose reader has gone must not raise SIGPIPE for the sake of a log line.
   private static let stderrPrepared: Void = { _ = fcntl(STDERR_FILENO, F_SETNOSIGPIPE, 1) }()
-  public static func record(_ line: String) {
+  #if MODELPLAN_TEST_ONLY_SPI
+  @MainActor public static var verificationLine: ((String) -> Void)?
+  #endif
+  @MainActor public static func record(_ line: String) {
+    #if MODELPLAN_TEST_ONLY_SPI
+    verificationLine?(line)
+    #endif
     logger.error("\(line, privacy: .public)")
     _ = stderrPrepared
     // Not FileHandle.write, which raises an exception when stderr is closed. A failed write is ignored.

@@ -30,6 +30,7 @@ import ModelPlanDock
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
+    static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -49,6 +50,7 @@ import ModelPlanDock
         }
         #if MODELPLAN_TEST_ONLY_SPI
         let verificationFactory = verificationPageFactory
+        let verificationNotice = verificationConsoleNotice
         #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
@@ -69,6 +71,9 @@ import ModelPlanDock
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
                 #if MODELPLAN_TEST_ONLY_SPI
+                if let verificationNotice {
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice)
+                }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
                 }
