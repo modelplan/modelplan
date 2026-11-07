@@ -137,31 +137,6 @@
       "checks": []
     },
     {
-      "id": "popup-card",
-      "title": "Popup card",
-      "expected": "A click on a ring opens its card with the synthetic windows and reset times.",
-      "prototype": "dock study prototype, card",
-      "requires": [
-        "widget-rest"
-      ],
-      "actions": [
-        {
-          "op": "click",
-          "target": "ax^:dock.subscription."
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        }
-      ],
-      "shot": {},
-      "checks": [
-        {
-          "exists": "ax^:dock.card."
-        }
-      ]
-    },
-    {
       "id": "drag-carry",
       "title": "Drag, carried",
       "expected": "While carried the widget follows the pointer; no click-through outline shows.",
@@ -169,9 +144,6 @@
         "widget-rest"
       ],
       "actions": [
-        {
-          "op": "clickEmpty"
-        },
         {
           "op": "park"
         },
@@ -452,6 +424,31 @@
       ]
     },
     {
+      "id": "popup-card",
+      "title": "Popup card",
+      "expected": "A click on a ring opens its card with the synthetic windows and reset times. It stays open after the pointer leaves until the cockpit opens; compare that with the prototype.",
+      "prototype": "dock study prototype, card",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "ax^:dock.subscription."
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.card."
+        }
+      ]
+    },
+    {
       "id": "cockpit-open",
       "title": "Cockpit open from a left click",
       "expected": "Left click on the status item opens the cockpit (owner test build). The widget hides while it is open.",
@@ -528,21 +525,31 @@
     },
     {
       "id": "hud-select",
-      "title": "HUD row hover",
-      "expected": "Hovering the first HUD row highlights it and lights its rocket. HUD rows are not in the accessibility tree, so the pointer goes by position.",
+      "title": "HUD row",
+      "expected": "A click on the first HUD row opens that model on the Effort page. HUD rows are not in the accessibility tree, so the pointer goes by position.",
       "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
       "requires": [
         "porthole-open"
       ],
       "actions": [
         {
-          "op": "hoverIn",
+          "op": "clickIn",
           "target": "label:Open the 3D view",
           "at": [
             0.17,
             0.48
-          ],
-          "seconds": 1.2
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
         }
       ],
       "shot": {
@@ -550,10 +557,7 @@
       },
       "checks": [
         {
-          "differsFrom": {
-            "step": "porthole-open",
-            "min": 0.0003
-          }
+          "on": "label:Effort"
         }
       ]
     },

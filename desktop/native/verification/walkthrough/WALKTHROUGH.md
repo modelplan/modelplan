@@ -28,7 +28,7 @@ to run unless `RUNNER_ENVIRONMENT` is `github-hosted`: it posts real input.
 
 The default display is 1024x768, too short to open the porthole. The tool switches to the largest listed mode
 first. Hosted modes are 1x only, so pictures are not Retina; compare layout, colour and state, not fine edges.
-It also turns off "click wallpaper to show desktop" on the runner, which would sweep the widget aside.
+Do not click the wallpaper in a step: macOS then sweeps every window aside, the widget too.
 
 ## Synthetic readers
 

@@ -219,11 +219,9 @@ class Walkthrough:
         self.host.helper("move", *centre(self.need(action["target"])["frame"]), 0.5)
         self.host.sleep(action.get("seconds", 1))
 
-    def op_hoverIn(self, action):
+    def op_clickIn(self, action):
         frame = self.need(action["target"])["frame"]
-        x, y = frame[0] + frame[2] * action["at"][0], frame[1] + frame[3] * action["at"][1]
-        self.host.helper("move", x, y, 0.5)
-        self.host.sleep(action.get("seconds", 1))
+        self.host.helper("click", frame[0] + frame[2] * action["at"][0], frame[1] + frame[3] * action["at"][1])
 
     def op_key(self, action):
         self.host.helper("key", action["name"])
@@ -238,9 +236,6 @@ class Walkthrough:
     def op_assertAbsent(self, action):
         if resolve(self.tree(), action["target"]) is not None:
             raise WalkthroughError("still on screen: " + action["target"])
-
-    def op_clickEmpty(self, _):
-        self.host.helper("click", *self.point(PARK))
 
     def card_at(self, point):
         self.host.helper("move", *point, 0.4)
@@ -343,6 +338,8 @@ class Walkthrough:
             raise WalkthroughError("still on screen: " + value)
         if kind == "checked" and str((resolve(tree, value) or {}).get("value")) != "0":
             raise WalkthroughError("not open: " + value)
+        if kind == "on" and str((resolve(tree, value) or {}).get("value")) != "1":
+            raise WalkthroughError("not on: " + value)
         if kind == "moved":
             node = resolve(tree, value)
             if node is None or node["frame"] == self.remembered:
@@ -497,14 +494,6 @@ def set_display(host):
     return host.helper("host")
 
 
-def quiet_desktop(host):
-    """A click on the wallpaper would sweep every window aside, the widget too (Sonoma and later)."""
-    env = dict(os.environ)
-    host.run(["defaults", "write", "com.apple.WindowManager", "EnableStandardClickToShowDesktop", "-bool", "false"], env)
-    host.run(["killall", "WindowManager"], env)
-    host.sleep(3)
-
-
 def doctor(host, cli, env, *flags):
     started = host.now()
     result = host.run([str(cli), "doctor", "readers", "--json", *flags], env, timeout=330)
@@ -656,7 +645,6 @@ def run(args, host):
         raise SystemExit("; ".join(problems))
     steps = json.loads(Path(args.steps).read_text(encoding="utf-8"))["steps"]
     seed = json.loads(Path(args.seed).read_text(encoding="utf-8"))
-    quiet_desktop(host)
     facts = set_display(host)
     frame = facts["screens"][0]["frame"]
     cli, exe = app / "Contents/Helpers/modelplan", app / "Contents/MacOS" / APP_EXECUTABLE
