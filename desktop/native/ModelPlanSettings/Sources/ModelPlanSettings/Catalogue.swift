@@ -150,6 +150,15 @@ public struct SettingsPageContext: Sendable {
             else if v1NormalEntry { unavailableControls[key] = dock }
         }
     }
+    /// SET-9-18: "Quota reset" and "Official extra reset" are delivered by the app once its
+    /// notification delivery is wired; then their rows are usable. Saved kinds are unchanged.
+    public mutating func observeNotificationDelivery(_ available: Bool) {
+        let notices = SettingsText("Unavailable until notifications can be delivered.", "通知可以送达前不可用。")
+        for key in [SettingKey.reset, .official] {
+            if available { unavailableControls.removeValue(forKey: key) }
+            else if v1NormalEntry { unavailableControls[key] = notices }
+        }
+    }
     /// SET-9-18 / SET-9-29: the forecast-exhaustion kind is offered only while the engine
     /// reports a forecast producer (F1); without one the v1 row is hidden, not shown disabled.
     /// The saved notification kinds are never changed here.

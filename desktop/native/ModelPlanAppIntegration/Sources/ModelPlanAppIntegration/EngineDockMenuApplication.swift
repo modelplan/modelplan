@@ -271,6 +271,8 @@ import ModelPlanMenuVerification
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
         }
+        // SET-9-18: the reset and official kinds are usable once delivery is wired.
+        if composition.notificationDeliveryAvailable { context.observeNotificationDelivery(true) }
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {

@@ -174,6 +174,14 @@ public struct EngineMenuRefreshResult {
         resetNotifier?.deliveryOverride=delivery
         resetNotifier?.apply(store.snapshot)
     }
+    /// The same seam with the Settings notification kind (`.reset` quota resets, `.official`
+    /// public reset events).
+    public func setNotificationDelivery(_ delivery:@escaping @MainActor (NotificationKind,String) async throws -> Void) {
+        resetNotifier?.kindDeliveryOverride=delivery
+        resetNotifier?.apply(store.snapshot)
+    }
+    /// True only when reset notifications can actually be delivered (system or host adapter).
+    public var notificationDeliveryAvailable:Bool { resetNotifier?.delivers ?? false }
     private var fallbackStatusText: String {
         let english = adapter.language == "en"
         let fallback: String
