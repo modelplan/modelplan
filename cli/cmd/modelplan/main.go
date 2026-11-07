@@ -240,6 +240,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	qwenExport := fs.String("export", "", "qwen-usage: optional Qwen JSON export file or directory")
 	effortSuggestion := fs.String("effort-suggestion", "", "history: dismiss for one week, off, or on (local only)")
 	readOnly := fs.Bool("read-only", false, "desktop: read what is on disk without writing, refreshing or starting anything")
+	withHistory := fs.Bool("history", false, "desktop: include the 7/30-day performance history and rankings in the snapshot")
 	refreshReaders := fs.Bool("refresh", false, "doctor readers: explicitly refresh admitted readers within request budgets")
 	share := fs.Bool("share", false, "doctor: print a sanitised share report")
 	if err := fs.Parse(reorder(rest)); err != nil {
@@ -490,7 +491,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 
 	case "desktop":
-		return desktopCmd(stdout, st, c, *readOnly)
+		return desktopCmd(stdout, st, c, *readOnly, *withHistory)
 
 	case "statusline":
 		if *recordOnly {
@@ -1131,7 +1132,7 @@ func filterSource(es []advise.Event, source string) []advise.Event {
 // Codex account reading, native readers, CodexBar and a stale publication in the background, records the quota
 // history and Codex speed, and arms switch-back; it marks nothing as told, which the app does
 // for its own notifications.
-func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int {
+func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHistory bool) int {
 	now := time.Now()
 	d, ps, _ := publication.Load(st)
 	if !c.offline && !readOnly {
@@ -1186,12 +1187,17 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly bool) int 
 		// This machine-readable feed is also consumed by plugins. Keep personal
 		// default-effort suggestions out, even when explicitly enabled locally.
 		boundaries := advise.Boundaries(advise.Input{Report: report, Digest: d, State: state, Now: now})
+		perfView := speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now}
+		var perfHistory *snapshot.PerfHistory
+		if withHistory {
+			perfHistory = snapshot.BuildPerfHistory(&perfView, report.Accounts, admittedHistorySources(admission), now)
+		}
 		return snapshot.Build(snapshot.Input{LocalHistory: localusage.ProductionHistoriesWithAdmission(home, st.Dir, true, now, admission), LocalUsage: []localusage.Report{localUsage, qwenLocal}, Report: report, Digest: d, State: ps, Events: es,
-			Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &speed.PerfView{Ledger: perf, OK: ok, Long: long, LongOK: longOK, Recording: !history.Off(), Now: now},
+			Measured: speed.Summarize(ledger, now), Ledger: ledger.Rows, Perf: &perfView,
 			QwenUsage:   qwenExport,
 			Connections: connections.DiagnoseWithAdmission(connectionEnv, report, admission),
 			Pace:        &history.PaceView{Ledger: pace, OK: paceOK, Recording: !history.Off(), Now: now}, Boundaries: boundaries,
-			Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now})
+			PerfHistory: perfHistory, Recording: !history.Off(), ProjectLabels: projectLabels(), CLIVersion: version, Now: now})
 	}, func(admission consent.Admission) snapshot.Snapshot {
 		// A second change publishes only the user's own declarations. No tool
 		// account, connection, history, session or advice survives a discarded build.

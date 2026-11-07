@@ -239,6 +239,37 @@ private actor S4RowsClient: EngineClient {
         await entry.composition.stop()
         return displayed
     }
+    /// F3 through the normal entry: forecasts on the rows stream reach the attached notifier and are delivered once.
+    static func forecastNotice(capture:URL) async throws {
+        var data=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
+        var projection=data["projection"] as! [String:Any]
+        var list=projection["rows"] as! [[String:Any]]
+        var accounts=list[0]["accounts"] as! [[String:Any]]
+        var windows=accounts[0]["windows"] as! [[String:Any]]
+        let clock=Date(),formatter=ISO8601DateFormatter()
+        let stamp={ (seconds:TimeInterval) in formatter.string(from:clock.addingTimeInterval(seconds)) }
+        windows[0]["current"]=true;windows[0]["resetsAt"]=stamp(18000);windows[0]["validUntil"]=stamp(3600)
+        accounts[0]["windows"]=windows;accounts[0]["valueState"]="current";list[0]["accounts"]=accounts;projection["rows"]=list
+        projection["forecasts"]=[["source":list[0]["id"]!,"subscriptionRef":accounts[0]["subscriptionRef"]!,"windowId":windows[0]["id"]!,
+                                  "runsOutAt":stamp(1200),"pace":"tight","basis":"recent-rate","observedAt":stamp(-60)]]
+        data["projection"]=projection
+        let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:data))
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-forecast-"+UUID().uuidString)
+        defer { removeScratch(directory) }
+        let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true }
+        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
+        entry.composition.currentDate = { clock }
+        var deliveries:[String]=[]
+        entry.composition.setForecastNotificationDelivery { deliveries.append($0) }
+        await entry.prepare();await entry.composition.start()
+        defer { entry.composition.dock.close() }
+        for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
+        try require(deliveries.count == 1,"normal entry must deliver one notification for the forecast episode")
+        guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
+        try await synthetic.replaceRows(rows);try await Task.sleep(for:.milliseconds(50))
+        try require(deliveries.count == 1,"a repeated forecast must not produce a second notification")
+    }
     static func resetEvents(capture:URL) async throws {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")

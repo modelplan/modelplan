@@ -271,6 +271,8 @@ import ModelPlanMenuVerification
         for key in [SettingKey.websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback] {
             context.unavailableControls.removeValue(forKey: key)
         }
+        // Project names reach the cockpit through `applySettings`, so the row is a real control.
+        context.unavailableControls.removeValue(forKey: .projectNames)
         settings.update(context: context)
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }
         if firstRunFlow == nil {

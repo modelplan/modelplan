@@ -102,6 +102,9 @@ type RowsSnapshot struct {
 // The standalone desktop projection retains its independent legacy contract.
 type RowsProjection struct {
 	ResetEvents *[]rows.ResetEvent `json:"resetEvents,omitempty" null:"forbidden"`
+	// Forecasts is present only for a client that negotiated cockpitForecastV1, so the App can
+	// notify while the cockpit is closed.
+	Forecasts   *[]CockpitForecast `json:"forecasts,omitempty" schema:"maxItems=128" null:"forbidden"`
 	RowsVersion int                `json:"rowsVersion"`
 	Rows        []rows.Row         `json:"rows"`
 	RowsSummary rows.RowsSummary   `json:"rowsSummary"`
@@ -112,6 +115,10 @@ func ProjectWithEvents(value rows.Projection, events *[]rows.ResetEvent, enabled
 	members := len(sourceEnabled) > 1 && sourceEnabled[1]
 	today := len(sourceEnabled) > 3 && sourceEnabled[3]
 	result := project(value, expose, members, today)
+	if len(sourceEnabled) > 4 && sourceEnabled[4] {
+		forecasts := ProjectForecasts(value, func(string) bool { return true }, time.Now())
+		result.Forecasts = &forecasts
+	}
 	if enabled {
 		if events != nil {
 			projected := ProjectResetEventLinks(*events, len(sourceEnabled) > 2 && sourceEnabled[2])

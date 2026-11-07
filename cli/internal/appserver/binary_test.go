@@ -4,6 +4,7 @@ package appserver
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -36,7 +37,7 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		home := t.TempDir()
 		stderr := &bytes.Buffer{}
 		cmd := exec.Command(bin, "app-server")
-		cmd.Env = []string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C"}
+		cmd.Env = append([]string{"HOME=" + home, "PATH=/nonexistent", "TMPDIR=" + home, "LANG=C"}, noRealCodex(home)...)
 		cmd.Stderr = stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -53,6 +54,14 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 		c.validate = func(m map[string]json.RawMessage) error {
 			b, _ := json.Marshal(m)
 			return validator.Validate("app-server", b)
+		}
+		c.exitDetail = func() string {
+			select {
+			case <-c.done:
+				return fmt.Sprintf("exit=%v stderr=%q", cmd.ProcessState, stderr.String())
+			default:
+				return "still running"
+			}
 		}
 		go func() { _ = cmd.Wait(); close(c.done) }()
 		t.Cleanup(func() {
@@ -157,4 +166,22 @@ func TestRealBinaryProtocolLifecycle(t *testing.T) {
 			t.Fatal("real binary did not end on EOF")
 		}
 	})
+}
+
+// A host's installed Codex must never start from these tests.
+func TestBinaryTestsKeepRealCodexOut(t *testing.T) {
+	home := t.TempDir()
+	env := noRealCodex(home)
+	if len(env) != 1 || env[0] != "MODELPLAN_CODEX="+filepath.Join(home, "no-real-codex") {
+		t.Fatalf("env = %v", env)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "bin"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "bin", "codex"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if env := noRealCodex(home); len(env) != 0 {
+		t.Fatalf("a test's own codex was hidden: %v", env)
+	}
 }

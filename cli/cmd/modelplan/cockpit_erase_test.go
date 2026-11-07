@@ -65,7 +65,7 @@ func TestHistoryRevokeAndForgetEraseAllLedgersAndDesktop(t *testing.T) {
 			}
 			desktop := func() snapshot.Snapshot {
 				var output bytes.Buffer
-				if code := desktopCmd(&output, st, common{offline: true}, true); code != 0 {
+				if code := desktopCmd(&output, st, common{offline: true}, true, false); code != 0 {
 					t.Fatalf("desktop exit %d", code)
 				}
 				var result snapshot.Snapshot
