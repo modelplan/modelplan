@@ -21,6 +21,7 @@ import ModelPlanMenuVerification
     private let contextSource: EngineSettingsContext
     private let appBundleURL: URL
     private var lastAboutConnectionReady = false
+    private var forecastCheckedSession: String?
     private var status: NSStatusItem?
     private(set) var liveStatusMenu: NSMenu?
     private var statusMenuComponent: DockStatusMenu?
@@ -123,6 +124,7 @@ import ModelPlanMenuVerification
             guard let self else { return }
             if self.composition.provider.dockContent.status == .cleared { self.unavailableMemberRefreshes.removeAll() }
             self.updateMemberRefreshCapability()
+            self.updateForecastProducerCapability()
             self.updateSettingsContext(); self.renderMenu(); self.console?.render()
             #if MODELPLAN_U6_DRIVE
             if self.composition.provider.dockContent.status == .cleared { self.driveGuard?.recordClear() }
@@ -144,6 +146,22 @@ import ModelPlanMenuVerification
             let supported = await self.composition.client.supportsCapability("memberRefreshV1")
             guard !self.terminating, self.composition.client.isCurrent(delivery), self.memberRefreshAdapter == nil else { return }
             if supported { self.memberRefreshAdapter = AppServerMemberRefreshAdapter(client: self.composition.client, store: self.composition.store) }
+        }
+    }
+    /// SET-9-29: capabilities are fixed per engine session, so each session asks once. The
+    /// forecast producer (F1) reports `forecastProducerV1`; until then the kind stays hidden.
+    private func updateForecastProducerCapability() {
+        guard let delivery = composition.store.snapshot.delivery, composition.client.isCurrent(delivery),
+              forecastCheckedSession != delivery.sessionID else { return }
+        forecastCheckedSession = delivery.sessionID
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let supported = await self.composition.client.supportsCapability("forecastProducerV1")
+            guard !self.terminating, self.composition.client.isCurrent(delivery),
+                  supported != self.settings.editor.context.capabilities.forecastProducerAvailable else { return }
+            var context = self.settings.editor.context
+            context.observeForecastProducer(supported)
+            self.settings.update(context: context)
         }
     }
     private func updateSettingsContext() {
