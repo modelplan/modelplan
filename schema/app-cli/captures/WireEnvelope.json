@@ -64,6 +64,12 @@
           },
           "accounts": [
             {
+              "today": {
+                "observedOutputTokens": 12000,
+                "generationTps": 42,
+                "runningSessions": 1,
+                "bindingBasis": "source-wide-current-binding"
+              },
               "resetCards": {
                 "state": "complete",
                 "count": 1,
