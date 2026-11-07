@@ -110,6 +110,25 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
         animation.repeatCount=0;animation.repeatDuration=0;animation.isRemovedOnCompletion=true
         layer?.add(animation,forKey:"dock-notice-once")
     }
+    public func attach(to button: NSButton) {
+        let bounds = button.bounds
+        let side: CGFloat = 7
+        let top = button.isFlipped ? bounds.minY : max(bounds.minY, bounds.maxY - side)
+        // MENU-06: the dot belongs to the icon's top right in every display style. With a
+        // percentage title after the leading icon, the button's right edge is the end of the
+        // text, so the dot ends at the icon's right edge instead and stays with the icon.
+        if !button.title.isEmpty, button.image != nil,
+           button.imagePosition == .imageLeading || button.imagePosition == .imageLeft,
+           let icon = button.cell?.imageRect(forBounds: bounds), !icon.isEmpty,
+           icon.maxX - side >= bounds.minX, icon.maxX < bounds.maxX {
+            frame = NSRect(x: icon.maxX - side, y: top, width: side, height: side)
+            autoresizingMask = [.maxXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        } else {
+            frame = NSRect(x: max(bounds.minX, bounds.maxX - side), y: top, width: side, height: side)
+            autoresizingMask = [.minXMargin, button.isFlipped ? .maxYMargin : .minYMargin]
+        }
+        if superview !== button { button.addSubview(self) }
+    }
     public override func hitTest(_ point:NSPoint)->NSView?{nil}
     public override func draw(_ dirtyRect:NSRect){guard let notice else{return};let color=colors[notice.tone] ?? .secondaryLabelColor
         let path=NSBezierPath(ovalIn:bounds.insetBy(dx:1,dy:1));if notice.shape == .hollow{color.setStroke();path.lineWidth=1;path.stroke()}else{color.setFill();path.fill()}}

@@ -44,6 +44,51 @@ private actor CardDismissalClient: EngineClient {
 }
 
 @MainActor final class DockCardDismissalJourneyTests: XCTestCase {
+    func testD16StaleCloseAndRetiredMenuCannotHoldOrReleaseCurrentTracking() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"),
+            applicationVersion: "test", allowedEnvironment: [:]), settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root),
+            createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        await app.prepare()
+        _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.autoHide(true))
+        app.allowDockPresentation()
+        let dock = app.composition.dock
+        defer { dock.close() }
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver)
+        let strip = try XCTUnwrap(dock.edgePresentation?.paintedFrame)
+        let sliver = try dock.prepareSliver(size: strip.size)
+        XCTAssertTrue(sliver.accessibilityPerformPress())
+        XCTAssertEqual(dock.edgePresentation?.state, .expanded)
+        let old = dock.menu(), current = dock.menu()
+        let oldDelegate = try XCTUnwrap(old.delegate as? DockSliverMenu)
+        let currentDelegate = try XCTUnwrap(current.delegate as? DockSliverMenu)
+        oldDelegate.menuWillOpen(old)
+        currentDelegate.menuWillOpen(current)
+        oldDelegate.menuDidClose(old)
+        XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen, "A stale close must not release the current menu")
+        try await Task.sleep(for: .milliseconds(700))
+        XCTAssertEqual(dock.edgePresentation?.state, .expanded, "Tracking protects the widget past the leave deadline")
+        currentDelegate.menuDidClose(current)
+        for _ in 0..<100 where dock.edgePresentation?.state != .sliver {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(dock.edgePresentation?.state, .sliver, "The real close releases auto-hide")
+        currentDelegate.menuWillOpen(current)
+        dock.setPresentationAllowed(false)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "Withdrawal retires the tracking owner")
+        currentDelegate.menuWillOpen(current)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "A retired surface cannot acquire a menu lock")
+        dock.setPresentationAllowed(true)
+        currentDelegate.menuDidClose(current)
+        currentDelegate.menuWillOpen(current)
+        XCTAssertFalse(dock.interactionEnvironment().menuActuallyOpen, "A menu from the old surface cannot reacquire tracking after restoration")
+        let restored = dock.menu(), restoredDelegate = try XCTUnwrap(restored.delegate as? DockSliverMenu)
+        restoredDelegate.menuWillOpen(restored)
+        XCTAssertTrue(dock.interactionEnvironment().menuActuallyOpen)
+        restoredDelegate.menuDidClose(restored)
+    }
+
     func testNormalEntryStartsAfterPresentationAndOfficialCardCloses() async throws {
         _ = NSApplication.shared
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("card-dismissal-" + UUID().uuidString)
@@ -64,9 +109,17 @@ private actor CardDismissalClient: EngineClient {
         projection["rows"] = rows; root["projection"] = projection
         let fixture = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: root))
         let config = EngineClientConfiguration(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-05T12:00:00Z"))
+        var pointer = CGPoint(x: 1430, y: 475)
+        var cardFrame: CGRect?
         let app = EngineRowsEntry.make(configuration: config,
             settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en-US"]),
-            createsNativePanels: false, cockpitEntryEnabled: true, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
+            createsNativePanels: false, cockpitEntryEnabled: true, dockEnvironment: {
+                var env = normalEntryTestEnvironment()
+                env.pointer = pointer
+                env.cardFrame = cardFrame
+                return env
+            }, deadlineNow: { now }, makeClient: { _, store in CardDismissalClient(store: store, rows: fixture) }, activateSettings: {})
         await app.prepare()
         let refresh = CardMemberRefresh(); app.memberRefreshAdapter = refresh
         let dock = app.composition.dock
@@ -89,7 +142,13 @@ private actor CardDismissalClient: EngineClient {
         }
         // A drag release must not become a click.
         let memberID = "0123456789abcdef"
-        let nozzle = try XCTUnwrap(dock.dockView.nozzleEventDelegate)
+        let view = dock.dockView
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(memberID))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX,
+            y: placement.frame.maxY - anchor.midY + view.bounds.minY)
+        XCTAssertNotNil(view.presentedReadingsForChecks[memberID]?.remainingPercent)
+        let nozzle = try XCTUnwrap(view.nozzleEventDelegate)
         let target = try XCTUnwrap(dock.interactionEnvironment().targets.first { $0.id == memberID })
         let start = CGPoint(x: target.along, y: target.along)
         XCTAssertTrue(nozzle.beginNozzle(id: memberID, local: start))
@@ -115,6 +174,25 @@ private actor CardDismissalClient: EngineClient {
         nozzle.hoverNozzle(memberID)
         for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertFalse(dock.card.isHidden)
+        let frame = try XCTUnwrap(dock.edgePresentation?.placement?.frame)
+        let cardTarget = CGRect(x: frame.minX - 312, y: frame.midY - 100, width: 300, height: 200)
+        cardFrame = cardTarget
+        pointer = CGPoint(x: frame.minX - 6, y: frame.midY)
+        nozzle.hoverNozzle(nil)
+        XCTAssertEqual(dock.interactionEnvironment().insideShared, true)
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertFalse(dock.card.isHidden, "The transfer corridor retains the card")
+        pointer = CGPoint(x: cardTarget.midX, y: cardTarget.midY)
+        dock.interactionControllerForChecks?.refresh()
+        XCTAssertFalse(dock.card.isHidden)
+        pointer = CGPoint(x: 100, y: 100)
+        dock.interactionControllerForChecks?.refresh()
+        for _ in 0..<100 where !dock.card.isHidden { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(dock.card.isHidden, "Leaving both surfaces closes the card after its grace")
+        cardFrame = nil
+        pointer = CGPoint(x: frame.midX, y: frame.midY)
+        nozzle.hoverNozzle(memberID)
+        for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
         try XCTUnwrap(button(dock.card, id: "dock.card.close")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "The ✕ button must close the official Dock card")
         nozzle.hoverNozzle(nil)
@@ -137,6 +215,30 @@ private actor CardDismissalClient: EngineClient {
         try XCTUnwrap(button(dock.card, id: "dock.card.enter")).performClick(nil)
         XCTAssertTrue(dock.card.isHidden, "Enter must close the Dock card before navigation")
         XCTAssertEqual(navigations, 1)
+
+        for (language, settings, close) in [(SettingsLanguage.english, "Settings", "Close"), (.chinese, "设置", "关闭")] {
+            _ = try await app.settingsHost.application.editor.commit(SettingsB21Edit.language(language))
+            nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+            for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(button(dock.card, id: "dock.card.enter")?.title, settings)
+            XCTAssertEqual(button(dock.card, id: "dock.card.close")?.accessibilityLabel(), close)
+            let menu = dock.menu()
+            let actions = menu.items.filter { $0.title == settings || $0.title == close }
+            XCTAssertEqual(actions.map(\.title), [settings, close])
+            let settingsItem = try XCTUnwrap(actions.first { $0.title == settings })
+            let beforeSettings = navigations
+            _ = try XCTUnwrap(settingsItem.target as? NSObject).perform(try XCTUnwrap(settingsItem.action), with: settingsItem)
+            XCTAssertEqual(navigations, beforeSettings + 1)
+            XCTAssertTrue(dock.card.isHidden)
+            nozzle.hoverNozzle(nil); nozzle.hoverNozzle(memberID)
+            for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
+            if let closeItem = actions.last, closeItem.title == close,
+               let target = closeItem.target as? NSObject, let action = closeItem.action {
+                _ = target.perform(action, with: closeItem)
+                XCTAssertTrue(dock.card.isHidden)
+                XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
+            }
+        }
         await app.composition.stop()
     }
 }

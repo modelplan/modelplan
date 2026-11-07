@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 import Foundation
-import ModelPlanDock
+@_spi(DockResourceChecks) import ModelPlanDock
 import ModelPlanSettings
 import ModelPlanEngineClient
 import ModelPlanEngineStore
@@ -205,7 +205,8 @@ private actor S4RowsClient: EngineClient {
         }
         await entry.composition.stop()
     }
-    static func announcedMenuIndicator(capture:URL) async throws -> Bool {
+    static func announcedMenuIndicator(capture: URL,
+        inspect: ((EngineDockMenuApplication) async throws -> Void)? = nil) async throws -> Bool {
         let fixture=capture.deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("proposals/fixtures/app-journey-plan-scoped.json")
         let document=try JSONSerialization.jsonObject(with:Data(contentsOf:fixture)) as! [String:Any]
@@ -234,8 +235,9 @@ private actor S4RowsClient: EngineClient {
         let displayed = entry.noticeIndicator.notice == entry.composition.dock.menuNotice
         entry.composition.dock.setPresentationAllowed(true)
         try require(!entry.cockpitEntryEnabled, "the interim beta must keep cockpit disabled")
+        try await inspect?(entry)
         entry.composition.dock.acknowledgeDockReveal()
-        try require(entry.noticeIndicator.notice == nil, "opening Dock must clear the indicator without cockpit")
+        try require(entry.noticeIndicator.notice == nil, "opening the widget must clear the menu-bar indicator without cockpit")
         await entry.composition.stop()
         return displayed
     }
@@ -256,40 +258,71 @@ private actor S4RowsClient: EngineClient {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-events-"+UUID().uuidString)
         defer { removeScratch(directory) }
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
-        try await store.update { $0.language = .english; $0.notifications.optedIn = true }
-        let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,cockpitEntryEnabled:true,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
-        entry.composition.currentDate = { clock }
-        var deliveries:[String]=[]
-        entry.composition.setResetNotificationDelivery { deliveries.append($0) }
+        try await store.update { $0.language = .english; $0.notifications.optedIn = true; $0.notifications.kinds = [.official] }
+        let ledger = directory.appendingPathComponent("isolated-reset-notifications.json")
+        func makeEntry(_ snapshot: WireRowsSnapshot) -> EngineDockMenuApplication {
+            let application = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/never-launched"),
+                applicationVersion: "s4", allowedEnvironment: [:], offline: true, readOnly: true),
+                settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: true,
+                makeClient: { _, store in S4RowsClient(store: store, rows: snapshot) },
+                isolatedResetNotificationLedger: ledger, activateSettings: {})
+            application.composition.currentDate = { clock }
+            return application
+        }
+        let entry = makeEntry(rows)
+        var deliveries: [String] = []
+        var titles: [String] = []
+        entry.composition.setResetNotificationDelivery { id, title in
+            deliveries.append(id)
+            titles.append(title)
+        }
         await entry.prepare();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard case .available(let decoded)=entry.composition.rowEvents else { throw Failure(description:"normal entry must admit the explicit reset event fixture") }
         try require(decoded.count == 1 && decoded[0].rowID == "codex" && decoded[0].status == "announced", "normal entry must preserve the fixture event and its row")
         for _ in 0..<100 where deliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id+":announced"],"normal entry must deliver one notification for the event episode")
+        try require(deliveries == [decoded[0].id],"normal entry must deliver one notification for the event episode")
+        try require(titles == ["Official extra reset"], "normal entry must use the official reset notification title")
+        try require(FileManager.default.fileExists(atPath: ledger.path), "normal entry must persist the event to the isolated ledger")
         guard let synthetic=entry.composition.client as? S4RowsClient else { throw Failure(description:"synthetic rows client missing") }
         try await synthetic.replaceRows(rows)
         try await Task.sleep(for:.milliseconds(50))
-        try require(deliveries == [decoded[0].id+":announced"],"a repeated event must not produce a second notification")
+        try require(deliveries == [decoded[0].id],"a repeated event must not produce a second notification")
         let cacheURL=directory.appendingPathComponent("notification-cache.json")
         var replay:[String]=[]
         let firstNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
-        firstNotifier.deliveryOverride={ replay.append($0) };firstNotifier.start()
+        firstNotifier.deliveryOverride={ id, _ in replay.append(id) };firstNotifier.start()
         for _ in 0..<100 where replay.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(replay == [decoded[0].id+":announced"],"fresh notification cache must admit one event")
+        try require(replay == [decoded[0].id],"fresh notification cache must admit one event")
         firstNotifier.stop()
         let secondNotifier=try EngineResetNotifier(composition:entry.composition,settings:store,cacheURL:cacheURL,deliverToSystem:false)
-        secondNotifier.deliveryOverride={ replay.append($0) };secondNotifier.start()
+        secondNotifier.deliveryOverride={ id, _ in replay.append(id) };secondNotifier.start()
         try await Task.sleep(for:.milliseconds(50))
         try require(replay.count == 1,"restored Settings notification ledger must deduplicate across notifier restart")
         secondNotifier.stop()
+        let legacyURL = directory.appendingPathComponent("legacy-reset-notifications.json")
+        var legacyPreferences = (await store.snapshot()).preferences
+        legacyPreferences.notifications.kinds = [.reset]
+        var legacyPolicy = NotificationPolicy(authorization: .authorized)
+        legacyPolicy.recordDelivered(.init(kind: .reset, subscriptionID: decoded[0].rowID,
+            episodeID: decoded[0].id + ":announced", beganAt: decoded[0].publishedAt, expiresAt: decoded[0].expiresAt),
+            preferences: legacyPreferences, now: clock)
+        try JSONEncoder().encode(legacyPolicy.ledger).write(to: legacyURL)
+        let legacyNotifier = try EngineResetNotifier(composition: entry.composition, settings: store,
+            cacheURL: legacyURL, deliverToSystem: false)
+        var legacyDeliveries = 0
+        legacyNotifier.deliveryOverride = { _, _ in legacyDeliveries += 1 }
+        legacyNotifier.start()
+        try await Task.sleep(for: .milliseconds(50))
+        legacyNotifier.stop()
+        try require(legacyDeliveries == 0, "the old status-suffixed ledger must still suppress a duplicate")
         let corruptURL=directory.appendingPathComponent("corrupt-reset-notifications.json")
         let corrupt=Data("{broken".utf8);try corrupt.write(to:corruptURL)
         var recoveredDeliveries:[String]=[]
         let recovered=try EngineResetNotifier.recovering(composition:entry.composition,settings:store,cacheURL:corruptURL,deliverToSystem:false)
-        recovered.deliveryOverride={ recoveredDeliveries.append($0) };recovered.start()
+        recovered.deliveryOverride={ id, _ in recoveredDeliveries.append(id) };recovered.start()
         for _ in 0..<100 where recoveredDeliveries.isEmpty { try await Task.sleep(for:.milliseconds(10)) }
-        try require(recoveredDeliveries == [decoded[0].id+":announced"],"a quarantined corrupt ledger must not disable reset delivery")
+        try require(recoveredDeliveries == [decoded[0].id],"a quarantined corrupt ledger must not disable reset delivery")
         let quarantined=try FileManager.default.contentsOfDirectory(at:directory,includingPropertiesForKeys:nil)
             .filter { $0.lastPathComponent.hasPrefix("corrupt-reset-notifications.json.corrupt-") }
         try require(quarantined.count == 1 && (try Data(contentsOf:quarantined[0])) == corrupt,"recovery must retain the exact corrupt bytes in one quarantine file")
@@ -317,7 +350,7 @@ private actor S4RowsClient: EngineClient {
         try require(cockpitOpened.menuNotice == nil && cockpitOpened.dots.count == 1,"opening cockpit must acknowledge only the menu notice")
         try attention.acknowledge(.dockRevealed,signals:signals,at:clock)
         let acknowledged=try attention.project(signals,stationBySubscription:stations,at:clock)
-        try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge both indicators")
+        try require(acknowledged.menuNotice == nil && acknowledged.dots.isEmpty,"revealing Dock must acknowledge the strip dots")
         try require(DockNoticeProjection.selected(for:matching,at:clock) != nil,"acknowledgement must not erase the Dock-face notice")
         // Simulate a slow host before delivering the confirmation. Its expiry
         // is based on the controlled delivery time, not journey wall time.
@@ -335,8 +368,26 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(confirmed)
         guard let confirmedSignal=entry.composition.resetSignals.first(where:{$0.id == matching.id}),let notice=DockNoticeProjection.selected(for:confirmedSignal,at:confirmationClock) else { throw Failure(description:"linked confirmation was not projected") }
         try require(notice.key.kind == .resetConfirmed && notice.shape == .solid,"linked confirmation must project the solid confirmed notice")
-        for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for:.milliseconds(10)) }
-        try require(deliveries == [decoded[0].id+":announced",decoded[0].id+":confirmed"],"confirmation must have a distinct notification episode")
+        try await Task.sleep(for: .milliseconds(50))
+        try require(deliveries.count == 1,"confirmation must not notify again for the same official reset event")
+        let relaunched = makeEntry(confirmed)
+        defer { relaunched.composition.dock.close() }
+        var relaunchedTitles: [String] = []
+        relaunched.composition.setResetNotificationDelivery { _, title in relaunchedTitles.append(title) }
+        await relaunched.prepare(); await relaunched.composition.start()
+        try await Task.sleep(for: .milliseconds(50))
+        try require(relaunchedTitles.isEmpty, "the same event must stay deduplicated after normal-entry relaunch")
+        try await store.update { $0.language = .chinese }
+        var separateEvent = superseded
+        separateEvent["id"] = "synthetic-separate-official-reset"
+        projection["resetEvents"] = [superseded, events[0], separateEvent]; data["projection"] = projection
+        let withSeparateEvent = try WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data))
+        guard let relaunchedClient = relaunched.composition.client as? S4RowsClient else { throw Failure(description: "relaunch lost fixture client") }
+        try await relaunchedClient.replaceRows(withSeparateEvent)
+        for _ in 0..<100 where relaunchedTitles.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        try require(relaunchedTitles == ["官方额外重置"], "a different event must still notify in the current language")
+        await relaunched.composition.stop()
+        projection["resetEvents"] = [superseded, events[0]]; data["projection"] = projection
         try require(DockNoticeProjection.selected(for:confirmedSignal,at:clock.addingTimeInterval(31)) == nil,"wire expiry must cap the confirmed notice before the 24-hour default")
         let beforeExpiry=clock
         clock=confirmationExpiry.addingTimeInterval(-1)
@@ -386,6 +437,27 @@ private actor S4RowsClient: EngineClient {
         try await synthetic.replaceRows(absent)
         try require(entry.composition.rowEvents == .absentFromSchema,"omitted event list must remain unsupported")
         try require(entry.composition.menuPresentation.title.isEmpty,"missing events must clear the menu dot")
+
+        // A different event arriving after the original announcement's deadline
+        // must not evict the already-notified identity before a late confirmation.
+        clock = clock.addingTimeInterval(7200)
+        var intervening = superseded
+        intervening["id"] = "synthetic-intervening-reset"
+        intervening["publishedAt"] = formatter.string(from: clock.addingTimeInterval(-10))
+        intervening["expiresAt"] = formatter.string(from: clock.addingTimeInterval(3600))
+        intervening["schedule"] = ["precision":"window","from":formatter.string(from:clock),"through":formatter.string(from:clock.addingTimeInterval(3600))]
+        projection["resetEvents"] = [intervening]; data["projection"] = projection
+        try await synthetic.replaceRows(WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data)))
+        for _ in 0..<100 where deliveries.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        try require(deliveries == [decoded[0].id, "synthetic-intervening-reset"], "the intervening event must be recorded")
+        var lateConfirmation = linked
+        lateConfirmation["publishedAt"] = formatter.string(from: clock.addingTimeInterval(-1))
+        lateConfirmation["expiresAt"] = formatter.string(from: clock.addingTimeInterval(3600))
+        lateConfirmation.removeValue(forKey: "schedule")
+        projection["resetEvents"] = [lateConfirmation]; data["projection"] = projection
+        try await synthetic.replaceRows(WireDecoder.decode(WireRowsSnapshot.self, from: JSONSerialization.data(withJSONObject: data)))
+        try await Task.sleep(for: .milliseconds(50))
+        try require(deliveries.count == 2, "a late confirmation must stay deduplicated after announcement expiry")
         await entry.composition.stop()
     }
     static func roles(capture:URL) async throws {
@@ -407,7 +479,7 @@ private actor S4RowsClient: EngineClient {
         var scopedWeekly=window("model","weekly",2,604800);scopedWeekly["modelScope"]=["models":["opus"]]
         var special=window("review","weekly",1,604800);special["limitKey"]="code_review";special["poolKey"]="code_review"
         var unknown=window("unknown","session",3,18000);unknown["limitKey"]="other";unknown["poolKey"]="other"
-        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",80,2592000)]
+        account["windows"]=[scopedWeekly,special,unknown,window("weekly","weekly",24,604800),window("extra","other",1,60),window("five","session",63,18000),window("month","monthly",12,2592000)]
         row["accounts"]=[account];projection["rows"]=[row];root["projection"]=projection
         let rows=try WireDecoder.decode(WireRowsSnapshot.self,from:JSONSerialization.data(withJSONObject:root))
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("s4-journey-"+UUID().uuidString)
@@ -415,21 +487,24 @@ private actor S4RowsClient: EngineClient {
         let store=try SettingsStore(url:directory.appendingPathComponent("settings.json"))
         try await store.update { $0.language = .english }
         let entry=EngineRowsEntry.make(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/never-launched"),applicationVersion:"s4",allowedEnvironment:[:],offline:true,readOnly:true),settingsStore:store,createsNativePanels:false,makeClient:{_,store in S4RowsClient(store:store,rows:rows)},activateSettings:{})
-        await entry.prepare();await entry.composition.start()
+        await entry.prepare();entry.allowDockPresentation();await entry.composition.start()
         defer { entry.composition.dock.close() }
         guard let input=entry.composition.presentedContent.snapshot.inputs.first else { throw Failure(description:"normal entry lost the quota member") }
         let reading=try DockInstrumentProjection.evaluate(input,now:Date())
-        try require(reading.remainingPercent == 24,"restricted and special-pool windows must not determine the general tightest")
+        try require(reading.remainingPercent == 12,"the tightest plan-wide reading must include the monthly window")
+        let rendered = entry.composition.dock.dockView.presentedReadingsForChecks[input.id]
+        try require(rendered?.selectedWindowID == "month" && rendered?.readout == "12%","normal Dock must paint the selected monthly value")
+        try require(input.windows.first(where:{$0.id == "month"})?.isGeneral == true,"a plan-wide monthly window must be general")
         try require(reading.outer?.windowID.hasSuffix("five") == true,"outer must use the shortest general window")
         try require(reading.inner?.windowID == "weekly","inner must use the remaining weekly window")
         try require(input.windows.filter{["model","review","unknown"].contains($0.id)}.allSatisfy{!$0.isGeneral},"scoped, special and unknown limits must stay out of general windows")
         try require(input.windows.first(where:{$0.id.hasSuffix("month")})?.period == .month,"monthly role must survive")
         guard let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"normal card missing") }
-        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Resets in ") == true,"card must carry the reported relative reset")
+        try require(card.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("resets in ") == true,"card must carry the reported relative reset")
         try require(card.rows.contains{$0.id == "quota:extra" && $0.kind == .extraQuota && $0.value == "1%"},"extra quota belongs in the card only")
         let afterReset=Date(timeIntervalSince1970:4_102_444_800) // 2100-01-01
         let expired=try entry.composition.dock.cardContent(for:input.id,at:afterReset)
-        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail == "Reset time passed","relative reset text must use presentation time, not cached projection time")
+        try require(expired?.rows.first(where:{$0.id == "quota:five"})?.detail.hasPrefix("Reset time passed") == true,"relative reset text must use presentation time, not cached projection time")
         var old=SettingsPreferences();old.subscriptionSettings["codex"] = .init(alias:"Saved",percentagePin:.week)
         old.subscriptions = .init(order:["codex"],hiddenIDs:["codex"])
         let migrated=entry.composition.accountMembers.migratingRowPreferences(old)
@@ -471,7 +546,12 @@ private actor S4RowsClient: EngineClient {
     static func members(capture:URL) async throws {
         var root=try JSONSerialization.jsonObject(with:Data(contentsOf:capture)) as! [String:Any]
         var projection=root["projection"] as! [String:Any],row=(projection["rows"] as! [[String:Any]])[0]
-        var first=(row["accounts"] as! [[String:Any]])[0],second=first
+        var first=(row["accounts"] as! [[String:Any]])[0]
+        var window=(first["windows"] as! [[String:Any]])[0]
+        window.removeValue(forKey:"modelScope");window["limitKey"]="five_hour";window["poolKey"]="main"
+        window["current"]=true;window["resetsAt"]="2099-01-01T00:00:00Z";window["validUntil"]="2099-01-01T00:00:00Z"
+        first["windows"]=[window]
+        var second=first
         first["subscriptionRef"]="0123456789abcdef";second["subscriptionRef"]="fedcba9876543210"
         first["credits"]=["balance":42.5,"unit":"credits"];second["credits"]=["balance":7,"unit":"credits"]
         row["state"]="fresh";row["expiresAt"]="2099-01-01T00:00:00Z"
@@ -494,7 +574,7 @@ private actor S4RowsClient: EngineClient {
         guard let firstCard=try entry.composition.dock.cardContent(for:"0123456789abcdef"),
               let secondCard=try entry.composition.dock.cardContent(for:"fedcba9876543210") else { throw Failure(description:"normal Dock must expose the actual member card content") }
         try require(firstCard.plan == "synthetic","card must carry the reported plan name")
-        try require(firstCard.sourceAndAge.contains("Saved sign-in"),"card header must retain its localized reported source")
+        try require(firstCard.sourceAndAge.hasPrefix("Local history · "),"card header must use the admitted window source, even when the account route differs")
         try require(firstCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"first card needs its own rounded credits")
         try require(secondCard.rows.contains{$0.kind == .reserve && $0.value == "7"},"second card needs its own reported credits")
         try require(!secondCard.rows.contains{$0.kind == .reserve && $0.value == "43"},"source totals must not leak across members")
@@ -531,7 +611,7 @@ private actor S4RowsClient: EngineClient {
               let card=try entry.composition.dock.cardContent(for:input.id) else { throw Failure(description:"unknown-facts member/card missing") }
         try require(card.plan.isEmpty && !card.rows.contains{$0.kind == .reserve},"unavailable plan/reserve must stay absent, not become zero or an inferred current value")
         try require(card.rows.first(where:{$0.kind == .quota})?.value == "--","unknown quota must not become zero fuel")
-        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "--","unknown reset time must stay unknown")
+        try require(card.rows.first(where:{$0.kind == .quota})?.detail == "-- · Unknown source · Reading time unknown","unknown reset time and unproved provenance must stay unknown")
         try require(card.sourceAndAge.contains("Reading time unknown"),"missing reading time must not use rendering time")
         await entry.composition.stop()
     }
@@ -659,12 +739,14 @@ private actor S4RowsClient: EngineClient {
                 cards.append(card);visible += [card.name,card.plan,card.sourceAndAge,card.stateLabel,card.enterLabel,card.dismissLabel]
                 visible += card.rows.flatMap{[$0.label,$0.value,$0.detail]}
             }
+            let balanceLabels = cards.map { $0.rows.first { $0.id == "credits" && $0.kind == .reserve }?.label }
+            let expectedBalanceLabels = language == .chinese ? ["余额", "储备", "点数"] : ["Balance", "Reserve", "Credits"]
+            try require(balanceLabels == expectedBalanceLabels,"wire units must map to localized balance facts without inventing a currency")
             if language == .chinese {
                 try require(!visible.joined().unicodeScalars.contains{(65...90).contains(Int($0.value)) || (97...122).contains(Int($0.value))},"Chinese projection must not leak raw English unit or fallback text")
                 try require(!visible.joined().contains("观测"),"reading age must use user-facing glossary copy")
                 try require(content.snapshot.inputs.first?.name == "合成工具 · 账号 1","duplicate member copy must use the account term consistently")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5小时"},"the short quota row must use the glossary label")
-                try require(cards.map{$0.rows.first(where:{$0.kind == .reserve})?.label} == ["余额","储备","点数"],"wire units must map to localized facts without inventing a currency")
             } else {
                 try require(!visible.joined().unicodeScalars.contains{(0x3400...0x9FFF).contains(Int($0.value))},"English projection must not retain Chinese strings after language change")
                 try require(cards.allSatisfy{$0.rows.first(where:{$0.kind == .quota})?.label == "5h"},"English quota row must use the glossary label")
