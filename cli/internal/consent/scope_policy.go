@@ -40,11 +40,13 @@ func Definitions() []ScopeDefinition {
 		if id == ScopeOpenCodeV2LocalHistory {
 			d.DefaultCheck = false
 		}
+		// The GLM Coding Plan key a user saved in their own tool (ZCode's provider file)
+		// is a standard route, on by default (owner decision 2026-11-06, G3-21).
 		// Claude Code's own saved login is a standard route too (owner decision D27,
 		// 2026-11-06, G3-19): read without a consent click. On macOS that login lives in
 		// the Keychain, whose read keeps its own recorded choice, so no Keychain prompt
 		// appears by default; a Keychain-only login waits for that choice.
-		if id == ScopeClaudeAccountUsageSavedLogin {
+		if id == ScopeZaiAccountUsageAPIKey || id == ScopeClaudeAccountUsageSavedLogin {
 			d.DefaultCheck = true
 		}
 		d.Keychain = id == ScopeClaudeAccountUsageSavedLogin

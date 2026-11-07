@@ -23,6 +23,7 @@ jobs:
       - run: node scripts/check-source-policy.mjs
       - run: node --test scripts/tests/workflow-policy.test.mjs
       - run: node --test scripts/tests/changelog.test.mjs
+      - run: node --test scripts/tests/plugin-versions.test.mjs
       - run: node scripts/changelog.mjs --check
       - run: node --test scripts/tests/mac-scope.test.mjs
       - run: node --test scripts/tests/merge-gates.test.mjs

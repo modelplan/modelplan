@@ -40,7 +40,7 @@ public struct DockHelpSurface: Equatable {
     public func placeableKinds(context: HintContext, trial: InstrumentHintSourceSnapshot?) -> Set<FirstUseHintKind> {
         guard let surface, context.dockReveal == surface.revealID else { return [] }
         let offered = presenter.placeableKinds(context: context, trial: trial)
-        return Set(offered.filter { [.ignition, .drag, .pinned, .ringRefresh, .findWidget].contains($0) && valid(surface, kind: $0) })
+        return Set(offered.filter { [.ignition, .drag, .pinned, .ringRefresh, .findWidget, .widgetOff].contains($0) && valid(surface, kind: $0) })
     }
     public func showAndVerify(_ offer: HintOffer, trial: InstrumentHintSourceSnapshot?) -> Bool {
         guard let surface, valid(surface, kind: offer.kind) else { return false }
@@ -67,7 +67,7 @@ public struct DockHelpSurface: Equatable {
         if changed {
             host.cancelDwell(.ignition); host.cancelDwell(.drag)
             if let kind = host.hints.visible?.offer.kind,
-               kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || (kind == .pinned && host.hints.context.cockpitOpen == nil) {
+               kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && host.hints.context.cockpitOpen == nil) {
                 host.dismiss()
             }
             guard generation == token, !retired else { return }
@@ -91,7 +91,7 @@ public struct DockHelpSurface: Equatable {
         retired = true; generation &+= 1; surface = nil
         host.cancelDwell(.ignition); host.cancelDwell(.drag)
         if let kind = host.hints.visible?.offer.kind,
-           kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || (kind == .pinned && host.hints.context.cockpitOpen == nil) {
+           kind == .ignition || kind == .drag || kind == .ringRefresh || kind == .findWidget || kind == .widgetOff || (kind == .pinned && host.hints.context.cockpitOpen == nil) {
             host.dismiss()
         }
         var merged = context; merged.dockReveal = nil

@@ -130,7 +130,7 @@ func Generate(root string) ([]byte, error) {
 	b.defs["Window"].(object)["properties"].(object)["modelScope"] = object{"$ref": "#/$defs/ModelScope"}
 	scope := b.defs["ModelScope"].(object)
 	scope["properties"].(object)["models"] = object{"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": object{"type": "string", "enum": []string{"gemini-2.5-flash", "gemini-2.5-pro", "opus", "sonnet", "unknown"}}}
-	b.defs["CockpitQueryParams"].(object)["properties"].(object)["redBelow"] = object{"type": "integer", "enum": []int{10, 16, 20, 25}}
+	b.defs["CockpitQueryParams"].(object)["properties"].(object)["redBelow"] = object{"type": "integer", "enum": []int{10, 15, 20, 25, 30, 40}}
 	// The optional session reference is null or a validated opaque reference.
 	b.defs["CockpitSession"].(object)["properties"].(object)["subscriptionRef"] = object{"anyOf": []any{object{"type": "string", "pattern": "^[a-f0-9]{16}$", "maxLength": 16}, object{"type": "null"}}}
 	// The member variant is mutually exclusive with scope selection. Optional

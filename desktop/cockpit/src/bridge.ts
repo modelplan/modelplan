@@ -70,7 +70,7 @@ function message(raw:string):HostMessage|null {
   return m as unknown as HostMessage;
 }
 function threshold(value:unknown):RedBelow {
-  if(value!==10&&value!==16&&value!==20&&value!==25)console.warn('Cockpit redBelow missing or invalid; using default 25.');
+  if(value!==10&&value!==15&&value!==20&&value!==25&&value!==30&&value!==40)console.warn('Cockpit redBelow missing or invalid; using default 25.');
   return effectiveRedBelow(value);
 }
 export class CockpitBridge {

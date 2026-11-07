@@ -268,7 +268,7 @@ import ModelPlanCore
         for language in [SettingsLanguage.english, .chinese] {
             let row = SettingsNativeRow(key: .consentHelp)
             row.apply(item, language: language, saving: false, input: nil, reduced: true, onChoice: NSSelectorFromString("unused:"),
-                target: self, showGroup: false, snapshot: snapshot, context: context, holdAvailable: false, hasHost: false,
+                target: self, snapshot: snapshot, context: context, holdAvailable: false, hasHost: false,
                 onEdit: { _, _ in XCTFail("Read-only instructions must not edit") },
                 onSurfaceAction: { _, _ in XCTFail("Rendering must not execute a URL/CLI action") }, onDraftCleared: { _ in })
             let field = try XCTUnwrap(row.controls.arrangedSubviews.compactMap { $0 as? NSTextField }.first { $0.stringValue.contains(SettingsAbout.consentHelpURL.absoluteString) })

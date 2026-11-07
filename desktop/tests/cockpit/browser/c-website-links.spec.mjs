@@ -32,7 +32,7 @@ test('CKP-MFD-24 a scoped subscription links its plans page in the reader\'s lan
  await link.evaluate(e=>e.click());
  expect(await links(page),'a scripted click asks for nothing').toHaveLength(1);
  const style=await link.evaluate(e=>{const s=getComputedStyle(e);return {size:parseFloat(s.fontSize),line:s.textDecorationLine,animation:s.animationName};});
- expect(style).toEqual({size:9,line:'none',animation:'none'});
+ expect(style).toEqual({size:10,line:'none',animation:'none'});
 });
 
 test('CKP-MFD-24 the plans link is Chinese in Chinese and absent for an unknown maker',async({page})=>{
