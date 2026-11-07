@@ -248,7 +248,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
         let manifest=try JSONSerialization.data(withJSONObject:["schemaVersion":1,"edition":"community","interfaceOnly":true,
             "files":["index.html":VerifiedCockpitBundle.digest(html),"field.html":VerifiedCockpitBundle.digest(html)]])
         try manifest.write(to:root.appendingPathComponent("bundle-manifest.json"))
-        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:root.appendingPathComponent("support"))
+        let support=FileManager.default.temporaryDirectory.appendingPathComponent("u11-field-support-"+UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:support)}
+        let settings=try EngineRowsEntry.makeSettingsStore(applicationSupport:support)
         let client=RouteClient()
         let composition=EngineDockMenuComposition(configuration:.init(executableURL:URL(fileURLWithPath:"/synthetic/not-launched"),applicationVersion:"synthetic",allowedEnvironment:[:]),createsNativePanels:false,makeClient:{_,_ in client})
         let owner=CockpitConsoleOwner(bundle:root,settingsStore:settings)
