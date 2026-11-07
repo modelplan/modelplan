@@ -49,7 +49,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
   private var requestTicket: CockpitQueryTicket?
   private var refreshAgain = false
   public var onIntent: ((CockpitIntent) -> Void)?
-  public var onUnavailable: (() -> Void)?
+  public var onUnavailable: ((CockpitUnavailableReason) -> Void)?
   public var onClosed: (() -> Void)?
   public var onOpened: (() -> Void)?
 
@@ -99,17 +99,18 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     _ = try await client.start()
   }
   public func open() {
-    guard let delivery, client != nil, let context = try? Self.bridgeContext(delivery) else {
-      onUnavailable?()
-      return
-    }
+    guard client != nil else { onUnavailable?(.noClient); return }
+    guard let delivery else { onUnavailable?(.noDelivery); return }
+    guard let context = try? Self.bridgeContext(delivery) else { onUnavailable?(.invalidContext); return }
     if let page {
       page.open()
       if self.page === page { onOpened?() }
       return
     }
     let newPage: any CockpitPageSurface
-    do { newPage = try makePage(context) } catch { onUnavailable?(); return }
+    do { newPage = try makePage(context) } catch {
+      onUnavailable?(.pageCreation(CockpitFailureLog.errorName(error))); return
+    }
     let generation = UUID()
     pageGeneration = generation
     newPage.onReady = { [weak self] in
@@ -171,7 +172,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
         // ProcessEngineClient pairs this completion with the ordered feature
         // event. That event alone owns the notice, in either scheduling order.
       } catch {
-        if self?.requestToken == token { self?.onUnavailable?() }
+        if self?.requestToken == token { self?.onUnavailable?(.query(CockpitFailureLog.errorName(error))) }
       }
       guard let self, self.requestToken == token else { return }
       self.request = nil
@@ -201,7 +202,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     } catch {
       delivery = nil
       close()
-      onUnavailable?()
+      onUnavailable?(.contextRejected)
     }
   }
   public func consume(_ event: EngineClientEvent) async {
@@ -230,7 +231,7 @@ private final class WeakCockpitConsumer: EngineClientEventConsumer, @unchecked S
     case .featureFailure(.cockpit, _):
       cancelQuery()
       // Capture the foreground recovery intent before onClosed retires it.
-      onUnavailable?()
+      onUnavailable?(.featureFailure)
       close()
     default: break
     }

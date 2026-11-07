@@ -85,7 +85,7 @@ import ModelPlanDock
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
-    var pageFailure: (() -> Void)?
+    var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
@@ -102,7 +102,7 @@ import ModelPlanDock
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
-        page.onFailure = { [weak self] _ in self?.pageFailure?() }
+        page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
@@ -136,8 +136,8 @@ struct CockpitUnavailableNotice {
          requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
         self.owner=owner;self.composition=composition
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
-        owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
-        owner.pageFailure = { [weak self] in self?.unavailable() }
+        owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
+        owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
@@ -183,7 +183,7 @@ struct CockpitUnavailableNotice {
                 guard let self,self.wantsVisible else { return }
                 switch intent {
                 case .chooseSetup,.openSettings:self.owner.settings?()
-                case .openHistory:self.unavailable(history:true)
+                case .openHistory:self.unavailable(path:"intent.openHistory",history:true)
                 case .close:self.owner.coordinator?.requestClose()
                 case .detach,.putBack,.shutterToggle,.scopeSelect:
                     // The page owns shell controls; the coordinator validates and
@@ -207,9 +207,11 @@ struct CockpitUnavailableNotice {
         composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
-    private func unavailable(history:Bool=false) {
-        guard wantsVisible else { return }
+    private func unavailable(path:String,history:Bool=false) {
         let initiatedInForeground=isForeground()
+        // A failure in the background or after a close shows nothing, so the log is all there is.
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
+        guard wantsVisible else { return }
         let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
