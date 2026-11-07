@@ -9,6 +9,7 @@ import ModelPlanWire
 /// Uses the actual controller and bridge with fake delivery and scheduler; it
 /// never calls open() or creates a WebView, window, panel or system event.
 @MainActor final class CockpitControllerNoWindowTests: XCTestCase {
+  func testOpenFadeIsTheRequiredDuration() { XCTAssertEqual(CockpitWindowController.openFade, 0.18) }
   private let source = CockpitMessageSource(mainFrame: true, origin: "modelplan-cockpit://bundle")
   private func reply(_ raw: String, type: String, sequence: Int, extra: [String: Any] = [:]) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])

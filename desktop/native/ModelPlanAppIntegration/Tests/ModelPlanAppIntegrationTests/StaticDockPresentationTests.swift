@@ -34,6 +34,11 @@ import ModelPlanSettings
             }
         }
     }
+    /// DOCK-3.7-02: the reset mark on the strip is 4 pt at M, at 70 % opacity.
+    func testStripResetMarkSizeAndOpacity() {
+        XCTAssertEqual(DockSliverNoticeMark.diameter(tone: .blue, shape: .solid, unit: 44.0 / 52), 4, accuracy: 1e-6)
+        XCTAssertEqual(DockSliverNoticeMark.opacity, 0.7)
+    }
     func testSliverNamedParametersSupportFixedLengthAndPhysicalTrackingDepth() throws {
         var parameters = DockSliverParameters.current
         parameters.visibleThickness = 6; parameters.visibleLength = .fixed(96); parameters.trackingDepth = 20

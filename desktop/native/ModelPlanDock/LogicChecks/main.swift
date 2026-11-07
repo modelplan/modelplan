@@ -98,6 +98,25 @@ do {
         _ = try state.step(input, at: 3, intent: .reveal); input.pointer = .unknown
         try expect(try state.step(input, at: 100).state == .expanded, "unknown pointer cannot be taken as outside")
     }
+    try test("edge: Option arrows follow the edge's axis (DOCK-3.6-13)") {
+        for edge in [DockEdge.bottom, .top] {
+            try expect(edge.optionArrowDelta(keyCode: 123) == -1 && edge.optionArrowDelta(keyCode: 124) == 1, "left and right move along a horizontal edge")
+            try expect(edge.optionArrowDelta(keyCode: 125) == nil && edge.optionArrowDelta(keyCode: 126) == nil, "up and down do nothing there")
+        }
+        for edge in [DockEdge.left, .right] {
+            try expect(edge.optionArrowDelta(keyCode: 126) == -1 && edge.optionArrowDelta(keyCode: 125) == 1, "up and down move along a side edge")
+            try expect(edge.optionArrowDelta(keyCode: 123) == nil && edge.optionArrowDelta(keyCode: 124) == nil, "left and right do nothing there")
+        }
+    }
+    try test("visibility: the inside area has 12 pt of slack (DOCK-3.6-03)") {
+        let area = DockPresenceArea(painted: [CGRect(x: 100, y: 100, width: 50, height: 200)], wake: .zero, card: nil,
+                                    display: CGRect(x: 0, y: 0, width: 1000, height: 800), edge: .right, outerEdge: false)
+        try expect(DockVisibilityPolicy().insideSlack == 12, "slack value")
+        try expect(area.region(at: CGPoint(x: 88, y: 200)) == .inside, "12 pt out is inside")
+        try expect(area.region(at: CGPoint(x: 87.5, y: 200)) != .inside, "past 12 pt is not")
+        try expect(area.region(at: CGPoint(x: 125, y: 312)) == .inside, "the slack holds on every side")
+        try expect(area.region(at: CGPoint(x: 125, y: 312.5)) != .inside, "past 12 pt is not")
+    }
     try test("visibility: stale locks expire but each real protection survives") {
         for lock in [DockRecordedLocks.drag, .menu, .keyboard] {
             var state = DockVisibilityState(), input = DockPresence(); input.pointer = .outside; input.recordedLocks = lock
