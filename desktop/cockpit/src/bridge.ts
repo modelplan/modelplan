@@ -6,7 +6,7 @@ import {effectiveRedBelow,type RedBelow} from './threshold.js';
 export const MAX_MESSAGE_BYTES = 1024 * 1024;
 export interface Context { readonly sessionId:string; readonly storeEpoch:string; readonly generation:string; readonly viewRevision:string }
 export interface BridgeSource { readonly origin:string; readonly isMainFrame:boolean }
-export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean }
+export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
 export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect';
@@ -53,12 +53,12 @@ function message(raw:string):HostMessage|null {
   let m:unknown; try {m=parseMessage(raw);} catch {return null;}
   if(!record(m)||m.version!==2||!uuid(m.pageId)||!uuid(m.requestId)||!uint(m.sequence)||!uuid(m.sessionId)||!identity(m.storeEpoch)||['unavailable','legacy'].includes(m.storeEpoch)||!uint(m.generation)||!uint(m.viewRevision)) return null;
   const keys=(extra:string[]=[],optional:string[]=[])=>exact(m,[...header,'type',...extra,...optional.filter(key=>Object.hasOwn(m,key))]);
-  const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency'])&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
+  const validAppearance=(v:unknown):boolean=>exact(v,['theme','locale','reduceMotion','reduceTransparency','showProjectNames'])&&typeof v.showProjectNames==='boolean'&&['day','night'].includes(v.theme as string)&&['en','zh-CN'].includes(v.locale as string)&&typeof v.reduceMotion==='boolean'&&typeof v.reduceTransparency==='boolean';
   const validScope=(v:unknown):boolean=>{if(typeof v!=='string')return false;if(v==='all'||/^[a-f0-9]{16}$/.test(v))return true;const parts=v.split('#');let last=parts.pop()??'';if(/^\d+$/.test(last)){if(!/^[1-9]\d*$/.test(last)||Number(last)>1024)return false;last=parts.pop()??'';}return identity(parts.join('#'))&&['saved_login_api','runtime_rpc','local_log','api_key_api','local_sqlite','status_line','browser_session','manual','unknown'].includes(last);};
   const validShell=(v:unknown):boolean=>exact(v,['profile','attached','forcedClosed','tier','scope'])&&['open','closed'].includes(v.profile as string)&&typeof v.attached==='boolean'&&typeof v.forcedClosed==='boolean'&&['tall','compact'].includes(v.tier as string)&&validScope(v.scope);
   switch(m.type) {
     case 'load': if(!keys(['appearance','shell'],['redBelow'])||!validAppearance(m.appearance)||!validShell(m.shell)) return null; break;
-    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency'],['redBelow'])||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return null; break;
+    case 'appearance': if(!keys(['theme','locale','reduceMotion','reduceTransparency','showProjectNames'],['redBelow'])||typeof m.showProjectNames!=='boolean'||!['day','night'].includes(m.theme as string)||!['en','zh-CN'].includes(m.locale as string)||typeof m.reduceMotion!=='boolean'||typeof m.reduceTransparency!=='boolean') return null; break;
     case 'shell': if(!keys(['profile','attached','forcedClosed','tier','scope'])||!validShell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope})) return null; break;
     case 'display': if(!keys(['data'])||!validData(m.data)) return null; break;
     case 'visibility': if(!keys(['visible','occluded','key'])||[m.visible,m.occluded,m.key].some(v=>typeof v!=='boolean')) return null; break;
@@ -158,7 +158,7 @@ export class CockpitBridge {
     if(!same(m,this.context)) return false;
     switch(m.type) {
       case 'appearance':
-        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency},this.clock(),threshold(m.redBelow));} catch {this.unload();return false;}
+        try {this.view.updateAppearance({theme:m.theme,locale:m.locale,reduceMotion:m.reduceMotion,reduceTransparency:m.reduceTransparency,showProjectNames:m.showProjectNames},this.clock(),threshold(m.redBelow));} catch {this.unload();return false;}
         this.sequence=BigInt(m.sequence);this.reportDeadline(m.requestId);return true;
       case 'shell':
         try {this.view.shell({profile:m.profile,attached:m.attached,forcedClosed:m.forcedClosed,tier:m.tier,scope:m.scope});} catch {this.unload();return false;}

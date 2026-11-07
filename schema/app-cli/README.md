@@ -254,6 +254,23 @@ fixed classification (`local_history`, `runtime`, `saved_login`, `api_key`, or
 `other`); the window's own `observedAt` remains its capture time. Omission means
 source is unavailable. Without the capability the field is omitted.
 
+Clients can declare `cockpitForecastV1`, together with `cockpitDetailsV1`, to
+receive `details.forecasts` from `cockpit/query`: one entry per current window of
+a verified subscription, with `pace`, `basis` (`recent-rate`, `cycle-average` or
+`none`), the reading's `observedAt`, and `runsOutAt` only when the window is
+forecast to run out before its reset. `runsOutAt` is derived from the reading and
+does not move with the clock. Without the capability the field is omitted. An
+engine that produces forecasts also reports `forecastProducerV1`, so the App can
+offer the forecast notification. The same capability adds `forecasts` to rows
+snapshots and changes, so the App can notify while the cockpit is closed.
+
+Clients can declare `cockpitHistoryV1` to receive `history` from `cockpit/query`:
+7/30-day sums per subscription and source, model and tool rankings, `daily` (last
+182 local days from `dailyFrom`) and `hourly` (last 48 local hours) buckets per
+source, and `projects` (labels only while the project-labels preference is on).
+All of it is observed on this device. A day or hour that is not listed has no
+observation, which is not a known zero.
+
 Clients can declare `refreshDecisionsV1` to receive `refreshDecisions` from
 `diagnostics/get`. The array holds at most 20 recent in-memory scheduling and
 read outcome codes with relative ages and scope names. It contains no quota

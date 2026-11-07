@@ -301,6 +301,8 @@ import ModelPlanMenuVerification
             if cockpitEntryEnabled { context.unavailableControls.removeValue(forKey: .openShortcut) }
             else { context.unavailableControls[.openShortcut] = .init("Unavailable until this build can open the cockpit.", "此版本可打开驾驶舱前不可用。") }
         }
+        // Project names reach the cockpit through `applySettings`, so the row is a real control.
+        context.unavailableControls.removeValue(forKey: .projectNames)
         settings.update(context: context)
         shortcutRegistrar?.onPress = { [weak self] action in self?.performShortcut(action) }
         settings.editor.onHostRequest = { [weak self] request in self?.dispatchHostRequest(request) }

@@ -46,7 +46,7 @@ import ModelPlanSettings
         for key in [SettingKey.language, .menuDisplay] {
             XCTAssertEqual(rows.first { $0.key == key }?.availability, .available, "not usable: \(key)")
         }
-        XCTAssertEqual(rows.first { $0.key == .projectNames }?.availability, .serviceUnavailable, "the web cockpit does not honour this yet")
+        XCTAssertEqual(rows.first { $0.key == .projectNames }?.availability, .available, "the cockpit reads this through applySettings")
         await app.composition.stop()
     }
 }

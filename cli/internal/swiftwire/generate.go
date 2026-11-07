@@ -102,7 +102,7 @@ func load(root string) (*model, error) {
 			files = append(files, "reset_events.go")
 		}
 		if pkg == "wire" {
-			files = append(files, "cockpit.go", "results.go")
+			files = append(files, "cockpit.go", "cockpit_history.go", "results.go")
 		}
 		for _, file := range files {
 			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(root, "cli/internal", dir, file), nil, 0)
