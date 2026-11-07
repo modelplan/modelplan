@@ -75,38 +75,38 @@ for(const attached of [true,false])test(`visible non-key ${attached?'attached':'
 });
 test('appearance at quota expiry reports its request and preserves live peer',async({page})=>{
  const {send,receive}=await open(page,dataFor());await check(page,false);const previous=(await reports(page)).at(-1);
- await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}));expect(await receive(JSON.stringify(appearance))).toBe(true);
+ await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}));expect(await receive(JSON.stringify(appearance))).toBe(true);
  const report=(await reports(page)).at(-1);expect(report.requestId).toBe(appearance.requestId);expect(BigInt(report.sequence)).toBeGreaterThan(BigInt(previous.sequence));expect(report.deadlineUnixMs).toBe(String(Date.parse(week)));await check(page,true);
 });
 test('appearance at reset expiry reports the next authoritative deadline',async({page})=>{
  const data=dataFor(true),a=data.projection.rows[0].accounts[0];a.windows[0].remainingPercent=80;a.windows[0].validUntil=week;a.windows[0].resetsAt=week;data.projection.rows[0].expiresAt=week;data.details.alerts=[];data.details.resetEvents=[{version:1,id:'synthetic-reset',provider:'openai',rowId:data.projection.rows[0].id,status:'announced',publishedAt:start,expiresAt:at,source:{kind:'publication',publicationId:'0123456789abcdef01234567'}}];
- const {send,receive}=await open(page,data);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(1);await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}));expect(await receive(JSON.stringify(appearance))).toBe(true);
+ const {send,receive}=await open(page,data);await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);await expect(page.locator('.pg-overview .mfd-alerts li.al-blue')).toHaveCount(1);await page.clock.setSystemTime(new Date(at));const appearance=JSON.parse(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}));expect(await receive(JSON.stringify(appearance))).toBe(true);
  const report=(await reports(page)).at(-1);expect(report.requestId).toBe(appearance.requestId);expect(report.deadlineUnixMs).toBe(String(Date.parse(week)));await expect(page.locator('.s6-alert')).not.toHaveClass(/lit|amber|red/);
 });
 test('appearance at expiry preserves engine page, scope and focused control',async({page})=>{
  const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}
  const {send,receive}=await open(page,data);expect(await receive(send('shell',{...shell,scope:base.accounts[0].subscriptionRef}))).toBe(true);
  const control=page.getByRole('button',{name:'Page 2'});await control.click();await control.focus();await page.clock.setSystemTime(new Date(at));
- expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  await expect(page.getByRole('button',{name:'Page 2'})).toHaveAttribute('aria-current','true');await expect(page.getByRole('button',{name:'Page 2'})).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
 test('appearance repaint preserves an active shutter drag',async({page})=>{
  const {send,receive}=await open(page,dataFor()),shutter=page.locator('[data-shutter]'),box=await shutter.boundingBox();expect(box).not.toBeNull();
  await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+20,box.y+box.height/2);
- const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ const before=await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'));expect(before).not.toBe('');await page.clock.setSystemTime(new Date(at));expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  expect(await shutter.evaluate(e=>e.style.getPropertyValue('--shutter-travel'))).toBe(before);await page.mouse.up();
 });
 for(const [from,to,fromLabel,toLabel] of [['en','zh-CN','＋ Add a subscription','＋ 添加订阅'],['zh-CN','en','＋ 添加订阅','＋ Add a subscription']])test(`Add subscription focus survives ${from} to ${to} and expiry`,async({page})=>{
  const {send,receive,tick}=await open(page,dataFor());
- if(from!=='en')expect(await receive(send('appearance',{theme:'night',locale:from,reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ if(from!=='en')expect(await receive(send('appearance',{theme:'night',locale:from,reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await expect(add).toHaveAttribute('aria-label',fromLabel);await add.focus();await expect(add).toBeFocused();
- expect(await receive(send('appearance',{theme:'night',locale:to,reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ expect(await receive(send('appearance',{theme:'night',locale:to,reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  const translated=page.locator('.eng-keys button[data-add-subscription]').nth(1);await expect(translated).toHaveAttribute('aria-label',toLabel);await expect(translated).toBeFocused();
  expect(await tick(at)).toBe(true);await expect(translated).toBeFocused();await expect(translated).toHaveAttribute('aria-label',toLabel);
 });
 test('localization preserves focus on a non-Add control',async({page})=>{
  const {send,receive}=await open(page,dataFor());const all=page.locator('.eng-krow button[data-all]');await all.focus();await expect(all).toBeFocused();
- expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  await expect(page.locator('.eng-krow button[data-all]')).toBeFocused();await expect(page.locator('.eng-keys button[data-add-subscription]').first()).not.toBeFocused();
 });
 test('display update preserves focused Add subscription and scope',async({page})=>{
@@ -294,19 +294,19 @@ test('reset mode cannot distinguish otherwise identical quota siblings',async({p
 function sevenRows(){const data=dataFor(),base=data.projection.rows[0];for(let i=1;i<7;i++){const row=structuredClone(base);row.id='tool'+i;row.name={en:'Tool '+i,zh:'工具 '+i};row.accounts[0].subscriptionRef=null;data.projection.rows.push(row);}return data;}
 test('appearance followed by unchanged selected shell preserves page and Add focus',async({page})=>{
  const data=sevenRows(),ref=data.projection.rows[0].accounts[0].subscriptionRef,{send,receive}=await open(page,data);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await page.getByRole('button',{name:'Page 2'}).click();
- const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);await expect(add).toBeFocused();
+ const add=page.locator('.eng-keys button[data-add-subscription]').nth(1);await add.focus();await expect(add).toBeFocused();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(add).toBeFocused();
  expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.getByRole('button',{name:'第 2 页'})).toHaveAttribute('aria-current','true');await expect(page.locator('.eng-keys button[data-add-subscription]').nth(1)).toBeFocused();await expect(page.locator('#cockpit')).toHaveAttribute('data-scope','subscription');
 });
 test('appearance followed by unchanged All shell preserves focused MFD member',async({page})=>{
  const data=twoVerified(),{send,receive}=await open(page,data);await page.getByRole('button',{name:'Subscription',exact:true}).click();await page.locator('.mfd-page .sa').first().focus();
- expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();
+ expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(page.locator('.mfd-page .sa').first()).toBeFocused();
 });
 test('actual scope change retains its page behavior without moving focus to another bay',async({page})=>{
  const data=sevenRows(),ref=data.projection.rows[0].accounts[0].subscriptionRef,{send,receive}=await open(page,data);await page.getByRole('button',{name:'Page 2'}).click();await page.locator('.eng-keys button[data-add-subscription]').nth(1).focus();
- expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false}))).toBe(true);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.getByRole('button',{name:'Page 1'})).toHaveAttribute('aria-current','true');expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
+ expect(await receive(send('appearance',{theme:'night',locale:'en',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);expect(await receive(send('shell',{...shell,scope:ref}))).toBe(true);await expect(page.getByRole('button',{name:'Page 1'})).toHaveAttribute('aria-current','true');expect(await page.evaluate(()=>document.activeElement===document.body)).toBe(true);
 });
 test('appearance and shell cannot steal external focus or revive cleared state',async({page})=>{
- const data=dataFor(),{send,receive}=await open(page,data);await page.locator('.eng-keys button[data-add-subscription]').first().focus();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false}))).toBe(true);
+ const data=dataFor(),{send,receive}=await open(page,data);await page.locator('.eng-keys button[data-add-subscription]').first().focus();expect(await receive(send('appearance',{theme:'night',locale:'zh-CN',reduceMotion:true,reduceTransparency:false,showProjectNames:true}))).toBe(true);
  const settings=page.getByRole('button',{name:'设置',exact:true});await settings.focus();expect(await receive(send('shell',{...shell,scope:'all'}))).toBe(true);await expect(settings).toBeFocused();
  expect(await receive(send('visibility',{visible:false,occluded:false,key:false}))).toBe(true);const old=send('shell',{...shell,scope:'all'});expect(await receive(send('clear',{generation:'42',viewRevision:'4'}))).toBe(true);expect(await receive(old)).toBe(false);await expect(page.locator('.eng-keys button[data-add-subscription]')).toHaveCount(0);
 });

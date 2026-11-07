@@ -129,6 +129,7 @@ type WindowInput struct {
 	RemainingPercent *float64
 	ResetsAt         *time.Time
 	ObservedAt       *time.Time
+	Forecast         *WindowForecast
 }
 
 // SourceState preserves distinct emitting channels so exhaustive mapping tests
