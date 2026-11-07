@@ -76,6 +76,7 @@ import ModelPlanDock
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
+        if application.cockpitEntryEnabled { owner.prepare() }
         owner.settings = { [weak application] in Task { await application?.presentSettings() } }
         return application
     }
@@ -94,16 +95,37 @@ import ModelPlanDock
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
-    func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
-        guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
-              CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
+    /// G3-42: hashing the helper and every bundle file took the main thread on each click. The app's identity and
+    /// bundle are checked once per launch, away from the click; every served file is still checked again as it loads.
+    /// A click before this finishes checks on the spot, and a failure here is reported by that click.
+    func prepare() {
+        guard verifiedBundle == nil, preparation == nil else { return }
+        let bundle=self.bundle,pins=CommunityCockpitApplicationFactory.manifestPins
+        let work=Task.detached(priority:.utility) { try? Self.admit(bundle:bundle,pins:pins) }
+        preparation=work
+        Task { @MainActor [weak self] in
+            let verified=await work.value
+            guard let self else { return }
+            preparation=nil
+            if verifiedBundle == nil { verifiedBundle=verified }
+        }
+    }
+    private var preparation: Task<VerifiedCockpitBundle?,Never>?
+    nonisolated private static func admit(bundle: URL,pins: [String:String]) throws -> VerifiedCockpitBundle {
+        guard CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
         else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
         var edition="community"
         if let data=try? Data(contentsOf:editionURL),data.count<=1024,
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
-        let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
-            manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
+        guard let pin=pins[edition] else { throw CockpitBridgeError.unavailable }
+        return try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
+            manifestSHA256:pin,allowOfficial:edition == "official")
+    }
+    func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
+        guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL
+        else { throw CockpitBridgeError.unavailable }
+        let verified=try verifiedBundle ?? Self.admit(bundle:bundle,pins:CommunityCockpitApplicationFactory.manifestPins)
         verifiedBundle=verified
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
