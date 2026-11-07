@@ -54,14 +54,14 @@ public struct DockInstrumentSkin: Codable, Sendable {
         self.stations=stations;self.palette=palette;self.text=text;self.aliasText=aliasText
     }
 }
-/// G3-32: a vendor without a checked mark shows its initials (at most two), sized to the ring face.
+/// G3-32: a vendor without a checked mark shows the first two letters of its display name, so
+/// vendors sharing an initial stay apart (Ge, Gr, GL), sized to the ring face.
 public enum DockVendorFallback {
     public static func mark(_ name: String) -> String {
         // A duplicate-account tag (" · 2") is an account detail, not the vendor's identity.
         let base = name.components(separatedBy: " · ").first ?? name
-        let words = base.split(whereSeparator: \.isWhitespace)
-        let initials = words.prefix(2).compactMap { $0.first(where: { $0.isLetter || $0.isNumber }) }.map { String($0).uppercased() }.joined()
-        return initials.isEmpty ? "?" : initials
+        let letters = base.filter { $0.isLetter || $0.isNumber }.prefix(2)
+        return letters.isEmpty ? "?" : letters.prefix(1).uppercased() + letters.dropFirst()
     }
 }
 public struct DockGlyphMetric: Sendable {public let text:String,font:String;public let advance:Double,ascent:CGFloat,descent:CGFloat;public let runFonts:[String]}
