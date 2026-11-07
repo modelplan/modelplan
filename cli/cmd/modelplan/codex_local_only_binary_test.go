@@ -41,7 +41,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 	if _, err := consent.EnsureStore(consent.Path()); err != nil {
 		t.Fatal(err)
 	}
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+	if err := changeConsentWhenFree(func(s *consent.State) error {
 		if err := consent.Set(s, "codex", true, "native:codex", "native", now); err != nil {
 			return err
 		}
@@ -145,7 +145,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 			}
 		}
 	}
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+	if err := changeConsentWhenFree(func(s *consent.State) error {
 		record := s.Scopes[consent.ScopeCodexLocalHistory]
 		record.Allowed = false
 		s.Scopes[consent.ScopeCodexLocalHistory] = record
@@ -154,7 +154,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoCodexValues(p, "local denial")
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+	if err := changeConsentWhenFree(func(s *consent.State) error {
 		record := s.Scopes[consent.ScopeCodexLocalHistory]
 		record.Allowed = true
 		s.Scopes[consent.ScopeCodexLocalHistory] = record
@@ -162,7 +162,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+	if err := changeConsentWhenFree(func(s *consent.State) error {
 		record := s.Tools["codex"]
 		record.Allowed = false
 		s.Tools["codex"] = record
@@ -171,7 +171,7 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertNoCodexValues(p, "tool denial")
-	if err := consent.Change(consent.Path(), func(s *consent.State) error {
+	if err := changeConsentWhenFree(func(s *consent.State) error {
 		record := s.Tools["codex"]
 		record.Allowed = true
 		s.Tools["codex"] = record
@@ -182,4 +182,16 @@ func TestCodexLocalOnlyAdmissionRealBinary(t *testing.T) {
 	t.Setenv("MODELPLAN_READERS", "off")
 	off := startQueryBinaryCaps(t, binary, []string{"rows"})
 	assertNoCodexValues(off, "global readers off")
+}
+
+// changeConsentWhenFree retries while the running app server holds the consent lock for a read.
+func changeConsentWhenFree(change func(*consent.State) error) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := consent.Change(consent.Path(), change)
+		if err == nil || err.Error() != "consent busy; retry" || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
