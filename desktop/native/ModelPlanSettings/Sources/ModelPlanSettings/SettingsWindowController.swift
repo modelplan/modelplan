@@ -474,7 +474,6 @@ enum SettingsWords {
     func choice(key: SettingKey, subscriptionID: String = "") -> SettingsChoiceControl? { rows[key]?.choices[subscriptionID] }
     func diagram(key: SettingKey) -> SettingsDiagramView? { rows[key]?.diagram }
     func readerLink(id: String) -> SettingsActionControl? { rows[.optionalReaders]?.readerLinks[id] }
-    func actionControl(key: SettingKey) -> SettingsActionControl? { rows[key]?.surfaceAction }
     var visibleSettingKeys: [SettingKey] { displayedKeys }
     func aliasControl(subscriptionID: String) -> SettingsAliasControl? { rows[.alias]?.aliases[subscriptionID] }
     func shortcutControl(key: SettingKey) -> SettingsShortcutControl? { rows[key]?.shortcut }
