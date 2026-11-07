@@ -118,6 +118,26 @@ func materializeCockpitPublication(d *digest.Digest, selected []*digest.Model, t
 	return result
 }
 
+// allCockpitModels lists every published model that passes the same checks as the lineup, in
+// publication order. An invalid model is left out rather than failing the whole list.
+func allCockpitModels(d *digest.Digest) []wire.CockpitPublicationModel {
+	out := []wire.CockpitPublicationModel{}
+	if d == nil || d.Source != digest.ComponentClient {
+		return out
+	}
+	seen := map[string]bool{}
+	for i := range d.Models {
+		if len(out) == 256 {
+			break
+		}
+		if converted, ok := publishedCockpitModel(d.Models[i]); ok && !seen[converted.ID] {
+			seen[converted.ID] = true
+			out = append(out, converted)
+		}
+	}
+	return out
+}
+
 // selectCockpitPublication puts the models in use first, then keeps the verified models array's
 // publication order; it does not calculate a cross-vendor score or a synthetic ranking.
 func selectCockpitPublication(d *digest.Digest, projection rows.Projection, inUse map[string]bool) *wire.CockpitPublication {

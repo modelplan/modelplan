@@ -69,6 +69,7 @@ type quotaText struct {
 	Title, Observed, Stale, Reset, Remaining, Projected, None string
 	StaleCodex                                                string // how to refresh an old Codex reading
 	RefreshTooSoon, RefreshFailed, RefreshNotAllowed          string // what --refresh-account did
+	ReadersOff, ConsentNewer                                  string // why nothing was read
 	Kinds, Source, Headroom, Pace                             map[string]string
 	Day, Hour, Min                                            string
 	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
@@ -85,6 +86,8 @@ var quotaZH = quotaText{
 	RefreshTooSoon:    "Codex 读数刚问过，%s后才能再问；上面是已有读数。",
 	RefreshFailed:     "Codex 读数没有刷新%s；上面是已有读数。",
 	RefreshNotAllowed: "没有授权读取 Codex 账号，读数没有刷新。",
+	ReadersOff:        "读取已关闭：MODELPLAN_READERS 设为 off，或授权记录无法读取。",
+	ConsentNewer:      "授权记录由更新版本的 ModelPlan 写入，这个 CLI 读不了，所以没有读取额度。请更新插件或 CLI。",
 	Kinds:             map[string]string{"five_hour": "5小时", "weekly": "每周", "monthly": "每月", "spend": "限额", "full": "完整", "unknown": "窗口"},
 	Source:            map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "手填"},
 	Headroom:          map[string]string{"spend": "额度富余：重置前用不完，可以升档", "normal": "额度正常：按 ★ 推荐档用", "conserve": "额度偏紧：保持 ★ 或降一档", "exhausted": "额度已用完：等重置或换用其他套餐", "unknown": "额度未知"},
@@ -103,6 +106,8 @@ var quotaEN = quotaText{
 	RefreshTooSoon:    "Codex was asked moments ago; it can be asked again in %s. Figures above are the existing reading.",
 	RefreshFailed:     "The Codex reading was not refreshed%s. Figures above are the existing reading.",
 	RefreshNotAllowed: "Reading the Codex account is not allowed, so nothing was refreshed.",
+	ReadersOff:        "Reading is off: MODELPLAN_READERS is off, or the consent record cannot be read.",
+	ConsentNewer:      "A newer ModelPlan wrote the consent record and this CLI cannot read it, so no quota was read. Update the plugin or the CLI.",
 	Kinds:             map[string]string{"five_hour": "5h", "weekly": "week", "monthly": "month", "spend": "spend", "full": "full", "unknown": "window"},
 	Source:            map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "manual"},
 	Headroom:          map[string]string{"spend": "Surplus: it resets unused, worth stepping up", "normal": "On track: use the ★ effort", "conserve": "Tight: stay at ★ or step down", "exhausted": "Exhausted: wait for the reset or use another plan", "unknown": "Quota unknown"},
@@ -153,6 +158,11 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 	q := s.qt()
 	if len(r.Accounts) == 0 {
 		fmt.Fprintln(w, s.c(dim, q.None))
+		for _, x := range r.Sources {
+			if x.Source == "readers" && x.Status == "off" {
+				fmt.Fprintln(w, s.c(dim, map[string]string{"reader-privacy": q.ReadersOff, "consent-newer": q.ConsentNewer}[x.Reason]))
+			}
+		}
 	}
 	for i, a := range r.Accounts {
 		if i > 0 {

@@ -170,6 +170,17 @@ func CockpitDetailsEnabled(ctx context.Context) bool {
 	return enabled
 }
 
+// CapabilityCockpitModelsV1 opts in to every published model's public data in the cockpit
+// details, for the launch field and the frontier. The three-model publication field is unchanged.
+const CapabilityCockpitModelsV1 = "cockpitModelsV1"
+
+type cockpitModelsContextKey struct{}
+
+func CockpitModelsEnabled(ctx context.Context) bool {
+	enabled, _ := ctx.Value(cockpitModelsContextKey{}).(bool)
+	return enabled
+}
+
 // CapabilityCockpitForecastV1 opts in to per-window forecasts in the cockpit details.
 const CapabilityCockpitForecastV1 = "cockpitForecastV1"
 
