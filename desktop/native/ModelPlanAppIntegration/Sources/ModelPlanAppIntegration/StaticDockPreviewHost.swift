@@ -334,6 +334,7 @@ struct DockHelpInteraction: Equatable {
         guard let surface = lastDockHelpSurface, isCurrentDockHelpSurface(surface) else { return nil }
         return surface
     }
+    var dockHelpSurfaceAwaitsPublish: Bool { lastDockHelpSurface != nil && dockHelpInputGeneration != inputGeneration }
     private var snapshot: JoinedSnapshot?, diagnostics = StoreDiagnostics()
     private var model: CommunityDockSnapshot?
     private var contentProvider: any DockContentProvider
