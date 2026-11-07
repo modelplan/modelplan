@@ -2,8 +2,32 @@
 import Foundation
 import XCTest
 import ModelPlanEngineClient
+import ModelPlanEngineStore
+import ModelPlanWire
 @testable import ModelPlanAppIntegration
 import ModelPlanSettings
+
+private actor ForecastCapabilityClient: EngineClient {
+    let store: EngineStore
+    let supported: Bool
+    let context = EngineDeliveryContext(sessionID: "synthetic-forecast", floor: .init(storeEpoch: "synthetic-forecast", generation: 1), revision: 1)
+    init(store: EngineStore, supported: Bool) { self.store = store; self.supported = supported }
+    nonisolated func isCurrent(_ value: EngineDeliveryContext) -> Bool { value.sessionID == "synthetic-forecast" }
+    func supportsCapability(_ capability: String) async -> Bool { supported && capability == "forecastProducerV1" }
+    func start() async throws -> EngineDeliveryContext { await store.consume(.connection(.ready(context))); await store.consume(.context(context)); return context }
+    func stop() async {}
+    func retry() async throws -> EngineDeliveryContext { try await start() }
+    func subscribeRows(timeout: Duration?) async throws -> EngineRequestCompletion { .init(requestID: .string("rows")) }
+    func consent(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func grant(_ request: WireConsentGrantParams, userAction: EngineUserAction?, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func refresh(_ request: WireRefreshRequestParams, timeout: Duration?, prepared: @escaping @Sendable (WireRequestID) async -> Void) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func history(_ request: WireHistoryQueryParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func cockpit(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func publication(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func pluginInstall(_ request: WirePluginInstallParams, timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+    func diagnostics(timeout: Duration?) async throws -> EngineRequestCompletion { throw EngineClientError.unsupportedCapability }
+}
 
 /// SET-9-18 / SET-9-29 through the normal entry: the packaged app's Settings (EngineRowsEntry,
 /// v1 normal entry) never lists "Resets expiring" or "Data stopped arriving" (v1.1, owner
@@ -54,5 +78,28 @@ import ModelPlanSettings
         XCTAssertFalse(try SettingsCatalogue.rows(preferences: preferences, context: editor.context).contains { $0.key == .forecast })
         XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.notifications.kinds, preferences.notifications.kinds)
         await app.composition.stop()
+    }
+
+    /// The real connection path: the engine's reported capability reaches Settings with no
+    /// test-side context write, and an engine that does not report it keeps the row hidden.
+    func testSET_9_29EngineCapabilityDrivesTheForecastRow() async throws {
+        for supported in [true, false] {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("set-9-29-" + UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true),
+                settingsStore: try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en-US"]),
+                createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment,
+                makeClient: { _, store in ForecastCapabilityClient(store: store, supported: supported) }, activateSettings: {})
+            defer { app.composition.dock.close() }
+            await app.prepare(); await app.composition.start()
+            let editor = app.settingsHost.application.editor
+            for _ in 0..<100 where editor.context.capabilities.forecastProducerAvailable != supported { try await Task.sleep(for: .milliseconds(10)) }
+            if !supported { try await Task.sleep(for: .milliseconds(100)) }
+            XCTAssertEqual(editor.context.capabilities.forecastProducerAvailable, supported)
+            let preferences = try XCTUnwrap(editor.snapshot).preferences
+            let rows = try SettingsCatalogue.rows(preferences: preferences, context: editor.context, paneID: "notifications")
+            XCTAssertEqual(rows.contains { $0.key == .forecast }, supported)
+            await app.composition.stop()
+        }
     }
 }
