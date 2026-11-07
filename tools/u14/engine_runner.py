@@ -255,7 +255,15 @@ def backpressure(binary, home):
             engine._bytes_ready(3)
             engine.buffer.extend(os.read(engine.process.stdout.fileno(), 1))
             with (case / '.config/modelplan/consent.json.readers.lock').open('a') as lock:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # A background read may hold this lock for a moment; wait for it to finish.
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        require(time.monotonic() < deadline, 'readers-lock-unavailable')
+                        time.sleep(.01)
                 engine.send(12, 'consent/grant', revoke)
                 deadline = time.monotonic() + 3
                 while state(case)['generation'] == hello['consentGeneration']:
