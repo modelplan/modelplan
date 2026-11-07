@@ -78,6 +78,27 @@ public enum CockpitIntent: Equatable, Sendable {
   case chooseSetup, openSettings, close, detach, putBack, shutterToggle, openField
   case openHistory(String)
   case scopeSelect(String)
+  case openWebsite(CockpitWebsiteLink)
+}
+/// A typed public page, never a URL from the page: native builds the address from these fields.
+public struct CockpitWebsiteLink: Equatable, Sendable {
+  public enum Page: String, Sendable { case plans, effort, methodology }
+  public let page: Page, value: String
+  public init?(page: String?, value: String?) {
+    guard let page = page.flatMap(Page.init(rawValue:)), let value, (1...64).contains(value.utf8.count),
+      value.utf8.allSatisfy({ (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || [45, 46, 95].contains($0) })
+    else { return nil }
+    self.page = page; self.value = value
+  }
+  public var url: URL {
+    var parts = URLComponents(); parts.scheme = "https"; parts.host = "modelplan.ai"; parts.path = "/" + page.rawValue
+    switch page {
+    case .plans: parts.queryItems = [.init(name: "seller", value: value)]
+    case .effort: parts.queryItems = [.init(name: "model", value: value)]
+    case .methodology: parts.fragment = value
+    }
+    return parts.url!
+  }
 }
 public enum CockpitReceipt: Equatable {
   case ready, rendered, cleared
@@ -429,8 +450,8 @@ public final class CockpitBridgeState {
       // Strict page sequence rejects replays without a lifetime action cap.
       if let earlyDisplay, sequence <= earlyDisplay.sequence { throw CockpitBridgeError.invalidMessage }
       let action = m["action"] as? String
-      let history = action == "openHistory", scope = action == "scopeSelect"
-      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : ["action"]
+      let history = action == "openHistory", scope = action == "scopeSelect", website = action == "openWebsite"
+      let extra:Set<String> = history ? ["action","tool"] : scope ? ["action","key"] : website ? ["action","page","value"] : ["action"]
       guard Set(m.keys) == base.union(extra), ready, !blocked,
         visibility.active
       else { throw CockpitBridgeError.invalidMessage }
@@ -442,6 +463,9 @@ public final class CockpitBridgeState {
         guard let key=m["key"] as? String, scopeMembers.contains(key),
           earlyDisplay.map({ pending[$0.requestID]?.members.contains(key) == true }) ?? true else { throw CockpitBridgeError.invalidMessage }
         intent = .scopeSelect(key)
+      case "openWebsite":
+        guard let link = CockpitWebsiteLink(page: m["page"] as? String, value: m["value"] as? String) else { throw CockpitBridgeError.invalidMessage }
+        intent = .openWebsite(link)
       case "close": intent = .close
       case "detach": intent = .detach
       case "putBack": intent = .putBack

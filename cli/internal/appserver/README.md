@@ -53,7 +53,9 @@ The backend owns consent, migration, receipts, reader admission, publication
 fences, budgets and shared-store synchronization. The transport does not create
 a second store. `CredentialReceiver` repeats admission/fence/budget checks before
 in-memory use. Operations are bound to their session, generation and expiry,
-consumed once, and limited to one per provider. Background requests are
+consumed once, and limited to one per provider, including while an explicit
+operation's read runs after its result arrives. An automatic saved-login refresh stays off the
+provider until 15 seconds after that read; a requested one waits only for the read. Background requests are
 non-interactive; foreground requests arise only from an explicit Keychain grant.
 
 `Handler` is the seam for the refresh/plugin and cockpit/history units. Results

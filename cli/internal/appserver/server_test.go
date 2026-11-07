@@ -792,3 +792,43 @@ func TestRefreshDecisionDiagnosticsCapability(t *testing.T) {
 		})
 	}
 }
+
+type blockingCredentialBackend struct {
+	*memoryBackend
+	entered, release chan struct{}
+}
+
+func (b blockingCredentialBackend) AcceptCredential(ctx context.Context, stamp Stamp, need CredentialNeed, result wire.CredentialResult) error {
+	close(b.entered)
+	<-b.release
+	return b.memoryBackend.AcceptCredential(ctx, stamp, need, result)
+}
+
+// The operation is spent when its result arrives, but its read is what the one-per-provider
+// rule protects: a second operation must wait for the read, not only for the result.
+func TestExplicitCredentialHoldsProviderUntilItsReadEnds(t *testing.T) {
+	backend := blockingCredentialBackend{newMemoryBackend(), make(chan struct{}), make(chan struct{})}
+	c := startClient(t, Config{Backend: backend})
+	c.initialize(t)
+	op, err := c.server.RequestCredential(CredentialNeed{Provider: "claude", Scope: testScope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.next(t, func(m map[string]json.RawMessage) bool { return string(m["method"]) == `"credentials/request"` })
+	c.send(t, 2, "credentials/result", wire.CredentialResult{OperationID: op, Outcome: wire.OutcomeNotFound})
+	<-backend.entered
+	if active, _ := c.server.CredentialHold("claude"); !active {
+		t.Fatal("provider free while the explicit read runs")
+	}
+	if _, err := c.server.RequestCredential(CredentialNeed{Provider: "claude", Scope: testScope}); err == nil {
+		t.Fatal("second operation opened during the read")
+	}
+	close(backend.release)
+	if m := c.response(t, 2); m["error"] != nil {
+		t.Fatal("result rejected")
+	}
+	active, until := c.server.CredentialHold("claude")
+	if active || !until.After(time.Now()) {
+		t.Fatalf("after the read: active=%v until=%v", active, until)
+	}
+}
