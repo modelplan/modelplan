@@ -168,6 +168,12 @@ process name and never reads any process's environment or arguments. If the laun
 registering, the guardian stops any owned process inside that scope, rescans after a settle delay and reports
 `subject: never-started` when nothing was ever found, which permits `finish --cleaned`. A stray it
 had to stop (`unregistered-stopped`) or anything unconfirmed keeps the booking started.
+A launcher that exits non-zero before reserving (for example an admission refusal) leaves a
+run-bound `<subjectPidPath>.no-subject.json`; the guardian then also reports `never-started`.
+
+Reader scope, allow-listed candidate environment and the real-profile product backup
+(`--readers off|passive|codex,zcode`, `--backup product`, the run manifest) are specified in
+[VERIFY-RUN.md](VERIFY-RUN.md#candidate-environment-reader-scope-and-product-backup-launchpy-packaged_candidatepy).
 
 If the booking is abandoned **before start**, use this instead of start/release/launch:
 

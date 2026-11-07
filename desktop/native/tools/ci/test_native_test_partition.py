@@ -89,6 +89,13 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(any("failed:" in e for e in
                             partition.verify(pkg, cases[:1], log([(cases[0], "failed")]), "gui")))
 
+    def test_repository_admits_only_the_cli_missing_headless_skip(self):
+        pkg = MANIFEST["packages"]["app-integration"]
+        case = "ModelPlanAppIntegrationTests.CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI"
+        self.assertEqual(partition.verify(pkg, [case], log([(case, "skipped")]), "headless"), [])
+        self.assertTrue(any("skipped without an allowed-skip entry" in e for e in
+                            partition.verify(pkg, [case], log([(case, "skipped")]), "gui")))
+
     def test_a_skip_allowed_on_the_other_leg_is_not_allowed_here(self):
         pkg = {**PKG, "headless": ["Fast", "Window"]}
         _, expected, _ = partition.plan(pkg, LISTED, "headless")

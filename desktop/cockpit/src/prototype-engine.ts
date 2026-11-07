@@ -6,7 +6,8 @@ import {effectiveRedBelow} from './threshold.js';
 import type {WireCockpitData,WireWindow} from '../generated/wire.js';
 import type {Appearance} from './bridge.js';
 import {cockpitMembers} from './members.js';
-import {prototypeEngineSupplement,currentWindow,displayWindow} from './prototype-data-adapter.js';
+import {cautionItems,cautionLevel} from './caution.js';
+import {prototypeEngineSupplement,currentWindow,displayWindow,runOutMinutes,runOutFields,forecastOf} from './prototype-data-adapter.js';
 import {engineModel} from '../study/rocket-r1/engine-model.js';
 import {engineView,rowsTemplate} from '../study/rocket-r1/engine-view.js';
 import {setLanguage} from '../study/rocket-r1/i18n.js';
@@ -29,16 +30,18 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   const ids=new Map<string,number>(),bases=new Map<string,number>(),meanings=new Map<string,number>(),semantics=new Map<WireWindow,string>();
   for(const w of account.windows){const meaning=semantic(w),key=base(w);semantics.set(w,meaning);ids.set(w.id,(ids.get(w.id)??0)+1);bases.set(key,(bases.get(key)??0)+1);meanings.set(meaning,(meanings.get(meaning)??0)+1);}
   const validId=(w:WireWindow)=>{const key=base(w),count=bases.get(key)??0;if(count===1)return w.id===key;const suffix=w.id.startsWith(key+':')?w.id.slice(key.length+1):'';return /^[1-9]\d*$/.test(suffix)&&Number.isSafeInteger(Number(suffix))&&Number(suffix)<=count;};
-  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,trend:null,durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
+  const runOut=(w:WireWindow)=>runOutMinutes(data,row.id,account,w,now);
+  const convert=(w:WireWindow)=>({focusIdentity:validId(w)&&ids.get(w.id)===1&&meanings.get(semantics.get(w)!)===1?semantics.get(w)!:null,kind:role(w),remaining:displayWindow(account,w,now)?finite(w.remainingPercent):null,resetIn:displayWindow(account,w,now)&&w.resetsAt&&Number.isFinite(Date.parse(w.resetsAt))?Math.max(0,(Date.parse(w.resetsAt)-now)/60000):null,resetAt:null,resetText:null,elapsed:null,...runOutFields(runOut(w)),durationMinutes:w.durationSeconds===null?null:w.durationSeconds/60});
   const windows=account.windows.filter(general).map(convert);
-  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)},runOutMin:null}));
+  const extras=account.windows.filter(w=>!general(w)).map(w=>({...convert(w),period:role(w),name:esc(locale==='en'?w.label.en:w.label.zh),label:esc(locale==='en'?w.label.en:w.label.zh),scope:{label:esc(locale==='en'?w.label.en:w.label.zh)}}));
   const notice=data.details?.resetEvents.find(e=>e.rowId===row.id&&Date.parse(e.expiresAt)>now&&(!e.planIds?.length||e.planIds.includes(account.plan.id)));
   const detail=prototypeEngineSupplement(account,data), cards=detail.resetCards?.map(c=>({count:c.count,expiresAt:c.expiresAt?Date.parse(c.expiresAt):null}))??[];
-  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:null,event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
+  return {id:esc(key),name:esc(name),short:esc(name),alias:esc(name),colour:brand?.colour??'#c6ccd4',logo:brand?'../../vendor-marks/'+brand.logo+'.svg':'../../neutral.png',state:account.valueState==='current'?'ok':account.valueState==='retained'?'stale':'loading',ageMin:null,support:detail.todayTokens!==null?'observed':'quota-only',todayAverageGenerationTps:detail.todayAverageGenerationTps,todayTokens:detail.todayTokens,usage7:null,windows,extras,forecast:forecastOf(windows),event:notice?{status:notice.status,at:null}:null,cards,credits:detail.reserveCredits&&['credits','points'].includes(detail.reserveCredits.unit)&&finite(detail.reserveCredits.balance)!==null?{balance:detail.reserveCredits.balance,drawing:false}:null};
  });
- const alerts=data.details?data.details.alerts.flatMap(a=>{const m=members.find(m=>m.key===a.subscriptionRef&&m.row.id===a.source);return m&&m.account.windows.some(w=>w.id===a.windowId&&currentWindow(m.account,w,now))&&['critical','warning'].includes(a.severity)?[{level:a.severity==='critical'?'red':'amber',sub:esc(m.key)}]:[];}):members.flatMap(({key,account})=>account.valueState!=='current'?[]:account.windows.filter(w=>currentWindow(account,w,now)&&w.remainingPercent!==null&&w.remainingPercent<=40).map(w=>({level:w.remainingPercent!<=redBelow()?'red':'amber',sub:esc(key)})));
- const hasReset=!!data.details?.resetEvents.some(e=>Date.parse(e.expiresAt)>now&&members.some(m=>m.row.id===e.rowId));
- const level=alerts.some(a=>a.level==='red')?'red':alerts.some(a=>a.level==='amber')||hasReset?'amber':null;
+ // Owner D38: only red (at or below T) and forecast amber conditions wash a column or light the lamp.
+ const items=cautionItems(data,now,redBelow());
+ const alerts=items.flatMap(x=>x.level==='blue'?[]:[{level:x.level,sub:esc(x.member)}]);
+ const level=cautionLevel(items);
  const caution=root.querySelector<HTMLElement>('.ck-lamp .caution');if(caution){caution.classList.toggle('lit',!!level);caution.classList.toggle('red',level==='red');caution.classList.toggle('amber',level==='amber');caution.setAttribute('aria-label',level?(locale==='en'?'Alert active':'告警激活'):(locale==='en'?'Alert inactive':'告警未激活'));}
  return {now,accounts,alerts,caution:{level,key:''}};
  }
@@ -68,8 +71,8 @@ export function renderPrototypeEngine(data:WireCockpitData,locale:Appearance['lo
   for(const led of host.querySelectorAll<HTMLElement>('.eng-led[data-page]')){const n=Number(led.dataset.page);led.setAttribute('role','button');led.setAttribute('aria-label',locale==='en'?`Page ${n+1}`:`第 ${n+1} 页`);led.setAttribute('aria-current',String(n===page));}
   // Unknown vendors have no mark; never turn their input into an image URL.
   for(const image of host.querySelectorAll<HTMLImageElement>('img[src="assets/brands/../../neutral.png"]'))image.remove();
-  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);b.setAttribute('aria-label',locale==='en'?member.row.name.en:member.row.name.zh);}}
-  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';all.setAttribute('aria-label',locale==='en'?'All':'全部');}
+  for(const b of host.querySelectorAll<HTMLButtonElement>('.ek[data-sub]')){const member=seen.get(b.dataset.sub??'');if(member){b.dataset.scope=member.key;b.dataset.unstable=String(member.unstable);const name=locale==='en'?member.row.name.en:member.row.name.zh;const digit=b.querySelector('.ki')?.textContent??'';const shortcut=locale==='en'?`Shortcut key ${digit}`:`快捷键 ${digit}`;b.setAttribute('aria-label',`${name} · ${shortcut}`);b.title=`${name} · ${shortcut}`;const label=b.querySelector<HTMLElement>('.ek-name');if(label)label.title=b.title;}}
+  const all=host.querySelector<HTMLButtonElement>('.ek[data-all]');if(all){all.dataset.scope='';const shortcut=locale==='en'?'Shortcut key 0':'快捷键 0';all.setAttribute('aria-label',`${locale==='en'?'All':'全部'} · ${shortcut}`);all.title=shortcut;}
   root.dataset.scope=scope?'subscription':'all';
  };
  const choosePage=(element:Element)=>{const led=element.closest<HTMLElement>('.eng-led[data-page]');if(!led||!host.contains(led))return false;const requested=Number(led.dataset.page);if(Number.isInteger(requested)&&requested>=0&&requested<Math.ceil(members.length/6)){page=requested;paint();}return true;};

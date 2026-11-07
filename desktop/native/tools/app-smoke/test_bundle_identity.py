@@ -82,9 +82,12 @@ class BundleIdentityModeTests(unittest.TestCase):
         smoke_package = calls(smoke, 'tools/package-neutral.sh')
         release_package = calls(release, 'tools/package-neutral.sh')
         self.assertEqual(len(smoke_package), 1)
-        self.assertIn('--unverified', smoke_package[0])
+        # Unverified by default; the owner test build (D39/D-E) is the only other mode, chosen by the
+        # dispatch input. The release workflow uses neither, so its package keeps the cockpit closed.
+        self.assertEqual(smoke_package[0][-1], '$PACKAGE_MODE')
+        self.assertIn("PACKAGE_MODE: ${{ inputs.owner_test && '--owner-test' || '--unverified' }}", smoke)
         self.assertTrue(release_package)
-        self.assertTrue(all('--unverified' not in command for command in release_package))
+        self.assertTrue(all('--unverified' not in command and '--owner-test' not in command for command in release_package))
         checker = calls(smoke, 'app-smoke/check-app-smoke.py')
         self.assertEqual(len(checker), 1)
         self.assertIn('--expect-unverified', checker[0])
@@ -103,7 +106,7 @@ class BundleIdentityModeTests(unittest.TestCase):
         self.assertIn('git rev-parse HEAD', zipping)
         guard = zipping.index('"$SOURCE_SHA" ]')
         self.assertLess(guard, zipping.index('ditto -c'))  # refused before anything is zipped
-        self.assertIn('name: native-app-unverified-' + head, smoke)
+        self.assertIn("name: native-app-${{ inputs.owner_test && 'test' || 'unverified' }}-" + head, smoke)
 
 
 if __name__ == '__main__':

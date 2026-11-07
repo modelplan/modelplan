@@ -63,7 +63,7 @@ final class SettingsV1PolicyTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.key == .automaticUpdates || $0.key == .updateStatus })
         let keys: [SettingKey] = [.login, .menuDisplay, .openShortcut, .dockShortcut,
             .resetHints, .magnification, .sliverAlert, .percentagePin, .order,
-            .visible, .alias, .notificationConsent, .forecast, .reset, .official, .expiring, .stale,
+            .visible, .alias, .notificationConsent, .reset, .official,
             .projectNames, .fullscreen,
             .websiteLink, .methodologyLink, .privacyLink, .repositoryLink, .feedback, .clearAppCache]
         for key in keys {
