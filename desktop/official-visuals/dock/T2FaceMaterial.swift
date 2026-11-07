@@ -5,6 +5,12 @@ import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
+/// DOCK-3.1-11: the T2 matte gradient, free edge to attachment.
+public enum T2FaceGradient {
+    public static let inks: [[CGFloat]] = [[21,29,35], [54,63,68], [38,50,57], [16,27,36], [3,9,17]]
+    public static let locations: [CGFloat] = [0, 0.17, 0.43, 0.74, 1]
+}
+
 /// DOCK-3.1-10/-11/-20: native face material, soot and clipped ignition well.
 /// Instruments, the grip and ignition remain later layers.
 @MainActor public final class T2FaceMaterial {
@@ -58,10 +64,9 @@ import CoreImage.CIFilterBuiltins
         outline.move(to: pathPoint(first))
         for point in geometry.outline.dropFirst() { outline.addLine(to: pathPoint(point)) }
         outline.closeSubpath(); context.addPath(outline); context.clip()
-        let inks: [[CGFloat]] = [[21,29,35], [54,63,68], [38,50,57], [16,27,36], [3,9,17]]
-        let colors = inks.map { CGColor(colorSpace: srgb, components: [$0[0]/255, $0[1]/255, $0[2]/255, 1])! }
+        let colors = T2FaceGradient.inks.map { CGColor(colorSpace: srgb, components: [$0[0]/255, $0[1]/255, $0[2]/255, 1])! }
         guard let gradient = CGGradient(colorsSpace: srgb, colors: colors as CFArray,
-            locations: [0, 0.17, 0.43, 0.74, 1]) else { throw RenderError.allocation }
+            locations: T2FaceGradient.locations) else { throw RenderError.allocation }
         let c = geometry.input.coordinates, depth = geometry.freeDepth
         let start: CGPoint, end: CGPoint
         switch c.edge {

@@ -26,6 +26,9 @@ import (
 // consent store, route catalogue, reader implementation or publication policy.
 type SharedConfig struct {
 	now func() time.Time
+	// Reported receives the report the rows were just built from, at most once a minute, so
+	// quota history is kept without a second read.
+	Reported func(quota.Report, time.Time)
 	// Activity is an admitted, cache-only observer, independent of quota refresh/rate.
 	Activity          func(context.Context, consent.Admission, time.Time) []rows.ActivityInput
 	ResetPublication  func() (*digest.Digest, error)
@@ -47,6 +50,8 @@ type SharedBackend struct {
 	activity      []rows.ActivityInput
 	activityStamp Stamp
 	activityBusy  atomic.Bool
+	reportBusy    atomic.Bool
+	reportedAt    time.Time
 	config        SharedConfig
 	changes       chan struct{}
 	once          sync.Once
@@ -178,6 +183,7 @@ func (b *SharedBackend) buildView(admission consent.Admission, changed bool) Vie
 	if !changed && admission.Mode() != consent.Off {
 		quota.AppendManagedRows(&in, p)
 		report = quota.ReadPermitted(p, in.Now)
+		b.reported(report, in.Now)
 		projectionReport := report
 		if admission.Allows("codex", consent.Local) {
 			// The generic native adapter can report the ungranted runtime
@@ -533,6 +539,18 @@ func (b *SharedBackend) observeActivity(ctx context.Context, now time.Time) {
 		b.Notify()
 	}
 }
+func (b *SharedBackend) reported(report quota.Report, now time.Time) {
+	if b.config.Reported == nil || !b.reportBusy.CompareAndSwap(false, true) {
+		return
+	}
+	if !now.After(b.reportedAt.Add(time.Minute)) {
+		b.reportBusy.Store(false)
+		return
+	}
+	b.reportedAt = now
+	go func() { defer b.reportBusy.Store(false); b.config.Reported(report, now) }()
+}
+
 func (b *SharedBackend) activityFor(stamp Stamp) []rows.ActivityInput {
 	b.activityMu.Lock()
 	defer b.activityMu.Unlock()

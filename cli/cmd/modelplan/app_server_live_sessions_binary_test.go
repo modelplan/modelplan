@@ -96,6 +96,15 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 	if raw, err := status.CombinedOutput(); err != nil {
 		t.Fatalf("statusline: %v %s", err, raw)
 	}
+	// The statusline run above keeps quota history too. Clear it, so whatever appears below came
+	// from the app-server. It is cleared before the server starts because the server writes at
+	// most once a minute: clearing it afterwards would wait out that limit.
+	observed := filepath.Join(home, "cache", "observed")
+	for _, name := range []string{"cycles.json", "pace.json"} {
+		if err := os.Remove(filepath.Join(observed, name)); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+	}
 	project := filepath.Join(home, ".claude", "projects", "-synthetic-project")
 	if err := os.MkdirAll(project, 0o700); err != nil {
 		t.Fatal(err)
@@ -107,13 +116,39 @@ func TestAppServerSessionActivityReachesTheAccountRow(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(project, "session.jsonl"), []byte(log), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitForActivity(t, binary, "claude", "tool")
+	c := waitForActivity(t, binary, "claude", "tool")
+	// The cockpit's session names the same account, so a record line can link to its column.
+	linked := time.Now().Add(10 * time.Second)
+	for {
+		response := c.call("cockpit/query", map[string]any{})
+		var result wire.Envelope[wire.CockpitData]
+		if json.Unmarshal(response["result"], &result) == nil && result.Data.Details != nil && len(result.Data.Details.Sessions) > 0 && result.Data.Details.Sessions[0].SubscriptionRef != nil {
+			break
+		}
+		if time.Now().After(linked) {
+			t.Fatalf("no bound session: %s", response["result"])
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	// Quota history is kept from the same read, with no plugin hook.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		cycles, cyclesErr := os.ReadFile(filepath.Join(observed, "cycles.json"))
+		pace, paceErr := os.ReadFile(filepath.Join(observed, "pace.json"))
+		if cyclesErr == nil && paceErr == nil && len(cycles) > 2 && len(pace) > 2 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no quota history recorded: cycles %v, pace %v", cyclesErr, paceErr)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // waitForActivity starts the real app-server and waits for verified activity on that tool's account.
-func waitForActivity(t *testing.T, binary, tool, phase string) {
+func waitForActivity(t *testing.T, binary, tool, phase string) *queryBinary {
 	t.Helper()
-	c := startQueryBinaryCaps(t, binary, []string{"rows"})
+	c := startQueryBinaryCaps(t, binary, []string{"rows", "cockpit", "cockpitDetailsV1"})
 	deadline := time.Now().Add(25 * time.Second)
 	var last json.RawMessage
 	for time.Now().Before(deadline) {
@@ -130,13 +165,14 @@ func waitForActivity(t *testing.T, binary, tool, phase string) {
 					if !activity.BindingVerified || string(activity.Phase) != phase || account.SubscriptionRef == nil || activity.SubscriptionRef != *account.SubscriptionRef {
 						t.Fatalf("activity = %+v", activity)
 					}
-					return
+					return c
 				}
 			}
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
 	t.Fatalf("no activity reached the %s row: %s", tool, last)
+	return nil
 }
 
 func buildObserverBinary(t *testing.T) string {
