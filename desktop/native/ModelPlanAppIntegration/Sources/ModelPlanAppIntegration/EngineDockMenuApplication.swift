@@ -637,10 +637,6 @@ import ModelPlanMenuVerification
         }
     }
     @objc private func showConsoleMenu() { showConsole() }
-    @objc private func openPublicLink(_ sender:NSMenuItem) {
-        guard !terminating,let raw=sender.representedObject as? String,let link=SettingsPublicLink(rawValue:raw) else { return }
-        openExternalURL(link.url)
-    }
     @objc private func checkForUpdates() { try? settings.editor.request(.checkForUpdates) }
     @objc private func showAbout() { Task { await settingsHost.present(paneID:"about",origin:.userInitiated) } }
     @objc private func refreshRows() {

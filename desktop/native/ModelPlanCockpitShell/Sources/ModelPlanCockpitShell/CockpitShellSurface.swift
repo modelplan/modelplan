@@ -233,13 +233,6 @@ public enum CockpitSurfaceError: Error { case invalidGeometry, duplicateStation,
     }
 }
 
-/// THM-2.4-08: the native shell's named colours, mirroring `--metal-2` in the cockpit theme so the
-/// backdrop matches the page drawn over it in both themes.
-public enum CockpitShellTheme {
-    public static let nightBackdrop = CGColor(srgbRed: 0x1c / 255, green: 0x1d / 255, blue: 0x1f / 255, alpha: 1)
-    public static let dayBackdrop = CGColor(srgbRed: 0xb7 / 255, green: 0xbc / 255, blue: 0xc1 / 255, alpha: 1)
-}
-
 @MainActor public final class NeutralCockpitShellSkin: CockpitShellSkin {
     public init() {}
     public func layout(for state: CockpitSurfaceState) throws -> CockpitSurfaceLayout {
@@ -254,7 +247,7 @@ public enum CockpitShellTheme {
         guard let ctx = CGContext(data: nil,width: Int(b.width)*scale,height: Int(b.height)*scale,bitsPerComponent: 8,bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!,bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CockpitSurfaceError.invalidRaster }
         ctx.scaleBy(x: CGFloat(scale),y: CGFloat(scale))
-        ctx.setFillColor(state.appearance.dark ? CockpitShellTheme.nightBackdrop : CockpitShellTheme.dayBackdrop)
+        ctx.setFillColor(NSColor(calibratedWhite: state.appearance.dark ? 0.12 : 0.8,alpha: 1).cgColor)
         ctx.fill(CGRect(origin: .zero,size: layout.rootSize))
         guard let image = ctx.makeImage() else { throw CockpitSurfaceError.invalidRaster }; return image
     }

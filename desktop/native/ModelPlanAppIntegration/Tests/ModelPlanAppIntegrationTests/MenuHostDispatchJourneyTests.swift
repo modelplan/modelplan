@@ -9,7 +9,7 @@ import ModelPlanWire
 @testable import ModelPlanAppIntegration
 
 /// MENU-13: requests from the status menu and Settings reach the host at normal entry.
-/// Login is covered by CommunityLoginServiceAdapterTests; shortcuts by #634.
+/// Login is covered by CommunityLoginServiceAdapterTests; shortcuts by SET905ShortcutRegistrationJourneyTests.
 @MainActor final class MenuHostDispatchJourneyTests: XCTestCase {
     private func makeApp() throws -> EngineDockMenuApplication {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("menu-host-" + UUID().uuidString)
