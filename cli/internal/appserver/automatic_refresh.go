@@ -119,7 +119,8 @@ func (s *RefreshScheduler) automatic() {
 					s.config.Changed()
 				}
 			}
-			if nextObserve.Before(next) {
+			// While a read runs an overdue observation must not set the wake-up: the loop would spin.
+			if idle && nextObserve.Before(next) {
 				next = nextObserve
 			}
 		}

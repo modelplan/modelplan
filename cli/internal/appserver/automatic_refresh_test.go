@@ -278,3 +278,20 @@ func TestAutomaticSchedulesDefaultCodexRuntimeWithoutDecision(t *testing.T) {
 		}
 	}
 }
+
+// Each scheduler pass repeats the scopes that cannot run; a real outcome must survive them.
+func TestRepeatedNotAttemptedDecisionsKeepRealOutcomesInTheRing(t *testing.T) {
+	var ring refreshDecisionRing
+	at := time.Unix(1_800_000_000, 0)
+	ring.add(at, consent.ScopeMiniMaxAccountUsageAPIKey, refreshSucceeded, refreshCompleted)
+	for i := 0; i < 50; i++ {
+		ring.add(at.Add(time.Duration(i)*time.Second), consent.ScopeZaiAccountUsageAPIKey, refreshNotAttempted, refreshUnavailable)
+		ring.add(at.Add(time.Duration(i)*time.Second), consent.ScopeCopilotRuntimeUsage, refreshNotAttempted, refreshUnavailable)
+	}
+	if ring.count != 3 {
+		t.Fatalf("decisions = %d: %+v", ring.count, ring.items[:ring.count])
+	}
+	if ring.items[0].scope != consent.ScopeMiniMaxAccountUsageAPIKey || ring.items[1].at != at.Add(49*time.Second) {
+		t.Fatalf("items = %+v", ring.items[:3])
+	}
+}
