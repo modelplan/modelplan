@@ -23,11 +23,12 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"b75793f48ac14cd4d99fe4ec9e0396893da72861c85b95394344ea6d505ee41a",
-        "official":"e4958f25f0f94661f4d12ebf121065ac00440a4c41a9752aa670ac0bbc23c920",
+        "community":"2cbe995c4933c1512fcf630f3824a06763a818ec78d3a4d9d1607fecefd5e03a",
+        "official":"4c09d87e055e485aa37878a102baacc50e56f5a0115c5d4d92ca42212ba45532",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
+    static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -45,11 +46,17 @@ import ModelPlanDock
                 createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,makeClient:makeClient,
                 makeSettingsSurface:makeSettingsSurface,makeConsole:makeConsole,activateSettings:activateSettings)
         }
+        #if MODELPLAN_TEST_ONLY_SPI
+        let verificationFactory = verificationPageFactory
+        #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
             createsNativePanels:createsNativePanels,bundleURL:bundleURL,cockpitEntryEnabled:cockpitEntryEnabled,dockEnvironment:dockEnvironment,deadlineNow:deadlineNow,deadlineElapsed:deadlineElapsed,deadlineScheduling:deadlineScheduling,
             makeClient: { configuration, store in
                 let coordinator = EngineCockpitCoordinator { [weak owner] context in
+                    #if MODELPLAN_TEST_ONLY_SPI
+                    if let verificationFactory { return try verificationFactory(context) }
+                    #endif
                     guard let owner else { throw CockpitBridgeError.unavailable }
                     return try owner.makePage(context:context,executable:configuration.executableURL)
                 }
@@ -60,6 +67,11 @@ import ModelPlanDock
             },makeSettingsSurface:makeSettingsSurface,
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
+                #if MODELPLAN_TEST_ONLY_SPI
+                if verificationFactory != nil {
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
+                }
+                #endif
                 return SharedEngineCockpitConsole(owner:owner,composition:composition)
             },activateSettings:activateSettings)
         owner.anchor = { [weak application] in application?.cockpitAnchor }
