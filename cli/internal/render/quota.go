@@ -67,6 +67,8 @@ func pts(v *float64, format string) string {
 type quotaText struct {
 	RecentThread                                              string // Codex model/effort read from the newest interactive thread, not necessarily this one
 	Title, Observed, Stale, Reset, Remaining, Projected, None string
+	StaleCodex                                                string // how to refresh an old Codex reading
+	RefreshTooSoon, RefreshFailed, RefreshNotAllowed          string // what --refresh-account did
 	Kinds, Source, Headroom, Pace                             map[string]string
 	Day, Hour, Min                                            string
 	RunsOut, RunsOutShort                                     string // at the recent rate: used up in …
@@ -79,11 +81,15 @@ var quotaZH = quotaText{
 	RecentThread: "最近本机会话，不一定是当前对话",
 	Requests:     "请求",
 	Title:        "额度", Observed: "观测于", Stale: "读数较旧", Reset: "重置", Remaining: "剩", Projected: "按当前速度重置时用到", None: "没有可读的本机额度。",
-	Kinds:    map[string]string{"five_hour": "5小时", "weekly": "每周", "monthly": "每月", "spend": "限额", "full": "完整", "unknown": "窗口"},
-	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "手填"},
-	Headroom: map[string]string{"spend": "额度富余：重置前用不完，可以升档", "normal": "额度正常：按 ★ 推荐档用", "conserve": "额度偏紧：保持 ★ 或降一档", "exhausted": "额度已用完：等重置或换用其他套餐", "unknown": "额度未知"},
-	Pace:     map[string]string{"surplus": "富余", "on_track": "正常", "tight": "偏紧", "exhausted": "用完", "reset_passed": "已过重置，等待读数", "unknown": "—"},
-	Day:      "天", Hour: "时", Min: "分",
+	StaleCodex:        "（modelplan quota --refresh-account 可刷新）",
+	RefreshTooSoon:    "Codex 读数刚问过，%s后才能再问；上面是已有读数。",
+	RefreshFailed:     "Codex 读数没有刷新%s；上面是已有读数。",
+	RefreshNotAllowed: "没有授权读取 Codex 账号，读数没有刷新。",
+	Kinds:             map[string]string{"five_hour": "5小时", "weekly": "每周", "monthly": "每月", "spend": "限额", "full": "完整", "unknown": "窗口"},
+	Source:            map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "手填"},
+	Headroom:          map[string]string{"spend": "额度富余：重置前用不完，可以升档", "normal": "额度正常：按 ★ 推荐档用", "conserve": "额度偏紧：保持 ★ 或降一档", "exhausted": "额度已用完：等重置或换用其他套餐", "unknown": "额度未知"},
+	Pace:              map[string]string{"surplus": "富余", "on_track": "正常", "tight": "偏紧", "exhausted": "用完", "reset_passed": "已过重置，等待读数", "unknown": "—"},
+	Day:               "天", Hour: "时", Min: "分",
 	RunsOut: "按最近的用量约 %s后用完", RunsOutShort: "≈%s用完",
 	Left: "剩%s", WeekNarrow: "周", RunsOutNarrow: "≈%s",
 	Credits: "点数", Unlimited: "不限量", ReadAgo: "%s前读取", OnCredits: "额度已用完：继续用会扣点数",
@@ -93,11 +99,15 @@ var quotaEN = quotaText{
 	RecentThread: "latest local thread, may not be this one",
 	Requests:     "requests",
 	Title:        "Quota", Observed: "observed", Stale: "old reading", Reset: "resets", Remaining: "left", Projected: "at this pace, used by reset", None: "No local quota readings.",
-	Kinds:    map[string]string{"five_hour": "5h", "weekly": "week", "monthly": "month", "spend": "spend", "full": "full", "unknown": "window"},
-	Source:   map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "manual"},
-	Headroom: map[string]string{"spend": "Surplus: it resets unused, worth stepping up", "normal": "On track: use the ★ effort", "conserve": "Tight: stay at ★ or step down", "exhausted": "Exhausted: wait for the reset or use another plan", "unknown": "Quota unknown"},
-	Pace:     map[string]string{"surplus": "surplus", "on_track": "on track", "tight": "tight", "exhausted": "exhausted", "reset_passed": "reset passed; awaiting reading", "unknown": "—"},
-	Day:      "d", Hour: "h", Min: "m",
+	StaleCodex:        "(modelplan quota --refresh-account refreshes it)",
+	RefreshTooSoon:    "Codex was asked moments ago; it can be asked again in %s. Figures above are the existing reading.",
+	RefreshFailed:     "The Codex reading was not refreshed%s. Figures above are the existing reading.",
+	RefreshNotAllowed: "Reading the Codex account is not allowed, so nothing was refreshed.",
+	Kinds:             map[string]string{"five_hour": "5h", "weekly": "week", "monthly": "month", "spend": "spend", "full": "full", "unknown": "window"},
+	Source:            map[string]string{"claude-code": "Claude Code", "codex": "Codex", "user": "manual"},
+	Headroom:          map[string]string{"spend": "Surplus: it resets unused, worth stepping up", "normal": "On track: use the ★ effort", "conserve": "Tight: stay at ★ or step down", "exhausted": "Exhausted: wait for the reset or use another plan", "unknown": "Quota unknown"},
+	Pace:              map[string]string{"surplus": "surplus", "on_track": "on track", "tight": "tight", "exhausted": "exhausted", "reset_passed": "reset passed; awaiting reading", "unknown": "—"},
+	Day:               "d", Hour: "h", Min: "m",
 	RunsOut: "at the recent rate, used up in %s", RunsOutShort: "out ~%s",
 	Left: "%s left", WeekNarrow: "wk", RunsOutNarrow: "~%s",
 	Credits: "credits", Unlimited: "unlimited", ReadAgo: "read %s ago", OnCredits: "Exhausted: further use draws on credits",
@@ -169,6 +179,9 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 		age := ""
 		if a.Stale {
 			age = " " + s.c(warn, q.Stale)
+			if a.Source == "codex" {
+				age += " " + s.c(dim, q.StaleCodex)
+			}
 		}
 		fmt.Fprintf(w, "%s %s%s\n", s.c(amber, "▲"), strings.Join(head, s.c(dim, " · ")), age)
 		for _, x := range a.Windows {
@@ -189,6 +202,9 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 				kind += " " + LimitName(a.SafeLimit(x.Limit))
 			}
 			line := fmt.Sprintf("  %s %s %s  %s  %s  %s", pad(kind, 8), s.c(s.paceColour(x.Pace), bar(frac, 10)), s.c(hi, pad(used, 5)), s.c(dim, pad(left, 9)), s.c(tcyan, pad(reset, 10)), s.c(s.paceColour(x.Pace), q.Pace[x.Pace]))
+			if x.Stale && !a.Stale {
+				line += " " + s.c(warn, q.Stale)
+			}
 			if x.ProjectedPercent != nil && x.Pace != "surplus" {
 				line += s.c(dim, fmt.Sprintf(" · %s %.0f%%", q.Projected, *x.ProjectedPercent))
 			}
@@ -236,6 +252,28 @@ func (s Style) Quota(w io.Writer, r quota.Report) {
 			verdict = LimitName(a.SafeLimit(a.Pool)) + " · " + verdict // the allowance the verdict is about
 		}
 		fmt.Fprintf(w, "  %s %s\n", s.c(dim, "→"), s.c(s.paceColour(map[string]string{"spend": "surplus", "conserve": "tight", "exhausted": "exhausted"}[a.Headroom]), verdict))
+	}
+	if f := r.Refresh; f != nil {
+		line := ""
+		switch f.Status {
+		case "too_soon":
+			wait := 1
+			if f.NextAt != nil && int(time.Until(*f.NextAt).Minutes()) > 0 {
+				wait = int(time.Until(*f.NextAt).Minutes()) + 1
+			}
+			line = fmt.Sprintf(q.RefreshTooSoon, q.Dur(wait))
+		case "failed":
+			why := ""
+			if f.Reason != "" {
+				why = " (" + f.Reason + ")"
+			}
+			line = fmt.Sprintf(q.RefreshFailed, why)
+		case "not_allowed":
+			line = q.RefreshNotAllowed
+		}
+		if line != "" {
+			fmt.Fprintln(w, s.c(warn, line))
+		}
 	}
 }
 
