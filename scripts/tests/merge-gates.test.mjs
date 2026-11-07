@@ -48,6 +48,8 @@ test("tier: path rules, test-only rule, override and gate self-protection", () =
   assert.equal(R.pathTier([]), 1);
   assert.equal(R.pathTier([".github/workflows/merge-gates.yml"]), 2);
   assert.equal(R.pathTier(["scripts/merge-gates/rules.mjs"]), 2);
+  assert.equal(R.pathTier([R.TIER_TABLE]), 2, "the tier table decides which scenarios need evidence");
+  assert.equal(R.pathTier(["docs/a.md", R.TIER_TABLE]), 2);
   assert.equal(R.pathTier([".github/workflows/release.yml"]), 2);
   assert.deepEqual(R.prPaths([file("docs/new.md", { previous_filename: "cli/old.go" })]), ["docs/new.md", "cli/old.go"]);
   const items = R.feed([comment("REVIEW-TIER: 2"), comment("note\nREVIEW-TIER: 0"), comment("REVIEW-TIER: 0", { login: "x", id: 3 })], [review("REVIEW-TIER: 1")]);

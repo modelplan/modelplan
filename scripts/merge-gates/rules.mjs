@@ -49,8 +49,8 @@ const TEST_RE = /(^|\/)Tests\/|^desktop\/tests\/|(^|\/)tests?\/|_test\.go$|\.(te
 const TIER2_RE = /^schema\/app-cli\/|^cli\/internal\/appserver\/wire\/|^cli\/internal\/swiftwire\/|^clients\/swift\/|keychain|consent|credential|secret|privacy|signing|codesign|notari[sz]|sparkle|\.github\/workflows\/[^/]*(release|packag|candidate|sign|notar|distribution)[^/]*$|desktop\/native\/tools\/[^/]*(identity|sign|seal|bundle)[^/]*$|^scripts\/release|^cli\/internal\/(quota|readers|connections)\/|^desktop\/native\/ModelPlan(EngineStore|EngineClient|CockpitWeb)\/|^desktop\/cockpit\/src\/bridge/i;
 const TIER0_RE = /^docs\/|\.md$|^NOTICE|^LICEN|\.(png|jpe?g|svg|webp|woff2?|ttf|otf)$|^desktop\/official-visuals\/|^desktop\/third-party\/|^scripts\/check-[a-z-]+\.mjs$|^scripts\/tests\/(check-|[a-z-]+-pack\.test\.mjs$)|^\.github\/|^source-policy\.json$/;
 // Stricter: the gate's own rules and workflows are tier 2, so a PR cannot loosen the gate that judges it
-// with less review than a seam change gets.
-const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$/;
+// with less review than a seam change gets. The tier table counts too: it decides which scenarios need evidence.
+const GATE_SELF_RE = /^scripts\/merge-gates\/|^\.github\/workflows\/merge-gates[^/]*$|^desktop\/native\/verification\/scenario-tiers\.tsv$/;
 
 export function tierOverride(items) {
   let t = null;
