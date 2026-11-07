@@ -33,6 +33,8 @@ import ModelPlanDock
     static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
     /// The coordinator's prewarm and open steps, for timing tests.
     public static var verificationCockpitTrace: ((String) -> Void)?
+    /// False measures the open without a prewarmed page, as before CKP-SHELL-20.
+    static var verificationPrewarm = true
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -90,7 +92,7 @@ import ModelPlanDock
             owner.prepare()
             // CKP-SHELL-20: a synthetic page from a test factory is made only by a click.
             #if MODELPLAN_TEST_ONLY_SPI
-            let prewarms = verificationFactory == nil
+            let prewarms = verificationFactory == nil && verificationPrewarm
             #else
             let prewarms = true
             #endif
