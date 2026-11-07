@@ -112,7 +112,7 @@ func TestSelectCockpitPublicationUsesCurrentReadingsAndPublicationOrder(t *testi
 	}
 	d := &digest.Digest{Source: digest.ComponentClient, PublicationID: "0123456789abcdef01234567", PublishedAt: "2026-10-24T12:00:00Z", Models: []digest.Model{model("o1", "openai"), model("a1", "anthropic"), model("o2", "openai"), model("o3", "openai"), model("o4", "openai")}}
 	p := rows.Projection{Rows: []rows.Row{{ID: "codex", Kind: rows.KindTool, Consent: rows.ConsentAllowed, Accounts: []rows.Account{{ValueState: rows.ValueStateCurrent}}}, {ID: "claude", Kind: rows.KindTool, Consent: rows.ConsentAllowed, Accounts: []rows.Account{{ValueState: rows.ValueStateRetained}}}}}
-	got := selectCockpitPublication(d, p)
+	got := selectCockpitPublication(d, p, nil)
 	if got == nil || !got.Truncated || len(got.Models) != 3 || got.Models[0].ID != "o1" || got.Models[1].ID != "o2" || got.Models[2].ID != "o3" {
 		t.Fatalf("filtered lineup: %+v", got)
 	}
@@ -121,8 +121,12 @@ func TestSelectCockpitPublicationUsesCurrentReadingsAndPublicationOrder(t *testi
 			t.Fatalf("efforts: %+v", m.Efforts)
 		}
 	}
+	// CKP-FAD-02: a model in use leads, even one the three-model limit would have cut.
+	if used := selectCockpitPublication(d, p, map[string]bool{"o4": true}); used == nil || len(used.Models) != 3 || used.Models[0].ID != "o4" || used.Models[1].ID != "o1" || !used.Truncated {
+		t.Fatalf("in-use lineup: %+v", used)
+	}
 	p.Rows[0].Consent = rows.ConsentDenied
-	empty := selectCockpitPublication(d, p)
+	empty := selectCockpitPublication(d, p, nil)
 	if empty == nil || empty.Models == nil || len(empty.Models) != 0 || empty.Truncated {
 		t.Fatalf("empty current lineup: %+v", empty)
 	}

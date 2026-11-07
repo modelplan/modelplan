@@ -20,6 +20,9 @@ test('admitted cockpit details populate faders and pin on release',async({page})
  const box=await strips.nth(2).boundingBox();await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.waitForTimeout(600);
  await expect(page.locator('.st-pin')).toHaveCount(0);await page.mouse.up();
  await expect(strips.nth(0)).toContainText('Synthetic C');await expect(strips.nth(0).locator('.st-pin')).toHaveCount(1);
+ data.details.sessions=[{sessionRef:'0123456789abcdef',source:'codex',subscriptionRef:null,model:'model-b',effort:'high',projectLabel:null,lastObservedAt:'2026-10-24T12:00:00Z',state:'running',rate:null}];
+ expect(await receive(send('display',{data}))).toBe(true);
+ await expect(strips.nth(0)).toContainText('Synthetic C');await expect(strips.nth(1)).toContainText('Synthetic B');await expect(strips.nth(2)).toContainText('Synthetic A');
  delete data.details.publication;expect(await receive(send('display',{data}))).toBe(true);await expect(page.locator('.fd-ch.empty')).toHaveCount(3);
 });
 

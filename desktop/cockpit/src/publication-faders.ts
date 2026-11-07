@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Map published model verdicts to the study's fader inputs. This does not
-// select, rank, or fill missing values; the producer owns those decisions.
-type Fader = {id:string;name:string;short:string;rec:string;e:[string,number|null,number|null,number|null][];accounts:string[];sessions:never[]};
+// Map published model verdicts to the study's fader inputs. This does not fill
+// missing values. Models in use lead, then the publication's own recommended order.
+type Fader = {id:string;name:string;short:string;rec:string;e:[string,number|null,number|null,number|null][];accounts:string[];sessions:{ref:string;sub:string|null}[]};
 const object=(value:unknown):Record<string,unknown>|null=>value!==null&&typeof value==='object'&&!Array.isArray(value)?value as Record<string,unknown>:null;
 const text=(value:unknown):string|null=>typeof value==='string'&&value.length>0&&value.length<=200?value:null;
 const number=(value:unknown):number|null=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1e12?value:null;
@@ -11,7 +11,7 @@ const level=(value:unknown):string|null=>{
  return levels[value.toLowerCase()]??null;
 };
 
-export function publicationFaders(publication:unknown):{accounts:never[];faders:Fader[]} {
+export function publicationFaders(publication:unknown,live:unknown=null):{accounts:never[];faders:Fader[]} {
  const root=object(publication);
  if(!root||root.contractVersion!==1||!Array.isArray(root.models))return {accounts:[],faders:[]};
  const faders:Fader[]=[];
@@ -26,7 +26,8 @@ export function publicationFaders(publication:unknown):{accounts:never[];faders:
   }
   rows.sort((a,b)=>['Low','Med','High','XHigh','Max'].indexOf(a[0])-['Low','Med','High','XHigh','Max'].indexOf(b[0]));
   if(!recommendedStarred)continue;
-  faders.push({id,name,short:name,rec:recommended,e:rows,accounts:[],sessions:[]});
+  const sessions=(Array.isArray(live)?live:[]).flatMap(value=>{const session=object(value),ref=text(session?.sessionRef);return ref&&session?.model===id?[{ref,sub:text(session.subscriptionRef)}]:[];});
+  faders.push({id,name,short:name,rec:recommended,e:rows,accounts:[],sessions});
  }
- return {accounts:[],faders};
+ return {accounts:[],faders:[...faders.filter(f=>f.sessions.length),...faders.filter(f=>!f.sessions.length)]};
 }

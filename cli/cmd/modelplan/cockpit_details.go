@@ -35,7 +35,7 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 	if err != nil {
 		return result, err
 	}
-	result.Publication = selectCockpitPublication(published, view.Projection)
+	result.Publication = selectCockpitPublication(published, view.Projection, nil)
 	now := time.Now()
 	redBelow := admission.RedBelow
 	if redBelow == 0 {
@@ -234,6 +234,13 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 		// The existing live ledger does not prove a per-session binding. #410 may
 		// supply that evidence; never substitute a source-wide current binding.
 		result.Sessions = append(result.Sessions, wire.CockpitSession{SessionRef: session.Ref, Source: session.Source, Model: model, Effort: effort, ProjectLabel: label, LastObservedAt: session.LastAt, State: session.Status, Rate: session.Rate.Value})
+	}
+	inUse := map[string]bool{}
+	for _, session := range result.Sessions {
+		inUse[session.Model] = true
+	}
+	if len(inUse) > 0 {
+		result.Publication = selectCockpitPublication(published, view.Projection, inUse)
 	}
 	return result, ctx.Err()
 }

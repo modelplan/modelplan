@@ -23,3 +23,12 @@ test('glm-450-4 ignores a starred duplicate when the retained recommended row is
  ]}]};
  assert.deepEqual(publicationFaders(p),{accounts:[],faders:[]});
 });
+
+test('CKP-FAD-02 models in use lead, then the publication order',()=>{
+ const model=id=>({id,name:id,recommended:'medium',efforts:[{effort:'medium',star:true,ability:1,cost:1,time:null}]});
+ const live=[{sessionRef:'0123456789abcdef',subscriptionRef:null,model:'c'},{sessionRef:'fedcba9876543210',subscriptionRef:null,model:'unknown'}];
+ const {faders}=publicationFaders({contractVersion:1,models:[model('a'),model('b'),model('c')]},live);
+ assert.deepEqual(faders.map(f=>f.id),['c','a','b']);
+ assert.deepEqual(faders[0].sessions,[{ref:'0123456789abcdef',sub:null}]);
+ assert.deepEqual(faders[1].sessions,[]);
+});
