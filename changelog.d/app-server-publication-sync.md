@@ -1,0 +1,1 @@
+The app now fetches the public publication by itself soon after it starts, so a Mac with only the app installed gets its faders without running `modelplan sync`. The cockpit fills in when the data arrives; while it cannot be fetched the app keeps working, retries, and the faders say the data is unavailable.

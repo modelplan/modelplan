@@ -1145,7 +1145,7 @@ func desktopCmd(stdout io.Writer, st *store.Store, c common, readOnly, withHisto
 	if !c.offline && !readOnly {
 		refreshAccountLater(st)
 		refreshNativeLater(st)
-		if (d == nil || time.Since(ps.CheckedAt) > staleAfter) && time.Since(ps.LastAttemptAt) > backgroundEvery {
+		if publicationSyncDue(d, ps, now) {
 			_ = startDetached("sync", "--quiet", "--scheduled", "--base", c.base)
 		}
 	}

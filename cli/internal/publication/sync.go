@@ -137,6 +137,7 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	cached := st
 	if st.Base != c.Base { // another source: nothing cached is comparable
 		st = store.State{Base: c.Base}
 	}
@@ -160,6 +161,10 @@ func (c *Client) Sync(ctx context.Context, force bool) (Result, error) {
 	st.LastAttemptAt = now
 	res, err := c.sync(ctx, &st)
 	if err != nil {
+		if cached.Base != c.Base && cached.PublicationID != "" {
+			st = cached // the failed source must not cost the verified publication
+			st.LastAttemptAt = now
+		}
 		st.LastError = err.Error()
 	} else {
 		st.LastError = ""

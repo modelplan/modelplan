@@ -261,7 +261,8 @@ extension RealBinaryTests {
         try await eventually { self.resultCount(home) == 1 }
         let before = await agent.count(); XCTAssertEqual(before, 0)
         _ = try await client.refresh(try WireRefreshRequestParams(scopes: [credentialScope]))
-        try await eventually { await agent.count() == 1 }
+        // The serial refresh worker can be inside a Codex read first; only the request matters.
+        try await eventually({ await agent.count() == 1 }, timeout: 15)
         let last = await agent.latest()
         XCTAssertEqual(last?.request.interactive, false)
         XCTAssertNil(last?.userAction)

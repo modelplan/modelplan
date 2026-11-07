@@ -128,11 +128,28 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 		broker.Changed = shared.Notify
 		closeBackend = scheduler.Close
 	}
-	var sessionStarted func()
+	var fetcher *appPublication
+	if !options.Offline && !options.ReadOnly {
+		fetcher = newAppPublication(ctx, st, appPublicationBase())
+	}
+	if fetcher != nil {
+		closeScheduler := closeBackend
+		closeBackend = func() {
+			closeScheduler()
+			fetcher.Close()
+		}
+	}
 	var decisions func() []wire.RefreshDecision
 	if scheduler != nil {
-		sessionStarted = scheduler.StartAutomatic
 		decisions = scheduler.Decisions
+	}
+	sessionStarted := func() {
+		if scheduler != nil {
+			scheduler.StartAutomatic()
+		}
+		if fetcher != nil {
+			fetcher.Start()
+		}
 	}
 	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions})
 	broker.Request = server.ReadCredential

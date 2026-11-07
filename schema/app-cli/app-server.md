@@ -386,8 +386,11 @@ optional `resetEvents` on the shared rows projection in `rows/subscribe`,
 was unavailable; an empty array means the verified source had no eligible
 records. Older clients never receive the field. This is a public announcement,
 not evidence that any personal quota was reset; acknowledgement and notification
-state belong to the App. The existing publication cache and rows watcher supply
-refresh; no additional fetch is started.
+state belong to the App. The events come from the verified publication cache, and
+the rows watcher picks up a new publication. After the first session starts, the
+server keeps that cache current with the ordinary public publication sync, which
+needs no consent and carries no account data; `--offline` and `--read-only` start
+no fetch. The events themselves start no fetch, and queries read only the cache.
 
 The server also advertises `resetEventLinksV1` when the publication source is
 configured. Clients independently declare it to receive `source.links` on reset

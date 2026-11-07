@@ -67,6 +67,16 @@ carry their admission stamp; private queries also carry scopes. Results are
 reserved before admission, and stale results produce `consent_changed` without
 items. A query failure does not mutate rows.
 
+The publication is public data. After the first session starts, the ordinary
+command fetches it with `publication.Client.Sync` (same lock, interval and
+verification as `modelplan sync`). The backend's `state.json` watcher then gives
+subscribers a rows event and the cockpit re-queries. It needs no consent scope and ignores
+`MODELPLAN_READERS`. `--offline` and `--read-only` fetch nothing. With an empty
+cache a failure retries after 30 seconds, backing off to 10 minutes; a cached
+publication follows the shared rule (stale after 6 hours, at most one attempt per
+10 minutes across clients). A failure never reaches the protocol: queries keep
+answering from the cache, and `publication/get` and the cockpit stay unavailable.
+
 ## Bounds and supervision
 
 There is one writer. Control messages precede queued data and are not coalesced.
