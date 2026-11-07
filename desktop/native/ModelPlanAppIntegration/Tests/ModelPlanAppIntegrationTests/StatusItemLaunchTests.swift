@@ -4,13 +4,77 @@ import XCTest
 @testable import ModelPlanAppIntegration
 
 /// G3-22: the menu bar item must never be blank. Uses the window server (status bar), so GUI leg.
+@MainActor private final class StatusClickConsole: EngineRowsConsoleSurface {
+    var shows = 0
+    func show() { shows += 1 }
+    func render() {}
+    func hide() {}
+}
+
 @MainActor final class StatusItemLaunchTests: XCTestCase {
-    private func application() async throws -> EngineDockMenuApplication {
+    private func click(_ type: NSEvent.EventType, on button: NSButton, flags: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: flags, timestamp: 0,
+            windowNumber: button.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+
+    /// D44: both halves of a click are claimed, so AppKit never starts menu tracking for a left click.
+    func testLeftClickOpensTheCockpitWithoutTheMenu() async throws {
+        let console = StatusClickConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertEqual(console.shows, 0, "the cockpit opens on mouse-up")
+        XCTAssertTrue(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.shows, 1)
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseUp, on: button)), "an unpaired mouse-up is not a click")
+    }
+
+    /// D44: these clicks are left to AppKit, which shows the attached menu; sending them would start real tracking.
+    func testRightAndControlClickKeepTheMenu() async throws {
+        let console = StatusClickConsole()
+        let app = try await application(cockpitEntryEnabled: true, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(app.statusMenuForTesting === app.liveStatusMenu, "the menu stays attached for right-click and accessibility")
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseDown, on: button, flags: .control)))
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseUp, on: button, flags: .control)))
+        XCTAssertFalse(app.handleStatusClick(try click(.rightMouseDown, on: button)))
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseDown, on: button, flags: .command)), "Command-drag moves the icon")
+        XCTAssertEqual(console.shows, 0)
+    }
+
+    func testLeftClickKeepsTheMenuWhileTheCockpitEntryIsOff() async throws {
+        let console = StatusClickConsole()
+        let app = try await application(cockpitEntryEnabled: false, console: console)
+        defer { app.removeStatusItem(); app.composition.dock.close() }
+        app.installStatusItem(); app.renderMenu()
+        let button = try XCTUnwrap(app.statusButtonForTesting)
+        XCTAssertTrue(app.statusMenuForTesting === app.liveStatusMenu)
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseDown, on: button)))
+        XCTAssertFalse(app.handleStatusClick(try click(.leftMouseUp, on: button)))
+        XCTAssertEqual(console.shows, 0)
+    }
+
+    func testReopeningTheAppOpensTheCockpitOnlyWhenTheEntryIsOn() async throws {
+        for enabled in [true, false] {
+            let console = StatusClickConsole()
+            let app = try await application(cockpitEntryEnabled: enabled, console: console)
+            defer { app.composition.dock.close() }
+            XCTAssertFalse(app.applicationShouldHandleReopen(.shared, hasVisibleWindows: false))
+            XCTAssertEqual(console.shows, enabled ? 1 : 0)
+        }
+    }
+
+    private func application(cockpitEntryEnabled: Bool? = nil,
+                             console: (any EngineRowsConsoleSurface)? = nil) async throws -> EngineDockMenuApplication {
         _ = NSApplication.shared
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("status-item-" + UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
-        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, dockEnvironment: normalEntryTestEnvironment, activateSettings: {})
+        let app = EngineRowsEntry.make(configuration: .init(executableURL: root.appendingPathComponent("not-launched"), applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true), settingsStore: store, createsNativePanels: false, cockpitEntryEnabled: cockpitEntryEnabled, dockEnvironment: normalEntryTestEnvironment, makeConsole: console.map { surface in { _ in surface } }, activateSettings: {})
         await app.prepare()
         return app
     }
