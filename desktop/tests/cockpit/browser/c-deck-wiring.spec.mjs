@@ -53,6 +53,8 @@ test('CKP-MFD-23 the time list shows admitted last-seen sessions without claimin
  await page.locator('.mfd-ok [data-opt="time"] [data-choice="7d"]').click();
  const rows=page.locator('.ws-list .ws');await expect(rows).toHaveCount(2);
  await expect(page.locator('.ws-list .ws-h')).toHaveText(['Running 1','Last seen 1']);
+ // glm-608-2: the rows have no action, so they do not offer one to the keyboard.
+ await expect(page.locator('.ws-list .ws').first()).toHaveAttribute('aria-disabled','true');await expect(page.locator('.ws-list .ws').first()).toHaveAttribute('tabindex','-1');
  await expect(page.locator('.ws-list')).not.toContainText('Ended');
  await expect(rows.first()).toHaveClass(/\brun\b/);await expect(rows.first().locator('.ws-p')).toHaveText('alpha');
  await expect(rows.nth(1).locator('.ws-tk')).toHaveText('--');

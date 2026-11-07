@@ -78,7 +78,7 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
  // running or idle and the last observation; it is never an end time, and per-session tokens are not reported.
  function lastSeen(members:ReturnType<typeof cockpitMembers>,ids:Map<string,string>){
   const detail=data?.details;if(!detail||detail.sessionCoverage!=='local-last-seen')return [];
-  return detail.sessions.slice(0,200).flatMap(x=>{const at=Date.parse(x.lastObservedAt);if(!Number.isFinite(at)||(x.state!=='running'&&x.state!=='idle'))return [];
+  return detail.sessions.slice(0,64).flatMap(x=>{const at=Date.parse(x.lastObservedAt);if(!Number.isFinite(at)||(x.state!=='running'&&x.state!=='idle'))return [];
    const member=x.subscriptionRef?members.find(m=>m.key===x.subscriptionRef):undefined;
    return [{ref:x.sessionRef,sub:member?ids.get(member.key)??null:null,tool:x.source,model:x.model,effort:x.effort,fast:false,project:x.projectLabel??'--',running:x.state==='running',startedAt:null,endedAt:null,lastAt:at,tokens:null}];});
  }
