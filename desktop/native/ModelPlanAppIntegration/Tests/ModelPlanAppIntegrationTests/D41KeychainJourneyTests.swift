@@ -86,6 +86,12 @@ private actor D41Engine: EngineClient {
         addTeardownBlock { @MainActor in await app.composition.stop(); app.composition.dock.close() }
         return (app, try XCTUnwrap(holder.engine))
     }
+    /// The consent buttons act only in a visible window, as a real click would.
+    private func show(_ content: NSView) {
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 560, height: 480), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = content; window.orderFrontRegardless()
+        addTeardownBlock { @MainActor in window.orderOut(nil) }
+    }
     private func views(_ root: NSView) -> [NSView] { [root] + root.subviews.flatMap(views) }
     private func view(_ id: String, in root: NSView) -> NSView? { views(root).first { $0.accessibilityIdentifier() == id } }
     private func card(_ app: EngineDockMenuApplication) throws -> DockCardContent {
@@ -96,6 +102,7 @@ private actor D41Engine: EngineClient {
     func testAllowIsTheOnlyThingThatSendsTheKeychainGrant() async throws {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
+        show(sheet)
         let line = try XCTUnwrap(view("scope.firstRun.keychain", in: sheet) as? NSTextField)
         XCTAssertTrue(line.stringValue.contains("Keychain") && line.stringValue.contains("Always Allow"), line.stringValue)
         let grantsBefore = await engine.recorded()
@@ -115,6 +122,7 @@ private actor D41Engine: EngineClient {
     func testLaterRecordsNothingAndLeavesTheStandingState() async throws {
         let (app, engine) = try await launch(keychain: "unset")
         let sheet = try app.scopeConsentEntry.makeFirstRunView(language: .english)
+        show(sheet)
         (try XCTUnwrap(view("scope.keychain.later", in: sheet) as? NSButton)).performClick(nil)
         for _ in 0..<100 where view("scope.firstRun.keychain", in: sheet) != nil { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNil(view("scope.firstRun.keychain", in: sheet), "Later closes the question")
