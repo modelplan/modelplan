@@ -65,14 +65,15 @@ private actor S04SyntheticClient: EngineClient {
             makeClient: { _, engineStore in S04SyntheticClient(store: engineStore, rows: rows) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         defer { app.composition.dock.close() }
-        for _ in 0..<200 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        // The widget takes about three seconds to settle on a hosted Mac.
+        for _ in 0..<1000 where liveHintLayers().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
         // #529 supplies the real visible-widget anchor, so the first hint must now appear.
         let first = try XCTUnwrap(liveHintLayers().first, "The first hint must appear on the real visible widget")
         let firstCard = try XCTUnwrap(first.input?.firstUse)
         XCTAssertEqual(liveHintLayers().count, 1)
         XCTAssertEqual(firstCard.anchorID, "dock.findWidget")
         first.onAction?(.dismissHint(offerID: firstCard.offerID, reason: .explicitButton))
-        for _ in 0..<200 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
+        for _ in 0..<1000 where !liveHintLayers().contains(where: { $0.input?.firstUse?.anchorID == "dock.ringRefresh" }) {
             try await Task.sleep(for: .milliseconds(10))
         }
         let second = try XCTUnwrap(liveHintLayers().first { $0.input?.firstUse?.anchorID == "dock.ringRefresh" })

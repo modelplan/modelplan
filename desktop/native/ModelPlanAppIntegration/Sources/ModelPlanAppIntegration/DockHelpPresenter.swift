@@ -25,6 +25,7 @@ import ModelPlanSettings
     private var currentOffer: HintOffer?
     private var currentExplanationID: String?
     private var currentSurfaceValue: DockHelpSurface?
+    private var currentReducedMotion: Bool?
     private var generation: UInt64 = 0
     private var retired = false
 
@@ -86,6 +87,7 @@ import ModelPlanSettings
         let effective = accessibility()
         input.reduceMotion = motionOverride ?? effective.motion
         input.reduceTransparency = effective.transparency
+        currentReducedMotion = input.reduceMotion
         layer.update(input)
         guard !retired, generation == token, isCurrent(surface),
               let placement = layer.presentation?.card,
@@ -105,8 +107,8 @@ import ModelPlanSettings
         container.addSubview(layer); window.contentView = container
         currentOffer = offer; currentSurfaceValue = surface
         layer.onAction = { [weak self] action in
-            guard let self, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface, self.isCurrent(surface) else { return }
+            guard let self, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current) else { return }
             if case .dismissHint(let id, _) = action, id == offer.id { self.dismiss(id) }
         }
         window.setFrame(screenRect, display: true); window.orderFrontRegardless()
@@ -120,9 +122,8 @@ import ModelPlanSettings
         }
         // Observe only this app's events; no global input monitor or new system permission.
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown]) { [weak self, weak window] event in
-            guard let self, let window, !self.retired, self.generation == token,
-                  self.currentOffer == offer, self.currentSurfaceValue == surface,
-                  self.isCurrent(surface), window.isVisible else { return event }
+            guard let self, let window, !self.retired, self.generation == token, self.currentOffer == offer,
+                  let current = self.currentSurfaceValue, self.isCurrent(current), window.isVisible else { return event }
             if event.type == .keyDown, event.keyCode == 53 {
                 self.dismiss(offer.id)
                 return nil
@@ -135,6 +136,14 @@ import ModelPlanSettings
 
     func updateAndVerify(_ presentation: HintPresentation) -> Bool {
         guard currentOffer == presentation.offer else { return false }
+        // The surface is republished on most refreshes; ordering the panel out and in each time flashes it.
+        let kind = presentation.offer.kind
+        if let surface = currentSurface(), let shown = currentSurfaceValue, surface.revealID == shown.revealID,
+           surface.visible, !surface.dragging, surface.anchors[kind] == shown.anchors[kind],
+           presentation.reducedMotion == currentReducedMotion, panel?.isVisible == true, isCurrent(surface) {
+            currentSurfaceValue = surface
+            return true
+        }
         return show(presentation.offer, motionOverride: presentation.reducedMotion)
     }
 
