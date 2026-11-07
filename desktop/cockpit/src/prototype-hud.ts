@@ -4,20 +4,41 @@
 // effort a running session last reported. Prototype: rocket-r1/porthole.js:49-76 for behaviour; the code is written here.
 import type {WireCockpitData} from '../generated/wire.js';
 import {FIELD_LIMIT,fieldModel,type FieldModel} from './field-model.js';
+import {cockpitMembers} from './members.js';
 
 const SVG='http://www.w3.org/2000/svg',TALL_ROWS=6,COMPACT_ROWS=3;
 const svg=<K extends keyof SVGElementTagNameMap>(tag:K,attributes:Record<string,string|number>)=>{const e=document.createElementNS(SVG,tag);for(const [k,v] of Object.entries(attributes))e.setAttribute(k,String(v));return e;};
 
-/** The user's vendors first, then publication order; the same list feeds the frontier and the HUD. */
-export function publishedFleet(data:WireCockpitData|null|undefined):FieldModel[] {
- const models=(data?.details?.publishedModels??[]).flatMap(m=>{const f=fieldModel(m);return f?[f]:[];}),lineup=new Set(data?.details?.publication?.models.map(m=>m.id)??[]);
- return models.filter(m=>lineup.has(m.id)).concat(models.filter(m=>!lineup.has(m.id))).slice(0,FIELD_LIMIT);
+// A subscription's tool to its model developer, the same map as eligibleCockpitVendors in the CLI.
+const toolDevelopers:Readonly<Record<string,string>>={codex:'openai',claude:'anthropic',gemini:'google',grok:'xai',kimi:'kimi',zai:'zhipuai',minimax:'minimax',qwen:'alibaba'};
+const WEEK=7*864e5,USED_LIMIT=3;
+export interface HudOptions {readonly scope?:string;readonly now?:number;readonly selected?:string|null;readonly closed?:boolean}
+export type HudModel=FieldModel&{readonly dominated:boolean;readonly latestEffort?:string|null};
+function roundRobin(list:readonly HudModel[]) {
+ const groups=new Map<string,HudModel[]>();for(const m of list)(groups.get(m.dev)??groups.set(m.dev,[]).get(m.dev)!).push(m);
+ const out:HudModel[]=[];for(let slot=0;slot<Math.max(0,...[...groups.values()].map(g=>g.length));slot++)for(const g of groups.values())if(g[slot])out.push(g[slot]!);
+ return out;
+}
+/** One order for the scope (hud-selection/selection.js): models used this week, the lineup, then developers in turn; dominated last. */
+export function publishedFleet(data:WireCockpitData|null|undefined,scope='all',now=Date.now()):HudModel[] {
+ const published=data?.details?.publishedModels??[],developerOf=new Map(published.map(m=>[m.id,m.developerId]));
+ const member=scope==='all'||!data?null:cockpitMembers(data).find(m=>m.key===scope)??null;
+ if(scope!=='all'&&!member)return [];
+ const recent=[...(data?.details?.sessions??[])].filter(s=>{const at=Date.parse(s.lastObservedAt);return (!member||s.subscriptionRef===member.key)&&at>=now-WEEK&&at<=now;}).sort((a,b)=>Date.parse(b.lastObservedAt)-Date.parse(a.lastObservedAt));
+ const latest=new Map<string,string|null>();for(const s of recent)if(!latest.has(s.model))latest.set(s.model,s.effort);
+ const developer=member?toolDevelopers[member.row.id]:undefined;
+ const candidates=published.flatMap(m=>{const f=fieldModel(m);return f&&(!member||developerOf.get(m.id)===developer||latest.has(m.id))?[f]:[];});
+ const beaten=(m:FieldModel)=>candidates.some(n=>n.id!==m.id&&n.sel[2]>0&&m.sel[2]>0&&n.sel[1]>=m.sel[1]&&n.sel[2]<=m.sel[2]&&(n.sel[1]>m.sel[1]||n.sel[2]<m.sel[2]));
+ const models=candidates.map((m):HudModel=>({...m,dominated:beaten(m),...(latest.has(m.id)?{latestEffort:latest.get(m.id)??null}:{})}));
+ const byId=new Map(models.map(m=>[m.id,m]));
+ const used=[...latest.keys()].flatMap(id=>{const m=byId.get(id);return m?[m]:[];}).slice(0,USED_LIMIT),taken=new Set(used.map(m=>m.id));
+ const rest=models.filter(m=>!taken.has(m.id)),lineup=(data?.details?.publication?.models??[]).flatMap(p=>{const m=rest.find(x=>x.id===p.id&&!x.dominated);return m?[m]:[];}),picked=new Set(lineup.map(m=>m.id));
+ return [...used,...lineup,...roundRobin(rest.filter(m=>!m.dominated&&!picked.has(m.id))),...roundRobin(rest.filter(m=>m.dominated&&!picked.has(m.id)))].slice(0,FIELD_LIMIT);
 }
 /** Each model's most recently seen effort, when a session reported one that the model publishes. */
-function seenEfforts(data:WireCockpitData|null|undefined,models:readonly FieldModel[]) {
+function seenEfforts(models:readonly HudModel[]) {
  const seen=new Map<string,readonly [string,number,number,number]>();
- const sessions=[...(data?.details?.sessions??[])].sort((a,b)=>Date.parse(a.lastObservedAt)-Date.parse(b.lastObservedAt));
- for(const s of sessions){const m=models.find(x=>x.id===s.model),row=s.effort&&m?m.e.find(r=>r[0].toLowerCase()===s.effort!.toLowerCase()):undefined;if(m&&row)seen.set(m.id,row);}
+ for(const m of models){const row=m.latestEffort?m.e.find(r=>r[0].toLowerCase()===m.latestEffort!.toLowerCase()):undefined;if(row)seen.set(m.id,row);}
  return seen;
 }
 /** One point per model at ★: log cost from the cheapest ★, linear ability. */
@@ -38,17 +59,19 @@ export function miniChart(models:readonly FieldModel[],seen:ReadonlyMap<string,r
  }
  return root;
 }
-export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string) {
- const fleet=publishedFleet(data),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
- host.replaceChildren();host.hidden=!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(!rows.length)return;
+export function paintHud(host:HTMLElement,data:WireCockpitData|null|undefined,compact:boolean,locale:string,options:HudOptions={}) {
+ const fleet=publishedFleet(data,options.scope,options.now),rows=fleet.slice(0,compact?COMPACT_ROWS:TALL_ROWS);
+ host.replaceChildren();host.hidden=!!options.closed||!rows.length;host.classList.toggle('hud-b',!compact);host.classList.toggle('hud-strip',compact);if(host.hidden)return;
  host.setAttribute('role','group');host.setAttribute('aria-label',locale==='en'?'Published models':'已发布模型');
- if(!compact){const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(data,rows),162,77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);}
+ if(!compact){const chart=document.createElement('div');chart.className='hud-chart';chart.append(miniChart(rows,seenEfforts(rows),162,77,locale==='en'?'Ability against cost at each recommended effort':'各推荐档位的能力与成本'));host.append(chart);}
  const list=document.createElement('div');list.className='hud-list';
  for(const [i,m] of rows.entries()){
-  const row=document.createElement('button');row.type='button';row.className='hp';row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
+  const row=document.createElement('button');row.type='button';row.className='hp'+(m.id===options.selected?' selected':'')+(!compact&&m.dominated?' dominated':'');row.dataset.hudModel=m.id;row.dataset.hudName=m.name;row.title=m.name;
   const n=document.createElement('span');n.className='hp-n';n.textContent=String(i+1);
-  const name=document.createElement('b');name.textContent=m.short;
-  const rec=document.createElement('span');rec.className='hp-rec';rec.textContent='★'+m.rec;
+  // A running session at ★ glows the star; at any other effort the name turns gold (porthole.js:56-63).
+  const atStar=m.latestEffort!==undefined&&m.latestEffort?.toLowerCase()===m.rec.toLowerCase(),elsewhere=m.latestEffort!==undefined&&!atStar;
+  const name=document.createElement('b');name.textContent=m.short;if(elsewhere)name.className='gold';
+  const rec=document.createElement('span');rec.className='hp-rec'+(atStar?' on':'');rec.textContent='★'+m.rec;
   row.append(n,name,rec);list.append(row);
  }
  host.append(list);

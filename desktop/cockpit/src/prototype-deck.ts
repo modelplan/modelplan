@@ -95,8 +95,8 @@ export function mountPrototypeDeck(root:HTMLElement,onScope?:(key:string)=>boole
   // The overview follows the selected scope; the full list (the global lamp's destination) never does.
   const allAlerts=data?cautionItems(data,now,redBelow()).map(x=>({member:x.member,level:x.level,text:locale==='en'?x.text.en:x.text.zh})):[];
   const alerts=allAlerts.filter(x=>scope==='all'||x.member===scope).map(({level,text})=>({level,text}));
-  // Public model data for the frontier (owner D39/D-B): the user's vendors first, then publication order, ten at most.
-  const published=publishedFleet(data);
+  // Public model data for the frontier (owner D39/D-B): the shared selection for this scope, ten at most.
+  const published=publishedFleet(data,scope,now);
   return {now,accounts,alerts,allAlerts,events:[],...historyView(data,ids,now,locale),sessionRanking:lastSeen(members,ids),models:published,lineup:[],selection:{scope:scope==='all'?null:ids.get(scope)??null,field:published},empty:accounts.length===0,ids,members};
  }
  function paint(keepFaders=false,now?:number){
