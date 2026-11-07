@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 7312b209f8d09fd56df529571e50f1537b4f64422a4277ed0c3b613bd4442f62
+// Schema SHA-256: 9f8f76204b34fdfe6c3de0488a813876ce238f228035c8fa9500be4068676039
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
@@ -45,6 +45,7 @@ export type WireCockpitData = {
 
 export type WireCockpitDetails = {
   readonly "alerts": ReadonlyArray<WireCockpitAlert>;
+  readonly "forecasts"?: ReadonlyArray<WireCockpitForecast>;
   readonly "publication"?: WireCockpitPublication | null;
   readonly "resetEvents": ReadonlyArray<WireResetEvent>;
   readonly "sessionCoverage": string;
@@ -52,6 +53,16 @@ export type WireCockpitDetails = {
   readonly "sources": ReadonlyArray<string>;
   readonly "subscriptions": ReadonlyArray<WireCockpitSubscriptionDetails>;
   readonly "version": number;
+};
+
+export type WireCockpitForecast = {
+  readonly "basis": "recent-rate" | "cycle-average" | "none";
+  readonly "observedAt": string;
+  readonly "pace": "tight" | "on_track" | "surplus" | "exhausted";
+  readonly "runsOutAt": string | null;
+  readonly "source": string;
+  readonly "subscriptionRef": string;
+  readonly "windowId": string;
 };
 
 export type WireCockpitPublication = {
@@ -525,6 +536,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
         "maxItems": 128,
         "type": "array"
       },
+      "forecasts": {
+        "items": {
+          "$ref": "#/$defs/CockpitForecast"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
       "publication": {
         "anyOf": [
           {
@@ -581,6 +599,64 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "sessionCoverage",
       "resetEvents",
       "alerts"
+    ],
+    "type": "object"
+  },
+  "CockpitForecast": {
+    "additionalProperties": false,
+    "properties": {
+      "basis": {
+        "enum": [
+          "recent-rate",
+          "cycle-average",
+          "none"
+        ],
+        "type": "string"
+      },
+      "observedAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "pace": {
+        "enum": [
+          "tight",
+          "on_track",
+          "surplus",
+          "exhausted"
+        ],
+        "type": "string"
+      },
+      "runsOutAt": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      },
+      "windowId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "source",
+      "subscriptionRef",
+      "windowId",
+      "runsOutAt",
+      "pace",
+      "basis",
+      "observedAt"
     ],
     "type": "object"
   },
