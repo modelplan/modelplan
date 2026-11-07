@@ -72,7 +72,9 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           filter: blob:none
-          sparse-checkout: scripts/merge-gates
+          sparse-checkout: |
+            scripts/merge-gates
+            desktop/native/verification
       - run: node scripts/merge-gates/evaluate.mjs
         env:
           GITHUB_TOKEN: ${{ github.token }}

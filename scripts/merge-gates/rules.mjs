@@ -223,10 +223,30 @@ export function parseScenarios(body) {
   return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g))].sort(), malformed: null };
 }
 
+// Lowest sufficient evidence per scenario (verification plan v2). Read from the default branch, never from a PR.
+export const TIER_TABLE = "desktop/native/verification/scenario-tiers.tsv";
+const CI_TIER = /^(T0|T1|T1P|T2|T2a|T2b)$/;
+
+export function parseTiers(text) {
+  const tiers = new Map();
+  for (const l of lines(text)) {
+    const [id, tier] = l.split("\t");
+    if (SCENARIO_ID.test(id) && /^T[0-9][A-Za-z0-9]*$/.test(tier ?? "")) tiers.set(id, tier);
+  }
+  return tiers;
+}
+
+// A table that cannot be read comes back empty, so every scenario then needs evidence.
+export function tiersFrom(read) {
+  try { return parseTiers(read()); } catch { return new Map(); }
+}
+
 // Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
-// or other commit. Stricter: a Scenarios line alone asks for it, with or without a ledger row (#661 landed with
-// C-10 unaccounted for because only G3 PRs were read here).
-export function evidenceState(pr, items, head) {
+// or other commit. As in evidence-gate.sh (D21): a PR naming a ledger row needs a line for every scenario; any other
+// PR needs one for each scenario that is not on a CI tier, so real-Mac tiers, G3 rows and IDs missing from `tiers`
+// all do. A CI-tier scenario needs no line because evaluatePr requires green CI at the head anyway. #661 landed with
+// C-10 (T3) unaccounted for when only ledger PRs were read here.
+export function evidenceState(pr, items, head, tiers = new Map()) {
   const body = pr.body ?? "";
   const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
   const { ids: scenarios, malformed } = parseScenarios(body);
@@ -244,7 +264,8 @@ export function evidenceState(pr, items, head) {
       if (deferred && deferred[2] === head) verified.add(deferred[1]);
     }
   }
-  const missing = scenarios.filter((id) => !verified.has(id));
+  const onCi = (id) => !ledger && CI_TIER.test(tiers.get(id) ?? "");
+  const missing = scenarios.filter((id) => !verified.has(id) && !onCi(id));
   return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
     : { state: SUCCESS, why: "scenario evidence verified" };
 }
@@ -321,8 +342,9 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = 
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [] }) {
+// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs;
+// tiers: parseTiers().
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [], tiers = new Map() }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -331,7 +353,7 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
   // Only the trusted account's own same-repository PRs land; a stranger's or a fork PR waits for the coordinator.
   if (!isTrusted(pr.user) || pr.head.repo?.full_name !== pr.base.repo.full_name)
     return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
-  const evidence = evidenceState(pr, items, head);
+  const evidence = evidenceState(pr, items, head, tiers);
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
   const gap = trainScenarioGap(pr, members);
   if (gap) return res(FAILURE, gap);

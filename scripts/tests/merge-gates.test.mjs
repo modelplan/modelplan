@@ -225,6 +225,44 @@ test("a Scenarios line without a ledger row needs the same exact-head evidence (
   assert.equal(evalPr({ p: pr({ title: "Docs", body: "No declaration here." }), files: docs }).state, R.SUCCESS);
 });
 
+test("D21: without a ledger row a CI-tier scenario rides on green CI; real-Mac tiers and anything unknown need a line", () => {
+  const docs = [file("docs/evidence.md")];
+  const tiers = R.parseTiers("# comment\nid\ttier\tneeds\nS-11\tT2\t-\nV-17\tT1P\t-\nR-01\tT0\tVF\nC-10\tT3\tCK\nD-02\tT4\tSYS\n");
+  assert.deepEqual([...tiers], [["S-11", "T2"], ["V-17", "T1P"], ["R-01", "T0"], ["C-10", "T3"], ["D-02", "T4"]]);
+  const plain = (line) => pr({ title: "Cockpit", body: `Ledger: none\nScenarios: ${line}` });
+  const ev = (line, o = {}) => R.evaluatePr({ pr: plain(line), items: R.feed(o.comments ?? []), files: docs, runs: o.runs ?? greenCi, statuses: [], verifiedEdge: () => false, conf, tiers: o.tiers ?? tiers });
+
+  assert.equal(ev("S-11, V-17, R-01").state, R.SUCCESS, "T2 passes on green CI");
+  assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", "failure")] }).state, R.FAILURE, "red CI stops it");
+  assert.equal(ev("S-11", { runs: [run(".github/workflows/ci.yml", null, 1, "in_progress")] }).state, R.PENDING, "running CI is not green");
+  const t3 = ev("S-11, C-10");
+  assert.equal(t3.state, R.PENDING, "T3 still needs its line");
+  assert.match(t3.why, /evidence pending: C-10$|evidence pending: C-10\b/);
+  assert.doesNotMatch(t3.why, /S-11/);
+  assert.equal(ev("D-02").state, R.PENDING, "T4 too");
+  assert.equal(ev("C-10", { comments: [comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  assert.equal(ev("C-10", { comments: [comment(`VERIFIED: C-10 @ ${H} evidence=fixture`)] }).state, R.SUCCESS);
+  assert.equal(ev("Z-01").state, R.PENDING, "a scenario missing from the table needs evidence");
+  assert.equal(ev("G3-12").state, R.PENDING, "a ledger row in the line is a ledger PR");
+  // A PR naming a ledger row needs a line for every scenario, whatever its tier.
+  const ledger = R.evaluatePr({ pr: pr({ title: "Fix G3-07", body: "Scenarios: S-11" }), items: [], files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, tiers });
+  assert.equal(ledger.state, R.PENDING);
+
+  // Fail closed: no readable table means every scenario needs evidence.
+  const missing = R.tiersFrom(() => { throw new Error("ENOENT"); });
+  assert.equal(missing.size, 0);
+  assert.equal(ev("S-11", { tiers: missing }).state, R.PENDING);
+  assert.equal(ev("S-11", { tiers: R.tiersFrom(() => "not a table\n") }).state, R.PENDING);
+
+  // The shipped table, and the checkout that must bring it to the gate.
+  const shipped = R.tiersFrom(() => readFileSync(join(root, R.TIER_TABLE), "utf8"));
+  assert.equal(shipped.get("C-10"), "T3");
+  assert.ok(shipped.size > 90);
+  const sparse = /sparse-checkout: \|\n((?:\s+\S+\n)+)/.exec(readFileSync(join(root, ".github/workflows/merge-gates.yml"), "utf8"))?.[1].trim().split(/\s+/) ?? [];
+  assert.ok(sparse.includes("scripts/merge-gates"), "the gate's own code");
+  assert.ok(sparse.includes(dirname(R.TIER_TABLE)), "cone-mode sparse checkout takes directories, so the table's directory");
+});
+
 test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free text are rejected (exception review 1.4)", () => {
   const docs = [file("docs/evidence.md")];
   const plain = (line) => pr({ title: "Widget setting", body: `Ledger: none\n${line}` });

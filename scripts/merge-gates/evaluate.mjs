@@ -11,7 +11,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { client } from "./github.mjs";
 import * as G from "./git.mjs";
-import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, trainMembers } from "./rules.mjs";
+import { CONTEXT, FAILURE, description, evaluateGroup, evaluatePr, feed, isTrain, parseDesignConf, supersededPrs, TIER_TABLE, tiersFrom, trainMembers } from "./rules.mjs";
 
 const env = process.env;
 const argv = process.argv.slice(2);
@@ -21,6 +21,7 @@ const repo = env.GITHUB_REPOSITORY || "modelplan/modelplan";
 const cwd = flag("--repo-dir") ?? process.cwd();
 const gh = client({ token: env.GITHUB_TOKEN, repo });
 const conf = parseDesignConf(readFileSync(new URL("./design-paths.conf", import.meta.url), "utf8"));
+const tiers = tiersFrom(() => readFileSync(new URL(`../../${TIER_TABLE}`, import.meta.url), "utf8"));
 const MAIN = "refs/remotes/origin/main";
 const runUrl = env.GITHUB_RUN_ID ? `${env.GITHUB_SERVER_URL || "https://github.com"}/${repo}/actions/runs/${env.GITHUB_RUN_ID}` : undefined;
 
@@ -29,6 +30,8 @@ function log(obj) {
   console.log(line);
   if (env.GITHUB_STEP_SUMMARY) appendFileSync(env.GITHUB_STEP_SUMMARY, "`" + line.replaceAll("`", "'") + "`\n\n");
 }
+
+if (!tiers.size) log({ warning: `${TIER_TABLE} unreadable: every scenario needs evidence` });
 
 async function post(sha, result) {
   log({ sha, ...result, dryRun });
@@ -73,7 +76,7 @@ async function prResult(number) {
     gh.get(`/commits/${head}/status`),
     readTrainMembers(pr),
   ]);
-  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members });
+  const result = evaluatePr({ pr, items: feed(comments, reviews), files, runs, statuses: combined.statuses ?? [], verifiedEdge, conf, members, tiers });
   return { pr, result };
 }
 
