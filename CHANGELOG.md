@@ -6,6 +6,42 @@ Releases of the `modelplan` CLI and the plugins in this repository. Binaries are
 
 These ship with the next CLI release; its pin PR gives them a version heading.
 
+## CLI v0.5.55, Codex plugin 0.15.41 and Claude Code plugin 0.7.40 (2026-11-07)
+
+- The app now fetches the public publication by itself soon after it starts, so a Mac with only the app installed gets its faders without running `modelplan sync`. The cockpit fills in when the data arrives; while it cannot be fetched the app keeps working, retries, and the faders say the data is unavailable.
+
+- A quota card now closes when the pointer leaves it after a ring was clicked. The click used to count as keyboard focus on the first ring, which held that ring's card open whichever ring was clicked.
+
+- The cockpit gains the enlarged launch field with vendor marks, the frontier page and the porthole HUD, which follows the selected subscription.
+
+- The cockpit opens faster: the app checks its cockpit files once at launch instead of on every click.
+
+- The app now logs which path raised "Cockpit unavailable", so a report can name the failure. The log holds code paths and counters only, never account data.
+
+- A failed first Codex read no longer leaves the widget without a Codex reading for half an hour. Until Codex has answered once, a failed read retries after 20 seconds, 1 minute and 5 minutes, then falls back to the half-hour wait, and the first read gets more time for a cold start.
+
+- `modelplan quota` now says why it read nothing. With reading off it names the cause in text as well as `--json`, and a consent record written by a newer ModelPlan has its own reason, `consent-newer`, with the fix: update the plugin or the CLI.
+
+- Pressing Allow for Keychain access now always brings up the Keychain prompt. A background refresh starting at the same moment could take its place and the prompt never appeared.
+
+- Allowing Keychain access now makes one credential read. An automatic refresh could slip in beside the read you just approved, read the credential a second time, and if it was slow make your approved read fail.
+
+- The cockpit now returns to All on the first open of a new day; within a day it keeps the subscription you chose.
+
+- Website links in the cockpit's main screen now open the matching page in your browser. The plan details link also follows the app language and is left out when the maker is unknown.
+
+- Links opened from the menu bar menu and Settings now share one path.
+
+- The two-window menu bar title now uses the same admission rule as the Quota Widget.
+
+- Chinese status lines now say the usage was read, instead of using an internal word.
+
+- `modelplan quota` no longer lets an old reading pass for a current one. Each window now says `stale` when its own reading is over an hour old, and the text output marks it, with the refresh command for Codex. `--refresh-account` reports what happened in `refresh` (refreshed, too soon with the next time, failed with the reason, or not allowed) instead of silently showing the old figures, and it no longer skips the other readers' background refresh. The Skill now answers quota questions from a fresh reading and is triggered by them in English and Chinese. The wording for reset cards becomes "extra resets".
+
+- Settings wording now follows the label rules in both languages, and CI checks the native app and cockpit strings against them.
+
+- VoiceOver and other accessibility tools now find each quota ring where it is painted; the widget reported every ring reflected top to bottom.
+
 ## CLI v0.5.54, Codex plugin 0.15.40 and Claude Code plugin 0.7.39 (2026-11-07)
 
 This heading also covers v0.5.47 to v0.5.53, which were released without their own heading.

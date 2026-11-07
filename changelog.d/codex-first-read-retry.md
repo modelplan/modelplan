@@ -1,1 +1,0 @@
-A failed first Codex read no longer leaves the widget without a Codex reading for half an hour. Until Codex has answered once, a failed read retries after 20 seconds, 1 minute and 5 minutes, then falls back to the half-hour wait, and the first read gets more time for a cold start.
