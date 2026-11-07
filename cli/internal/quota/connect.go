@@ -318,7 +318,11 @@ func ReadPermitted(p Paths, now time.Time) Report {
 	s, mode := admission.State(), admission.Mode()
 	r := Report{ConsentStoreEpoch: s.StoreEpoch, ConsentGeneration: s.Generation, SchemaVersion: 1, EvaluatedAt: now.UTC(), Note: note, Accounts: []Account{}}
 	if mode == consent.Off {
-		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: "reader-privacy"}}
+		reason := "reader-privacy"
+		if consent.NewerStore() {
+			reason = "consent-newer"
+		}
+		r.Sources = []SourceStatus{{Source: "readers", Status: "off", Reason: reason}}
 		return r
 	}
 	add := func(a []Account, st SourceStatus) {
