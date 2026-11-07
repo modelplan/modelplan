@@ -9,13 +9,10 @@ These ship with the next CLI release; its pin PR gives them a version heading.
 ## CLI v0.5.53 (2026-11-07)
 
 This heading also covers v0.5.47 to v0.5.52, which were released without their own heading. Plugin versions are unchanged; both plugins and their bundled Skill now pin CLI v0.5.53 and its published archive checksums.
-此标题同时涵盖未单独列出的 v0.5.47 至 v0.5.52。插件版本不变；两个插件及其内置 Skill 现固定到 CLI v0.5.53 及其已发布归档的校验和。
 
 - Standard readers are on by default. The app reads Codex's runtime, and its session logs as the fallback, on a profile with no recorded choices, without a consent click. A recorded refusal, a tool-level denial, a reset consent store and `MODELPLAN_READERS=off` still win.
-  标准读取器默认开启。在没有已记录选择的资料上，App 无需点击授权即可读取 Codex 运行时，并以会话日志作为后备。已记录的拒绝、工具级禁用、已重置的授权存储和 `MODELPLAN_READERS=off` 仍然优先。
 
 - One Codex account per ChatGPT login. While Codex's own live account reading is available, it is the only Codex account: session logs are no longer shown as a second account beside it, also after a plan upgrade. Only the current session's model, effort and allowance pool come from the logs. Without a live reading the session logs remain the Codex reading, and an older runtime plan never replaces a newer one.
-  一个 ChatGPT 登录只对应一个 Codex 账户。Codex 自身的实时账户读数可用时，它就是唯一的 Codex 账户：会话日志不再作为第二个账户并列显示，套餐升级后也一样。日志只提供当前会话的模型、档位和额度池。没有实时读数时，会话日志仍是 Codex 读数；较旧的运行时套餐不会取代较新的套餐。
 
 - Do not run this CLI concurrently with an older CLI against the same cache: the ledger lock protocols differ and do not mutually exclude one another. Stop older processes before starting this version.
   请勿让此 CLI 与旧版 CLI 同时使用同一缓存：两者的账本锁协议不同，无法相互排斥。启动本版本前请停止旧版进程。
