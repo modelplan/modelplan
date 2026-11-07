@@ -55,7 +55,7 @@ private actor V13SyntheticClient: EngineClient {
             ("claude", "logo-claude", "6d53db4be375e899c937c26cf16684a80d6e869b1928d72b37748bef2560e219"),
             ("cursor", "logo-cursor", "cd0e3e5d8991a4cdd4577f8896cd063105207665165c73e25a1ff918dd367eb7"),
             ("copilot", "logo-copilot", "ae3ac7a6dc1415aeaf7064c7a749d9efd7f1ec49a68450590df7cf0da8d83781"),
-            ("grok", "logo-grok", "3a462c3c2524733c173bb05c431de737812f8219db8fa115b0025d12a347e086"),
+            ("grok", "logo-grok", "de1e9ce2c033e7e2a6d11fd5981c2efeac5c8c5b094a62cabc2fbc4669057493"),
             ("antigravity", "logo-antigravity", "193ba1805de11c23cd0c7a1df92aa0a886708e57350f6f7766100afe5befed73"),
             ("droid", "logo-droid", "8b6270e882a878c8c962b2f48c4d4d3813b06ac9689f4fbd8309777067ee78e0"),
             ("deepseek", "logo-deepseek", "afb242f8632e69a1902a8f2df57a08409dc448e9c0d9448c9cdbb8c92008f3f4"),
