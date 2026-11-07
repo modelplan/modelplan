@@ -64,10 +64,10 @@ func saveFixture(t *testing.T, st *store.Store, f publicationFixture, state stor
 
 // scriptedAppPublication runs the real loop with a scripted sync and records every delay. The
 // loop stops when the script runs out.
-func scriptedAppPublication(st *store.Store, now time.Time, script []func() error) (*appPublication, *[]time.Duration, *int, *int) {
-	delays, syncs, changes := []time.Duration{}, 0, 0
+func scriptedAppPublication(st *store.Store, now time.Time, script []func() error) (*appPublication, *[]time.Duration, *int) {
+	delays, syncs := []time.Duration{}, 0
 	ctx, cancel := context.WithCancel(context.Background())
-	a := &appPublication{st: st, now: func() time.Time { return now }, changed: func() { changes++ }, ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	a := &appPublication{st: st, now: func() time.Time { return now }, ctx: ctx, cancel: cancel, done: make(chan struct{})}
 	a.sync = func(context.Context) (publication.Result, error) {
 		step := script[syncs]
 		syncs++
@@ -80,38 +80,38 @@ func scriptedAppPublication(st *store.Store, now time.Time, script []func() erro
 		}
 		return nil
 	}
-	return a, &delays, &syncs, &changes
+	return a, &delays, &syncs
 }
 
 func TestAppPublicationBacksOffWhileThereIsNothingToShow(t *testing.T) {
 	down := func() error { return errors.New("offline") }
-	a, delays, _, changes := scriptedAppPublication(&store.Store{Dir: t.TempDir()}, time.Now(), []func() error{down, down, down, down, down, down, down})
+	a, delays, _ := scriptedAppPublication(&store.Store{Dir: t.TempDir()}, time.Now(), []func() error{down, down, down, down, down, down, down})
 	a.run(context.Background())
 	want := []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 10 * time.Minute, 10 * time.Minute}
-	if !reflect.DeepEqual(*delays, want) || *changes != 0 {
-		t.Fatalf("delays %v changes %d", *delays, *changes)
+	if !reflect.DeepEqual(*delays, want) {
+		t.Fatalf("delays %v", *delays)
 	}
 }
 
 func TestAppPublicationBusyLockRetriesWithoutBackingOff(t *testing.T) {
 	busy := func() error { return store.ErrBusy }
 	down := func() error { return errors.New("offline") }
-	a, delays, _, _ := scriptedAppPublication(&store.Store{Dir: t.TempDir()}, time.Now(), []func() error{busy, busy, down})
+	a, delays, _ := scriptedAppPublication(&store.Store{Dir: t.TempDir()}, time.Now(), []func() error{busy, busy, down})
 	a.run(context.Background())
 	if want := []time.Duration{15 * time.Second, 15 * time.Second, 30 * time.Second}; !reflect.DeepEqual(*delays, want) {
 		t.Fatalf("delays %v", *delays)
 	}
 }
 
-func TestAppPublicationArrivalNotifiesAndSettles(t *testing.T) {
+func TestAppPublicationArrivalSettles(t *testing.T) {
 	st := &store.Store{Dir: t.TempDir()}
 	f := newPublicationFixture(t, nil)
 	down := func() error { return errors.New("offline") }
 	arrive := func() error { saveFixture(t, st, f, store.State{}); return nil }
-	a, delays, _, changes := scriptedAppPublication(st, time.Now(), []func() error{down, arrive})
+	a, delays, _ := scriptedAppPublication(st, time.Now(), []func() error{down, arrive})
 	a.run(context.Background())
-	if want := []time.Duration{30 * time.Second, backgroundEvery}; !reflect.DeepEqual(*delays, want) || *changes != 1 {
-		t.Fatalf("delays %v changes %d", *delays, *changes)
+	if want := []time.Duration{30 * time.Second, backgroundEvery}; !reflect.DeepEqual(*delays, want) {
+		t.Fatalf("delays %v", *delays)
 	}
 }
 
@@ -121,23 +121,23 @@ func TestAppPublicationCachedDataFollowsSharedRule(t *testing.T) {
 	st := &store.Store{Dir: t.TempDir()}
 	now := time.Now()
 	saveFixture(t, st, newPublicationFixture(t, nil), store.State{CheckedAt: now.Add(-time.Hour), LastAttemptAt: now.Add(-time.Hour)})
-	a, _, syncs, _ := scriptedAppPublication(st, now, nil)
+	a, _, syncs := scriptedAppPublication(st, now, nil)
 	failures := 0
 	if got := a.pass(context.Background(), &failures); got != backgroundEvery || *syncs != 0 {
 		t.Fatalf("fresh cache: %v, %d syncs", got, *syncs)
 	}
 	saveFixture(t, st, newPublicationFixture(t, nil), store.State{CheckedAt: now.Add(-staleAfter - time.Hour), LastAttemptAt: now.Add(-staleAfter - time.Hour)})
-	a, _, syncs, _ = scriptedAppPublication(st, now, []func() error{func() error { return errors.New("offline") }})
+	a, _, syncs = scriptedAppPublication(st, now, []func() error{func() error { return errors.New("offline") }})
 	if got := a.pass(context.Background(), &failures); got != backgroundEvery || *syncs != 1 {
 		t.Fatalf("stale cache: %v, %d syncs", got, *syncs)
 	}
 }
 
 func TestAppPublicationCloseWithoutStart(t *testing.T) {
-	a := newAppPublication(context.Background(), &store.Store{Dir: t.TempDir()}, "http://127.0.0.1:1", func() {})
+	a := newAppPublication(context.Background(), &store.Store{Dir: t.TempDir()}, "http://127.0.0.1:1")
 	a.Close()
 	a.Start() // a session that races shutdown must not start after Close
-	if newAppPublication(context.Background(), &store.Store{Dir: t.TempDir()}, "http://example.test", func() {}) != nil {
+	if newAppPublication(context.Background(), &store.Store{Dir: t.TempDir()}, "http://example.test") != nil {
 		t.Fatal("a plain-http remote base must not be used")
 	}
 }

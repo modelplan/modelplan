@@ -63,8 +63,8 @@ items. A query failure does not mutate rows.
 
 The publication is public data. After the first session starts, the ordinary
 command fetches it with `publication.Client.Sync` (same lock, interval and
-verification as `modelplan sync`) and notifies the backend, so subscribers get a
-rows event and the cockpit re-queries. It needs no consent scope and ignores
+verification as `modelplan sync`). The backend's `state.json` watcher then gives
+subscribers a rows event and the cockpit re-queries. It needs no consent scope and ignores
 `MODELPLAN_READERS`. `--offline` and `--read-only` fetch nothing. With an empty
 cache a failure retries after 30 seconds, backing off to 10 minutes; a cached
 publication follows the shared rule (stale after 6 hours, at most one attempt per

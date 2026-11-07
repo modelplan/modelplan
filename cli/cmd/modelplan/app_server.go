@@ -125,11 +125,7 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 	}
 	var fetcher *appPublication
 	if !options.Offline && !options.ReadOnly {
-		changed := func() {}
-		if shared != nil {
-			changed = shared.Notify
-		}
-		fetcher = newAppPublication(ctx, st, appPublicationBase(), changed)
+		fetcher = newAppPublication(ctx, st, appPublicationBase())
 	}
 	if fetcher != nil {
 		closeScheduler := closeBackend

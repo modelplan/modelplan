@@ -33,12 +33,13 @@ func appPublicationBase() string { return env("MODELPLAN_BASE", publication.Defa
 // the status line and hooks do it only where a plugin is installed. It is the ordinary
 // publication.Client.Sync, so the same lock, interval and verification apply. The publication
 // is public: a request carries no account data, and no consent scope or reader setting applies.
+// Sync writes state.json last, and the backend already watches that file, so subscribers get the
+// rows event the cockpit refreshes on without being told.
 type appPublication struct {
-	st      *store.Store
-	sync    func(context.Context) (publication.Result, error)
-	changed func()
-	now     func() time.Time
-	wait    func(context.Context, time.Duration) error
+	st   *store.Store
+	sync func(context.Context) (publication.Result, error)
+	now  func() time.Time
+	wait func(context.Context, time.Duration) error
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -48,12 +49,12 @@ type appPublication struct {
 
 // newAppPublication returns nil for an unusable base. The app-server then runs on what is
 // cached, as it does with --offline.
-func newAppPublication(ctx context.Context, st *store.Store, base string, changed func()) *appPublication {
+func newAppPublication(ctx context.Context, st *store.Store, base string) *appPublication {
 	if _, err := publication.New(base, st, version); err != nil {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	return &appPublication{st: st, changed: changed, now: time.Now, ctx: ctx, cancel: cancel, done: make(chan struct{}), wait: func(ctx context.Context, d time.Duration) error {
+	return &appPublication{st: st, now: time.Now, ctx: ctx, cancel: cancel, done: make(chan struct{}), wait: func(ctx context.Context, d time.Duration) error {
 		timer := time.NewTimer(d)
 		defer timer.Stop()
 		select {
@@ -119,9 +120,6 @@ func (a *appPublication) pass(ctx context.Context, failures *int) time.Duration 
 		return appPublicationBusyRetry
 	}
 	if err == nil {
-		// Level-triggered: the rows event goes out only if the view really changed, and the
-		// cockpit refreshes on it.
-		a.changed()
 		d, _, _ = publication.Load(a.st)
 	}
 	if d != nil {
