@@ -8,6 +8,10 @@ archive_dir=${1:?Pass directory with pinned official CLI archives and checksums.
 output_dir=${2:?Pass a new local output directory}
 identity_mode=release
 configuration=release
+# Owner D39/D-E: only owner test builds open the cockpit entry; release packages keep it closed (preflight PF-08)
+# until the owner accepts the cockpit.
+cockpit_entry=false
+owner_test_plist=''
 # U7 consumes an independently approved prebuilt artifact; packaging never builds/signs it.
 credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
 credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
@@ -25,12 +29,21 @@ case "${3:-}" in
     '') ;;
     --unverified) identity_mode=unverified ;;
     --e2e-journey) identity_mode=unverified; configuration=debug ;;
-    *) echo 'Optional third argument must be --unverified or --e2e-journey (CI only)' >&2; exit 1 ;;
+    --owner-test) identity_mode=unverified; cockpit_entry=true
+        owner_test_plist='<key>ModelPlanOwnerTestBuild</key><true/>'$'\n' ;;
+    *) echo 'Optional third argument must be --unverified, --e2e-journey or --owner-test (CI only)' >&2; exit 1 ;;
 esac
 if [ "$#" -gt 3 ]; then echo 'Too many packaging arguments' >&2; exit 1; fi
 if [ -e "$output_dir" ]; then echo 'Output directory already exists; refusing overwrite' >&2; exit 1; fi
 public_source=$(git -C "$repo_root" rev-parse HEAD)
 if [ -n "$(git -C "$repo_root" status --porcelain)" ]; then echo "Source tree must be clean" >&2; exit 1; fi
+if [ "$cockpit_entry" = true ]; then
+    # The canonical official cockpit page, checked against the native admission pins before it is copied.
+    npm ci --prefix "$repo_root/desktop/cockpit" --ignore-scripts
+    npm run build --prefix "$repo_root/desktop/cockpit"
+    npm run build:official --prefix "$repo_root/desktop/cockpit"
+    python3 "$native_root/ModelPlanCockpitWeb/check-bundle-pins.py" --repo "$repo_root"
+fi
 mkdir -p "$output_dir"
 archive_dir=$(cd "$archive_dir" && pwd)
 output_dir=$(cd "$output_dir" && pwd)
@@ -61,6 +74,10 @@ for architecture in arm64 x86_64; do
 done
 app="$output_dir/ModelPlan Community.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
+if [ "$cockpit_entry" = true ]; then
+    cp -R "$repo_root/desktop/cockpit/.tmp/official" "$app/Contents/Resources/Cockpit"
+    printf '%s\n' '{"edition": "official", "stage": "owner-test"}' > "$app/Contents/Resources/build-edition.json"
+fi
 # The native factory uses the reserved-licence outline tray template from this SwiftPM resource bundle.
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanAppIntegration_ModelPlanAppIntegration.bundle" "$app/Contents/Resources/"
 cp -R "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanOfficialDock_ModelPlanOfficialDock.bundle" "$app/Contents/Resources/"
@@ -74,7 +91,7 @@ fi
 rm -- "$mark_path"
 cp "$output_dir/build-arm64/arm64-apple-macosx/$configuration/ModelPlanCommunityApp" "$app/Contents/MacOS/ModelPlanCommunity"
 cp "$output_dir/cli-arm64/modelplan_darwin_arm64/modelplan" "$app/Contents/Helpers/modelplan"
-cat > "$app/Contents/Info.plist" <<'PLIST'
+cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -87,8 +104,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
-<key>ModelPlanCockpitEntryEnabled</key><false/>
-<key>NSHighResolutionCapable</key><true/>
+<key>ModelPlanCockpitEntryEnabled</key><$cockpit_entry/>
+$owner_test_plist<key>NSHighResolutionCapable</key><true/>
 <key>NSHumanReadableCopyright</key><string>MIT community software. Apple silicon only.</string>
 </dict></plist>
 PLIST

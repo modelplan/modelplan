@@ -92,7 +92,8 @@ import ModelPlanDock
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
     func makePage(context: CockpitEngineContext, executable: URL) throws -> CockpitWindowController {
         guard executable.standardizedFileURL == bundle.appendingPathComponent("Contents/Helpers/modelplan").standardizedFileURL,
-              CommunityConsentBundleIdentity.matches(bundle:bundle) else { throw CockpitBridgeError.unavailable }
+              CommunityConsentBundleIdentity.matches(bundle:bundle) || CommunityConsentBundleIdentity.matchesOwnerTest(bundle:bundle)
+        else { throw CockpitBridgeError.unavailable }
         let editionURL=bundle.appendingPathComponent("Contents/Resources/build-edition.json")
         var edition="community"
         if let data=try? Data(contentsOf:editionURL),data.count<=1024,
