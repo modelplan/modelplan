@@ -150,6 +150,14 @@ public struct SettingsPageContext: Sendable {
             else if v1NormalEntry { unavailableControls[key] = dock }
         }
     }
+    /// SET-9-18 / SET-9-29: the forecast-exhaustion kind is offered only while the engine
+    /// reports a forecast producer (F1); without one the v1 row is hidden, not shown disabled.
+    /// The saved notification kinds are never changed here.
+    public mutating func observeForecastProducer(_ available: Bool) {
+        capabilities.forecastProducerAvailable = available
+        if available { unavailableControls.removeValue(forKey: .forecast) }
+        else if v1NormalEntry { unavailableControls[.forecast] = SettingsText("Unavailable until forecasts are available.", "预测可用前不可用。") }
+    }
     public var dockPlacementObservation: SettingsDockPlacementObservation?
     public var displays: [SettingsDisplayChoice] = []
     public var subscriptions: [SettingsSubscription] = []
@@ -280,6 +288,12 @@ public enum SettingsCatalogue {
                     // nil means that no history producer is connected; do not show a dead row.
                     if key == .refreshHistory && c.refreshHistory == nil { return nil }
                     if c.v1NormalEntry && [.theme, .opening, .countdown].contains(key) { return nil }
+                    // SET-9-18 (owner 11-06, D36): "Resets expiring" and "Data stopped arriving" are
+                    // v1.1; v1 offers the forecast, reset and official-announcement kinds.
+                    if c.v1NormalEntry && [.expiring, .stale].contains(key) { return nil }
+                    // No dead controls in v1 (SET-9-29): the forecast kind appears once the
+                    // engine reports its forecast producer, and is hidden until then.
+                    if c.v1NormalEntry && key == .forecast && !c.capabilities.forecastProducerAvailable { return nil }
                     if c.v1NormalEntry && [.automaticUpdates, .updateStatus].contains(key) && (!c.capabilities.updateServiceAvailable || c.unavailableControls[key] != nil) { return nil }
                     guard let d = byKey[key] else { return nil }
                     let baseMatches = query.isEmpty || [d.key.rawValue, d.title.english, d.title.chinese,
