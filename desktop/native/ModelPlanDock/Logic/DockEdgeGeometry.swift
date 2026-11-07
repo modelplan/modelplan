@@ -22,7 +22,7 @@ public struct DockEdgeLayout: Equatable, Sendable {
     public let flipped:Bool
     public init(displayID:String,edge:DockEdge,expandedSize:CGSize,sliverLength:CGFloat,sliverThickness:CGFloat,hoverRects:[CGRect],flipped:Bool=true,alongAnchor:CGFloat?=nil){
         self.displayID=displayID;self.edge=edge;self.expandedSize=expandedSize;self.sliverLength=sliverLength
-        self.sliverThickness=sliverThickness;self.alongAnchor=alongAnchor ?? (edge == .bottom ? expandedSize.width:expandedSize.height)/2;self.hoverRects=hoverRects;self.flipped=flipped
+        self.sliverThickness=sliverThickness;self.alongAnchor=alongAnchor ?? (edge.isHorizontal ? expandedSize.width:expandedSize.height)/2;self.hoverRects=hoverRects;self.flipped=flipped
     }
 }
 public struct DockEdgePreference: Equatable, Sendable {
@@ -44,9 +44,10 @@ public struct DockEdgePlacement: Equatable, Sendable {
         CGRect(x:frame.minX+local.minX,y:flipped ? frame.maxY-local.maxY:frame.minY+local.minY,width:local.width,height:local.height)
     }
 }
-/// One geometry path for normal placement, migration and drag/drop. Never returns a floating/top state.
+/// One geometry path for normal placement, migration and drag/drop. Never returns a floating state;
+/// all four edges rest inside the visible frame (the top edge sits below the menu bar, A-1106-4).
 public enum DockEdgeGeometry {
-    public static let allowedEdges:[DockEdge]=[.right,.left,.bottom]
+    public static let allowedEdges:[DockEdge]=[.right,.left,.bottom,.top]
     private static func finite(_ r:CGRect)->Bool{
         [r.minX,r.minY,r.width,r.height].allSatisfy{$0.isFinite} && r.width>0 && r.height>0 && r.width<=100_000 && r.height<=100_000 && abs(r.minX)<=1_000_000 && abs(r.minY)<=1_000_000
     }
@@ -54,10 +55,10 @@ public enum DockEdgeGeometry {
         guard displays.count<=256, layouts.count<=768, Set(displays.map(\.id)).count==displays.count,displays.allSatisfy({!$0.id.isEmpty && finite($0.frame) && finite($0.visibleFrame) && finite($0.usableFrame)}) else{throw DockEdgeError.invalidGeometry}
         var keys=Set<String>()
         for p in layouts{
-            guard p.edge != .top,!p.displayID.isEmpty,p.expandedSize.width.isFinite,p.expandedSize.height.isFinite,
+            guard !p.displayID.isEmpty,p.expandedSize.width.isFinite,p.expandedSize.height.isFinite,
                 p.expandedSize.width>0,p.expandedSize.height>0,p.expandedSize.width<=4096,p.expandedSize.height<=4096,
                 p.sliverLength.isFinite,p.sliverLength>0,p.sliverLength<=4096,p.sliverThickness.isFinite,p.sliverThickness>0,p.sliverThickness<=256,
-                p.alongAnchor.isFinite,p.alongAnchor>=0,p.alongAnchor<=(p.edge == .bottom ? p.expandedSize.width:p.expandedSize.height),
+                p.alongAnchor.isFinite,p.alongAnchor>=0,p.alongAnchor<=(p.edge.isHorizontal ? p.expandedSize.width:p.expandedSize.height),
                 p.hoverRects.count<=4096,p.hoverRects.allSatisfy(finite) else{throw DockEdgeError.invalidGeometry}
             guard keys.insert(p.displayID+"/"+String(describing:p.edge)).inserted else{throw DockEdgeError.duplicateLayout}
         }
@@ -73,7 +74,7 @@ public enum DockEdgeGeometry {
             case .left:if point.x<=f.minX && n.minX<f.minX && n.maxX>=f.minX && point.y>=n.minY && point.y<=n.maxY{return false}
             case .right:if point.x>=f.maxX && n.maxX>f.maxX && n.minX<=f.maxX && point.y>=n.minY && point.y<=n.maxY{return false}
             case .bottom:if point.y<=f.minY && n.minY<f.minY && n.maxY>=f.minY && point.x>=n.minX && point.x<=n.maxX{return false}
-            case .top:return false
+            case .top:if point.y>=f.maxY && n.maxY>f.maxY && n.minY<=f.maxY && point.x>=n.minX && point.x<=n.maxX{return false}
             }
         };return true
     }

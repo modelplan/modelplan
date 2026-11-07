@@ -13,7 +13,7 @@ final class DockPlacementGeometryTests: XCTestCase {
     private func layouts(_ displays: [DockDisplayArea]) -> [DockEdgeLayout] {
         displays.flatMap { display in DockEdgeGeometry.allowedEdges.map { edge in
             DockEdgeLayout(displayID: display.id, edge: edge,
-                expandedSize: edge == .bottom ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
+                expandedSize: edge.isHorizontal ? CGSize(width: 180, height: 80) : CGSize(width: 80, height: 180),
                 sliverLength: 160, sliverThickness: 4, hoverRects: [])
         } }
     }

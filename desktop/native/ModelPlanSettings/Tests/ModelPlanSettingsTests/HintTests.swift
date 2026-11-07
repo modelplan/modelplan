@@ -114,7 +114,7 @@ final class HintTests: XCTestCase {
         XCTAssertTrue(h.preferences.seen.isEmpty)
     }
     func testEveryHintHasItsExactPriorityAndOnlyConfirmedFlagIsSpent() throws {
-        let priority = FirstUseHintKind.allCases.filter { $0 != .ringRefresh && $0 != .findWidget }
+        let priority = FirstUseHintKind.allCases.filter { $0 != .ringRefresh && $0 != .findWidget && $0 != .widgetOff }
         for index in priority.indices {
             let higher = Set(priority.prefix(index))
             var h = try open(2, dock: true, seen: higher), c = HintContext(cockpitOpen: UUID(), dockReveal: UUID())

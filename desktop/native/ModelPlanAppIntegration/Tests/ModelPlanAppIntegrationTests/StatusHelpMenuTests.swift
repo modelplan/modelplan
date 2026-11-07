@@ -32,7 +32,7 @@ import ModelPlanEngineClient
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
         addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
         try invoke("Show Quota Widget", on: app)
-        let feedback = "Could not show Quota Widget. Check Settings and try again."
+        let feedback = "Could not change Show Quota Widget. Check Settings and try again."
         for _ in 0..<250 {
             if app.liveStatusMenu?.items.contains(where: { $0.title == feedback }) == true { break }
             try await Task.sleep(for: .milliseconds(20))
@@ -117,7 +117,7 @@ import ModelPlanEngineClient
     }
 
     /// G3-12 (owner: Help missing or inactive). Help is chosen from the menu bar while the
-    /// widget is hidden by right-click Hide. Help must show the widget again and then present
+    /// widget is turned off from the status menu. Help must show the widget again and then present
     /// the map over it, instead of reporting "Help unavailable".
     func testG312HelpShowsAHiddenWidgetThenPresentsTheMap() async throws {
         for (language, title, failure) in [("en", "Help…", "Help unavailable. Try again when the Quota Widget is visible."),
@@ -128,11 +128,9 @@ import ModelPlanEngineClient
             let dock = app.composition.dock
             for _ in 0..<250 where dock.edgePresentation?.state != .expanded { try await Task.sleep(for: .milliseconds(20)) }
             XCTAssertEqual(dock.edgePresentation?.state, .expanded, "precondition: first show, " + language)
-            // Hide through the widget's own menu, as the owner did (G3-18 path).
-            let hide = try XCTUnwrap(dock.menu().items.first { $0.title == (language == "en" ? "Hide Quota Widget" : "隐藏额度挂件") })
-            _ = try XCTUnwrap(hide.target as? NSObject).perform(try XCTUnwrap(hide.action), with: hide)
+            // Turn the widget off from the status menu's checkable item (G3-18 path, owner 11-06).
+            try await chooseShowQuotaWidget(app, checked: true, title: language == "en" ? "Show Quota Widget" : "显示额度挂件")
             let editor = app.settingsHost.application.editor
-            for _ in 0..<250 where editor.snapshot?.preferences.showDock != false || editor.isSaving { try await Task.sleep(for: .milliseconds(20)) }
             XCTAssertFalse(dock.interactionEnvironment().active, "precondition: the widget is hidden, " + language)
             // The map can only be drawn over a shown, painted, expanded widget. Without native
             // panels the edge state stays expanded, so the shown state is the host's own gate.

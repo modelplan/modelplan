@@ -5,14 +5,17 @@ import ObjectiveC
 private var dockSliverMenuAssociationKey: UInt8 = 0
 
 /// One caller-supplied menu row. A nil title denotes a separator; a nil action is read-only.
+/// A non-nil `checked` makes a checkable item: a constant title with the system checkmark
+/// (NSMenuItem.state) showing the current setting, never a title that switches wording.
 @MainActor public struct DockMenuPresentationItem {
     public let title: String?, accessibilityID: String?, keyEquivalent: String
     public let action: (() -> Void)?
     public let target: AnyObject?, selector: Selector?
+    public let checked: Bool?
     public init(title: String?, accessibilityID: String? = nil, keyEquivalent: String = "",
-                target: AnyObject? = nil, selector: Selector? = nil, action: (() -> Void)? = nil) {
+                target: AnyObject? = nil, selector: Selector? = nil, checked: Bool? = nil, action: (() -> Void)? = nil) {
         self.title = title; self.accessibilityID = accessibilityID; self.keyEquivalent = keyEquivalent
-        self.target = target; self.selector = selector; self.action = action
+        self.target = target; self.selector = selector; self.checked = checked; self.action = action
     }
 }
 
@@ -43,6 +46,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.target = value.selector == nil ? (value.action == nil ? nil : self) : value.target
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
+            if let checked = value.checked { item.state = checked ? .on : .off }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }
@@ -89,6 +93,7 @@ private var dockSliverMenuAssociationKey: UInt8 = 0
             item.target = value.selector == nil ? (value.action == nil ? nil : self) : value.target
             item.representedObject = index; item.isEnabled = selector != nil
             if let id = value.accessibilityID { item.setAccessibilityIdentifier(id) }
+            if let checked = value.checked { item.state = checked ? .on : .off }
             if let action = value.action { presentedActions[index] = action }
             menu.addItem(item)
         }

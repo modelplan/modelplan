@@ -404,17 +404,17 @@ private actor LifecycleEngine: EngineClient {
             XCTAssertFalse(application.liveStatusMenu?.items.contains { $0.title == "Settings changed. Choose Show Quota Widget again." } ?? true)
         }
 
-        // In session: Hide from the widget menu, the hint ledger saves, then menu Show.
+        // In session: uncheck Show Quota Widget in the status menu, the hint ledger saves,
+        // then check it again (owner decision 11-06: no Hide item in the widget menu).
         try await ledgerWrite(app, .init(seen: [.ringRefresh]))
-        try select("Hide Quota Widget", in: app.composition.dock.menu())
-        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        XCTAssertFalse(app.composition.dock.menu().items.contains { $0.title == "Hide Quota Widget" || $0.title == "隐藏额度挂件" })
+        try await chooseShowQuotaWidget(app, checked: true)
         XCTAssertEqual(try showDockRow(app), .toggle(false))
         try await ledgerWrite(app, .init(seen: [.ringRefresh, .findWidget]))
         try await showFromMenu(app, hints: .init(seen: [.ringRefresh, .findWidget]))
 
-        // Relaunch hidden: the saved Hide is kept, then the same ledger write and menu Show.
-        try select("Hide Quota Widget", in: app.composition.dock.menu())
-        try await waitForSettings(editor) { editor.snapshot?.preferences.showDock == false && !editor.isSaving }
+        // Relaunch hidden: the saved switch is kept, then the same ledger write and menu Show.
+        try await chooseShowQuotaWidget(app, checked: true)
         await app.stopLifecycle(); app.composition.dock.close()
         let relaunched = try await make(root, topology: topology, rows: fixture)
         _ = start(relaunched)
@@ -620,27 +620,31 @@ private actor LifecycleEngine: EngineClient {
         let initial = try await make(root, topology: topology) { $0.motion = .on }
         initial.allowDockPresentation()
         let saved = try expanded(initial).frame
-        try select("Hide Quota Widget", in: initial.composition.dock.menu())
-        try await waitForSettings(initial.settingsHost.application.editor) { initial.settingsHost.application.editor.snapshot?.preferences.showDock == false }
+        try await chooseShowQuotaWidget(initial, checked: true)
         initial.composition.dock.close()
         let app = try await make(root, topology: topology)
         _ = start(app)
         let editor = app.settingsHost.application.editor
         XCTAssertEqual(editor.snapshot?.preferences.showDock, false)
         XCTAssertNil(app.composition.dock.edgePresentation?.paintedFrame)
-        func show(_ application: EngineDockMenuApplication) throws {
-            try select("Show Quota Widget", in: XCTUnwrap(application.liveStatusMenu))
+        // Owner decision 11-06: Show Quota Widget is a checkable switch. Locating a widget that is
+        // already on means turning it off and on again; turning it on expands and highlights it.
+        func show(_ application: EngineDockMenuApplication) async throws {
+            if application.settingsHost.application.editor.snapshot?.preferences.showDock == true {
+                try await chooseShowQuotaWidget(application, checked: true)
+            }
+            try await chooseShowQuotaWidget(application, checked: false)
         }
         func highlight(_ application: EngineDockMenuApplication) -> CALayer? {
             application.composition.dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
         }
-        try show(app)
+        try await show(app)
         try await wait { highlight(app) != nil }
         XCTAssertEqual(try expanded(app).frame, saved)
         XCTAssertEqual(app.settingsHost.application.editor.snapshot?.preferences.showDock, true)
         let first = try XCTUnwrap(highlight(app))
         XCTAssertTrue(first.animationKeys()?.isEmpty ?? true)
-        try show(app)
+        try await show(app)
         try await wait { highlight(app) != nil && highlight(app) !== first }
         XCTAssertEqual(try expanded(app).frame, saved)
         for shown in [false, true] {
@@ -657,7 +661,7 @@ private actor LifecycleEngine: EngineClient {
         let strip = try await make(profile(), topology: topology) { $0.autoHide = true; $0.motion = .on }
         _ = start(strip)
         XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .sliver)
-        try show(strip)
+        try await show(strip)
         try await wait { highlight(strip) != nil }
         XCTAssertEqual(strip.composition.dock.edgePresentation?.state, .expanded)
         XCTAssertTrue(try XCTUnwrap(highlight(strip)).animationKeys()?.isEmpty ?? true)
@@ -699,7 +703,9 @@ private actor LifecycleEngine: EngineClient {
             dock.dockView.layer?.sublayers?.first { $0.name == "dock.locate-highlight" }
         }
         func show(after previous: CALayer? = nil) async throws -> CALayer {
-            try select("Show Quota Widget", in: XCTUnwrap(app.liveStatusMenu))
+            // The checkable switch: off, then on, which expands the widget and highlights it.
+            if editor.snapshot?.preferences.showDock == true { try await chooseShowQuotaWidget(app, checked: true) }
+            try await chooseShowQuotaWidget(app, checked: false)
             try await wait { highlight() != nil && highlight() !== previous }
             XCTAssertEqual(dock.edgePresentation?.state, .expanded)
             if native { XCTAssertTrue(dock.nativePanel?.isVisible == true) }
@@ -885,7 +891,8 @@ private actor LifecycleEngine: EngineClient {
         first.keyDown(with: optionUp)
         let editor = app.settingsHost.application.editor
         let announcement = "position \(index) of \(ids.count)"
-        let deadline = ContinuousClock.now + .seconds(2)
+        // The widget now renders four edge variants (top added, G3-27); allow the reorder pass more time.
+        let deadline = ContinuousClock.now + .seconds(8)
         while (instrument.accessibilityValue() as? String)?.hasSuffix(announcement) != true && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }

@@ -22,11 +22,16 @@ import ModelPlanWire
     private let controller: ScopeConsentController
     private var language: SettingsLanguage
     private let buildSigning:ScopeConsentBuildSigning
+    /// G3-25: the first-run page shows only what FR-9 lists (paths, select all, allow);
+    /// diagnostics, plugins and revoke/forget stay in Settings.
+    public let firstRun: Bool
     private var observer: UUID?
     private var buttons: [NSButton] = []
+    private var wrappingLabels: [NSTextField] = []
     public init(controller: ScopeConsentController, language: SettingsLanguage = .chinese,
-                buildSigning:ScopeConsentBuildSigning = .current) {
-        self.controller = controller; self.language = language;self.buildSigning=buildSigning; super.init(frame: .zero)
+                buildSigning:ScopeConsentBuildSigning = .current, firstRun: Bool = false) {
+        self.controller = controller; self.language = language;self.buildSigning=buildSigning; self.firstRun = firstRun
+        super.init(frame: .zero)
         orientation = .vertical; alignment = .leading; spacing = 8
         setAccessibilityIdentifier("settings.scopeConsent")
         observer = controller.observe { [weak self] in self?.render() }; render()
@@ -46,11 +51,35 @@ import ModelPlanWire
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
     }
     public func suspend() { retirePresentation();controller.clearAcceptedPrivateState() }
+    /// Wrapping labels take the column width so long copy wraps instead of spilling (G3-25/26).
+    public override func layout() {
+        super.layout()
+        for label in wrappingLabels {
+            let width = label.bounds.width
+            if width > 0, abs(label.preferredMaxLayoutWidth - width) > 0.5 {
+                label.preferredMaxLayoutWidth = width; label.invalidateIntrinsicContentSize()
+            }
+        }
+    }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer { let controller = controller; Task { @MainActor in controller.removeObserver(observer) } }
     }
-    private func label(_ text: SettingsText) { addArrangedSubview(NSTextField(wrappingLabelWithString: text.value(language))) }
+    private func label(_ text: SettingsText, secondary: Bool = false, heading: Bool = false) {
+        let field = NSTextField(wrappingLabelWithString: text.value(language))
+        field.font = heading ? .systemFont(ofSize: 13, weight: .semibold) : .systemFont(ofSize: secondary ? 12 : 13)
+        if secondary { field.textColor = .secondaryLabelColor }
+        field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addArrangedSubview(field); wrappingLabels.append(field)
+        field.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
+    }
+    /// One horizontal line of related buttons, in reading order.
+    private func line(_ views: [NSView]) {
+        let row = NSStackView(views: views); row.orientation = .horizontal; row.alignment = .centerY; row.spacing = 8
+        addArrangedSubview(row)
+    }
+    private func gap() { if let last = arrangedSubviews.last { setCustomSpacing(16, after: last) } }
     private func button(_ text: SettingsText, id: String, enabled: Bool = true,
                         action: @escaping @MainActor () async -> Void) -> ScopeConsentButton {
         let value = ScopeConsentButton(title: text.value(language), id: id, invoke: action)
@@ -84,7 +113,8 @@ import ModelPlanWire
         }
         buttons = []
         for view in arrangedSubviews { removeArrangedSubview(view); view.removeFromSuperview() }
-        label(.init("Reading permissions", "读取权限"))
+        wrappingLabels = []
+        label(.init("Reading permissions", "读取权限"), heading: true)
         switch controller.notice {
         case .none: break
         case .outcomeUnknown: label(.init("The change outcome is unknown. Check current permissions before trying again.", "这次变更结果未知，请先检查当前权限，再决定是否重试。"))
@@ -94,31 +124,38 @@ import ModelPlanWire
         case .waitingForFacts: label(.init("Waiting for current permission facts. No change has been assumed.", "等待当前权限信息；尚未假定变更成功。"))
         case .cleanupPending: label(.init("Permission cleanup is pending. Check current permissions to follow progress.", "权限清理尚未完成，可检查当前权限查看进度。"))
         }
-        addArrangedSubview(button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in await self?.controller.inspectConsent() })
-        addArrangedSubview(button(.init("Request sanitized diagnostics", "获取脱敏诊断"), id: "scope.diagnostics", enabled: controller.canRequestDiagnostics) { [weak self] in await self?.controller.requestDiagnostics() })
-        if let report = controller.diagnosticsPresentation { label(report) }
+        let inspect = button(.init("Check current permissions", "检查当前权限"), id: "scope.inspect", enabled: controller.canInspect) { [weak self] in await self?.controller.inspectConsent() }
+        if firstRun { line([inspect]) }
+        else {
+            line([inspect, button(.init("Request sanitized diagnostics", "获取脱敏诊断"), id: "scope.diagnostics", enabled: controller.canRequestDiagnostics) { [weak self] in await self?.controller.requestDiagnostics() }])
+        }
+        if !firstRun, let report = controller.diagnosticsPresentation { label(report, secondary: true) }
         // SET-9-20: Copy diagnostics belongs to About, not this consent surface.
-        label(.init("Tool plugins", "工具插件"))
-        addArrangedSubview(synchronousButton(.init("Install Codex plugin…", "安装 Codex 插件…"), id: "scope.plugin.codex", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.codex) })
-        addArrangedSubview(synchronousButton(.init("Install Claude Code plugin…", "安装 Claude Code 插件…"), id: "scope.plugin.claude", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.claudeCode) })
-        switch controller.pluginPhase {
-        case .idle: break
-        case .confirmation(let id, let tool):
-            let name = tool == .codex ? "Codex" : "Claude Code"
-            label(.init("Confirm installing the plugin for " + name + "? This does not grant reading permissions.", "确认安装 " + name + " 插件？这不会授予读取权限。"))
-            addArrangedSubview(button(.init("Confirm plugin installation", "确认安装插件"), id: "scope.plugin.confirm") { [weak self] in await self?.controller.confirmPluginInstall(id) })
-            addArrangedSubview(synchronousButton(.init("Cancel", "取消"), id: "scope.plugin.cancel") { [weak self] in self?.controller.cancelPluginConfirmation() })
-        case .sending: label(.init("Sending the plugin request…", "正在提交插件请求…"))
-        case .unverified: label(.init("Plugin installation could not be verified. Check the plugin in the target tool; no installation success is assumed.", "无法核验插件安装结果，请在目标工具中检查插件；尚未假定安装成功。"))
-        case .result(let status):
-            switch status {
-            case .installed: label(.init("The engine reports the plugin installed. Check it in the target tool.", "引擎报告插件已安装，请在目标工具中检查。"))
-            case .planned: label(.init("The plugin installation plan is ready. Follow the target tool's plugin setup instructions.", "插件安装计划已就绪，请按照目标工具的插件设置说明操作。"))
-            case .instructions: label(.init("The host tool needs manual plugin setup. Follow its plugin setup instructions.", "宿主工具需要手动设置插件，请按照其插件设置说明操作。"))
-            case .failed: label(.init("The plugin installation did not finish. Check the target tool and try again.", "插件安装未完成，请检查目标工具后重试。"))
-            case .unknown: label(.init("The plugin result is not recognized. Check the target tool.", "无法识别插件结果，请在目标工具中检查。"))
+        if !firstRun {
+            gap()
+            label(.init("Tool plugins", "工具插件"), heading: true)
+            line([synchronousButton(.init("Install Codex plugin…", "安装 Codex 插件…"), id: "scope.plugin.codex", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.codex) },
+                  synchronousButton(.init("Install Claude Code plugin…", "安装 Claude Code 插件…"), id: "scope.plugin.claude", enabled: controller.canRequestPlugin) { [weak self] in self?.controller.requestPluginInstall(.claudeCode) }])
+            switch controller.pluginPhase {
+            case .idle: break
+            case .confirmation(let id, let tool):
+                let name = tool == .codex ? "Codex" : "Claude Code"
+                label(.init("Confirm installing the plugin for " + name + "? This does not grant reading permissions.", "确认安装 " + name + " 插件？这不会授予读取权限。"))
+                line([button(.init("Confirm plugin installation", "确认安装插件"), id: "scope.plugin.confirm") { [weak self] in await self?.controller.confirmPluginInstall(id) },
+                      synchronousButton(.init("Cancel", "取消"), id: "scope.plugin.cancel") { [weak self] in self?.controller.cancelPluginConfirmation() }])
+            case .sending: label(.init("Sending the plugin request…", "正在提交插件请求…"))
+            case .unverified: label(.init("Plugin installation could not be verified. Check the plugin in the target tool; no installation success is assumed.", "无法核验插件安装结果，请在目标工具中检查插件；尚未假定安装成功。"))
+            case .result(let status):
+                switch status {
+                case .installed: label(.init("The engine reports the plugin installed. Check it in the target tool.", "引擎报告插件已安装，请在目标工具中检查。"))
+                case .planned: label(.init("The plugin installation plan is ready. Follow the target tool's plugin setup instructions.", "插件安装计划已就绪，请按照目标工具的插件设置说明操作。"))
+                case .instructions: label(.init("The host tool needs manual plugin setup. Follow its plugin setup instructions.", "宿主工具需要手动设置插件，请按照其插件设置说明操作。"))
+                case .failed: label(.init("The plugin installation did not finish. Check the target tool and try again.", "插件安装未完成，请检查目标工具后重试。"))
+                case .unknown: label(.init("The plugin result is not recognized. Check the target tool.", "无法识别插件结果，请在目标工具中检查。"))
+                }
             }
         }
+        gap()
         guard let facts = controller.facts else {
             label(.init("Permission details are not ready. Check the engine connection.", "权限信息尚未就绪，请检查引擎连接。")); return
         }
@@ -136,7 +173,8 @@ import ModelPlanWire
         for scope in facts.scopes {
             let id = scope.scope
             let title = scopeTitle(scope)
-            label(title)
+            if let last = arrangedSubviews.last { setCustomSpacing(14, after: last) }
+            label(title, heading: true)
             if scope.route == .savedLoginApi && buildSigning == .unsigned {
                 label(.init("This reading path needs a signed build.", "此读取路径需要签名版本。"))
             }
@@ -147,17 +185,23 @@ import ModelPlanWire
             } else if scope.disabledReason != nil {
                 label(.init("This path cannot be newly allowed under the engine's current policy. Existing permissions can still be revoked.", "引擎当前策略不允许新增授权；仍可撤销已有权限。"))
             }
-            label(controller.isAllowed(id) ? .init("Allowed", "已授权") : .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。"))
+            label(controller.isAllowed(id) ? .init("Allowed", "已授权") : .init("Not granted. Select this path and confirm to allow it.", "尚未授权；选择该读取路径并确认后才会授权。"), secondary: true)
             let selected = controller.selectedIDs.contains(id)
             let box = synchronousButton(.init("Allow this path", "授权此读取路径"), id: "scope.allow." + id, enabled: controller.canChoose(id)) { [weak self] in
                 self?.controller.choose(id, selected: !selected)
             }
-            box.setButtonType(.switch); box.state = selected ? .on : .off; addArrangedSubview(box)
-            addArrangedSubview(synchronousButton(.init("Revoke this path…", "撤销此路径授权…"), id: "scope.revoke." + id, enabled: controller.canMutate) { [weak self] in self?.controller.requestRevoke(id) })
-            addArrangedSubview(synchronousButton(.init("Forget saved permission…", "忘记已保存权限…"), id: "scope.forget." + id, enabled: controller.canMutate) { [weak self] in self?.controller.requestForget(id) })
+            box.setButtonType(.switch); box.state = selected ? .on : .off
+            // One line per path: the choice, then its saved-permission actions (Settings only).
+            if firstRun { line([box]) }
+            else {
+                line([box,
+                      synchronousButton(.init("Revoke this path…", "撤销此路径授权…"), id: "scope.revoke." + id, enabled: controller.canMutate) { [weak self] in self?.controller.requestRevoke(id) },
+                      synchronousButton(.init("Forget saved permission…", "忘记已保存权限…"), id: "scope.forget." + id, enabled: controller.canMutate) { [weak self] in self?.controller.requestForget(id) }])
+            }
         }
-        addArrangedSubview(synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() })
-        addArrangedSubview(synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() })
+        gap()
+        line([synchronousButton(.init("Select all available paths", "全选可授权路径"), id: "scope.selectAll", enabled: controller.canMutate) { [weak self] in self?.controller.selectAll() },
+              synchronousButton(.init("Allow selected paths…", "授权所选路径…"), id: "scope.allowSelected", enabled: controller.canRequestAllow) { [weak self] in self?.controller.requestAllow() }])
         if case .confirmation(let confirmation) = controller.phase {
             let ids = Set(confirmation.intent.allowIDs + confirmation.intent.denyIDs + confirmation.intent.forgetIDs)
             for scope in facts.scopes where ids.contains(scope.scope) { label(scopeTitle(scope)) }
@@ -166,8 +210,8 @@ import ModelPlanWire
             case .revoke: label(.init("Revoke this specific reading permission?", "撤销这一项读取授权？"))
             case .forget: label(.init("Forget this saved decision and request cleanup?", "忘记这一项已保存的决定并请求清理？"))
             }
-            addArrangedSubview(button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) })
-            addArrangedSubview(synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() })
+            line([button(.init("Confirm", "确认"), id: "scope.confirm") { [weak self] in await self?.controller.confirm(confirmation.id) },
+                  synchronousButton(.init("Cancel", "取消"), id: "scope.cancel") { [weak self] in self?.controller.cancelConfirmation() }])
         }
     }
 }

@@ -56,14 +56,13 @@ public struct StaticDockGeometry {
     public mutating func registerSliver(hullBounds: CGRect, expandedSize: CGSize, edge: SettingsDockEdge,
                                        parameters: DockSliverParameters = .current, scale: CGFloat = 1) throws {
         guard !hullBounds.isNull, !hullBounds.isEmpty else { throw DockEdgeError.invalidGeometry }
-        let metrics = try parameters.resolve(fullSpan: edge == .bottom ? hullBounds.width : hullBounds.height, scale: scale)
+        let metrics = try parameters.resolve(fullSpan: edge.isHorizontal ? hullBounds.width : hullBounds.height, scale: scale)
         sliverLength = metrics.length; sliverThickness = metrics.thickness
-        sliverAlongAnchor = edge == .bottom ? hullBounds.midX : expandedSize.height - hullBounds.midY
+        sliverAlongAnchor = edge.isHorizontal ? hullBounds.midX : expandedSize.height - hullBounds.midY
     }
 }
 
 @MainActor private final class StaticDockContainer: NSView { override var isFlipped: Bool { true } }
-@MainActor private final class InertCockpitVeil: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
 /// Empty-state copy must not swallow the neutral Dock's background grab area.
 @MainActor private final class StaticDockStatusLabel: NSTextField {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -138,7 +137,6 @@ struct DockHelpInteraction: Equatable {
     public var cockpitEntryEnabled = true {
         didSet {
             consoleButton.isEnabled = cockpitEntryEnabled
-            cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
             guard oldValue != cockpitEntryEnabled else { return }
             if let presentation = edge.presentation { publishDockHelpSurface(presentation) }
             if !cockpitEntryEnabled { consoleButton.clearHelpFocus() }
@@ -146,7 +144,11 @@ struct DockHelpInteraction: Equatable {
     }
     public var showSettings: (() -> Void)?
     var openCardSourceURL: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
-    public var requestHideDock:(() -> Void)?
+    /// G3-28: the widget menu's Auto-Collapse item. The app writes the same stored setting
+    /// as Settings' auto-collapse switch; without an app the preview applies nothing.
+    public var requestAutoCollapse: ((Bool) -> Void)?
+    /// G3-22: shown as the first, disabled line of the widget menu (the status icon may be hidden).
+    public var statusIconNotice: SettingsText?
     /// Set only when the member-scoped refresh adapter is actually installed.
     public var ringRefreshAvailable = false
     public var catalogueChanged: (([SettingsSubscription]) -> Void)?
@@ -396,7 +398,7 @@ struct DockHelpInteraction: Equatable {
     private var lastDisplayChoices: [SettingsDisplayChoice] = []
     private var edgeGeometries: [DockEdge: StaticDockGeometry] = [:]
     private var edgeViews: [DockEdge: DockInstrumentView] = [:]
-    private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
+    private let alternateViews = [DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero), DockInstrumentView(frame: .zero)]
     func ownsDockMenu(_ menu: NSMenu) -> Bool {
         if menu.delegate === self { return true }
         return (menu.delegate as? DockSliverMenu)?.owner === self
@@ -507,7 +509,7 @@ struct DockHelpInteraction: Equatable {
               application?.effective.reduceMotion == false, let id = interactionHoveredID,
               let hovered = displayed.interactionAnchor(id) else { displayed.setNozzlePoses([:]); return }
         let stations = presentationGeometry.hoverStations
-        let horizontal = edge.presentation?.placement?.edge == .bottom
+        let horizontal = edge.presentation?.placement?.edge.isHorizontal == true
         let diameter = preferences.size.nozzleDiameter
         var along = horizontal ? hovered.midX : hovered.midY
         if let window = displayed.window, let pointer = environment().pointer {
@@ -521,11 +523,12 @@ struct DockHelpInteraction: Equatable {
             switch preferences.magnification {
             case .none: continue
             case .subtle:
-                guard member == id, let hull = displayed.registeredHullBounds else { continue }
-                let dx = hull.midX - hovered.midX, dy = hull.midY - hovered.midY
-                let distance = hypot(dx, dy)
+                // G3-29: like the prototype, the hovered ring grows outward (away from the screen
+                // edge, along the station's inward normal), never toward the readout below it.
+                guard member == id else { continue }
+                let length = hypot(station.inward.dx, station.inward.dy)
                 scale = 1.15
-                offset = distance > 0 ? CGPoint(x: 6 * dx / distance, y: 6 * dy / distance) : .zero
+                offset = length > 0 ? CGPoint(x: 6 * station.inward.dx / length, y: 6 * station.inward.dy / length) : .zero
             case .strong:
                 guard station.pitch > 0, let anchor = displayed.interactionAnchor(member) else { continue }
                 let centre = horizontal ? anchor.midX : anchor.midY
@@ -673,11 +676,22 @@ struct DockHelpInteraction: Equatable {
         overflowScroll.hasVerticalScroller = true; overflowScroll.drawsBackground = true
         overflowScroll.appearance = NSAppearance(named: (application?.effective.darkAppearance ?? true) ? .darkAqua : .aqua)
         let x = preferences.dockEdge == .left ? anchor.maxX + 12 : anchor.minX - size.width - 12
-        let y = preferences.dockEdge == .bottom ? anchor.maxY + 12 : anchor.midY - size.height / 2
+        let y = preferences.dockEdge == .bottom ? anchor.maxY + 12 : preferences.dockEdge == .top ? anchor.minY - size.height - 12 : anchor.midY - size.height / 2
         overflowPanel.contentView = overflowScroll
         overflowPanel.setFrame(CGRect(x: max(safe.minX, min(x, safe.maxX - size.width)),
             y: max(safe.minY, min(y, safe.maxY - size.height)), width: size.width, height: size.height), display: true)
         overflowPanel.orderFrontRegardless()
+    }
+    /// G3-31: the accepted r7 card measurements (plate 304 wide, 11-point padding, 20-point
+    /// vendor mark, 78 x 7 ten-segment bar with 1.5-point gaps). Material and colours are not ported yet.
+    static var prototypeCardStyle: DockCardStyle {
+        var style = DockCardStyle()
+        style.width = QuotaWidgetCardGeometry.plateWidth
+        style.padding = QuotaWidgetCardGeometry.plateHorizontalPadding
+        style.brandSize = QuotaWidgetCardGeometry.headingIconSize
+        style.barSize = CGSize(width: QuotaWidgetCardGeometry.rowFixedColumns[1], height: QuotaWidgetCardGeometry.barHeight)
+        style.barGap = QuotaWidgetCardGeometry.barSegmentGap
+        return style
     }
     public let dockView = DockInstrumentView(frame: .zero)
     private let sliver = DockSliverView(frame: .zero)
@@ -685,7 +699,6 @@ struct DockHelpInteraction: Equatable {
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
     private let consoleButton = DockIgnitionButton(frame: .zero)
-    private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
     public convenience init(appearance: Appearance? = nil, sliverParameters: DockSliverParameters = .current, readerCapabilities: CommunityReaderCapabilities = .init(), currentDate: @escaping @MainActor () -> Date = { Date() },
@@ -720,10 +733,9 @@ struct DockHelpInteraction: Equatable {
         consoleButton.setAccessibilityIdentifier("dock.ignition")
         consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
-        cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
-        cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
-        cockpitVeil.isHidden = true
-        container.addSubview(dockView); container.addSubview(cockpitVeil); container.addSubview(consoleButton)
+        // G3-23: the ignition cap shows the official red art at full strength, as in the prototype.
+        // A disabled cockpit entry only disables the button; no dark veil is painted over it.
+        container.addSubview(dockView); container.addSubview(consoleButton)
         bindEmptyStation(to: dockView)
         dockView.onAction = { [weak self] action in
             guard let self, self.permitted, !self.retired, !self.rendering else { return }
@@ -768,7 +780,8 @@ struct DockHelpInteraction: Equatable {
     private func connectEdge() {
         edge.onPresent = { [weak self] value in self?.present(value) }
         edge.prepareDragDisplay = { [weak self] display in
-            guard let self, self.appearanceDisplay != display, !self.rendering else { return }
+            // Also prepare the top-edge artwork once per carry on the same display (lazy, G3-27).
+            guard let self, self.appearanceDisplay != display || self.edgeViews[.top] == nil, !self.rendering else { return }
             self.rendering = true
             defer { self.rendering = false }
             self.rebuildPass(self.inputGeneration, carriedTo: display)
@@ -844,18 +857,35 @@ struct DockHelpInteraction: Equatable {
 
     /// Synchronously retire cached values and accessibility nodes before replacement.
     /// Reset notice acknowledgements only on a privacy withdrawal, not on a timer tick.
-    func withdrawAdmittedContent(privacy: Bool) {
-        guard !retired else { return }
+    @discardableResult
+    func withdrawAdmittedContent(privacy: Bool, keepingCardFor members: Set<String> = []) -> Bool {
+        guard !retired else { return false }
+        let keepCard = !privacy && cardPresentedGeneration != nil && (cardID.map(members.contains) ?? false)
+        if keepCard {
+            // Leave only an empty shell during the synchronous replacement.
+            // Its old labels, AX nodes and action generation retire before recompute.
+            cardPresentedGeneration = nil
+            card.dispose()
+        } else {
+            dismissCard()
+        }
         inputGeneration &+= 1
         model = nil; contentMenuStatusLines = []; contentEmptyText = nil
         workingSignals = [:]; attentionSignals = []
         if privacy { attention = DockAttentionState() }
         menuNotice = nil; menuNoticeDidChange?(nil, false)
-        catalogueKey = ""; catalogueChanged?([])
-        dismissCard(); try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
+        if !keepCard { catalogueKey = ""; catalogueChanged?([]) }
+        try? overflowTray.apply([]); overflowPanel?.orderOut(nil)
         for view in [dockView] + alternateViews { view.retireOfficialPresentation() }
         sliver.noticeMarks = []
         try? sliver.apply(image: nil, logicalSize: .zero, scale: 1, accessibilityLabel: "")
+        return keepCard
+    }
+
+    func finishCardReplacement() -> Bool {
+        guard cardID != nil, cardPresentedGeneration == nil else { return false }
+        dismissCard()
+        return true
     }
 
     /// Installs the content consumer without replacing window/input ownership.
@@ -1042,12 +1072,11 @@ struct DockHelpInteraction: Equatable {
         }
         container.setFrameSize(dockView.frame.size)
         consoleButton.isHidden = geometry.consoleButton == nil
-        if let rect = geometry.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
-        cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
+        if let rect = geometry.consoleButton { consoleButton.frame = rect }
         let selected = nativeEdge(passPreferences.dockEdge)
         var nextGeometries = [selected: geometry], nextViews = [selected: dockView]
         // The same neutral rectangle is valid at every edge. Register destinations before tracking,
-        // so a right-edge Community Dock can actually preview and drop on the left or bottom.
+        // so a right-edge Community Dock can actually preview and drop on the left, bottom or top.
         if appearance == nil {
             for orientation in DockEdgeGeometry.allowedEdges where orientation != selected {
                 var candidate = geometry
@@ -1061,7 +1090,10 @@ struct DockHelpInteraction: Equatable {
         // The official factory opts detached integration hosts into production
         // edge layouts; arbitrary injected appearances retain their own lifecycle.
         if (createsNativePanels || prepareDetachedAlternateAppearances), let appearance {
-            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected }) {
+            // The top edge (G3-27) is drawn only while the widget rests there or is being carried:
+            // an official horizontal face is costly, and a resting widget never needs it otherwise.
+            let needsTop = selected == .top || carriedTo != nil || edge.isBackgroundPressed
+            for (view, orientation) in zip(alternateViews, DockEdgeGeometry.allowedEdges.filter { $0 != selected && ($0 != .top || needsTop) }) {
                 var oriented = passPreferences
                 oriented.dockEdge = settingsEdge(orientation)
                 do {
@@ -1152,8 +1184,12 @@ struct DockHelpInteraction: Equatable {
         // The gate samples current geometry and can synchronously switch the displayed edge.
         return !createsNativePanels || view.superview === container
     }
-    private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
-    private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge { value == .left ? .left : value == .bottom ? .bottom : .right }
+    private func nativeEdge(_ value: SettingsDockEdge) -> DockEdge {
+        switch value { case .left: return .left; case .right: return .right; case .bottom: return .bottom; case .top: return .top }
+    }
+    private func settingsEdge(_ value: DockEdge) -> SettingsDockEdge {
+        switch value { case .left: return .left; case .right: return .right; case .bottom: return .bottom; case .top: return .top }
+    }
     private var visibilityPolicy: DockVisibilityPolicy {
         var value = DockVisibilityPolicy()
         value.revealDwell = Double(preferences.revealMilliseconds) / 1000
@@ -1286,12 +1322,10 @@ struct DockHelpInteraction: Equatable {
             let view = edgeViews[orientation] ?? dockView
             for child in container.subviews where child is DockInstrumentView && child !== view { child.removeFromSuperview() }
             if view.superview !== container { container.addSubview(view, positioned: .below, relativeTo: consoleButton) }
-            container.addSubview(cockpitVeil, positioned: .below, relativeTo: consoleButton)
             container.setFrameSize(view.frame.size)
             let current = edgeGeometries[orientation] ?? geometry
             consoleButton.isHidden = current.consoleButton == nil
-            if let rect = current.consoleButton { consoleButton.frame = rect; cockpitVeil.frame = rect; cockpitVeil.layer?.cornerRadius = min(rect.width, rect.height) / 2 }
-            cockpitVeil.isHidden = cockpitEntryEnabled || current.consoleButton == nil
+            if let rect = current.consoleButton { consoleButton.frame = rect }
             content = container
         case .sliver:
             do { content = try prepareSliver(size: panel.frame.size) }
@@ -1535,7 +1569,7 @@ struct DockHelpInteraction: Equatable {
     }
     private var sliverLogicalSize: CGSize {
         let current = presentationGeometry
-        return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)) == .bottom
+        return (edge.presentation?.placement?.edge ?? nativeEdge(preferences.dockEdge)).isHorizontal
             ? CGSize(width: current.sliverLength, height: current.sliverThickness)
             : CGSize(width: current.sliverThickness, height: current.sliverLength)
     }
@@ -1596,38 +1630,40 @@ struct DockHelpInteraction: Equatable {
             else { self.menuDidClose(menu) }
         }
         component.retainWithMenu()
-        var items: [DockMenuPresentationItem] = []
-        if lifecycleSuspended {
-            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
-            items.append(.init(title: cockpitEntryEnabled ? EngineRowsText.cockpitMenu.value(preferences.language) : EngineRowsText.comingSoon.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language)))
-            items.append(.init(title: EngineRowsText.contextClose.value(preferences.language),
-                               action: permitted ? { [weak self] in self?.closeContext() } : nil))
-            if permitted {
-                items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language),
-                                   action: { [weak self] in self?.hideDockMenu() }))
-            }
-            items.append(.init(title: nil))
-            let english = preferences.language == .english
-            let quit = purpose == .production ? (english ? "Quit ModelPlan" : "退出 ModelPlan") : (english ? "Quit preview" : "退出自测版")
-            items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
-            component.replace(with: items)
-            return menu
-        }
+        // G3-28 + owner HIG decision (11-06): [Auto-Collapse ✓, Settings… ⌘,] — [Quit ModelPlan ⌘Q].
+        // No Hide item here: the widget is turned off from the status menu or Settings.
+        // "收起/Collapse" only names the edge-strip state.
         let english = application == nil || preferences.language == .english
         let quit: String
         switch (purpose, english) {
         case (.production, true): quit = "Quit ModelPlan"
         case (.production, false): quit = "退出 ModelPlan"
-        case (.selfTest, true): quit = "Quit preview"
+        case (.selfTest, true): quit = "Quit Preview"
         case (.selfTest, false): quit = "退出自测版"
         }
-        items.append(.init(title: quit, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
+        let available = permitted && !lifecycleSuspended
+        var items: [DockMenuPresentationItem] = []
+        if let statusIconNotice {
+            items.append(.init(title: statusIconNotice.value(preferences.language), accessibilityID: "dock.menu.notice"))
+            items.append(.init(title: nil))
+        }
+        if lifecycleSuspended {
+            items.append(.init(title: EngineRowsText.paused.value(preferences.language)))
+            items.append(.init(title: nil))
+        } else if cockpitEntryEnabled {
+            items.append(.init(title: english ? "Open Cockpit" : "打开驾驶舱", action: { [weak self] in self?.openConsole() }))
+            items.append(.init(title: nil))
+        }
+        let autoCollapse = preferences.autoHide
+        items.append(.init(title: EngineRowsText.autoCollapse.value(preferences.language), accessibilityID: "dock.menu.autoCollapse",
+                           checked: autoCollapse,
+                           action: available && requestAutoCollapse != nil ? { [weak self] in self?.toggleAutoCollapseFromMenu(!autoCollapse) } : nil))
+        items.append(.init(title: EngineRowsText.settings.value(preferences.language), accessibilityID: "dock.menu.settings",
+                           keyEquivalent: available ? "," : "",
+                           action: available ? { [weak self] in self?.openSettings() } : nil))
         items.append(.init(title: nil))
-        items.append(.init(title: cockpitEntryEnabled ? (english ? "Open Cockpit" : "打开驾驶舱") : EngineRowsText.comingSoon.value(preferences.language), action: cockpitEntryEnabled ? { [weak self] in self?.openConsole() } : nil))
-        items.append(.init(title: EngineRowsText.contextSettings.value(preferences.language), action: { [weak self] in self?.openSettings() }))
-        items.append(.init(title: EngineRowsText.contextClose.value(preferences.language), action: { [weak self] in self?.closeContext() }))
-        items.append(.init(title: EngineRowsText.hideQuotaWidget.value(preferences.language), action: { [weak self] in self?.hideDockMenu() }))
+        items.append(.init(title: quit, accessibilityID: "dock.menu.quit", keyEquivalent: "q",
+                           target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))))
         component.replace(with: items)
         return menu
     }
@@ -1723,9 +1759,9 @@ struct DockHelpInteraction: Equatable {
         closeContext()
         showSettings?()
     }
-    @objc private func hideDockMenu() {
-        guard permitted,!retired else { return }
-        if let requestHideDock { requestHideDock() } else { setPresentationAllowed(false) }
+    private func toggleAutoCollapseFromMenu(_ on: Bool) {
+        guard permitted, !retired, !lifecycleSuspended else { return }
+        requestAutoCollapse?(on)
     }
     @objc private func displaysChanged() {
         guard permitted, !retired else { return }
@@ -1789,7 +1825,7 @@ struct DockHelpInteraction: Equatable {
         card.onFocusChange = { [weak self] in self?.refreshCardFocusSoon() }
         let unavailable = !cardUsesSettings(id) && !cockpitEntryEnabled
         do {
-            try card.apply(content, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
+            try card.apply(content, style: Self.prototypeCardStyle, enterDisabledReason: unavailable ? EngineRowsText.comingSoon.value(preferences.language) : nil)
         } catch { dismissCard(); return }
         if interactionController?.isActive != true { scheduleFallbackCardLeave() }
         guard createsNativePanels else { return }
@@ -1869,7 +1905,7 @@ struct DockHelpInteraction: Equatable {
         overflowTray.dispose(); overflowPanel?.orderOut(nil); overflowPanel = nil
         panel?.orderOut(nil); cardPanel?.orderOut(nil); panel = nil; cardPanel = nil
         reportVisibility(false); visibilityChanged = nil
-        showConsole = nil; showSettings = nil; requestHideDock=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
+        showConsole = nil; showSettings = nil; requestAutoCollapse=nil; catalogueChanged = nil; commitPlacement = nil; commitDisplayPlacement = nil; displayChoicesChanged = nil
     }
 }
 

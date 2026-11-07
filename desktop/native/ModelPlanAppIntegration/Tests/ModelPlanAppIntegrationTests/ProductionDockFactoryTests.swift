@@ -16,7 +16,7 @@ import ModelPlanSettings
         let productionTitles = production.menu().items.map(\.title).joined(separator: " | ")
         XCTAssertTrue(productionTitles.contains("Quit ModelPlan"))
         XCTAssertFalse(productionTitles.contains("preview")); XCTAssertFalse(productionTitles.contains("自测"))
-        XCTAssertTrue(preview.menu().items.contains { $0.title.contains("Quit preview") })
+        XCTAssertTrue(preview.menu().items.contains { $0.title.contains("Quit Preview") })
         XCTAssertNil(production.nativePanel); XCTAssertNil(preview.nativePanel)
     }
     func testQuitMenuFollowsLoadedLanguageWithoutOpeningWindows() async throws {
@@ -27,7 +27,7 @@ import ModelPlanSettings
         let preview = StaticDockPreviewHost(purpose: .selfTest)
         defer { production.close(); preview.close() }
         let app = SettingsApplicationCoordinator(store: store) { value in production.apply(value); preview.apply(value) }
-        for (language, expectedProduction, expectedPreview) in [(SettingsLanguage.chinese, "退出 ModelPlan", "退出自测版"), (.english, "Quit ModelPlan", "Quit preview")] {
+        for (language, expectedProduction, expectedPreview) in [(SettingsLanguage.chinese, "退出 ModelPlan", "退出自测版"), (.english, "Quit ModelPlan", "Quit Preview")] {
             try await store.update { $0.language = language }
             await app.reload()
             for (host, title) in [(production, expectedProduction), (preview, expectedPreview)] {
@@ -111,7 +111,7 @@ import ModelPlanSettings
             func arm(at deadline: TimeInterval, _ action: @escaping @MainActor () -> Void) {}
             func cancel() {}
         }
-        for edge in [SettingsDockEdge.right, .left, .bottom] {
+        for edge in [SettingsDockEdge.right, .left, .bottom, .top] {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("supplied-sliver-" + UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: root) }
             let store = try SettingsStore(url: root.appendingPathComponent("settings.json"))
@@ -121,7 +121,7 @@ import ModelPlanSettings
                 visibleFrame: .init(x: 0, y: 24, width: 1200, height: 850))
             let host = StaticDockPreviewHost(appearance: { view, rows, preferences in
                 try view.applyCommunity(rows)
-                let vertical = preferences.dockEdge != .bottom
+                let vertical = !preferences.dockEdge.isHorizontal
                 let size = CGSize(width: vertical ? 90 : 190, height: vertical ? 190 : 90)
                 view.setFrameSize(size)
                 let hull = CGRect(x: 11, y: 17, width: vertical ? 60 : span, height: vertical ? span : 60)
@@ -136,7 +136,7 @@ import ModelPlanSettings
             await app.reload(); host.setPresentationAllowed(true)
             let placement = try XCTUnwrap(host.edgePresentation?.placement)
             XCTAssertEqual(host.edgePresentation?.state, .sliver)
-            if edge == .bottom {
+            if edge.isHorizontal {
                 XCTAssertEqual(placement.sliverFrame.width, span, accuracy: 0.0001)
                 XCTAssertEqual(placement.sliverFrame.midX, placement.frame.minX + 11 + span / 2, accuracy: 0.0001)
             } else {

@@ -222,10 +222,12 @@ private actor CardDismissalClient: EngineClient {
             for _ in 0..<100 { if !dock.card.isHidden { break }; try await Task.sleep(for: .milliseconds(10)) }
             XCTAssertEqual(button(dock.card, id: "dock.card.enter")?.title, settings)
             XCTAssertEqual(button(dock.card, id: "dock.card.close")?.accessibilityLabel(), close)
+            // Owner HIG decision 11-06: the widget menu has Settings… (no Close; a menu closes itself).
             let menu = dock.menu()
-            let actions = menu.items.filter { $0.title == settings || $0.title == close }
-            XCTAssertEqual(actions.map(\.title), [settings, close])
-            let settingsItem = try XCTUnwrap(actions.first { $0.title == settings })
+            let menuSettings = settings + "…"
+            let actions = menu.items.filter { $0.title == menuSettings || $0.title == close }
+            XCTAssertEqual(actions.map(\.title), [menuSettings])
+            let settingsItem = try XCTUnwrap(actions.first { $0.title == menuSettings })
             let beforeSettings = navigations
             _ = try XCTUnwrap(settingsItem.target as? NSObject).perform(try XCTUnwrap(settingsItem.action), with: settingsItem)
             XCTAssertEqual(navigations, beforeSettings + 1)

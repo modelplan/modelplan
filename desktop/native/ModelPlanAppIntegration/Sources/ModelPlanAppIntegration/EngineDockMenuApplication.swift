@@ -64,6 +64,7 @@ struct StatusNoticePresentation {
     private var showRequestInFlight = false
     private var helpRevealTask: Task<Void, Never>?
     private var showFeedback: ShowQuotaWidgetOutcome?, hideFeedback: ShowQuotaWidgetOutcome?
+    private var autoCollapseFailed = false
     private var memberRefreshInFlight = Set<String>()
     private var unavailableMemberRefreshes = Set<String>()
     public var memberRefreshAdapter: (any DockMemberRefreshAdapting)? {
@@ -156,8 +157,8 @@ struct StatusNoticePresentation {
             self.console?.applySettings(value)
             self.dockHelp?.refresh()
         }
-        composition.dock.requestHideDock = { [weak self] in
-            Task { @MainActor [weak self] in await self?.hideDock() }
+        composition.dock.requestAutoCollapse = { [weak self] on in
+            Task { @MainActor [weak self] in await self?.setAutoCollapse(on) }
         }
         #if MODELPLAN_U6_DRIVE
         composition.provider.verificationWillClear = { [weak self] invalidation in
@@ -489,9 +490,42 @@ struct StatusNoticePresentation {
            actionForItem: { item in item.action == #selector(EngineDockMenuApplication.refreshRows) ? .refresh : nil })
         #endif
         renderMenu()
+        watchStatusItemVisibility()
         Task { await prepare(); guard !terminating else { return }; startLifecycle(); renderMenu() }
     }
+    /// G3-22: a full menu bar hides the item behind the notch (the owner's Mac: occluded at
+    /// x=769..801 of 1470). Test seam: nil reads the real status-item window.
+    var statusItemVisibility: (@MainActor () -> Bool?)?
+    private(set) var statusItemHidden = false
+    private var statusOcclusionObserver: NSObjectProtocol?
+    private func watchStatusItemVisibility() {
+        statusOcclusionObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                                        object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let window = note.object as? NSWindow, window === self.status?.button?.window else { return }
+                self.checkStatusItemVisibility()
+            }
+        }
+        // Give the menu bar a few seconds to lay the item out before telling the user.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.checkStatusItemVisibility()
+        }
+    }
+    /// Shows the one-line notice in the widget menu and Settings while the item is covered; clears it when visible.
+    func checkStatusItemVisibility() {
+        guard !terminating else { return }
+        let visible = statusItemVisibility.map { $0() } ?? status?.button?.window.map { $0.occlusionState.contains(.visible) }
+        let hidden = visible == false
+        guard hidden != statusItemHidden else { return }
+        statusItemHidden = hidden
+        composition.dock.statusIconNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        var context = settings.editor.context
+        context.statusItemNotice = hidden ? EngineRowsText.statusItemHidden : nil
+        settings.update(context: context)
+    }
     var statusButtonForTesting: NSStatusBarButton? { status?.button }
+    var statusLengthForTesting: CGFloat? { status?.length }
     /// A caller supplying no autosave name owns a temporary, non-persisted item.
     func installStatusItem(autosaveName: NSStatusItem.AutosaveName? = nil) {
         guard status == nil, !terminating else { return }
@@ -539,25 +573,26 @@ struct StatusNoticePresentation {
         func label(_ en: String, _ zh: String) -> String { english ? en : zh }
         let available = !lifecyclePaused
         let settingsTitle = label("Settings…", "设置…")
-        let quitTitle = label("Quit", "退出")
+        // HIG: "Quit AppName" and "About AppName" in a menu bar extra's menu.
+        let quitTitle = EngineRowsText.quit.value(language)
         applicationSettingsItem.title = settingsTitle
         applicationSettingsItem.isEnabled = available && !terminating
         applicationSettingsItem.keyEquivalent = applicationSettingsItem.isEnabled ? "," : ""
         applicationQuitItem.title = quitTitle
         let showAvailability = ShowQuotaWidgetRequest.availability(paused: terminating,
             loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight)
-        let showTitle: String
-        switch showAvailability {
-        case .loading: showTitle = label("Show Quota Widget — Loading Settings", "显示额度挂件 — 正在载入设置")
-        case .saving: showTitle = label("Show Quota Widget — Saving Settings", "显示额度挂件 — 正在保存设置")
-        case .ready, .paused: showTitle = EngineRowsText.showQuotaWidget.value(language)
-        }
+        // Owner HIG decision (11-06): one checkable item with a constant title. The checkmark
+        // shows the stored switch (the same one as Settings); choosing it toggles show/hide.
+        // While Settings load or save the item stays put and is only disabled.
+        let showTitle = EngineRowsText.showQuotaWidget.value(language)
+        let widgetShown = settings.editor.snapshot?.preferences.showDock ?? false
         var menuItems: [DockMenuPresentationItem] = []
         if let feedback = helpError ?? showFeedbackText(language) { menuItems.append(.init(title: feedback)) }
         else if lifecyclePaused { menuItems.append(.init(title: (canRetry ? EngineRowsText.waitingForFresh : EngineRowsText.paused).value(language))) }
         menuItems += [
             .init(title: label("Refresh", "刷新"), target: (available || canRetry) ? self : nil, selector: (available || canRetry) ? #selector(refreshRows) : nil),
-            .init(title: showTitle, action: showAvailability == .ready ? { [weak self] in self?.showDock() } : nil),
+            .init(title: showTitle, accessibilityID: "status.showQuotaWidget", checked: widgetShown,
+                  action: showAvailability == .ready ? { [weak self] in Task { @MainActor [weak self] in await self?.setDockShown(!widgetShown) } } : nil),
             .init(title: nil),
             .init(title: cockpitEntryEnabled ? label("Open Cockpit", "打开驾驶舱") : EngineRowsText.comingSoon.value(language), action: available && cockpitEntryEnabled ? { [weak self] in self?.showConsoleMenu() } : nil),
             .init(title: label("Website", "网站"), action: { NSWorkspace.shared.open(SettingsPublicLink.website.url) }),
@@ -600,7 +635,7 @@ struct StatusNoticePresentation {
             .init(title: label("Help…", "说明…"), accessibilityID: "status.help",
                   action: available ? { [weak self] in self?.showHelp(fromStatusMenu: true) } : nil),
             .init(title: settingsTitle, keyEquivalent: available ? "," : "", action: available ? { [weak self] in self?.settingsHost.action() } : nil),
-            .init(title: label("About", "关于"), action: available ? { [weak self] in self?.showAbout() } : nil),
+            .init(title: EngineRowsText.about.value(language), action: available ? { [weak self] in self?.showAbout() } : nil),
             .init(title: quitTitle, keyEquivalent: "q", target: NSApplication.shared, selector: #selector(NSApplication.terminate(_:))),
         ]
         LivePrivateMenus.scrubItems(menu)
@@ -612,6 +647,11 @@ struct StatusNoticePresentation {
         }
         if let button = status?.button {
             applyStatusContent(to: button, detail: detail)
+            // G3-22: an icon-only item takes the square menu-bar length (was 32 pt for a 16 pt image);
+            // a percentage title keeps a variable length. The autosave name keeps a ⌘-dragged position.
+            let iconOnly = button.title.isEmpty && button.image != nil
+            button.imagePosition = iconOnly ? .imageOnly : .imageLeading
+            status?.length = iconOnly ? NSStatusItem.squareLength : NSStatusItem.variableLength
             // MENU-06: place the dot after the title is set, against the icon, not the text end.
             noticeIndicator.attach(to: button)
         }
@@ -688,39 +728,41 @@ struct StatusNoticePresentation {
         return true
     }
     func showFeedbackText(_ language: SettingsLanguage) -> String? {
+        if autoCollapseFailed { return SettingsText("Could not change Auto-Collapse. Check Settings and try again.", "无法更改自动收起，请检查设置后重试。").value(language) }
         switch hideFeedback {
         case .changed: return SettingsText("Settings changed. Hide Quota Widget again if you still want it hidden.", "设置已更改；如仍要隐藏额度挂件，请再次选择隐藏。").value(language)
         case .failed, .unavailable: return SettingsText("Could not hide Quota Widget. Check Settings and try again.", "无法隐藏额度挂件，请检查设置后重试。").value(language)
         case .ready, nil: break
         }
         switch showFeedback {
-        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择显示额度挂件。").value(language)
-        case .failed, .unavailable: return SettingsText("Could not show Quota Widget. Check Settings and try again.", "无法显示额度挂件，请检查设置后重试。").value(language)
+        case .changed: return SettingsText("Settings changed. Choose Show Quota Widget again.", "设置已更改，请再次选择「显示额度挂件」。").value(language)
+        case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
     }
-    /// Same bounded path as Show, so a hint-ledger write cannot drop Hide. A Hide that did not
-    /// take effect is reported where a failed Show is: the widget is still on screen.
-    func hideDock(commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
-        let outcome = await ShowQuotaWidgetRequest.setVisible(false, editor: settings.editor, commit: commit)
+    /// G3-28: the same stored setting as Settings' auto-collapse switch, through the same bounded
+    /// path as Show, so a hint-ledger write cannot drop the choice. A failure shows in the status menu.
+    func setAutoCollapse(_ on: Bool, commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
+        let outcome = await ShowQuotaWidgetRequest.setAutoCollapse(on, editor: settings.editor, commit: commit)
         guard !terminating else { return }
-        hideFeedback = outcome == .ready ? nil : outcome
+        autoCollapseFailed = outcome != .ready
         renderMenu()
     }
-    private func showDock() {
+    /// The status menu's checkable Show Quota Widget item (G3-18): unchecking turns the widget
+    /// off, checking turns it on and reveals it. The app keeps running either way.
+    func setDockShown(_ shown: Bool, commit: (@MainActor (SettingsEditor) async throws -> SettingsSnapshot)? = nil) async {
         guard ShowQuotaWidgetRequest.availability(paused: terminating,
                 loaded: settings.editor.snapshot != nil, saving: settings.editor.isSaving || showRequestInFlight) == .ready else { return }
         showRequestInFlight = true; showFeedback = nil; hideFeedback = nil; renderMenu()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let outcome = await ShowQuotaWidgetRequest.perform(editor: self.settings.editor)
-            self.showRequestInFlight = false
-            guard !self.terminating else { return }
-            let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && self.settings.editor.snapshot?.preferences.showDock != true ? .changed : outcome
-            self.showFeedback = currentOutcome == .ready ? nil : currentOutcome
-            if currentOutcome == .ready { self.composition.dock.revealForUser() }
-            self.renderMenu()
-        }
+        let outcome = await ShowQuotaWidgetRequest.setVisible(shown, editor: settings.editor, commit: commit)
+        showRequestInFlight = false
+        guard !terminating else { return }
+        let currentOutcome: ShowQuotaWidgetOutcome = outcome == .ready && settings.editor.snapshot?.preferences.showDock != shown ? .changed : outcome
+        // A Hide that did not take effect leaves the widget on screen, so it is reported too.
+        if shown { showFeedback = currentOutcome == .ready ? nil : currentOutcome }
+        else { hideFeedback = currentOutcome == .ready ? nil : currentOutcome }
+        if currentOutcome == .ready && shown { composition.dock.revealForUser() }
+        renderMenu()
     }
     @objc private func showConsoleMenu() { showConsole() }
     @objc private func openPublicLink(_ sender:NSMenuItem) {

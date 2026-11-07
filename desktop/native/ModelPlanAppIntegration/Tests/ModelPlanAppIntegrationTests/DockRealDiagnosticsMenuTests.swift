@@ -110,10 +110,10 @@ import XCTest
         XCTAssertEqual(row()?.accounts.first?.windows.first?.remainingPercent, 75)
         let editor = app.settingsHost.application.editor
         let english = try items().map(\.title)
-        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"])
+        XCTAssertEqual(english, ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"])
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         let chinese = try items().map(\.title)
-        XCTAssertEqual(chinese, ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"])
+        XCTAssertEqual(chinese, ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"])
 
         // Backdate the synthetic fixture and reservation to exercise a second
         // real reader call without changing the production refresh interval.

@@ -26,6 +26,7 @@ public struct EngineMenuRefreshResult {
     private let admittedCache = HostPairedContentCache()
     private var deadlineLifecycleSuspended = false
     private var pendingProjectionReplacement = false
+    private var cardReplacementMembers: Set<String> = []
     private lazy var pairedProjection = HostPairedProjection(store: store, source: provider, provider: adapter, client: client)
     private let deadlineWall: @MainActor () -> Date
     private let deadlineElapsed: () -> TimeInterval
@@ -35,11 +36,14 @@ public struct EngineMenuRefreshResult {
             clear: { [weak self] in
                 guard let self else { return }
                 self.admittedCache.clear()
-                self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared)
-                // Rebuild from the empty, localized cache after scrubbing so the
-                // Dock menu has a next step even if no new projection is admitted.
-                self.dock.refreshDockContent()
-                self.menuDidChange?()
+                let keepCard = self.dock.withdrawAdmittedContent(privacy: self.provider.dockContent.status == .cleared,
+                                                                 keepingCardFor: self.cardReplacementMembers)
+                // On withdrawal or a failed replacement the empty cache still
+                // supplies the localized menu next step.
+                if !keepCard {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
             }, recompute: { [weak self] now in
                 guard let self else { return nil }
                 defer {
@@ -55,7 +59,13 @@ public struct EngineMenuRefreshResult {
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
-            installValidatedUnknown: true)
+            installValidatedUnknown: true, presentationInterval: 60, refreshPresentation: { [weak self] now in
+                guard let self else { return }
+                if !self.refreshCurrentPresentation(at:now) {
+                    self.pairedProjection.invalidate()
+                    if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+                }
+            })
     }()
     private let clock: EngineDockClock
     // Internal injection seam: the production entry retains the system clock.
@@ -121,9 +131,31 @@ public struct EngineMenuRefreshResult {
         provider.dockContentDidChange = { [weak self] in
             guard let self else { return }
             self.adapter.scrubInvalidatedMenus()
+            let previous = self.pairedProjection.acceptedDelivery
             self.pairedProjection.invalidate()
             if self.pairedProjection.isProjecting { self.pendingProjectionReplacement = true; return }
-            if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            guard !self.deadlineLifecycleSuspended else { return }
+
+            let content = self.provider.dockContent
+            self.cardReplacementMembers = []
+            if let previous, self.store.snapshot.delivery == previous, content.status == .ready {
+                let catalogue = EngineAccountMemberCatalogue(rows: content.dockRows)
+                self.cardReplacementMembers = Set(catalogue.members.compactMap { member in
+                    guard member.subscriptionRef == member.id, member.isStable,
+                          member.row.state == .fresh || member.row.state == .stale,
+                          member.row.consent == .allowed || member.row.consent == .implicit || member.row.consent == .notRequired,
+                          member.account.valueState == .retained || member.account.valueState == .current else { return nil }
+                    return member.id
+                })
+            }
+            defer {
+                self.cardReplacementMembers = []
+                if self.dock.finishCardReplacement() {
+                    self.dock.refreshDockContent()
+                    self.menuDidChange?()
+                }
+            }
+            self.deadlineDriver.replace()
         }
     }
     public var presentedContent: DockContent { presentedContent(at: deadlineWall()) }
@@ -134,22 +166,22 @@ public struct EngineMenuRefreshResult {
     func setLanguage(_ language: String) {
         guard adapter.language != language else { return }
         adapter.language = language
-        // A locale change does not replace the accepted delivery. Reproject
-        // atomically only if the existing cache and source are still current,
-        // preserving an open card without retaining stale source data.
-        if !deadlineLifecycleSuspended, !pairedProjection.isProjecting {
-            let now = deadlineWall(), token = pairedProjection.generation
-            if admittedCache.isAdmissible(at: now),
-               let candidate = try? pairedProjection.make(.init(snapshot: nil, diagnostics: .init(), now: now)),
-               candidate.sourceToken == token, pairedProjection.isCurrent(token) {
-                admittedCache.install(candidate.value, evaluatedAt: now)
-                dock.refreshDockContent(); menuDidChange?()
-                return
-            }
-        }
+        if refreshCurrentPresentation(at:deadlineWall()) { return }
         pairedProjection.invalidate()
         if pairedProjection.isProjecting { pendingProjectionReplacement = true; return }
         if !deadlineLifecycleSuspended { deadlineDriver.replace() }
+    }
+    /// Re-evaluate only the current admitted source inside its original validity interval.
+    /// Countdown/age ticks and locale changes use the same atomic path; neither renews source freshness.
+    private func refreshCurrentPresentation(at now:Date) -> Bool {
+        guard !deadlineLifecycleSuspended, !pairedProjection.isProjecting else { return false }
+        let token=pairedProjection.generation
+        guard admittedCache.isAdmissible(at:now),
+              let candidate=try? pairedProjection.make(.init(snapshot:nil,diagnostics:.init(),now:now)),
+              candidate.sourceToken == token, pairedProjection.isCurrent(token) else { return false }
+        admittedCache.install(candidate.value,evaluatedAt:now)
+        dock.refreshDockContent();menuDidChange?()
+        return true
     }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.

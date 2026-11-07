@@ -47,4 +47,16 @@ final class DockPlacementPresentationTests: XCTestCase {
         XCTAssertEqual(preferences.dockEdge, .right)
         XCTAssertThrowsError(try SettingsDockPlacementObservation(displayID: "screen", edge: .left, alongFraction: .nan, recovering: true))
     }
+    /// G3-27: the top edge is a saved choice of its own and reports where the widget actually is.
+    func testTopEdgeIsOfferedSavedAndReportedBelowTheMenuBar() throws {
+        var preferences = SettingsPreferences(); preferences.dockEdge = .top
+        let decoded = try JSONDecoder().decode(SettingsPreferences.self, from: JSONEncoder().encode(preferences))
+        XCTAssertEqual(decoded.dockEdge, .top)
+        var context = SettingsPageContext()
+        context.dockPlacementObservation = try .init(displayID: "screen", edge: .top, alongFraction: 0.5, recovering: false)
+        let row = try XCTUnwrap(SettingsCatalogue.rows(preferences: preferences, context: context).first { $0.key == .dockEdge })
+        guard case .choice(let value, let options) = row.value else { return XCTFail("saved choice missing") }
+        XCTAssertEqual(value, "top"); XCTAssertTrue(options.contains("top"))
+        XCTAssertTrue(row.subtitle.english.contains("Currently top")); XCTAssertTrue(row.subtitle.chinese.contains("当前位于顶部"))
+    }
 }

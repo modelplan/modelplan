@@ -953,7 +953,7 @@ actor EntrySyntheticClient: EngineClient {
         }
         let resting = try pixels()
         let skin = try XCTUnwrap(view.presentedSkinForChecks)
-        let hull = try XCTUnwrap(view.registeredHullBounds)
+        XCTAssertNotNil(view.registeredHullBounds)
         let nozzle = try XCTUnwrap(view.interactionAnchor(id))
         let restingWidth = try XCTUnwrap(view.presentedImageForChecks).width
         let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID == id })
@@ -1006,11 +1006,13 @@ actor EntrySyntheticClient: EngineClient {
         let subtle = try XCTUnwrap(view.nozzlePosesForChecks[id])
         XCTAssertEqual(subtle.scale, 1.15)
         XCTAssertEqual(hypot(subtle.offset.x, subtle.offset.y), 6, accuracy: 0.001)
-        let dx = hull.midX - nozzle.midX, dy = hull.midY - nozzle.midY
-        let distance = hypot(dx, dy)
-        XCTAssertGreaterThan(distance, 0)
-        XCTAssertEqual(subtle.offset.x, 6 * dx / distance, accuracy: 0.001)
-        XCTAssertEqual(subtle.offset.y, 6 * dy / distance, accuracy: 0.001)
+        // G3-29: on the right edge the ring moves left, away from the edge, not down onto its text.
+        XCTAssertLessThan(subtle.offset.x, -5.5, "subtle hover grows outward from the screen edge")
+        XCTAssertLessThan(abs(subtle.offset.y), 1.5, "subtle hover does not slide along the edge")
+        let grown = CGRect(x: nozzle.midX + subtle.offset.x - nozzle.width * subtle.scale / 2,
+                           y: nozzle.midY + subtle.offset.y - nozzle.height * subtle.scale / 2,
+                           width: nozzle.width * subtle.scale, height: nozzle.height * subtle.scale)
+        XCTAssertFalse(grown.intersects(try XCTUnwrap(view.helpReadoutAnchor(id))), "the magnified ring never covers its readout")
         XCTAssertGreaterThan(try XCTUnwrap(view.presentedImageForChecks).width, restingWidth)
         XCTAssertTrue(view.isPainted(atLocal: CGPoint(x: nozzle.midX, y: nozzle.midY)))
         XCTAssertNil(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
@@ -1077,8 +1079,8 @@ actor EntrySyntheticClient: EngineClient {
         func items() throws -> [NSMenuItem] {
             try XCTUnwrap(app.liveStatusMenu).items.filter { !$0.isSeparatorItem }
         }
-        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About", "Quit"]
-        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于", "退出"]
+        let english = ["Refresh", "Show Quota Widget", "Open Cockpit", "Website", "Methodology", "Privacy", "Help…", "Settings…", "About ModelPlan", "Quit ModelPlan"]
+        let chinese = ["刷新", "显示额度挂件", "打开驾驶舱", "网站", "方法论", "隐私", "说明…", "设置…", "关于 ModelPlan", "退出 ModelPlan"]
         XCTAssertEqual(try items().map(\.title), english)
         _ = try await editor.commit(SettingsB21Edit.language(.chinese))
         XCTAssertEqual(try items().map(\.title), chinese)
@@ -1206,7 +1208,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertEqual(surface.pane, "diagnostics")
         let id = "aaaaaaaaaaaaaaaa"
         XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.name, "Synthetic account · Account 1")
-        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · 4368h ago")
+        XCTAssertEqual(try app.composition.dock.cardContent(for: id, at: wall)?.stateLabel, "Stale · over 30 days ago")
         let dockView = app.composition.dock.dockView
         let placement = try XCTUnwrap(app.composition.dock.edgePresentation?.placement)
         let anchor = try XCTUnwrap(dockView.interactionAnchor(id))
@@ -1221,7 +1223,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(app.composition.dock.card.isHidden, "A same-delivery language change preserves the hovered card")
         let card = try XCTUnwrap(app.composition.dock.cardContent(for: id, at: wall))
         XCTAssertEqual(card.name, "合成账户 · 账号 1")
-        XCTAssertEqual(card.stateLabel, "过期 · 4368小时前", "The stale badge follows the Chinese prototype while preserving the original observation age")
+        XCTAssertEqual(card.stateLabel, "过期 · 超过 30 天前", "The stale badge follows the Chinese prototype while preserving the original observation age")
         XCTAssertTrue(app.composition.menuPresentation.detail.contains("合成账户"))
         let context = EngineDeliveryContext(sessionID: "synthetic", floor: .init(storeEpoch: "synthetic", generation: 1), revision: 1)
         await store.consume(.clearPrivateViews(.init(revision: 2, reason: .generationAdvanced, previous: context, nextFloor: nil)))

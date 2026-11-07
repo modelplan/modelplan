@@ -9,6 +9,8 @@ public enum DockCardReadingState: Equatable, Sendable { case ok, loading, stale,
 public struct DockWindowObservation: Sendable {
     public let sourceName: String
     public let observedAt: Date?
+    // Retained provenance conveys neither a numeric reading nor an active reset deadline.
+    var verifiedRetained = false
 }
 
 public struct DockContentRow: Sendable {

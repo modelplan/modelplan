@@ -114,6 +114,19 @@ import ModelPlanShell
             XCTAssertEqual(CommunityObservationAge.text(observedAt:observed,now:now),CommunityObservationAge.unknown)
         }
     }
+    /// A missing/zero timestamp or a far-away clock never prints an absurd age such as
+    /// "632675小时前" (owner test 5, card line); older readings switch to days, then stop.
+    func testAgeNeverPrintsAbsurdHours() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-47 * 3600), now: now, english: false), "47小时前")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-3 * 86_400), now: now, english: true), "3d ago")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-3 * 86_400), now: now, english: false), "3天前")
+        XCTAssertEqual(CommunityObservationAge.cardText(observedAt: now.addingTimeInterval(-400 * 86_400), now: now, english: false), "超过 30 天前")
+        for zero in [Date(timeIntervalSince1970: 0), Date(timeIntervalSinceReferenceDate: 0)] {
+            XCTAssertEqual(CommunityObservationAge.cardText(observedAt: zero, now: now, english: false), "读数时间未知")
+            XCTAssertEqual(CommunityObservationAge.text(observedAt: zero, now: now), CommunityObservationAge.unknown)
+        }
+    }
     func testBoundAgeFollowsTheSelectedAccountWithoutUsingReportTime() throws {
         // The fixture serializes whole seconds; use the same precision for the
         // age boundaries so formatting cannot move an observation forward.

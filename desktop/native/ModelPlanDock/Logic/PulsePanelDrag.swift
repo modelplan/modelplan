@@ -51,12 +51,12 @@ struct PulsePanelDrag {
         case .left: return abs(pointer.x - visible.minX)
         case .right: return abs(pointer.x - visible.maxX)
         case .bottom: return abs(pointer.y - visible.minY)
-        case .top: return .infinity
+        case .top: return abs(pointer.y - visible.maxY)
         }
     }
 
     private static func nearest(to pointer: CGPoint, visible: CGRect) -> DockEdge {
-        [DockEdge.right, .left, .bottom].min {
+        DockEdgeGeometry.allowedEdges.min {
             distance(from: $0, pointer: pointer, visible: visible) < distance(from: $1, pointer: pointer, visible: visible)
         } ?? .right
     }
@@ -64,14 +64,14 @@ struct PulsePanelDrag {
     static func nearestPlacement(pointer: CGPoint, display: DockDisplayArea) -> DockEdgePreference {
         let room = display.usableFrame
         let edge = nearest(to: pointer, visible: room)
-        let fraction = edge == .bottom ? (pointer.x - room.minX) / room.width : (pointer.y - room.minY) / room.height
+        let fraction = edge.isHorizontal ? (pointer.x - room.minX) / room.width : (pointer.y - room.minY) / room.height
         return .init(displayID: display.id, edge: edge, alongFraction: Double(max(0, min(1, fraction))))
     }
 
     private func preference(display: DockDisplayArea, edge: DockEdge, pointer: CGPoint,
                             layout: DockEdgeLayout?, useGrab: Bool) -> DockEdgePreference {
         let room = display.usableFrame
-        let vertical = edge != .bottom
+        let vertical = !edge.isHorizontal
         let length = vertical ? room.height : room.width
         var along = vertical ? pointer.y - room.minY : pointer.x - room.minX
         if useGrab, let layout {
@@ -94,7 +94,10 @@ struct PulsePanelDrag {
            let layout = layouts.first(where: { $0.displayID == display.id && $0.edge == heldEdge }) {
             let origin = CGPoint(x: pointer.x - grab.x * layout.expandedSize.width,
                                  y: pointer.y - grab.y * layout.expandedSize.height)
-            let rail = CGPoint(x: heldEdge == .right ? origin.x + layout.expandedSize.width : origin.x, y: origin.y)
+            // The edge-side side of the carried frame: its right side on the right rail,
+            // its top side on the top rail (A-1106-4), otherwise its origin.
+            let rail = CGPoint(x: heldEdge == .right ? origin.x + layout.expandedSize.width : origin.x,
+                               y: heldEdge == .top ? origin.y + layout.expandedSize.height : origin.y)
             if Self.distance(from: heldEdge, pointer: rail, visible: visible) < breakDistance {
                 return (heldEdge, true)
             }

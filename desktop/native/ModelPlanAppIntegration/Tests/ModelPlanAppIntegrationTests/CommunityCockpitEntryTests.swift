@@ -195,8 +195,9 @@ final class CommunityCockpitEntryTests:XCTestCase {
             let statusItem=try XCTUnwrap(status.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
             XCTAssertEqual(statusItem.isEnabled,enabled)
             let menu=app.composition.dock.menu()
-            let item=try XCTUnwrap(menu.items.first { $0.title == (enabled ? "Open Cockpit" : "Coming soon") })
-            XCTAssertEqual(item.isEnabled,enabled)
+            // The widget menu lists the cockpit only when its entry is on (owner HIG decision 11-06).
+            if enabled { XCTAssertTrue(try XCTUnwrap(menu.items.first { $0.title == "Open Cockpit" }).isEnabled) }
+            else { XCTAssertFalse(menu.items.contains { $0.title == "Coming soon" || $0.title == "Open Cockpit" }) }
             app.composition.dock.perform(NSSelectorFromString("openConsole"))
             app.perform(NSSelectorFromString("showConsoleMenu"))
             XCTAssertEqual(constructed,enabled ? 1 : 0)
@@ -208,11 +209,12 @@ final class CommunityCockpitEntryTests:XCTestCase {
                 let chinese = try XCTUnwrap(app.liveStatusMenu?.items.first { $0.title == "即将推出" })
                 XCTAssertFalse(chinese.isEnabled)
                 let chineseDock = app.composition.dock.menu()
-                XCTAssertFalse(try XCTUnwrap(chineseDock.items.first { $0.title == "即将推出" }).isEnabled)
+                XCTAssertFalse(chineseDock.items.contains { $0.title == "即将推出" })
                 app.composition.dock.pauseForLifecycle()
                 let paused = app.composition.dock.menu()
                 XCTAssertTrue(paused.items.contains { $0.title == "退出 ModelPlan" })
-                XCTAssertTrue(paused.items.contains { $0.title == "即将推出" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "自动收起" && !$0.isEnabled })
+                XCTAssertTrue(paused.items.contains { $0.title == "设置…" && !$0.isEnabled })
             }
             await app.composition.stop()
         }

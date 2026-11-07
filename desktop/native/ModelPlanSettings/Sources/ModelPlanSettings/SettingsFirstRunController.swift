@@ -35,12 +35,14 @@ import AppKit
         self.editor = editor; self.host = host; self.scopeConsentEntry = scopeConsentEntry
         self.scopePresentation = scopeConsentEntry.map { FirstRunConsentPresentation(entry: $0) }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 980, height: 720),
+        // G3-25: one 570-point column with even margins; the page scrolls when it is taller.
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: Self.column + 2 * Self.margin, height: 680),
                               styleMask: [.titled,.closable,.resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: 900, height: 500)
+        window.isReleasedWhenClosed = false; window.contentMinSize = .init(width: Self.column + 2 * Self.margin, height: 480)
         super.init(window: window); window.delegate = self
         build(window); refreshEnabled()
     }
+    static let column: CGFloat = 570, margin: CGFloat = 40
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
         if let observer {
@@ -107,6 +109,10 @@ import AppKit
         loginButton.target = self; loginButton.action = #selector(loginChanged)
         loginButton.setAccessibilityIdentifier("firstRun.login")
         loginSubtitle.font = .systemFont(ofSize: 12); loginSubtitle.textColor = .secondaryLabelColor
+        // Wrapping copy wraps at the column width instead of growing past it or clipping a line.
+        for field in [privacy, subscriptions, loginSubtitle, status] {
+            field.preferredMaxLayoutWidth = Self.column; field.lineBreakMode = .byWordWrapping; field.maximumNumberOfLines = 0
+        }
         let login = NSStackView(views: [loginButton,loginSubtitle]); login.orientation = .vertical; login.alignment = .leading; login.spacing = 5
         status.font = .systemFont(ofSize: 12); status.textColor = .systemRed
         status.setAccessibilityIdentifier("firstRun.status")
@@ -128,7 +134,7 @@ import AppKit
             scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: root.topAnchor), scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            stack.widthAnchor.constraint(equalToConstant: 570), stack.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            stack.widthAnchor.constraint(equalToConstant: Self.column), stack.centerXAnchor.constraint(equalTo: document.centerXAnchor),
             stack.topAnchor.constraint(equalTo: document.topAnchor, constant: 28), stack.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -28),
         ])
     }
