@@ -74,6 +74,12 @@ jobs:
       run: swift test --package-path desktop/native/ModelPlanSettings --scratch-path "$RUNNER_TEMP/settings-tests" --jobs 2
     - name: Native test partition rules
       run: python3 desktop/native/tools/ci/native_test_partition.py check
+    - name: Build and verify the community cockpit for native GUI tests
+      run: |
+        npm ci --prefix desktop/cockpit --ignore-scripts
+        npm run build --prefix desktop/cockpit
+        python3 desktop/native/ModelPlanCockpitWeb/check-bundle-pins.py --edition community
+        echo "MODELPLAN_COCKPIT_BUNDLE_DIR=$GITHUB_WORKSPACE/desktop/cockpit/.tmp/community" >> "$GITHUB_ENV"
     - name: App integration tests, GUI leg (window-server classes; the rest run in native-headless)
       shell: bash
       run: |

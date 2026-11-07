@@ -239,7 +239,7 @@ jobs:
       matrix:
         os:
         - macos-latest
-    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@8a22050adc0cbcc85e4159e54cbd50647245b6c0
+    uses: modelplan/modelplan/.github/workflows/trusted-mac.yml@02dff3d036e786e49be300b40dbf01291b8ce5da
     with:
       task: native
       os: ${{ matrix.os }}
