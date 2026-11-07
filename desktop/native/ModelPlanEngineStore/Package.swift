@@ -8,13 +8,15 @@ let package = Package(
     dependencies: [
         .package(path: "../../../clients/swift/ModelPlanEngineClient"),
         .package(path: "../../../clients/swift/ModelPlanWire"),
-        .package(path: "../../../clients/swift/ModelPlanEngineStoreCore")
+        .package(path: "../../../clients/swift/ModelPlanEngineStoreCore"),
+        .package(path: "../ModelPlanCredentialAgent")
     ],
     targets: [
         .target(name: "ModelPlanEngineStore", dependencies: [
             .product(name: "ModelPlanEngineClient", package: "ModelPlanEngineClient"),
             .product(name: "ModelPlanWire", package: "ModelPlanWire"),
-            .product(name: "ModelPlanEngineStoreCore", package: "ModelPlanEngineStoreCore")
+            .product(name: "ModelPlanEngineStoreCore", package: "ModelPlanEngineStoreCore"),
+            .product(name: "ModelPlanCredentialAgent", package: "ModelPlanCredentialAgent")
         ]),
         .testTarget(name: "ModelPlanEngineStoreTests", dependencies: [
             "ModelPlanEngineStore",

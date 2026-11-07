@@ -1,0 +1,29 @@
+--- a/desktop/native/tools/package-neutral.sh
++++ b/desktop/native/tools/package-neutral.sh
+@@ -8,6 +8,10 @@
+ output_dir=${2:?Pass a new local output directory}
+ identity_mode=release
+ configuration=release
++# U7 consumes an independently approved universal artifact; App builds never build/sign it.
++credential_artifact=${MODELPLAN_CREDENTIAL_AGENT_ARTIFACT:?Pass the approved prebuilt universal helper directory}
++credential_sha=${MODELPLAN_CREDENTIAL_AGENT_SHA256:?Pass its independently approved SHA-256}
++credential_tools="$native_root/ModelPlanCredentialAgent/tools"
+ case "${3:-}" in
+     '') ;;
+     --unverified) identity_mode=unverified ;;
+@@ -69,6 +73,8 @@
+ PLIST
+ cp "$repo_root/LICENSE" "$app/Contents/Resources/LICENSE.txt"
+ cp "$output_dir/cli-arm64/modelplan_darwin_arm64/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/CLI-THIRD-PARTY-NOTICES.md"
++python3 "$credential_tools/embed_fixed_helper.py" --artifact "$credential_artifact" \
++    --expected-sha256 "$credential_sha" --universal "$app"
+ codesign --force --sign - --options runtime "$app/Contents/Helpers/modelplan"
+ shasum -a 256 "$app/Contents/Helpers/modelplan" | awk '{print $1}' > "$app/Contents/Resources/modelplan.sha256"
+ python3 "$native_root/tools/write-consent-bundle-identity.py" --mode "$identity_mode" --app "$app" --public-source "$public_source" \
+@@ -76,4 +82,6 @@
+     --x86-64-input "$output_dir/cli-x86_64/modelplan_darwin_amd64/modelplan"
+ codesign --force --sign - --options runtime "$app"
+ codesign --verify --deep --strict "$app"
++python3 "$credential_tools/check_embedded_agent.py" --pin "$credential_artifact/credential-agent.json" \
++    --expected-sha256 "$credential_sha" --single "$app"
+ printf '%s\n' "$app"
