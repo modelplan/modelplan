@@ -1,0 +1,668 @@
+{
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "id": "first-run-window",
+      "title": "First-run window",
+      "expected": "The Set up ModelPlan window lists the synthetic subscriptions; the widget is visible beside it.",
+      "actions": [
+        {
+          "op": "await",
+          "target": "ax:firstRun.done",
+          "timeout": 30
+        },
+        {
+          "op": "park"
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:firstRun.done"
+      },
+      "checks": [
+        {
+          "exists": "ax:firstRun.title"
+        }
+      ]
+    },
+    {
+      "id": "first-run-done",
+      "title": "First run finished",
+      "expected": "Done closes the window and the widget stays. No hint is due here: v1 hints are for a concealed widget.",
+      "requires": [
+        "first-run-window"
+      ],
+      "actions": [
+        {
+          "op": "press",
+          "by": "id",
+          "value": "firstRun.login"
+        },
+        {
+          "op": "click",
+          "target": "ax:firstRun.done"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "absent": "ax:firstRun.done"
+        }
+      ]
+    },
+    {
+      "id": "widget-rest",
+      "title": "Widget at rest",
+      "expected": "Rings, gauges and percentages at rest. Pointer away from the widget.",
+      "prototype": "dock study prototype, rest state",
+      "actions": [
+        {
+          "op": "dismissHints"
+        },
+        {
+          "op": "await",
+          "target": "ax^:dock.subscription.",
+          "timeout": 20
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "mirrorPixels"
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
+        },
+        {
+          "nonblank": "window-of:ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-hover",
+      "title": "Widget hover and magnify",
+      "expected": "The ring under the pointer magnifies; the others stay put.",
+      "prototype": "dock study prototype, hover state",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "hover",
+          "target": "ax^:dock.subscription.",
+          "seconds": 1.2
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax^:dock.subscription."
+        }
+      ]
+    },
+    {
+      "id": "ring-card-map",
+      "title": "Card per ring",
+      "expected": "Pointing at each painted ring opens that ring's own card. The manifest also records what opens at the frame the app reports.",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "ringCardMap"
+        }
+      ],
+      "shot": {},
+      "checks": []
+    },
+    {
+      "id": "popup-card",
+      "title": "Popup card",
+      "expected": "A click on a ring opens its card with the synthetic windows and reset times.",
+      "prototype": "dock study prototype, card",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "ax^:dock.subscription."
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "exists": "ax^:dock.card."
+        }
+      ]
+    },
+    {
+      "id": "drag-carry",
+      "title": "Drag, carried",
+      "expected": "While carried the widget follows the pointer; no click-through outline shows.",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "clickEmpty"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "assertAbsent",
+          "target": "ax^:dock.card."
+        },
+        {
+          "op": "remember",
+          "target": "window-of:ax:dock.grip.0"
+        },
+        {
+          "op": "dragStart",
+          "target": "ax:dock.grip.0"
+        },
+        {
+          "op": "dragTo",
+          "point": [
+            0.5,
+            0.5
+          ],
+          "seconds": 1.0
+        },
+        {
+          "op": "wait",
+          "seconds": 0.5
+        }
+      ],
+      "shot": {},
+      "checks": []
+    },
+    {
+      "id": "drag-snap",
+      "title": "Drag and snap",
+      "expected": "Released near the left edge, the widget snaps to that edge. No card is open.",
+      "requires": [
+        "widget-rest"
+      ],
+      "actions": [
+        {
+          "op": "dragTo",
+          "point": [
+            0.04,
+            0.5
+          ],
+          "seconds": 1.0
+        },
+        {
+          "op": "dragEnd"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "moved": "window-of:ax:dock.grip.0"
+        },
+        {
+          "absent": "ax^:dock.card."
+        }
+      ]
+    },
+    {
+      "id": "status-menu-right",
+      "title": "Status menu, right click",
+      "expected": "Right click shows the status menu with Show Quota Widget, Open Cockpit, the test option, Settings and Quit.",
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "opened": "ax:status.test.ringsCentred"
+        }
+      ]
+    },
+    {
+      "id": "ring-centred-on",
+      "title": "Ring centred on",
+      "expected": "With the test option on, every quota ring sits in the centre of its station.",
+      "prototype": "owner A/B: ring position",
+      "requires": [
+        "status-menu-right"
+      ],
+      "actions": [
+        {
+          "op": "press",
+          "by": "id",
+          "value": "status.test.ringsCentred"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "differsFrom": {
+            "step": "drag-snap",
+            "min": 0.01
+          }
+        }
+      ]
+    },
+    {
+      "id": "ring-centred-off",
+      "title": "Ring centred off",
+      "expected": "With the test option off, rings return to the prototype position.",
+      "prototype": "dock study prototype, rest state",
+      "requires": [
+        "ring-centred-on"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "status.test.ringsCentred"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "matches": {
+            "step": "drag-snap",
+            "max": 0.005
+          }
+        }
+      ]
+    },
+    {
+      "id": "first-use-hint",
+      "title": "First-use hint",
+      "expected": "Turning the widget off from the status menu shows the hint at the menu bar icon telling how to get it back.",
+      "requires": [
+        "status-menu-right"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "status.showQuotaWidget"
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "awaitNewWindow",
+          "timeout": 12
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "absent": "ax:dock.grip.0"
+        }
+      ]
+    },
+    {
+      "id": "widget-shown-again",
+      "title": "Widget shown again",
+      "expected": "Show Quota Widget brings the widget back at its snapped place.",
+      "requires": [
+        "status-menu-right"
+      ],
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "click",
+          "target": "status-item",
+          "button": "right"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.2
+        },
+        {
+          "op": "press",
+          "by": "id",
+          "value": "status.showQuotaWidget"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "window-of:ax:dock.grip.0"
+      },
+      "checks": [
+        {
+          "exists": "ax:dock.grip.0"
+        },
+        {
+          "matches": {
+            "step": "drag-snap",
+            "max": 0.005
+          }
+        }
+      ]
+    },
+    {
+      "id": "cockpit-open",
+      "title": "Cockpit open from a left click",
+      "expected": "Left click on the status item opens the cockpit (owner test build). The widget hides while it is open.",
+      "prototype": "desktop/cockpit/study/rocket-r1",
+      "actions": [
+        {
+          "op": "click",
+          "target": "status-item"
+        },
+        {
+          "op": "await",
+          "target": "label:ModelPlan Cockpit",
+          "timeout": 25
+        },
+        {
+          "op": "wait",
+          "seconds": 6
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "label:ModelPlan Cockpit"
+        },
+        {
+          "absent": "value:Cockpit unavailable"
+        },
+        {
+          "nonblank": "label:ModelPlan Cockpit"
+        }
+      ]
+    },
+    {
+      "id": "porthole-open",
+      "title": "Porthole shutter open and HUD",
+      "expected": "The shutter is open and the porthole shows the fleet with the HUD model list.",
+      "prototype": "desktop/cockpit/study/rocket-r1 porthole",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "openShutter"
+        },
+        {
+          "op": "wait",
+          "seconds": 5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "checked": "label:Porthole shutter"
+        }
+      ]
+    },
+    {
+      "id": "hud-select",
+      "title": "HUD row hover",
+      "expected": "Hovering the first HUD row highlights it and lights its rocket. HUD rows are not in the accessibility tree, so the pointer goes by position.",
+      "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
+      "requires": [
+        "porthole-open"
+      ],
+      "actions": [
+        {
+          "op": "hoverIn",
+          "target": "label:Open the 3D view",
+          "at": [
+            0.17,
+            0.48
+          ],
+          "seconds": 1.2
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "differsFrom": {
+            "step": "porthole-open",
+            "min": 0.0003
+          }
+        }
+      ]
+    },
+    {
+      "id": "faders",
+      "title": "Faders",
+      "expected": "One fader per model; moving one by a detent changes its effort step.",
+      "prototype": "desktop/cockpit/study/rocket-r1/fader-view.js",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "park"
+        },
+        {
+          "op": "faderStep",
+          "target": "role:AXSlider"
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "exists": "role:AXSlider"
+        },
+        {
+          "changed": "role:AXSlider"
+        }
+      ]
+    },
+    {
+      "id": "porthole-enlarged",
+      "title": "Porthole enlarged 3D view",
+      "expected": "A click on the porthole opens the enlarged launch field in its own panel, rendering the 3D scene.",
+      "prototype": "desktop/cockpit/study/rocket-r1 porthole.js enlarge",
+      "requires": [
+        "porthole-open"
+      ],
+      "actions": [
+        {
+          "op": "click",
+          "target": "label:Open the 3D view"
+        },
+        {
+          "op": "wait",
+          "seconds": 8
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "newWindow": true
+        }
+      ]
+    },
+    {
+      "id": "cockpit-close",
+      "title": "Cockpit closed, widget back",
+      "expected": "Close returns the widget at its snapped place.",
+      "requires": [
+        "cockpit-open"
+      ],
+      "actions": [
+        {
+          "op": "key",
+          "name": "escape"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        },
+        {
+          "op": "click",
+          "target": "label:Close"
+        },
+        {
+          "op": "wait",
+          "seconds": 2.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {},
+      "checks": [
+        {
+          "absent": "label:ModelPlan Cockpit"
+        },
+        {
+          "exists": "ax:dock.grip.0"
+        }
+      ]
+    }
+  ]
+}
