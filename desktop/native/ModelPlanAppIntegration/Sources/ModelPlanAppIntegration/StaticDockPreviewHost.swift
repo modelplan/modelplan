@@ -829,7 +829,8 @@ struct DockHelpInteraction: Equatable {
         guard let store = cardResourceStore(zaiMarkEnabled: false),
               let font = try? store.font(QuotaWidgetCardMaterial.readoutFontResource, size: size) else { return nil }
         // AppKit text cannot draw an unregistered graphics font: Latin and digits come out blank while
-        // CJK falls back. Register the verified face for this process, then ask AppKit for it by name.
+        // CJK falls back. Register the verified file for this process, then ask AppKit for it by name.
+        // On macOS 15 a graphics-font registration resolves the name but still draws nothing.
         if let url = try? store.checkedURL(QuotaWidgetCardMaterial.readoutFontResource) {
             _ = CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
