@@ -207,6 +207,32 @@ import XCTest
         XCTAssertFalse(recorder.recording)
         controller.close()
     }
+    func testSET_9_13OrderResetRestoresTheDefaultOrder() async throws {
+        let editor = try await makeEditor()
+        let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
+        await controller.prepare(); controller.selectPane("dock")
+        let live = controller.editor, order = try XCTUnwrap(controller.orderControl)
+        let moved = expectation(description: "arrow reorder persisted")
+        live.onCommit = { _, _ in moved.fulfill() }
+        XCTAssertTrue(order.down.sendAction(order.down.action, to: order.down.target))
+        await fulfillment(of: [moved], timeout: 3)
+        XCTAssertTrue(try XCTUnwrap(controller.orderControl).reset.isEnabled, "a changed order can be reset")
+        let reset = expectation(description: "reset persisted")
+        live.onCommit = { _, _ in reset.fulfill() }
+        let control = try XCTUnwrap(controller.orderControl)
+        XCTAssertTrue(control.reset.sendAction(control.reset.action, to: control.reset.target))
+        await fulfillment(of: [reset], timeout: 3)
+        XCTAssertEqual(try live.snapshot!.preferences.presentedSubscriptionIDs(["a","b","c"], includingHidden: true), ["a","b","c"])
+        controller.close()
+    }
+    func testSET_9_24DiagramStaysStaticUnderReduceMotion() {
+        let diagram = SettingsDiagramView(input: .edge(.bottom)), size = diagram.frame.size
+        diagram.apply(.edge(.left), reduceMotion: true, animate: true)
+        diagram.play()
+        XCTAssertNil(diagram.layer?.animation(forKey: "settings.lineMovement"))
+        XCTAssertEqual(diagram.input, .edge(.left), "the end state is shown at once")
+        XCTAssertEqual(diagram.frame.size, size)
+    }
     func testOrderButtonsAndLocalDropPersistButStaleAndRetiredCallbacksDoNot() async throws {
         let editor = try await makeEditor()
         let controller = SettingsWindowController(editor: editor, environmentProvider: { .init() })
