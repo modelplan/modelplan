@@ -222,7 +222,10 @@ func (s sharedCockpit) cockpitDetails(ctx context.Context, view appserver.View, 
 			v := session.Effort
 			effort = &v
 		}
-		if labels && session.ProjectRef != nil {
+		if labels && session.ProjectRef != nil && safeCockpitLabel(session.ProjectLabel) {
+			v := session.ProjectLabel
+			label = &v
+		} else if labels && session.ProjectRef != nil {
 			for _, saved := range perf.Ledger.Sessions {
 				if saved.Ref == session.Ref && saved.Source == session.Source && saved.ProjectRef == *session.ProjectRef && safeCockpitLabel(saved.ProjectLabel) {
 					v := saved.ProjectLabel

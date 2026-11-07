@@ -14,6 +14,12 @@
             }
           ]
         },
+        "activity": {
+          "items": {
+            "$ref": "#/$defs/AccountActivity"
+          },
+          "type": "array"
+        },
         "beta": {
           "type": "boolean"
         },
@@ -151,6 +157,46 @@
         "freshUntil",
         "lastFailure",
         "windows"
+      ],
+      "type": "object"
+    },
+    "AccountActivity": {
+      "additionalProperties": false,
+      "properties": {
+        "bindingVerified": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "model",
+            "tool",
+            "finished",
+            "fallback"
+          ],
+          "type": "string"
+        },
+        "recordAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "sessionRef": {
+          "type": "string"
+        },
+        "subscriptionRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionRef",
+        "subscriptionRef",
+        "bindingVerified",
+        "phase",
+        "recordAt",
+        "expiresAt"
       ],
       "type": "object"
     },

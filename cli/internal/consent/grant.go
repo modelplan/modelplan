@@ -52,7 +52,7 @@ func EnsureStore(file string) (State, error) {
 	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
 		return Empty(), err
 	}
-	unlock, err := lockFile(file + ".lock")
+	unlock, err := lockConsent(file)
 	if err != nil {
 		return Empty(), err
 	}

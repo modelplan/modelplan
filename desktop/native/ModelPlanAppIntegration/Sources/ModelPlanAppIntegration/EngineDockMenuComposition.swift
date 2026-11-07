@@ -58,6 +58,7 @@ public struct EngineMenuRefreshResult {
                 guard let evaluatedAt = self.pairedProjection.evaluatedAt else { return }
                 self.admittedCache.install(content, evaluatedAt: evaluatedAt)
                 self.dock.refreshDockContent(); self.menuDidChange?()
+                self.armActivityExpiry()
             }, sourceIsCurrent: { [weak self] token in self?.pairedProjection.isCurrent(token) == true },
             installValidatedUnknown: true, presentationInterval: 60, refreshPresentation: { [weak self] now in
                 guard let self else { return }
@@ -67,6 +68,7 @@ public struct EngineMenuRefreshResult {
                 }
             })
     }()
+    private var activityExpiryTask: Task<Void, Never>?
     private let clock: EngineDockClock
     // Internal injection seam: the production entry retains the system clock.
     var currentDate: @MainActor () -> Date {
@@ -182,7 +184,25 @@ public struct EngineMenuRefreshResult {
               candidate.sourceToken == token, pairedProjection.isCurrent(token) else { return false }
         admittedCache.install(candidate.value,evaluatedAt:now)
         dock.refreshDockContent();menuDidChange?()
+        armActivityExpiry()
         return true
+    }
+    /// Flames must stop when their evidence expires, even if no further engine message arrives.
+    private func armActivityExpiry() {
+        activityExpiryTask?.cancel(); activityExpiryTask=nil
+        guard !deadlineLifecycleSuspended else { return }
+        let now=deadlineWall()
+        guard let expiry=presentedContent(at:now).snapshot.inputs.compactMap({$0.working?.expiresAt}).filter({$0>now}).min() else { return }
+        activityExpiryTask=Task { @MainActor [weak self] in
+            do { try await Task.sleep(for:.seconds(expiry.timeIntervalSince(now))); try Task.checkCancellation() }
+            catch { return }
+            guard let self else { return }
+            self.activityExpiryTask=nil
+            if !self.refreshCurrentPresentation(at:self.deadlineWall()) {
+                self.pairedProjection.invalidate()
+                if !self.deadlineLifecycleSuspended { self.deadlineDriver.replace() }
+            }
+        }
     }
     var language:String { adapter.language }
     /// Same admitted membership for M2's placement/Settings writer; cleared with the Store.
@@ -283,7 +303,7 @@ public struct EngineMenuRefreshResult {
         }
         catch { onResult?(.failure(error)) /* No automatic retry or optimistic value. */ }
     }
-    func suspendDeadlines() { deadlineLifecycleSuspended = true; pairedProjection.invalidate(); deadlineDriver.suspend() }
+    func suspendDeadlines() { deadlineLifecycleSuspended = true; activityExpiryTask?.cancel(); activityExpiryTask = nil; pairedProjection.invalidate(); deadlineDriver.suspend() }
     func resumeDeadlines() { deadlineLifecycleSuspended = false; pairedProjection.invalidate(); deadlineDriver.replace() }
-    public func stop() async { resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
+    public func stop() async { activityExpiryTask?.cancel(); activityExpiryTask = nil; resetNotifier?.stop(); deadlineDriver.close(); dock.close(); await client.stop(); if let resetScratch { try? FileManager.default.removeItem(at:resetScratch) } }
 }
