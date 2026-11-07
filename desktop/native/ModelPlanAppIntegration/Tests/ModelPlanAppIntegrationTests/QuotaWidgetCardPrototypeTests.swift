@@ -40,6 +40,25 @@ import XCTest
         XCTAssertEqual(rows.map(\.height), [19, 19, 19])
         XCTAssertEqual(rows.map(\.minX), [18, 18, 18])
     }
+    /// Digits and Latin must reach the pixels: an unregistered readout font left them blank.
+    func testReadoutValuesAreActuallyDrawn() throws {
+        let view = try card(badCase, name: "train-card-ink")
+        let rep = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        func ink(_ rect: CGRect) -> Int {
+            var count = 0
+            for x in stride(from: Int(rect.minX), to: Int(rect.maxX), by: 1) { for y in stride(from: Int(rect.minY), to: Int(rect.maxY), by: 1) {
+                let px = rep.colorAt(x: x * rep.pixelsWide / Int(view.bounds.width), y: y * rep.pixelsHigh / Int(view.bounds.height))?.usingColorSpace(.sRGB)
+                if let px, max(px.redComponent, px.greenComponent, px.blueComponent) > 0.45 { count += 1 }
+            } }
+            return count
+        }
+        for (row, cell) in [("quota:weekly", 2), ("reserve", 1), ("today", 1)] {
+            let cells = view.rowCellsForChecks(row)
+            XCTAssertGreaterThan(cells.count, cell, row)
+            XCTAssertGreaterThan(ink(cells[cell]), 5, row + " has no drawn value")
+        }
+    }
     func testNoSettingsOrCloseButtonsAndNoSourceRow() throws {
         let view = try card(badCase, name: "train-card-check")
         func labels(_ v: NSView) -> [String] { v.subviews.flatMap { labels($0) + (($0 as? NSButton).map { [$0.title] } ?? []) + (($0 as? NSTextField).map { [$0.stringValue] } ?? []) } }

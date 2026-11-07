@@ -745,7 +745,10 @@ struct DockHelpInteraction: Equatable {
         if let font = cardFonts[size] { return font }
         guard let store = cardResourceStore(zaiMarkEnabled: false),
               let font = try? store.font(QuotaWidgetCardMaterial.readoutFontResource, size: size) else { return nil }
-        let value = font as NSFont
+        // AppKit text cannot draw an unregistered graphics font: Latin and digits come out blank while
+        // CJK falls back. Register the verified face for this process, then ask AppKit for it by name.
+        _ = CTFontManagerRegisterGraphicsFont(CTFontCopyGraphicsFont(font, nil), nil)
+        guard let value = NSFont(name: CTFontCopyPostScriptName(font) as String, size: size) else { return nil }
         cardFonts[size] = value
         return value
     }
