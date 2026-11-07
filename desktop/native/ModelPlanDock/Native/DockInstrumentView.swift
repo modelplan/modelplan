@@ -422,6 +422,9 @@ enum DockGripInk {
     public override var acceptsFirstResponder:Bool{keyboardNavigationEnabled}
     public override func becomeFirstResponder() -> Bool {
         guard keyboardNavigationEnabled, super.becomeFirstResponder() else { return false }
+        // AppKit also hands a clicked view first responder. Only keyboard focus picks a ring: a picked
+        // ring holds its card open, so a click would pin the first ring's card (G3-14).
+        if let event = NSApp.currentEvent?.type, [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event) { return true }
         if keyboardTargetID == nil { keyboardTargetID = orderedIDs.first }
         nozzleEventDelegate?.hoverNozzle(keyboardTargetID)
         return true
