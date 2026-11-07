@@ -159,10 +159,13 @@ func (s State) AllowsScope(id, mode string) bool {
 		if s.RequireConsent {
 			return false
 		}
-		if _, decided := s.Tools[d.Tool]; decided {
+		if !d.DefaultCheck {
 			return false
 		}
-		if !d.DefaultCheck {
+		// An older tool-level allow predates this scope and did not refuse it. A tool
+		// denial, a stale consent text, a denied source or a chosen non-native backend
+		// still vetoes it, so migration never widens a CodexBar choice.
+		if r, decided := s.Tools[d.Tool]; decided && (!r.Allowed || r.ConsentTextVersion != TextVersion || r.DeniedSources[d.Class] || (r.Backend != "" && r.Backend != "native")) {
 			return false
 		}
 	}
