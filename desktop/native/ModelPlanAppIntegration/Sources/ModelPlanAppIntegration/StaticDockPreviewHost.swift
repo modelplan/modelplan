@@ -61,7 +61,57 @@ public struct StaticDockGeometry {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
+@MainActor private final class DockIgnitionButton: NSButton {
+    var onHelpFocusChanged: (() -> Void)?
+    private var keyboardFocused = false
+    private var assistiveFocused = false
+
+    private var canPresentHelp: Bool { isEnabled && !isHiddenOrHasHiddenAncestor && !bounds.isEmpty }
+    var hasHelpFocus: Bool { canPresentHelp && (keyboardFocused || assistiveFocused) }
+
+    override func becomeFirstResponder() -> Bool {
+        guard super.becomeFirstResponder() else { return false }
+        updateHelpFocus(keyboard: canPresentHelp)
+        return true
+    }
+
+    override func resignFirstResponder() -> Bool {
+        guard super.resignFirstResponder() else { return false }
+        updateHelpFocus(keyboard: false)
+        return true
+    }
+
+    override func setAccessibilityFocused(_ focused: Bool) {
+        super.setAccessibilityFocused(focused)
+        updateHelpFocus(assistive: focused && canPresentHelp)
+    }
+
+    override func viewDidHide() {
+        clearHelpFocus()
+        super.viewDidHide()
+    }
+
+    func clearHelpFocus() {
+        setAccessibilityHelp(nil)
+        updateHelpFocus(keyboard: false, assistive: false)
+    }
+
+    private func updateHelpFocus(keyboard: Bool? = nil, assistive: Bool? = nil) {
+        let wasFocused = keyboardFocused || assistiveFocused
+        if let keyboard { keyboardFocused = keyboard }
+        if let assistive { assistiveFocused = assistive }
+        if wasFocused != (keyboardFocused || assistiveFocused) { onHelpFocusChanged?() }
+    }
+}
+
 public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
+
+struct DockHelpInteraction: Equatable {
+    enum Source: Equatable { case pointer, keyboard }
+    let anchor: DockRequestedHelpAnchor
+    let source: Source
+    let receipt = UUID()
+}
 
 /// Interactive native Dock companion shared by production and explicit self-tests.
 /// The static instrument renderer does not disable native panels, edge/hide, drag/drop or menus.
@@ -77,7 +127,15 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         isVisible = visible; visibilityChanged?()
     }
     public var showConsole: (() -> Void)?
-    public var cockpitEntryEnabled = true { didSet { consoleButton.isEnabled = cockpitEntryEnabled; cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil } }
+    public var cockpitEntryEnabled = true {
+        didSet {
+            consoleButton.isEnabled = cockpitEntryEnabled
+            cockpitVeil.isHidden = cockpitEntryEnabled || geometry.consoleButton == nil
+            guard oldValue != cockpitEntryEnabled else { return }
+            if let presentation = edge.presentation { publishDockHelpSurface(presentation) }
+            if !cockpitEntryEnabled { consoleButton.clearHelpFocus() }
+        }
+    }
     public var showSettings: (() -> Void)?
     public var requestHideDock:(() -> Void)?
     /// Set only when the member-scoped refresh adapter is actually installed.
@@ -163,6 +221,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     var dockHelpSurfaceDidChange: ((DockHelpSurface?) -> Void)? {
         didSet { dockHelpSurfaceDidChange?(lastDockHelpSurface) }
     }
+    private(set) var currentDockHelpInteraction: DockHelpInteraction?
+    var dockHelpInteractionDidChange: ((DockHelpInteraction?) -> Void)?
     private var lastDockHelpSurface: DockHelpSurface?
     private var dockHelpInputGeneration: UInt64?
     var currentDockHelpSurface: DockHelpSurface? {
@@ -490,6 +550,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     }
 
     private func renderInteraction(_ value: DockInteractionPresentation) {
+        defer { publishDockHelpInteraction() }
         guard permitted, !retired else { dismissCard(); overflowPanel?.orderOut(nil); return }
         let preview = value.reorder?.order
         if preview != interactionPreviewOrder { interactionPreviewOrder = preview; rebuild() }
@@ -527,7 +588,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
     private let empty = StaticDockStatusLabel(wrappingLabelWithString: "")
     let card = DockCardView(frame: .zero)
     private let container = StaticDockContainer()
-    private let consoleButton = NSButton(frame: .zero)
+    private let consoleButton = DockIgnitionButton(frame: .zero)
     private let cockpitVeil = InertCockpitVeil(frame: .zero)
     private lazy var edge = makeEdge(policy: visibilityPolicy)
 
@@ -560,6 +621,8 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         super.init()
         consoleButton.title = ""; consoleButton.isBordered = false; consoleButton.isTransparent = true
         consoleButton.target = self; consoleButton.action = #selector(openConsole)
+        consoleButton.setAccessibilityIdentifier("dock.ignition")
+        consoleButton.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         consoleButton.setAccessibilityLabel(EngineRowsText.openCockpit.value(preferences.language))
         cockpitVeil.wantsLayer = true; cockpitVeil.layer?.masksToBounds = true
         cockpitVeil.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
@@ -590,6 +653,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         NotificationCenter.default.addObserver(self, selector: #selector(displaysChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
     private func bindEmptyStation(to view: DockInstrumentView) {
+        view.onHelpFocusChanged = { [weak self] in self?.publishDockHelpInteraction() }
         view.onEmptyAction = { [weak self, weak view] in
             guard let self, let view, self.permitted, !self.retired, !self.rendering,
                   view.emptyStationRectForChecks != nil, let showSettings = self.showSettings else { return false }
@@ -1058,6 +1122,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             // presumed outside because the pointer may be over a separate card.
             self.edge.refresh()
             self.interactionController?.refresh()
+            self.publishDockHelpInteraction()
         }
         return surface
     }
@@ -1148,8 +1213,13 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                                   visible: view.visibleRect, contains: regions.contains)
     }
     private func withdrawDockHelpSurface() {
-        guard lastDockHelpSurface != nil else { return }
+        guard lastDockHelpSurface != nil else {
+            if !permitted || retired { consoleButton.clearHelpFocus() }
+            return
+        }
         lastDockHelpSurface = nil; dockHelpInputGeneration = nil
+        consoleButton.clearHelpFocus()
+        publishDockHelpInteraction()
         dockHelpSurfaceDidChange?(nil)
     }
     @objc private func dockHelpOcclusionChanged(_ notification: Notification) {
@@ -1185,6 +1255,62 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         guard isCurrentDockHelpSurface(value), let panel else { return nil }
         return (panel.sharingType, panel.collectionBehavior)
     }
+    /// The presenter supplies the same title and body it displayed, after its own dwell.
+    /// An older surface or focus receipt cannot overwrite or clear the current control.
+    @discardableResult func setDockHelpAccessibilityExplanation(
+        _ text: String?, for interaction: DockHelpInteraction, on surface: DockHelpSurface
+    ) -> Bool {
+        guard isCurrentDockHelpSurface(surface), !surface.dragging, interaction.source == .keyboard,
+              currentDockHelpInteraction == interaction, focusedDockHelpAnchorID == interaction.anchor.id else { return false }
+        if interaction.anchor.id == "dock.ignition" {
+            consoleButton.setAccessibilityHelp(text)
+            return true
+        }
+        return interactionView.setFocusedHelpExplanation(text, for: interaction.anchor.id)
+    }
+
+    var focusedDockHelpAnchorID: String? {
+        guard permitted, !retired, edge.presentation?.state == .expanded, edge.presentation?.moving != true,
+              interactionController?.hasCapture != true else { return nil }
+        return consoleButton.hasHelpFocus ? "dock.ignition" : interactionView.focusedHelpAnchorID
+    }
+
+    private func clearDockHelpAccessibilityExplanation() {
+        consoleButton.setAccessibilityHelp(nil)
+        dockView.clearFocusedHelpExplanation()
+        alternateViews.forEach { $0.clearFocusedHelpExplanation() }
+    }
+
+    private func publishDockHelpInteraction() {
+        let next: DockHelpInteraction?
+        if let surface = currentDockHelpSurface, !surface.dragging,
+           interactionController?.hasCapture != true, let panel {
+            let view = interactionView
+            if let focused = focusedDockHelpAnchorID,
+               let anchor = surface.mapAnchors.first(where: { $0.id == focused && $0.visible }) {
+                next = .init(anchor: anchor, source: .keyboard)
+            } else if let pointer = environment().pointer {
+                let local = view.convert(panel.convertPoint(fromScreen: pointer), from: nil)
+                let targetID = view.helpAnchorID(atLocal: local)
+                let anchor = surface.mapAnchors.first { $0.visible && $0.id == targetID }
+                    ?? surface.mapAnchors.first {
+                        guard $0.visible, $0.rect.contains(pointer) else { return false }
+                        if $0.id == "dock.ignition" {
+                            return consoleButton.isEnabled && !consoleButton.isHiddenOrHasHiddenAncestor
+                        }
+                        return $0.id == "dock.move" || $0.id == "dock.card"
+                    }
+                next = anchor.map { .init(anchor: $0, source: .pointer) }
+            } else { next = nil }
+        } else { next = nil }
+        // A fresh focus visit gets a new receipt, but repeated samples of one visit stay silent.
+        guard next?.anchor != currentDockHelpInteraction?.anchor ||
+                next?.source != currentDockHelpInteraction?.source else { return }
+        clearDockHelpAccessibilityExplanation()
+        currentDockHelpInteraction = next
+        dockHelpInteractionDidChange?(next)
+    }
+
     private func publishDockHelpSurface(_ value: DockEdgePresentation) {
         guard createsNativePanels, !retired, !retiring, permitted, preferences.showDock, value.state == .expanded,
               let panel, panel.isVisible, !panel.isMiniaturized, panel.alphaValue > 0,
@@ -1192,6 +1318,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
         let orientation = value.placement?.edge ?? nativeEdge(preferences.dockEdge)
         let view = edgeViews[orientation] ?? dockView
         guard view.window === panel, !view.isHiddenOrHasHiddenAncestor else { withdrawDockHelpSurface(); return }
+        defer { publishDockHelpInteraction() }
         let current = edgeGeometries[orientation] ?? geometry
         func screenRect(_ rect: CGRect) -> CGRect? {
             guard !rect.isNull, !rect.isInfinite, rect.width > 0, rect.height > 0,
@@ -1202,6 +1329,9 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             return global
         }
         var anchors: [FirstUseHintKind: CGRect] = [:]
+        if let hull = view.registeredHullBounds, let global = screenRect(hull) {
+            anchors[.findWidget] = global
+        }
         if let id = model?.inputs.first(where: { view.interactionAnchor($0.id) != nil })?.id,
            let local = view.interactionAnchor(id), let global = screenRect(local) {
             anchors[.ringRefresh] = global
@@ -1218,11 +1348,18 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
             anchors[.drag] = global
         }
         var mapAnchors: [DockRequestedHelpAnchor] = []
+        for (index, rect) in view.registeredGripRects.enumerated() {
+            if let global = screenRect(rect) {
+                mapAnchors.append(.init(id: "dock.grip.\(index)", region: .dockMove, rect: global, visible: true))
+            }
+        }
         if let grip = anchors[.drag] { mapAnchors.append(.init(id: "dock.move", region: .dockMove, rect: grip, visible: true)) }
         if let ignition = anchors[.ignition] { mapAnchors.append(.init(id: "dock.ignition", region: .ignition, rect: ignition, visible: true)) }
         for input in model?.inputs ?? [] {
             if let local = view.interactionAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.nozzle." + input.id, region: .nozzle, rect: rect, visible: true))
+            }
+            if let local = view.helpRingsAnchor(input.id), let rect = screenRect(local) {
                 mapAnchors.append(.init(id: "dock.rings." + input.id, region: .rings, rect: rect, visible: true))
             }
             if let local = view.helpReadoutAnchor(input.id), let rect = screenRect(local) {
@@ -1246,6 +1383,7 @@ public enum DockHostPurpose: Equatable, Sendable { case production, selfTest }
                                    visible: true, dragging: value.moving, anchors: anchors)
         next.mapAnchors = mapAnchors
         guard next != previous else { return }
+        clearDockHelpAccessibilityExplanation()
         lastDockHelpSurface = next; dockHelpInputGeneration = inputGeneration
         dockHelpSurfaceDidChange?(next)
     }
