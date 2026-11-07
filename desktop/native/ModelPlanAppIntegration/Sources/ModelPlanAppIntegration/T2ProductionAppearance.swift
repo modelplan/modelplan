@@ -7,7 +7,7 @@ import ModelPlanDockResources
 import ModelPlanSettings
 
 /// D-6: the ignition cap's art, loaded once from the verified store for its hover and press poses.
-final class T2IgnitionArt: @unchecked Sendable {
+@MainActor final class T2IgnitionArt {
     let idle: CGImage, pressed: CGImage, inner: CGImage, guardRing: CGImage
     private init?() {
         guard let records = try? T2BundledArtwork.records().mapValues({ DockResourceFile(path: $0.path, sha256: $0.sha256, bytes: $0.bytes) }),
