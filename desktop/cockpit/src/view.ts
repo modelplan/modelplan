@@ -136,7 +136,7 @@ export function mountCockpit(root:HTMLElement,action:(kind:PageAction,tool?:stri
   nextDeadline(){return lastData?nextDeadline(lastData,lastRenderedAt):null;},
   tick(now){refreshDeadlines(now);},
   clear(){retiredUnstableScopes.clear();conditions.clear();caution.classList.remove('flash');lastData=null;stop();setEmpty('cleared');if(nativeShell)nativeShell={...nativeShell,scope:'all'};delete root.dataset.scope;},
-  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){stop();caution.classList.remove('flash');help.hide();}},
+  active(value){active=value;root.dataset.active=String(value);frame.settings.disabled=!value;shellControls();if(!value){deck.cancelPress();stop();caution.classList.remove('flash');help.hide();}},
   dispose(){if(disposed)return;disposed=true;unwireHud();window.removeEventListener('keydown',scopeShortcut);caution.onclick=null;caution.removeEventListener('animationend',finishCaution);motionQuery.removeEventListener('change',motionChanged);conditions.clear();applyScope=null;refreshEngine=null;localiseEngine=null;quotaFocusIdentity=null;lastData=null;nativeShell=null;deck.dispose();help.dispose();stop();frame.lamp.removeEventListener('animationend',settled);frame.lamp.removeEventListener('animationcancel',settled);frame.settings.onclick=null;attach.onclick=null;shutter.onclick=null;shutter.onpointerdown=null;shutter.onpointermove=null;shutter.onpointerup=null;shutter.onpointercancel=null;shutter.onlostpointercapture=null;shutter.onkeydown=null;close.onclick=null;root.replaceChildren();root.removeAttribute('data-active');delete root.dataset.scope;},
  };
 }

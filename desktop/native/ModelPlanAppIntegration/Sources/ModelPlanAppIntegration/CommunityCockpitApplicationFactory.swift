@@ -221,19 +221,16 @@ struct CockpitUnavailableNotice {
         }
     }
     func render() { fallback?.render() } // typed event delivery itself owns WK display.
-<<<<<<< HEAD
     func hide() {
         wantsVisible = false
         showTask?.cancel()
         showTask = nil
+        fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
         composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
-=======
-    func hide() { wantsVisible=false;showTask?.cancel();showTask=nil;fieldPanel?.close();owner.coordinator?.close();fallback?.hide() }
->>>>>>> 04e5552c0669973bb77227370e21aa8f61935c60
     private func unavailable(history:Bool=false) {
         guard wantsVisible else { return }
         let initiatedInForeground=isForeground()
