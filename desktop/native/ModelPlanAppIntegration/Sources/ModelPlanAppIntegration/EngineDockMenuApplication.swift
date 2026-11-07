@@ -326,6 +326,7 @@ struct StatusNoticePresentation {
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
         context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
+        if ownerTestOptions { composition.dock.ringsCentred = UserDefaults.standard.bool(forKey: Self.ringsCentredKey) }
         composition.dock.cardActionRequested = { [weak self] _ in Task { await self?.scopeConsentEntry.controller.allowKeychain() } }
         context.loginServiceObserved = true
         context.notificationServiceObserved = true
@@ -700,6 +701,7 @@ struct StatusNoticePresentation {
             .init(title: label("Methodology", "方法论"), action: { NSWorkspace.shared.open(SettingsPublicLink.methodology.url) }),
             .init(title: label("Privacy", "隐私"), action: { NSWorkspace.shared.open(SettingsPublicLink.privacy.url) }),
         ]
+        if let item = ownerTestRingItem(language) { menuItems.append(item) }
         let admitted = composition.presentedContent.snapshot.presentationRows
         unavailableMemberRefreshes.formIntersection(Set(admitted.keys))
         let content = composition.provider.dockContent
@@ -841,6 +843,19 @@ struct StatusNoticePresentation {
         case .failed, .unavailable: return SettingsText("Could not change Show Quota Widget. Check Settings and try again.", "无法更改「显示额度挂件」，请检查设置后重试。").value(language)
         case .ready, nil: return nil
         }
+    }
+    /// Owner test option: flip the ring position and see it at once. Off is the prototype position.
+    func ownerTestRingItem(_ language: SettingsLanguage) -> DockMenuPresentationItem? {
+        guard ownerTestOptions else { return nil }
+        let on = composition.dock.ringsCentred
+        return .init(title: SettingsText("Test option: centre the quota ring", "测试选项：额度圈居中").value(language),
+                     accessibilityID: "status.test.ringsCentred", checked: on, action: { [weak self] in self?.setRingsCentred(!on) })
+    }
+    func setRingsCentred(_ on: Bool) {
+        guard ownerTestOptions else { return }
+        UserDefaults.standard.set(on, forKey: Self.ringsCentredKey)
+        composition.dock.ringsCentred = on
+        renderMenu()
     }
     /// G3-28: the same stored setting as Settings' auto-collapse switch, through the same bounded
     /// path as Show, so a hint-ledger write cannot drop the choice. A failure shows in the status menu.
