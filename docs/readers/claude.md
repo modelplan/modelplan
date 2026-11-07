@@ -33,7 +33,7 @@ The reference links above are source-reported behavior/pitfalls, not new inciden
 
 ## Choice
 
-- Chosen path and tier: H/O, standard, not pre-selected. Saved-login consent is unchecked initially. Passive/off cannot elevate it. File login is the selected account path; a Keychain source additionally needs the reviewed app credential operation.
+- Chosen path and tier: H/O, standard, on by default (D27). Passive/off cannot elevate it. File login is the selected account path and is read without a click. A login kept only in the macOS Keychain is never read before the user's Allow (D41): the row reports `needs_keychain` / `keychain_unset` from a stat alone, and the read right after Allow goes through the reviewed app credential operation. That read skips a back-off left by failures that never reached Anthropic; a provider back-off and the success floor still apply.
 - Why: The selected saved login reports the needed subscription windows without launching Claude or installing a hook. Retaining a read-only file path does not approve the legacy Keychain fallback.
 - Licence: Independent Go implementation. CodexBar (MIT) and Pulse (Apache-2.0) are protocol/incident references only; this card copies no code or upstream account fixture.
 - Rejected paths and their red lines are listed in Candidate paths. No W/web scraping, automatic source waterfall or catalogue-driven authority expansion is admitted.
