@@ -8,8 +8,13 @@ import ModelPlanSettings
     func render()
     func hide()
     func applySettings(_ value: SettingsApplication)
+    /// True while the surface is on screen, so the menu bar icon can close it again.
+    var isOpen: Bool { get }
 }
-public extension EngineRowsConsoleSurface { func applySettings(_ value: SettingsApplication) {} }
+public extension EngineRowsConsoleSurface {
+    func applySettings(_ value: SettingsApplication) {}
+    var isOpen: Bool { false }
+}
 /// Read-only native Dock-reading status; no private cockpit or producer is constructed.
 @MainActor final class EngineRowsConsole: NSWindowController, EngineRowsConsoleSurface {
     private let composition: EngineDockMenuComposition
@@ -39,4 +44,5 @@ public extension EngineRowsConsoleSurface { func applySettings(_ value: Settings
     }
     func applySettings(_ value: SettingsApplication) { render() }
     func hide() { window?.orderOut(nil) }
+    var isOpen: Bool { window?.isVisible == true }
 }
