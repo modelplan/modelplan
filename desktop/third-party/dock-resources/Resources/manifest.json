@@ -88,8 +88,8 @@
     },
     "notice-vendors": {
       "path": "Marks/SOURCES.md",
-      "sha256": "50732c6a4008722b6340255044e85529a83b051412d2176ce9595460d3ab9ada",
-      "bytes": 2100,
+      "sha256": "75ae1559f8025429ab4138a114cfbf82c083233e7aa2a9c78ba34759df5c58ff",
+      "bytes": 2374,
       "rights": "Source attribution; original third-party rights retained"
     }
   }
