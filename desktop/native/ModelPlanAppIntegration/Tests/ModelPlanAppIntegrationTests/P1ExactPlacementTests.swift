@@ -593,6 +593,7 @@ extension P1ExactPlacementTests {
                     // A live reading: the capture's window is past its validity.
                     let observed = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60))
                     windows[0]["remainingPercent"] = remaining; windows[0]["role"] = "session"; windows[0]["durationSeconds"] = 18000
+                    windows[0]["limitKey"] = "five_hour"; windows[0]["poolKey"] = "main"
                     windows[0]["current"] = true; windows[0]["observedAt"] = observed
                     windows[0]["resetsAt"] = "2099-01-01T00:00:00Z"; windows[0]["validUntil"] = "2099-01-01T00:00:00Z"
                     windows[0].removeValue(forKey: "modelScope")
