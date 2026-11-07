@@ -414,3 +414,53 @@ func TestKeychainGrantKeepsProviderBackoff(t *testing.T) {
 		t.Fatal("Keychain grant bypassed a provider back-off", paths)
 	}
 }
+
+// macrev2-605-1: a canceled credential operation overlays the entry, but the provider's
+// refusal still holds the next read until its deadline.
+func TestKeychainGrantKeepsProviderBackoffAfterCanceledCredential(t *testing.T) {
+	p := claudeTestPaths(t)
+	status := 500
+	paths := []string{}
+	claudeTestServer(t, &status, &paths)
+	g := p.ReaderAccess.Grants["claude"]
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	home, _ := os.UserHomeDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	g.Profiles = []ReaderProfile{{Root: root}}
+	g.Keychain, g.KeychainPriorGrant = true, true
+	valid := claudeCredentialJSON(t, "synthetic-access-token", claudeTestNow.Add(48*time.Hour))
+	result, outcome := valid, ""
+	credential := func(next string) {
+		outcome, result = next, valid
+		if next != "" {
+			result = nil
+		}
+	}
+	g.Credential = func(context.Context) ([]byte, string) { return append([]byte(nil), result...), outcome }
+	p.ReaderAccess.Grants["claude"] = g
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow); err != nil {
+		t.Fatal(err)
+	}
+	remote := len(paths)
+	if remote == 0 {
+		t.Fatal("first read did not reach the provider")
+	}
+	credential("canceled")
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := loadReaderState(p.Cache, "claude")
+	if len(s.Entries) == 0 || s.Entries[0].CredentialReadState == "" {
+		t.Fatal("cancellation did not overlay the entry", s.Entries)
+	}
+	credential("")
+	if err := KeychainGrantRead(context.Background(), p, "claude", claudeTestNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != remote {
+		t.Fatal("a canceled credential made the provider back-off bypassable", paths)
+	}
+}

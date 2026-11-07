@@ -643,13 +643,17 @@ func KeychainGrantRead(ctx context.Context, p Paths, provider string, now time.T
 // A provider failure or a success keeps its floor and any Retry-After.
 func claudeBackoffIsLocal(cache string) bool {
 	s, err := loadReaderState(cache, "claude")
-	if err != nil || s.Failures == 0 || len(s.Entries) == 0 {
+	if err != nil || s.Failures == 0 || s.ProviderBackoff || len(s.Entries) == 0 {
 		return false
 	}
 	for _, e := range s.Entries {
-		if e.Status == "ok" || (e.CredentialReadState == "" && e.ErrorCode != "file_missing") {
+		if e.Status == "ok" || !credentialStageFailure(e) {
 			return false
 		}
 	}
 	return true
+}
+
+func credentialStageFailure(e readerEntry) bool {
+	return e.CredentialReadState != "" || e.ErrorCode == "file_missing"
 }
