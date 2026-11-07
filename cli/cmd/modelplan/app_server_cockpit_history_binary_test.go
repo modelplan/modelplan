@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
+
 	"github.com/modelplan/modelplan/cli/internal/testenv"
 )
 
@@ -22,6 +24,10 @@ func TestAppServerCockpitHistoryCapabilityNegotiation(t *testing.T) {
 	t.Setenv("MODELPLAN_CODEX_ACCOUNT", "off")
 	t.Setenv("MODELPLAN_CODEXBAR", "off")
 	t.Setenv("MODELPLAN_READERS", "")
+	// A fresh profile has no consent store, and cockpit/query refuses without one.
+	if _, err := consent.EnsureStore(consent.Path()); err != nil {
+		t.Fatal(err)
+	}
 	fixture, err := os.ReadFile(filepath.Join("testdata", "cockpit-history", "perf.json"))
 	if err != nil {
 		t.Fatal(err)
