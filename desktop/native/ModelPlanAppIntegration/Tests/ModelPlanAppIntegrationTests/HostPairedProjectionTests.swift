@@ -685,6 +685,8 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertTrue(content.rows.contains { $0.kind == .extraQuota }, "precondition: the card has a scoped extra row")
         func tooltips(_ root: NSView) -> [String] { (root.toolTip.map { [$0] } ?? []) + root.subviews.flatMap(tooltips) }
         XCTAssertEqual(tooltips(dock.card), [])
+        // DOCK-3.6-18: no native tooltip on the widget itself either; details go to accessible labels.
+        XCTAssertEqual(tooltips(view), [])
     }
 
     func testNormalReserveLabelAndNumberHaveVisibleRoomInBothLanguages() async throws {
