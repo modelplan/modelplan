@@ -19,6 +19,24 @@ final class T2SkinValueTests: XCTestCase {
         XCTAssertEqual(T2Grain.frequencyX, 0.91); XCTAssertEqual(T2Grain.frequencyY, 0.73)
     }
 
+    /// DOCK-3.1-11: #151d23, #363f44, #263239, #101b24, #030911 at 0, .17, .43, .74 and 1.
+    func testFaceGradientStops() {
+        XCTAssertEqual(T2FaceGradient.inks, [[0x15, 0x1d, 0x23], [0x36, 0x3f, 0x44], [0x26, 0x32, 0x39], [0x10, 0x1b, 0x24], [0x03, 0x09, 0x11]])
+        XCTAssertEqual(T2FaceGradient.locations, [0, 0.17, 0.43, 0.74, 1])
+    }
+
+    /// DOCK-3.1-29: 18 arc px inside the tip opposite the ignition, at half the tip width, never under 9.
+    func testGripSitsInsideTheOppositeTip() throws {
+        for diameter in [CGFloat(36), 44, 52] {
+            for (edge, atEnd) in [(T2Edge.right, false), (.left, false), (.bottom, true), (.top, true)] {
+                let g = try T2Geometry.make(subscriptions: [.init(id: "member-a")], input: .init(coordinates: .init(edge: edge, width: 1470, height: 956, menuBarExclusion: 26), diameter: diameter, ignitionAtEnd: atEnd))
+                let unit = diameter / 52
+                XCTAssertEqual(g.gripArc, atEnd ? g.start + 18 * unit : g.end - 18 * unit, accuracy: 1e-6)
+                XCTAssertGreaterThanOrEqual(g.gripDepth, 9 * unit - 1e-6)
+            }
+        }
+    }
+
     func testReadoutBoxScalesWithTheNozzle() throws {
         for diameter in [CGFloat(36), 44, 52] {
             let box = try skin(diameter).station.readout

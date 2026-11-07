@@ -20,7 +20,7 @@ public enum QuotaLevel: Int, Comparable, Sendable {
     public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
     public static func of(_ remaining: Double?, redBelow: Double = 25) -> Self {
         guard let remaining = percentage(remaining), redBelow.isFinite, (0...100).contains(redBelow) else { return .unknown }
-        return remaining <= redBelow ? .critical : remaining < 41 ? .amber : .healthy
+        return remaining <= redBelow ? .critical : remaining <= 50 ? .amber : .healthy
     }
 }
 public enum QuotaPublicReset: Equatable, Sendable { case announced(Date?), confirmedAwaitingReading }

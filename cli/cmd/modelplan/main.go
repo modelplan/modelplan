@@ -392,20 +392,27 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if !*quiet {
 			detectedHint(st, stderr, c)
 		}
-		if *refreshAccount && consent.Allowed("codex", consent.Runtime) {
-			home, _ := os.UserHomeDir()
-			err := quota.RefreshCodexAccount(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
-			if *quiet {
-				return 0
-			}
-			if err != nil {
-				fmt.Fprintln(stderr, "codex account:", err)
+		var refreshed *quota.AccountRefresh
+		if *refreshAccount {
+			refreshed = &quota.AccountRefresh{Source: "codex", Status: "not_allowed"}
+			if consent.Allowed("codex", consent.Runtime) {
+				home, _ := os.UserHomeDir()
+				refreshed = quota.RefreshAccountNow(context.Background(), st.Dir, quota.CodexBin(home), time.Now())
+				if *quiet {
+					return 0
+				}
+				if refreshed.Status == "failed" {
+					fmt.Fprintln(stderr, "codex account:", refreshed.Reason)
+				}
 			}
 		} else if !c.offline {
 			refreshAccountLater(st)
+		}
+		if !c.offline {
 			refreshNativeLater(st)
 		}
 		r := quota.ReadPermitted(quotaPaths(st), time.Now())
+		r.Refresh = refreshed
 		if c.json {
 			return printJSON(stdout, r)
 		}

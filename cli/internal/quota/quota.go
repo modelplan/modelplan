@@ -76,6 +76,8 @@ type Window struct {
 	ElapsedPercent   *float64 `json:"elapsedPercent"`   // share of the window already elapsed
 	ProjectedPercent *float64 `json:"projectedPercent"` // share used at reset if the current pace holds
 	AgeMinutes       *int     `json:"ageMinutes"`
+	// Stale: this window's reading is older than ObservationFreshness; do not report it as current.
+	Stale bool `json:"stale,omitempty"`
 	// RecentPercentPerHour: how fast the window filled over the last readings (up to 45 minutes,
 	// at least 10), in percentage points per hour; nil without enough fresh readings.
 	RecentPercentPerHour *float64 `json:"recentPercentPerHour"`
@@ -283,7 +285,9 @@ type Report struct {
 	EvaluatedAt       time.Time      `json:"evaluatedAt"`
 	Accounts          []Account      `json:"accounts"`
 	Sources           []SourceStatus `json:"sources"`
-	Note              string         `json:"note"`
+	// Refresh: what `quota --refresh-account` did, so old figures never pass for a fresh reading.
+	Refresh *AccountRefresh `json:"refresh,omitempty"`
+	Note    string          `json:"note"`
 }
 
 const note = "Local observations only, read from files on this machine; never sent anywhere. Percentages are the harness's own usage meters, not token or task counts. Pace and headroom are estimates that assume the recent rate of use continues."
@@ -411,6 +415,7 @@ func evalWindow(w *Window, now time.Time) {
 		age := int(math.Max(0, now.Sub(w.ObservedAt).Minutes()))
 		w.AgeMinutes = &age
 	}
+	w.Stale = !w.ObservedAt.IsZero() && now.Sub(w.ObservedAt) > staleAfter
 	if w.WindowMinutes == 0 {
 		w.WindowMinutes = defaultMinutes[w.Kind]
 	}

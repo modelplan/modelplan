@@ -5,6 +5,7 @@ import ModelPlanCockpitWeb
 import ModelPlanEngineClient
 import ModelPlanEngineStore
 import ModelPlanSettings
+import ModelPlanWire
 import ModelPlanDock
 
 /// Keep #332's single showConsole route and one protocol client/store.
@@ -23,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"79ef3f2ba4a7699fa773ed0cc80c052d3eb51997fd245e804ec6a98c4ba4f3b6",
-        "official":"7950f1d37351159f2f2b44aee3e0b3701737d9846caf5b823dbb5c1875f6c013",
+        "community":"03d4e9e0f504cd8bbfeae9c2f96663d3026e4796f2ffa49a8af9c27fe7e7ba72",
+        "official":"e76613231de3c82e7335380089a71da50d90182c2a37fdf5d990b0eaf753ec59",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -85,8 +86,11 @@ import ModelPlanDock
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
+    var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: (() -> Void)?
     var anchor: (() -> CGRect?)?
+    var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
     var appearance=CockpitAppearance(theme:.night,locale:.en,profile:.full)
     init(bundle: URL,settingsStore: SettingsStore) { self.bundle=bundle;self.settingsStore=settingsStore }
@@ -100,6 +104,7 @@ import ModelPlanDock
            let value=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],value["edition"] as? String == "official" { edition="official" }
         let verified=try VerifiedCockpitBundle(root:bundle.appendingPathComponent("Contents/Resources/Cockpit"),
             manifestSHA256:CommunityCockpitApplicationFactory.manifestPins[edition]!,allowOfficial:edition == "official")
+        verifiedBundle=verified
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
         page.onFailure = { [weak self] _ in self?.pageFailure?() }
@@ -146,9 +151,42 @@ struct CockpitUnavailableNotice {
         owner.coordinator?.onClosed = { [weak self] in
             guard let self else { return }
             self.wantsVisible = false
+            self.fieldPanel?.close()
             self.pageOpened = false
             self.composition.dock.setCockpitPresentationBlocked(false)
         }
+    }
+    /// Public model data only: the launch field never receives personal readings. The official page is
+    /// the only one that asks; a community bundle has no field page, so the panel is not offered.
+    private struct FieldPayload:Encodable {
+        let language:String,reduceMotion:Bool,models:[WireCockpitPublicationModel],mine:[String],focus:String?
+    }
+    private var fieldPanel:CockpitFieldPanel?
+    var fieldIsOpen:Bool { fieldPanel?.isOpen == true }
+    func fieldPayload() -> String? {
+        guard let details=composition.store.snapshot.cockpit?.details,let models=details.publishedModels,!models.isEmpty else { return nil }
+        let mine=details.publication?.models.map(\.id) ?? []
+        let value=FieldPayload(language:owner.appearance.locale == .en ? "en":"zh",reduceMotion:owner.appearance.reduceMotion,models:models,mine:mine,focus:nil)
+        return (try? JSONEncoder().encode(value)).flatMap { String(data:$0,encoding:.utf8) }
+    }
+    func handle(_ intent:CockpitIntent) {
+        guard wantsVisible else { return }
+        switch intent {
+        case .chooseSetup,.openSettings:owner.settings?()
+        case .openHistory:unavailable(history:true)
+        case .openField:openField()
+        case .openWebsite(let link):owner.openWebsite(link.url)
+        case .close:owner.coordinator?.requestClose()
+        case .detach,.putBack,.shutterToggle,.scopeSelect:
+            // The page owns shell controls; the coordinator validates and
+            // consumes scope selection. An unexpected escape fails closed.
+            hide()
+        }
+    }
+    private func openField() {
+        guard let bundle=owner.verifiedBundle,let payload=fieldPayload() else { return }
+        let panel=fieldPanel ?? CockpitFieldPanel(bundle:bundle)
+        fieldPanel=panel;panel.open(payload:payload,near:owner.anchor?())
     }
     /// The page follows the committed settings live; a cockpit opened later starts from them.
     func applySettings(_ value: SettingsApplication) {
@@ -179,18 +217,7 @@ struct CockpitUnavailableNotice {
             owner.appearance = .init(theme:theme,locale:snapshot.preferences.language == .english ? .en:.zhCN,profile:.full,
                 redBelow:snapshot.preferences.redBelow,showProjectNames:snapshot.preferences.showProjectNames)
             if let appliedSettings { owner.appearance=cockpitAppearance(appliedSettings) }
-            owner.coordinator?.onIntent = { [weak self] intent in
-                guard let self,self.wantsVisible else { return }
-                switch intent {
-                case .chooseSetup,.openSettings:self.owner.settings?()
-                case .openHistory:self.unavailable(history:true)
-                case .close:self.owner.coordinator?.requestClose()
-                case .detach,.putBack,.shutterToggle,.scopeSelect:
-                    // The page owns shell controls; the coordinator validates and
-                    // consumes scope selection. An unexpected escape fails closed.
-                    self.hide()
-                }
-            }
+            owner.coordinator?.onIntent = { [weak self] intent in self?.handle(intent) }
             activate()
             owner.coordinator?.open()
             if !pageOpened { composition.dock.setCockpitPresentationBlocked(false) }
@@ -202,6 +229,7 @@ struct CockpitUnavailableNotice {
         wantsVisible = false
         showTask?.cancel()
         showTask = nil
+        fieldPanel?.close()
         owner.coordinator?.close()
         pageOpened = false
         composition.dock.setCockpitPresentationBlocked(false)

@@ -318,6 +318,24 @@ final class BridgeTests: XCTestCase {
     _ = try state.accept(reply(clear,"cleared",3),source:source)
     XCTAssertThrowsError(try state.accept(reply(newer,"nextDeadline",4,extra:["deadlineUnixMs":"2000"]),source:source))
   }
+  func testWebsiteActionIsATypedPageAndNeverAURL() throws {
+    let state=CockpitBridgeState(context:try context()),load=try ready(state)
+    _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))
+    let display=try state.display(fixture(),ticket:XCTUnwrap(state.queryTicket))
+    _ = try state.accept(reply(display,"rendered",2),source:source)
+    let link=try XCTUnwrap(CockpitWebsiteLink(page:"plans",value:"openai"))
+    XCTAssertEqual(try state.accept(reply(load,"action",3,extra:["action":"openWebsite","page":"plans","value":"openai"]),source:source),.action(.openWebsite(link)))
+    XCTAssertEqual(link.url.absoluteString,"https://modelplan.ai/plans?seller=openai")
+    XCTAssertEqual(CockpitWebsiteLink(page:"effort",value:"gpt-6.1-sol")?.url.absoluteString,"https://modelplan.ai/effort?model=gpt-6.1-sol")
+    XCTAssertEqual(CockpitWebsiteLink(page:"methodology",value:"effort-ladder")?.url.absoluteString,"https://modelplan.ai/methodology#effort-ladder")
+    var sequence=4
+    for extra:[String:Any] in [["page":"home","value":"x"],["page":"plans","value":"a b"],["page":"plans","value":"https://evil.example"],
+                               ["page":"plans","value":String(repeating:"x",count:65)],["page":"plans"],["value":"x"],
+                               ["page":"plans","value":"x","url":"https://evil.example"]] {
+      XCTAssertThrowsError(try state.accept(reply(load,"action",sequence,extra:extra.merging(["action":"openWebsite"]){$1}),source:source),"\(extra)")
+      sequence += 1
+    }
+  }
   func testEarlyAppearanceReportSurvivesLaterValidActionBeforeAck() throws {
     let state=CockpitBridgeState(context:try context()),load=try ready(state)
     _ = try state.setVisibility(.init(visible:true,occluded:false,key:true))

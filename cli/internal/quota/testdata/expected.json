@@ -153,6 +153,7 @@
           "elapsedPercent": null,
           "projectedPercent": null,
           "ageMinutes": 2940,
+          "stale": true,
           "recentPercentPerHour": null,
           "runsOutInMinutes": null,
           "unknownReason": "reset_passed",
