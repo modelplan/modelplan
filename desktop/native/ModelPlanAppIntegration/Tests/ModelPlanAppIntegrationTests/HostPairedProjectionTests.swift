@@ -2,6 +2,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import XCTest
 import ModelPlanCore
 @_spi(DockResourceChecks) import ModelPlanDock
@@ -961,6 +962,16 @@ actor EntrySyntheticClient: EngineClient {
             try XCTUnwrap(view.presentedImageForChecks?.dataProvider?.data) as Data
         }
         let resting = try pixels()
+        // Evidence for review: what the ring looks like at rest and magnified, under dock-visual/.
+        func capture(_ name: String) throws {
+            let root = ProcessInfo.processInfo.environment["RUNNER_TEMP"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? FileManager.default.temporaryDirectory
+            let output = root.appendingPathComponent("dock-instrument-checks/dock-visual/magnification", isDirectory: true)
+            try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+            guard let image = view.presentedImageForChecks,
+                  let writer = CGImageDestinationCreateWithURL(output.appendingPathComponent(name + ".png") as CFURL, "public.png" as CFString, 1, nil) else { return }
+            CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+        }
+        try capture("resting")
         let skin = try XCTUnwrap(view.presentedSkinForChecks)
         XCTAssertNotNil(view.registeredHullBounds)
         let nozzle = try XCTUnwrap(view.interactionAnchor(id))
@@ -1027,6 +1038,7 @@ actor EntrySyntheticClient: EngineClient {
         XCTAssertFalse(grown.intersects(try XCTUnwrap(view.helpReadoutAnchor(id))), "the magnified ring never covers its readout")
         XCTAssertGreaterThan(try XCTUnwrap(view.presentedImageForChecks).width, restingWidth)
         XCTAssertTrue(view.isPainted(atLocal: CGPoint(x: nozzle.midX, y: nozzle.midY)))
+        try capture("subtle")
         XCTAssertNil(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
         events.hoverNozzle(nil)
         XCTAssertEqual(try pixels(), resting)
@@ -1038,6 +1050,7 @@ actor EntrySyntheticClient: EngineClient {
         _ = try await application.editor.commit(SettingsB21Edit.magnification(.strong))
         events.hoverNozzle(id)
         XCTAssertEqual(view.nozzlePosesForChecks[id]?.scale, 1.5)
+        try capture("strong")
         let neighbour = try XCTUnwrap(view.nozzlePosesForChecks["bbbbbbbbbbbbbbbb"])
         XCTAssertGreaterThan(neighbour.scale, 1)
         XCTAssertLessThan(neighbour.scale, 1.5)

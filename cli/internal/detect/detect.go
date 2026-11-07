@@ -93,7 +93,7 @@ func safeRelative(p string) bool {
 	}
 	// Documented tool-owned classes; never admit unrelated secret stores such as
 	// .ssh or arbitrary home files just because a remote catalogue names them.
-	roots := []string{".claude", ".codex", ".zcode", ".cursor", ".copilot", ".gemini", ".kimi-code", ".qwen", ".kiro", ".grok", ".factory", ".kimi", ".local/share/amp", ".config/opencode", "Library/Application Support/Cursor", "Library/Application Support/Claude", "Library/Application Support/Codex", "Library/Application Support/ZCode"}
+	roots := []string{".claude", ".codex", ".zcode", ".cursor", ".copilot", ".gemini", ".kimi-code", ".qwen", ".kiro", ".grok", ".factory", ".kimi", ".local/share/amp", ".local/share/zcode-community", ".local/share/zcode-cli", ".config/opencode", "Library/Application Support/Cursor", "Library/Application Support/Claude", "Library/Application Support/Codex", "Library/Application Support/ZCode"}
 	for _, root := range roots {
 		if p == root || strings.HasPrefix(p, root+"/") {
 			return true

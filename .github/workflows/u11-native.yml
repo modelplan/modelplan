@@ -62,6 +62,7 @@ jobs:
         env:
           MODELPLAN_U11_TEST_CLI: ${{ github.workspace }}/.tmp/u11-cli
           MODELPLAN_U11_TEST_REQUIRED: "1"
+          MODELPLAN_DOCK_RUNTIME_PRODUCER: "1"
         shell: bash
         run: |
           set -o pipefail

@@ -792,6 +792,19 @@ private actor ReserveJourneyClient: EngineClient {
 
     // Empty and unrecognized units are decoder-boundary inputs; the current
     // producer normalizes both to "other" and does not emit them directly.
+    func testV06UnknownUnitUsesReserveLabelWithoutUnitText() async throws {
+        let examples: [(Double, String)] = [(3, "3"), (3.5, "4"), (3.456, "3"),
+                                             (0.004, "<1"), (1_234_567.891, "1,234,568")]
+        for english in [true, false] {
+            for (value, expected) in examples {
+                let row = try await reserve(balance: value, unit: "other", english: english)
+                XCTAssertEqual(row?.label, english ? "Reserve" : "储备")
+                XCTAssertEqual(row?.value, expected)
+                XCTAssertEqual(row?.detail, "")
+            }
+        }
+    }
+
     func testUnknownAndEmptyUnitAreNotMisreportedOrEchoed() async throws {
         for english in [true, false] {
             let label = english ? "Reserve" : "储备"

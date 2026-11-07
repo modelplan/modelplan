@@ -129,7 +129,67 @@ func ProductionPathsWithAdmission(cache, version string, admission consent.Admis
 		}
 		p.ReaderAccess.Grants[id] = g
 	}
+	if g, ok := defaultZCodeGrant(home, state, mode, glmSourceConfigured(p)); ok {
+		p.ReaderAccess.Grants["zai"] = g
+	}
 	return p
+}
+
+// defaultZCodeGrant: ZCode's own Coding Plan key route is on by default (owner decision
+// 2026-11-06, G3-21) for a user who has made no ModelPlan decision about GLM. Construction
+// only checks that ZCode's provider file is there; the file is opened at read time, under
+// the reader lock, by the existing Z.ai configured-key reader. An explicit GLM decision
+// (allow with another source, or deny) always takes precedence.
+func defaultZCodeGrant(home string, state consent.State, mode string, configured bool) (ReaderGrant, bool) {
+	if r, decided := state.Tools["zai"]; (decided && (!r.Allowed || zaiRecordChoseSource(r))) || configured || home == "" || mode != consent.Automatic || !state.AllowsScope(consent.ScopeZaiAccountUsageAPIKey, mode) {
+		return ReaderGrant{}, false
+	}
+	file := ZCodeProviderConfig(home)
+	fi, err := os.Lstat(file)
+	if err != nil || !fi.Mode().IsRegular() || !detect.LocalRoot(filepath.Dir(filepath.Dir(file))) {
+		return ReaderGrant{}, false
+	}
+	scope := consent.ScopeZaiAccountUsageAPIKey
+	fence := state.Fence()
+	// The login generation also follows the provider file (size and modification time,
+	// from the same stat; the file is not read here), so replacing the selected key after
+	// a refusal releases the held "sign-in rejected" state at the next due read.
+	stamp := strconv.FormatInt(fi.Size(), 10) + "." + strconv.FormatInt(fi.ModTime().UnixNano(), 10)
+	return ReaderGrant{Admission: state.CaptureStamp(scope), CaptureAllowed: func(stamp *consent.CaptureStamp) bool { return state.CaptureAllowed(stamp, scope) },
+		Generation: fence.StoreEpoch + ":" + strconv.FormatUint(state.Generation, 10) + ":zcode:" + stamp,
+		Publish:    func(write func() error) error { return consent.Publish(fence, write) },
+		StillValid: func() bool {
+			current, effective := consent.Current()
+			return effective == consent.Automatic && !nativeOff() && current.Fence() == fence
+		},
+		ConfigSource: &ZaiConfigSource{Tool: "zcode", SettingsPath: file}}, true
+}
+
+// zaiRecordChoseSource: a legacy GLM allow can be a bare tool grant from before ZCode's
+// route existed; only a recorded key, profile or other backend is a choice of source.
+func zaiRecordChoseSource(r consent.Record) bool {
+	return r.KeyEnv != "" || len(r.Profiles) > 0 || (r.Backend != "" && r.Backend != BackendNative)
+}
+
+// glmSourceConfigured: a GLM (Z.ai) source the user already chose in connections.json or
+// the legacy CodexBar file. It always wins over ZCode's default key; an unreadable
+// connections file counts as configured (fail closed).
+func glmSourceConfigured(p Paths) bool {
+	entries, err := LoadConnections(p.ConnectionsFile)
+	if err != nil {
+		return true
+	}
+	for _, e := range entries {
+		if e.Provider == "zai" {
+			return true
+		}
+	}
+	for _, provider := range legacyCodexBar(p.CodexBarFile) {
+		if provider == "zai" {
+			return true
+		}
+	}
+	return false
 }
 
 // InteractiveReaders is only used by an explicit foreground refresh. Quiet

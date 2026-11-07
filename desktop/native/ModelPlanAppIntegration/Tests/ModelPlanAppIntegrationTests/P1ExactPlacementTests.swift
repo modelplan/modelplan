@@ -758,6 +758,9 @@ extension P1ExactPlacementTests {
         XCTAssertEqual(try reading().status, .critical)
         XCTAssertEqual(try reading().outer?.status, .critical)
         let red = try ringRedPixels()
+        if let image = view.presentedImageForChecks, let writer = CGImageDestinationCreateWithURL(try visualOutput("ring-centre").appendingPathComponent("ring-M-20.png") as CFURL, "public.png" as CFString, 1, nil) {
+            CGImageDestinationAddImage(writer, image, nil); CGImageDestinationFinalize(writer)
+        }
         XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
         try await settings.commit(.redBelow(16))
         try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
