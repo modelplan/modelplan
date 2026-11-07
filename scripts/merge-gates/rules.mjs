@@ -199,22 +199,40 @@ export function glmVerdict(items, head) {
   return r;
 }
 
-// ---- Exact-head owner-ledger evidence (evidence-gate.sh) ----
-// Scenario declarations come from the first matching body line; only trusted issue comments count.
-// Evidence is tied to the actual head and is never carried across a merge or other commit.
+// ---- Exact-head scenario evidence (evidence-gate.sh) ----
+const SCENARIO_LINE = /^\s*\**Scenarios:?\**:?/i;
+const SCENARIO_ID = /^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/;
+
+// The first matching body line is the declaration. It is either "none" (a bracketed note may follow) or spec
+// scenario IDs separated by commas, semicolons or "and", each with an optional bracketed note. Anything else
+// (requirement IDs, free text, an empty line) is malformed: read as "no scenarios" it would switch the evidence
+// gate off, so every PR is held to this, not only ledger PRs.
+export function parseScenarios(body) {
+  const line = lines(body ?? "").find((l) => SCENARIO_LINE.test(l));
+  if (line === undefined) return { declared: false, ids: [], malformed: null };
+  const rest = line.replace(SCENARIO_LINE, "").replace(/\*+\s*$/, "").trim();
+  if (/^none\s*(\(.*\))?$/i.test(rest)) return { declared: true, ids: [], malformed: null };
+  let bare = rest;
+  for (let prev = null; prev !== bare;) { prev = bare; bare = bare.replace(/\([^()]*\)/g, " "); }
+  const tokens = bare.split(/[,;\s]+/).filter((t) => t && t !== "and");
+  // A note stays free text, but cannot hide a mistyped ID.
+  const shaped = rest.match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
+  const bad = [...tokens, ...shaped].filter((t) => !SCENARIO_ID.test(t));
+  if (bad.length || !tokens.length)
+    return { declared: true, ids: [], malformed: `Scenarios line must be spec scenario IDs or none${bad.length ? `, not: ${bad.slice(0, 3).join(" ")}` : ""}` };
+  return { declared: true, ids: [...new Set(rest.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g))].sort(), malformed: null };
+}
+
+// Only trusted issue comments count. Evidence is tied to the actual head and is never carried across a merge
+// or other commit. Stricter: a Scenarios line alone asks for it, with or without a ledger row (#661 landed with
+// C-10 unaccounted for because only G3 PRs were read here).
 export function evidenceState(pr, items, head) {
   const body = pr.body ?? "";
-  if (!/g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n")))
-    return { state: SUCCESS, why: "not an evidence-tier-1 PR" };
-  const declaration = lines(body).find((line) => /^\s*\**Scenarios:?\**:?/i.test(line));
-  // Reject malformed scenario-shaped tokens, including when a valid ID is also present.
-  // Free-text annotations remain allowed, but cannot hide a mistyped ID.
-  const candidates = declaration?.replace(/^\s*\**Scenarios:?\**:?/i, "")
-    .match(/\b[A-Za-z][A-Za-z0-9-]*[0-9][A-Za-z0-9-]*\b/g) ?? [];
-  if (candidates.some((id) => !/^[A-Z][A-Z0-9]{0,3}-[0-9]{2}$/.test(id)))
-    return { state: FAILURE, why: "Scenarios line contains malformed scenario IDs" };
-  const scenarios = [...new Set(declaration?.match(/\b[A-Z][A-Z0-9]{0,3}-[0-9]{2}\b/g) ?? [])].sort();
-  if (!scenarios.length) return { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" };
+  const ledger = /g3-[0-9]+/i.test([pr.title ?? "", body, pr.head.ref ?? ""].join("\n"));
+  const { ids: scenarios, malformed } = parseScenarios(body);
+  if (malformed) return { state: FAILURE, why: malformed };
+  if (!scenarios.length) return ledger ? { state: FAILURE, why: "ledger PR requires a Scenarios line with scenario IDs" }
+    : { state: SUCCESS, why: "not an evidence-tier-1 PR" };
   const verified = new Set();
   for (const item of items) if (item.kind === "comment") {
     for (const line of lines(item.body)) {
@@ -229,6 +247,42 @@ export function evidenceState(pr, items, head) {
   const missing = scenarios.filter((id) => !verified.has(id));
   return missing.length ? { state: PENDING, why: `evidence pending: ${missing.join(", ")}` }
     : { state: SUCCESS, why: "scenario evidence verified" };
+}
+
+// ---- Trains ----
+// A train lands many PRs under one Scenarios line, and only that line is checked for evidence, so a member's
+// scenario missing from it would land unaccounted for (#650 dropped seven). evaluate.mjs reads members only for
+// a PR that looks like a train: "train" in the title, a b/ branch, or a Supersedes section.
+export const isTrain = (pr) => /\btrain\b/i.test(pr.title ?? "") || (pr.head.ref ?? "").startsWith("b/") || /^#{2,3}\s*Supersedes\b/im.test(pr.body ?? "");
+
+// The PR numbers in the body's Supersedes section.
+export function supersededPrs(body) {
+  const section = /^#{2,3}\s*Supersedes\b.*\n((?:(?!#{1,3}\s).*(?:\n|$))*)/im.exec(body ?? "");
+  return [...new Set([...(section?.[1] ?? "").matchAll(/#([0-9]+)/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+}
+
+// based: PRs into the train's branch; open: open PRs into main; superseded: the PRs named in Supersedes;
+// commits: the train head's commits that main lacks. A PR merged through GitHub or carried at its exact head is
+// a member; a PR the train says it supersedes is one by declaration, unless it already landed on main under its
+// own gate.
+export function trainMembers(pr, { based, open, superseded, commits }) {
+  const members = new Map();
+  for (const p of [...based, ...open]) if (p.merged_at || commits.has(p.head.sha)) members.set(p.number, p);
+  for (const p of superseded) if (!(p.merged_at && p.base?.ref === "main")) members.set(p.number, p);
+  return [...members.values()].filter((p) => p.head.sha !== pr.head.sha).sort((a, b) => a.number - b.number);
+}
+
+// members: [{number, body}].
+export function trainScenarioGap(pr, members) {
+  const own = new Set(parseScenarios(pr.body).ids);
+  const gaps = [];
+  for (const m of members) {
+    const { ids, malformed } = parseScenarios(m.body);
+    if (malformed) gaps.push(`#${m.number}: unreadable Scenarios line`);
+    const lost = ids.filter((id) => !own.has(id));
+    if (lost.length) gaps.push(`#${m.number}: ${lost.join(" ")}`);
+  }
+  return gaps.length ? `train Scenarios line misses ${gaps.join("; ")}` : null;
 }
 
 // ---- CI at one commit (merge-when.sh) ----
@@ -267,8 +321,8 @@ export function ciState(runs, statuses = [], { required = [ANCHOR_WORKFLOW] } = 
 
 // ---- One PR head ----
 // pr: REST pull request; items: feed(); files: REST PR files; runs/statuses: CI at the head;
-// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf.
-export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf }) {
+// verifiedEdge(old, new): carry proof; conf: parsed design-paths.conf; members: a train's member PRs.
+export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, conf, members = [] }) {
   const head = pr.head.sha;
   const res = (state, why, extra = {}) => ({ state, why, head, ...extra });
   if (!SHA.test(head)) return res(FAILURE, "head is not a full sha");
@@ -279,6 +333,8 @@ export function evaluatePr({ pr, items, files, runs, statuses, verifiedEdge, con
     return res(FAILURE, "not a trusted same-repository PR; coordinator decides");
   const evidence = evidenceState(pr, items, head);
   if (evidence.state === FAILURE) return res(FAILURE, evidence.why);
+  const gap = trainScenarioGap(pr, members);
+  if (gap) return res(FAILURE, gap);
   if (pr.draft) return res(PENDING, "draft");
 
   const paths = prPaths(files);

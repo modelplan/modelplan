@@ -210,6 +210,97 @@ test("malformed scenario members fail PR and merge group despite valid evidence"
   assert.equal(valid.state, R.SUCCESS);
 });
 
+test("a Scenarios line without a ledger row needs the same exact-head evidence (#661: C-10 passed unaccounted)", () => {
+  const docs = [file("docs/evidence.md")];
+  const plain = (body) => pr({ title: "Cockpit publication", body: `Ledger: none\n${body}`, head: { sha: H, ref: "web/publication", repo: { full_name: "modelplan/modelplan" } } });
+  const done = (id) => comment(`VERIFIED: ${id} @ ${H} evidence=fixture`);
+  const pending = evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09")] });
+  assert.equal(pending.state, R.PENDING);
+  assert.match(pending.why, /evidence pending: C-10/);
+  const group = R.evaluateGroup({ steps: [{ pr: 661, prResult: pending, mergeProof: { ok: true } }], queueRuns: greenCi });
+  assert.equal(group.state, R.FAILURE, "a pending member never lands");
+  assert.equal(evalPr({ p: plain("Scenarios: C-09, C-10"), files: docs, comments: [done("C-09"), comment(`EVIDENCE-DEFERRED: C-10 @ ${H} issue=470`)] }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: plain("Scenarios: C-09"), files: docs, comments: [comment(`VERIFIED: C-09 @ ${OLD} evidence=fixture`)] }).state, R.PENDING, "another head proves nothing");
+  assert.equal(evalPr({ p: plain("Scenarios: none"), files: docs }).state, R.SUCCESS);
+  assert.equal(evalPr({ p: pr({ title: "Docs", body: "No declaration here." }), files: docs }).state, R.SUCCESS);
+});
+
+test("Scenarios lines: spec IDs or none, on every PR; requirement IDs and free text are rejected (exception review 1.4)", () => {
+  const docs = [file("docs/evidence.md")];
+  const plain = (line) => pr({ title: "Widget setting", body: `Ledger: none\n${line}` });
+  for (const line of [
+    "Scenarios: SET-9-09",
+    "Scenarios: SET-9 Quota Widget controls (widget side)",
+    "Scenarios: LBL-2.2-01, LBL-2.2-02",
+    "Scenarios: DOCK-3.1-01, D-01",
+    "Scenarios: owner test build opens the cockpit from the menu bar",
+    "Scenarios: D-01 and a sentence",
+    "Scenarios: none listed",
+    "Scenarios: none, D-03",
+    "Scenarios:",
+    "Scenarios were not changed",
+  ]) {
+    const result = evalPr({ p: plain(line), files: docs });
+    assert.equal(result.state, R.FAILURE, line);
+    assert.match(result.why, /Scenarios line/, line);
+  }
+  const draft = evalPr({ p: pr({ draft: true, title: "x", body: "Scenarios: SET-9-12" }), files: docs });
+  assert.equal(draft.state, R.FAILURE, "a draft sees the rejection at once");
+  // Forms real PRs use: notes in brackets, semicolons, bold, none with a note.
+  const shapes = {
+    "Scenarios: R-08, R-09 (partial evidence); V-06, V-07": ["R-08", "R-09", "V-06", "V-07"],
+    "**Scenarios:** C-13 (Effort and Breakdown slice), C-05 (live locale; web slice)": ["C-05", "C-13"],
+    "Scenarios: D-12 and D-24": ["D-12", "D-24"],
+    "Scenarios: G3-12, V-03": ["G3-12", "V-03"],
+    "Scenarios: none": [],
+    "**Scenarios:** None": [],
+    "Scenarios: none (no new product behaviour)": [],
+  };
+  for (const [line, ids] of Object.entries(shapes)) {
+    const parsed = R.parseScenarios(`Intro\n${line}\nScenarios: SET-9-09`);
+    assert.equal(parsed.malformed, null, line);
+    assert.deepEqual(parsed.ids, ids, line);
+  }
+  assert.equal(R.parseScenarios("no line").declared, false);
+});
+
+test("train: every member's scenarios must be in the train's own line (#650 dropped seven)", () => {
+  const docs = [file("docs/evidence.md")];
+  const ref = (name) => ({ sha: H, ref: name, repo: { full_name: "modelplan/modelplan" } });
+  const train = pr({ title: "Quota Widget train", body: "Ledger: none\nScenarios: D-01, V-02", head: ref("b/widget-train") });
+  const done = [comment(`VERIFIED: D-01 @ ${H} evidence=fixture`), comment(`VERIFIED: V-02 @ ${H} evidence=fixture`)];
+  const trainPr = (members, p = train) => R.evaluatePr({ pr: p, items: R.feed(done), files: docs, runs: greenCi, statuses: [], verifiedEdge: () => false, conf, members });
+  assert.equal(trainPr([{ number: 1, body: "Scenarios: D-01" }, { number: 2, body: "Scenarios: none" }, { number: 3, body: "no line" }]).state, R.SUCCESS);
+  const short = trainPr([{ number: 519, body: "Scenarios: R-08, V-02" }, { number: 518, body: "Scenarios: S-01" }]);
+  assert.equal(short.state, R.FAILURE);
+  assert.match(short.why, /#519: R-08/);
+  assert.match(short.why, /#518: S-01/);
+  const bad = trainPr([{ number: 626, body: "Scenarios: SET-9 Quota Widget controls" }]);
+  assert.equal(bad.state, R.FAILURE, "an unreadable member line cannot be proved a subset");
+  assert.match(bad.why, /#626/);
+  const none = pr({ title: "Train", body: "Scenarios: none", head: ref("b/x") });
+  assert.equal(trainPr([{ number: 7, body: "Scenarios: D-01" }], none).state, R.FAILURE);
+
+  assert.ok(R.isTrain(train));
+  assert.ok(R.isTrain(pr({ title: "Build 9 TRAIN", body: "" })));
+  assert.ok(R.isTrain(pr({ title: "x", body: "", head: ref("b/widget") })));
+  assert.ok(R.isTrain(pr({ title: "x", body: "## Supersedes\n\n#620" })));
+  assert.ok(!R.isTrain(pr({ title: "Restrained change", body: "supersedes #1 in prose", head: ref("feature/b/x") })));
+  assert.deepEqual(R.supersededPrs("Intro #1\n## Supersedes\n\n#620, #621. Also #518 (see #518).\n\n## Dependencies\n\n#646"), [518, 620, 621]);
+  assert.deepEqual(R.supersededPrs("#1 only"), []);
+
+  // Members: merged into the train branch, or an open PR whose exact head the train contains, or superseded by name.
+  const inTrain = new Set(["1".repeat(40)]);
+  const picked = R.trainMembers(train, {
+    based: [{ number: 665, merged_at: "2026-11-07T00:00:00Z", head: { sha: "2".repeat(40) }, body: "a" }, { number: 666, merged_at: null, head: { sha: "1".repeat(40) }, body: "b" }, { number: 669, merged_at: null, head: { sha: "3".repeat(40) }, body: "c" }],
+    open: [{ number: 519, head: { sha: "1".repeat(40) }, body: "d" }, { number: 700, head: { sha: "4".repeat(40) }, body: "e" }, { number: 665, head: { sha: "2".repeat(40) }, body: "a" }],
+    superseded: [{ number: 620, head: { sha: "5".repeat(40) }, base: { ref: "main" }, body: "f" }, { number: 650, head: { sha: H }, body: "self" },
+      { number: 523, merged_at: "2026-11-07T00:00:00Z", head: { sha: "6".repeat(40) }, base: { ref: "main" }, body: "landed under its own gate" }],
+    commits: inTrain,
+  });
+  assert.deepEqual(picked.map((m) => m.number), [519, 620, 665, 666]);
+});
+
 test("merge-group evaluation: the group's own CI replaces any stale-base rule", () => {
   const ok = { state: R.SUCCESS, why: "ok" };
   const step = (o = {}) => ({ pr: 7, prResult: ok, mergeProof: { ok: true }, ...o });
@@ -276,6 +367,21 @@ test("carry proof: object-identical contribution over a clean main merge, fail c
     r.g("checkout", "-q", "-b", "side", "main~2"); r.put("c.txt", "side\n"); r.g("commit", "-qam", "side");
     r.g("checkout", "-q", "-b", "pr4", reviewed); r.g("merge", "-q", "--no-edit", "side");
     assert.equal(G.verifyCarry(r.dir, reviewed, r.sha(), MAINREF).why, "second parent is not on main");
+  } finally { r.done(); }
+});
+
+test("commitsOnlyIn: the head's commits that main does not have, fail closed on a missing object", () => {
+  const r = repo();
+  try {
+    const base = r.sha();
+    r.g("checkout", "-qb", "member"); r.put("a.txt", "m\n"); r.g("commit", "-qam", "member");
+    const member = r.sha();
+    r.g("checkout", "-qb", "train"); r.put("b.txt", "t\n"); r.g("commit", "-qam", "train");
+    const train = r.sha();
+    const only = G.commitsOnlyIn(r.dir, train, MAINREF);
+    assert.ok(only.has(member) && only.has(train));
+    assert.ok(!only.has(base));
+    assert.throws(() => G.commitsOnlyIn(r.dir, "f".repeat(40), MAINREF), /not found/);
   } finally { r.done(); }
 });
 
