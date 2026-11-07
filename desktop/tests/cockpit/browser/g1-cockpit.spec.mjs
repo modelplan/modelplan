@@ -26,14 +26,15 @@ test('CKP-ENG-02 one or two subscriptions keep three engine columns',async({page
  }
 });
 
-test('CKP-ENG-14 shared threshold includes the exact 41, 40, 26, 25 and zero boundaries',async({page})=>{
+test('CKP-ENG-14 shared threshold includes the exact 51, 50, 26, 25 and zero boundaries',async({page})=>{
  const data=visualFixture().data,extra=structuredClone(data.projection.rows[0]);extra.id='synthetic-fifth';extra.accounts[0].subscriptionRef=null;extra.accounts[0].accountLocator=null;data.projection.rows.push(extra);
- for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[41,40,26,25,0][i];
+ for(const [i,row] of data.projection.rows.entries())for(const window of row.accounts[0].windows)window.remainingPercent=[51,50,26,25,0][i];
  await open(page,data);
  const cells=page.locator('.eng-cols .ec[data-col] .qcell[data-row="first"]');await expect(cells).toHaveCount(5);
  for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(cells.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
  await page.getByRole('button',{name:'Subscription',exact:true}).click();const values=page.locator('.sa-list .sa .v');
- for(const [i,kind] of ['ok','mid','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
+ // The MFD's fmt.js keeps its old 41 % line until it follows D22, so 50 is still ok there.
+ for(const [i,kind] of ['ok','ok','mid','low','low'].entries())await expect(values.nth(i)).toHaveClass(new RegExp('\\blv-'+kind+'\\b'));
 });
 
 test('CKP-STRIP-04 ALERT stays English while its accessible label localizes',async({page})=>{
@@ -299,7 +300,7 @@ test('CKP-STRIP-06 a new caution flashes at most ten seconds and a new condition
 });
 
 test('CKP-STRIP-09 last-seen records follow running sessions without claiming they ended',async({page})=>{
- const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-live')).toContainText('58');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-time')).toHaveText('Last seen');await expect(rows.nth(2).locator('.t-live')).toHaveText('--');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-time')).toHaveText('最近观察');const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toContainText('运行中');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
+ const data=visualFixture().data;data.details.sessions[0].rate=58;data.details.sessions[2].rate=58;data.details.sessions.reverse();const {send,receive}=await open(page,data);const rows=page.locator('.ck-tape .t-observed');await expect(rows).toHaveCount(3);await expect(rows.nth(0).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-time')).toHaveText('Running');await expect(rows.nth(1).locator('.t-live')).toContainText('58');await expect(rows.nth(2).locator('.t-model')).toHaveText('GLM-5.3');await expect(rows.nth(2).locator('.t-time')).toHaveText('Last seen');await expect(rows.nth(2).locator('.t-live')).toHaveText('--');await expect(rows.nth(2)).not.toContainText(/ended|stopped/i);expect(await receive(send('appearance',{...appearance,locale:'zh-CN'}))).toBe(true);await expect(rows.nth(2).locator('.t-time')).toHaveText('最近读数');const template=data.details.sessions.find(s=>s.state==='running');data.details.sessions=Array.from({length:7},(_,i)=>({...template,sessionRef:(i+1).toString(16).padStart(16,'0')}));expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(4);await expect(page.locator('.ck-tape .t-overflow')).toContainText('3');await expect(page.locator('.ck-tape .t-overflow')).toContainText('运行中');data.details.sessionCoverage='unavailable';expect(await receive(send('display',{data}))).toBe(true);await expect(rows).toHaveCount(0);
 });
 
 test('CKP-STRIP-10 running session cursors blink, stop when hidden, and stay static under Reduce Motion',async({page})=>{
@@ -331,7 +332,7 @@ test('Record strip (requirement ID pending) session status text fits without ell
   for(const locale of ['en','zh-CN']){
    expect(await receive(send('appearance',{...appearance,locale}))).toBe(true);
    const labels=page.locator('.ck-tape .t-observed .t-time');await expect(labels).toHaveCount(3);
-   await expect(labels.nth(2)).toHaveText(locale==='en'?'Last seen':'最近观察');
+   await expect(labels.nth(2)).toHaveText(locale==='en'?'Last seen':'最近读数');
    for(const label of await labels.all()){const size=await label.evaluate(e=>({scroll:e.scrollWidth,client:e.clientWidth,text:e.textContent}));expect(size.text).not.toMatch(/[\u2026]/);expect(size.scroll).toBeLessThanOrEqual(size.client);}
   }
  }

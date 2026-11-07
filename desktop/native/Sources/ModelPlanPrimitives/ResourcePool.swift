@@ -181,6 +181,8 @@ public struct EffectFrameRequest: Hashable, Sendable {
 /// Untinted RGBA consumer for externally supplied frames. No second cache and no synthetic artwork fallback.
 @MainActor public final class SteppedImageEffect {
     public let layer = CALayer()
+    /// Seconds for one pass of the frames: 1 is the normal ~9 fps. Set before `configure`.
+    public var cycleSeconds: Double = 1
     private let pool: EffectResourcePool
     private var key: EffectResourcePool.Key?
     private var entry: EffectResourcePool.Entry?
@@ -203,14 +205,14 @@ public struct EffectFrameRequest: Hashable, Sendable {
             let animation = CAKeyframeAnimation(keyPath: "contents")
             animation.values = atlas.images
             animation.keyTimes = (0...EffectResourcePool.poses).map { NSNumber(value: Double($0) / Double(EffectResourcePool.poses)) }
-            animation.calculationMode = .discrete; animation.duration = 1; animation.repeatCount = .infinity
+            animation.calculationMode = .discrete; animation.duration = cycleSeconds; animation.repeatCount = .infinity
             layer.add(animation, forKey: "stepped-images"); isAnimating = true
         }
         CATransaction.commit()
     }
     public func seekForCapture(_ phase: Double) {
         guard phase.isFinite, let entry else { return }
-        let value = max(0, phase.truncatingRemainder(dividingBy: 1))
+        let value = max(0, phase.truncatingRemainder(dividingBy: cycleSeconds) / cycleSeconds)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.removeAnimation(forKey: "stepped-images"); isAnimating = false
         layer.contents = entry.images[min(EffectResourcePool.poses - 1, Int(value * Double(EffectResourcePool.poses)))]

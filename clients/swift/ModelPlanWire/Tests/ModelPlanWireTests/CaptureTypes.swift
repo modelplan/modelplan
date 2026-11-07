@@ -6,6 +6,7 @@ import ModelPlanWire
 func decodeCapture(_ type: String, _ data: Data) throws {
     switch type {
     case "RowsAccount": _ = try WireDecoder.decode(RowsAccount.self, from: data)
+    case "RowsAccountActivity": _ = try WireDecoder.decode(RowsAccountActivity.self, from: data)
     case "RowsAccountToday": _ = try WireDecoder.decode(RowsAccountToday.self, from: data)
     case "RowsCredits": _ = try WireDecoder.decode(RowsCredits.self, from: data)
     case "RowsExpiryState": _ = try WireDecoder.decode(RowsExpiryState.self, from: data)
@@ -30,6 +31,9 @@ func decodeCapture(_ type: String, _ data: Data) throws {
     case "WireCockpitAccount": _ = try WireDecoder.decode(WireCockpitAccount.self, from: data)
     case "WireCockpitAlert": _ = try WireDecoder.decode(WireCockpitAlert.self, from: data)
     case "WireCockpitCredits": _ = try WireDecoder.decode(WireCockpitCredits.self, from: data)
+    case "WireCockpitCycle": _ = try WireDecoder.decode(WireCockpitCycle.self, from: data)
+    case "WireCockpitCycleGroup": _ = try WireDecoder.decode(WireCockpitCycleGroup.self, from: data)
+    case "WireCockpitCycleShare": _ = try WireDecoder.decode(WireCockpitCycleShare.self, from: data)
     case "WireCockpitData": _ = try WireDecoder.decode(WireCockpitData.self, from: data)
     case "WireCockpitDetails": _ = try WireDecoder.decode(WireCockpitDetails.self, from: data)
     case "WireCockpitEntityRanking": _ = try WireDecoder.decode(WireCockpitEntityRanking.self, from: data)
@@ -93,6 +97,7 @@ func decodeCapture(_ type: String, _ data: Data) throws {
 func roundTripCapture(_ type: String, _ data: Data) throws -> Data {
     switch type {
     case "RowsAccount": return try JSONEncoder().encode(WireDecoder.decode(RowsAccount.self, from: data))
+    case "RowsAccountActivity": return try JSONEncoder().encode(WireDecoder.decode(RowsAccountActivity.self, from: data))
     case "RowsAccountToday": return try JSONEncoder().encode(WireDecoder.decode(RowsAccountToday.self, from: data))
     case "RowsCredits": return try JSONEncoder().encode(WireDecoder.decode(RowsCredits.self, from: data))
     case "RowsExpiryState": return try JSONEncoder().encode(WireDecoder.decode(RowsExpiryState.self, from: data))
@@ -117,6 +122,9 @@ func roundTripCapture(_ type: String, _ data: Data) throws -> Data {
     case "WireCockpitAccount": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitAccount.self, from: data))
     case "WireCockpitAlert": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitAlert.self, from: data))
     case "WireCockpitCredits": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitCredits.self, from: data))
+    case "WireCockpitCycle": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitCycle.self, from: data))
+    case "WireCockpitCycleGroup": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitCycleGroup.self, from: data))
+    case "WireCockpitCycleShare": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitCycleShare.self, from: data))
     case "WireCockpitData": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitData.self, from: data))
     case "WireCockpitDetails": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitDetails.self, from: data))
     case "WireCockpitEntityRanking": return try JSONEncoder().encode(WireDecoder.decode(WireCockpitEntityRanking.self, from: data))

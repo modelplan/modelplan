@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 import Foundation
 
-public enum SettingsDockEdge: String, Codable, CaseIterable, Sendable { case right, bottom, left }
+public enum SettingsDockEdge: String, Codable, CaseIterable, Sendable {
+    /// The Quota Widget rests on all four edges; the top edge sits below the menu bar (A-1106-4).
+    case right, bottom, left, top
+    public var isHorizontal: Bool { self == .bottom || self == .top }
+}
 public enum SettingsReaderID: String, Codable, CaseIterable, Sendable { case codex, claude, gemini, cursor }
 public enum OptionalReaderID: String, Codable, CaseIterable, Sendable { case gemini, cursor }
 /// Consent is an app choice, not proof a reader is enabled or a command to enable one.
@@ -39,7 +43,7 @@ public struct ReaderSetting: Equatable, Sendable {
 }
 /// Confirmed task65 homes shared by the current data table; not a visual/layout implementation.
 public enum Settings65Homes {
-    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.automaticUpdates,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints])
+    public static let general = SettingsGroupDefinition(id: "general", keys: [.login,.automaticUpdates,.language,.menuDisplay,.openShortcut,.dockShortcut,.resetHints,.loginSystemSettings])
     public static let dock: [SettingsGroupDefinition] = [
         .init(id: "display", title: .init("Display", "显示"), keys: [.showDock,.autoHide,.reveal,.magnification,.size]),
         .init(id: "numbers", title: .init("Numbers", "数字"), keys: [.showPercentages,.percentageMode,.percentagePin,.redBelow,.sliverAlert]),

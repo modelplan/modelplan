@@ -34,7 +34,12 @@ test('both editions have reproducible bounded manifests; community excludes rese
     for(const rule of ["connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(rule));
     const script=readFileSync(root+'src/main.js','utf8')+readFileSync(root+'src/view.js','utf8');
     assert.doesNotMatch(script,/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/);
-    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
+    // Owner D39/D-A: the reserved launch-field scene is the one runtime script; it schedules its own (on-demand,
+    // 30 fps capped) frames and is loaded only when the enlarged view opens, never by the page's module graph.
+    const scene='runtime/field-scene/cockpit-scene.bundle.js';
+    assert.equal(Object.hasOwn(manifest.files,scene),edition==='official',scene);
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name.startsWith('src/')))assert.doesNotMatch(readFileSync(root+name,'utf8'),/field-scene|cockpit-scene/,name);
+    for(const name of Object.keys(manifest.files).filter(name=>name.endsWith('.js')&&name!==scene))assert.doesNotMatch(readFileSync(root+name,'utf8'),/\b(?:setTimeout|setInterval|requestAnimationFrame)\s*\(/,name);
     const provenance=JSON.parse(readFileSync(root+'prototype/source.json'));
     assert.equal(provenance.sourceCommit,'1d3f82429f1b853314ee120d4bd0007f84fc051d');
     assert.equal(provenance.fixtureAudit.copied,false);
@@ -42,7 +47,7 @@ test('both editions have reproducible bounded manifests; community excludes rese
       assert.doesNotMatch(name,/workbench-data|three[.]/i);
       if(name.endsWith('.svg'))assert.ok(edition==='official'&&['assets/detach.svg','assets/put-back.svg'].includes(name),`unapproved SVG: ${name}`);
       // Published U12 PNGs may join the verified pack; no runtime scene code.
-      if(name.startsWith('runtime/'))assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
+      if(name.startsWith('runtime/')&&name!==scene)assert.match(name,/(?:\.(png|json|md|txt)|\/SHA256SUMS)$/i);
     }
     execFileSync(process.execPath,[project+'build.mjs',...(edition==='official'?['--official']:[])],{stdio:'pipe'});
     assert.deepEqual(JSON.parse(readFileSync(root+'bundle-manifest.json')),manifest);

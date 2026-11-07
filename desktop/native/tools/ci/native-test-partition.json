@@ -59,8 +59,10 @@
         "ConsentContractTests",
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
-        "DockInteractionHostPortTests",
+        "DockCodexRuntimeRealServerTests",
+        "DockHoverExplanationTests", "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
+        "DockMotionPolicyTests",
         "DockPlacementGeometryTests",
         "DockPlacementProducerTests",
         "DockPointerObservationTests",
@@ -96,6 +98,10 @@
         "U8ConsentJourneyTests"
       ],
       "allowedSkips": {
+        "CommunityCockpitEntryTests/testG313RealCLIRecoversRetainedWeeklyCard": {
+          "leg": "headless",
+          "reason": "requires the synthetic real CLI supplied and required by the U11 workflow"
+        },
         "CommunityCockpitEntryTests/testNormalEntryRejectsOutdatedCLI": {
           "leg": "headless",
           "reason": "needs the real synthetic-test CLI, which the native job does not build; U11 builds and supplies it"
@@ -159,6 +165,18 @@
         "S1GalleryTests/testProduceOffscreenGallery": {
           "leg": "headless",
           "reason": "gallery producer runs only with MODELPLAN_S1_GOLDEN_DIR and MODELPLAN_S1_GALLERY_DIR"
+        },
+        "DockCodexRuntimeRealServerTests/testR01ExplicitLocalGrantShowsFourThenThreePercentWithSourceTime": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
+        },
+        "DockCodexRuntimeRealServerTests/testR06LocalHistoryChangeReachesTheSameSubscribedMember": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
+        },
+        "DockCodexRuntimeRealServerTests/testSameRuntimeMemberUpdatesTheOpenCard": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
         },
         "U6StatusItemFrameTests/testHostedStatusItemTitleChangePublishesLastSettledTopFrame": {
           "leg": "gui",

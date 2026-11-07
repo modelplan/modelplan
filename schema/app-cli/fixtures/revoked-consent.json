@@ -9,7 +9,7 @@
   "scopes": [
     {
       "cleanupPending": false,
-      "defaultCheck": false,
+      "defaultCheck": true,
       "detected": true,
       "keychain": "unset",
       "retired": false,

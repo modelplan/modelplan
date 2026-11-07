@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Generated from schema/app-cli/app-server.json (Go wire DTOs). DO NOT EDIT.
-// Schema SHA-256: 338920a5c19011a3cf0a14456874f0897dc692b2535dfc5a35628bbae5a052f8
+// Schema SHA-256: 09741a545d12d9ca0b2ef1b75f719d01e9b7385f53203ee714a975796acf4914
 import type { Schema } from '../src/schema.js';
 
 export type WireAccount = {
   readonly "accountLocator": string | null;
+  readonly "activity"?: ReadonlyArray<WireAccountActivity>;
   readonly "beta": boolean;
   readonly "credits": WireCredits | null;
   readonly "freshUntil": string | null;
@@ -18,6 +19,15 @@ export type WireAccount = {
   readonly "today"?: WireAccountToday | null;
   readonly "valueState": "current" | "retained" | "none";
   readonly "windows": ReadonlyArray<WireWindow>;
+};
+
+export type WireAccountActivity = {
+  readonly "bindingVerified": boolean;
+  readonly "expiresAt": string;
+  readonly "phase": "model" | "tool" | "finished" | "fallback";
+  readonly "recordAt": string;
+  readonly "sessionRef": string;
+  readonly "subscriptionRef": string;
 };
 
 export type WireAccountToday = {
@@ -43,6 +53,28 @@ export type WireCockpitAlert = {
 export type WireCockpitCredits = {
   readonly "balance": number | null;
   readonly "observedAt": string;
+};
+
+export type WireCockpitCycle = {
+  readonly "hadDrop": boolean;
+  readonly "points": number;
+  readonly "resetsAt": string;
+  readonly "spent": ReadonlyArray<WireCockpitCycleShare>;
+  readonly "startedAt": string;
+};
+
+export type WireCockpitCycleGroup = {
+  readonly "attribution": string;
+  readonly "cycles": ReadonlyArray<WireCockpitCycle>;
+  readonly "kind": string;
+  readonly "subscriptionRef": string;
+};
+
+export type WireCockpitCycleShare = {
+  readonly "effort": string | null;
+  readonly "fast": boolean;
+  readonly "model": string | null;
+  readonly "points": number;
 };
 
 export type WireCockpitData = {
@@ -89,6 +121,7 @@ export type WireCockpitForecast = {
 
 export type WireCockpitHistory = {
   readonly "coverage": string;
+  readonly "cycles": ReadonlyArray<WireCockpitCycleGroup>;
   readonly "daily": ReadonlyArray<WireCockpitSourceBucket>;
   readonly "dailyFrom": string | null;
   readonly "hourly": ReadonlyArray<WireCockpitSourceBucket>;
@@ -146,7 +179,7 @@ export type WireCockpitPublicationModel = {
 };
 
 export type WireCockpitQueryParams = {
-  readonly "redBelow"?: 10 | 16 | 20 | 25;
+  readonly "redBelow"?: 10 | 15 | 20 | 25 | 30 | 40;
 };
 
 export type WireCockpitRankedEntity = {
@@ -384,6 +417,12 @@ export const definitions: Readonly<Record<string, Schema>> = {
           }
         ]
       },
+      "activity": {
+        "items": {
+          "$ref": "#/$defs/AccountActivity"
+        },
+        "type": "array"
+      },
       "beta": {
         "type": "boolean"
       },
@@ -524,6 +563,46 @@ export const definitions: Readonly<Record<string, Schema>> = {
     ],
     "type": "object"
   },
+  "AccountActivity": {
+    "additionalProperties": false,
+    "properties": {
+      "bindingVerified": {
+        "type": "boolean"
+      },
+      "expiresAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "phase": {
+        "enum": [
+          "model",
+          "tool",
+          "finished",
+          "fallback"
+        ],
+        "type": "string"
+      },
+      "recordAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "sessionRef": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "sessionRef",
+      "subscriptionRef",
+      "bindingVerified",
+      "phase",
+      "recordAt",
+      "expiresAt"
+    ],
+    "type": "object"
+  },
   "AccountToday": {
     "additionalProperties": false,
     "properties": {
@@ -640,6 +719,108 @@ export const definitions: Readonly<Record<string, Schema>> = {
     "required": [
       "balance",
       "observedAt"
+    ],
+    "type": "object"
+  },
+  "CockpitCycle": {
+    "additionalProperties": false,
+    "properties": {
+      "hadDrop": {
+        "type": "boolean"
+      },
+      "points": {
+        "type": "number"
+      },
+      "resetsAt": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "spent": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycleShare"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "startedAt": {
+        "format": "date-time",
+        "type": "string"
+      }
+    },
+    "required": [
+      "startedAt",
+      "resetsAt",
+      "points",
+      "hadDrop",
+      "spent"
+    ],
+    "type": "object"
+  },
+  "CockpitCycleGroup": {
+    "additionalProperties": false,
+    "properties": {
+      "attribution": {
+        "type": "string"
+      },
+      "cycles": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycle"
+        },
+        "maxItems": 10,
+        "type": "array"
+      },
+      "kind": {
+        "type": "string"
+      },
+      "subscriptionRef": {
+        "maxLength": 16,
+        "pattern": "^[a-f0-9]{16}$",
+        "type": "string"
+      }
+    },
+    "required": [
+      "subscriptionRef",
+      "kind",
+      "attribution",
+      "cycles"
+    ],
+    "type": "object"
+  },
+  "CockpitCycleShare": {
+    "additionalProperties": false,
+    "properties": {
+      "effort": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "fast": {
+        "type": "boolean"
+      },
+      "model": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "points": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "model",
+      "effort",
+      "fast",
+      "points"
     ],
     "type": "object"
   },
@@ -870,6 +1051,13 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "coverage": {
         "type": "string"
       },
+      "cycles": {
+        "items": {
+          "$ref": "#/$defs/CockpitCycleGroup"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
       "daily": {
         "items": {
           "$ref": "#/$defs/CockpitSourceBucket"
@@ -946,7 +1134,8 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "dailyFrom",
       "daily",
       "hourly",
-      "projects"
+      "projects",
+      "cycles"
     ],
     "type": "object"
   },
@@ -1206,9 +1395,11 @@ export const definitions: Readonly<Record<string, Schema>> = {
       "redBelow": {
         "enum": [
           10,
-          16,
+          15,
           20,
-          25
+          25,
+          30,
+          40
         ],
         "type": "integer"
       }

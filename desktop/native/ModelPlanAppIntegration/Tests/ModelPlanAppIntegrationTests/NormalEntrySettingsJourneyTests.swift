@@ -76,6 +76,33 @@ actor SettingsJourneyClient: EngineClient {
 }
 
 @MainActor final class NormalEntrySettingsJourneyTests: XCTestCase {
+    func testV17NormalEntryDefaultsToTightestAndRetainsExplicitMenuChoice() async throws {
+        let profile = FileManager.default.temporaryDirectory.appendingPathComponent("v17-settings-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profile) }
+        let config = EngineClientConfiguration(executableURL: profile.appendingPathComponent("not-launched"),
+            applicationVersion: "synthetic", allowedEnvironment: [:], offline: true, readOnly: true)
+        let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+        let app = EngineRowsEntry.make(configuration: config, settingsStore: store, createsNativePanels: false,
+            bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+            activateSettings: {})
+        await app.prepare()
+        defer { app.composition.dock.close() }
+        let editor = app.settingsHost.application.editor
+        XCTAssertEqual(try XCTUnwrap(editor.snapshot).preferences.menuDisplay, .tightest,
+                       "A fresh normal entry must select the tightest reading")
+        for choice in [MenuDisplay.icon, .twoWindows, .tightest] {
+            _ = try await store.update { $0.menuDisplay = choice }
+            let reopened = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
+            let relaunched = EngineRowsEntry.make(configuration: config, settingsStore: reopened, createsNativePanels: false,
+                bundleURL: profile.appendingPathComponent("Synthetic.app"), dockEnvironment: normalEntryTestEnvironment,
+                activateSettings: {})
+            await relaunched.prepare()
+            XCTAssertEqual(try XCTUnwrap(relaunched.settingsHost.application.editor.snapshot).preferences.menuDisplay,
+                           choice, "Explicit choices must survive reconstruction through the normal entry")
+            relaunched.composition.dock.close()
+        }
+    }
+
     func testFoundationStoreFinishesFirstRunWithCheckedReaderWithoutSavingConsent() async throws {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("first-run-foundation-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: profile) }
@@ -120,15 +147,12 @@ actor SettingsJourneyClient: EngineClient {
         let first = try makeApp(); defer { first.composition.dock.close() }
         await first.prepare(); first.allowDockPresentation()
         await first.composition.start()
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         XCTAssertFalse(first.composition.dock.interactionEnvironment().active)
-        try await showFromStatusMenu(first)
-        try await waitFor(first, shown: true)
+        try await chooseShowQuotaWidget(first, checked: false)
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         let editor = first.settingsHost.application.editor
         let snapshot = try XCTUnwrap(editor.snapshot)
         let settingsRows = try SettingsCatalogue.rows(preferences: snapshot.preferences, context: editor.context, paneID: nil)
@@ -136,8 +160,7 @@ actor SettingsJourneyClient: EngineClient {
         _ = try await editor.commit(SettingsB21Edit.showDock(true))
         XCTAssertTrue(first.composition.dock.interactionEnvironment().active)
 
-        try select("Hide Quota Widget", in: first.composition.dock.menu())
-        try await waitFor(first, shown: false)
+        try await chooseShowQuotaWidget(first, checked: true)
         await first.composition.stop()
         first.composition.dock.close()
         let reopened = try makeApp(); await reopened.prepare(); reopened.allowDockPresentation()
