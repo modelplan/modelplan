@@ -73,6 +73,27 @@ import ModelPlanShell
         XCTAssertEqual(controller.presentation?.placement?.displayID, display.id)
     }
 
+    /// DOCK-3.6-10: a stale lock outlives the widget's outside time, the widget hides anyway, and that is recorded once.
+    func testStaleLockRecoveryIsRecordedOnce() throws {
+        var env = environment([display])
+        env.presence.autoHide = true; env.presence.recordedLocks = .drag
+        env.pointer = CGPoint(x: display.frame.midX, y: display.frame.midY)
+        var elapsed: TimeInterval = 0
+        let scheduler = PulsePositionScheduler()
+        let controller = DockEdgeController(preference: .init(displayID: display.id), clock: { elapsed },
+            scheduler: scheduler, read: { env }, position: PulseDockPositioning.resolve)
+        controller.start()
+        defer { controller.stop() }
+        controller.reveal()
+        XCTAssertEqual(controller.forcedHideCount, 0)
+        for time in [1.0, 2.9] { elapsed = time; scheduler.action?() }
+        XCTAssertEqual(controller.forcedHideCount, 0, "the lock still holds inside the grace")
+        elapsed = 3.2; scheduler.action?()
+        XCTAssertEqual(controller.forcedHideCount, 1)
+        elapsed = 4; scheduler.action?()
+        XCTAssertEqual(controller.forcedHideCount, 1, "the recovery clears the lock")
+    }
+
     func testOneControllerUsesBorrowedPositioningForCarryReleaseAndStop() throws {
         var env = environment([display]); env.presence.autoHide = false
         var elapsed: TimeInterval = 0

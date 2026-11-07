@@ -599,7 +599,7 @@ import ModelPlanSettings
         try await community.coordinator.editor.commit(.autoHide(false))
         try await community.coordinator.editor.commit(.showPercentages(false))
         let value = try XCTUnwrap(community.rows().first?.accessibilityValue() as? String)
-        XCTExpectFailure("dock-item 8: Community row ignores Show percentages=false; beta07 bug") {
+        XCTExpectFailure("dock-item 8: Community row ignores Quota Widget percentages=false; beta07 bug") {
             XCTAssertFalse(value.contains("%"), "hidden percentages still expose the native readout: \(value)")
         }
         report(8, "Dock-keys=\(covered.count) reveal=300ms size=L/52 display/follow/edge/position=applied capture=unavailable supplier-options=forwarded expected-failures=1(show-percentages)")
