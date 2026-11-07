@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import AppKit
+import OSLog
 import ModelPlanCore
 
 @MainActor public protocol DockEdgeScheduling:AnyObject {
@@ -57,6 +58,9 @@ public struct DockEdgePresentation:Equatable,Sendable {
     public var onPresent:((DockEdgePresentation)->Void)?
     public var onReveal:(()->Void)?,onCommittedPlacement:((DockEdgePreference)->Void)?,onClearRecordedLocks:((DockRecordedLocks)->Void)?
     public var onFailure:((Error)->Void)?
+    /// DOCK-3.6-10: a stale lock was overridden to hide the widget. Logged, and counted for checks.
+    public private(set) var forcedHideCount=0
+    private func noteForcedHide(){forcedHideCount += 1;Logger(subsystem:"org.modelplan.community",category:"dock").notice("forcedHide: stale locks recovered after continuous outside time")}
     public var dragRegions:DockBackgroundDragRegions?{didSet{dragLayout=presentation?.placement?.layout}}
     private var dragLayout:DockEdgeLayout?
     private let read:()->DockEdgeEnvironment,clock:()->TimeInterval,scheduler:any DockEdgeScheduling
@@ -134,6 +138,7 @@ public struct DockEdgePresentation:Equatable,Sendable {
             var reset:DockVisibilityChange?
             if changed && intent == .sample{reset=try visibility.step(input,at:now,intent:.lifecycleCancel)}
             let result=try visibility.step(input,at:now,intent:intent)
+            if result.forcedHide { noteForcedHide() }
             let cleared=result.clearRecordedLocks.union(reset?.clearRecordedLocks ?? []).union(extraClear)
             if !cleared.isEmpty{onClearRecordedLocks?(cleared)}
             guard running,timerGeneration==token else{return}

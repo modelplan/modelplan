@@ -9,6 +9,30 @@ import CryptoKit
     private func manifest(_ beta: Bool) throws -> DockResourceManifest {
         try JSONDecoder().decode(DockResourceManifest.self, from: DockThirdPartyResources.manifestData(zaiMarkEnabled: beta))
     }
+    /// DOCK-3.2-04: every mark reads at 3:1 or better against the nozzle's dark centre.
+    func testEveryMarkReadsAtThreeToOneOnTheDarkCentre() throws {
+        func linear(_ value: Double) -> Double { value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
+        func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double { 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b) }
+        let centre = luminance(5.0 / 255, 6.0 / 255, 8.0 / 255)
+        let value = try manifest(false), store = try DockArtworkStore(root: DockThirdPartyResources.rootURL(), manifest: value)
+        let marks = value.files.keys.filter { $0.hasPrefix("logo-") }.sorted()
+        XCTAssertGreaterThan(marks.count, 10)
+        for id in marks {
+            let image = try store.image(id, maximumPixelSize: 96)
+            let context = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+            var total = 0.0, count = 0.0
+            for at in stride(from: 0, to: image.width * image.height * 4, by: 4) where bytes[at + 3] > 200 {
+                let alpha = Double(bytes[at + 3])
+                total += luminance(Double(bytes[at]) / alpha, Double(bytes[at + 1]) / alpha, Double(bytes[at + 2]) / alpha); count += 1
+            }
+            XCTAssertGreaterThan(count, 0, id)
+            XCTAssertGreaterThanOrEqual((total / max(count, 1) + 0.05) / (centre + 0.05), 3, id)
+        }
+    }
+
     func testResourceLookupSupportsFlatAndNestedBundleLayouts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("resource-layout-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
