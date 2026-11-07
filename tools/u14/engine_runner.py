@@ -4,8 +4,12 @@ from pathlib import Path
 
 from contracts import digest
 from candidate import regular_bytes
-from engine_process import EngineFailure, EngineProcess
+from engine_process import EngineFailure, EngineProcess, EngineTimeout
 from shape_home import safe_relative
+
+
+class RowsUnsettled(EngineFailure):
+    """Consent kept changing for the whole wait; no frame was rejected."""
 
 
 def require(condition, code):
@@ -125,8 +129,24 @@ def fresh_rows(engine, seconds=3):
         result = engine.request('rows/subscribe', timeout=max(5, seconds))
         if result.get('error', {}).get('code') not in (-32013, -32023):
             return row_projection(result)
-        require(time.monotonic() < deadline, 'rows-publication-did-not-stabilize')
+        if time.monotonic() >= deadline:
+            raise RowsUnsettled('rows-publication-did-not-stabilize')
         time.sleep(.01)
+
+
+def await_pending(engine, projection, seconds):
+    # The pending fault churns consent on two of three view builds, so one request can land
+    # on the stable build. Only "no answer yet" is retried: a frame the validator rejected
+    # is a protocol or privacy failure and must end the scenario.
+    import time
+    deadline = time.monotonic() + seconds
+    while projection['rowsSummary']['state'] != 'pending' and time.monotonic() < deadline:
+        time.sleep(.01)
+        try:
+            projection = fresh_rows(engine, 2)
+        except (RowsUnsettled, EngineTimeout):
+            continue
+    return projection
 
 
 def null_selectors(binary, home):
@@ -182,7 +202,6 @@ def empty_states(binary, home, fault_binary):
     from shape_home import build_home
     from contracts import ROOT, load_json
     observations, messages, bindings = [], [], []
-    import time
     for empty in ('readers_off', 'pending', 'no_consent', 'empty'):
         case = Path(home) / empty
         build_home(load_json(ROOT / 'examples/synthetic-shape.json'), case)
@@ -203,15 +222,8 @@ def empty_states(binary, home, fault_binary):
             # Consent churn can outlast a short wait on a loaded machine.
             patience = 20 if empty == 'pending' else 3
             projection = fresh_rows(engine, patience)
-            # The pending fault churns consent on two of three view builds, and background
-            # refreshes also build views, so one request can land on the stable build.
-            deadline = time.monotonic() + patience
-            while empty == 'pending' and projection['rowsSummary']['state'] != empty and time.monotonic() < deadline:
-                time.sleep(.01)
-                try:
-                    projection = fresh_rows(engine, 2)
-                except EngineFailure:
-                    continue
+            if empty == 'pending':
+                projection = await_pending(engine, projection, patience)
             require(projection['rowsSummary']['state'] == empty, 'wrong-empty-summary-' + empty)
             require(bool(projection['rowsSummary']['text']['en']) and bool(projection['rowsSummary']['text']['zh']), 'empty-summary-without-text')
             if empty in ('readers_off', 'pending'):
