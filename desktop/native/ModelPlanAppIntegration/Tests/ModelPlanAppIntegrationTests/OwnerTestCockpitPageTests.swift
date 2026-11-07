@@ -111,5 +111,42 @@ extension CommunityCockpitEntryTests {
             page.discard()
         }
     }
+
+    /// G3-42: where the time goes from a click to a ready page, on the production factory and the real
+    /// WKWebView. Hosted-runner numbers are rough; compare stages and runs, never absolute targets.
+    @MainActor func testG3_42OpenStageTimings() async throws {
+        let official = Self.repoRoot().appendingPathComponent("desktop/cockpit/.tmp/official")
+        guard let path = ProcessInfo.processInfo.environment["MODELPLAN_U11_TEST_CLI"],
+              FileManager.default.isExecutableFile(atPath: path),
+              FileManager.default.fileExists(atPath: official.appendingPathComponent("bundle-manifest.json").path) else {
+            throw XCTSkip("The real page needs the canonical official cockpit and the synthetic-test CLI")
+        }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("g3-42-" + UUID().uuidString).resolvingSymlinksInPath()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let app = try Self.ownerTestShapedApp(at: root, helper: URL(fileURLWithPath: path), ownerTest: true, official: official)
+        let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root.appendingPathComponent("support"), preferredLanguages: ["en"])
+        let owner = CockpitConsoleOwner(bundle: app, settingsStore: settings)
+        let helper = app.appendingPathComponent("Contents/Helpers/modelplan")
+        func ms(_ start: ContinuousClock.Instant) -> Int {
+            let (seconds, attoseconds) = (ContinuousClock.now - start).components
+            return Int(seconds) * 1000 + Int(attoseconds / 1_000_000_000_000_000)
+        }
+        for run in 1...4 {
+            let context = try CockpitEngineContext(sessionID: UUID(), storeEpoch: "synthetic-owner-test", generation: 1)
+            let click = ContinuousClock.now
+            let page = try owner.makePage(context: context, executable: helper)
+            let factory = ms(click)
+            var ready: Int?
+            page.onReady = { if ready == nil { ready = ms(click) } }
+            page.open()
+            let opened = ms(click)
+            let deadline = ContinuousClock.now + .seconds(30)
+            while ready == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(2)) }
+            let resources = (try? await page.verificationWebView?.evaluateJavaScript("performance.getEntriesByType('resource').length")) as? Int
+            print("G3-42-TIMING run=\(run) factoryMs=\(factory) openMs=\(opened) pageReadyMs=\(ready.map(String.init) ?? "timeout") resources=\(resources ?? -1)")
+            XCTAssertNotNil(ready)
+            page.discard()
+        }
+    }
     #endif
 }
