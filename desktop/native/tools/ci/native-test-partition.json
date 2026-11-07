@@ -59,7 +59,8 @@
         "ConsentContractTests",
         "ConsentCoreQ2Tests",
         "ConsentHostDisplayTests",
-        "DockInteractionHostPortTests",
+        "DockCodexRuntimeRealServerTests",
+        "DockHoverExplanationTests", "DockInteractionHostPortTests",
         "DockLiveFollowerTests",
         "DockMotionPolicyTests",
         "DockPlacementGeometryTests",
@@ -116,6 +117,18 @@
         "S1GalleryTests/testProduceOffscreenGallery": {
           "leg": "headless",
           "reason": "gallery producer runs only with MODELPLAN_S1_GOLDEN_DIR and MODELPLAN_S1_GALLERY_DIR"
+        },
+        "DockCodexRuntimeRealServerTests/testR01ExplicitLocalGrantShowsFourThenThreePercentWithSourceTime": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
+        },
+        "DockCodexRuntimeRealServerTests/testR06LocalHistoryChangeReachesTheSameSubscribedMember": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
+        },
+        "DockCodexRuntimeRealServerTests/testSameRuntimeMemberUpdatesTheOpenCard": {
+          "leg": "headless",
+          "reason": "requires the real synthetic-test CLI supplied and required by the U11 workflow"
         },
         "U6StatusItemFrameTests/testHostedStatusItemTitleChangePublishesLastSettledTopFrame": {
           "leg": "gui",

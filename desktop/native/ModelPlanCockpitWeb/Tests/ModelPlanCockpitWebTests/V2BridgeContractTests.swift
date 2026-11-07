@@ -32,18 +32,20 @@ final class V2BridgeContractTests: XCTestCase {
         XCTAssertEqual(shell["attached"] as? Bool, false)
     }
     func testCommittedThresholdIsEncodedOnLoadAndEachAppearanceUpdate() throws {
-        for threshold in [10, 16, 20, 25] {
+        for threshold in [10, 15, 20, 25, 30, 40] {
             let value = try state()
             let load = try value.load(.init(theme: .night, locale: .en, profile: .full, redBelow: threshold), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))
             let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(load.utf8)) as? [String: Any])
             XCTAssertEqual(body["redBelow"] as? Int, threshold)
             _ = try value.accept(encode(receipt(load)), source: source)
-            let next = threshold == 10 ? 16 : 10
+            let next = threshold == 10 ? 40 : 10
             let update = try value.setAppearance(.init(theme: .night, locale: .en, profile: .full, redBelow: next))
             let message = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
             XCTAssertEqual(message["redBelow"] as? Int, next)
         }
-        XCTAssertEqual(CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: 17).redBelow, 25)
+        for threshold: Int? in [nil, 0, 16, 17, 100] {
+            XCTAssertEqual(CockpitAppearance(theme: .night, locale: .en, profile: .full, redBelow: threshold).redBelow, 25)
+        }
     }
     func testRequiresVersionTwoAndAllThreeCapabilitiesBeforeAnyQuery() throws {
         let value = try state(), load = try value.load(.init(theme: .night, locale: .en, profile: .full), shell: .init(closed: false, attached: true, forcedClosed: false, tier: .tall))

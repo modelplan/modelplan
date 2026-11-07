@@ -16,7 +16,7 @@ import ModelPlanInstruments
 
     func testSavedThresholdFeedsBothDockAndActualSubscriptionConsumer() async throws {
         let url = try file(), store = try SettingsStore(url: url)
-        try await store.update { $0.redBelow = 16 }
+        try await store.update { $0.redBelow = 15 }
         let restored = try SettingsStore(url: url)
         let coordinator = SettingsApplicationCoordinator(store: restored) { _ in }
         await coordinator.reload()
@@ -27,15 +27,15 @@ import ModelPlanInstruments
         dockInput.dataState = .fresh
         let input = SubscriptionNowInput(id: "sample", header: nil, windows: [
             .init(id: "q", period: .fiveHours, remaining: 20, resetsAt: now.addingTimeInterval(3600))])
-        for threshold in [16,25] {
+        for threshold in [15,25] {
             if threshold == 25 { try await coordinator.commit(.redBelow(25)) }
             let application = try XCTUnwrap(coordinator.latest)
             let before = try Data(contentsOf: url)
             let detail = application.subscriptionNowSnapshot(inputs: [input], scope: .subscription("sample"), at: now, calendar: Calendar(identifier: .gregorian))
             let row = try XCTUnwrap(detail.accounts.first?.rows.first { $0.id.hasSuffix(".window.q") })
-            XCTAssertEqual(row.level, threshold == 16 ? .amber : .critical)
+            XCTAssertEqual(row.level, threshold == 15 ? .amber : .critical)
             XCTAssertEqual(detail.accounts.first?.summary.level, row.level)
-            XCTAssertEqual(try application.dockReading(for: dockInput, at: now).status, threshold == 16 ? .warning : .critical)
+            XCTAssertEqual(try application.dockReading(for: dockInput, at: now).status, threshold == 15 ? .warning : .critical)
             XCTAssertEqual(application.snapshot.preferences.redBelow, threshold)
             XCTAssertEqual(try Data(contentsOf: url), before, "projection must not rewrite the saved threshold")
             let saved = await restored.snapshot()
