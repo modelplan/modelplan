@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelplan/modelplan/cli/internal/consent"
 	"github.com/modelplan/modelplan/cli/internal/rows"
 )
 
