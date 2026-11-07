@@ -350,6 +350,10 @@ class Walkthrough:
                 raise WalkthroughError("value did not change: " + value)
         if kind == "newWindow" and not window_ids(self.windows()) - self.window_baseline:
             raise WalkthroughError("no new window opened")
+        if kind == "noNewWindow" and window_ids(self.windows()) - self.window_baseline:
+            raise WalkthroughError("a new window opened")
+        if kind == "windowClosed" and not self.window_baseline - window_ids(self.windows()):
+            raise WalkthroughError("no window closed")
         if kind == "nonblank":
             node = resolve(tree, value)
             if node is None:

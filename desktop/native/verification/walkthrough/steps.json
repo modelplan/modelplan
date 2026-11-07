@@ -524,44 +524,6 @@
       ]
     },
     {
-      "id": "hud-select",
-      "title": "HUD row",
-      "expected": "A click on the first HUD row opens that model on the Effort page. HUD rows are not in the accessibility tree, so the pointer goes by position.",
-      "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
-      "requires": [
-        "porthole-open"
-      ],
-      "actions": [
-        {
-          "op": "clickIn",
-          "target": "label:Open the 3D view",
-          "at": [
-            0.17,
-            0.48
-          ]
-        },
-        {
-          "op": "wait",
-          "seconds": 1.5
-        },
-        {
-          "op": "park"
-        },
-        {
-          "op": "wait",
-          "seconds": 1
-        }
-      ],
-      "shot": {
-        "crop": "label:ModelPlan Cockpit"
-      },
-      "checks": [
-        {
-          "on": "label:Effort"
-        }
-      ]
-    },
-    {
       "id": "faders",
       "title": "Faders",
       "expected": "One fader per model; moving one by a detent changes its effort step.",
@@ -623,6 +585,84 @@
       "checks": [
         {
           "newWindow": true
+        }
+      ]
+    },
+    {
+      "id": "porthole-enlarged-closed",
+      "title": "Enlarged view closed",
+      "expected": "A second click on the porthole closes the enlarged panel.",
+      "requires": [
+        "porthole-enlarged"
+      ],
+      "actions": [
+        {
+          "op": "clickIn",
+          "target": "label:Open the 3D view",
+          "at": [
+            0.8,
+            0.3
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 2
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "windowClosed": true
+        }
+      ]
+    },
+    {
+      "id": "hud-select",
+      "title": "HUD row",
+      "expected": "A click on the first HUD row opens that model on the Effort page and nothing else. HUD rows are not in the accessibility tree, so the pointer goes by position.",
+      "prototype": "desktop/cockpit/study/rocket-r1 hud-selection",
+      "requires": [
+        "porthole-enlarged-closed"
+      ],
+      "actions": [
+        {
+          "op": "clickIn",
+          "target": "label:Open the 3D view",
+          "at": [
+            0.17,
+            0.48
+          ]
+        },
+        {
+          "op": "wait",
+          "seconds": 1.5
+        },
+        {
+          "op": "park"
+        },
+        {
+          "op": "wait",
+          "seconds": 1
+        }
+      ],
+      "shot": {
+        "crop": "label:ModelPlan Cockpit"
+      },
+      "checks": [
+        {
+          "on": "label:Effort"
+        },
+        {
+          "noNewWindow": true
         }
       ]
     },
