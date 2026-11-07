@@ -11,9 +11,10 @@ func TestLegacyToolAllowKeepsDefaultOnScopes(t *testing.T) {
 		t.Fatal("allowed tool record blocked a default-on scope")
 	}
 	for name, r := range map[string]Record{
-		"denied":      {Allowed: false, ConsentTextVersion: TextVersion},
-		"stale text":  {Allowed: true, ConsentTextVersion: TextVersion - 1},
-		"source veto": {Allowed: true, ConsentTextVersion: TextVersion, DeniedSources: map[string]bool{Runtime: true}},
+		"denied":        {Allowed: false, ConsentTextVersion: TextVersion},
+		"stale text":    {Allowed: true, ConsentTextVersion: TextVersion - 1},
+		"source veto":   {Allowed: true, ConsentTextVersion: TextVersion, DeniedSources: map[string]bool{Runtime: true}},
+		"other backend": {Allowed: true, ConsentTextVersion: TextVersion, Backend: "codexbar"},
 	} {
 		s.Tools["codex"] = r
 		if s.AllowsScope(ScopeCodexRuntimeUsage, Automatic) {
