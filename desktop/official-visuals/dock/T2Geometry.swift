@@ -18,10 +18,12 @@ public struct T2GeometryInput: Sendable {
     public let showsPercentages: Bool
     public let along: CGFloat
     public let ignitionAtEnd: Bool
+    /// Owner test option only: each ring sits halfway across the face at its own height.
+    public let centresRings: Bool
     public init(coordinates: T2EdgeCoordinates, diameter: CGFloat = 44,
                 showsPercentages: Bool = true, along: CGFloat = 0.5,
-                ignitionAtEnd: Bool? = nil) {
-        self.coordinates = coordinates; self.diameter = diameter
+                ignitionAtEnd: Bool? = nil, centresRings: Bool = false) {
+        self.coordinates = coordinates; self.diameter = diameter; self.centresRings = centresRings
         self.showsPercentages = showsPercentages; self.along = along
         self.ignitionAtEnd = ignitionAtEnd ?? (coordinates.edge == .bottom)
     }
@@ -36,9 +38,6 @@ public struct T2Station: Sendable {
     public let inwardNormal: CGVector
     public let readoutCentre: CGPoint
     public let pitch: CGFloat
-    /// geometry.js's position, kept for the oracle tests. The owner moved the ring from it (11-07).
-    public let prototypeCentre: CGPoint
-    public let prototypeReadoutCentre: CGPoint
 }
 
 /// Pure native translation of the accepted T2 study's geometry.js.
@@ -231,20 +230,13 @@ public struct T2Geometry: Sendable {
         let buttonU = (low + high) / 2
         let stations = selected.indices.map { i -> T2Station in
             let slot = selected[i], s = m.positions[i], local = m.local(s, depth)
-            // Owner 11-07: a ring sits in the middle of the visible face at its own height:
-            // halfway between the screen edge (0) and the face's inner edge there. The study
-            // kept it 14 x D/52 from the edge plus the whole arc sag, which reads as off-centre.
-            let point = screen(CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2))
-            let prototype = screen(local)
-            func readoutCentre(_ point: CGPoint) -> CGPoint {
-                vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
-                    ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
-                    CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)
-            }
+            let point = screen(p.centresRings ? CGPoint(x: local.x, y: (m.freeDepth + local.y - depth) / 2) : local)
+            let readout = vertical ? CGPoint(x: point.x, y: point.y + d / 2 + 14 * scale +
+                ((slot.subscription?.alias.isEmpty ?? true) ? 0 : 6 * scale)) :
+                CGPoint(x: point.x + d / 2 + 31 * scale, y: point.y)
             return T2Station(subscription: slot.subscription, isOverflow: slot.overflow, isEmpty: slot.empty,
                 arcPosition: s, centre: point, inwardNormal: c.direction(along: sin(s / m.radius), inward: cos(s / m.radius)),
-                readoutCentre: readoutCentre(point), pitch: m.pitches[i],
-                prototypeCentre: prototype, prototypeReadoutCentre: readoutCentre(prototype))
+                readoutCentre: readout, pitch: m.pitches[i])
         }
         let gripS = p.ignitionAtEnd ? m.start + 18 * scale : m.end - 18 * scale
         return Self(input: p, stations: stations, shown: visible, overflow: more, outline: localOutline.map(screen),
