@@ -18,6 +18,17 @@ real-run queue.
 The ledger is a coordination record, not a security boundary; its writers are
 trusted lanes on the approved share.
 
+## Bookings queue per host role
+
+Bookings are keyed by host role: `--host dev-mac` (the M1 dev Mac) and
+`--host macci` (the V1/MacCI/MacTest machine). Each host has its own queue
+head and exclusivity, so an M1 booking never waits behind a V1 booking or
+vice versa; two bookings for the same host still run one at a time. `request`,
+`start` and `finish` require `--host`, and `start`/`finish` refuse a booking
+that belongs to another host's queue. `status` accepts an optional `--host`
+to scope the view to one queue (default: every host). Ledgers written before
+per-host queues replay with their bookings on the dev-mac queue.
+
 ## One session, one unit, several scenarios
 
 From the checkout root (invoke all commands with `python3`), set
@@ -26,7 +37,7 @@ before using these commands:
 
 ```sh
 python3 desktop/native/verification/bin/book.py request \
-  --lane M2 --unit U11a --scenario cold --scenario repeated-open-close --minutes 20
+  --lane M2 --unit U11a --scenario cold --scenario repeated-open-close --minutes 20 --host dev-mac
 python3 desktop/native/verification/bin/book.py status
 python3 desktop/native/verification/bin/book.py start \
   --id BOOKING_ID --lane M2 --run-id RUN_ID --epoch EPOCH

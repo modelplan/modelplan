@@ -323,17 +323,19 @@ class Session:
         local = Path(ctx['scratchParent']) / f'verify-{ctx["batch"]}-{self.index:02d}-{secrets.token_hex(4)}'
         local.mkdir()
         self.local = local
+        host = ctx.get('host') or 'dev-mac'
         request = self.tool('book.py', 'request', '--lane', lane, '--unit', ctx['batch'],
-                            *[x for i in self.segment['ids'] for x in ('--scenario', i)], '--minutes', str(minutes))
+                            *[x for i in self.segment['ids'] for x in ('--scenario', i)], '--minutes', str(minutes),
+                            '--host', host)
         self.booking = request['id']
-        head = (self.tool('book.py', 'status').get('head') or {})
+        head = (self.tool('book.py', 'status', '--host', host).get('head') or {})
         if head.get('id') != self.booking:
             self.tool('book.py', 'withdraw', '--id', self.booking, '--lane', lane, '--reason', 'verify-run not at head')
             self.booking = None
             raise NotRun('booking-not-at-head')
         self.run_id, self.epoch = f'{ctx["batch"]}-s{self.index:02d}', secrets.token_hex(8)
         lease = self.tool('book.py', 'start', '--id', self.booking, '--lane', lane, '--run-id', self.run_id,
-                          '--epoch', self.epoch)
+                          '--epoch', self.epoch, '--host', host)
         self.started = True
         paths = {k: str(local / v) for k, v in (('leasePath', 'lease.json'), ('releasePath', 'release.json'),
                  ('stopPath', 'STOP'), ('subjectPidPath', 'subject.json'), ('candidateCleanupReceipt', 'cleanup.json'),
@@ -454,7 +456,7 @@ class Session:
         cleaned = codes.get('guardian') == 0 and codes.get('run') in (0, 3) and guardian.get('candidateCleaned') is True
         if cleaned:
             self.tool('book.py', 'finish', '--id', self.booking, '--lane', self.ctx['lane'], '--run-id', self.run_id,
-                      '--epoch', self.epoch, '--cleaned')
+                      '--epoch', self.epoch, '--cleaned', '--host', self.ctx.get('host') or 'dev-mac')
         return dict(cleaned=cleaned, detail=f'run={codes.get("run")} guardian={codes.get("guardian")} '
                     f'subject={guardian.get("subject")}', booking=self.booking)
 

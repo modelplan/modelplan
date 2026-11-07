@@ -126,8 +126,8 @@ class Fixture(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.now = time.time()
         self.ledger = book.Ledger(self.root / 'ledger.jsonl', clock=lambda: self.now)
-        self.ident = self.ledger.request('V1', 'U11a', ['cold'])['id']
-        self.lease = self.ledger.start(self.ident, 'V1', 'run', 'epoch')
+        self.ident = self.ledger.request('V1', 'U11a', ['cold'], host='macci')['id']
+        self.lease = self.ledger.start(self.ident, 'V1', 'run', 'epoch', host='macci')
         self.output = self.root / 'release.json'
 
 
@@ -347,8 +347,8 @@ class MacCISequence(unittest.TestCase):
         return self.cli(BIN / 'book.py', '--ledger', self.ledger, *args)
 
     def start(self, open_mode, subject='binary', mode='launchservices'):
-        ident = json.loads(self.book('request', '--lane', 'V1', '--unit', 'U11a', '--scenario', 'cold', '--minutes', '2').stdout)['id']
-        started = self.book('start', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci')
+        ident = json.loads(self.book('request', '--lane', 'V1', '--unit', 'U11a', '--scenario', 'cold', '--minutes', '2', '--host', 'macci').stdout)['id']
+        started = self.book('start', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci', '--host', 'macci')
         self.assertEqual(started.returncode, 0, started.stderr)
         self.paths['lease'].write_text(started.stdout)
         self.guardian_out = self.root / 'guardian.out'
@@ -385,7 +385,7 @@ class MacCISequence(unittest.TestCase):
         return ident
 
     def finish(self, ident):
-        return self.book('finish', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci', '--cleaned')
+        return self.book('finish', '--id', ident, '--lane', 'V1', '--run-id', 'run-macci', '--epoch', 'epoch-macci', '--cleaned', '--host', 'macci')
 
     def test_launchservices_subject_registers_by_bundle_path_and_closes(self):
         ident = self.start('ok')

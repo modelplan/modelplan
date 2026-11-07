@@ -115,11 +115,11 @@ class M1Sequence(unittest.TestCase):
     def booking(self, *, minutes, run_id, epoch, lease_path):
         """book.py request + start; returns (booking id, started lease event)."""
         result = self.book('request', '--lane', 'M1', '--unit', 'U11a',
-                           '--scenario', 'cold', '--minutes', str(minutes))
+                           '--scenario', 'cold', '--minutes', str(minutes), '--host', 'dev-mac')
         self.assertEqual(result.returncode, 0, result.stderr)
         ident = json.loads(result.stdout)['id']
         result = self.book('start', '--id', ident, '--lane', 'M1',
-                           '--run-id', run_id, '--epoch', epoch)
+                           '--run-id', run_id, '--epoch', epoch, '--host', 'dev-mac')
         self.assertEqual(result.returncode, 0, result.stderr)
         lease_path.write_text(result.stdout)
         return ident, json.loads(result.stdout)
@@ -154,7 +154,7 @@ class M1Sequence(unittest.TestCase):
 
     def finish(self, ident, run_id, epoch):
         return self.book('finish', '--id', ident, '--lane', 'M1',
-                         '--run-id', run_id, '--epoch', epoch, '--cleaned')
+                         '--run-id', run_id, '--epoch', epoch, '--cleaned', '--host', 'dev-mac')
 
     def status(self):
         result = self.book('status')
