@@ -3,6 +3,21 @@ import XCTest
 @testable import ModelPlanInstruments
 
 final class HelpCatalogTests: XCTestCase {
+    func testDeferredCockpitActionsAreDescribedWithoutPromisingNavigation() {
+        for language in [InstrumentLanguage.english, .chinese] {
+            let map = HelpMapCatalog(language), catalog = HelpCatalog(language)
+            let window = language == .english ? "Window: the field view is unavailable." : "悬窗：场景视图暂不可用。"
+            let alert = language == .english ? "Alert lamp: indicates current alerts." : "注意灯：显示当前提醒状态。"
+            let record = language == .english ? "Running sessions first, then last seen; -- means speed unavailable." : "运行中的会话在前，其后为最近观察；-- 表示速率不可用。"
+            XCTAssertEqual(map.sentence(.window), window)
+            XCTAssertEqual(map.sentence(.alert), alert)
+            XCTAssertEqual(map.sentence(.record), record)
+            XCTAssertEqual(catalog.explanation(.window).body, language == .english ? "The field view is unavailable." : "场景视图暂不可用。")
+            XCTAssertEqual(catalog.explanation(.caution).body, language == .english ? "Indicates current alerts." : "显示当前提醒状态。")
+            XCTAssertEqual(catalog.explanation(.record).body, record)
+            XCTAssertEqual(catalog.explanation(.session).body, language == .english ? "Press to view this session on the Main screen." : "按一下在公共屏查看这次会话。")
+        }
+    }
     func testEveryTopicHasTwoLocalizedLinesAndIdenticalAccessibleDescription() {
         XCTAssertEqual(Set(HelpTopic.allCases.map(\.rawValue)).count, HelpTopic.allCases.count)
         for language in [InstrumentLanguage.chinese, .english] {
