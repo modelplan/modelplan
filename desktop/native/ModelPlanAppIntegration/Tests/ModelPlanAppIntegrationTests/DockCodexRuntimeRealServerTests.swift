@@ -35,7 +35,10 @@ import XCTest
         }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("codex-card-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try FileManager.default.removeItem(at: root) }
+        addTeardownBlock {
+            do { try FileManager.default.removeItem(at: root) }
+            catch { XCTFail("DIAG teardown removal: \(error)") }
+        }
         let environment = ["HOME": root.path, "TMPDIR": root.path, "PATH": root.path + ":/usr/bin:/bin", "LANG": "C"]
         // Keep production scheduling enabled while blocking child network access.
         let helper = try script("app-cli", in: root, """
@@ -202,7 +205,9 @@ import XCTest
         let retainedSource = text("source", in: card)
         XCTAssertTrue(retainedSource?.contains("Tool runtime · 3h ago") == true,
                       "Retained window provenance: " + (retainedSource ?? "missing"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: hold.path), "DIAG hold before requested wait")
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: hold.path), "DIAG hold after requested wait: " + ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).joined(separator: ","))
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         try FileManager.default.removeItem(at: hold)
         try await wait { account(in: app)?.valueState == .current && account(in: app)?.windows.first?.remainingPercent == 70 }
@@ -233,6 +238,7 @@ import XCTest
         await app.composition.stop()
 
         try FileManager.default.removeItem(at: requested)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hold.path), "DIAG hold before second write")
         try Data().write(to: hold)
         let denied = await makeApplication()
         _ = try await denied.composition.client.start()
