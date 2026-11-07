@@ -281,7 +281,7 @@ func Build(in Input) Snapshot {
 		s.PaceHistory = in.Pace.History()
 	}
 	if in.Digest != nil && in.State.PublicationID != "" {
-		p := &Publication{PublicationID: in.State.PublicationID, PublishedAt: in.State.PublishedAt, LastError: in.State.LastError,
+		p := &Publication{PublicationID: in.State.PublicationID, PublishedAt: in.State.PublishedAt, LastError: store.CleanLastError(in.State.LastError),
 			Stale: in.State.CheckedAt.IsZero() || in.Now.Sub(in.State.CheckedAt) > publicationStale}
 		if !in.State.CheckedAt.IsZero() {
 			t := in.State.CheckedAt.UTC()

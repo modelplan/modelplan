@@ -151,7 +151,13 @@ func newAppServerWithSources(ctx context.Context, options appServerOptions, sour
 			fetcher.Start()
 		}
 	}
-	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions})
+	server = appserver.New(appserver.Config{Version: version, Backend: backend, Handlers: handlers, SessionStarted: sessionStarted, RefreshDecisions: decisions, LastErrorClass: func() string {
+		state, err := st.State()
+		if err != nil {
+			return ""
+		}
+		return store.CleanLastError(state.LastError)
+	}})
 	broker.Request = server.ReadCredential
 	return server, closeBackend, nil
 }
