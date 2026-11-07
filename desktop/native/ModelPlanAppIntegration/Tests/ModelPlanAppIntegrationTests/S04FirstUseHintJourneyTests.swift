@@ -165,6 +165,8 @@ private actor S04SyntheticClient: EngineClient {
             modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
         view.mouseMoved(with: moved)
         XCTAssertNil(view.focusedGripIndex, "the pointer path, not keyboard focus")
+        XCTAssertNotNil(view.gripRingInkForChecks, "G3-11: the pointer lights the warm ring")
+        XCTAssertNil(view.gripFocusInkForChecks, "G3-11: the gold outline is for keyboard focus only")
         XCTAssertEqual(dock.currentDockHelpInteraction?.anchor.id, "dock.grip.0")
         XCTAssertNil(app.shownDockExplanationForChecks, "the explanation waits for the dwell")
         for _ in 0..<200 where app.shownDockExplanationForChecks == nil { try await Task.sleep(for: .milliseconds(10)) }

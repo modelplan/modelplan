@@ -114,6 +114,11 @@ import ModelPlanEngineClient
         // R64 D-5: the outline hugs the painted art inside the larger hit target.
         let art = try XCTUnwrap(view.registeredGripArtRects.first)
         XCTAssertEqual(view.emphasizedGripFrameForChecks, art)
+        // G3-11: the prototype's warm ring and glow (rocket.css:53), plus its gold keyboard outline (rocket.css:30).
+        func rgba(_ colour: CGColor?) -> [Int] { (colour?.components ?? []).map { Int(($0 * 255).rounded()) } }
+        XCTAssertEqual(rgba(view.gripRingInkForChecks), [0xdf, 0x60, 0x4c, 0x99])
+        XCTAssertEqual(rgba(view.gripGlowInkForChecks), [0xdf, 0x60, 0x4c, 0x55])
+        XCTAssertEqual(rgba(view.gripFocusInkForChecks), [0xd4, 0xb9, 0x94, 0xff])
         XCTAssertTrue(grip.boundingBox.contains(art))
         // Side edge: the hit box is the prototype's 44 x 30 (.dk-cap), scaled with the dock (rocket.css:44-46).
         if let stationDiameter = view.presentedSkinForChecks?.stations.first?.diameter, view.bounds.width < view.bounds.height {
@@ -125,6 +130,7 @@ import ModelPlanEngineClient
         }
         _ = view.resignFirstResponder()
         XCTAssertNil(view.emphasizedGripFrameForChecks)
+        XCTAssertNil(view.gripFocusInkForChecks)
     }
 
     /// G3-12 (owner: Help missing or inactive). Help is chosen from the menu bar while the
