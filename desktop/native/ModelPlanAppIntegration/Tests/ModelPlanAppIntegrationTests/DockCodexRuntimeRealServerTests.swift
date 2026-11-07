@@ -78,10 +78,16 @@ import XCTest
     }
 
     func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
+        func mark(_ s: String) { FileHandle.standardError.write(Data(("BREAD " + s + "\n").utf8)) }
+        mark("L81")
         let (root, helper, environment) = try sandbox()
+        mark("L82")
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
+        mark("L83")
         let payload = root.appendingPathComponent("rpc-response.json")
+        mark("L84")
         let hold = root.appendingPathComponent("hold-runtime-reply")
+        mark("L85")
         let requested = root.appendingPathComponent("runtime-requested")
         _ = try script("codex", in: root, """
             #!/bin/sh
@@ -99,43 +105,66 @@ import XCTest
                 esac
             done
             """)
+        mark("L102")
         let now = Date(), iso = ISO8601DateFormatter(), scope = "codex.runtime_usage"
+        mark("L103")
         func response(used: Int) throws {
             try encode(["rateLimits": ["planType": "plus", "secondary": ["usedPercent": used,
                 "windowDurationMins": 10080, "resetsAt": Int(now.timeIntervalSince1970) + 86_400]]]).write(to: payload, options: .atomic)
         }
+        mark("L107")
         _ = try await command(["consent", "init", "--json"], helper: helper, environment: environment)
+        mark("L108")
         let before = try await command(["consent", "--json"], helper: helper, environment: environment)
+        mark("L109")
         _ = try await command(["consent", "grant", "--json"], helper: helper, environment: environment, input: [
             "requestId": UUID().uuidString.lowercased(), "expectStoreEpoch": try XCTUnwrap(before["storeEpoch"] as? String),
             "expectGeneration": try XCTUnwrap(before["generation"] as? Int),
             "consentTextVersion": try XCTUnwrap(before["consentTextVersion"] as? Int), "allow": [scope], "deny": [String]()
         ])
+        mark("L114")
         try response(used: 80)
+        mark("L115")
         _ = try await command(["quota", "--refresh-account", "--json", "--offline"], helper: helper, environment: environment)
         // Age only the disposable fixture, keeping the producer-generated binding and admission stamp.
+        mark("L117")
         let readingURL = cache.appendingPathComponent("codex-account.json")
+        mark("L118")
         var seed = try decode(Data(contentsOf: readingURL))
+        mark("L119")
         let ref = try XCTUnwrap(seed["subscriptionRef"] as? String)
+        mark("L120")
         let old = iso.string(from: now.addingTimeInterval(-3 * 3600 - 30))
         seed["observedAt"] = old
+        mark("L122")
         var windows = try XCTUnwrap(seed["windows"] as? [[String: Any]])
+        mark("L123")
         XCTAssertEqual(windows.count, 1)
         windows[0]["observedAt"] = old
         seed["windows"] = windows
+        mark("L126")
         let retainedBytes = try encode(seed)
+        mark("L127")
         try retainedBytes.write(to: readingURL, options: .atomic)
+        mark("L128")
         let reservation = cache.appendingPathComponent("reader-attempts/codex.json")
+        mark("L129")
         try encode(["schemaVersion": 1, "nextAttemptAt": old]).write(to: reservation, options: .atomic)
+        mark("L130")
         try response(used: 30)
 
+        mark("L132")
         try Data().write(to: hold)
         defer { try? FileManager.default.removeItem(at: hold) }
 
+        mark("L135")
         let display = DockDisplayArea(id: "synthetic", frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
             visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 880))
+        mark("L137")
         var pointer = CGPoint(x: 700, y: 450), elapsed = 0.0
+        mark("L138")
         let settings = try EngineRowsEntry.makeSettingsStore(applicationSupport: root, preferredLanguages: ["en"])
+        mark("L139")
         func makeApplication(offline: Bool = false) async -> EngineDockMenuApplication {
             let app = EngineRowsEntry.make(configuration: .init(executableURL: helper, applicationVersion: "synthetic-runtime-card",
                 allowedEnvironment: environment, offline: offline), settingsStore: settings, createsNativePanels: false,
@@ -147,10 +176,12 @@ import XCTest
             app.allowDockPresentation()
             return app
         }
+        mark("L150")
         func account(in app: EngineDockMenuApplication) -> RowsAccount? {
             let row = app.composition.store.snapshot.rows?.projection.rows.first { $0.id == "codex" }
             return row?.accounts.first { $0.subscriptionRef == ref && $0.route == .runtimeRpc }
         }
+        mark("L154")
         func blockedRefresh(in app: EngineDockMenuApplication, reason: WireRefreshDisabledReason) async throws {
             let store = app.composition.store
             var replies: [(WireRequestID, [WireRefreshScheduled])] = []
@@ -163,26 +194,42 @@ import XCTest
                            "Neither startup nor an explicit blocked request may call the runtime")
         }
 
+        mark("L166")
         let offline = await makeApplication(offline: true)
+        mark("L167")
         _ = try await offline.composition.client.start()
+        mark("L168")
         _ = try await offline.composition.client.subscribeRows(timeout: .seconds(4))
+        mark("L169")
         XCTAssertEqual(account(in: offline)?.valueState, .retained)
+        mark("L170")
         XCTAssertEqual(account(in: offline)?.observedAt?.rawValue, old)
+        mark("L171")
         try await blockedRefresh(in: offline, reason: .offline)
+        mark("L172")
         XCTAssertEqual(try Data(contentsOf: readingURL), retainedBytes, "Offline may not replace the retained cache")
+        mark("L173")
         await offline.composition.stop()
 
+        mark("L175")
         let app = await makeApplication()
+        mark("L176")
         let delivery = try await app.composition.client.start()
+        mark("L177")
         func wait(until predicate: () -> Bool) async throws {
             let deadline = ContinuousClock.now + .seconds(10)
             while !predicate() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         }
+        mark("L181")
         try await wait { account(in: app)?.valueState == .retained }
+        mark("L182")
         XCTAssertEqual(account(in: app)?.observedAt?.rawValue, old)
+        mark("L183")
         XCTAssertEqual(account(in: app)?.valueState, .retained)
 
+        mark("L185")
         let dock = app.composition.dock, view = dock.dockView
+        mark("L186")
         func openCard() throws -> DockCardView {
             let placement = try XCTUnwrap(dock.edgePresentation?.placement)
             let anchor = try XCTUnwrap(view.interactionAnchor(ref))
@@ -194,59 +241,101 @@ import XCTest
             elapsed += 0.251; dock.interactionControllerForChecks?.refresh()
             return try XCTUnwrap(dock.detachedCardForChecks)
         }
+        mark("L197")
         let card = try openCard()
+        mark("L198")
         let window = try XCTUnwrap(account(in: app)?.windows.first)
+        mark("L199")
         XCTAssertEqual(window.remainingPercent, 20)
+        mark("L200")
         XCTAssertEqual(window.observedAt?.rawValue, old)
+        mark("L201")
         XCTAssertEqual(window.source, .runtime)
+        mark("L202")
         let weekly = "row.quota:" + window.id
+        mark("L203")
         XCTAssertEqual(text(weekly + ".value", in: card), "--", "Retained metadata must not admit an expired number")
         // One source: the header carries it, and the row does not repeat it.
+        mark("L205")
         let retainedSource = text("source", in: card)
+        mark("L206")
         XCTAssertTrue(retainedSource?.contains("Tool runtime · 3h ago") == true,
                       "Retained window provenance: " + (retainedSource ?? "missing"))
+        mark("L208")
         XCTAssertTrue(FileManager.default.fileExists(atPath: hold.path), "DIAG hold before requested wait")
+        mark("L209")
         try await wait { FileManager.default.fileExists(atPath: requested.path) }
+        mark("L210")
         XCTAssertTrue(FileManager.default.fileExists(atPath: hold.path), "DIAG hold after requested wait: " + ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).joined(separator: ","))
+        mark("L211")
         XCTAssertTrue(FileManager.default.fileExists(atPath: requested.path), "The normal session started the runtime RPC")
         do { try FileManager.default.removeItem(at: hold) }
         catch { XCTFail("DIAG first release failed; exists=\(FileManager.default.fileExists(atPath: hold.path)) dir=\(((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).joined(separator: ",")) error=\(error)"); throw error }
+        mark("L214")
         try await wait { account(in: app)?.valueState == .current && account(in: app)?.windows.first?.remainingPercent == 70 }
+        mark("L215")
         XCTAssertEqual(app.composition.store.snapshot.delivery, delivery)
+        mark("L216")
         let recovered = try XCTUnwrap(account(in: app)?.windows.first)
+        mark("L217")
         XCTAssertEqual(recovered.id, window.id)
+        mark("L218")
         XCTAssertEqual(recovered.remainingPercent, 70)
+        mark("L219")
         XCTAssertEqual(recovered.source, .runtime)
+        mark("L220")
         XCTAssertNotEqual(recovered.observedAt?.rawValue, old)
+        mark("L221")
         XCTAssertEqual(account(in: app)?.valueState, .current)
+        mark("L222")
         XCTAssertTrue(dock.detachedCardForChecks === card, "The still-hovered card must update without closing")
         // If continuity fails, a fresh hover still distinguishes projection from the close.
+        mark("L224")
         let currentCard: DockCardView
         if let displayed = dock.detachedCardForChecks { currentCard = displayed }
         else { currentCard = try openCard() }
+        mark("L227")
         XCTAssertEqual(text(weekly + ".value", in: currentCard), "70%")
+        mark("L228")
         XCTAssertTrue(text("source", in: currentCard)?.contains("Tool runtime · just now") == true)
 
+        mark("L230")
         let deny = try WireConsentGrantParams(requestId: UUID().uuidString.lowercased(),
             expectStoreEpoch: delivery.floor.storeEpoch, expectGeneration: delivery.floor.generation,
             consentTextVersion: XCTUnwrap(before["consentTextVersion"] as? Int), allow: [], deny: [scope])
+        mark("L233")
         _ = try await app.composition.client.grant(deny, userAction: .init(id: UUID()), timeout: .seconds(4))
+        mark("L234")
         XCTAssertNil(dock.detachedCardForChecks, "Consent withdrawal must close the card before the grant returns")
+        mark("L235")
         XCTAssertNil(text(weekly + ".value", in: currentCard))
+        mark("L236")
         _ = try await app.composition.client.subscribeRows(timeout: .seconds(4))
+        mark("L237")
         XCTAssertNil(account(in: app), "A revoked subscription must not reappear on the next real rows reply")
+        mark("L238")
         XCTAssertNil(try dock.cardContent(for: ref))
+        mark("L239")
         await app.composition.stop()
 
+        mark("L241")
         try FileManager.default.removeItem(at: requested)
+        mark("L242")
         XCTAssertFalse(FileManager.default.fileExists(atPath: hold.path), "DIAG hold before second write")
+        mark("L243")
         try Data().write(to: hold)
         print("DIAG reached denied launch")
+        mark("L245")
         let denied = await makeApplication()
+        mark("L246")
         _ = try await denied.composition.client.start()
+        mark("L247")
         _ = try await denied.composition.client.subscribeRows(timeout: .seconds(4))
+        mark("L248")
         XCTAssertNil(account(in: denied), "A new launch must honor the persisted denial")
+        mark("L249")
         try await blockedRefresh(in: denied, reason: .readOnly)
+        mark("L250")
         XCTAssertNil(try denied.composition.dock.cardContent(for: ref))
     }
     func testR01ExplicitLocalGrantShowsFourThenThreePercentWithSourceTime() async throws {
