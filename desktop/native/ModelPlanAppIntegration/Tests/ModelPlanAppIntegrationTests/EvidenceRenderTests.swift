@@ -69,9 +69,10 @@ private actor EvidenceEngine: EngineClient {
         let profile = FileManager.default.temporaryDirectory.appendingPathComponent("evidence-" + UUID().uuidString)
         let store = try EngineRowsEntry.makeSettingsStore(applicationSupport: profile, preferredLanguages: ["en"])
         _ = try await store.update { p in p.showDock = true; p.autoHide = false; p.dockEdge = .right; p.size = .large; p.showPercentages = true; for _ in 0..<16 { p.onboarding.next() } }
+        var pointer = CGPoint(x: 600, y: 450)
         let screen = DockDisplayArea(id: "primary", frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 80, width: 1440, height: 795))
         let app = EngineRowsEntry.make(configuration: .init(executableURL: URL(fileURLWithPath: "/synthetic/modelplan"), applicationVersion: "synthetic", allowedEnvironment: [:]), settingsStore: store, createsNativePanels: false,
-            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: CGPoint(x: 600, y: 450)) },
+            dockEnvironment: { .init(displays: [screen], layouts: [], primaryDisplayID: "primary", pointer: pointer) },
             makeClient: { _, target in EvidenceEngine(store: target, rows: rows) }, activateSettings: {})
         await app.prepare(); app.allowDockPresentation(); await app.composition.start()
         let dock = app.composition.dock, view = dock.dockView
@@ -80,11 +81,22 @@ private actor EvidenceEngine: EngineClient {
         write(view.presentedImageForChecks, "resting")
         if let container = view.superview { snapshot(container, "resting-with-ignition") }
         let id = try XCTUnwrap(view.presentedReadingsForChecks.keys.first)
+        let placement = try XCTUnwrap(dock.edgePresentation?.placement)
+        let anchor = try XCTUnwrap(view.interactionAnchor(id))
+        pointer = CGPoint(x: placement.frame.minX + anchor.midX - view.bounds.minX, y: placement.frame.maxY - anchor.midY + view.bounds.minY)
         try XCTUnwrap(view.nozzleEventDelegate).hoverNozzle(id)
-        try await Task.sleep(for: .milliseconds(600))
+        dock.interactionControllerForChecks?.refresh()
+        try await Task.sleep(for: .milliseconds(500))
+        dock.interactionControllerForChecks?.refresh()
         write(view.presentedImageForChecks, "hover")
-        for _ in 0..<300 where dock.card.isHidden { try await Task.sleep(for: .milliseconds(10)) }
-        snapshot(dock.card, "card")
+        let cardStyle = DockCardStyle()
+        let cardView = DockCardView(frame: .zero)
+        try cardView.apply(try XCTUnwrap(try dock.cardContent(for: id)), style: cardStyle)
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(cardView.frame.width * 2), pixelsHigh: Int(cardView.frame.height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        rep.size = cardView.frame.size
+        cardView.cacheDisplay(in: cardView.bounds, to: rep)
+        write(rep.cgImage, "card")
         await app.composition.stop(); dock.close()
     }
 }
