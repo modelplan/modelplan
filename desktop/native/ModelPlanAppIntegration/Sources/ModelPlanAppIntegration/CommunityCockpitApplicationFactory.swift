@@ -30,6 +30,7 @@ import ModelPlanDock
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
     static var verificationPageFactory: EngineCockpitCoordinator.PageFactory?
+    static var verificationConsoleNotice: (@MainActor (CockpitUnavailableNotice) -> Void)?
     #endif
     public static func make(configuration: EngineClientConfiguration, settingsStore: SettingsStore,
                             createsNativePanels: Bool = true, bundleURL: URL = Bundle.main.bundleURL,
@@ -49,6 +50,7 @@ import ModelPlanDock
         }
         #if MODELPLAN_TEST_ONLY_SPI
         let verificationFactory = verificationPageFactory
+        let verificationNotice = verificationConsoleNotice
         #endif
         let owner = CockpitConsoleOwner(bundle:bundleURL,settingsStore:settingsStore)
         let application = EngineDockMenuApplication(configuration:configuration,settingsStore:settingsStore,
@@ -69,6 +71,9 @@ import ModelPlanDock
             makeConsole: { composition in
                 if let makeConsole { return makeConsole(composition) }
                 #if MODELPLAN_TEST_ONLY_SPI
+                if let verificationNotice {
+                    return SharedEngineCockpitConsole(owner:owner,composition:composition,isForeground:{ true },activate:{},requestNotice:verificationNotice)
+                }
                 if verificationFactory != nil {
                     return SharedEngineCockpitConsole(owner:owner,composition:composition,activate:{})
                 }
@@ -89,7 +94,7 @@ import ModelPlanDock
     var settings: (() -> Void)?
     /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
     var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
-    var pageFailure: (() -> Void)?
+    var pageFailure: ((CockpitWindowFailure) -> Void)?
     var anchor: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
     let shell = CockpitShellSession()
@@ -129,7 +134,7 @@ import ModelPlanDock
         verifiedBundle=verified
         let page=CockpitWindowController(bundle:verified,context:context,appearance:appearance,
             shellSession:shell,anchor:{ [weak self] in self?.anchor?() })
-        page.onFailure = { [weak self] _ in self?.pageFailure?() }
+        page.onFailure = { [weak self] failure in self?.pageFailure?(failure) }
         #if MODELPLAN_TEST_ONLY_SPI
         CommunityCockpitApplicationFactory.verificationPage?(page)
         #endif
@@ -163,8 +168,8 @@ struct CockpitUnavailableNotice {
          requestNotice: (@MainActor (CockpitUnavailableNotice) -> Void)? = nil) {
         self.owner=owner;self.composition=composition
         self.isForeground=isForeground;self.activate=activate;self.requestNotice=requestNotice
-        owner.coordinator?.onUnavailable = { [weak self] in self?.unavailable() }
-        owner.pageFailure = { [weak self] in self?.unavailable() }
+        owner.coordinator?.onUnavailable = { [weak self] reason in self?.unavailable(path:reason.path) }
+        owner.pageFailure = { [weak self] failure in self?.unavailable(path:"page."+failure.rawValue) }
         let onOpened = owner.coordinator?.onOpened
         owner.coordinator?.onOpened = { [weak self] in
             self?.pageOpened = true
@@ -195,7 +200,7 @@ struct CockpitUnavailableNotice {
         guard wantsVisible else { return }
         switch intent {
         case .chooseSetup,.openSettings:owner.settings?()
-        case .openHistory:unavailable(history:true)
+        case .openHistory:unavailable(path:"intent.openHistory",history:true)
         case .openField:openField()
         case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
@@ -257,9 +262,11 @@ struct CockpitUnavailableNotice {
         composition.dock.setCockpitPresentationBlocked(false)
         fallback?.hide()
     }
-    private func unavailable(history:Bool=false) {
-        guard wantsVisible else { return }
+    private func unavailable(path:String,history:Bool=false) {
         let initiatedInForeground=isForeground()
+        // A failure in the background or after a close shows nothing, so the log is all there is.
+        CockpitFailureLog.record("unavailable path=\(path) wantsVisible=\(wantsVisible) foreground=\(initiatedInForeground) pageOpened=\(pageOpened)")
+        guard wantsVisible else { return }
         let notice=CockpitUnavailableNotice(history:history)
         Task { @MainActor [weak self] in
             guard let self,initiatedInForeground else { return }
