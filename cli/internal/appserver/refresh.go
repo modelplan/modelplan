@@ -499,7 +499,7 @@ func (s *RefreshScheduler) run(job refreshJob) {
 	if err != nil {
 		wait = 10 * time.Minute
 		if job.scope == consent.ScopeCodexRuntimeUsage {
-			wait = 30 * time.Minute
+			wait = quota.CodexFailureWait(paths.Cache)
 		}
 	}
 	if busy {

@@ -112,11 +112,11 @@ func TestCodexRuntimeErrorOutput(t *testing.T) {
 					if err != nil {
 						assertNoRuntimeCanary(t, "returned refresh error", err.Error())
 					}
-					if AccountDue(cache, acctNow.Add(29*time.Minute)) || !AccountDue(cache, acctNow.Add(30*time.Minute)) {
+					if AccountDue(cache, acctNow.Add(firstReadRetries[0]-time.Second)) || !AccountDue(cache, acctNow.Add(firstReadRetries[0])) {
 						t.Error("retry floor changed")
 					}
 				}
-				if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(time.Minute)); err != nil {
+				if err := RefreshCodexAccount(context.Background(), cache, bin, acctNow.Add(time.Second)); err != nil {
 					t.Fatal("not-due refresh failed")
 				}
 				assertRuntimeCacheSafe(t, cache)
