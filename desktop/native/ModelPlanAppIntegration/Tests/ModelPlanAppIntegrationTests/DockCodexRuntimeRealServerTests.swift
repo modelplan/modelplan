@@ -74,13 +74,17 @@ import XCTest
         return root.subviews.lazy.compactMap { self.text(name, in: $0) }.first
     }
 
-    func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
-        // Passed on the M2 lane with producer 8a74bc08 (CLI #523, runtime fallback, still open).
-        // A CLI built from this branch never issues the held runtime request, so the journey runs
-        // only when that producer is supplied (MODELPLAN_DOCK_RUNTIME_PRODUCER=1).
+    /// Passed on the M2 lane with producer 8a74bc08 (CLI #523, runtime fallback, still open). A CLI
+    /// built from this branch has no local fallback for a denied runtime, so these journeys run
+    /// only when that producer is supplied (MODELPLAN_DOCK_RUNTIME_PRODUCER=1).
+    private func requireRuntimeProducer() throws {
         guard ProcessInfo.processInfo.environment["MODELPLAN_DOCK_RUNTIME_PRODUCER"] == "1" else {
             throw XCTSkip("Needs the Codex runtime-fallback producer from CLI #523 (8a74bc08)")
         }
+    }
+
+    func testSameRuntimeMemberUpdatesTheOpenCard() async throws {
+        try requireRuntimeProducer()
         let (root, helper, environment) = try sandbox()
         let cache = root.appendingPathComponent("Library/Caches/modelplan/observed")
         let payload = root.appendingPathComponent("rpc-response.json")
@@ -247,10 +251,12 @@ import XCTest
         XCTAssertNil(try denied.composition.dock.cardContent(for: ref))
     }
     func testR01ExplicitLocalGrantShowsFourThenThreePercentWithSourceTime() async throws {
+        try requireRuntimeProducer()
         try await exerciseLocalHistory(initialRemaining: 4, updatedRemaining: 3, initialAge: 150, initialState: .current)
     }
 
     func testR06LocalHistoryChangeReachesTheSameSubscribedMember() async throws {
+        try requireRuntimeProducer()
         try await exerciseLocalHistory(initialRemaining: 20, updatedRemaining: 70, initialAge: 3 * 3600 + 30, initialState: .retained)
     }
 
