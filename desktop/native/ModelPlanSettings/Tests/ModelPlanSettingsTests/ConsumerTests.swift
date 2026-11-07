@@ -108,4 +108,34 @@ final class ConsumerTests: XCTestCase {
         XCTAssertNil(policy.action(for: p.openShortcut, preferences: p, global: false, repeated: true))
         XCTAssertEqual(policy.action(for: p.dockShortcut, preferences: p, global: false), .toggleDock)
     }
+
+    func testAliasDisplayKeepsAboutFiveHanOrNineLatinThenEllipsis() {
+        XCTAssertEqual(AliasDisplay.shortened("Work"), "Work")
+        XCTAssertEqual(AliasDisplay.shortened("123456789"), "123456789")
+        XCTAssertEqual(AliasDisplay.shortened("1234567890"), "123456789…")
+        XCTAssertEqual(AliasDisplay.shortened("工作订阅甲"), "工作订阅甲")
+        XCTAssertEqual(AliasDisplay.shortened("工作订阅甲乙"), "工作订阅甲…")
+        XCTAssertEqual(AliasDisplay.shortened(""), "")
+    }
+
+    func testAliasShortensOnDisplayButStaysWholeWhenSaved() throws {
+        var preferences = SettingsPreferences()
+        var draft = AliasDraft(subscriptionID: "a", committed: "")
+        draft.input("Personal subscription", composing: false)
+        try draft.commit(to: &preferences)
+        XCTAssertEqual(preferences.subscriptionSettings["a"]?.alias, "Personal subscription")
+        let shown = preferences.applying(to: DockInstrumentInput(id: "a", name: "Sample", windows: []))
+        XCTAssertEqual(shown.alias, "Personal …")
+    }
+
+    func testAliasInputIsCleanedNotRefused() throws {
+        var preferences = SettingsPreferences()
+        var draft = AliasDraft(subscriptionID: "a", committed: "")
+        draft.input("  Wo\nrk\t ", composing: false)
+        try draft.commit(to: &preferences)
+        XCTAssertEqual(preferences.subscriptionSettings["a"]?.alias, "Work")
+        draft.input(String(repeating: "长", count: 500), composing: false)
+        try draft.commit(to: &preferences)
+        XCTAssertEqual(preferences.subscriptionSettings["a"]?.alias.count, 128)
+    }
 }
