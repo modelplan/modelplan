@@ -416,5 +416,12 @@ func ExistingActivityBindings(cache string, admission consent.Admission) []Activ
 			out = append(out, ActivityBinding{s.Source, s.Key, s.SubscriptionRef, true, grantStart(admission, s.Source)})
 		}
 	}
+	// A session joins Sessions when its first turn completes, so a first turn in flight is only
+	// in Live. Its reference is the one account signed in to that tool, or none when several are.
+	for _, r := range l.Live {
+		if r.SubscriptionRef != "" {
+			out = append(out, ActivityBinding{r.Source, r.Key, r.SubscriptionRef, true, grantStart(admission, r.Source)})
+		}
+	}
 	return out
 }

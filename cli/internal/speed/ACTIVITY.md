@@ -25,8 +25,10 @@ events and the config baseURL field:
 The parser and fixtures here are independently written; no upstream code or
 transcript content is copied.
 
-Activity binds only through existing per-session ledger associations to a
-verified opaque account reference. `refs[source]` is not session provenance:
+Activity binds only through per-session ledger associations to a verified opaque
+account reference: completed sessions, plus live records for a first turn in flight.
+The app-server records both itself every 30 seconds, so no plugin hook is needed and
+a brand-new session can take up to that long to light. `refs[source]` is not session provenance:
 the legacy fallback now disappears when multiple different accounts share a
 source, and the new observer excludes that fallback entirely. Missing or
 conflicting session bindings remain unbound. In particular the existing ZCode

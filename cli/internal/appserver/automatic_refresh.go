@@ -24,6 +24,7 @@ func (s *RefreshScheduler) automatic() {
 	defer close(s.autoDone)
 	first := true
 	var previous Stamp
+	var nextObserve time.Time
 	for s.ctx.Err() == nil {
 		now := s.now()
 		admission := consent.Capture()
@@ -105,6 +106,23 @@ func (s *RefreshScheduler) automatic() {
 			}
 		}
 		first = false
+		if s.config.Observe != nil && !s.config.Offline && !s.config.ReadOnly {
+			// Local writes skip rather than wait for the reader lock, so go when no read holds it.
+			// The end of each read wakes this loop.
+			s.mu.Lock()
+			idle := len(s.pending) == 0
+			s.mu.Unlock()
+			if idle && !now.Before(nextObserve) {
+				s.config.Observe(s.paths(admission), now)
+				nextObserve = now.Add(observeEvery)
+				if s.config.Changed != nil {
+					s.config.Changed()
+				}
+			}
+			if nextObserve.Before(next) {
+				next = nextObserve
+			}
+		}
 		wait := next.Sub(s.now())
 		if wait < 0 {
 			wait = 0

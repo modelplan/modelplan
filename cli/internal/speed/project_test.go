@@ -227,3 +227,22 @@ func TestProjectLabelsDefault(t *testing.T) {
 		t.Fatal("turned on again", err)
 	}
 }
+
+// Turning project labels off also removes them from the live records.
+func TestClearProjectLabelsCoversLiveRecords(t *testing.T) {
+	cache := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cache, "observed"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(PerfLedger{SchemaVersion: 1, Since: time.Now(), Live: []LiveRecord{{Key: "k", Ref: "r", Source: "codex", ProjectRef: "p", ProjectLabel: "alpha"}}})
+	if err := os.WriteFile(PerfPath(cache), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ClearProjectLabels(cache); err != nil {
+		t.Fatal(err)
+	}
+	l, ok := LoadPerf(cache)
+	if !ok || len(l.Live) != 1 || l.Live[0].ProjectLabel != "" || l.Live[0].ProjectRef != "p" {
+		t.Fatalf("live = %+v", l.Live)
+	}
+}

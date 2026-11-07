@@ -45,6 +45,7 @@ type LiveRecord struct {
 	Effort          string        `json:"effort"`
 	Speed           string        `json:"speed"`
 	ProjectRef      string        `json:"projectRef,omitempty"`
+	ProjectLabel    string        `json:"projectLabel,omitempty"` // only while project labels are on
 	SubscriptionRef string        `json:"subscriptionRef,omitempty"`
 	StartedAt       time.Time     `json:"startedAt"`
 	LastAt          time.Time     `json:"lastAt"`
@@ -62,6 +63,7 @@ type LiveSession struct {
 	EffortStatus    string        `json:"effortStatus"`
 	Speed           string        `json:"speed"`
 	ProjectRef      *string       `json:"projectRef"`
+	ProjectLabel    string        `json:"projectLabel,omitempty"`
 	SubscriptionRef *string       `json:"subscriptionRef"`
 	StartedAt       time.Time     `json:"startedAt"`
 	LastAt          time.Time     `json:"lastAt"`
@@ -260,8 +262,14 @@ func (l *PerfLedger) setLive(key, source string, x liveProbe, subscription strin
 			break
 		}
 	}
-	if r.ProjectRef == "" && x.cwd != "" && l.project != nil {
-		r.ProjectRef, _ = l.project(x.cwd)
+	if x.cwd != "" && l.project != nil {
+		ref, label := l.project(x.cwd)
+		if r.ProjectRef == "" {
+			r.ProjectRef = ref
+		}
+		if ref == r.ProjectRef {
+			r.ProjectLabel = label
+		}
 	}
 	for _, q := range x.requests {
 		if q.cfg != x.cfg || q.end.Before(start) || q.end.After(now) || !q.end.After(now.Add(-LiveRateWindow)) {
@@ -308,7 +316,7 @@ func (v PerfView) LiveSessions() []LiveSession {
 		if !r.LastAt.After(v.Now.Add(-LiveWithin)) || r.LastAt.After(v.Now) {
 			continue
 		}
-		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), SubscriptionRef: refOrNil(r.SubscriptionRef)}
+		x := LiveSession{Ref: r.Ref, Source: r.Source, Model: r.Model, Effort: r.Effort, EffortStatus: "unreported", Speed: r.Speed, StartedAt: r.StartedAt, LastAt: r.LastAt, Status: "idle", ProjectRef: refOrNil(r.ProjectRef), ProjectLabel: r.ProjectLabel, SubscriptionRef: refOrNil(r.SubscriptionRef)}
 		if r.Effort != "" {
 			x.EffortStatus = "reported"
 		}

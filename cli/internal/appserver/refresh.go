@@ -27,8 +27,11 @@ type RefreshConfig struct {
 	Offline, ReadOnly bool
 	Changed           func()
 	CredentialRequest func(CredentialNeed) (string, error)
-	Now               func() time.Time
-	Plan              func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
+	// Observe records what the local logs show: sessions, speed and quota history. The app has
+	// no other trigger for this; the CLI's own commands do it themselves.
+	Observe func(quota.Paths, time.Time)
+	Now     func() time.Time
+	Plan    func(quota.Paths, string, time.Time) (quota.ScopeRefreshPlan, error)
 }
 type refreshJob struct {
 	at         time.Time
@@ -71,6 +74,9 @@ func (s *RefreshScheduler) plan(paths quota.Paths, scope string, now time.Time) 
 // readerBusyRetry: another process, such as a plugin hook, held the reader lock past the
 // two-second wait. The failure back-off is for reads that ran.
 const readerBusyRetry = 15 * time.Second
+
+// observeEvery matches the live session window closely enough for a current rate.
+const observeEvery = 30 * time.Second
 
 func NewRefreshScheduler(ctx context.Context, config RefreshConfig) *RefreshScheduler {
 	ctx, cancel := context.WithCancel(ctx)
