@@ -322,3 +322,44 @@ func TestCredentialHoldKeepsAutomaticReadsOffAndDelaysRequestedOnes(t *testing.T
 		t.Fatal("requested read did not run after the operation")
 	}
 }
+
+func TestHeldAutomaticReadIsReportedDeferred(t *testing.T) {
+	backend, basePaths, _ := refreshFixture(t, consent.ScopeClaudeAccountUsageSavedLogin)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := func(admission consent.Admission) quota.Paths {
+		p := basePaths(admission)
+		p.ReaderAccess = &quota.ReaderAccess{Grants: map[string]quota.ReaderGrant{"claude": {
+			SavedLogin: true, Keychain: true, Generation: "synthetic",
+			Credential: func(context.Context) ([]byte, string) { return nil, "unavailable" },
+			Profiles:   []quota.ReaderProfile{{Root: filepath.Join(home, ".claude")}},
+		}}}
+		return p
+	}
+	scheduler := NewRefreshScheduler(context.Background(), RefreshConfig{Backend: backend, Paths: paths,
+		CredentialHold: func(string) (bool, time.Time) { return true, time.Time{} },
+		Run:            func(context.Context, quota.Paths, string, time.Time) error { return nil },
+	})
+	defer scheduler.Close()
+	params := wire.RefreshRequestParams{Scopes: []string{consent.ScopeClaudeAccountUsageSavedLogin}}
+	if result, _, err := scheduler.request(context.Background(), params, true); err != nil || result[0].DisabledReason != nil {
+		t.Fatal("automatic read was not scheduled", result, err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		decisions := scheduler.Decisions()
+		if len(decisions) > 0 {
+			last := decisions[len(decisions)-1]
+			if last.Outcome != wire.RefreshDecisionOutcome(refreshDeferred) || last.Reason != wire.RefreshDecisionReason(refreshInFlight) {
+				t.Fatalf("held read reported as %+v", last)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no decision for the held read")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
