@@ -296,8 +296,7 @@ struct StatusNoticePresentation {
         var context = settings.editor.context
         context.capabilities.login = loginServiceAdapter?.observedState ?? .unavailable
         context.notificationAuthorization = observedAuthorization
-        context.unavailableControls.removeValue(forKey: .sliverAlert)
-        context.unavailableControls.removeValue(forKey: .magnification)
+        context.observeWidgetConsumers(StaticDockPreviewHost.consumedSettingKeys)
         if context.capabilities.login != .unavailable { context.unavailableControls.removeValue(forKey: .login) }
         if notificationAuthorizationService != nil && observedAuthorization != .unavailable {
             context.unavailableControls.removeValue(forKey: .notificationConsent)

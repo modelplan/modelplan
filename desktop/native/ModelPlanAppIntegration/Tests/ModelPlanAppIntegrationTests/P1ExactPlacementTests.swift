@@ -569,7 +569,7 @@ private actor P1SyntheticEngine: EngineClient {
 
 // G3-30 colour and G3-32 ring marks, both through the normal entry (EngineRowsEntry + settings store).
 extension P1ExactPlacementTests {
-    private struct Station { let id: String; let vendorKey: String; let name: String; let accounts: Int }
+    private struct Station { let id: String; let vendorKey: String; let name: String; let accounts: Int; var remaining: Double? = nil }
 
     private func synthetic(_ stations: [Station]) throws -> WireRowsSnapshot {
         let capture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../../../../schema/app-cli/captures/WireRowsSnapshot.json").standardizedFileURL
@@ -589,6 +589,10 @@ extension P1ExactPlacementTests {
                 var copy = account
                 copy["subscriptionRef"] = String(format: "%016x", serial)
                 copy["valueState"] = "current"; copy["freshUntil"] = "2099-01-01T00:00:00Z"
+                if let remaining = station.remaining, var windows = copy["windows"] as? [[String: Any]], !windows.isEmpty {
+                    windows[0]["remainingPercent"] = remaining
+                    copy["windows"] = windows
+                }
                 return copy
             }
             return row
@@ -689,6 +693,58 @@ extension P1ExactPlacementTests {
         }
         try report.joined(separator: "\n").write(to: output.appendingPathComponent("g3-30-colour.txt"), atomically: true, encoding: .utf8)
         print(report.joined(separator: "\n"))
+    }
+
+    /// SET-9: each Quota Widget setting changes the running widget; nothing is relaunched.
+    /// The red threshold drives the ring's red band, not only the number.
+    func testWidgetSettingsChangeTheRunningWidget() async throws {
+        let rows = try synthetic([Station(id: "live", vendorKey: "openai", name: "Codex", accounts: 1, remaining: 20)])
+        let (app, view) = try await launch(rows, size: .medium, percentages: true, stations: 1, tag: "live")
+        addTeardownBlock { @MainActor in await app.stopLifecycle(); app.composition.dock.close() }
+        let settings = app.settingsHost.application
+        func settled(_ what: String, _ predicate: () -> Bool) async throws {
+            for _ in 0..<300 where !predicate() { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertTrue(predicate(), what)
+        }
+        func reading() throws -> DockInstrumentReading { try XCTUnwrap(view.presentedReadingsForChecks.values.first) }
+        func ringRedPixels() throws -> Int {
+            let image = try XCTUnwrap(view.presentedImageForChecks)
+            let rgba = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
+            rgba.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            let bytes = try XCTUnwrap(rgba.data).assumingMemoryBound(to: UInt8.self)
+            // Only the ring: the ignition cap is red too, and it sits outside this station's box.
+            let skin = try XCTUnwrap(view.presentedSkinForChecks)
+            let station = try XCTUnwrap(skin.stations.first { $0.subscriptionID != nil })
+            let pixels = CGFloat(image.width) / skin.bounds.width, radius = SettingsSize.medium.nozzleDiameter / 2
+            let centreX = (station.centre.x - skin.bounds.minX) * pixels, centreY = (station.centre.y - skin.bounds.minY) * pixels
+            var count = 0
+            for y in max(0, Int(centreY - radius * pixels))..<min(image.height, Int(centreY + radius * pixels)) {
+                for x in max(0, Int(centreX - radius * pixels))..<min(image.width, Int(centreX + radius * pixels)) {
+                    let p = (y * image.width + x) * 4
+                    if bytes[p] > 180, bytes[p + 1] < 110, bytes[p + 2] < 110 { count += 1 }
+                }
+            }
+            return count
+        }
+        // The default threshold (25) makes 20% red; 16 makes the same reading amber; back to red.
+        XCTAssertEqual(try reading().status, .critical)
+        XCTAssertEqual(try reading().outer?.status, .critical)
+        let red = try ringRedPixels()
+        XCTAssertGreaterThan(red, 0, "the ring paints its red band at 20% with the default threshold")
+        try await settings.commit(.redBelow(16))
+        try await settled("the ring leaves red") { (try? reading().outer?.status) == .warning }
+        XCTAssertEqual(try reading().status, .warning)
+        XCTAssertEqual(try ringRedPixels(), 0, "no red band above the committed threshold")
+        try await settings.commit(.redBelow(25))
+        try await settled("the ring returns to red") { (try? reading().outer?.status) == .critical }
+        XCTAssertEqual(try ringRedPixels(), red)
+        // Percentages leave and return with the same running view.
+        XCTAssertTrue(view.presentedTextMetricsForChecks.contains { $0.text == "20%" })
+        try await settings.commit(.showPercentages(false))
+        try await settled("the readout disappears") { !view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
+        try await settings.commit(.showPercentages(true))
+        try await settled("the readout returns") { view.presentedTextMetricsForChecks.contains { $0.text == "20%" } }
     }
 
     /// G3-32: a ring shows the vendor's checked mark; without one, its initials fit the face.
