@@ -80,6 +80,14 @@ func Path() string {
 func Empty() State {
 	return State{SchemaVersion: 2, Privacy: Automatic, Tools: map[string]Record{}, Scopes: map[string]Record{}, Revoked: map[string]uint64{}, Hinted: map[string]bool{}}
 }
+
+// ErrNewerStore: a newer ModelPlan (the app bundles its own CLI) wrote the file. It reads as
+// no consent, like any file this CLI cannot trust, but the reason differs for the user.
+var ErrNewerStore = errors.New("consent written by a newer ModelPlan")
+
+// NewerStore reports that this CLI reads nothing because of ErrNewerStore.
+func NewerStore() bool { _, err := Load(Path()); return errors.Is(err, ErrNewerStore) }
+
 func loadRaw(file string) (State, []byte, error) {
 	s := Empty()
 	f, err := os.Open(file)
@@ -93,6 +101,12 @@ func loadRaw(file string) (State, []byte, error) {
 	b, err := io.ReadAll(io.LimitReader(f, (256<<10)+1))
 	if err != nil || len(b) > 256<<10 {
 		return s, nil, errors.New("consent too large or unreadable")
+	}
+	var v struct {
+		SchemaVersion int `json:"schemaVersion"`
+	}
+	if json.Unmarshal(b, &v) == nil && v.SchemaVersion > 2 {
+		return Empty(), nil, ErrNewerStore
 	}
 	if json.Unmarshal(b, &s) != nil || (s.SchemaVersion != 1 && s.SchemaVersion != 2) || (s.Privacy != Automatic && s.Privacy != Passive) || s.Tools == nil {
 		return Empty(), nil, errors.New("invalid consent state")
