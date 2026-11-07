@@ -24,8 +24,8 @@ import ModelPlanDock
 @MainActor public enum CommunityCockpitApplicationFactory {
     public static let webSource = "f25e1e821411bdd58cb09d9a388b9064505e856c"
     public static let manifestPins = [
-        "community":"8b09ead9a0e6dd86428cc961212c4a800a33d6be8139b2818e72673e63f89fc1",
-        "official":"eafcbe83b14bfe8dd96b6fb602c54b4860fbda6e67ab2194985b62ee55086efd",
+        "community":"03d4e9e0f504cd8bbfeae9c2f96663d3026e4796f2ffa49a8af9c27fe7e7ba72",
+        "official":"e76613231de3c82e7335380089a71da50d90182c2a37fdf5d990b0eaf753ec59",
     ]
     #if MODELPLAN_TEST_ONLY_SPI
     public static var verificationPage: ((CockpitWindowController) -> Void)?
@@ -86,6 +86,8 @@ import ModelPlanDock
     let settingsStore: SettingsStore
     var coordinator: EngineCockpitCoordinator?
     var settings: (() -> Void)?
+    /// The one way a cockpit website link leaves the app; tests read the URL instead of a browser.
+    var openWebsite: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     var pageFailure: (() -> Void)?
     var anchor: (() -> CGRect?)?
     var verifiedBundle: VerifiedCockpitBundle?
@@ -173,6 +175,7 @@ struct CockpitUnavailableNotice {
         case .chooseSetup,.openSettings:owner.settings?()
         case .openHistory:unavailable(history:true)
         case .openField:openField()
+        case .openWebsite(let link):owner.openWebsite(link.url)
         case .close:owner.coordinator?.requestClose()
         case .detach,.putBack,.shutterToggle,.scopeSelect:
             // The page owns shell controls; the coordinator validates and

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 import { definitions, type WireCockpitData } from '../generated/wire.js';
+import {websiteFields} from './website-link.js';
 import { conforms, exact, parseMessage, record } from './schema.js';
 import { cockpitMembers } from './members.js';
 import {effectiveRedBelow,type RedBelow} from './threshold.js';
@@ -9,7 +10,7 @@ export interface BridgeSource { readonly origin:string; readonly isMainFrame:boo
 export interface Appearance { readonly theme:'day'|'night'; readonly locale:'en'|'zh-CN'; readonly reduceMotion:boolean; readonly reduceTransparency:boolean; readonly showProjectNames:boolean }
 export type LiveAppearance = Appearance;
 export interface ShellState { readonly profile:'open'|'closed'; readonly attached:boolean; readonly forcedClosed:boolean; readonly tier:'tall'|'compact'; readonly scope:string }
-export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField';
+export type PageAction = 'chooseSetup'|'openSettings'|'openHistory'|'close'|'detach'|'putBack'|'shutterToggle'|'scopeSelect'|'openField'|'openWebsite';
 export interface Header extends Context { readonly version:2; readonly pageId:string; readonly requestId:string; readonly sequence:string }
 export type HostMessage = Header & (
   {readonly type:'load'; readonly appearance:Appearance; readonly shell:ShellState; readonly redBelow?:unknown} |
@@ -183,7 +184,7 @@ export class CockpitBridge {
     }
   }
   action(action:PageAction,tool?:string):boolean {
-    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField'].includes(action)) return false;
+    if(!this.isActive()||!['chooseSetup','openSettings','openHistory','close','detach','putBack','shutterToggle','scopeSelect','openField','openWebsite'].includes(action)) return false;
     if(['close','detach','putBack','shutterToggle'].includes(action)) {
       if(!this.shellState)return false;
       if(action==='detach'&&!this.shellState.attached||action==='putBack'&&this.shellState.attached||action==='shutterToggle'&&this.shellState.forcedClosed)return false;
@@ -191,6 +192,11 @@ export class CockpitBridge {
     if(action==='scopeSelect') {
       if(!this.hasDisplay||!tool||(tool!=='all'&&!this.scopeMembers.has(tool)))return false;
       this.emit('action',this.requestId(),{action,key:tool});return true;
+    }
+    if(action==='openWebsite') {
+      const link=tool?websiteFields(tool):null;
+      if(!link)return false;
+      this.emit('action',this.requestId(),{action,...link});return true;
     }
     if(action==='openHistory'?(!tool||!this.historyTools.has(tool)):tool!==undefined) return false;
     this.emit('action',this.requestId(),{action,...(tool?{tool}:{})});return true;
